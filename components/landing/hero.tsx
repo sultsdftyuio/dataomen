@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ArrowRight } from 'lucide-react'
 import { ProductMockup } from './product-mockup'
+import Link from 'next/link'
 
 export function Hero() {
   return (
@@ -26,10 +27,6 @@ export function Hero() {
 
       <div className="relative mx-auto max-w-6xl">
         <div className="mx-auto max-w-3xl text-center">
-          <Badge variant="secondary" className="mb-6 font-mono text-xs font-normal tracking-wider">
-            Now in Private Beta
-          </Badge>
-
           <h1 className="mb-6 text-balance text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
             Your Autonomous{' '}
             <span className="text-primary">
@@ -42,12 +39,16 @@ export function Hero() {
           </p>
 
           <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="gap-2">
-              Get Early Access
-              <ArrowRight className="h-4 w-4" />
+            <Button size="lg" className="gap-2" asChild>
+              <Link href="/login">
+                Get Started
+                <ArrowRight className="h-4 w-4" />
+              </Link>
             </Button>
-            <Button size="lg" variant="outline" className="gap-2">
-              Watch Demo
+            <Button size="lg" variant="outline" className="gap-2" asChild>
+              <Link href="/login">
+                Log In
+              </Link>
             </Button>
           </div>
         </div>
