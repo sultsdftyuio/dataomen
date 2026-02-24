@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useTheme } from 'next-themes'
 import { Moon, Sun, Menu, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 
 export function Navbar() {
   const { theme, setTheme } = useTheme()
@@ -28,7 +29,7 @@ export function Navbar() {
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         {/* Logo */}
-        <a href="#" className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-primary-foreground">
               <path d="M7 1L13 4V10L7 13L1 10V4L7 1Z" fill="currentColor" fillOpacity="0.3" />
@@ -37,7 +38,7 @@ export function Navbar() {
             </svg>
           </div>
           <span className="text-lg font-semibold tracking-tight text-foreground">DataOmen</span>
-        </a>
+        </Link>
 
         {/* Desktop Nav */}
         <div className="hidden items-center gap-1 md:flex">
@@ -64,9 +65,22 @@ export function Navbar() {
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           )}
-          <Button size="sm" className="hidden md:inline-flex">
-            Join Waitlist
-          </Button>
+          
+          {/* Desktop Auth Buttons */}
+          <div className="hidden items-center gap-2 md:flex">
+            <Link href="/login">
+              <Button variant="ghost" size="sm">
+                Log In
+              </Button>
+            </Link>
+            <Link href="/login">
+              <Button size="sm">
+                Sign Up
+              </Button>
+            </Link>
+          </div>
+
+          {/* Mobile Menu Toggle Button */}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -93,9 +107,20 @@ export function Navbar() {
                 {item}
               </a>
             ))}
-            <Button size="sm" className="mt-2">
-              Join Waitlist
-            </Button>
+            
+            {/* Mobile Auth Buttons */}
+            <div className="mt-4 flex flex-col gap-2">
+              <Link href="/login" onClick={() => setMobileOpen(false)}>
+                <Button variant="outline" className="w-full justify-center">
+                  Log In
+                </Button>
+              </Link>
+              <Link href="/login" onClick={() => setMobileOpen(false)}>
+                <Button className="w-full justify-center">
+                  Sign Up
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       )}
