@@ -1,53 +1,40 @@
-import os
-import jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
-# from database import get_db
-from models import User
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
-# Standard FastAPI utility to extract the Bearer token from the header
-security = HTTPBearer()
+router = APIRouter()
 
-# Your Supabase JWT Secret (Found in Supabase Dashboard -> Project Settings -> API)
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+# Pydantic Schemas to strictly validate incoming JSON from Next.js
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    # db: Session = Depends(get_db)
-) -> User:
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+@router.post("/login", response_model=TokenResponse)
+def login(request: LoginRequest):
     """
-    FastAPI Dependency to verify the Supabase JWT and extract the user.
-    Inject this into any route that needs tenant isolation.
+    Phase 1: Authenticate a user and return a JWT.
+    (Currently mocked to clear the connection error).
     """
-    token = credentials.credentials
+    # TODO: Connect to PostgreSQL and hash passwords
+    if request.email == "test@example.com" and request.password == "password":
+        return TokenResponse(access_token="mock_jwt_token_for_phase_1")
+    
+    # If credentials fail, we throw an HTTP 401. 
+    # Next.js will catch this and throw the 'detail' string to the frontend.
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid email or password"
+    )
 
-    try:
-        # Decode the token using your Supabase secret.
-        # Supabase uses the "aud": "authenticated" claim for logged-in users.
-        payload = jwt.decode(
-            token, 
-            SUPABASE_JWT_SECRET, 
-            algorithms=["HS256"], 
-            audience="authenticated"
-        )
-        
-        # Extract the Supabase user UUID
-        user_id = payload.get("sub")
-        if user_id is None:
-            raise ValueError("No subject in token")
+# Mock endpoint to prevent the register action from throwing a 404
+class RegisterRequest(BaseModel):
+    company: str
+    email: str
+    password: str
 
-        # Mocking DB lookup for architecture demonstration:
-        # user = db.query(User).filter(User.id == user_id).first()
-        # if not user:
-        #     raise HTTPException(status_code=404, detail="User not found in public schema")
-        
-        # return user
-
-        # Returning a mock user for now based on our Step 1 Model
-        return User(id=user_id, email=payload.get("email"))
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+@router.post("/register", response_model=TokenResponse)
+def register(request: RegisterRequest):
+    return TokenResponse(access_token="mock_jwt_token_for_phase_1")
