@@ -1,22 +1,28 @@
+# api/database.py
+
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
+from dotenv import load_dotenv
 
-# Use environment variables for security
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/dataomen")
+# Force Python to read your .env file
+load_dotenv()
 
-# The engine handles the connection pool to PostgreSQL
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# We set the default directly to 'postgres' so it matches your Docker container perfectly
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql://postgres:password@localhost:5432/dataomen"
+)
 
-# Each request will get its own local session
+# Create the SQLAlchemy Engine
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
+# Create a local session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db() -> Generator[Session, None, None]:
-    """
-    FastAPI dependency that provides a database session to a route 
-    and ensures it is closed after the request is finished.
-    """
+    """Dependency to yield a database session for our API routes."""
     db = SessionLocal()
     try:
         yield db
