@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.auth import router as auth_router
 from api.routes.datasets import router as datasets_router # New Import
 from api.database import engine
+from api.routes import query
+
 import models
 
 # In Phase 1, we let SQLAlchemy create tables if they don't exist.
@@ -22,6 +24,7 @@ app.add_middleware(
 # Register our routers
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(datasets_router) # Now properly reachable at /api/v1/datasets/upload
+app.include_router(query.router)
 
 @app.get("/health")
 def health_check():
