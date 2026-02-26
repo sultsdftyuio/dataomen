@@ -1,37 +1,66 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { UploadCloud, FileType, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast"; //
+import React, { useState, useCallback, useRef } from "react";
+import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
-// Aligned with the DatasetStatus enum in models.py
 type UploadState = "idle" | "uploading" | "success" | "error";
 
-export default function FileUploadZone() {
-  const { toast } = useToast();
-  const [uploadState, setUploadState] = useState<UploadState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+interface FileUploadZoneProps {
+  onUploadSuccess?: (datasetId: string) => void;
+}
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+export function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps) {
+  const [dragActive, setDragActive] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
   }, []);
 
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      validateAndSetFile(e.dataTransfer.files[0]);
+    }
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    if (e.target.files && e.target.files[0]) {
+      validateAndSetFile(e.target.files[0]);
+    }
+  };
+
   const validateAndSetFile = (file: File) => {
-    setErrorMessage(null);
-    
-    // Phase 1 Security: Strict CSV validation
+    // Phase 1 MVP strict requirement: CSV only
     if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-      setUploadState("error");
-      setErrorMessage("Strictly CSV files are allowed for Phase 1.");
+      toast({
+        title: "Invalid File Type",
+        description: "Please upload a valid CSV file.",
+        variant: "destructive",
+      });
       return;
     }
-
-    // Tier-based limit to prevent server memory exhaustion
+    
+    // Optional: Max 50MB restriction (can adjust based on your FastAPI limits)
     if (file.size > 50 * 1024 * 1024) {
-      setUploadState("error");
-      setErrorMessage("File exceeds the 50MB limit.");
+      toast({
+        title: "File too large",
+        description: "Please upload a file smaller than 50MB.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -39,140 +68,155 @@ export default function FileUploadZone() {
     setUploadState("idle");
   };
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      validateAndSetFile(e.dataTransfer.files[0]);
-    }
-  }, []);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      validateAndSetFile(e.target.files[0]);
-    }
-  };
-
-  const handleUpload = async () => {
+  const uploadFile = async () => {
     if (!selectedFile) return;
 
     setUploadState("uploading");
-    setErrorMessage(null);
 
-    // Prepare multipart/form-data as expected by api/routes/datasets.py
     const formData = new FormData();
     formData.append("file", selectedFile);
-    formData.append("dataset_name", selectedFile.name.replace(".csv", ""));
+    // You can hardcode a tenant_id or fetch it from the user session here
+    formData.append("tenant_id", "default_tenant"); 
+
+    // The crucial Vercel fix:
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
     try {
-      const response = await fetch("http://localhost:8000/api/v1/datasets/upload", {
+      const response = await fetch(`${API_URL}/api/datasets/upload`, {
         method: "POST",
+        // Do NOT set 'Content-Type' manually when sending FormData
         body: formData,
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.detail || "The ingestion pipeline failed to initialize.");
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Upload failed");
       }
 
-      setUploadState("success");
+      const data = await response.json();
       
+      setUploadState("success");
       toast({
-        title: "Upload Successful",
-        description: `Dataset ${data.dataset_id} is now being processed in the background.`,
+        title: "Upload Complete!",
+        description: `${selectedFile.name} was successfully converted to Parquet.`,
       });
 
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Connection to DataOmen engine lost.";
+      if (onUploadSuccess && data.dataset_id) {
+        onUploadSuccess(data.dataset_id);
+      }
+
+      // Reset after 3 seconds
+      setTimeout(() => {
+        setUploadState("idle");
+        setSelectedFile(null);
+      }, 3000);
+
+    } catch (error: any) {
+      console.error("Upload error:", error);
       setUploadState("error");
-      setErrorMessage(message);
-      
       toast({
+        title: "Upload Failed",
+        description: error.message || "Could not connect to the processing engine.",
         variant: "destructive",
-        title: "Ingestion Error",
-        description: message,
       });
     }
   };
 
   return (
-    <div className="max-w-xl mx-auto mt-10 p-6 bg-white border border-gray-200 rounded-xl shadow-sm dark:bg-gray-950 dark:border-gray-800">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Initialize Data Pipeline</h2>
-        <p className="text-sm text-gray-500">Upload your raw CSV. Our engine will sanitize and compress it into Parquet.</p>
-      </div>
-
+    <div className="w-full max-w-2xl mx-auto mt-8">
       <div
-        onDragOver={handleDragOver}
+        className={`relative flex flex-col items-center justify-center p-12 text-center border-2 border-dashed rounded-xl transition-all duration-200 ease-in-out ${
+          dragActive ? "border-primary bg-primary/5" : "border-border bg-card"
+        } ${uploadState === "uploading" ? "opacity-50 pointer-events-none" : ""}`}
+        onDragEnter={handleDrag}
+        onDragLeave={handleDrag}
+        onDragOver={handleDrag}
         onDrop={handleDrop}
-        className={`relative flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer transition-colors 
-          ${uploadState === "error" ? "border-red-400 bg-red-50/50 dark:bg-red-900/10" : "border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900/50"}
-          ${uploadState === "success" ? "border-green-400 bg-green-50/50 dark:bg-green-900/10" : ""}
-        `}
       >
-        <input 
-          type="file" 
-          accept=".csv" 
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" 
-          onChange={handleFileChange}
-          disabled={uploadState === "uploading" || uploadState === "success"}
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv"
+          onChange={handleChange}
+          className="hidden"
         />
 
-        <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none text-center px-4">
-          {uploadState === "idle" && !selectedFile && (
-            <>
-              <UploadCloud className="w-10 h-10 mb-3 text-gray-400" />
-              <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                <span className="font-semibold">Click to upload</span> or drag and drop
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">CSV (MAX. 50MB)</p>
-            </>
-          )}
+        {uploadState === "idle" && !selectedFile && (
+          <>
+            <div className="p-4 rounded-full bg-primary/10 mb-4 text-primary">
+              <UploadCloud size={32} />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">Upload your dataset</h3>
+            <p className="text-muted-foreground mb-6">
+              Drag and drop your CSV file here, or click to browse
+            </p>
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="px-6 py-2.5 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Select CSV File
+            </button>
+          </>
+        )}
 
-          {uploadState === "idle" && selectedFile && (
-            <>
-              <FileType className="w-10 h-10 mb-3 text-blue-500" />
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{selectedFile.name}</p>
-              <p className="text-xs text-gray-500">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
-            </>
-          )}
+        {selectedFile && uploadState === "idle" && (
+          <>
+            <div className="p-4 rounded-full bg-primary/10 mb-4 text-primary">
+              <FileText size={32} />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">{selectedFile.name}</h3>
+            <p className="text-sm text-muted-foreground mb-6">
+              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={() => setSelectedFile(null)}
+                className="px-6 py-2.5 bg-secondary text-secondary-foreground font-medium rounded-md hover:bg-secondary/80 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={uploadFile}
+                className="px-6 py-2.5 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors"
+              >
+                Process & Compress
+              </button>
+            </div>
+          </>
+        )}
 
-          {uploadState === "uploading" && (
-            <>
-              <Loader2 className="w-10 h-10 mb-3 text-blue-500 animate-spin" />
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Transmitting to DataOmen Engine...</p>
-            </>
-          )}
+        {uploadState === "uploading" && (
+          <div className="flex flex-col items-center text-primary">
+            <Loader2 size={48} className="animate-spin mb-4" />
+            <h3 className="text-xl font-semibold">Sanitizing Data...</h3>
+            <p className="text-sm text-muted-foreground mt-2">Converting to Parquet format</p>
+          </div>
+        )}
 
-          {uploadState === "success" && (
-            <>
-              <CheckCircle className="w-10 h-10 mb-3 text-green-500" />
-              <p className="text-sm font-medium text-green-700 dark:text-green-400">Upload Complete</p>
-              <p className="text-xs text-gray-500 mt-1">Check your dashboard for processing status.</p>
-            </>
-          )}
+        {uploadState === "success" && (
+          <div className="flex flex-col items-center text-green-600 dark:text-green-400">
+            <CheckCircle size={48} className="mb-4" />
+            <h3 className="text-xl font-semibold">Processing Complete</h3>
+            <p className="text-sm text-muted-foreground mt-2">Ready for analysis via DuckDB</p>
+          </div>
+        )}
 
-          {uploadState === "error" && (
-            <>
-              <AlertCircle className="w-10 h-10 mb-3 text-red-500" />
-              <p className="text-sm font-medium text-red-600 dark:text-red-400">{errorMessage}</p>
-            </>
-          )}
-        </div>
+        {uploadState === "error" && (
+          <div className="flex flex-col items-center text-red-600 dark:text-red-400">
+            <AlertCircle size={48} className="mb-4" />
+            <h3 className="text-xl font-semibold">Processing Failed</h3>
+            <p className="text-sm text-muted-foreground mt-2 mb-6">
+              There was an issue with your CSV schema.
+            </p>
+            <button
+              onClick={() => setUploadState("idle")}
+              className="px-6 py-2.5 bg-secondary text-secondary-foreground font-medium rounded-md hover:bg-secondary/80 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
       </div>
-
-      {selectedFile && uploadState === "idle" && (
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={handleUpload}
-            className="w-full sm:w-auto px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
-          >
-            Process Dataset
-          </button>
-        </div>
-      )}
     </div>
   );
 }
