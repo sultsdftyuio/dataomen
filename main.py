@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.auth import router as auth_router
-from api.routes.datasets import router as datasets_router # New Import
+from api.routes.datasets import router as datasets_router
 from api.database import engine
 from api.routes import query
+from api.routes import narrative  # <--- Imported the new Narrative Router
 
 import models
 
@@ -11,21 +12,25 @@ import models
 # In production, we would use Alembic migrations.
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="DataOmen API", version="0.1.0")
+app = FastAPI(title="SaaS Analytics MVP")
 
+# Configure CORS so your Next.js frontend can talk to this backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"], # For dev only; in prod use your Vercel URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register our routers
-app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
-app.include_router(datasets_router) # Now properly reachable at /api/v1/datasets/upload
-app.include_router(query.router)
+# ---------------------------------------------------------
+# Modular Engine App Routers
+# ---------------------------------------------------------
+app.include_router(auth_router)
+app.include_router(datasets_router)  # Phase 1: Ingestion & Storage
+app.include_router(query.router)     # Phase 2: NL2SQL & RAG Engine
+app.include_router(narrative.router) # Phase 3: CFO Narrative Engine
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "phase": 1, "message": "DataOmen backend is alive."}
+@app.get("/")
+def read_root():
+    return {"message": "Backend is running"}
