@@ -1,62 +1,67 @@
 import uuid
 import enum
 from datetime import datetime, timezone
-from typing import Optional, List
-from sqlalchemy import String, Enum, DateTime, ForeignKey, Text
+from typing import Optional, List, Dict, Any
+
+from sqlalchemy import String, Enum, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
+# Note: Ensure you have pgvector installed if you are utilizing the Vector column.
+from pgvector.sqlalchemy import Vector 
+
+from pydantic import BaseModel, ConfigDict, Field
+
+# ==========================================
+# 1. ORM Models (SQLAlchemy 2.0)
+# ==========================================
 
 class Base(DeclarativeBase):
     """Strict Base class for all SQLAlchemy 2.0 models."""
     pass
 
 class DatasetStatus(str, enum.Enum):
-    """Lifecycle states for dataset ingestion and processing."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    READY = "ready"
-    ERROR = "error"
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    
-    # Security by Design: Explicit tenant_id for partitioning and isolation
-    tenant_id: Mapped[str] = mapped_column(String, index=True, default=lambda: str(uuid.uuid4()), nullable=False)
-    
-    # Audit fields
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-    # Relationships
-    datasets: Mapped[List["Dataset"]] = relationship(
-        "Dataset", 
-        back_populates="user", 
-        cascade="all, delete-orphan"
-    )
+    """Enum tracking the ingestion lifecycle of analytical datasets."""
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    FAILED = "FAILED"
 
 class Dataset(Base):
+    """
+    Multi-tenant dataset tracking model. 
+    Security by Design: tenant_id ensures isolation.
+    """
     __tablename__ = "datasets"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    filename: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[DatasetStatus] = mapped_column(Enum(DatasetStatus), default=DatasetStatus.PENDING, nullable=False)
-    
-    # Metadata for semantic routing/contextual RAG
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Mathematical Precision / Vector Search: 1536 dims is standard for OpenAI ada-002
-    embedding: Mapped[Optional[Vector]] = mapped_column(Vector(1536))
-    
-    # Multi-tenant isolation at the row level
     tenant_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[DatasetStatus] = mapped_column(Enum(DatasetStatus), default=DatasetStatus.PENDING)
     
-    # Audit fields
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # Store S3/R2 URI here if using remote blob storage (Modular Strategy)
+    storage_uri: Mapped[Optional[str]] = mapped_column(String, nullable=True) 
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="datasets")
+# Add other ORM models here (e.g., Queries, ChatHistory, etc.) as needed...
+
+
+# ==========================================
+# 2. Pydantic Schemas (Validation & I/O)
+# ==========================================
+
+class DatasetResponse(BaseModel):
+    """
+    Pydantic schema used to serialize Dataset objects back to the frontend.
+    """
+    # Enables Pydantic to read directly from SQLAlchemy ORM objects natively
+    model_config = ConfigDict(from_attributes=True)
+    
+    # Expose the internal 'id' as 'dataset_id' to match frontend expectations
+    dataset_id: str = Field(validation_alias="id", serialization_alias="dataset_id")
+    tenant_id: str
+    filename: str
+    status: DatasetStatus
+    created_at: datetime
+    
+    # Optional fields that might be populated later
+    storage_uri: Optional[str] = None
