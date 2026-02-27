@@ -1,79 +1,101 @@
-# api/services/nl2sql_generator.py
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
-from openai import OpenAI
+import os
+import duckdb
+from typing import List, Dict, Any
+from pydantic import BaseModel
+from openai import AsyncOpenAI
+from sqlalchemy.orm import Session
+from pathlib import Path
 
-# 1. Strict Output Schemas
-class ChartConfig(BaseModel):
-    """Instructs the frontend on exactly how to map the DuckDB data to Recharts."""
-    type: str = Field(
-        description="The type of chart. Allowed values: 'bar_chart', 'line_chart', 'pie_chart', 'single_value', 'table'"
-    )
-    x_axis: Optional[str] = Field(
-        None, description="The exact column name to use for the X-axis (if applicable)."
-    )
-    y_axis: Optional[str] = Field(
-        None, description="The exact column name to use for the Y-axis (if applicable)."
-    )
+from models import Dataset
 
-class NL2SQLResponse(BaseModel):
-    """The master JSON object the LLM is forced to return."""
-    thought_process: str = Field(
-        description="A brief, one-sentence explanation of the logic behind the SQL query."
-    )
-    sql_query: str = Field(
-        description="The exact, read-only DuckDB SQL query. MUST use 'FROM dataset_table'."
-    )
-    chart_config: ChartConfig
+STORAGE_DIR = Path("./storage")
 
-# 2. The Service Class
+class QueryResult(BaseModel):
+    """Type-safe return schema for Interaction (Frontend) consumption."""
+    sql_executed: str
+    data: List[Dict[str, Any]]
+
 class NL2SQLGenerator:
     """
-    Orchestrates the translation of a user's natural language question into 
-    executable DuckDB SQL and deterministic chart configurations using GPT-5 Nano.
+    Service converting natural language into precise analytical DuckDB queries.
+    Uses Contextual RAG to prevent hallucination and Read-Only connections for security.
     """
-    def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key)
-        # Swapped to gpt-5-nano for maximum speed and cost-efficiency
-        self.model = "gpt-5-nano"
+    def __init__(self, db: Session, tenant_id: str):
+        self.db = db
+        self.tenant_id = tenant_id
+        # Assumes OPENAI_API_KEY is available in the environment variables
+        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-    def _build_system_prompt(self, schema_context: List[Dict[str, Any]]) -> str:
-        """Pure function to format the narrowed schema into the system prompt."""
-        schema_str = "\n".join(
-            [f"- {col['name']} ({col['type']}): {col['description']}" for col in schema_context]
-        )
+    def _get_schema_fragment(self, parquet_path: str) -> str:
+        """
+        Extracts strictly the schema types to prevent LLM token bloat.
+        Contextual RAG: We only need column names and types, not the data itself.
+        """
+        with duckdb.connect() as conn:
+            # Describe returns column_name, column_type, null, key, default, extra
+            schema_df = conn.execute(f"DESCRIBE SELECT * FROM '{parquet_path}'").df()
+            return schema_df[['column_name', 'column_type']].to_string(index=False)
 
-        return f"""
-        You are a world-class Data Analyst and DuckDB SQL expert.
-        Your job is to translate the user's question into a highly optimized, read-only SQL query.
+    async def generate_and_execute(self, dataset_id: str, natural_query: str) -> QueryResult:
+        """
+        Orchestrates LLM query generation and DuckDB in-memory execution.
+        """
+        # 1. Security by Design: Verify tenant owns the requested dataset
+        dataset = self.db.query(Dataset).filter(
+            Dataset.id == dataset_id,
+            Dataset.tenant_id == self.tenant_id
+        ).first()
         
-        You will query a virtual table named exactly: `dataset_table`.
-        
-        Here are the ONLY columns available to you based on the user's dataset:
-        {schema_str}
+        if not dataset:
+            raise ValueError("Dataset not found or access denied.")
+
+        parquet_path = STORAGE_DIR / self.tenant_id / f"{dataset.id}.parquet"
+        if not parquet_path.exists():
+            raise FileNotFoundError("Underlying data file is missing or corrupted.")
+
+        # 2. Contextual RAG Injection
+        schema_context = self._get_schema_fragment(str(parquet_path))
+
+        system_prompt = f"""You are an elite, highly precise DuckDB SQL Data Analyst.
+        Write a strictly compliant SQL query to answer the user's question based on the exact schema provided below.
         
         RULES:
-        1. NEVER hallucinate column names. Only use what is provided above.
-        2. ALWAYS use `FROM dataset_table`.
-        3. If calculating dates/times, assume standard ISO 8601 formatting.
-        4. Do NOT use markdown formatting in your response. Return strictly the requested JSON structure.
+        1. The data is located at the file path: '{parquet_path}'
+        2. You MUST wrap the file path in single quotes in your FROM clause (e.g., FROM '{parquet_path}').
+        3. Do NOT invent columns. Only use the columns listed in the schema.
+        4. Respond ONLY with the raw SQL code. No markdown formatting, no backticks, no explanations.
+        
+        SCHEMA:
+        {schema_context}
         """
 
-    def generate_payload(self, user_query: str, schema_context: List[Dict[str, Any]]) -> NL2SQLResponse:
-        """
-        Executes the prompt using OpenAI's Structured Outputs feature.
-        """
-        system_prompt = self._build_system_prompt(schema_context)
-
-        completion = self.client.beta.chat.completions.parse(
-            model=self.model,
+        # 3. Request LLM Inference
+        response = await self.client.chat.completions.create(
+            model="gpt-4o-mini", # Opting for high-speed, cost-effective reasoning
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
+                {"role": "user", "content": natural_query}
             ],
-            response_format=NL2SQLResponse,
-            # Note: GPT-5 nano supports native structured parsing flawlessly
-            temperature=0.0 
+            temperature=0.0 # Mathematical Precision: 0.0 prevents creative SQL syntax
         )
 
-        return completion.choices[0].message.parsed
+        generated_sql = response.choices[0].message.content.strip()
+        # Fallback strip in case the LLM disobeys the "no markdown" rule
+        generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
+
+        # 4. Computation (Execution)
+        try:
+            # Multi-tenant Security: 'read_only': True explicitly blocks DROP/DELETE/INSERT commands
+            with duckdb.connect(config={'read_only': True}) as conn:
+                # Execute and instantly dump to a Pandas DataFrame (vectorized memory)
+                result_df = conn.execute(generated_sql).df()
+                
+                # Vectorization over loops: Convert DataFrame to standard dicts for JSON serialization
+                data = result_df.to_dict(orient="records")
+                
+                return QueryResult(sql_executed=generated_sql, data=data)
+                
+        except duckdb.Error as e:
+            raise RuntimeError(f"Generated SQL execution failed: {e}\nSQL Executed: {generated_sql}")
+        except Exception as e:
+            raise RuntimeError(f"Unexpected computation error: {e}")

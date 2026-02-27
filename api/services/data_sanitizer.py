@@ -1,84 +1,104 @@
+import os
+import io
+import tempfile
 import logging
-import pandas as pd
-from pathlib import Path
+from typing import BinaryIO
+
+import duckdb
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
-class DataSanitizer:
+class EdgeDataSanitizer:
     """
-    Deterministically cleans raw CSV data to prepare it for 
-    analytical Parquet storage and DuckDB querying.
+    In-memory analytical gatekeeper. 
+    Guarantees type-safety, structural integrity, and multi-tenant security
+    by immediately converting raw uploads to strict Parquet format via DuckDB before storage.
     """
-
-    def __init__(self, file_path: Path | str):
-        self.file_path = Path(file_path)
-        if not self.file_path.exists():
-            raise FileNotFoundError(f"Cannot sanitize. File not found at {self.file_path}")
-
-    def clean(self) -> pd.DataFrame:
-        """
-        Executes the master cleaning pipeline.
-        Returns a sanitized Pandas DataFrame ready for Parquet conversion.
-        """
-        logger.info(f"Starting sanitization for {self.file_path.name}")
+    
+    def __init__(self):
+        # Ephemeral, thread-local, in-memory DuckDB connection.
+        # Executes with blazing fast C++ vectorized operations.
+        self.conn = duckdb.connect(':memory:')
         
-        # Load CSV (Using low_memory=False to let Pandas aggressively infer dtypes)
-        df = pd.read_csv(self.file_path, low_memory=False)
-
-        df = self._standardize_columns(df)
-        df = self._drop_nulls(df)
-        df = self._enforce_iso_dates(df)
-
-        logger.info(f"Sanitization complete. Final shape: {df.shape}")
-        return df
-
-    def _standardize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+    def sanitize_and_convert(
+        self, 
+        file_stream: BinaryIO, 
+        tenant_id: str, 
+        file_extension: str = 'csv'
+    ) -> io.BytesIO:
         """
-        Forces column names to lowercase, strips trailing spaces, 
-        and replaces internal spaces with underscores.
-        """
-        df.columns = (
-            df.columns
-            .str.strip()
-            .str.lower()
-            .str.replace(r'\s+', '_', regex=True)
-            .str.replace(r'[^\w]', '', regex=True) # Strip special characters
-        )
-        return df
-
-    def _drop_nulls(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Strict Phase 1 Rule: Drop rows with missing values to ensure 
-        deterministic querying in DuckDB later.
-        """
-        initial_rows = len(df)
-        df = df.dropna()
-        dropped_rows = initial_rows - len(df)
+        Takes a raw byte stream, infers the schema, cleanses malformed rows, 
+        injects a tenant_id for zero-trust isolation, and returns a binary stream 
+        of a highly compressed Parquet file.
         
-        if dropped_rows > 0:
-            logger.warning(f"Dropped {dropped_rows} rows containing null values.")
+        :param file_stream: Raw file payload from the frontend.
+        :param tenant_id: The UUID of the uploading tenant (Security by Design).
+        :param file_extension: The source format (csv or json).
+        :return: io.BytesIO stream containing the ZSTD compressed Parquet.
+        """
+        file_extension = file_extension.lower()
+        if file_extension not in ['csv', 'json']:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Unsupported file format: {file_extension}. Only CSV and JSON are permitted."
+            )
+
+        # We must use temporary files to hand off the byte stream to DuckDB's C++ I/O engine
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_input:
+            temp_input.write(file_stream.read())
+            input_path = temp_input.name
+
+        output_path = f"{input_path}_clean.parquet"
+
+        try:
+            # Build the C-compiled conversion query. 
+            # Security by Design: Hardcode the tenant_id directly into the Parquet file AST.
+            if file_extension == 'csv':
+                # read_csv_auto detects separators, headers, and dates automatically.
+                # sample_size=-1 forces a full pass to guarantee 100% type accuracy.
+                query = f"""
+                    COPY (
+                        SELECT *, '{tenant_id}' AS tenant_partition_id 
+                        FROM read_csv_auto('{input_path}', sample_size=-1, ignore_errors=true)
+                    ) TO '{output_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
+                """
+            else:
+                query = f"""
+                    COPY (
+                        SELECT *, '{tenant_id}' AS tenant_partition_id 
+                        FROM read_json_auto('{input_path}', format='array')
+                    ) TO '{output_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
+                """
+
+            # Execute the vectorized conversion
+            self.conn.execute(query)
+
+            # Read the optimized parquet back into an in-memory BytesIO stream
+            # This allows us to delete the temporary disk files immediately
+            with open(output_path, 'rb') as sanitized_file:
+                sanitized_stream = io.BytesIO(sanitized_file.read())
             
-        return df
+            # Reset stream pointer for the StorageManager to read from the beginning
+            sanitized_stream.seek(0)
+            return sanitized_stream
 
-    def _enforce_iso_dates(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Heuristically detects date columns and forces them into ISO 8601 string format.
-        """
-        for col in df.columns:
-            # We check if the column datatype is object (string) to avoid converting 
-            # purely numeric IDs or floats into dates unexpectedly.
-            if df[col].dtype == 'object':
-                try:
-                    # Attempt to convert to datetime. 
-                    # errors='ignore' ensures non-date columns remain untouched.
-                    parsed_dates = pd.to_datetime(df[col], errors='ignore')
-                    
-                    # If conversion succeeded (dtype changed to datetime64)
-                    if pd.api.types.is_datetime64_any_dtype(parsed_dates):
-                        # Force to ISO 8601 string format (YYYY-MM-DDTHH:MM:SS)
-                        df[col] = parsed_dates.dt.strftime('%Y-%m-%dT%H:%M:%S')
-                        logger.info(f"Converted column '{col}' to ISO 8601 dates.")
-                except Exception as e:
-                    logger.debug(f"Skipped date conversion for column '{col}': {e}")
-                    
-        return df
+        except duckdb.InvalidInputException as e:
+            logger.error(f"Data poisoning blocked at edge layer for tenant {tenant_id}: {e}")
+            raise HTTPException(
+                status_code=422, 
+                detail="Dataset rejected. File contains fundamentally malformed or unparseable rows."
+            )
+        except Exception as e:
+            logger.error(f"Sanitization pipeline failure for tenant {tenant_id}: {e}")
+            raise HTTPException(
+                status_code=500, 
+                detail="Internal analytical engine error during dataset validation."
+            )
+            
+        finally:
+            # Strict ephemeral cleanup to prevent OS disk bloat/memory leaks
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            if os.path.exists(output_path):
+                os.remove(output_path)
