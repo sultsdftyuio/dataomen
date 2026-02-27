@@ -1,9 +1,8 @@
-# models.py
 import uuid
 import enum
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlalchemy import String, Enum as SAEnum, DateTime, ForeignKey, Text, Boolean, JSON
+from sqlalchemy import String, Enum, DateTime, ForeignKey, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -12,60 +11,52 @@ class Base(DeclarativeBase):
     pass
 
 class DatasetStatus(str, enum.Enum):
-    """Enum mapping for the dataset processing pipeline."""
+    """Lifecycle states for dataset ingestion and processing."""
     PENDING = "pending"
     PROCESSING = "processing"
     READY = "ready"
-    FAILED = "failed"
+    ERROR = "error"
 
 class User(Base):
-    """
-    Core User (Tenant) model enforcing multi-tenant isolation.
-    """
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     
-    # Establish a strict 1-to-many relationship to datasets
+    # Security by Design: Explicit tenant_id for partitioning and isolation
+    tenant_id: Mapped[str] = mapped_column(String, index=True, default=lambda: str(uuid.uuid4()), nullable=False)
+    
+    # Audit fields
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
     datasets: Mapped[List["Dataset"]] = relationship(
         "Dataset", 
-        back_populates="owner", 
+        back_populates="user", 
         cascade="all, delete-orphan"
     )
 
 class Dataset(Base):
-    """
-    Dataset module representing a swappable data layer (e.g., Parquet in R2/S3).
-    """
     __tablename__ = "datasets"
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # Tenant partition key:
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[DatasetStatus] = mapped_column(Enum(DatasetStatus), default=DatasetStatus.PENDING, nullable=False)
     
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Metadata for semantic routing/contextual RAG
     description: Mapped[Optional[str]] = mapped_column(Text)
-    status: Mapped[DatasetStatus] = mapped_column(SAEnum(DatasetStatus), default=DatasetStatus.PENDING)
     
-    # Path to the columnar formatted file (e.g., s3://bucket/tenant_id/dataset_id.parquet)
-    storage_path: Mapped[Optional[str]] = mapped_column(String(512))
+    # Mathematical Precision / Vector Search: 1536 dims is standard for OpenAI ada-002
+    embedding: Mapped[Optional[Vector]] = mapped_column(Vector(1536))
     
-    # Schema metadata fragment to pass to the LLM (preventing token bloat)
-    schema_metadata: Mapped[Optional[dict]] = mapped_column(JSON)
-
-    # Contextual RAG vector index for semantic routing (dim 1536 for OpenAI embeddings)
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536))
+    # Multi-tenant isolation at the row level
+    tenant_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     
+    # Audit fields
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        default=lambda: datetime.now(timezone.utc), 
-        onupdate=lambda: datetime.now(timezone.utc)
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    # Link back to the tenant
-    owner: Mapped["User"] = relationship("User", back_populates="datasets")
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="datasets")
