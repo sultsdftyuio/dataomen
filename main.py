@@ -1,62 +1,40 @@
-import uuid
-import enum
-from datetime import datetime, timezone
-from typing import Optional, List
-from sqlalchemy import String, Enum, DateTime, ForeignKey, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from api.routes.datasets import router as datasets_router
+from api.routes.query import router as query_router
+from api.routes.narrative import router as narrative_router
+from api.database import engine, Base
 
-class Base(DeclarativeBase):
-    """Strict Base class for all SQLAlchemy 2.0 models."""
-    pass
+# Create tables if they don't exist (Optional: better to use Alembic for prod)
+Base.metadata.create_all(bind=engine)
 
-class DatasetStatus(str, enum.Enum):
-    """Lifecycle states for dataset ingestion and processing."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    READY = "ready"
-    ERROR = "error"
+app = FastAPI(
+    title="Analytical SaaS API",
+    description="High-performance backend for analytical processing",
+    version="1.0.0"
+)
 
-class User(Base):
-    __tablename__ = "users"
+# CORS configuration for Interaction (Frontend) functionality
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, swap "*" for your specific frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    
-    # Security by Design: Explicit tenant_id for partitioning and isolation
-    tenant_id: Mapped[str] = mapped_column(String, index=True, default=lambda: str(uuid.uuid4()), nullable=False)
-    
-    # Audit fields
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+# Health Check Route
+@app.get("/health", tags=["Health"])
+async def health_check():
+    return {"status": "healthy", "engine": "fastapi"}
 
-    # Relationships
-    datasets: Mapped[List["Dataset"]] = relationship(
-        "Dataset", 
-        back_populates="user", 
-        cascade="all, delete-orphan"
-    )
+# Include Routers (Modular Strategy)
+app.include_router(datasets_router, prefix="/api/v1/datasets", tags=["Datasets"])
+app.include_router(query_router, prefix="/api/v1/query", tags=["Query Engine"])
+app.include_router(narrative_router, prefix="/api/v1/narrative", tags=["Narrative & AI"])
 
-class Dataset(Base):
-    __tablename__ = "datasets"
-
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    filename: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[DatasetStatus] = mapped_column(Enum(DatasetStatus), default=DatasetStatus.PENDING, nullable=False)
-    
-    # Metadata for semantic routing/contextual RAG
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    
-    # Mathematical Precision / Vector Search: 1536 dims is standard for OpenAI ada-002
-    embedding: Mapped[Optional[Vector]] = mapped_column(Vector(1536))
-    
-    # Multi-tenant isolation at the row level
-    tenant_id: Mapped[str] = mapped_column(String, index=True, nullable=False)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    
-    # Audit fields
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="datasets")
+if __name__ == "__main__":
+    import uvicorn
+    # Use 0.0.0.0 to bind to all interfaces for cloud deployments (like Render)
+    uvicorn.run("main:app", host="0.0.0.0", port=10000, reload=False)
