@@ -1,86 +1,72 @@
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import logging
+import uuid
+import enum
+from datetime import datetime, timezone
+from typing import Optional, List
+from sqlalchemy import String, Enum as SAEnum, DateTime, ForeignKey, Text, Boolean, JSON
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
-# Your existing imports
-from api.auth import router as auth_router
-from api.routes.datasets import router as datasets_router
-from api.database import engine
-from api.routes import query
-from api.routes import narrative  
-import models
+class Base(DeclarativeBase):
+    """Strict Base class for all SQLAlchemy 2.0 models."""
+    pass
 
-# --- PHASE 4 IMPORTS ---
-from api.services.anomaly_detector import AnomalyDetector
-from api.services.watchdog_service import WatchdogService
+class DatasetStatus(str, enum.Enum):
+    """Enum mapping for the dataset processing pipeline."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
+    FAILED = "failed"
 
-# Setup basic logging to see the Watchdog on Render logs
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# --- PHASE 4 WATCHDOG SETUP ---
-# In production, db_path might be your DuckDB instance file or an in-memory instance
-anomaly_detector = AnomalyDetector(variance_threshold=0.20)
-watchdog_service = WatchdogService(db_path=":memory:", anomaly_detector=anomaly_detector)
-
-async def run_watchdog_job():
+class User(Base):
     """
-    Wrapper function to pass active tasks to the Watchdog.
-    In a real app, you would fetch these tasks from your PostgreSQL metadata DB.
+    Core User (Tenant) model enforcing multi-tenant isolation.
+    Every interaction and analytical query is partitioned by the User ID.
     """
-    logger.info("Watchdog woken up by APScheduler...")
-    
-    # Mock task list. You will eventually query this from your DB.
-    mock_active_tasks = [
-        # Example task: Check "total_sales" in "sales_data" for tenant "tenant_123"
-        # {"tenant_id": "tenant_123", "dataset_name": "sales_data", "date_col": "date", "target_col": "total_sales"}
-    ]
-    
-    await watchdog_service.run_nightly_scan(mock_active_tasks)
+    __tablename__ = "users"
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    
+    # Establish a strict 1-to-many relationship to datasets
+    datasets: Mapped[List["Dataset"]] = relationship(
+        "Dataset", 
+        back_populates="owner", 
+        cascade="all, delete-orphan"
+    )
+
+class Dataset(Base):
     """
-    FastAPI Lifespan: Executes exactly once when the server starts, 
-    and yields control. Executes the finally block when server stops.
+    Dataset module representing a swappable data layer (e.g., Parquet in R2/S3).
+    Includes pgvector embedding column for Contextual RAG routing.
     """
-    logger.info("Starting up APScheduler...")
-    scheduler = AsyncIOScheduler()
+    __tablename__ = "datasets"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    # Tenant partition key:
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     
-    # Schedule the Watchdog to run every day at 2:00 AM
-    # For testing right now, you might want to use: trigger='interval', minutes=1
-    scheduler.add_job(run_watchdog_job, trigger='cron', hour=2, minute=0)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[DatasetStatus] = mapped_column(SAEnum(DatasetStatus), default=DatasetStatus.PENDING)
     
-    scheduler.start()
+    # Path to the columnar formatted file (e.g., s3://bucket/tenant_id/dataset_id.parquet)
+    storage_path: Mapped[Optional[str]] = mapped_column(String(512))
     
-    yield # App runs here
+    # Schema metadata fragment to pass to the LLM (preventing token bloat)
+    schema_metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+
+    # Contextual RAG vector index for semantic routing (dim 1536 for OpenAI embeddings)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536))
     
-    logger.info("Shutting down APScheduler...")
-    scheduler.shutdown()
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        default=lambda: datetime.now(timezone.utc), 
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
 
-# Inject the lifespan into FastAPI
-app = FastAPI(lifespan=lifespan)
-
-# --- YOUR EXISTING APP SETUP ---
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# In Phase 1, we let SQLAlchemy create tables if they don't...
-models.Base.metadata.create_all(bind=engine)
-
-app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-app.include_router(datasets_router, prefix="/api/datasets", tags=["datasets"])
-app.include_router(query.router, prefix="/api/query", tags=["query"])
-app.include_router(narrative.router, prefix="/api/narrative", tags=["narrative"])
-
-@app.get("/")
-async def root():
-    return {"message": "Dataomen API is running. Phase 4 Watchdog Armed."}
+    # Link back to the tenant
+    owner: Mapped["User"] = relationship("User", back_populates="datasets")
