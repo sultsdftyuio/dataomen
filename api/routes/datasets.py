@@ -1,39 +1,41 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, BackgroundTasks, status
 from sqlalchemy.orm import Session
+from typing import List
+
 from api.services.dataset_service import DatasetService
 from api.database import get_db
-# from api.auth import get_current_user # Dependency for Phase 2 auth
+from api.auth import get_current_user
+from models import DatasetResponse
 
-router = APIRouter(prefix="/api/v1/datasets", tags=["Datasets"])
+router = APIRouter()
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_dataset(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    dataset_name: str = Form(...),
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user) 
+    user: dict = Depends(get_current_user)
 ):
-    # Mocking user for Phase 1 until JWT logic is fully verified:
-    from models import User
-    user = db.query(User).first() 
-    
-    service = DatasetService(db=db, current_user=user)
-    
-    # 1. Stage file and create DB record
-    dataset = await service.accept_upload(file=file, dataset_name=dataset_name)
-    
-    file_path = f"/tmp/dataomen_uploads/{dataset.id}.csv"
-    
-    # 2. Handoff to background task
-    background_tasks.add_task(
-        service.process_file_background, 
-        dataset_id=dataset.id, 
-        file_path=file_path
+    """
+    Orchestration (Backend): Upload a dataset and associate it with the tenant_id 
+    derived from the Supabase JWT.
+    """
+    service = DatasetService(db)
+    # We pass the user['tenant_id'] to ensure the file is stored in a tenant-isolated path
+    job_id = await service.process_upload(
+        file=file, 
+        tenant_id=user["tenant_id"],
+        background_tasks=background_tasks
     )
-    
-    return {
-        "message": "Dataset uploaded successfully and is now processing.",
-        "dataset_id": str(dataset.id),
-        "status": dataset.status.value
-    }
+    return {"job_id": job_id, "message": "Upload started"}
+
+@router.get("/", response_model=List[DatasetResponse])
+def list_datasets(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Security by Design: Only list datasets belonging to the current tenant.
+    """
+    service = DatasetService(db)
+    return service.get_tenant_datasets(tenant_id=user["tenant_id"])
