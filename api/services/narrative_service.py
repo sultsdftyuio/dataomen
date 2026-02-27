@@ -10,7 +10,7 @@ class CFONarrativeService:
     def __init__(self, api_key: str):
         # Injecting the dependency cleanly
         self.client = openai.AsyncOpenAI(api_key=api_key)
-        self.model = "gpt-4o-mini" # Fast, cheap, and perfectly capable for summarization
+        self.model = "gpt-5-nano" # Fast, cheap, and perfectly capable for summarization
 
     async def generate_summary(self, user_question: str, data_rows: List[Dict[str, Any]]) -> str:
         """

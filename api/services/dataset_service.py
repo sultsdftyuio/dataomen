@@ -1,88 +1,89 @@
-import uuid
-from pathlib import Path
-from sqlalchemy.orm import Session
-from fastapi import UploadFile, HTTPException, status
-import shutil
 import os
+import uuid
+import shutil
+from pathlib import Path
+from typing import Optional
+from fastapi import UploadFile, HTTPException, status
+from sqlalchemy.orm import Session
+import duckdb
 
-from models import Dataset, DatasetStatus, User
+from models import Dataset, DatasetStatus
+
+# Modular Strategy: Externalize storage logic. For now, we use local partitioned storage.
+# In a cloud environment, this path can be swapped to an S3/R2 mount or path.
+STORAGE_DIR = Path("./storage")
 
 class DatasetService:
-    def __init__(self, db: Session, current_user: User):
+    """
+    Orchestration (Backend) Service handling dataset ingestion and analytical vectorization.
+    Enforces Multi-Tenant Security at the storage and database layers.
+    """
+    def __init__(self, db: Session, tenant_id: str, user_id: str):
         self.db = db
-        self.current_user = current_user
+        # Security by Design: strictly bound tenant context
+        self.tenant_id = tenant_id
+        self.user_id = user_id
 
-    async def accept_upload(self, file: UploadFile, dataset_name: str) -> Dataset:
+    def _get_tenant_dir(self) -> Path:
+        """Ensure tenant-specific isolated directory exists."""
+        tenant_dir = STORAGE_DIR / self.tenant_id
+        tenant_dir.mkdir(parents=True, exist_ok=True)
+        return tenant_dir
+
+    async def process_upload(self, file: UploadFile, description: Optional[str] = "") -> Dataset:
         """
-        Validates the file, saves it to a temporary location, and creates a database record.
+        Ingests a CSV/Excel file and casts it directly into a highly-compressed Parquet file.
         """
-        if not file.filename.endswith(".csv"):
-             raise HTTPException(status_code=400, detail="Only CSV files are currently supported.")
-
-        # Create DB Record
-        dataset = Dataset(
-            id=uuid.uuid4(),
-            user_id=self.current_user.id,
-            name=dataset_name,
-            status=DatasetStatus.PENDING
-        )
-        self.db.add(dataset)
-        self.db.commit()
-        self.db.refresh(dataset)
-
-        # Stage the file locally
-        os.makedirs("/tmp/dataomen_uploads", exist_ok=True)
-        file_path = f"/tmp/dataomen_uploads/{dataset.id}.csv"
+        tenant_dir = self._get_tenant_dir()
+        dataset_id = str(uuid.uuid4())
         
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Temporary file for raw upload before vectorization
+        temp_input_path = tenant_dir / f"temp_{dataset_id}_{file.filename}"
+        final_parquet_path = tenant_dir / f"{dataset_id}.parquet"
 
-        return dataset
-
-    def process_file_background(self, dataset_id: uuid.UUID, file_path: str):
-        """
-        The master Phase 1 pipeline: Clean -> Compress -> Upload -> Validate -> Ready.
-        """
-        from api.database import SessionLocal 
-        db = SessionLocal()
-        
         try:
-            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-            if not dataset: return
+            # 1. Stream the incoming file safely to disk
+            with open(temp_input_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
 
-            dataset.status = DatasetStatus.PROCESSING
-            db.commit()
+            # 2. Analytical Efficiency: DuckDB Vectorized Ingestion
+            # duckdb.connect() without a database file creates an in-memory instance
+            with duckdb.connect() as conn:
+                # read_csv_auto smartly handles headers, delimiters, and date parsing
+                conn.execute(f"""
+                    COPY (SELECT * FROM read_csv_auto('{temp_input_path}')) 
+                    TO '{final_parquet_path}' (FORMAT PARQUET, COMPRESSION ZSTD);
+                """)
 
-            # 1. Clean (Pandas)
-            from api.services.data_sanitizer import DataSanitizer
-            sanitizer = DataSanitizer(Path(file_path))
-            clean_df = sanitizer.clean()
-
-            # 2. Upload (Parquet to S3/R2)
-            from api.services.storage_manager import S3StorageManager
-            storage = S3StorageManager()
-            s3_uri = storage.upload_dataframe(clean_df, str(dataset.user_id), str(dataset.id))
-
-            # 3. Validate (DuckDB)
-            from api.services.duckdb_validator import DuckDBValidator
-            validator = DuckDBValidator()
-            row_count = validator.validate_and_count(s3_uri)
-
-            # 4. Finalize Metadata
-            dataset.storage_uri = s3_uri
-            dataset.row_count = row_count
-            dataset.status = DatasetStatus.READY
-            db.commit()
+            # 3. Create Database Record
+            db_dataset = Dataset(
+                id=dataset_id,
+                filename=file.filename or "unknown.csv",
+                status=DatasetStatus.READY,
+                description=description,
+                tenant_id=self.tenant_id,
+                user_id=self.user_id
+            )
             
+            self.db.add(db_dataset)
+            self.db.commit()
+            self.db.refresh(db_dataset)
+
+            return db_dataset
+
+        except duckdb.Error as duck_err:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, 
+                detail=f"Data parsing failed. Ensure it is a valid CSV. Error: {str(duck_err)}"
+            )
         except Exception as e:
-            db.rollback()
-            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-            if dataset:
-                dataset.status = DatasetStatus.FAILED
-                db.commit()
-            print(f"❌ Phase 1 Pipeline Failed: {e}")
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_SERVER, 
+                detail=f"Internal ingestion error: {str(e)}"
+            )
         finally:
-            db.close()
-            # Cleanup temp file
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            # 4. Cleanup: Remove the unoptimized temporary CSV/Excel file to save space
+            if temp_input_path.exists():
+                os.remove(temp_input_path)
