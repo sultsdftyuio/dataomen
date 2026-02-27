@@ -1,72 +1,87 @@
-import uuid
-import enum
-from datetime import datetime, timezone
-from typing import Optional, List
-from sqlalchemy import String, Enum as SAEnum, DateTime, ForeignKey, Text, Boolean, JSON
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
+import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-class Base(DeclarativeBase):
-    """Strict Base class for all SQLAlchemy 2.0 models."""
-    pass
+# Core swappable modules and routing
+from api.auth import router as auth_router
+from api.routes.datasets import router as datasets_router
+from api.routes import query
+from api.routes import narrative
 
-class DatasetStatus(str, enum.Enum):
-    """Enum mapping for the dataset processing pipeline."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    READY = "ready"
-    FAILED = "failed"
+# Database orchestration
+from api.database import engine
+import models 
 
-class User(Base):
-    """
-    Core User (Tenant) model enforcing multi-tenant isolation.
-    Every interaction and analytical query is partitioned by the User ID.
-    """
-    __tablename__ = "users"
+# 1. Observability: Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+# Create the background task scheduler
+scheduler = AsyncIOScheduler()
+
+# 2. Async Context Manager for Lifespan events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Initializing High-Performance Analytical SaaS...")
     
-    # Establish a strict 1-to-many relationship to datasets
-    datasets: Mapped[List["Dataset"]] = relationship(
-        "Dataset", 
-        back_populates="owner", 
-        cascade="all, delete-orphan"
-    )
-
-class Dataset(Base):
-    """
-    Dataset module representing a swappable data layer (e.g., Parquet in R2/S3).
-    Includes pgvector embedding column for Contextual RAG routing.
-    """
-    __tablename__ = "datasets"
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # Tenant partition key:
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    # Ensure database schema is created (in production, use Alembic migrations instead)
+    models.Base.metadata.create_all(bind=engine)
+    logger.info("Database schemas validated.")
     
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    status: Mapped[DatasetStatus] = mapped_column(SAEnum(DatasetStatus), default=DatasetStatus.PENDING)
+    # Start background scheduler for things like watchdog services or garbage collection
+    scheduler.start()
+    logger.info("Background task scheduler running.")
     
-    # Path to the columnar formatted file (e.g., s3://bucket/tenant_id/dataset_id.parquet)
-    storage_path: Mapped[Optional[str]] = mapped_column(String(512))
+    yield # Hand control over to the application
     
-    # Schema metadata fragment to pass to the LLM (preventing token bloat)
-    schema_metadata: Mapped[Optional[dict]] = mapped_column(JSON)
+    # Teardown logic
+    scheduler.shutdown()
+    logger.info("Shutting down ASGI application gracefully...")
 
-    # Contextual RAG vector index for semantic routing (dim 1536 for OpenAI embeddings)
-    embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536))
-    
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        default=lambda: datetime.now(timezone.utc), 
-        onupdate=lambda: datetime.now(timezone.utc)
-    )
+# 3. Instantiate the ASGI App
+app = FastAPI(
+    title="Dataomen Analytical API",
+    description="High-performance, multi-tenant backend orchestrated with FastAPI",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
-    # Link back to the tenant
-    owner: Mapped["User"] = relationship("User", back_populates="datasets")
+# 4. Configure Multi-Tenant / Cross-Origin Security
+# NOTE: Update allow_origins to match your frontend domain in production (e.g., ["https://app.dataomen.com"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 5. Include your modular routes (API Layer)
+app.include_router(auth_router, prefix="/api/auth", tags=["Authentication & Identity"])
+app.include_router(datasets_router, prefix="/api/datasets", tags=["Dataset Management"])
+
+# Guarding against missing files during refactoring: only include if they exist
+try:
+    app.include_router(query.router, prefix="/api/query", tags=["DuckDB Analytical Engine"])
+except AttributeError:
+    logger.warning("Query router not found. Skipping DuckDB analytics layer.")
+
+try:
+    app.include_router(narrative.router, prefix="/api/narrative", tags=["LLM Contextual RAG"])
+except AttributeError:
+    logger.warning("Narrative router not found. Skipping LLM narrative layer.")
+
+# 6. Observability Healthcheck
+@app.get("/health", tags=["System Observability"])
+def health_check():
+    """Validates that the Uvicorn worker is actively accepting connections."""
+    return {
+        "status": "healthy", 
+        "orchestration_layer": "active",
+        "message": "Dataomen API is running."
+    }
