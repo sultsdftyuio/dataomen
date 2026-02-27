@@ -3,57 +3,49 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-interface RegisterResponse {
-  access_token?: string
-  token_type?: string
-  detail?: string
+export interface ActionState {
+  error: string | null
 }
 
-export async function registerUser(formData: FormData) {
-  const company = formData.get('company')
-  const email = formData.get('email')
-  const password = formData.get('password')
-
-  // 1. ADD THIS LINE
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+export async function registerAction(
+  prevState: ActionState | null,
+  formData: FormData
+): Promise<ActionState> {
+  const email = formData.get('email') as string
+  const password = formData.get('password') as string
 
   try {
-    // 2. USE THE DYNAMIC URL HERE
-    const response = await fetch(`${API_URL}/api/auth/register`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        company_name: company,
-        email: email,
-        password: password,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     })
 
-    const data: RegisterResponse = await response.json()
+    const result = await response.json()
 
     if (!response.ok) {
-      return { error: data.detail || 'Registration failed' }
+      return { error: result.detail || 'Registration failed. Please try again.' }
     }
 
-    if (data.access_token) {
-      // ADD AWAIT HERE
+    // Optional: Auto-login after registration if backend returns a token
+    if (result.access_token) {
       const cookieStore = await cookies()
-      cookieStore.set('token', data.access_token, {
+      cookieStore.set('auth_token', result.access_token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 7, 
         path: '/',
+        maxAge: 60 * 60 * 24 * 7, // 1 week
       })
+    } else {
+      // If no token is returned (e.g., requires email verification), send them to login
+      redirect('/login?registered=true')
     }
-    
-
-  } catch (error) {
-    console.error("Registration Error:", error)
-    return { error: 'Failed to connect to the server.' }
+  } catch (err) {
+    console.error('Registration error:', err)
+    return { error: 'Connection failed. Please check your network.' }
   }
 
+  // Redirect to dashboard immediately after auto-login
   redirect('/dashboard')
 }

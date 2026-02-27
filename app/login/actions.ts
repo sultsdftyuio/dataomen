@@ -1,4 +1,3 @@
-// app/login/actions.ts
 'use server'
 
 import { cookies } from 'next/headers'
@@ -8,10 +7,6 @@ export interface ActionState {
   error: string | null
 }
 
-/**
- * Updated signature to support useActionState.
- * prevState is required as the first argument by the hook.
- */
 export async function loginAction(
   prevState: ActionState | null,
   formData: FormData
@@ -19,8 +14,8 @@ export async function loginAction(
   const email = formData.get('email') as string
   const password = formData.get('password') as string
 
-  // Modular Strategy: Business logic orchestration layer
   try {
+    // Modular Strategy: Underlying technology is abstracted via API call
     const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -30,21 +25,24 @@ export async function loginAction(
     const result = await response.json()
 
     if (!response.ok) {
-      return { error: result.detail || 'Authentication failed' }
+      // Return serializable object for useActionState
+      return { error: result.detail || 'Invalid email or password' }
     }
 
-    // Security by Design: Store session securely
+    // Security by Design: HttpOnly cookies for session management
     const cookieStore = await cookies()
     cookieStore.set('auth_token', result.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      path: '/',
       maxAge: 60 * 60 * 24 * 7, // 1 week
     })
   } catch (err) {
-    return { error: 'An unexpected error occurred. Please try again.' }
+    console.error('Login error:', err)
+    return { error: 'Connection failed. Please check your network.' }
   }
 
-  // Redirect must happen outside the try/catch or be the last statement
+  // Interaction Layer: Successful login redirects to dashboard
   redirect('/dashboard')
 }
