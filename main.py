@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 # Modular Strategy: Import routers
 from api.routes.datasets import router as datasets_router
@@ -8,9 +9,14 @@ from api.routes.narrative import router as narrative_router
 
 # Orchestration (Backend): Correctly route our decoupled database dependencies
 from api.database import engine
-from models import Base  # <-- Fixed: Importing Base from our models.py file
+from models import Base 
 
-# Create tables if they don't exist (Note: Alembic is preferred for production)
+# Mathematical Precision: Ensure the vector extension exists before creating tables
+with engine.connect() as connection:
+    connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    connection.commit()
+
+# Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
