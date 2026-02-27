@@ -26,3 +26,4 @@ pydantic-settings==2.3.1
 
 # --- Proactive Watchdog (Phase 4) ---
 apscheduler==3.10.4
+pgvector==0.2.5
