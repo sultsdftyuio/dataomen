@@ -4,66 +4,47 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-/**
- * Interface defining the expected shape of the login API response.
- * Ensures Type Safety.
- */
-interface LoginResponse {
-  access_token: string
-  token_type: string
+export interface ActionState {
+  error: string | null
 }
 
 /**
- * Executes a server-side login request to the FastAPI backend.
- * Uses an environment variable for the API base URL to support Docker/production.
+ * Updated signature to support useActionState.
+ * prevState is required as the first argument by the hook.
  */
-export async function loginAction(formData: FormData) {
-  const email = formData.get('email')
-  const password = formData.get('password')
+export async function loginAction(
+  prevState: ActionState | null,
+  formData: FormData
+): Promise<ActionState> {
+  const email = formData.get('email') as string
+  const password = formData.get('password') as string
 
-  if (!email || !password) {
-    return { error: 'Email and password are required' }
-  }
-
-  // Modular Strategy: Abstract the API URL to handle Docker vs Local networking natively.
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'
-
+  // Modular Strategy: Business logic orchestration layer
   try {
-    const response = await fetch(`${API_BASE_URL}/token`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      // OAuth2 in FastAPI strictly requires form-urlencoded data for the token endpoint
-      body: new URLSearchParams({
-        username: email.toString(),
-        password: password.toString(),
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     })
 
+    const result = await response.json()
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      return { error: errorData.detail || 'Invalid credentials' }
+      return { error: result.detail || 'Authentication failed' }
     }
 
-    const data: LoginResponse = await response.json()
-
-    // Security by Design: Store the token in an HTTP-only cookie for secure multi-tenant sessions.
-    cookies().set('token', data.access_token, {
+    // Security by Design: Store session securely
+    const cookieStore = await cookies()
+    cookieStore.set('auth_token', result.access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/',
       maxAge: 60 * 60 * 24 * 7, // 1 week
     })
-
-  } catch (error) {
-    console.error('Login Action Error:', error)
-    return { 
-      error: 'Unable to connect to the authentication server. Please verify the backend is running.' 
-    }
+  } catch (err) {
+    return { error: 'An unexpected error occurred. Please try again.' }
   }
 
-  // Redirect must happen outside the try-catch block in Next.js Server Actions
+  // Redirect must happen outside the try/catch or be the last statement
   redirect('/dashboard')
 }
