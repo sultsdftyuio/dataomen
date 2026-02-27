@@ -1,40 +1,53 @@
-import os
-from fastapi import APIRouter, HTTPException, Depends
+import logging
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List, Dict, Any
 
-from api.services.narrative_service import CFONarrativeService
+from api.database import get_db
+from api.auth import get_current_user
+from api.services.narrative_service import NarrativeService
 
-# Isolate narrative routes
-router = APIRouter(prefix="/narrative", tags=["Narrative"])
+logger = logging.getLogger("dataomen.narrative")
 
-# Strict type safety for the incoming payload
+router = APIRouter()
+
 class NarrativeRequest(BaseModel):
-    user_question: str
-    data_rows: List[Dict[str, Any]]
-
-def get_narrative_service() -> CFONarrativeService:
-    """Dependency injection for the service."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set in the environment.")
-    return CFONarrativeService(api_key=api_key)
+    dataset_id: str
 
 @router.post("/generate")
-async def generate_cfo_narrative(
+async def generate_narrative(
     request: NarrativeRequest,
-    service: CFONarrativeService = Depends(get_narrative_service)
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
     """
-    Receives executed database rows and returns a 3-sentence executive summary.
-    Designed to be called asynchronously by the frontend *after* the chart renders.
+    Modular Strategy: High-level narrative generation scoped to a specific tenant.
+    This endpoint leverages LLMs to provide a human-readable interpretation
+     of the data metrics for the specified dataset.
     """
     try:
-        summary = await service.generate_summary(
-            user_question=request.user_question, 
-            data_rows=request.data_rows
+        service = NarrativeService(db)
+        
+        # Security by Design: Ensure the narrative is strictly scoped to the tenant_id
+        narrative = await service.generate_summary(
+            dataset_id=request.dataset_id,
+            tenant_id=user["tenant_id"]
         )
-        return {"summary": summary}
+        
+        if not narrative:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Dataset not found or no narrative could be generated."
+            )
+            
+        return {
+            "dataset_id": request.dataset_id,
+            "narrative": narrative
+        }
+
     except Exception as e:
-        # We don't want a failed summary to crash the frontend dashboard
-        return {"summary": "Narrative engine offline. Please review the chart for insights."}
+        logger.error(f"Narrative generation error for tenant {user['tenant_id']}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate narrative summary."
+        )

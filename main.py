@@ -1,53 +1,58 @@
-from fastapi import FastAPI
+import logging
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-
-# Modular Strategy: Import routers
-from api.routes.datasets import router as datasets_router
-from api.routes.query import router as query_router
-from api.routes.narrative import router as narrative_router
+from api.routes import datasets, query, narrative
 from api.auth import router as auth_router
-
-# Orchestration (Backend): Correctly route our decoupled database dependencies
 from api.database import engine, Base
 
-# Create database tables automatically
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("dataomen.debug")
+
+# Create database tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="DataOmen API",
-    description="High-performance multi-tenant analytical API powered by DuckDB",
-    version="1.0.0"
-)
+app = FastAPI(title="DataOmen API")
 
-# Configure CORS to be resilient across multiple developer environments and production
+# DEBUG MIDDLEWARE: Log every single request that hits this server
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    path = request.url.path
+    method = request.method
+    logger.info(f"Incoming Request: {method} {path}")
+    
+    response = await call_next(request)
+    
+    process_time = (time.time() - start_time) * 1000
+    logger.info(f"Completed Request: {method} {path} - Status: {response.status_code} - Time: {process_time:.2f}ms")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # NOTE: Recommend narrowing down to specific domains (e.g. your Vercel URL) in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers - ensure consistent standard API prefixes to prevent 404s
+# Explicitly register routers
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
-app.include_router(datasets_router, prefix="/api/v1/datasets", tags=["Datasets"])
-app.include_router(query_router, prefix="/api/v1/query", tags=["Query"])
-app.include_router(narrative_router, prefix="/api/v1/narrative", tags=["Narrative"])
+app.include_router(datasets.router, prefix="/api/v1/datasets", tags=["Datasets"])
+app.include_router(query.router, prefix="/api/v1/query", tags=["Query"])
+app.include_router(narrative.router, prefix="/api/v1/narrative", tags=["Narrative"])
 
-@app.get("/health", tags=["System"])
+# DEBUG: Print all registered routes on startup
+@app.on_event("startup")
+async def inspect_routes():
+    print("\n" + "="*50)
+    print("REGISTERED API ROUTES:")
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            print(f"[{' , '.join(route.methods)}] {route.path}")
+    print("="*50 + "\n")
+
+@app.get("/health")
 async def health_check():
-    """
-    Standardized health check endpoint to verify backend orchestration is online.
-    """
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "message": "DataOmen Analytical Engine is running."
-    }
-
-# Run execution block for local debugging
-if __name__ == "__main__":
-    import uvicorn
-    # Use standard local port. Ensure your NEXT_PUBLIC_API_URL targets this exactly.
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    return {"status": "healthy"}

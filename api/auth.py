@@ -1,82 +1,62 @@
-from datetime import datetime, timedelta
-from typing import Annotated
 import os
+from typing import Optional
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import jwt, JWTError
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from passlib.context import CryptContext
-from jose import jwt
+# Orchestration (Backend): Use standard HTTP Bearer for Supabase JWTs
+security = HTTPBearer()
 
-from api.database import get_db
-from models import User, UserCreate, Token, UserResponse
-
-router = APIRouter()
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-that-should-be-changed")
+# IMPORTANT: You must set SUPABASE_JWT_SECRET in your environment variables.
+# You can find this in your Supabase Dashboard > Project Settings > API > JWT Settings.
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 1 week
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Modular JWT Validator: Verifies tokens issued by Supabase.
+    This replaces local authenticate_user logic entirely.
+    """
+    if not SUPABASE_JWT_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SUPABASE_JWT_SECRET environment variable is not set."
+        )
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-def authenticate_user(db: Session, email: str, password: str):
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
-        return False
-    return user
-
-@router.post("/register", response_model=UserResponse)
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    token = credentials.credentials
     
-    hashed_password = get_password_hash(user.password)
-    # Natural implementation of tenant isolation Security by Design
-    db_user = User(
-        email=user.email,
-        hashed_password=hashed_password,
-        full_name=user.full_name,
-        company_name=user.company_name,
-        tenant_id=f"tenant_{os.urandom(8).hex()}"
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+    try:
+        # Security by Design: Validate the token against Supabase's secret and audience
+        payload = jwt.decode(
+            token, 
+            SUPABASE_JWT_SECRET, 
+            algorithms=[ALGORITHM], 
+            audience="authenticated"
+        )
+        
+        # Extract the Supabase 'sub' (User UUID) which we use as the tenant identifier
+        user_id: str = payload.get("sub")
+        email: Optional[str] = payload.get("email")
+        
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token is missing subject claim (sub).",
+            )
+            
+        # Computation (Execution): Return a simplified user context for downstream routes
+        return {
+            "id": user_id,
+            "email": email,
+            "tenant_id": user_id  # Mapping Supabase UID directly to tenant_id for isolation
+        }
 
-@router.post("/token", response_model=Token)
-def login_for_access_token(
-    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
-    db: Session = Depends(get_db)
-):
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
+    except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail=f"Could not validate credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.email, "tenant_id": user.tenant_id}, expires_delta=access_token_expires
-    )
-    return Token(access_token=access_token, token_type="bearer")
+
+# Note: The register/login routes are now handled by the Next.js frontend directly 
+# with Supabase Client SDK, so they are removed from the backend orchestration layer.

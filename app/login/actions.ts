@@ -1,9 +1,8 @@
 'use server'
 
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-
-// Safely handle API URLs by ensuring no trailing slash
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+import { redirect } from 'next/navigation'
 
 export type ActionState = {
   error?: string;
@@ -11,45 +10,30 @@ export type ActionState = {
 }
 
 export async function loginAction(state: ActionState, formData: FormData): Promise<ActionState> {
-  // Strictly parse form values to string, defaulting to empty string if null
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+          } catch { /* Handle server component cookie limits */ }
+        },
+      },
+    }
+  )
+
   const email = formData.get('email')?.toString() || ''
   const password = formData.get('password')?.toString() || ''
 
-  try {
-    const res = await fetch(`${API_URL}/api/v1/auth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        username: email,
-        password: password,
-      }),
-    })
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      return { error: data?.detail || 'Login failed - verify your credentials.' }
-    }
-
-    const data = await res.json()
-    
-    if (data.access_token) {
-        // Next.js 15+: cookies() is async and must be awaited before accessing .set()
-        const cookieStore = await cookies()
-        cookieStore.set('token', data.access_token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          sameSite: 'lax',
-          maxAge: 60 * 60 * 24 * 7, // 1 week
-          path: '/'
-        })
-        return { success: true }
-    } else {
-        return { error: 'Authentication failed: Invalid response from server.' }
-    }
-  } catch (error) {
-    console.error('Login Error:', error)
-    return { error: 'Could not connect to the authentication server.' }
+  if (error) {
+    return { error: error.message }
   }
+
+  return { success: true }
 }
