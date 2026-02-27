@@ -1,85 +1,91 @@
 'use client'
 
 import Link from 'next/link'
-import { useActionState } from 'react'
+import { useActionState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2 } from 'lucide-react'
-import { registerAction, type ActionState } from './actions'
-
-const initialState: ActionState = {
-  error: null,
-}
+import { registerAction } from './actions'
 
 export default function RegisterPage() {
-  const [state, formAction, isPending] = useActionState(registerAction, initialState)
+  const router = useRouter()
+  // Ensure the initial state is an empty object to avoid null-assignment errors
+  const [state, action, isPending] = useActionState(registerAction, {})
+
+  useEffect(() => {
+    if (state.success) {
+      // After registration, redirect to login
+      router.push('/login?registered=true')
+    }
+  }, [state.success, router])
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/30 px-4 py-12 sm:px-6 lg:px-8">
-      <Card className="w-full max-w-sm shadow-sm border-muted">
-        <CardHeader className="space-y-2 text-center">
-          <CardTitle className="text-2xl font-bold tracking-tight">Create an account</CardTitle>
+    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1 text-center">
+          <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
           <CardDescription>
-            Enter your email and a password to get started
+            Join DataOmen and start analyzing your data today
           </CardDescription>
         </CardHeader>
-        
-        <CardContent>
-          <form action={formAction} className="space-y-4">
-            {state?.error && (
+        <form action={action}>
+          <CardContent className="grid gap-4">
+            {state.error && (
               <Alert variant="destructive">
                 <AlertDescription>{state.error}</AlertDescription>
               </Alert>
             )}
-            
-            <div className="space-y-2">
-              <Label htmlFor="email">Email address</Label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input id="name" name="name" placeholder="John Doe" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="company">Company</Label>
+                <Input id="company" name="company" placeholder="Acme Inc." required />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 name="email"
                 type="email"
+                placeholder="m@example.com"
                 required
-                placeholder="name@example.com"
-                disabled={isPending}
               />
             </div>
-            
-            <div className="space-y-2">
+            <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                placeholder="Create a strong password"
-                disabled={isPending}
-              />
+              <Input id="password" name="password" type="password" required />
             </div>
-
-            <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating account...
-                </>
-              ) : (
-                'Sign up'
-              )}
+          </CardContent>
+          <CardFooter className="flex flex-col gap-4">
+            <Button className="w-full" type="submit" disabled={isPending}>
+              {isPending ? 'Creating account...' : 'Create account'}
             </Button>
-          </form>
-        </CardContent>
-        
-        <CardFooter className="flex justify-center border-t border-muted/50 pt-4">
-          <p className="text-sm text-muted-foreground">
-            Already have an account?{' '}
-            <Link href="/login" className="font-medium text-primary hover:underline">
-              Sign in
-            </Link>
-          </p>
-        </CardFooter>
+            <div className="text-center text-sm text-muted-foreground">
+              By clicking continue, you agree to our{" "}
+              <Link href="/terms" className="underline hover:text-primary">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className="underline hover:text-primary">
+                Privacy Policy
+              </Link>
+              .
+            </div>
+            <div className="text-center text-sm">
+              Already have an account?{" "}
+              <Link href="/login" className="font-medium text-primary hover:underline">
+                Login
+              </Link>
+            </div>
+          </CardFooter>
+        </form>
       </Card>
     </div>
   )

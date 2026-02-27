@@ -1,51 +1,41 @@
 'use server'
 
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 
-export interface ActionState {
-  error: string | null
+export type ActionState = {
+  error?: string;
+  success?: boolean;
 }
 
-export async function registerAction(
-  prevState: ActionState | null,
-  formData: FormData
-): Promise<ActionState> {
-  const email = formData.get('email') as string
-  const password = formData.get('password') as string
+export async function registerAction(state: ActionState, formData: FormData): Promise<ActionState> {
+  // Strictly parse form values to string, defaulting to empty string if null
+  const email = formData.get('email')?.toString() || ''
+  const password = formData.get('password')?.toString() || ''
+  const fullName = formData.get('name')?.toString() || ''
+  const companyName = formData.get('company')?.toString() || ''
 
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/register`, {
+    const res = await fetch(`${API_URL}/api/v1/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        full_name: fullName,
+        company_name: companyName,
+      }),
     })
 
-    const result = await response.json()
-
-    if (!response.ok) {
-      return { error: result.detail || 'Registration failed. Please try again.' }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      return { error: data?.detail || 'Registration failed' }
     }
 
-    // Optional: Auto-login after registration if backend returns a token
-    if (result.access_token) {
-      const cookieStore = await cookies()
-      cookieStore.set('auth_token', result.access_token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 7, // 1 week
-      })
-    } else {
-      // If no token is returned (e.g., requires email verification), send them to login
-      redirect('/login?registered=true')
-    }
-  } catch (err) {
-    console.error('Registration error:', err)
-    return { error: 'Connection failed. Please check your network.' }
+    return { success: true }
+  } catch (error) {
+    console.error('Registration error:', error)
+    return { error: 'Could not connect to the registration server.' }
   }
-
-  // Redirect to dashboard immediately after auto-login
-  redirect('/dashboard')
 }

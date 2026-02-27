@@ -6,45 +6,48 @@ from sqlalchemy import text
 from api.routes.datasets import router as datasets_router
 from api.routes.query import router as query_router
 from api.routes.narrative import router as narrative_router
+from api.auth import router as auth_router
 
 # Orchestration (Backend): Correctly route our decoupled database dependencies
-from api.database import engine
-from models import Base 
+from api.database import engine, Base
 
-# Mathematical Precision: Ensure the vector extension exists before creating tables
-with engine.connect() as connection:
-    connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-    connection.commit()
-
-# Create tables if they don't exist
+# Create database tables automatically
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Analytical SaaS API",
-    description="High-performance backend for analytical processing",
+    title="DataOmen API",
+    description="High-performance multi-tenant analytical API powered by DuckDB",
     version="1.0.0"
 )
 
-# CORS configuration for Interaction (Frontend) functionality
+# Configure CORS to be resilient across multiple developer environments and production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, swap "*" for your frontend's specific origin
+    allow_origins=["*"], # NOTE: Recommend narrowing down to specific domains (e.g. your Vercel URL) in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Health Check Route
-@app.get("/health", tags=["Health"])
-async def health_check():
-    return {"status": "healthy", "engine": "fastapi"}
-
-# Include Routers
+# Include routers - ensure consistent standard API prefixes to prevent 404s
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(datasets_router, prefix="/api/v1/datasets", tags=["Datasets"])
-app.include_router(query_router, prefix="/api/v1/query", tags=["Query Engine"])
-app.include_router(narrative_router, prefix="/api/v1/narrative", tags=["Narrative & AI"])
+app.include_router(query_router, prefix="/api/v1/query", tags=["Query"])
+app.include_router(narrative_router, prefix="/api/v1/narrative", tags=["Narrative"])
 
+@app.get("/health", tags=["System"])
+async def health_check():
+    """
+    Standardized health check endpoint to verify backend orchestration is online.
+    """
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "message": "DataOmen Analytical Engine is running."
+    }
+
+# Run execution block for local debugging
 if __name__ == "__main__":
     import uvicorn
-    # 0.0.0.0 bind is required for Render/Docker deployments
-    uvicorn.run("main:app", host="0.0.0.0", port=10000, reload=False)
+    # Use standard local port. Ensure your NEXT_PUBLIC_API_URL targets this exactly.
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
