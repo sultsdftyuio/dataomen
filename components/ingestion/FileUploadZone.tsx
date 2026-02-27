@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useRef } from "react";
+import { createBrowserClient } from "@supabase/ssr";
 import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -10,213 +11,159 @@ interface FileUploadZoneProps {
   onUploadSuccess?: (datasetId: string) => void;
 }
 
-export function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps) {
-  const [dragActive, setDragActive] = useState(false);
+export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps) {
+  const [file, setFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const { toast } = useToast();
+  
+  // 1. Modular Strategy: Utilize the SSR package's browser client for Next.js App Router
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      validateAndSetFile(e.dataTransfer.files[0]);
-    }
-  }, []);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    if (e.target.files && e.target.files[0]) {
-      validateAndSetFile(e.target.files[0]);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+      setUploadState("idle");
     }
   };
 
-  const validateAndSetFile = (file: File) => {
-    // Phase 1 MVP strict requirement: CSV only
-    if (file.type !== "text/csv" && !file.name.endsWith(".csv")) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please upload a valid CSV file.",
-        variant: "destructive",
-      });
-      return;
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFile(e.dataTransfer.files[0]);
+      setUploadState("idle");
     }
-    
-    // Optional: Max 50MB restriction (can adjust based on your FastAPI limits)
-    if (file.size > 50 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Please upload a file smaller than 50MB.",
-        variant: "destructive",
-      });
-      return;
-    }
+  }, []);
 
-    setSelectedFile(file);
-    setUploadState("idle");
-  };
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  }, []);
 
-  const uploadFile = async () => {
-    if (!selectedFile) return;
+  const handleUpload = useCallback(async () => {
+    if (!file) return;
 
     setUploadState("uploading");
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-    // You can hardcode a tenant_id or fetch it from the user session here
-    formData.append("tenant_id", "default_tenant"); 
-
-    // The crucial Vercel fix:
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
     try {
-      const response = await fetch(`${API_URL}/api/datasets/upload`, {
+      // 2. Security by Design: Retrieve JWT for Tenant Isolation
+      const { data: { session }, error: authError } = await supabase.auth.getSession();
+      
+      if (authError || !session) {
+        throw new Error("Authentication session missing. Please log in.");
+      }
+
+      // 3. Prepare Payload natively (letting the browser handle multi-part boundaries)
+      const formData = new FormData();
+      formData.append("file", file);
+
+      // 4. Orchestration: Environment-agnostic endpoint
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      
+      const response = await fetch(`${API_URL}/api/v1/datasets/upload`, {
         method: "POST",
-        // Do NOT set 'Content-Type' manually when sending FormData
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`
+          // WARNING: Do NOT manually set 'Content-Type': 'multipart/form-data'. 
+          // The browser automatically sets it with the proper boundary string.
+        },
         body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Upload failed");
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || `Upload failed with status: ${response.status}`);
       }
 
       const data = await response.json();
-      
       setUploadState("success");
+      
       toast({
-        title: "Upload Complete!",
-        description: `${selectedFile.name} was successfully converted to Parquet.`,
+        title: "Upload Successful",
+        description: `${file.name} has been securely ingested.`,
+        variant: "default"
       });
 
       if (onUploadSuccess && data.dataset_id) {
         onUploadSuccess(data.dataset_id);
       }
-
-      // Reset after 3 seconds
-      setTimeout(() => {
-        setUploadState("idle");
-        setSelectedFile(null);
-      }, 3000);
-
+      
     } catch (error: any) {
       console.error("Upload error:", error);
       setUploadState("error");
+      
       toast({
         title: "Upload Failed",
-        description: error.message || "Could not connect to the processing engine.",
-        variant: "destructive",
+        description: error.message || "A network error occurred. Ensure the backend is running.",
+        variant: "destructive"
       });
     }
-  };
+  }, [file, supabase, onUploadSuccess, toast]);
 
   return (
-    <div className="w-full max-w-2xl mx-auto mt-8">
-      <div
-        className={`relative flex flex-col items-center justify-center p-12 text-center border-2 border-dashed rounded-xl transition-all duration-200 ease-in-out ${
-          dragActive ? "border-primary bg-primary/5" : "border-border bg-card"
-        } ${uploadState === "uploading" ? "opacity-50 pointer-events-none" : ""}`}
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
+    <div 
+      className="w-full max-w-md p-8 border-2 border-dashed border-gray-300 rounded-xl bg-white text-center flex flex-col items-center transition-all hover:border-blue-400"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept=".csv,.parquet,.json"
+      />
+      
+      {file ? (
+        <div className="flex flex-col items-center space-y-4 w-full">
+          <FileText className="w-12 h-12 text-blue-500" />
+          <div className="w-full truncate px-4">
+            <p className="font-medium text-gray-700 truncate">{file.name}</p>
+            <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+          </div>
+        </div>
+      ) : (
+        <div 
+          className="flex flex-col items-center space-y-4 cursor-pointer w-full group"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <UploadCloud className="w-12 h-12 text-gray-400 group-hover:text-blue-500 transition-colors" />
+          <p className="font-medium text-gray-600">Click to browse or drag and drop</p>
+          <p className="text-sm text-gray-400">CSV, Parquet, or JSON (max 50MB)</p>
+        </div>
+      )}
+
+      {uploadState === "error" && (
+        <div className="mt-4 flex items-center text-red-500 text-sm font-medium">
+          <AlertCircle className="w-4 h-4 mr-2" />
+          Connection Refused / Unauthorized
+        </div>
+      )}
+
+      {uploadState === "success" && (
+        <div className="mt-4 flex items-center text-green-500 text-sm font-medium">
+          <CheckCircle className="w-4 h-4 mr-2" />
+          Dataset ready for analysis
+        </div>
+      )}
+
+      <button
+        onClick={handleUpload}
+        disabled={!file || uploadState === "uploading"}
+        className="mt-6 w-full py-2.5 px-4 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
       >
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv"
-          onChange={handleChange}
-          className="hidden"
-        />
-
-        {uploadState === "idle" && !selectedFile && (
+        {uploadState === "uploading" ? (
           <>
-            <div className="p-4 rounded-full bg-primary/10 mb-4 text-primary">
-              <UploadCloud size={32} />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">Upload your dataset</h3>
-            <p className="text-muted-foreground mb-6">
-              Drag and drop your CSV file here, or click to browse
-            </p>
-            <button
-              onClick={() => inputRef.current?.click()}
-              className="px-6 py-2.5 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors"
-            >
-              Select CSV File
-            </button>
+            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            Ingesting Data...
           </>
+        ) : (
+          "Upload Dataset"
         )}
-
-        {selectedFile && uploadState === "idle" && (
-          <>
-            <div className="p-4 rounded-full bg-primary/10 mb-4 text-primary">
-              <FileText size={32} />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">{selectedFile.name}</h3>
-            <p className="text-sm text-muted-foreground mb-6">
-              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-            </p>
-            <div className="flex gap-4">
-              <button
-                onClick={() => setSelectedFile(null)}
-                className="px-6 py-2.5 bg-secondary text-secondary-foreground font-medium rounded-md hover:bg-secondary/80 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={uploadFile}
-                className="px-6 py-2.5 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors"
-              >
-                Process & Compress
-              </button>
-            </div>
-          </>
-        )}
-
-        {uploadState === "uploading" && (
-          <div className="flex flex-col items-center text-primary">
-            <Loader2 size={48} className="animate-spin mb-4" />
-            <h3 className="text-xl font-semibold">Sanitizing Data...</h3>
-            <p className="text-sm text-muted-foreground mt-2">Converting to Parquet format</p>
-          </div>
-        )}
-
-        {uploadState === "success" && (
-          <div className="flex flex-col items-center text-green-600 dark:text-green-400">
-            <CheckCircle size={48} className="mb-4" />
-            <h3 className="text-xl font-semibold">Processing Complete</h3>
-            <p className="text-sm text-muted-foreground mt-2">Ready for analysis via DuckDB</p>
-          </div>
-        )}
-
-        {uploadState === "error" && (
-          <div className="flex flex-col items-center text-red-600 dark:text-red-400">
-            <AlertCircle size={48} className="mb-4" />
-            <h3 className="text-xl font-semibold">Processing Failed</h3>
-            <p className="text-sm text-muted-foreground mt-2 mb-6">
-              There was an issue with your CSV schema.
-            </p>
-            <button
-              onClick={() => setUploadState("idle")}
-              className="px-6 py-2.5 bg-secondary text-secondary-foreground font-medium rounded-md hover:bg-secondary/80 transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
-        )}
-      </div>
+      </button>
     </div>
   );
 }
