@@ -68,7 +68,7 @@ export function FileUploadZone() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Server Error ${response.status}: ${errorText}`);
+        throw new Error(`shServer Error ${response.status}: ${errorText}`);
       }
 
       setProgress(100);
