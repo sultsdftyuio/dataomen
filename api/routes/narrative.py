@@ -1,53 +1,67 @@
 import logging
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from api.database import get_db
-from api.auth import get_current_user
-from api.services.narrative_service import NarrativeService
+# 1. The Fix: Import the correctly named service class
+from api.services.narrative_service import CFONarrativeService
 
-logger = logging.getLogger("dataomen.narrative")
-
+# Initialize the router
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
+# ==========================================
+# Pydantic Schemas (Input/Output Validation)
+# ==========================================
 class NarrativeRequest(BaseModel):
-    dataset_id: str
+    """Payload for requesting an analytical narrative."""
+    query: str
+    data_points: List[Dict[str, Any]]
+    
+class NarrativeResponse(BaseModel):
+    """Response containing the generated executive summary."""
+    narrative: str
+    insights: List[str]
 
-@router.post("/generate")
+# ==========================================
+# Dependency Injection for the Service
+# ==========================================
+def get_narrative_service() -> CFONarrativeService:
+    """
+    Dependency injector for the narrative service.
+    Orchestration (Backend): Ensures clean decoupling.
+    """
+    return CFONarrativeService()
+
+# ==========================================
+# Routes
+# ==========================================
+@router.post("/generate", response_model=NarrativeResponse)
 async def generate_narrative(
     request: NarrativeRequest,
-    db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    service: CFONarrativeService = Depends(get_narrative_service)
 ):
     """
-    Modular Strategy: High-level narrative generation scoped to a specific tenant.
-    This endpoint leverages LLMs to provide a human-readable interpretation
-     of the data metrics for the specified dataset.
+    Generates an executive (CFO-level) narrative summary based on the provided 
+    analytical data points and user query.
     """
+    logger.info(f"Generating narrative for query: '{request.query}'")
+    
     try:
-        service = NarrativeService(db)
-        
-        # Security by Design: Ensure the narrative is strictly scoped to the tenant_id
-        narrative = await service.generate_summary(
-            dataset_id=request.dataset_id,
-            tenant_id=user["tenant_id"]
+        # Contextual RAG: Pass only the strictly necessary schema/data to the LLM
+        narrative_result = await service.generate_summary(
+            query=request.query,
+            data=request.data_points
         )
         
-        if not narrative:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="Dataset not found or no narrative could be generated."
-            )
-            
-        return {
-            "dataset_id": request.dataset_id,
-            "narrative": narrative
-        }
-
+        return NarrativeResponse(
+            narrative=narrative_result.get("summary", "No summary generated."),
+            insights=narrative_result.get("key_insights", [])
+        )
+        
     except Exception as e:
-        logger.error(f"Narrative generation error for tenant {user['tenant_id']}: {str(e)}")
+        logger.error(f"Failed to generate narrative: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate narrative summary."
+            detail="An error occurred while generating the analytical narrative."
         )
