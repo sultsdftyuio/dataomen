@@ -48,6 +48,9 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
 
     setUploadState("uploading");
 
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    console.log("Targeting API:", API_URL);
+
     try {
       // 2. Security by Design: Retrieve JWT for Tenant Isolation
       const { data: { session }, error: authError } = await supabase.auth.getSession();
