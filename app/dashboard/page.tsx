@@ -1,7 +1,10 @@
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 "use client";
+
+// Next.js route segment config must come after the use client directive
+// when it is a purely client-rendered component that needs to bypass cache.
+// Note: In strict App Router setups, you typically put 'force-dynamic' in a parent layout 
+// or an API route, but for a client component, the dynamic nature is inherently managed by the browser.
+export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -37,10 +40,11 @@ export default function DashboardPage() {
   // or selected from a list of the user's previously uploaded datasets.
   const [activeDatasetId, setActiveDatasetId] = useState<string>("latest-dataset-id");
 
-  const supabase = createBrowserClient(
+  // Only instantiate the Supabase client inside the component when running on the client
+  const [supabase] = useState(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  ));
 
   // 1. Orchestration: Hydrate Auth State on Mount
   useEffect(() => {
