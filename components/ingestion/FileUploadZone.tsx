@@ -62,8 +62,9 @@ export default function FileUploadZone() {
       formData.append("file", file);
       formData.append("name", file.name);
 
-      // --- ENGINEERING EXCELLENCE: Dynamic Environment Routing ---
-      // Automatically resolves to Render URL in prod, or local Python backend in dev
+      // --- DYNAMIC ENVIRONMENT ROUTING ---
+      // Automatically uses your Render URL in production (if set in Vercel Env Vars)
+      // Falls back to localhost:10000 for local development.
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
       
       const response = await fetch(`${API_BASE_URL}/api/v1/datasets/upload`, {
@@ -82,7 +83,7 @@ export default function FileUploadZone() {
       setUploadState("success");
       toast({
         title: "Ingestion Complete",
-        description: `${file.name} has been securely processed into columnar format.`,
+        description: `${file.name} has been securely processed.`,
       });
       
     } catch (error) {

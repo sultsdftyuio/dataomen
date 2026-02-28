@@ -1,74 +1,36 @@
 import { useState, useEffect } from 'react';
 
-// Strict type interfaces for robust state management
-export type JobStatus = 'idle' | 'processing' | 'completed' | 'failed';
+// Modular Strategy: Resolve API base URL based on environment variables
+// Falls back to localhost for development to prevent connection errors
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:10000';
 
-export interface JobState<T> {
-  status: JobStatus;
-  data: T | null;
-  error: string | null;
-}
-
-/**
- * Custom React Hook to offload heavy analytical tracking to the client side.
- * Automatically polls the backend until the worker queue resolves the job.
- */
-export function useAsyncJob<T>(jobId: string | null, pollIntervalMs: number = 2000): JobState<T> {
-  const [state, setState] = useState<JobState<T>>({
-    status: 'idle',
-    data: null,
-    error: null,
-  });
+export function useAsyncJob(jobId: string | null) {
+  const [status, setStatus] = useState<string>('idle');
+  const [result, setResult] = useState<any>(null);
 
   useEffect(() => {
-    // If there is no active job, remain idle.
-    if (!jobId) {
-      setState({ status: 'idle', data: null, error: null });
-      return;
-    }
+    if (!jobId) return;
 
-    let isMounted = true;
-    let intervalId: NodeJS.Timeout;
-
-    const pollJobStatus = async () => {
+    const checkStatus = async () => {
       try {
-        // Assume API endpoint: GET /api/v1/jobs/{jobId}
-        const response = await fetch(`/api/v1/jobs/${jobId}`);
+        // Engineering Excellence: Use environment-aware URLs
+        const response = await fetch(`${API_BASE_URL}/api/v1/datasets/job/${jobId}`);
         if (!response.ok) throw new Error('Failed to fetch job status');
-
-        const result = await response.json();
-
-        if (isMounted) {
-          if (result.status === 'completed') {
-            setState({ status: 'completed', data: result.data, error: null });
-            clearInterval(intervalId); // Terminate polling
-          } else if (result.status === 'failed') {
-            setState({ status: 'failed', data: null, error: result.error_message });
-            clearInterval(intervalId); // Terminate polling
-          } else {
-            // Still processing
-            setState((prev) => ({ ...prev, status: 'processing' }));
-          }
+        
+        const data = await response.json();
+        setStatus(data.status);
+        if (data.status === 'completed') {
+          setResult(data.result);
         }
-      } catch (err: any) {
-        if (isMounted) {
-          setState({ status: 'failed', data: null, error: err.message });
-          clearInterval(intervalId);
-        }
+      } catch (error) {
+        console.error('Job polling error:', error);
+        setStatus('error');
       }
     };
 
-    // Initiate the polling lifecycle
-    setState({ status: 'processing', data: null, error: null });
-    pollJobStatus(); // First check immediate
-    intervalId = setInterval(pollJobStatus, pollIntervalMs);
+    const interval = setInterval(checkStatus, 3000);
+    return () => clearInterval(interval);
+  }, [jobId]);
 
-    // Cleanup phase: prevent state updates on unmounted components
-    return () => {
-      isMounted = false;
-      clearInterval(intervalId);
-    };
-  }, [jobId, pollIntervalMs]);
-
-  return state;
+  return { status, result };
 }
