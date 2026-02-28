@@ -25,8 +25,6 @@ export default function FileUploadZone() {
   useEffect(() => {
     console.log("🚀 [DEBUG] FileUploadZone Mounted");
     console.log("🌍 [DEBUG] Window Origin:", typeof window !== "undefined" ? window.location.origin : "SSR");
-    console.log("🔧 [DEBUG] NEXT_PUBLIC_API_URL from env:", process.env.NEXT_PUBLIC_API_URL || "NOT SET");
-    console.log("🔧 [DEBUG] NODE_ENV:", process.env.NODE_ENV);
   }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -56,7 +54,7 @@ export default function FileUploadZone() {
   }, []);
 
   const handleFileSelection = (selectedFile: File) => {
-    console.log("📂 [DEBUG] File Selected:", selectedFile.name, "Type:", selectedFile.type, "Size:", selectedFile.size);
+    console.log("📂 [DEBUG] File Selected:", selectedFile.name, "Size:", selectedFile.size);
     const validTypes = [
       "text/csv",
       "application/vnd.ms-excel",
@@ -66,7 +64,7 @@ export default function FileUploadZone() {
     const isCsv = selectedFile.name.toLowerCase().endsWith(".csv");
 
     if (!validTypes.includes(selectedFile.type) && !isParquet && !isCsv) {
-      console.warn("⚠️ [DEBUG] Invalid file type detected:", selectedFile.type);
+      console.warn("⚠️ [DEBUG] Invalid file type:", selectedFile.type);
       toast({
         variant: "destructive",
         title: "Invalid file type",
@@ -88,55 +86,50 @@ export default function FileUploadZone() {
 
     console.log("=========================================");
     console.log("📤 [DEBUG] STARTING UPLOAD PROCESS");
-    console.log("📄 [DEBUG] File Name:", file.name);
 
     setUploadState("uploading");
 
     try {
       // 1. Session Check
-      console.log("🔐 [DEBUG] Fetching Supabase session...");
+      console.log("🔐 [DEBUG] Fetching session...");
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !session) {
-        console.error("❌ [DEBUG] Auth Error:", sessionError);
+        console.error("❌ [DEBUG] Auth Error");
         throw new Error("Authentication required. Please log in.");
       }
-      console.log("✅ [DEBUG] Session active for user:", session.user.id);
 
       // 2. Prepare FormData
       const formData = new FormData();
       formData.append("file", file);
       formData.append("name", file.name.replace(/\.[^/.]+$/, "")); 
-      console.log("📦 [DEBUG] FormData prepared. Name appended.");
+      console.log("📦 [DEBUG] FormData prepared.");
 
-      // 3. Construct Target URL
-      // EXTREMELY IMPORTANT: We do NOT use localhost here. We use the relative path 
-      // so it hits the Next.js server, which uses next.config.mjs to proxy to Render.
+      // 3. Target URL - USING RELATIVE PATH FOR PROXY
+      // This is the magic! This forces the browser to send it to Vercel, not localhost!
       const targetUrl = "/api/v1/datasets/upload";
       
-      console.log("🌐 [DEBUG] Firing fetch request to RELATIVE URL:", targetUrl);
+      console.log("🌐 [DEBUG] Firing fetch request to:", targetUrl);
 
       // 4. Execute Fetch
       const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          // Let the browser set the Content-Type header to inject the correct multipart boundary
         },
         body: formData,
       });
 
       console.log("📡 [DEBUG] Response Status:", response.status);
-      console.log("📡 [DEBUG] Response OK:", response.ok);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("❌ [DEBUG] Upload failed. Server responded with:", errorText);
-        throw new Error(`Upload failed (${response.status}): ${errorText.substring(0, 100)}`);
+        console.error("❌ [DEBUG] Server responded with:", errorText);
+        throw new Error(`Upload failed (${response.status})`);
       }
 
       const result = await response.json();
-      console.log("✅ [DEBUG] Upload successful. Server returned:", result);
+      console.log("✅ [DEBUG] Upload successful:", result);
 
       setUploadState("success");
       toast({
@@ -151,23 +144,16 @@ export default function FileUploadZone() {
       }, 3000);
       
     } catch (error: any) {
-      console.error("🚨 [DEBUG] CATCH BLOCK TRIGGERED");
-      console.error("🚨 [DEBUG] Error Name:", error.name);
-      console.error("🚨 [DEBUG] Error Message:", error.message);
-      
-      if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("CONNECTION_REFUSED")) {
-         console.error("🚨 [DEBUG] CRITICAL DIAGNOSIS: Connection refused or failed to fetch.");
-         console.error("🚨 [DEBUG] FIX: Ensure next.config.mjs has the 'rewrites' array deployed to Vercel.");
-      }
+      console.error("🚨 [DEBUG] ERROR:", error.message);
 
       setUploadState("error");
       toast({
         variant: "destructive",
         title: "Upload Failed",
-        description: error.message || "An unexpected error occurred. Check the console.",
+        description: error.message || "An unexpected error occurred. Check console.",
       });
     } finally {
-      console.log("🏁 [DEBUG] UPLOAD PROCESS FINISHED");
+      console.log("🏁 [DEBUG] PROCESS FINISHED");
       console.log("=========================================");
     }
   };
@@ -281,7 +267,7 @@ export default function FileUploadZone() {
       {uploadState === "error" && (
         <div className="flex items-center mt-4 p-3 text-sm text-red-800 bg-red-100 rounded-md dark:bg-red-900/30 dark:text-red-300">
           <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
-          There was a problem uploading your dataset. Check the developer console for details.
+          There was a problem uploading your dataset. Check developer tools.
         </div>
       )}
     </div>
