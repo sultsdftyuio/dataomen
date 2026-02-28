@@ -7,11 +7,10 @@ import { useToast } from "@/hooks/use-toast";
 
 type UploadState = "idle" | "uploading" | "success" | "error";
 
-export default function FileUploadZone() {
+export function FileUploadZone() {
   const [file, setFile] = useState<File | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string>("");
-  const [isDragging, setIsDragging] = useState(false);
+  const [progress, setProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -21,157 +20,169 @@ export default function FileUploadZone() {
   );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      console.log("[DEBUG] File selected:", selectedFile.name, "| Size:", selectedFile.size, "bytes | Type:", selectedFile.type);
+      
+      // Basic client-side validation
+      if (!selectedFile.name.endsWith('.csv') && !selectedFile.name.endsWith('.json')) {
+         console.warn("[DEBUG] Invalid file type selected.");
+         toast({ title: "Invalid File", description: "Only CSV or JSON files are currently supported.", variant: "destructive" });
+         return;
+      }
+      setFile(selectedFile);
       setUploadState("idle");
     }
   };
 
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFile(e.dataTransfer.files[0]);
-      setUploadState("idle");
+  const handleUpload = async () => {
+    if (!file) {
+      console.warn("[DEBUG] Upload triggered, but no file is selected.");
+      return;
     }
-  }, []);
-
-  const handleUpload = useCallback(async () => {
-    if (!file) return;
 
     setUploadState("uploading");
-    
-    try {
-      const { data: { session }, error: authError } = await supabase.auth.getSession();
-      
-      if (authError || !session) {
-        throw new Error("Authentication required. Please log in.");
-      }
+    setProgress(10); // Fake initial progress for UX
 
+    try {
+      console.log("[DEBUG] --- STARTING UPLOAD PROCESS ---");
+      
+      // 1. Get Authentication Context
+      console.log("[DEBUG] Fetching Supabase session...");
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        console.error("[DEBUG] Auth Error:", sessionError || "No active session found.");
+        throw new Error("You must be logged in to upload data.");
+      }
+      console.log("[DEBUG] Session retrieved for User ID:", session.user.id);
+      setProgress(30);
+
+      // 2. Prepare Payload
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("name", file.name);
-
-      // --- DYNAMIC ENVIRONMENT ROUTING ---
-      // Automatically uses your Render URL in production (if set in Vercel Env Vars)
-      // Falls back to localhost:10000 for local development.
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
       
-      const response = await fetch(`${API_BASE_URL}/api/v1/datasets/upload`, {
+      // We explicitly state the backend URL here to catch config errors
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const targetEndpoint = `${apiUrl}/api/v1/datasets/upload`;
+      
+      console.log("[DEBUG] Target Upload Endpoint:", targetEndpoint);
+      console.log("[DEBUG] Auth Token (truncated):", session.access_token.substring(0, 15) + "...");
+
+      // 3. Execute Fetch
+      setProgress(50);
+      console.log("[DEBUG] Executing POST request...");
+      
+      const response = await fetch(targetEndpoint, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session.access_token}`,
+          // Note: Do NOT set 'Content-Type': 'multipart/form-data'. 
+          // The browser sets it automatically with the correct boundary boundary.
         },
         body: formData,
       });
 
+      console.log("[DEBUG] Response received. Status:", response.status, response.statusText);
+
+      // 4. Handle Response
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Upload failed with status: ${response.status}`);
+        const errorText = await response.text();
+        console.error("[DEBUG] Backend rejected the upload. Payload:", errorText);
+        throw new Error(`Server Error ${response.status}: ${errorText || response.statusText}`);
       }
 
+      const responseData = await response.json();
+      console.log("[DEBUG] Upload successful. Server returned:", responseData);
+
+      setProgress(100);
       setUploadState("success");
-      toast({
-        title: "Ingestion Complete",
-        description: `${file.name} has been securely processed.`,
-      });
-      
-    } catch (error) {
-      console.error("Upload error:", error);
+      toast({ title: "Upload Complete", description: "Your dataset has been securely stored and modularized." });
+
+    } catch (error: any) {
+      console.error("[DEBUG] Upload caught an exception:", error);
       setUploadState("error");
-      const msg = error instanceof Error ? error.message : "Failed to connect to ingestion engine.";
-      setErrorMessage(msg);
-      toast({
-        variant: "destructive",
-        title: "Ingestion Failed",
-        description: msg,
-      });
+      
+      // Detect specifically if it's a Connection Refused error
+      if (error.message.includes('Failed to fetch')) {
+        toast({ 
+            title: "Connection Error", 
+            description: "Could not reach the backend server. Is it running on the correct port?", 
+            variant: "destructive" 
+        });
+      } else {
+        toast({ title: "Upload Failed", description: error.message || "An unknown error occurred.", variant: "destructive" });
+      }
     }
-  }, [file, supabase.auth, toast]);
+  };
 
+  // ... (Rest of the UI component remains exactly the same)
   return (
-    <div className="w-full max-w-2xl mx-auto mt-8">
+    <div className="w-full max-w-xl mx-auto p-6 bg-card rounded-xl border border-border shadow-sm">
       <div 
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`flex flex-col items-center justify-center p-10 border-2 border-dashed rounded-xl transition-colors duration-200 ${
-          isDragging 
-            ? "border-blue-500 bg-blue-50" 
-            : "border-gray-300 bg-gray-50 hover:bg-gray-100"
-        }`}
+        className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors
+          ${file ? 'border-primary/50 bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'}
+        `}
       >
-        <div className="flex items-center justify-center w-16 h-16 bg-white shadow-sm border border-gray-100 text-blue-600 rounded-full mb-6">
-          {uploadState === "uploading" ? (
-            <Loader2 className="w-8 h-8 animate-spin" />
-          ) : uploadState === "success" ? (
-            <CheckCircle className="w-8 h-8 text-green-500" />
-          ) : uploadState === "error" ? (
-            <AlertCircle className="w-8 h-8 text-red-500" />
-          ) : file ? (
-            <FileText className="w-8 h-8" />
-          ) : (
-            <UploadCloud className="w-8 h-8 text-gray-400" />
-          )}
-        </div>
-
-        <h3 className="text-xl font-semibold mb-2 text-gray-900">
-          {file ? file.name : "Upload analytical dataset"}
-        </h3>
-        
-        <p className="text-sm text-gray-500 mb-8 text-center max-w-sm">
-          {!file && "Drag and drop your Parquet, CSV, or JSON files here for high-performance processing."}
-          {file && `Ready to ingest ${(file.size / 1024 / 1024).toFixed(2)} MB into the analytical engine.`}
-          {uploadState === "error" && <span className="block mt-2 font-medium text-red-600">{errorMessage}</span>}
-        </p>
-
-        <input
-          type="file"
-          className="hidden"
+        <input 
+          type="file" 
           ref={fileInputRef}
-          onChange={handleFileChange}
-          accept=".csv,.parquet,.json"
+          onChange={handleFileChange} 
+          accept=".csv,.json"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+          disabled={uploadState === "uploading"}
         />
-
-        <div className="flex gap-4">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadState === "uploading"}
-            className="px-6 py-2.5 font-medium border border-gray-300 text-gray-700 bg-white rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 disabled:opacity-50 transition-all"
-          >
-            {file ? "Change Dataset" : "Browse Local Files"}
-          </button>
-
-          {file && (
-            <button
-              onClick={handleUpload}
-              disabled={uploadState === "uploading" || uploadState === "success"}
-              className="px-6 py-2.5 font-medium border border-transparent text-white bg-blue-600 rounded-lg shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all flex items-center"
-            >
-              {uploadState === "uploading" ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Vectorizing Data...
-                </>
-              ) : uploadState === "success" ? (
-                "Dataset Ingested"
-              ) : (
-                "Initialize Engine"
-              )}
-            </button>
+        
+        <div className="flex flex-col items-center justify-center space-y-4 pointer-events-none">
+          {file ? (
+             <div className="flex items-center space-x-3 text-primary">
+                <FileText className="w-8 h-8" />
+                <div className="text-left">
+                  <p className="text-sm font-semibold">{file.name}</p>
+                  <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+             </div>
+          ) : (
+            <>
+              <div className="p-4 bg-muted rounded-full">
+                <UploadCloud className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Click or drag file to this area to upload</p>
+                <p className="text-xs text-muted-foreground mt-1">Support for a single CSV or JSON upload.</p>
+              </div>
+            </>
           )}
         </div>
       </div>
+
+      {file && (
+        <div className="mt-6 flex flex-col space-y-4">
+          <button
+            onClick={handleUpload}
+            disabled={uploadState === "uploading" || uploadState === "success"}
+            className="w-full inline-flex justify-center items-center py-2.5 px-4 rounded-md bg-primary text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {uploadState === "uploading" && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            {uploadState === "idle" || uploadState === "error" ? "Upload Dataset" : ""}
+            {uploadState === "uploading" ? "Processing..." : ""}
+            {uploadState === "success" ? "Ready for Analysis" : ""}
+          </button>
+
+          {uploadState === "uploading" && (
+            <div className="w-full bg-secondary rounded-full h-1.5">
+              <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+            </div>
+          )}
+
+          {uploadState === "error" && (
+            <div className="flex items-center text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+               <AlertCircle className="w-4 h-4 mr-2" />
+               Check the console logs for detailed debug information.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

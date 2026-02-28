@@ -1,98 +1,112 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import DynamicChartFactory, { ChartConfig } from './DynamicChartFactory';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertCircle } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DynamicChartFactory } from './DynamicChartFactory';
+import { Loader2, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:10000';
+interface WidgetLayout {
+  w: number;
+  h: number;
+}
+
+interface DashboardWidget {
+  id: string;
+  type: 'kpi' | 'bar_chart' | 'line_chart' | 'pie_chart' | 'table';
+  title: string;
+  sql: string;
+  xAxis?: string;
+  yAxis?: string[];
+  layout: WidgetLayout;
+  data: any[];
+}
+
+interface DashboardConfig {
+  title: string;
+  widgets: DashboardWidget[];
+}
 
 interface DashboardOrchestratorProps {
   datasetId: string;
 }
 
-// Engineering Excellence: Flexible Type Safety to handle varying backend schema fragments
-interface ChartPayload {
-  config?: ChartConfig;
-  data?: any[];
-  [key: string]: any; 
-}
+export function DashboardOrchestrator({ datasetId }: DashboardOrchestratorProps) {
+  const [prompt, setPrompt] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [dashboard, setDashboard] = useState<DashboardConfig | null>(null);
 
-export default function DashboardOrchestrator({ datasetId }: DashboardOrchestratorProps) {
-  const [charts, setCharts] = useState<ChartPayload[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const handleGenerate = async () => {
+    if (!prompt.trim()) return;
+    setLoading(true);
+    setDashboard(null);
 
-  useEffect(() => {
-    async function fetchInitialAnalytics() {
-      if (!datasetId) return;
+    try {
+      const res = await fetch(`/api/datasets/${datasetId}/dashboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
       
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/query/auto-analyze/${datasetId}`);
-        if (!response.ok) throw new Error('Analytical engine failed to provide insights.');
-        
-        const responseData = await response.json();
-        setCharts(responseData.charts || []);
-      } catch (err) {
-        console.error('Dashboard Orchestration Error:', err);
-        setError(err instanceof Error ? err.message : 'Could not connect to analytical service.');
-      } finally {
-        setLoading(false);
-      }
+      if (!res.ok) throw new Error('Failed to generate dynamic dashboard');
+      
+      const data: DashboardConfig = await res.json();
+      setDashboard(data);
+      toast.success('Generative Dashboard constructed successfully!');
+    } catch (error: any) {
+      toast.error(error.message || 'An error occurred during generation.');
+    } finally {
+      setLoading(false);
     }
-
-    fetchInitialAnalytics();
-  }, [datasetId]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-20 gap-4">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-        <p className="text-muted-foreground animate-pulse text-sm">Orchestrating Analytical View...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <Alert variant="destructive" className="max-w-2xl mx-auto mt-8">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Engine Error</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    );
-  }
+  };
 
   return (
-    <div className="space-y-8 p-6">
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {charts.length > 0 ? (
-          charts.map((chartItem, index) => {
-            // Modular Strategy: Safely extract config and data regardless of nesting
-            const chartConfig = chartItem.config || (chartItem as unknown as ChartConfig);
-            const chartData = chartItem.data || chartConfig.data || [];
-
-            return (
-              <DynamicChartFactory 
-                key={`${datasetId}-${index}`} 
-                config={chartConfig} 
-                data={chartData} 
-              />
-            );
-          })
-        ) : (
-          <div className="col-span-full text-center p-20 border-2 border-dashed rounded-xl bg-gray-50">
-            <p className="text-gray-500">No automated insights found for this dataset.</p>
-            <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
-              Retry Analysis
-            </Button>
-          </div>
-        )}
+    <div className="space-y-6 w-full">
+      <div className="flex items-center space-x-3 bg-card p-4 rounded-xl shadow-sm border">
+        <Sparkles className="w-5 h-5 text-primary" />
+        <Input 
+          placeholder="E.g., How is our marketing performing? Show spend over time and top campaigns." 
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
+          onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+        />
+        <Button onClick={handleGenerate} disabled={loading || !prompt.trim()} className="rounded-full px-6">
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Analyze
+        </Button>
       </div>
+
+      {dashboard && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="flex items-center justify-between">
+             <h2 className="text-3xl font-bold tracking-tight text-foreground">{dashboard.title}</h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            {dashboard.widgets.map((widget) => (
+              <div 
+                key={widget.id} 
+                style={{ gridColumn: `span ${widget.layout.w} / span ${widget.layout.w}` }}
+                className="min-h-[200px]"
+              >
+                <Card className="h-full flex flex-col shadow-sm hover:shadow-md transition-shadow">
+                  <CardHeader className="pb-2 border-b bg-muted/20">
+                    <CardTitle className="text-sm font-semibold text-muted-foreground flex justify-between">
+                      {widget.title}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 flex flex-col justify-center pt-4">
+                     <DynamicChartFactory widget={widget} />
+                  </CardContent>
+                </Card>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
