@@ -36,83 +36,49 @@ export function FileUploadZone() {
   };
 
   const handleUpload = async () => {
-    if (!file) {
-      console.warn("[DEBUG] Upload triggered, but no file is selected.");
-      return;
-    }
-
+    if (!file) return;
     setUploadState("uploading");
-    setProgress(10); // Fake initial progress for UX
+    setProgress(10); 
 
     try {
-      console.log("[DEBUG] --- STARTING UPLOAD PROCESS ---");
-      
-      // 1. Get Authentication Context
-      console.log("[DEBUG] Fetching Supabase session...");
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
       if (sessionError || !session) {
-        console.error("[DEBUG] Auth Error:", sessionError || "No active session found.");
         throw new Error("You must be logged in to upload data.");
       }
-      console.log("[DEBUG] Session retrieved for User ID:", session.user.id);
       setProgress(30);
 
-      // 2. Prepare Payload
       const formData = new FormData();
       formData.append("file", file);
       
-      // We explicitly state the backend URL here to catch config errors
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const targetEndpoint = `${apiUrl}/api/v1/datasets/upload`;
+      // 🚀 THE BRUTE-FORCE OVERRIDE:
+      // Bypass the environment variables entirely so Vercel caching cannot break this.
+      const targetEndpoint = "https://dataomen.onrender.com/api/v1/datasets/upload";
       
-      console.log("[DEBUG] Target Upload Endpoint:", targetEndpoint);
-      console.log("[DEBUG] Auth Token (truncated):", session.access_token.substring(0, 15) + "...");
+      console.log("🔥 FORCE-ROUTING TRAFFIC TO:", targetEndpoint);
 
-      // 3. Execute Fetch
       setProgress(50);
-      console.log("[DEBUG] Executing POST request...");
-      
       const response = await fetch(targetEndpoint, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${session.access_token}`,
-          // Note: Do NOT set 'Content-Type': 'multipart/form-data'. 
-          // The browser sets it automatically with the correct boundary boundary.
         },
         body: formData,
       });
 
-      console.log("[DEBUG] Response received. Status:", response.status, response.statusText);
-
-      // 4. Handle Response
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("[DEBUG] Backend rejected the upload. Payload:", errorText);
-        throw new Error(`Server Error ${response.status}: ${errorText || response.statusText}`);
+        throw new Error(`Server Error ${response.status}: ${errorText}`);
       }
-
-      const responseData = await response.json();
-      console.log("[DEBUG] Upload successful. Server returned:", responseData);
 
       setProgress(100);
       setUploadState("success");
-      toast({ title: "Upload Complete", description: "Your dataset has been securely stored and modularized." });
+      toast({ title: "Upload Complete", description: "Your dataset has been securely stored." });
 
     } catch (error: any) {
-      console.error("[DEBUG] Upload caught an exception:", error);
+      console.error(error);
       setUploadState("error");
-      
-      // Detect specifically if it's a Connection Refused error
-      if (error.message.includes('Failed to fetch')) {
-        toast({ 
-            title: "Connection Error", 
-            description: "Could not reach the backend server. Is it running on the correct port?", 
-            variant: "destructive" 
-        });
-      } else {
-        toast({ title: "Upload Failed", description: error.message || "An unknown error occurred.", variant: "destructive" });
-      }
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
     }
   };
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
