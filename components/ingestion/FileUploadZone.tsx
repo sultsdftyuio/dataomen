@@ -115,6 +115,8 @@ export function FileUploadZone() {
       }
     }
   };
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
+console.log("🔥 THE FRONTEND IS POINTING TO:", apiUrl);
 
   // ... (Rest of the UI component remains exactly the same)
   return (
