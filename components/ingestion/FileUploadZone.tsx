@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,14 @@ export default function FileUploadZone() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
+
+  // DEBUGGING: Run once on mount to check the environment
+  useEffect(() => {
+    console.log("🚀 [DEBUG] Component Mounted");
+    console.log("🌍 [DEBUG] Window Origin:", typeof window !== "undefined" ? window.location.origin : "SSR");
+    console.log("🔧 [DEBUG] NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL || "NOT SET");
+    console.log("🔧 [DEBUG] NODE_ENV:", process.env.NODE_ENV);
+  }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -46,11 +54,10 @@ export default function FileUploadZone() {
   }, []);
 
   const handleFileSelection = (selectedFile: File) => {
-    // Validate file type (CSV or Parquet)
     const validTypes = [
       "text/csv",
       "application/vnd.ms-excel",
-      "application/octet-stream", // Fallback for parquet on some OS
+      "application/octet-stream", // Fallback for parquet
     ];
     const isParquet = selectedFile.name.toLowerCase().endsWith(".parquet");
     const isCsv = selectedFile.name.toLowerCase().endsWith(".csv");
@@ -75,42 +82,58 @@ export default function FileUploadZone() {
   const uploadFile = async () => {
     if (!file) return;
 
+    console.log("=========================================");
+    console.log("📤 [DEBUG] STARTING UPLOAD PROCESS");
+    console.log("📄 [DEBUG] File Name:", file.name);
+    console.log("🗜️ [DEBUG] File Size:", file.size, "bytes");
+
     setUploadState("uploading");
 
     try {
-      // 1. Get current user session
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
+      // 1. Session Check
+      console.log("🔐 [DEBUG] Fetching Supabase session...");
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !session) {
+        console.error("❌ [DEBUG] Auth Error:", sessionError);
         throw new Error("Authentication required. Please log in.");
       }
+      console.log("✅ [DEBUG] Session active for user:", session.user.id);
 
       // 2. Prepare FormData
       const formData = new FormData();
       formData.append("file", file);
-      // Ensure the name is attached for the backend
       formData.append("name", file.name.replace(/\.[^/.]+$/, "")); 
 
-      // 3. Send to Backend via Next.js Proxy
-      // Using relative path triggers the proxy setup in next.config.mjs
-      const response = await fetch("/api/v1/datasets/upload", {
+      // 3. Construct Target URL
+      // We force the relative path here so the browser hits Next.js, 
+      // relying on next.config.mjs rewrites to proxy to Render.
+      const targetUrl = "/api/v1/datasets/upload";
+      
+      console.log("🌐 [DEBUG] Firing fetch request to:", targetUrl);
+      console.log("🌐 [DEBUG] Using Headers: Authorization Bearer [REDACTED]");
+
+      // 4. Execute Fetch
+      const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          // Let the browser set Content-Type so it generates the multipart boundary automatically
+          // Let browser set Content-Type for multipart/form-data boundary
         },
         body: formData,
       });
 
+      console.log("📡 [DEBUG] Response Status:", response.status);
+      console.log("📡 [DEBUG] Response OK:", response.ok);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Upload failed. Please try again.");
+        const errorText = await response.text();
+        console.error("❌ [DEBUG] Upload failed. Server responded with:", errorText);
+        throw new Error(`Upload failed (${response.status}): ${errorText.substring(0, 100)}`);
       }
 
       const result = await response.json();
+      console.log("✅ [DEBUG] Upload successful. Server returned:", result);
 
       setUploadState("success");
       toast({
@@ -118,7 +141,6 @@ export default function FileUploadZone() {
         description: `Dataset "${result.name}" has been ingested.`,
       });
 
-      // Reset file after a short delay
       setTimeout(() => {
         setFile(null);
         setUploadState("idle");
@@ -126,13 +148,23 @@ export default function FileUploadZone() {
       }, 3000);
       
     } catch (error: any) {
-      console.error("Upload error:", error);
+      console.error("🚨 [DEBUG] CATCH BLOCK TRIGGERED");
+      console.error("🚨 [DEBUG] Error Name:", error.name);
+      console.error("🚨 [DEBUG] Error Message:", error.message);
+      
+      if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
+         console.error("🚨 [DEBUG] DIAGNOSIS: The browser could not reach the endpoint. Check if next.config.mjs rewrite is active, or if CORS blocked it before the proxy.");
+      }
+
       setUploadState("error");
       toast({
         variant: "destructive",
         title: "Upload Failed",
         description: error.message || "An unexpected error occurred.",
       });
+    } finally {
+      console.log("🏁 [DEBUG] UPLOAD PROCESS FINISHED");
+      console.log("=========================================");
     }
   };
 
@@ -245,7 +277,7 @@ export default function FileUploadZone() {
       {uploadState === "error" && (
         <div className="flex items-center mt-4 p-3 text-sm text-red-800 bg-red-100 rounded-md dark:bg-red-900/30 dark:text-red-300">
           <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
-          There was a problem uploading your dataset.
+          There was a problem uploading your dataset. Check the console for debug logs.
         </div>
       )}
     </div>
