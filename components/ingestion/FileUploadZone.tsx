@@ -19,11 +19,13 @@ export default function FileUploadZone() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  // DEBUGGING: Run once on mount to check the environment
+  // ==========================================
+  // DEBUGGING: Check environment on mount
+  // ==========================================
   useEffect(() => {
-    console.log("🚀 [DEBUG] Component Mounted");
+    console.log("🚀 [DEBUG] FileUploadZone Mounted");
     console.log("🌍 [DEBUG] Window Origin:", typeof window !== "undefined" ? window.location.origin : "SSR");
-    console.log("🔧 [DEBUG] NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL || "NOT SET");
+    console.log("🔧 [DEBUG] NEXT_PUBLIC_API_URL from env:", process.env.NEXT_PUBLIC_API_URL || "NOT SET");
     console.log("🔧 [DEBUG] NODE_ENV:", process.env.NODE_ENV);
   }, []);
 
@@ -54,6 +56,7 @@ export default function FileUploadZone() {
   }, []);
 
   const handleFileSelection = (selectedFile: File) => {
+    console.log("📂 [DEBUG] File Selected:", selectedFile.name, "Type:", selectedFile.type, "Size:", selectedFile.size);
     const validTypes = [
       "text/csv",
       "application/vnd.ms-excel",
@@ -63,6 +66,7 @@ export default function FileUploadZone() {
     const isCsv = selectedFile.name.toLowerCase().endsWith(".csv");
 
     if (!validTypes.includes(selectedFile.type) && !isParquet && !isCsv) {
+      console.warn("⚠️ [DEBUG] Invalid file type detected:", selectedFile.type);
       toast({
         variant: "destructive",
         title: "Invalid file type",
@@ -85,7 +89,6 @@ export default function FileUploadZone() {
     console.log("=========================================");
     console.log("📤 [DEBUG] STARTING UPLOAD PROCESS");
     console.log("📄 [DEBUG] File Name:", file.name);
-    console.log("🗜️ [DEBUG] File Size:", file.size, "bytes");
 
     setUploadState("uploading");
 
@@ -104,21 +107,21 @@ export default function FileUploadZone() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("name", file.name.replace(/\.[^/.]+$/, "")); 
+      console.log("📦 [DEBUG] FormData prepared. Name appended.");
 
       // 3. Construct Target URL
-      // We force the relative path here so the browser hits Next.js, 
-      // relying on next.config.mjs rewrites to proxy to Render.
+      // EXTREMELY IMPORTANT: We do NOT use localhost here. We use the relative path 
+      // so it hits the Next.js server, which uses next.config.mjs to proxy to Render.
       const targetUrl = "/api/v1/datasets/upload";
       
-      console.log("🌐 [DEBUG] Firing fetch request to:", targetUrl);
-      console.log("🌐 [DEBUG] Using Headers: Authorization Bearer [REDACTED]");
+      console.log("🌐 [DEBUG] Firing fetch request to RELATIVE URL:", targetUrl);
 
       // 4. Execute Fetch
       const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${session.access_token}`,
-          // Let browser set Content-Type for multipart/form-data boundary
+          // Let the browser set the Content-Type header to inject the correct multipart boundary
         },
         body: formData,
       });
@@ -152,15 +155,16 @@ export default function FileUploadZone() {
       console.error("🚨 [DEBUG] Error Name:", error.name);
       console.error("🚨 [DEBUG] Error Message:", error.message);
       
-      if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError")) {
-         console.error("🚨 [DEBUG] DIAGNOSIS: The browser could not reach the endpoint. Check if next.config.mjs rewrite is active, or if CORS blocked it before the proxy.");
+      if (error.message.includes("Failed to fetch") || error.message.includes("NetworkError") || error.message.includes("CONNECTION_REFUSED")) {
+         console.error("🚨 [DEBUG] CRITICAL DIAGNOSIS: Connection refused or failed to fetch.");
+         console.error("🚨 [DEBUG] FIX: Ensure next.config.mjs has the 'rewrites' array deployed to Vercel.");
       }
 
       setUploadState("error");
       toast({
         variant: "destructive",
         title: "Upload Failed",
-        description: error.message || "An unexpected error occurred.",
+        description: error.message || "An unexpected error occurred. Check the console.",
       });
     } finally {
       console.log("🏁 [DEBUG] UPLOAD PROCESS FINISHED");
@@ -277,7 +281,7 @@ export default function FileUploadZone() {
       {uploadState === "error" && (
         <div className="flex items-center mt-4 p-3 text-sm text-red-800 bg-red-100 rounded-md dark:bg-red-900/30 dark:text-red-300">
           <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
-          There was a problem uploading your dataset. Check the console for debug logs.
+          There was a problem uploading your dataset. Check the developer console for details.
         </div>
       )}
     </div>
