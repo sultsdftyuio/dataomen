@@ -1,158 +1,228 @@
-// app/dashboard/page.tsx
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 "use client";
 
-import React, { useState } from "react";
-import { UploadCloud, MessageSquare, Database, Loader2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createBrowserClient } from "@supabase/ssr";
+import { 
+  LayoutDashboard, 
+  Database, 
+  Sparkles, 
+  Settings, 
+  LogOut, 
+  Bell, 
+  Search,
+  Menu,
+  X,
+  Activity,
+  Zap
+} from "lucide-react";
 
-export default function Dashboard() {
-  const [file, setFile] = useState<File | null>(null);
-  const [query, setQuery] = useState("");
-  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
-  const [results, setResults] = useState<any[] | null>(null);
-  const [sqlExecuted, setSqlExecuted] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+// Our Modular Components
+import { FileUploadZone } from "@/components/ingestion/FileUploadZone";
+import { DashboardOrchestrator } from "@/components/dashboard/DashboardOrchestrator";
 
-  // In production, grab tenant_id via your auth provider (e.g., Clerk)
-  const MOCK_TENANT_ID = "mock-tenant-123";
+// --- Types ---
+type ActiveTab = "overview" | "ingest" | "analyze" | "settings";
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file) return;
-    setLoading(true);
+export default function DashboardPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("ingest");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  
+  // In a full production app, this ID would be set dynamically after an upload succeeds, 
+  // or selected from a list of the user's previously uploaded datasets.
+  const [activeDatasetId, setActiveDatasetId] = useState<string>("latest-dataset-id");
 
-    const formData = new FormData();
-    formData.append("file", file);
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-    try {
-      // Connects to our Modular backend routes
-      const res = await fetch(`http://localhost:10000/api/v1/datasets/upload`, {
-        method: "POST",
-        headers: { "X-Tenant-ID": MOCK_TENANT_ID },
-        body: formData,
-      });
-      const data = await res.json();
-      setActiveDatasetId(data.id);
-      alert("File Processed & Parquet Created Successfully!");
-    } catch (error) {
-      console.error("Upload failed", error);
-    } finally {
-      setLoading(false);
+  // 1. Orchestration: Hydrate Auth State on Mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session) {
+        router.push("/login");
+      } else {
+        setUser(session.user);
+      }
+    };
+    checkAuth();
+  }, [router, supabase.auth]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
+
+  // --- UI Sub-Components ---
+  
+  const renderContent = () => {
+    switch (activeTab) {
+      case "ingest":
+        return (
+          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in zoom-in-95 duration-500">
+            <div className="text-center space-y-2 mb-8">
+              <h2 className="text-3xl font-bold tracking-tight text-foreground">Data Ingestion Engine</h2>
+              <p className="text-muted-foreground">Upload your raw CSV or JSON files to be converted into highly optimized Parquet modules.</p>
+            </div>
+            <FileUploadZone />
+            
+            <div className="mt-8 flex justify-center">
+              <button 
+                onClick={() => setActiveTab("analyze")}
+                className="text-sm text-primary font-medium hover:underline flex items-center"
+              >
+                Finished uploading? Proceed to AI Analysis <Sparkles className="w-4 h-4 ml-1" />
+              </button>
+            </div>
+          </div>
+        );
+      case "analyze":
+        return (
+          <div className="max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="mb-8 border-b pb-6">
+              <h2 className="text-3xl font-bold tracking-tight text-foreground flex items-center">
+                <Sparkles className="w-6 h-6 mr-3 text-primary" />
+                Generative Workspace
+              </h2>
+              <p className="text-muted-foreground mt-2">Ask natural language questions to generate instant, dynamic analytical dashboards.</p>
+            </div>
+            {/* Inject the Orchestrator */}
+            <DashboardOrchestrator datasetId={activeDatasetId} />
+          </div>
+        );
+      case "overview":
+      case "settings":
+      default:
+        return (
+          <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-4 animate-in fade-in duration-700">
+            <div className="p-6 bg-muted/30 rounded-full">
+              <Activity className="w-12 h-12 text-muted-foreground/50" />
+            </div>
+            <h3 className="text-xl font-semibold">Coming Soon</h3>
+            <p className="text-muted-foreground max-w-sm">This module is currently being optimized by our engineering team. Stick to Data Ingestion and AI Analysis for now.</p>
+          </div>
+        );
     }
   };
 
-  const handleQuery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeDatasetId || !query) return;
-    setLoading(true);
-
-    try {
-      const res = await fetch(`http://localhost:10000/api/v1/narrative/ask`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Tenant-ID": MOCK_TENANT_ID,
-        },
-        body: JSON.stringify({ dataset_id: activeDatasetId, query }),
-      });
-      const data = await res.json();
-      setResults(data.data);
-      setSqlExecuted(data.sql_executed);
-    } catch (error) {
-      console.error("Query failed", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // --- Main Render ---
   return (
-    <div className="min-h-screen bg-gray-50 p-8 font-sans">
-      <div className="max-w-5xl mx-auto space-y-8">
-        <header className="flex items-center space-x-3">
-          <Database className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">Analytical Engine</h1>
+    <div className="min-h-screen bg-background flex flex-col md:flex-row overflow-hidden">
+      
+      {/* Mobile Header */}
+      <div className="md:hidden flex items-center justify-between p-4 border-b bg-card">
+        <div className="flex items-center font-bold text-lg tracking-tight">
+          <Zap className="w-5 h-5 mr-2 text-primary" /> DataOmen
+        </div>
+        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 bg-muted rounded-md">
+          {isSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {/* Sidebar Navigation */}
+      <aside className={`
+        ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"} 
+        md:translate-x-0 fixed md:static inset-y-0 left-0 z-50 w-64 bg-card border-r border-border shadow-xl md:shadow-none transition-transform duration-300 ease-in-out flex flex-col
+      `}>
+        <div className="h-16 flex items-center px-6 border-b border-border/50">
+           <Zap className="w-6 h-6 mr-2 text-primary" />
+           <span className="font-extrabold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-500">
+             DataOmen
+           </span>
+        </div>
+        
+        <nav className="flex-1 overflow-y-auto py-6 px-4 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4 px-2">Analytics</p>
+          
+          <button 
+            onClick={() => { setActiveTab("overview"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors ${activeTab === "overview" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          >
+            <LayoutDashboard className="w-5 h-5" /> <span>Overview</span>
+          </button>
+          
+          <button 
+            onClick={() => { setActiveTab("ingest"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors ${activeTab === "ingest" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          >
+            <Database className="w-5 h-5" /> <span>Data Pipeline</span>
+          </button>
+
+          <button 
+            onClick={() => { setActiveTab("analyze"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors ${activeTab === "analyze" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          >
+            <Sparkles className="w-5 h-5" /> <span>Generative UI</span>
+          </button>
+
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-8 mb-4 px-2">System</p>
+          
+          <button 
+            onClick={() => { setActiveTab("settings"); setIsSidebarOpen(false); }}
+            className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-colors ${activeTab === "settings" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          >
+            <Settings className="w-5 h-5" /> <span>Settings</span>
+          </button>
+        </nav>
+
+        <div className="p-4 border-t border-border/50">
+          <div className="flex items-center justify-between bg-muted/30 p-3 rounded-xl border border-border/50">
+            <div className="flex flex-col overflow-hidden">
+              <span className="text-sm font-medium truncate">{user?.email || "Loading..."}</span>
+              <span className="text-xs text-muted-foreground">Pro Plan</span>
+            </div>
+            <button onClick={handleSignOut} className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors" title="Sign Out">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col min-w-0 bg-muted/10">
+        
+        {/* Top Header */}
+        <header className="h-16 hidden md:flex items-center justify-between px-8 bg-background/50 backdrop-blur-md border-b border-border/50 sticky top-0 z-40">
+          <div className="flex items-center flex-1 max-w-md bg-muted/50 rounded-full px-4 py-2 border border-border/50 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/50 transition-all">
+            <Search className="w-4 h-4 text-muted-foreground mr-2" />
+            <input 
+              type="text" 
+              placeholder="Search datasets, queries, or metrics..." 
+              className="bg-transparent border-0 focus:ring-0 outline-none text-sm w-full text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+          
+          <div className="flex items-center space-x-4 ml-4">
+            <button className="relative p-2 text-muted-foreground hover:text-foreground transition-colors">
+              <Bell className="w-5 h-5" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full animate-pulse"></span>
+            </button>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-primary to-purple-500 flex items-center justify-center text-white font-bold shadow-sm cursor-pointer hover:opacity-90 transition-opacity">
+              {user?.email ? user.email.charAt(0).toUpperCase() : "U"}
+            </div>
+          </div>
         </header>
 
-        {/* Upload Zone */}
-        <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <UploadCloud className="w-5 h-5 text-gray-500" /> Ingest Data
-          </h2>
-          <form onSubmit={handleUpload} className="flex gap-4 items-center">
-            <input
-              type="file"
-              accept=".csv,.xlsx"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-            />
-            <button
-              type="submit"
-              disabled={!file || loading}
-              className="bg-blue-600 text-white px-6 py-2 rounded-md font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Process Vector"}
-            </button>
-          </form>
-          {activeDatasetId && (
-            <p className="text-sm text-green-600 mt-3 font-medium">
-              Active Dataset ID: {activeDatasetId}
-            </p>
-          )}
-        </section>
+        {/* Dynamic Canvas */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-10 scroll-smooth">
+          {renderContent()}
+        </div>
+      </main>
 
-        {/* Natural Language Query Zone */}
-        <section className={`bg-white p-6 rounded-xl shadow-sm border border-gray-200 ${!activeDatasetId && "opacity-50 pointer-events-none"}`}>
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-gray-500" /> Contextual RAG Query
-          </h2>
-          <form onSubmit={handleQuery} className="flex gap-4">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g., What is the sum of revenue grouped by region?"
-              className="flex-1 border border-gray-300 rounded-md px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="bg-gray-900 text-white px-6 py-2 rounded-md font-medium hover:bg-gray-800 disabled:opacity-50"
-            >
-              Generate Insight
-            </button>
-          </form>
-
-          {/* Results Display */}
-          {sqlExecuted && (
-            <div className="mt-6 bg-gray-100 p-4 rounded-md text-sm font-mono text-gray-700 overflow-x-auto">
-              <strong>DuckDB SQL Executed:</strong>
-              <pre className="mt-2 text-blue-600">{sqlExecuted}</pre>
-            </div>
-          )}
-
-          {results && (
-            <div className="mt-6 overflow-x-auto rounded-md border border-gray-200">
-              <table className="min-w-full divide-y divide-gray-200 text-sm text-left">
-                <thead className="bg-gray-50">
-                  <tr>
-                    {Object.keys(results[0] || {}).map((key) => (
-                      <th key={key} className="px-4 py-3 font-medium text-gray-900">{key}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white">
-                  {results.map((row, i) => (
-                    <tr key={i}>
-                      {Object.values(row).map((val: any, j) => (
-                        <td key={j} className="px-4 py-3 text-gray-600">{String(val)}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 }
