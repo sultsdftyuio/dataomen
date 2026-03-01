@@ -1,141 +1,147 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { UploadCloud, Loader2, FileCheck2, AlertCircle } from "lucide-react";
+import React, { useState, useCallback, useRef } from "react";
+import { UploadCloud, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Strict Interface for Component Props
+// 1. Strict Type Definitions
 interface FileUploadZoneProps {
-  tenantId: string;
-  onUploadComplete: (fileKey: string, fileName: string) => void;
+  onUploadSuccess: (datasetId: string) => void;
 }
 
-export default function FileUploadZone({ tenantId, onUploadComplete }: FileUploadZoneProps) {
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
+export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const handleUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  // 2. Interaction & Computation Handler
+  const handleUpload = async (file: File) => {
     if (!file) return;
 
+    // Validate analytical file formats
+    const validTypes = [".csv", ".parquet"];
+    if (!validTypes.some((ext) => file.name.toLowerCase().endsWith(ext))) {
+      toast({
+        variant: "destructive",
+        title: "Invalid file format",
+        description: "For analytical efficiency, please upload a CSV or Parquet file.",
+      });
+      return;
+    }
+
     setIsUploading(true);
-    setUploadStatus("uploading");
+
+    const formData = new FormData();
+    formData.append("file", file);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://dataomen.onrender.com";
+      // Supabase Auth Integration: Grab the current session token to pass to the backend.
+      // (Adjust 'sb-access-token' to match whatever local storage key Supabase uses in your setup, 
+      // or if using a fetch wrapper/interceptor, you can remove the headers config).
+      const token = localStorage.getItem("sb-access-token") || localStorage.getItem("auth_token");
       
-      // Step 1: Security by Design - Request a Pre-Signed URL
-      // Fix: Removed 'Content-Type' header to prevent browser from sending an OPTIONS preflight
-      const presignedRes = await fetch(
-        `${backendUrl}/api/datasets/upload-url?filename=${encodeURIComponent(file.name)}&tenant_id=${encodeURIComponent(tenantId)}`,
-        { method: "GET" }
-      );
-
-      if (!presignedRes.ok) {
-        const errorData = await presignedRes.json().catch(() => ({}));
-        throw new Error(errorData.detail || `API Error: HTTP ${presignedRes.status}`);
-      }
-
-      const { upload_url, file_key } = await presignedRes.json();
-
-      // Step 2: Hybrid Performance Paradigm - Direct Client-to-Cloud Push
-      // Step 2: Hybrid Performance Paradigm - Direct Client-to-Cloud Push
-      const uploadRes = await fetch(upload_url, {
-        method: "PUT",
-        body: file,
+      const response = await fetch("/api/datasets/upload", {
+        method: "POST",
         headers: {
-          // MUST exactly match the ContentType signed by the Python StorageManager
-          "Content-Type": "application/octet-stream", 
+          ...(token && { Authorization: `Bearer ${token}` })
         },
+        body: formData,
       });
 
-      if (!uploadRes.ok) {
-        throw new Error("Direct cloud storage upload failed. Verify bucket CORS policy allows PUT from this origin.");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || "Upload failed");
       }
 
-      setUploadStatus("success");
+      const data = await response.json();
+      
       toast({
-        title: "Ingestion Successful",
-        description: `${file.name} securely streamed to cloud.`,
+        title: "Upload Successful",
+        description: `${file.name} is ready for analysis.`,
       });
 
-      // Step 3: Trigger analytical pipeline downstream
-      onUploadComplete(file_key, file.name);
-
+      // The Orchestration Layer: Alert the DashboardOrchestrator to swap states
+      onUploadSuccess(data.dataset_id);
+      
     } catch (error: any) {
-      console.error("Upload workflow failed:", error);
-      setUploadStatus("error");
       toast({
-        title: "Upload Pipeline Error",
-        description: error.message || "Failed to stream dataset.",
         variant: "destructive",
+        title: "Upload Error",
+        description: error.message,
       });
     } finally {
       setIsUploading(false);
-      event.target.value = "";
-      setTimeout(() => {
-        setUploadStatus("idle");
-      }, 3000);
     }
-  }, [tenantId, onUploadComplete, toast]);
+  };
+
+  // 3. Drag and Drop Interaction Event Handlers
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUpload(e.dataTransfer.files[0]);
+    }
+  }, []);
 
   return (
-    <div className="w-full">
-      <label 
-        className={`relative flex flex-col items-center justify-center w-full p-12 transition-all border-2 border-dashed rounded-xl cursor-pointer
-          ${isUploading ? 'border-blue-400 bg-blue-50/50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'}
-          ${uploadStatus === 'error' ? 'border-red-400 bg-red-50' : ''}
-          ${uploadStatus === 'success' ? 'border-green-400 bg-green-50' : ''}
-        `}
-      >
-        <input 
-          type="file" 
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-          onChange={handleUpload}
-          disabled={isUploading}
-          accept=".csv,.xlsx,.json,.parquet"
-        />
-        
-        {uploadStatus === "idle" && (
-          <div className="flex flex-col items-center space-y-3">
-            <div className="p-3 bg-white rounded-full shadow-sm">
-              <UploadCloud className="w-8 h-8 text-gray-500" />
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onClick={() => fileInputRef.current?.click()}
+      className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 ${
+        isUploading ? "cursor-not-allowed opacity-80" : "cursor-pointer"
+      } ${
+        isDragging
+          ? "border-blue-500 bg-blue-50"
+          : "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+      }`}
+    >
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept=".csv,.parquet"
+        onChange={(e) => {
+          if (e.target.files) handleUpload(e.target.files[0]);
+        }}
+        disabled={isUploading}
+      />
+      
+      <div className="flex flex-col items-center justify-center space-y-4">
+        {isUploading ? (
+          <>
+            <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
+            <div className="space-y-1">
+              <p className="text-lg font-medium text-gray-900">Uploading securely...</p>
+              <p className="text-sm text-gray-500">Preparing zero-copy processing via DuckDB</p>
             </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-gray-700">Click or drag dataset here</p>
-              <p className="mt-1 text-xs text-gray-500">
-                Analytical engines optimized for <span className="font-medium text-gray-700">Parquet</span>, CSV, and Excel.
+          </>
+        ) : (
+          <>
+            <div className="p-4 bg-blue-100 rounded-full">
+              <UploadCloud className="h-8 w-8 text-blue-600" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-lg font-medium text-gray-900">
+                Click or drag file to this area to upload
               </p>
+              <p className="text-sm text-gray-500">Supports CSV and Parquet datasets</p>
             </div>
-          </div>
+          </>
         )}
-
-        {uploadStatus === "uploading" && (
-          <div className="flex flex-col items-center space-y-3">
-            <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
-            <span className="text-sm font-medium text-blue-700 animate-pulse">Streaming direct-to-cloud...</span>
-          </div>
-        )}
-
-        {uploadStatus === "success" && (
-          <div className="flex flex-col items-center space-y-3">
-            <div className="p-3 bg-white rounded-full shadow-sm">
-              <FileCheck2 className="w-8 h-8 text-green-500" />
-            </div>
-            <span className="text-sm font-medium text-green-700">Dataset Secured</span>
-          </div>
-        )}
-
-        {uploadStatus === "error" && (
-          <div className="flex flex-col items-center space-y-3">
-            <div className="p-3 bg-white rounded-full shadow-sm">
-              <AlertCircle className="w-8 h-8 text-red-500" />
-            </div>
-            <span className="text-sm font-medium text-red-700">Pipeline Handshake Failed</span>
-          </div>
-        )}
-      </label>
+      </div>
     </div>
   );
 }

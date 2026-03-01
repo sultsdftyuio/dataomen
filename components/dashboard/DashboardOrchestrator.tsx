@@ -1,109 +1,71 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DynamicChartFactory } from './DynamicChartFactory';
-import { Loader2, Sparkles } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState } from "react";
+import FileUploadZone from "@/components/ingestion/FileUploadZone";
+import { DataPreview } from "@/components/dashboard/DataPreview";
+import { LayoutDashboard } from "lucide-react";
 
-interface WidgetLayout {
-  w: number;
-  h: number;
-}
+export default function DashboardOrchestrator() {
+  // State to track which dataset the user is currently working with
+  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
 
-interface DashboardWidget {
-  id: string;
-  type: 'kpi' | 'bar_chart' | 'line_chart' | 'pie_chart' | 'table';
-  title: string;
-  sql: string;
-  xAxis?: string;
-  yAxis?: string[];
-  layout: WidgetLayout;
-  data: any[];
-}
-
-interface DashboardConfig {
-  title: string;
-  widgets: DashboardWidget[];
-}
-
-interface DashboardOrchestratorProps {
-  datasetId: string;
-}
-
-export function DashboardOrchestrator({ datasetId }: DashboardOrchestratorProps) {
-  const [prompt, setPrompt] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [dashboard, setDashboard] = useState<DashboardConfig | null>(null);
-
-  const handleGenerate = async () => {
-    if (!prompt.trim()) return;
-    setLoading(true);
-    setDashboard(null);
-
-    try {
-      const res = await fetch(`/api/datasets/${datasetId}/dashboard`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      
-      if (!res.ok) throw new Error('Failed to generate dynamic dashboard');
-      
-      const data: DashboardConfig = await res.json();
-      setDashboard(data);
-      toast.success('Generative Dashboard constructed successfully!');
-    } catch (error: any) {
-      toast.error(error.message || 'An error occurred during generation.');
-    } finally {
-      setLoading(false);
-    }
+  // Interaction Handler: Triggered from the DataPreview component 
+  // when the user is ready to begin the Natural Language analysis.
+  const handleStartAnalysis = (datasetId: string) => {
+    console.log(`Starting AI analysis for dataset: ${datasetId}`);
+    // Next Step Integration: 
+    // Here you would typically toggle a state boolean (e.g., setChatMode(true))
+    // to mount your Chat/NL2SQL interface next to or below the data preview.
   };
 
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex items-center space-x-3 bg-card p-4 rounded-xl shadow-sm border">
-        <Sparkles className="w-5 h-5 text-primary" />
-        <Input 
-          placeholder="E.g., How is our marketing performing? Show spend over time and top campaigns." 
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          className="flex-1 border-0 focus-visible:ring-0 shadow-none bg-transparent"
-          onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-        />
-        <Button onClick={handleGenerate} disabled={loading || !prompt.trim()} className="rounded-full px-6">
-          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Analyze
-        </Button>
+    <div className="max-w-7xl mx-auto p-6 space-y-8 animate-in fade-in duration-500">
+      
+      {/* Header Section */}
+      <div className="flex items-center gap-3 border-b border-gray-200 pb-4">
+        <div className="p-2 bg-blue-50 rounded-lg">
+          <LayoutDashboard className="h-6 w-6 text-blue-600" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Workspace</h1>
+          <p className="text-gray-500 mt-1">
+            Upload your analytical data to begin exploring and chatting instantly.
+          </p>
+        </div>
       </div>
 
-      {dashboard && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <div className="flex items-center justify-between">
-             <h2 className="text-3xl font-bold tracking-tight text-foreground">{dashboard.title}</h2>
-          </div>
+      {/* The Modular Strategy: 
+        Render the ingestion zone. It operates as a black box and alerts 
+        the orchestrator via the callback when it finishes successfully.
+      */}
+      {!activeDatasetId && (
+        <div className="mt-8">
+          <FileUploadZone 
+            onUploadSuccess={(datasetId: string) => setActiveDatasetId(datasetId)} 
+          />
+        </div>
+      )}
+
+      {/* The Hybrid Performance Paradigm:
+        Once we have an active dataset, mount the preview component.
+        This component natively handles rendering massive DOM tables 
+        using the sticky headers and constrained viewport heights we built earlier.
+      */}
+      {activeDatasetId && (
+        <div className="mt-8 flex flex-col space-y-6">
+          <DataPreview 
+            datasetId={activeDatasetId} 
+            onStartAnalysis={handleStartAnalysis} 
+          />
           
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            {dashboard.widgets.map((widget) => (
-              <div 
-                key={widget.id} 
-                style={{ gridColumn: `span ${widget.layout.w} / span ${widget.layout.w}` }}
-                className="min-h-[200px]"
-              >
-                <Card className="h-full flex flex-col shadow-sm hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-2 border-b bg-muted/20">
-                    <CardTitle className="text-sm font-semibold text-muted-foreground flex justify-between">
-                      {widget.title}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex-1 flex flex-col justify-center pt-4">
-                     <DynamicChartFactory widget={widget} />
-                  </CardContent>
-                </Card>
-              </div>
-            ))}
+          {/* A soft reset option to clear the workspace */}
+          <div className="flex justify-end">
+            <button 
+              onClick={() => setActiveDatasetId(null)}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Clear workspace and upload a new file
+            </button>
           </div>
         </div>
       )}
