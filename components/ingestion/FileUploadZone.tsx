@@ -25,28 +25,21 @@ export default function FileUploadZone({ tenantId, onUploadComplete }: FileUploa
     try {
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://dataomen.onrender.com";
       
-      // Step 1: Security by Design - Request a Pre-Signed URL from Orchestration Layer
+      // Step 1: Security by Design - Request a Pre-Signed URL
+      // Fix: Removed 'Content-Type' header to prevent browser from sending an OPTIONS preflight
       const presignedRes = await fetch(
         `${backendUrl}/api/datasets/upload-url?filename=${encodeURIComponent(file.name)}&tenant_id=${encodeURIComponent(tenantId)}`,
-        { 
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            // Include Supabase auth tokens here if endpoint requires it
-            // "Authorization": `Bearer ${session.access_token}` 
-          }
-        }
+        { method: "GET" }
       );
 
       if (!presignedRes.ok) {
-        const errorData = await presignedRes.json();
+        const errorData = await presignedRes.json().catch(() => ({}));
         throw new Error(errorData.detail || `API Error: HTTP ${presignedRes.status}`);
       }
 
       const { upload_url, file_key } = await presignedRes.json();
 
       // Step 2: Hybrid Performance Paradigm - Direct Client-to-Cloud Push
-      // Bypass the FastAPI backend entirely to prevent memory bloat
       const uploadRes = await fetch(upload_url, {
         method: "PUT",
         body: file,
@@ -65,7 +58,7 @@ export default function FileUploadZone({ tenantId, onUploadComplete }: FileUploa
         description: `${file.name} securely streamed to cloud.`,
       });
 
-      // Step 3: Trigger analytical pipeline downstream (e.g., DuckDB schema inference)
+      // Step 3: Trigger analytical pipeline downstream
       onUploadComplete(file_key, file.name);
 
     } catch (error: any) {
@@ -78,10 +71,7 @@ export default function FileUploadZone({ tenantId, onUploadComplete }: FileUploa
       });
     } finally {
       setIsUploading(false);
-      // Reset input so the same file can be selected again if needed
       event.target.value = "";
-      
-      // Reset status after a delay
       setTimeout(() => {
         setUploadStatus("idle");
       }, 3000);
