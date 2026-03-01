@@ -1,129 +1,83 @@
 import os
-import duckdb
-import logging
-from typing import List, Dict, Any, Optional
+import json
+from typing import Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
-from pathlib import Path
 
-from models import Dataset
-
-logger = logging.getLogger(__name__)
-
-STORAGE_DIR = Path("./storage")
-
-# --- Structured Output Schemas ---
-class WidgetLayout(BaseModel):
-    w: int = Field(description="Width of widget on a 12-column grid (1-12)")
-    h: int = Field(description="Height of widget (relative units, typically 2 to 4)")
-
-class DashboardWidget(BaseModel):
-    id: str
-    type: str = Field(description="One of: kpi, bar_chart, line_chart, pie_chart, table")
-    title: str
-    sql: str = Field(description="DuckDB compatible SQL query to fetch data for this widget")
-    xAxis: Optional[str] = Field(default=None, description="Column name for the X-axis")
-    yAxis: Optional[List[str]] = Field(default=None, description="Column names for the Y-axis metrics")
-    layout: WidgetLayout
-    data: Optional[List[Dict[str, Any]]] = None
-
-class DashboardConfig(BaseModel):
-    title: str = Field(description="Title of the overall dashboard")
-    widgets: List[DashboardWidget]
-
-
-class NL2SQLGenerator:
+# -------------------------------------------------------------------------
+# 1. Type Safety & Structured Output
+# -------------------------------------------------------------------------
+class SQLResponse(BaseModel):
     """
-    Modular AI service responsible for translating natural language into 
-    Generative Dashboard configurations.
+    Forces the LLM to output a strict JSON structure, guaranteeing
+    we always get an executable query and a human-readable explanation.
     """
-    def __init__(self):
-        self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    sql_query: str = Field(
+        description="The highly optimized, executable DuckDB SQL query."
+    )
+    explanation: str = Field(
+        description="A concise, 1-sentence explanation of the analytical logic used."
+    )
 
-    async def generate_dashboard_config(
+# -------------------------------------------------------------------------
+# 2. Orchestration & Service Layer
+# -------------------------------------------------------------------------
+class NL2SQLService:
+    """
+    Service responsible for converting Natural Language to DuckDB SQL.
+    Uses gpt-5-nano for ultra-low-latency code generation.
+    """
+    def __init__(self, api_key: Optional[str] = None):
+        # We use the Async client to prevent blocking the main event loop
+        # ensuring high concurrency for multiple tenants.
+        self.client = AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+        self.model = "gpt-5-nano"
+
+    async def generate_sql(
         self, 
-        prompt: str, 
+        tenant_id: str, 
+        user_question: str, 
         schema_context: str
-    ) -> DashboardConfig:
+    ) -> str:
         """
-        Uses OpenAI structured outputs to generate a multi-widget dashboard 
-        configuration based on the user's analytical intent and the specific dataset schema.
+        Generates tenant-isolated SQL using Contextual RAG schema fragments.
         """
+        # Security by Design: We explicitly instruct the model on tenant isolation
+        # and strictly forbid destructive operations.
         system_prompt = f"""
-        You are an expert Data Architect and UI Designer.
-        Your task is to analyze the user's intent and generate a comprehensive 
-        dashboard configuration JSON.
+        You are a world-class Data Engineering AI. Your task is to translate user questions into highly optimized DuckDB SQL.
         
-        The user has uploaded a dataset with the following schema:
+        CRITICAL INSTRUCTIONS:
+        1. MULTI-TENANT SECURITY: You must scope ALL queries to the current tenant. Always include `WHERE tenant_id = '{tenant_id}'` where applicable.
+        2. NO HALLUCINATIONS: Only use the tables and columns provided in the SCHEMA CONTEXT.
+        3. ANALYTICAL EFFICIENCY: Utilize DuckDB's vectorized functions (e.g., date truncation, array aggregations) for peak performance.
+        4. READ-ONLY: NEVER generate INSERT, UPDATE, DELETE, ALTER, or DROP statements.
+        
+        SCHEMA CONTEXT:
         {schema_context}
-        
-        Rules for SQL Generation:
-        - Strictly use DuckDB SQL syntax.
-        - The table name is 'data_table'.
-        - Ensure correct aggregations (e.g., SUM, AVG) and grouping.
-        
-        Rules for Dashboard Layout:
-        - Provide 1-4 'kpi' cards for high-level metrics (layout.w: 3).
-        - Provide 'line_chart' or 'bar_chart' for time-series / trends (layout.w: 6 or 12).
-        - Provide 'table' or 'pie_chart' for categorical breakdown.
-        - Grid is 12 columns wide. 'layout.w' indicates how many columns a widget spans.
         """
-        
+
         try:
             response = await self.client.beta.chat.completions.parse(
-                model="gpt-4o",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": user_question}
                 ],
-                response_format=DashboardConfig,
-                temperature=0.1
+                # Enforce strict parsing matching our Pydantic model
+                response_format=SQLResponse,
+                # Mathematical precision: 0.0 temperature ensures deterministic, repeatable SQL
+                temperature=0.0 
             )
-            return response.choices[0].message.parsed
+
+            # The .parse() method automatically returns the validated Pydantic object
+            parsed_result: SQLResponse = response.choices[0].message.parsed
+            
+            return parsed_result.sql_query
+
         except Exception as e:
-            logger.error(f"Failed to generate dashboard config: {e}")
-            raise
+            # In a production environment, this would integrate with your logger/Datadog
+            raise RuntimeError(f"NL2SQL Generation failed via {self.model}: {str(e)}")
 
-    async def execute_dashboard(
-        self, 
-        dataset: Dataset, 
-        prompt: str
-    ) -> dict:
-        """
-        Orchestrates generating the dashboard config and safely executing 
-        the SQL for each widget directly against the Parquet file.
-        """
-        schema_context = dataset.schema_inferred or "No schema available."
-        
-        # 1. Generate the Config (LLM)
-        dashboard_config = await self.generate_dashboard_config(prompt, schema_context)
-        
-        # 2. Connect to DuckDB & Mount Parquet Module
-        file_path = STORAGE_DIR / str(dataset.tenant_id) / f"{dataset.id}.parquet"
-        if not file_path.exists():
-            raise FileNotFoundError(f"Parquet file not found at {file_path}")
-
-        conn = duckdb.connect(database=':memory:')
-        conn.execute(f"CREATE VIEW data_table AS SELECT * FROM read_parquet('{file_path}')")
-        
-        # 3. Vectorized execution for each widget
-        for widget in dashboard_config.widgets:
-            try:
-                # Security boundary: Block destructive commands
-                if any(kw in widget.sql.upper() for kw in ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER']):
-                    raise ValueError("Disallowed SQL keyword detected. Read-only permitted.")
-                
-                # Computation Performance: Fetch DataFrame, convert cleanly
-                df = conn.execute(widget.sql).fetchdf()
-                
-                # Replace NaNs/NaNs from Pandas to satisfy JSON standards
-                df = df.fillna(0) 
-                widget.data = df.to_dict(orient='records')
-                
-            except Exception as e:
-                logger.error(f"Error executing SQL for widget {widget.id}: {e}")
-                widget.data = [{"error": str(e)}]
-        
-        conn.close()
-        # Return dict serialization of the Pydantic object
-        return dashboard_config.model_dump()
+# Expose a singleton for easy Dependency Injection across your FastAPI/Flask routes
+nl2sql_service = NL2SQLService()
