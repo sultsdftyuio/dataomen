@@ -21,8 +21,8 @@ import {
   Zap
 } from "lucide-react";
 
-// 1. Strict Named Imports (Modular Strategy)
-import { FileUploadZone } from "@/components/ingestion/FileUploadZone";
+// 1. Strict Default Import (Modular Strategy)
+import FileUploadZone from "@/components/ingestion/FileUploadZone";
 import { DashboardOrchestrator } from "@/components/dashboard/DashboardOrchestrator";
 
 // --- Types ---
@@ -62,9 +62,10 @@ export default function DashboardPage() {
   };
 
   // --- Handlers ---
-  const handleUploadSuccess = (datasetPath: string) => {
+  // Updated to match the exact signature emitted by FileUploadZone
+  const handleUploadComplete = (fileKey: string, fileName: string) => {
     // Orchestrate the state handoff from the Ingestion Module to the Analytical Module
-    setActiveDatasetId(datasetPath);
+    setActiveDatasetId(fileKey);
     setActiveTab("analyze");
   };
 
@@ -83,7 +84,7 @@ export default function DashboardPage() {
             {user ? (
               <FileUploadZone 
                 tenantId={user.id} 
-                onUploadSuccess={handleUploadSuccess} 
+                onUploadComplete={handleUploadComplete} 
               />
             ) : (
               <div className="text-center py-12 text-sm text-muted-foreground border-2 border-dashed border-border rounded-xl">

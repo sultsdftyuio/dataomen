@@ -1,192 +1,149 @@
 "use client";
 
-import React, { useState, useCallback, useRef } from "react";
-import { UploadCloud, Loader2 } from "lucide-react";
+import React, { useState, useCallback } from "react";
+import { UploadCloud, Loader2, FileCheck2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// 1. Strict TypeScript Interface to resolve the IntrinsicAttributes error
-export interface FileUploadZoneProps {
+// Strict Interface for Component Props
+interface FileUploadZoneProps {
   tenantId: string;
-  onUploadSuccess?: (datasetPath: string) => void;
+  onUploadComplete: (fileKey: string, fileName: string) => void;
 }
 
-// 2. Named export to match your dashboard import
-export function FileUploadZone({ tenantId, onUploadSuccess }: FileUploadZoneProps) {
-  const [isDragging, setIsDragging] = useState<boolean>(false);
+export default function FileUploadZone({ tenantId, onUploadComplete }: FileUploadZoneProps) {
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadProgress, setUploadProgress] = useState<number>(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const { toast } = useToast();
 
-  // In production, sync this with your Next.js env variables
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:10000";
-
-  const handleUpload = async (file: File) => {
+  const handleUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    const allowedTypes = ["text/csv", "application/vnd.apache.parquet", "application/json", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
-    const fileExt = file.name.split('.').pop()?.toLowerCase();
-    
-    if (!allowedTypes.includes(file.type) && !['csv', 'parquet', 'json', 'xlsx'].includes(fileExt || '')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a CSV, JSON, XLSX, or Parquet file.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadStatus("uploading");
 
     try {
-      // ====================================================================
-      // PHASE 1: Request Cloudflare R2 Presigned URL from FastAPI Backend
-      // ====================================================================
-      setUploadProgress(20);
-      const urlRes = await fetch(`${API_BASE_URL}/api/datasets/upload-url?filename=${encodeURIComponent(file.name)}&tenant_id=${encodeURIComponent(tenantId)}`);
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://dataomen.onrender.com";
       
-      if (!urlRes.ok) {
-        throw new Error("Failed to provision secure storage allocation.");
+      // Step 1: Security by Design - Request a Pre-Signed URL from Orchestration Layer
+      const presignedRes = await fetch(
+        `${backendUrl}/api/datasets/upload-url?filename=${encodeURIComponent(file.name)}&tenant_id=${encodeURIComponent(tenantId)}`,
+        { 
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            // Include Supabase auth tokens here if endpoint requires it
+            // "Authorization": `Bearer ${session.access_token}` 
+          }
+        }
+      );
+
+      if (!presignedRes.ok) {
+        const errorData = await presignedRes.json();
+        throw new Error(errorData.detail || `API Error: HTTP ${presignedRes.status}`);
       }
-      
-      const { url, fields, storage_path } = await urlRes.json();
 
-      // ====================================================================
-      // PHASE 2: Direct-to-Storage Upload (Bypasses Vercel Limit completely)
-      // ====================================================================
-      setUploadProgress(40);
-      const formData = new FormData();
-      
-      // AWS S3/Cloudflare R2 requires these specific fields attached BEFORE the file
-      Object.entries(fields).forEach(([key, value]) => {
-        formData.append(key, value as string);
-      });
-      formData.append("file", file);
+      const { upload_url, file_key } = await presignedRes.json();
 
-      // Raw POST to Cloudflare R2 edge network
-      const uploadRes = await fetch(url, {
-        method: "POST",
-        body: formData,
+      // Step 2: Hybrid Performance Paradigm - Direct Client-to-Cloud Push
+      // Bypass the FastAPI backend entirely to prevent memory bloat
+      const uploadRes = await fetch(upload_url, {
+        method: "PUT",
+        body: file,
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+        },
       });
 
       if (!uploadRes.ok) {
-        throw new Error("Direct storage upload rejected by Edge network.");
+        throw new Error("Direct cloud storage upload failed. Verify bucket CORS policy allows PUT from this origin.");
       }
 
-      // ====================================================================
-      // PHASE 3: Notify Backend that Dataset is ready for DuckDB Vectorization
-      // ====================================================================
-      setUploadProgress(80);
-      const registerRes = await fetch(`${API_BASE_URL}/api/datasets/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          tenant_id: tenantId,
-          file_path: storage_path,
-          original_name: file.name,
-          file_size: file.size,
-        }),
-      });
-
-      if (!registerRes.ok) {
-        throw new Error("Backend failed to register and vectorize dataset.");
-      }
-
-      setUploadProgress(100);
+      setUploadStatus("success");
       toast({
-        title: "Upload Complete",
-        description: "Dataset successfully converted and registered.",
+        title: "Ingestion Successful",
+        description: `${file.name} securely streamed to cloud.`,
       });
 
-      // Pass the resulting identifier up to the DashboardOrchestrator
-      if (onUploadSuccess) onUploadSuccess(storage_path);
+      // Step 3: Trigger analytical pipeline downstream (e.g., DuckDB schema inference)
+      onUploadComplete(file_key, file.name);
 
     } catch (error: any) {
       console.error("Upload workflow failed:", error);
+      setUploadStatus("error");
       toast({
-        title: "Ingestion Error",
-        description: error.message || "An unexpected error occurred during ingestion.",
+        title: "Upload Pipeline Error",
+        description: error.message || "Failed to stream dataset.",
         variant: "destructive",
       });
     } finally {
       setIsUploading(false);
-      setUploadProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      // Reset input so the same file can be selected again if needed
+      event.target.value = "";
+      
+      // Reset status after a delay
+      setTimeout(() => {
+        setUploadStatus("idle");
+      }, 3000);
     }
-  };
-
-  // --- Drag and Drop Handlers ---
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleUpload(e.dataTransfer.files[0]);
-    }
-  }, [tenantId]);
+  }, [tenantId, onUploadComplete, toast]);
 
   return (
-    <div
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 ease-in-out cursor-pointer ${
-        isDragging 
-          ? "border-primary bg-primary/5 scale-[1.02]" 
-          : "border-border hover:border-primary/50 hover:bg-muted/30"
-      }`}
-      onClick={() => !isUploading && fileInputRef.current?.click()}
-    >
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={(e) => e.target.files && handleUpload(e.target.files[0])}
-        className="hidden"
-        accept=".csv,.parquet,.json,.xlsx"
-      />
-      
-      {isUploading ? (
-        <div className="flex flex-col items-center space-y-4 animate-in fade-in duration-300">
-          <Loader2 className="w-12 h-12 animate-spin text-primary" />
-          <div className="space-y-2 w-full max-w-xs">
-            <p className="text-sm font-medium text-foreground">Optimizing & Vectorizing...</p>
-            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-              <div 
-                className="bg-primary h-2 rounded-full transition-all duration-300 ease-out" 
-                style={{ width: `${uploadProgress}%` }}
-              />
+    <div className="w-full">
+      <label 
+        className={`relative flex flex-col items-center justify-center w-full p-12 transition-all border-2 border-dashed rounded-xl cursor-pointer
+          ${isUploading ? 'border-blue-400 bg-blue-50/50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'}
+          ${uploadStatus === 'error' ? 'border-red-400 bg-red-50' : ''}
+          ${uploadStatus === 'success' ? 'border-green-400 bg-green-50' : ''}
+        `}
+      >
+        <input 
+          type="file" 
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+          onChange={handleUpload}
+          disabled={isUploading}
+          accept=".csv,.xlsx,.json,.parquet"
+        />
+        
+        {uploadStatus === "idle" && (
+          <div className="flex flex-col items-center space-y-3">
+            <div className="p-3 bg-white rounded-full shadow-sm">
+              <UploadCloud className="w-8 h-8 text-gray-500" />
             </div>
-            <p className="text-xs text-muted-foreground text-right">{uploadProgress}%</p>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-700">Click or drag dataset here</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Analytical engines optimized for <span className="font-medium text-gray-700">Parquet</span>, CSV, and Excel.
+              </p>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center space-y-4 pointer-events-none">
-          <div className="p-4 bg-primary/10 rounded-full text-primary">
-            <UploadCloud className="w-8 h-8" />
+        )}
+
+        {uploadStatus === "uploading" && (
+          <div className="flex flex-col items-center space-y-3">
+            <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+            <span className="text-sm font-medium text-blue-700 animate-pulse">Streaming direct-to-cloud...</span>
           </div>
-          <div className="space-y-1">
-            <p className="text-base font-semibold text-foreground">
-              Click or drag a file to orchestrate
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Supports CSV, XLSX, JSON, and Parquet. Securely isolated for Tenant: <span className="font-mono text-xs">{tenantId.slice(0, 8)}...</span>
-            </p>
+        )}
+
+        {uploadStatus === "success" && (
+          <div className="flex flex-col items-center space-y-3">
+            <div className="p-3 bg-white rounded-full shadow-sm">
+              <FileCheck2 className="w-8 h-8 text-green-500" />
+            </div>
+            <span className="text-sm font-medium text-green-700">Dataset Secured</span>
           </div>
-        </div>
-      )}
+        )}
+
+        {uploadStatus === "error" && (
+          <div className="flex flex-col items-center space-y-3">
+            <div className="p-3 bg-white rounded-full shadow-sm">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <span className="text-sm font-medium text-red-700">Pipeline Handshake Failed</span>
+          </div>
+        )}
+      </label>
     </div>
   );
 }
