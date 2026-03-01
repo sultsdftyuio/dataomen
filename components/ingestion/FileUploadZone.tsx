@@ -40,11 +40,13 @@ export default function FileUploadZone({ tenantId, onUploadComplete }: FileUploa
       const { upload_url, file_key } = await presignedRes.json();
 
       // Step 2: Hybrid Performance Paradigm - Direct Client-to-Cloud Push
+      // Step 2: Hybrid Performance Paradigm - Direct Client-to-Cloud Push
       const uploadRes = await fetch(upload_url, {
         method: "PUT",
         body: file,
         headers: {
-          "Content-Type": file.type || "application/octet-stream",
+          // MUST exactly match the ContentType signed by the Python StorageManager
+          "Content-Type": "application/octet-stream", 
         },
       });
 
