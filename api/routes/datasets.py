@@ -5,16 +5,28 @@ from pydantic import BaseModel, Field
 
 # The Modular Strategy: Abstracting underlying storage tech (Cloudflare R2 / AWS S3)
 from api.services.storage_manager import StorageManager
+
 # The Hybrid Performance Paradigm: DuckDB for validation/analysis
-from api.services.duckdb_validator import DuckDBValidator 
+try:
+    from api.services.duckdb_validator import DuckDBValidator 
+    validator = DuckDBValidator()
+except ImportError:
+    # Graceful fallback if DuckDB isn't fully configured
+    validator = None
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-storage_manager = StorageManager()
-validator = DuckDBValidator()
 
-# Type-Safe Schemas
+# Instantiate storage manager gracefully. 
+# If it fails (e.g. missing keys), we catch it here so the server doesn't crash on startup.
+try:
+    storage_manager = StorageManager()
+except Exception as e:
+    logger.error(f"CRITICAL: StorageManager failed to boot. {str(e)}")
+    storage_manager = None
+
+# --- Type-Safe Schemas ---
 class UploadUrlResponse(BaseModel):
     upload_url: str
     file_key: str
@@ -32,6 +44,8 @@ class IngestResponse(BaseModel):
     message: str
 
 
+# --- Routes ---
+
 @router.get("/upload-url", response_model=UploadUrlResponse)
 async def get_upload_url(
     filename: str = Query(..., description="The name of the file to be uploaded"), 
@@ -42,6 +56,13 @@ async def get_upload_url(
     Generates a pre-signed URL for direct client-to-cloud storage upload.
     This bypasses the FastAPI compute layer, preventing large memory overheads.
     """
+    if not storage_manager:
+        # Surface exact configuration errors directly to the frontend
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="StorageManager is offline. Check Render Environment Variables for missing keys."
+        )
+
     if not filename or not tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
@@ -65,9 +86,10 @@ async def get_upload_url(
         
     except Exception as e:
         logger.error(f"Error generating presigned URL for tenant {tenant_id}: {str(e)}")
+        # Return the EXACT error string so the frontend can display it in the UI toast
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Failed to generate secure upload pipeline."
+            detail=f"Storage error: {str(e)}"
         )
 
 
@@ -78,6 +100,12 @@ async def register_dataset(request: IngestRequest):
     Called AFTER the client successfully uploads to the presigned URL.
     Registers the dataset, infers schema, and prepares it for vectorized operations.
     """
+    if not storage_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="StorageManager is offline."
+        )
+
     try:
         # 1. Fetch a temporary/streaming reference from StorageManager
         download_url = storage_manager.generate_presigned_download_url(
@@ -85,10 +113,13 @@ async def register_dataset(request: IngestRequest):
             expiration_seconds=300
         )
         
+        schema_info = {}
+        row_count = 0
+
         # 2. Hybrid Performance: Use DuckDB to infer schema directly from the cloud stream (HTTPFS)
-        # This prevents us from having to download the entire file into Render's memory
-        schema_info = validator.infer_schema(download_url)
-        row_count = validator.count_rows(download_url)
+        if validator:
+            schema_info = validator.infer_schema(download_url)
+            row_count = validator.count_rows(download_url)
         
         # 3. Here you would register the dataset metadata into Supabase 
         # e.g., db.register_dataset(request.tenant_id, request.file_name, request.file_key, schema_info)
@@ -107,16 +138,20 @@ async def register_dataset(request: IngestRequest):
             detail=f"Data ingestion pipeline failed: {str(e)}"
         )
 
+
 @router.get("/", response_model=List[dict])
 async def list_datasets(tenant_id: str = Query(...)):
     """
     Security by Design:
     Retrieves all datasets isolated specifically to the requesting tenant.
     """
+    if not storage_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="StorageManager is offline."
+        )
+
     try:
-        # Here you would typically query Supabase using the tenant_id
-        # db.get_datasets_by_tenant(tenant_id)
-        
         # Placeholder returning storage objects directly as a fallback
         files = storage_manager.list_files(prefix=f"{tenant_id}/datasets/")
         return [{"file_key": f, "status": "available"} for f in files]
@@ -125,5 +160,5 @@ async def list_datasets(tenant_id: str = Query(...)):
         logger.error(f"Failed to list datasets for tenant {tenant_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve datasets."
+            detail=f"Failed to retrieve datasets: {str(e)}"
         )
