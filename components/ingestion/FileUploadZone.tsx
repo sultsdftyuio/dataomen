@@ -1,204 +1,162 @@
-'use client'
+import React, { useState } from 'react';
+import { UploadCloud, CheckCircle, AlertTriangle, File as FileIcon } from 'lucide-react';
+import axios from 'axios';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { supabase } from '@/lib/utils';
+import { toast } from 'sonner';
 
-import React, { useState, useCallback } from 'react'
-import { UploadCloud, AlertCircle, Loader2 } from 'lucide-react'
-import { useDropzone } from 'react-dropzone'
-import { createBrowserClient } from '@supabase/ssr'
+export const FileUploadZone = ({ onUploadSuccess }: { onUploadSuccess: (datasetId: string) => void }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
-interface FileUploadZoneProps {
-  onUploadSuccess: (datasetId: string) => void
-}
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
 
-export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps) {
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
 
-  const handleUpload = useCallback(async (file: File) => {
-    setIsUploading(true)
-    setError(null)
-    setUploadProgress(0)
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const uploadFile = async () => {
+    if (!file) return;
+
+    setUploadStatus('uploading');
+    setUploadProgress(0);
 
     try {
-      // 1. Initialize Supabase client securely
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      
-      const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-      if (sessionError || !session) {
-        throw new Error('Authentication required to upload datasets.')
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please log in.');
       }
 
-      // 2. Prepare Payload
-      const formData = new FormData()
-      formData.append('file', file)
+      const formData = new FormData();
+      formData.append('file', file);
 
-      // 3. Execute the upload via XMLHttpRequest for native progress events
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || ''
-      const endpoint = `${baseUrl}/api/datasets/upload`
-
-      const result = await new Promise<any>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-
-        // Track upload progress
-        xhr.upload.addEventListener('progress', (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded * 100) / event.total)
-            setUploadProgress(progress)
-          }
-        })
-
-        // Handle completion
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              resolve(JSON.parse(xhr.responseText))
-            } catch (e) {
-              resolve(xhr.responseText)
-            }
-          } else {
-            try {
-              const errorResponse = JSON.parse(xhr.responseText)
-              reject(new Error(errorResponse.detail || 'Upload failed'))
-            } catch (e) {
-              reject(new Error(`Upload failed with status ${xhr.status}`))
-            }
-          }
-        })
-
-        // Handle network errors
-        xhr.addEventListener('error', () => {
-          reject(new Error('Network error occurred during upload. Check your API connection.'))
-        })
-
-        xhr.open('POST', endpoint)
-        
-        // Inject the Supabase JWT for FastAPI's `get_current_user` dependency
-        xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
-        
-        // Browser sets Content-Type automatically for FormData boundaries
-        xhr.send(formData)
-      })
-
-      // 4. Pass the datasetId back to the orchestrator
-      const finalDatasetId = result.dataset_id || result.id
-      if (!finalDatasetId) {
-         throw new Error("Backend did not return a valid dataset ID.")
-      }
+      // Clean the API URL securely to avoid double-slashes resolving to 404
+      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       
-      onUploadSuccess(finalDatasetId)
-
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred during ingestion.')
-      console.error('Upload Error:', err)
-    } finally {
-      setIsUploading(false)
-      if (error) setUploadProgress(0)
-    }
-  }, [onUploadSuccess, error])
-
-  const onDrop = useCallback(
-    (acceptedFiles: File[], fileRejections: any[]) => {
-      setError(null) // Reset errors on new attempt
-
-      // 1. Handle actual files that were dropped
-      if (acceptedFiles.length > 0) {
-        const file = acceptedFiles[0]
-        const filename = file.name.toLowerCase()
-        
-        // FIX: Added Excel extensions to the validation check
-        if (
-          !filename.endsWith('.csv') && 
-          !filename.endsWith('.parquet') && 
-          !filename.endsWith('.xlsx') && 
-          !filename.endsWith('.xls')
-        ) {
-          setError('Invalid file type. Only CSV, Parquet, and Excel (.xlsx, .xls) files are supported.')
-          return
+      const response = await axios.post(`${API_URL}/api/datasets/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        onUploadProgress: (progressEvent) => {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total ?? file.size));
+          setUploadProgress(percentCompleted);
         }
-        
-        handleUpload(file)
-        return
-      }
+      });
 
-      // 2. Catch and display exactly why a file might be rejected by dropzone limits
-      if (fileRejections.length > 0) {
-        const rejection = fileRejections[0]
-        const errorMsg = rejection.errors.map((e: any) => e.message).join(', ')
-        setError(`File rejected: ${errorMsg}`)
+      setUploadStatus('success');
+      toast.success('Dataset uploaded successfully!');
+      
+      if (response.data && response.data.dataset_id) {
+        onUploadSuccess(response.data.dataset_id);
       }
-    },
-    [handleUpload]
-  )
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    maxFiles: 1,
-    multiple: false,
-    disabled: isUploading
-  })
+    } catch (error: any) {
+      console.error('Upload Error:', error);
+      setUploadStatus('error');
+      setErrorMessage(error.response?.data?.detail || error.message || 'An error occurred during upload.');
+      toast.error('Upload failed. Please try again.');
+    }
+  };
 
   return (
     <div className="w-full">
-      <div
-        {...getRootProps()}
-        className={`relative flex flex-col items-center justify-center w-full p-12 border-2 border-dashed rounded-xl transition-all duration-200 ease-in-out ${
-          isUploading ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
-        } ${
-          isDragActive
-            ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10'
-            : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+      <div 
+        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ease-in-out ${
+          isDragging ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-muted-foreground/30 hover:border-primary/50'
         }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
-        <input {...getInputProps()} />
-
-        {isUploading ? (
-          <div className="flex flex-col items-center space-y-4">
-            <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-            <div className="flex flex-col items-center space-y-1">
-              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                Transferring to analytical engine...
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {uploadProgress}%
-              </p>
-              <div className="w-48 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2">
-                <div
-                  className="h-full bg-blue-500 transition-all duration-300 ease-out"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-            </div>
+        {uploadStatus === 'success' ? (
+          <div className="flex flex-col items-center justify-center space-y-3 py-6">
+            <CheckCircle className="w-12 h-12 text-green-500 animate-in zoom-in" />
+            <h3 className="text-lg font-medium">Upload Complete</h3>
+            <p className="text-sm text-muted-foreground">{file?.name}</p>
           </div>
         ) : (
-          <div className="flex flex-col items-center space-y-4 text-center">
-            <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full">
-              <UploadCloud className="w-8 h-8 text-slate-500 dark:text-slate-400" />
+          <div className="flex flex-col items-center justify-center space-y-4">
+            <div className="p-4 rounded-full bg-muted/50 text-primary">
+              {file ? <FileIcon className="w-8 h-8" /> : <UploadCloud className="w-8 h-8" />}
             </div>
-            <div className="space-y-1">
-              <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
-                Click or drag file to this area to upload
-              </p>
-              {/* FIX: Updated helper text for the UI */}
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Supports CSV, Parquet, and Excel datasets
+            
+            <div>
+              <h3 className="text-lg font-medium mb-1">
+                {file ? file.name : 'Drag & drop your dataset here'}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Supports CSV, Excel, and Parquet files up to 50MB'}
               </p>
             </div>
+
+            {!file && (
+              <>
+                <div className="flex items-center w-full max-w-xs my-2">
+                  <div className="flex-1 border-t border-muted"></div>
+                  <span className="px-3 text-xs text-muted-foreground uppercase">Or</span>
+                  <div className="flex-1 border-t border-muted"></div>
+                </div>
+                <Button variant="outline" onClick={() => document.getElementById('file-upload')?.click()}>
+                  Browse Files
+                </Button>
+                <input 
+                  type="file" 
+                  id="file-upload" 
+                  className="hidden" 
+                  accept=".csv,.xlsx,.xls,.parquet"
+                  onChange={handleFileSelect}
+                />
+              </>
+            )}
+
+            {file && uploadStatus === 'idle' && (
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" onClick={() => setFile(null)}>Cancel</Button>
+                <Button onClick={uploadFile}>Process Dataset</Button>
+              </div>
+            )}
+
+            {uploadStatus === 'uploading' && (
+              <div className="w-full max-w-xs space-y-2 pt-4">
+                <div className="flex justify-between text-sm font-medium">
+                  <span>Uploading...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <Progress value={uploadProgress} className="h-2" />
+              </div>
+            )}
+
+            {uploadStatus === 'error' && (
+              <div className="flex items-center gap-2 text-destructive text-sm mt-4 bg-destructive/10 px-4 py-2 rounded-md">
+                <AlertTriangle className="w-4 h-4" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {error && (
-        <div className="mt-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="text-sm font-medium text-red-800 dark:text-red-200">Upload failed</h4>
-            <p className="text-sm text-red-600 dark:text-red-300 mt-1">{error}</p>
-          </div>
-        </div>
-      )}
     </div>
-  )
-}
+  );
+};
