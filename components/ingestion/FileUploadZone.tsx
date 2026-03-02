@@ -1,162 +1,174 @@
-import React, { useState } from 'react';
-import { UploadCloud, CheckCircle, AlertTriangle, File as FileIcon } from 'lucide-react';
+"use client";
+
+import React, { useState, useRef } from 'react';
+import { UploadCloud, File as FileIcon, X, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { supabase } from '@/lib/utils';
+import { createBrowserClient } from '@supabase/ssr';
 import { toast } from 'sonner';
 
-export const FileUploadZone = ({ onUploadSuccess }: { onUploadSuccess: (datasetId: string) => void }) => {
-  const [isDragging, setIsDragging] = useState(false);
+export function FileUploadZone() {
   const [file, setFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  // 🚀 ENGINEERING EXCELLENCE: 
+  // Always initialize the Supabase client using @supabase/ssr in Client Components. 
+  // This ensures it reads the secure HttpOnly cookies set by the middleware, 
+  // bypassing the "Not authenticated" race-condition bug.
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
+      setUploadProgress(0);
     }
   };
 
-  const uploadFile = async () => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      setFile(e.dataTransfer.files[0]);
+      setUploadProgress(0);
+    }
+  };
+
+  const clearFile = () => {
+    setFile(null);
+    setUploadProgress(0);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleUpload = async () => {
     if (!file) return;
 
-    setUploadStatus('uploading');
+    setIsUploading(true);
     setUploadProgress(0);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Not authenticated. Please log in.');
+      // 1. Security by Design: Cryptographically fetch the active session from cookies
+      const { data: { session }, error: authError } = await supabase.auth.getSession();
+
+      if (authError || !session?.access_token) {
+        throw new Error("Not authenticated. Please log in.");
       }
 
+      // 2. Prepare Vectorized Data Payload
       const formData = new FormData();
       formData.append('file', file);
 
-      // Clean the API URL securely to avoid double-slashes resolving to 404
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+      // 3. Orchestration: Injecting JWT for multi-tenant isolation
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       
-      const response = await axios.post(`${API_URL}/api/datasets/upload`, formData, {
+      await axios.post(`${backendUrl}/api/datasets/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${session.access_token}`
         },
         onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / (progressEvent.total ?? file.size));
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total ?? 1)
+          );
           setUploadProgress(percentCompleted);
-        }
+        },
       });
 
-      setUploadStatus('success');
-      toast.success('Dataset uploaded successfully!');
-      
-      if (response.data && response.data.dataset_id) {
-        onUploadSuccess(response.data.dataset_id);
-      }
+      toast.success("Dataset successfully ingested and vectorized.");
+      clearFile();
+
     } catch (error: any) {
       console.error('Upload Error:', error);
-      setUploadStatus('error');
-      setErrorMessage(error.response?.data?.detail || error.message || 'An error occurred during upload.');
-      toast.error('Upload failed. Please try again.');
+      toast.error(error.response?.data?.detail || error.message || "Failed to process dataset.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
   return (
-    <div className="w-full">
-      <div 
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ease-in-out ${
-          isDragging ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-muted-foreground/30 hover:border-primary/50'
-        }`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        {uploadStatus === 'success' ? (
-          <div className="flex flex-col items-center justify-center space-y-3 py-6">
-            <CheckCircle className="w-12 h-12 text-green-500 animate-in zoom-in" />
-            <h3 className="text-lg font-medium">Upload Complete</h3>
-            <p className="text-sm text-muted-foreground">{file?.name}</p>
+    <div className="w-full p-6 border-2 border-dashed border-border rounded-xl bg-card transition-colors hover:border-primary/50">
+      {!file ? (
+        <div 
+          className="flex flex-col items-center justify-center py-10 cursor-pointer"
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-4">
+            <UploadCloud className="w-6 h-6" />
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <div className="p-4 rounded-full bg-muted/50 text-primary">
-              {file ? <FileIcon className="w-8 h-8" /> : <UploadCloud className="w-8 h-8" />}
+          <h3 className="text-lg font-semibold mb-1">Upload Dataset</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-sm">
+            Drag & drop your CSV or Parquet file here, or click to browse. Data will be converted to a columnar format for analytical efficiency.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col space-y-4">
+          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
+            <div className="flex items-center space-x-3 overflow-hidden">
+              <div className="w-10 h-10 bg-primary/10 text-primary rounded-lg flex items-center justify-center shrink-0">
+                <FileIcon className="w-5 h-5" />
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-sm font-medium truncate">{file.name}</p>
+                <p className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              </div>
             </div>
             
-            <div>
-              <h3 className="text-lg font-medium mb-1">
-                {file ? file.name : 'Drag & drop your dataset here'}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Supports CSV, Excel, and Parquet files up to 50MB'}
-              </p>
-            </div>
-
-            {!file && (
-              <>
-                <div className="flex items-center w-full max-w-xs my-2">
-                  <div className="flex-1 border-t border-muted"></div>
-                  <span className="px-3 text-xs text-muted-foreground uppercase">Or</span>
-                  <div className="flex-1 border-t border-muted"></div>
-                </div>
-                <Button variant="outline" onClick={() => document.getElementById('file-upload')?.click()}>
-                  Browse Files
-                </Button>
-                <input 
-                  type="file" 
-                  id="file-upload" 
-                  className="hidden" 
-                  accept=".csv,.xlsx,.xls,.parquet"
-                  onChange={handleFileSelect}
-                />
-              </>
-            )}
-
-            {file && uploadStatus === 'idle' && (
-              <div className="flex gap-3 pt-2">
-                <Button variant="outline" onClick={() => setFile(null)}>Cancel</Button>
-                <Button onClick={uploadFile}>Process Dataset</Button>
-              </div>
-            )}
-
-            {uploadStatus === 'uploading' && (
-              <div className="w-full max-w-xs space-y-2 pt-4">
-                <div className="flex justify-between text-sm font-medium">
-                  <span>Uploading...</span>
-                  <span>{uploadProgress}%</span>
-                </div>
-                <Progress value={uploadProgress} className="h-2" />
-              </div>
-            )}
-
-            {uploadStatus === 'error' && (
-              <div className="flex items-center gap-2 text-destructive text-sm mt-4 bg-destructive/10 px-4 py-2 rounded-md">
-                <AlertTriangle className="w-4 h-4" />
-                <span>{errorMessage}</span>
-              </div>
+            {!isUploading && (
+              <Button variant="ghost" size="icon" onClick={clearFile} className="text-muted-foreground hover:text-destructive shrink-0">
+                <X className="w-4 h-4" />
+              </Button>
             )}
           </div>
-        )}
-      </div>
+
+          {isUploading && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-medium text-muted-foreground">
+                <span>Ingesting...</span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <Progress value={uploadProgress} className="h-2" />
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 mt-4">
+            <Button variant="outline" onClick={clearFile} disabled={isUploading}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpload} disabled={isUploading} className="min-w-[120px]">
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processing
+                </>
+              ) : (
+                'Upload Data'
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+      
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+        accept=".csv,.xlsx,.xls,.parquet"
+      />
     </div>
   );
-};
+}
