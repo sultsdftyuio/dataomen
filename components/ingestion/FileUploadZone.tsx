@@ -1,165 +1,183 @@
-"use client";
+'use client'
 
-import React, { useState, useCallback, useRef } from "react";
-import { UploadCloud, Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState, useCallback } from 'react'
+import { UploadCloud, AlertCircle, Loader2 } from 'lucide-react'
+import { useDropzone } from 'react-dropzone'
+import { createBrowserClient } from '@supabase/ssr'
 
-// 1. Strict Type Definitions
 interface FileUploadZoneProps {
-  onUploadSuccess: (datasetId: string) => void;
+  // FIX: Renamed to match the parent component's exact prop and type signature
+  onUploadSuccess: (datasetId: string) => void
 }
 
 export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps) {
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  
-  // Ref to programmatically trigger the hidden native file input
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
 
-  // 2. Drag Event Handlers (Must prevent default to stop browser from opening files)
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
-
-  // 3. File Processing & Upload Logic
-  const processFile = async (file: File) => {
-    // Validate file type (CSV or Parquet)
-    const validTypes = [
-      "text/csv", 
-      "application/vnd.apache.parquet",
-      "application/octet-stream" // Fallback for some OS Parquet bindings
-    ];
-    const validExtensions = [".csv", ".parquet"];
-    
-    const isValidType = validTypes.includes(file.type) || 
-                        validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
-
-    if (!isValidType) {
-      toast({
-        title: "Invalid file type",
-        description: "Only CSV and Parquet datasets are supported.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsUploading(true);
+  const handleUpload = useCallback(async (file: File) => {
+    setIsUploading(true)
+    setError(null)
+    setUploadProgress(0)
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // Sending to your FastAPI/Next.js ingestion route
-      const response = await fetch("/api/datasets/upload", {
-        method: "POST",
-        body: formData,
-        // Include authorization headers here if necessary for multi-tenant isolation
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.detail || "Upload failed on the server.");
-      }
-
-      const data = await response.json();
+      // 1. Initialize Supabase client securely on the client-side
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       
-      toast({
-        title: "Upload Successful",
-        description: `${file.name} has been securely uploaded and is ready for analysis.`,
-      });
+      const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-      // Trigger the parent callback to refresh data/navigate
-      if (data.dataset_id) {
-        onUploadSuccess(data.dataset_id);
+      if (sessionError || !session) {
+        throw new Error('Authentication required to upload datasets.')
       }
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      toast({
-        title: "Upload Failed",
-        description: error.message || "An unexpected error occurred during upload.",
-        variant: "destructive"
-      });
+
+      // 2. Prepare Payload
+      const formData = new FormData()
+      formData.append('file', file)
+
+      // 3. Execute the upload via XMLHttpRequest for native progress events
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || ''
+      const endpoint = `${baseUrl}/api/datasets/upload`
+
+      const result = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+
+        // Track upload progress
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded * 100) / event.total)
+            setUploadProgress(progress)
+          }
+        })
+
+        // Handle completion
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              resolve(JSON.parse(xhr.responseText))
+            } catch (e) {
+              resolve(xhr.responseText)
+            }
+          } else {
+            try {
+              const errorResponse = JSON.parse(xhr.responseText)
+              reject(new Error(errorResponse.detail || 'Upload failed'))
+            } catch (e) {
+              reject(new Error(`Upload failed with status ${xhr.status}`))
+            }
+          }
+        })
+
+        // Handle network errors
+        xhr.addEventListener('error', () => {
+          reject(new Error('Network error occurred during upload'))
+        })
+
+        xhr.open('POST', endpoint)
+        
+        // Inject the Supabase JWT for FastAPI's `get_current_user` dependency
+        xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
+        
+        // Let the browser automatically set Content-Type with the correct multipart boundary
+        xhr.send(formData)
+      })
+
+      // 4. Pass the datasetId back to the orchestrator to trigger polling/refresh
+      const finalDatasetId = result.dataset_id || result.id
+      if (!finalDatasetId) {
+         throw new Error("Backend did not return a valid dataset ID.")
+      }
+      
+      onUploadSuccess(finalDatasetId)
+
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred during ingestion.')
+      console.error('Upload Error:', err)
     } finally {
-      setIsUploading(false);
-      // Reset input to allow consecutive uploads of the same file if needed
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+      setIsUploading(false)
+      if (error) setUploadProgress(0)
+    }
+  }, [onUploadSuccess, error])
+
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      if (acceptedFiles.length > 0) {
+        handleUpload(acceptedFiles[0])
       }
-    }
-  };
+    },
+    [handleUpload]
+  )
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFile(e.dataTransfer.files[0]);
-    }
-  }, []);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      processFile(e.target.files[0]);
-    }
-  };
-
-  const handleZoneClick = () => {
-    // Simulate a click on the hidden file input
-    fileInputRef.current?.click();
-  };
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/csv': ['.csv'],
+      'application/vnd.apache.parquet': ['.parquet'],
+    },
+    maxFiles: 1,
+    multiple: false,
+    disabled: isUploading
+  })
 
   return (
-    <div
-      onClick={handleZoneClick}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={`
-        relative flex flex-col items-center justify-center w-full h-64 p-6 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-200 ease-in-out
-        ${isDragging ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20" : "border-slate-300 dark:border-slate-700 hover:border-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50"}
-        ${isUploading ? "opacity-50 pointer-events-none" : ""}
-      `}
-    >
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        className="hidden"
-        accept=".csv,.parquet,text/csv,application/vnd.apache.parquet"
-      />
-      
-      {isUploading ? (
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-          <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-            Ingesting dataset into the analytical engine...
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center space-y-4 text-center">
-          <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800">
-            <UploadCloud className="w-10 h-10 text-slate-500 dark:text-slate-400" />
+    <div className="w-full">
+      <div
+        {...getRootProps()}
+        className={`relative flex flex-col items-center justify-center w-full p-12 border-2 border-dashed rounded-xl transition-all duration-200 ease-in-out ${
+          isUploading ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+        } ${
+          isDragActive
+            ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10'
+            : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+        }`}
+      >
+        <input {...getInputProps()} />
+
+        {isUploading ? (
+          <div className="flex flex-col items-center space-y-4">
+            <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+            <div className="flex flex-col items-center space-y-1">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Transferring to analytical engine...
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {uploadProgress}%
+              </p>
+              <div className="w-48 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
           </div>
-          <div className="space-y-1">
-            <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
-              Click or drag file to this area to upload
-            </p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Supports CSV and Parquet datasets
-            </p>
+        ) : (
+          <div className="flex flex-col items-center space-y-4 text-center">
+            <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full">
+              <UploadCloud className="w-8 h-8 text-slate-500 dark:text-slate-400" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
+                Click or drag file to this area to upload
+              </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Supports CSV and Parquet datasets
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-4 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 flex items-start space-x-3">
+          <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="text-sm font-medium text-red-800 dark:text-red-200">Upload failed</h4>
+            <p className="text-sm text-red-600 dark:text-red-300 mt-1">{error}</p>
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }
