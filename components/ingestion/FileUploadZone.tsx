@@ -108,9 +108,14 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
         const file = acceptedFiles[0]
         const filename = file.name.toLowerCase()
         
-        // Manual extension validation bypasses OS/Browser MIME-type quirks
-        if (!filename.endsWith('.csv') && !filename.endsWith('.parquet')) {
-          setError('Invalid file type. Only .csv and .parquet files are supported.')
+        // FIX: Added Excel extensions to the validation check
+        if (
+          !filename.endsWith('.csv') && 
+          !filename.endsWith('.parquet') && 
+          !filename.endsWith('.xlsx') && 
+          !filename.endsWith('.xls')
+        ) {
+          setError('Invalid file type. Only CSV, Parquet, and Excel (.xlsx, .xls) files are supported.')
           return
         }
         
@@ -130,8 +135,6 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    // FIX: Removed the strict `accept` mapping to bypass OS-specific MIME type browser bugs.
-    // Validation is now handled safely and predictably inside `onDrop` via file extension.
     maxFiles: 1,
     multiple: false,
     disabled: isUploading
@@ -178,8 +181,9 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
               <p className="text-base font-semibold text-slate-700 dark:text-slate-200">
                 Click or drag file to this area to upload
               </p>
+              {/* FIX: Updated helper text for the UI */}
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Supports CSV and Parquet datasets
+                Supports CSV, Parquet, and Excel datasets
               </p>
             </div>
           </div>
