@@ -6,7 +6,6 @@ import { useDropzone } from 'react-dropzone'
 import { createBrowserClient } from '@supabase/ssr'
 
 interface FileUploadZoneProps {
-  // FIX: Renamed to match the parent component's exact prop and type signature
   onUploadSuccess: (datasetId: string) => void
 }
 
@@ -21,7 +20,7 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
     setUploadProgress(0)
 
     try {
-      // 1. Initialize Supabase client securely on the client-side
+      // 1. Initialize Supabase client securely
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
       const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       
@@ -71,7 +70,7 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
 
         // Handle network errors
         xhr.addEventListener('error', () => {
-          reject(new Error('Network error occurred during upload'))
+          reject(new Error('Network error occurred during upload. Check your API connection.'))
         })
 
         xhr.open('POST', endpoint)
@@ -79,11 +78,11 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
         // Inject the Supabase JWT for FastAPI's `get_current_user` dependency
         xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`)
         
-        // Let the browser automatically set Content-Type with the correct multipart boundary
+        // Browser sets Content-Type automatically for FormData boundaries
         xhr.send(formData)
       })
 
-      // 4. Pass the datasetId back to the orchestrator to trigger polling/refresh
+      // 4. Pass the datasetId back to the orchestrator
       const finalDatasetId = result.dataset_id || result.id
       if (!finalDatasetId) {
          throw new Error("Backend did not return a valid dataset ID.")
@@ -101,9 +100,29 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
   }, [onUploadSuccess, error])
 
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
+    (acceptedFiles: File[], fileRejections: any[]) => {
+      setError(null) // Reset errors on new attempt
+
+      // 1. Handle actual files that were dropped
       if (acceptedFiles.length > 0) {
-        handleUpload(acceptedFiles[0])
+        const file = acceptedFiles[0]
+        const filename = file.name.toLowerCase()
+        
+        // Manual extension validation bypasses OS/Browser MIME-type quirks
+        if (!filename.endsWith('.csv') && !filename.endsWith('.parquet')) {
+          setError('Invalid file type. Only .csv and .parquet files are supported.')
+          return
+        }
+        
+        handleUpload(file)
+        return
+      }
+
+      // 2. Catch and display exactly why a file might be rejected by dropzone limits
+      if (fileRejections.length > 0) {
+        const rejection = fileRejections[0]
+        const errorMsg = rejection.errors.map((e: any) => e.message).join(', ')
+        setError(`File rejected: ${errorMsg}`)
       }
     },
     [handleUpload]
@@ -111,10 +130,8 @@ export default function FileUploadZone({ onUploadSuccess }: FileUploadZoneProps)
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'text/csv': ['.csv'],
-      'application/vnd.apache.parquet': ['.parquet'],
-    },
+    // FIX: Removed the strict `accept` mapping to bypass OS-specific MIME type browser bugs.
+    // Validation is now handled safely and predictably inside `onDrop` via file extension.
     maxFiles: 1,
     multiple: false,
     disabled: isUploading
