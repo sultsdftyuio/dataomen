@@ -13,37 +13,40 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Client-Side Route Protection
+  // Client-Side Session Hydration
+  // We strictly fetch the user for UI purposes (displaying the email). 
+  // We DO NOT redirect on failure here to prevent race conditions with the SSR Middleware.
   useEffect(() => {
-    const checkAuth = async () => {
+    const fetchUserContext = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // Using getUser() instead of getSession() for absolute cryptographic certainty
+        const { data: { user }, error } = await supabase.auth.getUser();
         
-        if (error || !session) {
-          toast.error("Please log in to access the dashboard.");
-          router.push('/login');
-          return;
+        if (user) {
+          setUserEmail(user.email || 'Analyst');
         }
-
-        setUserEmail(session.user.email || 'Analyst');
       } catch (err) {
-        console.error('Auth Check Error:', err);
-        router.push('/login');
+        console.error('Session Hydration Error:', err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkAuth();
-  }, [router]);
+    fetchUserContext();
+  }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    toast.success("Logged out successfully");
-    router.push('/login'); // Redirect to login or landing page
+    try {
+      await supabase.auth.signOut();
+      toast.success("Logged out successfully");
+      router.push('/login'); 
+      router.refresh(); // Clear the router cache to ensure protected routes are locked
+    } catch (error) {
+      toast.error("Failed to log out");
+    }
   };
 
-  // Prevent flashing the dashboard UI before confirming the user is authenticated
+  // Prevent flashing the dashboard UI before confirming the user is hydrated
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
