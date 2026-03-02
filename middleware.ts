@@ -1,18 +1,15 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-/**
- * Modular Strategy: Orchestrate Supabase session refreshing.
- * This middleware ensures that every request to a protected route has a valid session
- * or attempts to refresh it via cookies before reaching the page or action.
- */
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
+  // 1. Create a mutable response object to attach cookies to
+  let supabaseResponse = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
 
+  // 2. Initialize the Supabase Server Client securely
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -22,42 +19,63 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+          // A: Update request cookies for downstream Next.js Server Components
+          cookiesToSet.forEach(({ name, value, options }) =>
+            request.cookies.set(name, value)
+          )
+          
+          // B: Update response cookies for the user's browser
+          supabaseResponse = NextResponse.next({
+            request,
           })
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, options)
           )
         },
       },
     }
   )
 
-  // This refreshes the session if it's expired - critical for Server Actions
+  // 3. Security by Design: Cryptographically verify user token with Supabase API
+  // Do NOT use getSession() as it relies on potentially spoofed/stale local cookies.
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Optional: Add logic here to redirect unauthenticated users away from /dashboard
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/login', request.url))
+  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || 
+                      request.nextUrl.pathname.startsWith('/register') || 
+                      request.nextUrl.pathname.startsWith('/forgot-password');
+                      
+  const isProtectedRoute = request.nextUrl.pathname.startsWith('/dashboard');
+
+  // 4. Route Orchestration
+  if (!user && isProtectedRoute) {
+    // Attempting to hit dashboard without auth -> Kick to login
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
   }
 
-  return response
+  if (user && isAuthRoute) {
+    // Logged in but hitting login/register -> Kick to dashboard
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
+  // 5. Always return the mutated response so the browser syncs the refreshed token
+  return supabaseResponse
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for:
-     * 1. /api/* - Your FastAPI backend routes (prevents Not Found/404 errors)
-     * 2. _next/static - Static files
-     * 3. _next/image - Image optimization files
-     * 4. favicon.ico, sitemap.xml, robots.txt
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * Feel free to modify this pattern to include more paths.
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
