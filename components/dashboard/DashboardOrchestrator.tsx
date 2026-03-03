@@ -1,269 +1,240 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DataPreview } from './DataPreview';
 import { DynamicChartFactory } from './DynamicChartFactory';
 import { FileUploadZone } from '../ingestion/FileUploadZone';
-import { Bot, Send, Settings, TerminalSquare, AlertTriangle, X } from 'lucide-react';
+import { Bot, Send, Settings, TerminalSquare, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/lib/utils';
-import axios from 'axios';
 import { toast } from 'sonner';
+import { createBrowserClient } from '@supabase/ssr';
+import axios from 'axios';
 
-// Import the Modular Deep Link Hook
-import { useAnomalyDeepLink } from '@/hooks/useAnomalyDeepLink';
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  isError?: boolean;
+}
 
-export const DashboardOrchestrator = () => {
-  const [datasetId, setDatasetId] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState('');
+interface ChartConfig {
+  type: "bar" | "line" | "scatter" | "area" | "pie";
+  xKey: string;
+  yKeys: string[];
+  data: any[];
+}
+
+// 1. Strict Type Safety: Use Named Export to resolve the missing member error
+export function DashboardOrchestrator() {
+  const [messages, setMessages] = useState<Message[]>([
+    { id: 'init', role: 'assistant', content: 'Hello! Please upload a dataset to begin our analysis.' }
+  ]);
+  const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [insightString, setInsightString] = useState<string | null>(null);
-  const [chartData, setChartData] = useState<any[]>([]);
-  const [chartType, setChartType] = useState<'bar' | 'line' | 'scatter' | 'area' | 'pie'>('bar');
-  const [columns, setColumns] = useState<{ x: string, y: string | string[] }>({ x: '', y: '' });
+  
+  // 2. Orchestration Layer: Centralized state for analytical context
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [chartConfig, setChartConfig] = useState<ChartConfig | null>(null);
+  const [globalFilters, setGlobalFilters] = useState<Record<string, string>>({});
 
-  // 1. New State for Analytical Efficiency: DuckDB Global Filters
-  const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // 2. Interaction Paradigm: Hydrate the Deep Link State
-  const { anomalyContext, isHydrating, clearAnomalyContext } = useAnomalyDeepLink();
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
-  // 3. Synchronize AI Context with UI
+  // Auto-scroll chat to bottom smoothly
   useEffect(() => {
-    if (anomalyContext) {
-      // Auto-mount the dataset if the anomaly specifies it
-      if (anomalyContext.agent_id) { // Assuming agent maps to a dataset
-        setDatasetId(anomalyContext.agent_id); 
-      }
-
-      // Pre-fill the AI's diagnostic summary into the chat UI natively
-      setInsightString(anomalyContext.diagnostic_summary);
-
-      // Convert the array of top variance drivers into an active key-value filter dict
-      // E.g. { "Region": "EU", "Product": "Enterprise" }
-      if (anomalyContext.filters) {
-        const newFilters = anomalyContext.filters.reduce((acc: any, driver: any) => {
-          acc[driver.dimension] = driver.category_name;
-          return acc;
-        }, {});
-        setActiveFilters(newFilters);
-      }
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
-  }, [anomalyContext]);
+  }, [messages]);
 
-  const handleClearInvestigation = () => {
-    clearAnomalyContext();
-    setActiveFilters({});
-    setInsightString(null);
-    setChartData([]); // Reset to clean exploratory state
+  const handleUploadSuccess = (fileId: string) => {
+    setActiveFileId(fileId);
+    setMessages(prev => [
+      ...prev,
+      { 
+        id: Date.now().toString(), 
+        role: 'assistant', 
+        content: `Dataset ingested successfully. You can now ask me to analyze it, detect anomalies, or generate charts.` 
+      }
+    ]);
   };
 
-  const handleDatasetUploaded = (id: string) => {
-    setDatasetId(id);
-  };
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim()) return;
 
-  const executeAnalysis = async () => {
-    if (!datasetId || !prompt) return;
-
+    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: input };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
     setIsProcessing(true);
-    setInsightString(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      // Defensive URL formatting
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-
-      // Step 1: Query Execution
-      const queryRes = await axios.post(`${API_URL}/api/query/execute`, {
-        dataset_id: datasetId,
-        prompt: prompt,
-        // Security & Accuracy: Pass active filters to backend so LLM SQL is strictly bound to context
-        context_filters: activeFilters 
-      }, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
-      });
-
-      const { data, columns: resultColumns, sql_query } = queryRes.data;
-
-      // Smart Chart Type Selection based on data shape (heuristic)
-      let selectedChartType: 'bar' | 'line' | 'scatter' | 'pie' | 'area' = 'bar';
-      if (data.length > 0) {
-         const keys = Object.keys(data[0]);
-         const stringCols = keys.filter(k => typeof data[0][k] === 'string');
-         const numCols = keys.filter(k => typeof data[0][k] === 'number');
-         
-         if (stringCols.length > 0 && numCols.length > 0) {
-             setColumns({ x: stringCols[0], y: numCols });
-         } else if (numCols.length >= 2) {
-             selectedChartType = 'scatter';
-             setColumns({ x: numCols[0], y: numCols.slice(1) });
-         }
+      if (!activeFileId) {
+        throw new Error("Please upload a dataset first.");
       }
 
-      setChartData(data);
-      setChartType(selectedChartType);
-
-      // Step 2: Narrative Generation
-      const narrativeRes = await axios.post(`${API_URL}/api/narrative/generate`, {
-        dataset_id: datasetId,
-        query: sql_query,
-        results: data.slice(0, 20) // Provide a restricted context to the LLM to save tokens
-      }, {
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      // Analytical Efficiency: Route through semantic processing
+      const response = await axios.post('/api/query', {
+        query: userMessage.content,
+        file_id: activeFileId
       });
 
-      setInsightString(narrativeRes.data.narrative);
+      const data = response.data;
+      
+      const assistantMessage: Message = { 
+        id: (Date.now() + 1).toString(), 
+        role: 'assistant', 
+        content: data.narrative || "Analysis complete."
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+
+      // If the LLM determines a chart is mathematically optimal, update the visual canvas
+      if (data.chart_config) {
+        setChartConfig({
+          type: data.chart_config.type,
+          xKey: data.chart_config.xKey,
+          yKeys: data.chart_config.yKeys,
+          data: data.chart_config.data || data.data || []
+        });
+      }
 
     } catch (error: any) {
-      console.error('Analysis error:', error);
-      toast.error(error.response?.data?.detail || 'Failed to execute analysis.');
+      console.error('Query Error:', error);
+      setMessages(prev => [
+        ...prev, 
+        { 
+          id: (Date.now() + 1).toString(), 
+          role: 'assistant', 
+          content: error.response?.data?.detail || error.message || "Failed to process query.",
+          isError: true 
+        }
+      ]);
+      toast.error('Query Execution Failed');
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-4rem)] bg-background">
+    <div className="flex h-[calc(100vh-4rem)] bg-background">
       
-      {/* Dynamic Alert Banner: Triggers when navigated via Slack Deep Link */}
-      {isHydrating ? (
-          <Alert className="mx-4 mt-4 bg-slate-50 border-slate-200 animate-pulse">
-              <Bot className="h-4 w-4" />
-              <AlertTitle>Hydrating AI Diagnostic Context...</AlertTitle>
-          </Alert>
-      ) : anomalyContext ? (
-          <Alert variant="destructive" className="mx-4 mt-4 bg-red-50 border-red-200">
-              <AlertTriangle className="h-4 w-4" color="#dc2626" />
-              <AlertTitle className="text-red-800 font-bold flex justify-between items-center">
-                  <span>Investigating Anomaly: {anomalyContext.metric} on {anomalyContext.date}</span>
-                  <Button variant="outline" size="sm" onClick={handleClearInvestigation} className="h-8 border-red-300 text-red-700 hover:bg-red-100">
-                      <X className="w-3 h-3 mr-1" /> Clear Context
-                  </Button>
-              </AlertTitle>
-              <AlertDescription className="text-red-700 mt-2">
-                  Data is currently pre-filtered to the top variance drivers: 
-                  <strong> {Object.entries(activeFilters).map(([k,v]) => `${k}=${v}`).join(', ')}</strong>
-              </AlertDescription>
-          </Alert>
-      ) : null}
-
-      <div className="flex flex-1 overflow-hidden px-4 pb-4 gap-4">
-        {/* Left Sidebar - Chat/Commands */}
-        <Card className="w-1/3 flex flex-col shadow-sm border-muted">
-          <div className="p-4 border-b bg-muted/20">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Bot className="w-5 h-5 text-primary" />
-              Analysis Assistant
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">Upload data and ask questions in natural language.</p>
+      {/* Left Panel: Chat Interface */}
+      <div className="w-1/3 border-r flex flex-col bg-card/50">
+        <div className="p-4 border-b bg-card flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Bot className="w-5 h-5 text-primary" />
+            <h2 className="font-semibold text-sm">AI Copilot</h2>
           </div>
+        </div>
 
-          <ScrollArea className="flex-1 p-4">
-            {!datasetId ? (
-              <FileUploadZone onUploadSuccess={handleDatasetUploaded} />
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-primary/10 text-primary p-3 rounded-lg text-sm border border-primary/20">
-                  Dataset ready! Ask a question to analyze it.
+        <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+          <div className="space-y-4">
+            {messages.map((msg) => (
+              <div 
+                key={msg.id} 
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+              >
+                <div 
+                  className={`max-w-[85%] px-4 py-2 rounded-lg text-sm ${
+                    msg.role === 'user' 
+                      ? 'bg-primary text-primary-foreground rounded-br-none' 
+                      : msg.isError 
+                        ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-bl-none'
+                        : 'bg-muted rounded-bl-none'
+                  }`}
+                >
+                  {msg.content}
                 </div>
-                
-                {insightString && (
-                  <div className={`p-4 rounded-lg text-sm leading-relaxed border ${anomalyContext ? 'bg-red-50 border-red-200 text-red-900' : 'bg-muted border-border'}`}>
-                    <h3 className="font-semibold mb-2 flex items-center gap-2">
-                      <Settings className="w-4 h-4" /> 
-                      {anomalyContext ? "Diagnostic Summary" : "AI Insight"}
-                    </h3>
-                    {insightString}
-                  </div>
-                )}
+              </div>
+            ))}
+            {isProcessing && (
+              <div className="flex items-start">
+                <div className="bg-muted px-4 py-3 rounded-lg rounded-bl-none flex items-center space-x-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Analyzing...</span>
+                </div>
               </div>
             )}
-          </ScrollArea>
-
-          <div className="p-4 border-t bg-background">
-            <div className="flex gap-2">
-              <Input 
-                placeholder="e.g. 'Show me monthly revenue trend'" 
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                disabled={!datasetId || isProcessing}
-                onKeyDown={(e) => e.key === 'Enter' && executeAnalysis()}
-                className="flex-1"
-              />
-              <Button 
-                onClick={executeAnalysis} 
-                disabled={!datasetId || isProcessing || !prompt}
-              >
-                {isProcessing ? <Bot className="w-4 h-4 animate-bounce" /> : <Send className="w-4 h-4" />}
-              </Button>
-            </div>
           </div>
-        </Card>
+        </ScrollArea>
 
-        {/* Right Content - Visualizations & Data */}
-        <Card className="flex-1 flex flex-col shadow-sm border-muted overflow-hidden">
-          <Tabs defaultValue="visual" className="flex-1 flex flex-col h-full">
-            <div className="border-b px-4 py-2 bg-muted/20 flex items-center justify-between">
-              <TabsList>
-                <TabsTrigger value="visual">Visualization</TabsTrigger>
-                <TabsTrigger value="data">Raw Data</TabsTrigger>
-              </TabsList>
-            </div>
+        <div className="p-4 bg-card border-t">
+          <form onSubmit={handleSendMessage} className="flex space-x-2">
+            <Input 
+              value={input} 
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask about your data..." 
+              className="flex-1"
+              disabled={isProcessing}
+            />
+            <Button type="submit" size="icon" disabled={isProcessing || !input.trim()}>
+              <Send className="w-4 h-4" />
+            </Button>
+          </form>
+        </div>
+      </div>
 
-            <TabsContent value="visual" className="flex-1 p-6 m-0 outline-none overflow-y-auto">
-                <div className="mb-4">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TerminalSquare className="w-4 h-4 text-primary" />
-                    Result Visualization
-                  </CardTitle>
-                  <CardDescription>Auto-generated from your natural language query</CardDescription>
-                </div>
-                
-                <div className="h-[450px] w-full">
-                  {chartData.length > 0 || anomalyContext ? (
-                    // We pass globalFilters down so DynamicChartFactory can apply them
-                    // natively to DuckDB if it needs to fallback to direct queries
-                    <DynamicChartFactory 
-                      data={chartData} 
-                      type={chartType} 
-                      xKey={columns.x} 
-                      yKeys={Array.isArray(columns.y) ? columns.y : [columns.y]}
-                      globalFilters={activeFilters}
-                      fileId={datasetId || ''} 
-                    />
-                  ) : (
-                    <div className="h-full flex items-center justify-center border-2 border-dashed border-muted rounded-lg text-muted-foreground text-sm flex-col gap-2">
-                      <Bot className="w-8 h-8 opacity-20" />
-                      <p>Run a query to see visualizations</p>
-                    </div>
-                  )}
-                </div>
-            </TabsContent>
+      {/* Right Panel: Data Canvas */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="p-4 border-b flex justify-between items-center bg-card">
+          <h1 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+            <TerminalSquare className="w-5 h-5 text-muted-foreground" />
+            Analytical Canvas
+          </h1>
+          <Button variant="outline" size="sm">
+            <Settings className="w-4 h-4 mr-2" />
+            Options
+          </Button>
+        </div>
 
-            <TabsContent value="data" className="flex-1 p-6 m-0 outline-none overflow-y-auto">
-                <div className="mb-4">
-                  <CardTitle className="text-base">Data Table</CardTitle>
+        <ScrollArea className="flex-1 p-6 bg-muted/10">
+          <div className="max-w-5xl mx-auto space-y-6">
+            
+            {/* Phase 1: Ingestion Layer */}
+            {!activeFileId && (
+               <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                 <FileUploadZone onUploadSuccess={handleUploadSuccess} />
+               </div>
+            )}
+
+            {/* Phase 2: Visual Computation Layer */}
+            {activeFileId && chartConfig && chartConfig.data && chartConfig.data.length > 0 && (
+              <div className="p-6 border rounded-xl bg-card shadow-sm animate-in fade-in duration-500">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-sm">Generated Visualization</h3>
+                  <Button variant="ghost" size="icon" onClick={() => setChartConfig(null)}>
+                    <X className="w-4 h-4 text-muted-foreground" />
+                  </Button>
                 </div>
-                <div className="h-[450px] w-full border rounded-md">
-                   {chartData.length > 0 ? (
-                      <DataPreview data={chartData} />
-                   ) : (
-                      <div className="h-full flex items-center justify-center text-muted-foreground text-sm bg-muted/10">
-                        No data available
-                      </div>
-                   )}
-                </div>
-            </TabsContent>
-          </Tabs>
-        </Card>
+                {/* Dynamically renders via our functional chart factory */}
+                <DynamicChartFactory 
+                  type={chartConfig.type}
+                  xKey={chartConfig.xKey}
+                  yKeys={chartConfig.yKeys}
+                  data={chartConfig.data}
+                  globalFilters={globalFilters}
+                  fileId={activeFileId}
+                />
+              </div>
+            )}
+
+            {/* Phase 3: Raw Data Fragment Layer */}
+            {activeFileId && (
+              <div className="animate-in fade-in duration-700">
+                <DataPreview fileId={activeFileId} />
+              </div>
+            )}
+
+          </div>
+        </ScrollArea>
       </div>
     </div>
   );
-};
+}
