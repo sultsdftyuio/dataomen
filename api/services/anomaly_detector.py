@@ -1,89 +1,101 @@
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any, Union
+import logging
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+import duckdb
+
+logger = logging.getLogger(__name__)
 
 class AnomalyDetector:
-    """
-    Phase 4: The Math Engine
-    Stateless functional methods for detecting statistically significant deviations.
-    
-    Methodology Applied:
-    - Vectorization over Loops: 100% Pandas/NumPy C-extension execution.
-    - Mathematical Precision: Utilizes Exponential Moving Average (EMA) and rolling 
-      volatility to respect local trends and seasonality, preventing false positives 
-      on naturally trending datasets.
-    """
-    
-    @staticmethod
-    def detect_outliers(
-        data: List[Union[int, float]], 
-        threshold: float = 2.0, 
-        span: int = 14
-    ) -> Dict[str, Any]:
+    def __init__(self, s3_bucket_path: str = "s3://your-bucket-name/"):
         """
-        Detect anomalies using a Dynamic Z-Score based on EMA and Rolling Variance.
+        Initialize with the root path to your Parquet data lake.
+        """
+        self.base_path = s3_bucket_path
+
+    def _get_dataset_path(self, tenant_id: str, dataset_id: str) -> str:
+        """
+        Constructs the secure path to the tenant's data.
+        Assumes a partitioned structure like: s3://bucket/tenant_id/dataset_id.parquet
+        """
+        return f"{self.base_path}{tenant_id}/{dataset_id}.parquet"
+
+    def detect_anomaly(self, tenant_id: str, dataset_id: str, metric_col: str, time_col: str, threshold: float = 2.0) -> Optional[Dict[str, Any]]:
+        """
+        High-performance, vectorized anomaly detection.
+        Returns anomaly details if found, otherwise returns None.
+        """
+        file_path = self._get_dataset_path(tenant_id, dataset_id)
         
-        Args:
-            data (List[float]): Raw chronological data points.
-            threshold (float): Z-score sigma limit (default 2.0). 
-                               Values > 2.0 are typically statistically significant.
-            span (int): The lookback window for the EMA and rolling std (default 14).
+        # We only need the last 30 days to calculate a rolling baseline
+        thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).strftime('%Y-%m-%d')
+
+        try:
+            # 1. Analytical Efficiency: DuckDB pushes filters down to the Parquet file.
+            # We ONLY load the specific time and metric columns we need into memory.
+            query = f"""
+                SELECT 
+                    CAST({time_col} AS DATE) as ds, 
+                    SUM({metric_col}) as y
+                FROM read_parquet('{file_path}')
+                WHERE {time_col} >= '{thirty_days_ago}'
+                GROUP BY ds
+                ORDER BY ds ASC
+            """
             
-        Returns:
-            Dict[str, Any]: A dictionary containing global baselines and detected anomalies.
-        """
-        # Edge Case: Insufficient data to calculate variance
-        if not data or len(data) < 2:
-            return {
-                "global_mean": 0.0,
-                "global_std": 0.0,
-                "anomalies": [], 
-                "indices": [], 
-                "count": 0
-            }
+            with duckdb.connect(':memory:') as con:
+                # Fetch as a Pandas DataFrame
+                df = con.execute(query).df()
 
-        # Cast to vectorized Pandas Series
-        series = pd.Series(data, dtype=float)
-        
-        # Calculate global metrics for payload metadata
-        global_mean = series.mean()
-        global_std = series.std()
+            if df.empty or len(df) < 7:
+                logger.warning(f"Not enough data to detect anomalies for {dataset_id}")
+                return None
 
-        # Edge Case: Flatline data (Zero variance)
-        if global_std == 0:
-            return {
-                "global_mean": float(global_mean),
-                "global_std": float(global_std),
-                "anomalies": [], 
-                "indices": [], 
-                "count": 0
-            }
+            # 2. Data Sanitization & Math Setup
+            # Ensure chronological order and fill missing days with 0 (Vectorized)
+            df['ds'] = pd.to_datetime(df['ds'])
+            df = df.set_index('ds').asfreq('D', fill_value=0.0).reset_index()
 
-        # 1. Dynamic Baseline: Exponential Moving Average (EMA)
-        # Tracks local trends so natural growth isn't flagged as anomalous
-        ema = series.ewm(span=span, adjust=False).mean()
+            # 3. Vectorized Math: Calculate a 7-day rolling mean and standard deviation
+            # We shift(1) so today's data doesn't skew its own baseline
+            rolling_window = df['y'].shift(1).rolling(window=7, min_periods=3)
+            
+            df['rolling_mean'] = rolling_window.mean()
+            df['rolling_std'] = rolling_window.std()
 
-        # 2. Local Volatility: Rolling Standard Deviation
-        # Adapts the sensitivity based on current market/data turbulence
-        rolling_std = series.rolling(window=span, min_periods=1).std()
-        
-        # Fill early sequence NaNs (where window is too small) with the global std
-        rolling_std = rolling_std.fillna(global_std)
-        
-        # Prevent division-by-zero errors in highly stable data pockets
-        rolling_std = rolling_std.replace(0, 1e-9)
+            # Fill NaN std dev with a small number to avoid division by zero
+            df['rolling_std'] = df['rolling_std'].fillna(1e-9)
+            df['rolling_std'] = np.where(df['rolling_std'] == 0, 1e-9, df['rolling_std'])
 
-        # 3. Dynamic Vectorized Z-Score Calculation
-        # Z = (x - local_mean) / local_std
-        dynamic_z_scores = (series - ema) / rolling_std
-        
-        # 4. Boolean Indexing for Outliers (Vectorized Filter)
-        anomalies = series[abs(dynamic_z_scores) > threshold]
+            # 4. Z-Score Calculation (Vectorized)
+            # Z = (Value - Mean) / StdDev
+            df['z_score'] = (df['y'] - df['rolling_mean']) / df['rolling_std']
 
-        return {
-            "global_mean": float(global_mean),
-            "global_std": float(global_std),
-            "anomalies": anomalies.tolist(),
-            "indices": anomalies.index.tolist(),
-            "count": len(anomalies)
-        }
+            # 5. Evaluate the most recent day (Today/Yesterday)
+            latest_data = df.iloc[-1]
+            
+            is_anomalous = abs(latest_data['z_score']) > threshold
+
+            if is_anomalous:
+                direction = "spike" if latest_data['z_score'] > 0 else "drop"
+                variance_pct = ((latest_data['y'] - latest_data['rolling_mean']) / latest_data['rolling_mean']) * 100
+
+                return {
+                    "tenant_id": tenant_id,
+                    "dataset_id": dataset_id,
+                    "date": latest_data['ds'].strftime('%Y-%m-%d'),
+                    "metric": metric_col,
+                    "actual_value": float(latest_data['y']),
+                    "expected_value": float(latest_data['rolling_mean']),
+                    "z_score": float(latest_data['z_score']),
+                    "direction": direction,
+                    "variance_pct": float(variance_pct)
+                }
+            
+            # Math says everything is normal. Exit cheaply.
+            return None
+
+        except Exception as e:
+            logger.error(f"Anomaly detection failed for {dataset_id}: {str(e)}")
+            return None
