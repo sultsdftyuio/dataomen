@@ -1,102 +1,207 @@
 import logging
 import duckdb
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from api.services.anomaly_detector import AnomalyDetector
-# Assuming you have an LLM utility, or you can use your existing Narrative Service
-# from api.services.narrative_service import generate_cfo_summary
+from api.services.narrative_service import NarrativeService
 
 logger = logging.getLogger(__name__)
 
 class WatchdogService:
     """
-    Phase 4: The Proactive Watchdog Orchestrator
-    Safely iterates through tenant datasets, executes read-only analytical queries,
-    feeds data to the Math Engine, and triggers LLM alerts.
+    The Orchestration Engine (Backend):
+    Executes scheduled background checks securely across tenants, prioritizing
+    in-process analytical engines (DuckDB) and vectorized math (NumPy/Pandas).
     """
-    
-    def __init__(self, db_path: str, anomaly_detector: AnomalyDetector):
+    def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
-        self.detector = anomaly_detector
+        self.anomaly_detector = AnomalyDetector()
+        self.narrative_service = NarrativeService()
 
-    def fetch_tenant_timeseries(self, tenant_id: str, dataset_name: str, date_column: str, target_column: str) -> pd.DataFrame:
+    def _get_time_series(
+        self, 
+        conn: duckdb.DuckDBPyConnection, 
+        tenant_id: str, 
+        file_path: str, 
+        metric_col: str, 
+        time_col: str,
+        days_back: int = 30
+    ) -> pd.DataFrame:
         """
-        Fetches the last 60 days of aggregated data for a specific metric.
-        Enforces strict tenant isolation via S3/R2 pathing and read-only connections.
+        Analytical Efficiency: Do not load the whole Parquet file into Pandas.
+        Extracts only the required time series for the anomaly detector.
         """
-        # Read-only connection to DuckDB ensures the watchdog cannot alter data
-        with duckdb.connect(self.db_path, read_only=True) as conn:
-            
-            # IMPORTANT: We read directly from the tenant's isolated Parquet file in R2/S3
-            # Replace 's3://your-bucket' with your actual storage prefix configured in Phase 1
+        query = f"""
+            SELECT 
+                {time_col}::DATE AS ds, 
+                SUM({metric_col}) AS y 
+            FROM read_parquet('{file_path}')
+            WHERE tenant_id = ? 
+              AND {time_col}::DATE >= current_date - INTERVAL {days_back} DAY
+            GROUP BY 1
+            ORDER BY 1 ASC
+        """
+        return conn.execute(query, [tenant_id]).df()
+
+    def _get_categorical_columns(
+        self, 
+        conn: duckdb.DuckDBPyConnection, 
+        file_path: str
+    ) -> List[str]:
+        """Identifies categorical (VARCHAR) dimensions dynamically from the Parquet schema."""
+        schema_query = f"DESCRIBE SELECT * FROM read_parquet('{file_path}')"
+        schema_df = conn.execute(schema_query).df()
+        return schema_df[schema_df['column_type'] == 'VARCHAR']['column_name'].tolist()
+
+    def get_top_variance_drivers(
+        self,
+        conn: duckdb.DuckDBPyConnection,
+        tenant_id: str,
+        file_path: str,
+        metric_col: str,
+        time_col: str,
+        anomaly_date: str,
+        comparison_date: str,
+        top_n: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        The Variance Driver Algorithm (Contextual RAG):
+        Calculates the delta between the anomaly day and comparison day across 
+        all categorical dimensions entirely within DuckDB to prevent memory bloat.
+        """
+        categorical_cols = self._get_categorical_columns(conn, file_path)
+        
+        # Exclude internal/system columns if any exist (e.g., tenant_id, file_id)
+        excluded_cols = {'tenant_id', 'id', 'uuid'}
+        dimensions = [col for col in categorical_cols if col.lower() not in excluded_cols]
+        
+        drivers = []
+
+        for category in dimensions:
+            # Mathematical Precision: Compute exact deltas and percentage changes in SQL
             query = f"""
-                SELECT {date_column}, SUM({target_column}) as {target_column}
-                FROM read_parquet('s3://your-bucket/{tenant_id}/{dataset_name}.parquet')
-                WHERE {date_column} >= current_date - INTERVAL 60 DAY
-                GROUP BY {date_column}
-                ORDER BY {date_column} ASC
+                WITH daily_aggregates AS (
+                    SELECT 
+                        {category} AS category_val,
+                        SUM(CASE WHEN {time_col}::DATE = ? THEN {metric_col} ELSE 0 END) as anomaly_day_val,
+                        SUM(CASE WHEN {time_col}::DATE = ? THEN {metric_col} ELSE 0 END) as comparison_day_val
+                    FROM read_parquet('{file_path}')
+                    WHERE tenant_id = ?
+                      AND {time_col}::DATE IN (?, ?)
+                    GROUP BY {category}
+                )
+                SELECT 
+                    '{category}' AS dimension,
+                    category_val AS category_name,
+                    anomaly_day_val,
+                    comparison_day_val,
+                    (anomaly_day_val - comparison_day_val) AS absolute_delta,
+                    CASE 
+                        WHEN comparison_day_val = 0 THEN 0
+                        ELSE ((anomaly_day_val - comparison_day_val) / comparison_day_val) * 100 
+                    END AS percentage_change
+                FROM daily_aggregates
+                WHERE (anomaly_day_val - comparison_day_val) != 0
+                  AND category_val IS NOT NULL
+                ORDER BY ABS(absolute_delta) DESC
+                LIMIT {top_n};
             """
-            try:
-                df = conn.execute(query).df()
-                return df
-            except Exception as e:
-                logger.error(f"Watchdog failed to fetch data for tenant {tenant_id}: {str(e)}")
-                return pd.DataFrame()
-
-    async def generate_alert_narrative(self, anomaly_data: Dict[str, Any], metric_name: str) -> str:
-        """
-        Translates mathematical variance into a natural language CFO executive alert.
-        """
-        variance_pct = anomaly_data['variance'] * 100
-        direction = "spiked" if variance_pct > 0 else "dropped"
-        
-        prompt = (
-            f"Act as a CFO. The metric '{metric_name}' just {direction} by "
-            f"{abs(variance_pct):.1f}% compared to its expected seasonal baseline "
-            f"(accounting for the day of the week). "
-            f"Write a 2-sentence urgent but professional push notification alert to the CEO."
-        )
-        
-        # Dispatch to your fast/cheap LLM (e.g., GPT-4o-mini or Claude 3 Haiku)
-        # alert_text = await generate_cfo_summary(prompt)
-        
-        # Placeholder return until LLM is hooked up
-        alert_text = f"[MOCK LLM] Alert: {metric_name} {direction} by {abs(variance_pct):.1f}%. Please review the dashboard immediately."
-        return alert_text
-
-    async def run_nightly_scan(self, active_tasks: List[Dict[str, str]]):
-        """
-        The main execution loop triggered by APScheduler.
-        active_tasks is a list pulled from your PostgreSQL metadata DB containing what metrics to check.
-        """
-        logger.info("Starting nightly Watchdog scan...")
-        
-        for task in active_tasks:
-            tenant_id = task['tenant_id']
-            metric = task['target_col']
-            date_col = task['date_col']
             
-            # 1. Fetch Data
-            df = self.fetch_tenant_timeseries(
-                tenant_id=tenant_id,
-                dataset_name=task['dataset_name'],
-                date_column=date_col,
-                target_column=metric
+            # Fetch small result set to pandas
+            results_df = conn.execute(
+                query, 
+                [anomaly_date, comparison_date, tenant_id, anomaly_date, comparison_date]
+            ).df()
+            
+            drivers.extend(results_df.to_dict('records'))
+
+        # Sort globally across all dimensions to find the absolute biggest drivers
+        drivers.sort(key=lambda x: abs(x['absolute_delta']), reverse=True)
+        
+        return drivers[:top_n]
+
+    def evaluate_agent_rule(
+        self, 
+        agent_id: str,
+        tenant_id: str, 
+        file_path: str, 
+        metric_col: str, 
+        time_col: str,
+        sensitivity_threshold: float = 2.0
+    ) -> Optional[Dict[str, Any]]:
+        """
+        The Golden Path Execution.
+        Called by the Background RQ Worker. Returns Anomaly data if found, else None.
+        """
+        logger.info(f"Evaluating Agent {agent_id} for tenant {tenant_id}")
+        
+        # Security by Design: Fresh isolated connection per worker task
+        conn = duckdb.connect(self.db_path)
+        
+        try:
+            # 1. Fetch
+            ts_df = self._get_time_series(conn, tenant_id, file_path, metric_col, time_col)
+            
+            if ts_df.empty or len(ts_df) < 7:
+                logger.warning(f"Not enough data to evaluate agent {agent_id}.")
+                return None
+                
+            # 2. Math (Vectorized anomaly check)
+            # Ensure the df is sorted by date and set as index for the detector
+            ts_df = ts_df.sort_values('ds').set_index('ds')
+            
+            anomaly_result = self.anomaly_detector.detect(
+                ts_df, 
+                column='y', 
+                sensitivity=sensitivity_threshold
             )
             
-            # Need at least 2 weeks of data to form a reliable baseline
-            if df.empty or len(df) < 14: 
-                continue
+            if not anomaly_result['is_anomaly']:
+                # Fast, cheap exit if the math is normal
+                logger.info(f"Agent {agent_id} check passed. No anomalies.")
+                return None
                 
-            # 2. Run Math Engine (The Muscle)
-            anomalies = self.detector.detect_anomalies(df, target_column=metric, date_column=date_col)
+            logger.info(f"Anomaly detected for Agent {agent_id}! Generating context...")
             
-            # 3. Process Anomalies & Dispatch
-            for anomaly in anomalies:
-                alert_text = await self.generate_alert_narrative(anomaly, metric_name=metric)
-                
-                # 4. Push Notification (e.g., Insert into a notifications table or send email)
-                logger.warning(f"DISPATCHING ALERT -> Tenant: {tenant_id} | Message: {alert_text}")
-                
-        logger.info("Nightly Watchdog scan completed.")
+            # 3. Context (Variance Driver Algorithm)
+            anomaly_date = anomaly_result['date']
+            comparison_date = anomaly_result['comparison_date'] # Assumes your detector returns the baseline date (e.g., 7 days prior)
+            
+            top_drivers = self.get_top_variance_drivers(
+                conn=conn,
+                tenant_id=tenant_id,
+                file_path=file_path,
+                metric_col=metric_col,
+                time_col=time_col,
+                anomaly_date=anomaly_date,
+                comparison_date=comparison_date
+            )
+            
+            # 4. Reasoning (LLM RAG Diagnostic)
+            delta_pct = anomaly_result.get('percentage_change', 0.0)
+            diagnostic_summary = self.narrative_service.generate_anomaly_summary(
+                metric=metric_col,
+                delta_percentage=delta_pct,
+                top_drivers=top_drivers
+            )
+            
+            # 5. State (Package result to be saved to DB and sent to Notification Router)
+            return {
+                "agent_id": agent_id,
+                "tenant_id": tenant_id,
+                "date": anomaly_date,
+                "metric": metric_col,
+                "actual_value": anomaly_result['actual_value'],
+                "expected_value": anomaly_result['expected_value'],
+                "percentage_change": delta_pct,
+                "top_variance_drivers": top_drivers,
+                "diagnostic_summary": diagnostic_summary
+            }
+            
+        except Exception as e:
+            logger.error(f"Error evaluating agent {agent_id}: {str(e)}")
+            raise
+        finally:
+            # Always close the local connection to free memory
+            conn.close()
