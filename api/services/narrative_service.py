@@ -1,51 +1,90 @@
-import json
+# api/services/narrative_service.py
+import os
+from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-import openai
+from tenacity import retry, wait_exponential, stop_after_attempt
 
-class CFONarrativeService:
-    """
-    A stateless service responsible for generating executive summaries
-    from raw analytical data.
-    """
-    def __init__(self, api_key: str):
-        # Injecting the dependency cleanly
-        self.client = openai.AsyncOpenAI(api_key=api_key)
-        self.model = "gpt-5-nano" # Fast, cheap, and perfectly capable for summarization
+# SDK Imports
+from openai import OpenAI
+from anthropic import Anthropic
 
-    async def generate_summary(self, user_question: str, data_rows: List[Dict[str, Any]]) -> str:
-        """
-        Takes the user's original question and the DuckDB result rows, 
-        returning a highly structured, 3-sentence executive summary.
-        """
-        # We truncate the data rows if they are too massive to save tokens
-        # A CFO doesn't need 10,000 rows to spot the trend, the top 50 is enough for a summary
-        safe_data = data_rows[:50] 
-        
-        system_prompt = (
-            "You are a fractional CFO for a modern data business. "
-            "You are provided with a user's question and the raw data output from their database. "
-            "Your rules are absolute: "
-            "1. You must answer in exactly three sentences. "
-            "2. Sentence 1 & 2: Summarize the primary mathematical insight or trend. "
-            "3. Sentence 3: Provide exactly one actionable business recommendation based on this data. "
-            "4. Do not use markdown, bolding, or pleasantries."
+class BaseLLMProvider(ABC):
+    """The Modular Strategy: Abstract LLM interface ensuring zero vendor lock-in."""
+    @abstractmethod
+    def generate_diagnostic(self, prompt: str) -> str:
+        pass
+
+class OpenAIProvider(BaseLLMProvider):
+    def __init__(self):
+        # Relies on OPENAI_API_KEY in your .env
+        self.client = OpenAI() 
+
+    def generate_diagnostic(self, prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini", # Fast, cheap, capable reasoning
+            temperature=0.0,     # Strict zero hallucination
+            messages=[
+                {"role": "system", "content": "You are a precise analytical data agent."},
+                {"role": "user", "content": prompt}
+            ]
         )
+        return response.choices[0].message.content.strip()
 
-        user_prompt = f"Question: {user_question}\n\nData: {json.dumps(safe_data)}"
+class AnthropicProvider(BaseLLMProvider):
+    def __init__(self):
+        # Relies on ANTHROPIC_API_KEY in your .env
+        self.client = Anthropic()
+
+    def generate_diagnostic(self, prompt: str) -> str:
+        response = self.client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=500,
+            temperature=0.0,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.content[0].text
+
+class NarrativeService:
+    def __init__(self):
+        # Dependency Injection of our swappable modules
+        self.primary_provider = OpenAIProvider()
+        self.fallback_provider = AnthropicProvider()
+
+    # If OpenAI hits a rate limit (429) or 500 error, retry up to 3 times
+    # Wait 2^x * 1 seconds between each retry, up to 10 seconds max
+    @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+    def _execute_with_primary(self, prompt: str) -> str:
+        return self.primary_provider.generate_diagnostic(prompt)
+
+    def generate_anomaly_summary(self, metric: str, delta_percentage: float, top_drivers: List[Dict[str, Any]]) -> str:
+        """
+        Constructs the Contextual RAG prompt and safely queries the LLM with failover.
+        """
+        if not top_drivers:
+             return f"The metric '{metric}' changed by {delta_percentage:.2f}%, but no specific dimensional drivers were found."
+
+        # Strict Context Construction
+        context_str = "\n".join([
+            f"- Dimension: {d['dimension']} | Category: {d['category_name']} | "
+            f"Delta: {d['absolute_delta']:.2f} ({d['percentage_change']:.2f}%)"
+            for d in top_drivers
+        ])
+
+        prompt = f"""
+        The metric '{metric}' changed by {delta_percentage:.2f}%.
+        
+        Context (Top Variance Drivers):
+        {context_str}
+        
+        Instructions:
+        1. Formulate a 2-sentence summary explaining the primary drivers of this anomaly.
+        2. DO NOT hallucinate. DO NOT mention any metrics, dimensions, or categories not strictly present in the Context.
+        """
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.2, # Low temperature for deterministic, analytical tone
-                max_tokens=150
-            )
-            
-            return response.choices[0].message.content.strip()
-            
-        except Exception as e:
-            # Failsafe: If the LLM fails, we don't break the app, we return a graceful fallback.
-            return "Narrative engine is currently unavailable. Please review the chart above for data insights."
+            return self._execute_with_primary(prompt)
+        except Exception as primary_error:
+            print(f"Primary LLM (OpenAI) failed after retries: {primary_error}. Seamlessly falling back to Anthropic.")
+            return self.fallback_provider.generate_diagnostic(prompt)

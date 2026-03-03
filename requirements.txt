@@ -11,3 +11,5 @@ scikit-learn
 openpyxl
 python-multipart
 croniter
+tenacity==8.2.3
+anthropic==0.21.3

@@ -1,97 +1,102 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardOrchestrator } from '@/components/dashboard/DashboardOrchestrator';
 import { supabase } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { LogOut, User, Activity } from 'lucide-react';
+import { LogOut, LayoutDashboard, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+    const router = useRouter();
+    const [user, setUser] = useState<any>(null);
 
-  // Client-Side Session Hydration
-  // We strictly fetch the user for UI purposes (displaying the email). 
-  // We DO NOT redirect on failure here to prevent race conditions with the SSR Middleware.
-  useEffect(() => {
-    const fetchUserContext = async () => {
-      try {
-        // Using getUser() instead of getSession() for absolute cryptographic certainty
-        const { data: { user }, error } = await supabase.auth.getUser();
-        
-        if (user) {
-          setUserEmail(user.email || 'Analyst');
+    // Security & State Management: Ensure user is authenticated before mounting the dashboard
+    useEffect(() => {
+        const checkUser = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                router.replace('/login');
+            } else {
+                setUser(session.user);
+            }
+        };
+        checkUser();
+    }, [router]);
+
+    // Handle seamless session termination
+    const handleLogout = async () => {
+        try {
+            await supabase.auth.signOut();
+            toast.success("Successfully logged out");
+            router.replace('/login');
+        } catch (error) {
+            toast.error("Failed to log out");
         }
-      } catch (err) {
-        console.error('Session Hydration Error:', err);
-      } finally {
-        setIsLoading(false);
-      }
     };
 
-    fetchUserContext();
-  }, []);
-
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast.success("Logged out successfully");
-      router.push('/login'); 
-      router.refresh(); // Clear the router cache to ensure protected routes are locked
-    } catch (error) {
-      toast.error("Failed to log out");
-    }
-  };
-
-  // Prevent flashing the dashboard UI before confirming the user is hydrated
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Activity className="w-8 h-8 text-primary animate-pulse" />
-      </div>
-    );
-  }
-
-  return (
-    <main className="flex h-screen flex-col bg-background overflow-hidden">
-      {/* SaaS Dashboard Header */}
-      <header className="px-6 py-3 border-b border-border flex items-center justify-between bg-card shrink-0 z-10 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center shadow-inner">
-            <Activity className="w-5 h-5 text-primary-foreground" />
-          </div>
-          <h1 className="text-lg font-bold tracking-tight text-foreground">DataOmen Workspace</h1>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {userEmail && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/30 px-3 py-1.5 rounded-full border border-border">
-              <User className="w-4 h-4" />
-              <span className="font-medium">{userEmail}</span>
+    // Clean loading state while session hydrates
+    if (!user) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="animate-pulse flex flex-col items-center gap-4">
+                    <div className="bg-primary/10 p-3 rounded-xl">
+                        <Activity className="w-8 h-8 text-primary" />
+                    </div>
+                    <p className="text-muted-foreground font-medium">Authenticating workspace...</p>
+                </div>
             </div>
-          )}
-          
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={handleLogout} 
-            className="flex items-center gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </Button>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-background flex flex-col overflow-hidden">
+            {/* High-Performance Header
+              Strictly configured to h-16 (4rem) to ensure the DashboardOrchestrator's
+              h-[calc(100vh-4rem)] fills the exact remaining screen space without scrolling.
+            */}
+            <header className="h-16 border-b flex items-center justify-between px-6 bg-card shrink-0">
+                <div className="flex items-center gap-3">
+                    <div className="bg-primary/10 p-2 rounded-lg">
+                        <LayoutDashboard className="w-5 h-5 text-primary" />
+                    </div>
+                    <h1 className="font-bold text-lg tracking-tight text-foreground">
+                        Proactive Analytics
+                    </h1>
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <div className="text-sm font-medium text-muted-foreground hidden md:block px-3 py-1 bg-muted rounded-md border border-border">
+                        {user.email}
+                    </div>
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={handleLogout} 
+                        className="text-muted-foreground hover:text-foreground hover:bg-muted"
+                    >
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Sign Out
+                    </Button>
+                </div>
+            </header>
+
+            {/* Main Content Area */}
+            <main className="flex-1 overflow-hidden">
+                {/* The Suspense boundary is strictly required by Next.js App Router 
+                  when using `useSearchParams` (which we do inside useAnomalyDeepLink).
+                  It guarantees safe static/client rendering handoffs. 
+                */}
+                <Suspense fallback={
+                    <div className="h-full flex items-center justify-center flex-col gap-4 p-8">
+                        <Activity className="w-8 h-8 text-primary/50 animate-bounce" />
+                        <p className="text-muted-foreground">Loading Analytical Context...</p>
+                    </div>
+                }>
+                    <DashboardOrchestrator />
+                </Suspense>
+            </main>
         </div>
-      </header>
-      
-      {/* Main Workspace Area 
-        The orchestrator handles the file uploads, querying, and dynamic chart rendering cleanly.
-      */}
-      <div className="flex-1 w-full h-[calc(100vh-3.5rem)] overflow-hidden">
-        <DashboardOrchestrator />
-      </div>
-    </main>
-  );
+    );
 }
