@@ -10,3 +10,4 @@ pydantic
 scikit-learn
 openpyxl
 python-multipart
+croniter
