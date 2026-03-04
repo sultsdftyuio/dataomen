@@ -1,58 +1,112 @@
 import logging
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+import io
+import uuid
+from typing import Dict, Any
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+import pandas as pd
 
-# Database and Auth dependencies (matching your codebase)
-# Adjust these imports if your auth file exports `get_current_user` instead of `get_current_tenant`
-try:
-    from api.auth import get_current_tenant as get_tenant
-except ImportError:
-    # Fallback in case your auth file exports it as get_current_user
-    from api.auth import get_current_user as get_tenant
+from api.auth import get_current_user as get_tenant
+from api.database import get_db
+from api.services.storage_manager import storage_manager
+from models import Dataset  
 
-from api.services.dataset_service import DatasetService
-
+router = APIRouter(prefix="/datasets", tags=["Datasets"])
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
-@router.post("/upload")
+def sanitize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computation Layer: Vectorized data sanitization.
+    Cleans column names for strict SQL/DuckDB analytical compatibility.
+    """
+    # Vectorized string operations to clean headers (strip whitespace, lowercase, replace non-alphanumerics)
+    df.columns = (
+        df.columns.astype(str)
+        .str.strip()
+        .str.lower()
+        .str.replace(r'[^a-z0-9_]', '_', regex=True)
+    )
+    
+    # We allow Parquet to natively handle nulls (NaNs) to preserve analytical integrity,
+    # preventing skewed variance or EMA calculations later.
+    return df
+
+@router.post("/upload", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 async def upload_dataset(
     file: UploadFile = File(...),
-    tenant: dict = Depends(get_tenant)
-) -> Dict[str, Any]:
+    tenant_id: str = Depends(get_tenant),
+    db: Session = Depends(get_db)
+):
     """
-    Ingests a CSV, Parquet, or Excel file into the analytical engine.
-    Tenant isolation is enforced via the injected JWT token.
+    Ingests CSV/Excel, vectorizes to Parquet via Pandas, stores in R2, 
+    and registers the dataset natively partitioned by tenant_id.
     """
-    logger.info(f"Received upload request for file: {file.filename} from tenant: {tenant.get('sub', 'unknown')}")
-    
-    # Extract the unique tenant ID from the Supabase JWT payload (usually 'sub')
-    tenant_id = tenant.get("sub") or tenant.get("id")
-    if not tenant_id:
-        raise HTTPException(status_code=401, detail="Invalid authentication token structure.")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
 
+    file_ext = file.filename.split('.')[-1].lower()
+    if file_ext not in ['csv', 'xlsx', 'xls']:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Please upload CSV or Excel.")
+
+    # 1. Read file securely into memory
+    contents = await file.read()
+    
     try:
-        # Hybrid Performance: Offload the Heavy Lifting to the Service Layer
-        service = DatasetService()
+        # 2. Execute Vectorized Parsing (Pandas dataframe creation)
+        if file_ext == 'csv':
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+            
+        # Standardize the data structure for immediate DuckDB querying
+        df = sanitize_dataframe(df)
         
-        # Read the file stream directly into memory/disk depending on size
-        # This keeps the FastAPI event loop unblocked
-        file_bytes = await file.read()
+        # 3. Convert to Parquet (High-performance columnar format)
+        parquet_buffer = io.BytesIO()
+        df.to_parquet(parquet_buffer, engine='pyarrow', index=False)
+        parquet_bytes = parquet_buffer.getvalue()
         
-        result = await service.process_upload(
-            filename=file.filename,
-            file_bytes=file_bytes,
-            tenant_id=tenant_id
+    except Exception as e:
+        logger.error(f"Failed to process file {file.filename}: {e}")
+        raise HTTPException(status_code=422, detail=f"Data parsing failed. Ensure file is uncorrupted: {str(e)}")
+
+    # 4. Storage & Orchestration Layer
+    dataset_id = str(uuid.uuid4())
+    parquet_filename = f"{dataset_id}.parquet"
+    
+    try:
+        # Upload securely to tenant-partitioned Cloudflare R2 path
+        s3_uri = storage_manager.upload_parquet(
+            tenant_id=tenant_id,
+            dataset_id=dataset_id,
+            file_name=parquet_filename,
+            file_data=parquet_bytes
         )
         
-        # Ensure the returned dict maps cleanly to the frontend's expected format
-        return result
-
-    except ValueError as ve:
-        # Catch specific data processing errors (e.g. invalid file type)
-        logger.error(f"Validation error during upload: {str(ve)}")
-        raise HTTPException(status_code=400, detail=str(ve))
+        # 5. Database Transaction (Registering the dataset for the frontend)
+        new_dataset = Dataset(
+            id=dataset_id,
+            tenant_id=tenant_id,
+            name=file.filename,
+            storage_uri=s3_uri, # The s3:// URI for DuckDB
+            row_count=len(df),
+            column_count=len(df.columns)
+        )
+        
+        db.add(new_dataset)
+        db.commit()
+        db.refresh(new_dataset)
+        
+        return {
+            "status": "success",
+            "dataset_id": dataset_id,
+            "name": file.filename,
+            "uri": s3_uri,
+            "rows": len(df),
+            "columns": len(df.columns)
+        }
+        
     except Exception as e:
-        # Catch unforeseen pipeline crashes
-        logger.error(f"Unexpected error processing dataset: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to process dataset.")
+        db.rollback()
+        logger.error(f"Upload pipeline failed for tenant {tenant_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save dataset to storage or database.")
