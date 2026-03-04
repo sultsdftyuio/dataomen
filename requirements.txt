@@ -1,18 +1,27 @@
+# Web Framework & Server
 fastapi
-uvicorn
+uvicorn[standard]
+python-multipart
+
+# Computation & Analytical Engines
 pandas
 numpy
 duckdb
-python-dotenv
-supabase
-openai
-pydantic
 scikit-learn
-openpyxl
-python-multipart
-croniter
+
+# AI & LLM Integrations
+openai
+anthropic
 tenacity==8.2.3
-anthropic==0.21.3
-python-jose[cryptography]
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
+
+# Database & ORM (Fixes the ModuleNotFoundError)
+supabase
+sqlalchemy
+pgvector
+psycopg2-binary
+
+# Utilities & Config
+python-dotenv
+pydantic
+openpyxl
+croniter
