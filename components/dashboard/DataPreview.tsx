@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useMemo } from "react";
 import { 
   Table, 
   TableBody, 
@@ -10,103 +10,125 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// The Strict Contract: Enforce tenantId injection for Security by Design
+// 1. The Strict Contract: Stateless injection for pure Functional React execution
 export interface DataPreviewProps {
-  tenantId: string;
+  data: Record<string, any>[]; // Dynamically handles ANY analytical result set
+  isLoading?: boolean;
+  tenantId?: string; // Maintained for visual Security by Design boundaries
+  title?: string;
 }
 
-// Interface for strongly-typed analytical datasets
-interface DatasetMeta {
-  id: string;
-  name: string;
-  status: "Cleaned" | "Ingesting" | "Failed" | "Ready";
-  rows: number | null;
-  lastUpdated: string;
-}
+export function DataPreview({ 
+  data, 
+  isLoading = false, 
+  tenantId,
+  title = "Analytical Results"
+}: DataPreviewProps) {
+  
+  // 2. Computation Layer: Extract columns purely from the first row's schema.
+  // This guarantees the UI never crashes, regardless of the SQL LLM generation.
+  const columns = useMemo(() => {
+    if (!data || data.length === 0) return [];
+    return Object.keys(data[0]);
+  }, [data]);
 
-export function DataPreview({ tenantId }: DataPreviewProps) {
-  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // The Modular Strategy: This fetch logic can point to Supabase, an API route, 
-    // or an in-memory DuckDB query. Scoped strictly by tenantId.
-    const fetchTenantDatasets = async () => {
+  // 3. Sanitization: Ensure booleans, nulls, or nested objects from DuckDB don't crash React's renderer
+  const formatCellValue = (value: any): string => {
+    if (value === null || value === undefined) return '-';
+    if (typeof value === 'boolean') return value ? 'True' : 'False';
+    if (typeof value === 'object') {
       try {
-        setIsLoading(true);
-        // Simulate network/analytical fetch delay
-        await new Promise((resolve) => setTimeout(resolve, 800));
-
-        // Simulated Vectorized Metadata Payload
-        setDatasets([
-          { id: "1", name: "q3_financials.parquet", status: "Ready", rows: 1200500, lastUpdated: "2026-03-01T10:00:00Z" },
-          { id: "2", name: "user_events_raw.csv", status: "Ingesting", rows: null, lastUpdated: "2026-03-04T08:30:00Z" },
-          { id: "3", name: "anomaly_logs.parquet", status: "Cleaned", rows: 450, lastUpdated: "2026-03-03T14:15:00Z" },
-        ]);
-      } catch (error) {
-        console.error("[DataPreview] Failed to fetch dataset metadata:", error);
-      } finally {
-        setIsLoading(false);
+        return JSON.stringify(value);
+      } catch {
+        return 'Object';
       }
-    };
+    }
+    return String(value);
+  };
 
-    fetchTenantDatasets();
-  }, [tenantId]);
+  // 4. State Rendering Layers
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <div className="space-y-3 mt-2">
+          <Skeleton className="h-10 w-full rounded-md" />
+          <Skeleton className="h-10 w-full rounded-md" />
+          <Skeleton className="h-10 w-full rounded-md" />
+          <Skeleton className="h-10 w-full rounded-md" />
+        </div>
+      );
+    }
+
+    if (!data || data.length === 0) {
+      return (
+        <div className="flex h-32 w-full items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20 mt-2">
+          No analytical data to display. Execute a query to populate this table.
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-md border overflow-hidden mt-2 shadow-sm">
+        {/* Horizontal scroll container for wide analytical datasets */}
+        <div className="overflow-x-auto max-h-[400px] overflow-y-auto relative">
+          <Table className="w-full text-sm text-left">
+            <TableHeader className="bg-muted/50 sticky top-0 z-10 shadow-sm backdrop-blur-md">
+              <TableRow>
+                {columns.map((col) => (
+                  <TableHead 
+                    key={col} 
+                    className="px-4 py-3 font-semibold text-foreground whitespace-nowrap"
+                  >
+                    {col}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody className="divide-y divide-border">
+              {data.map((row, rowIndex) => (
+                <TableRow 
+                  key={`row-${rowIndex}`}
+                  className="hover:bg-muted/30 transition-colors"
+                >
+                  {columns.map((col) => (
+                    <TableCell 
+                      key={`cell-${rowIndex}-${col}`} 
+                      className="px-4 py-2 whitespace-nowrap text-muted-foreground"
+                    >
+                      {formatCellValue(row[col])}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        
+        {/* Vectorized Table Footer */}
+        <div className="bg-muted/20 border-t px-4 py-2 text-xs text-muted-foreground flex justify-between items-center">
+          <span>Displaying <span className="font-medium text-foreground">{data.length}</span> records</span>
+          <span className="font-mono text-[10px] bg-muted px-2 py-0.5 rounded-md border border-border">
+            Engine: DuckDB
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <Card className="h-full border-border bg-card">
-      <CardHeader>
-        <CardTitle className="text-xl">Active Datasets</CardTitle>
-        <CardDescription>Isolated data layer for Tenant: <span className="font-mono text-xs">{tenantId}</span></CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Dataset Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Row Count</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {datasets.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
-                      No datasets detected. Upload a parquet or csv file to begin.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  datasets.map((dataset) => (
-                    <TableRow key={dataset.id}>
-                      <TableCell className="font-medium">{dataset.name}</TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant={dataset.status === "Ready" || dataset.status === "Cleaned" ? "default" : "secondary"}
-                        >
-                          {dataset.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">
-                        {dataset.rows ? dataset.rows.toLocaleString() : "--"}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+    <Card className="w-full border-border bg-card flex flex-col">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xl">{title}</CardTitle>
+        {tenantId && (
+          <CardDescription>
+            Isolated data layer for Tenant: <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">{tenantId}</span>
+          </CardDescription>
         )}
+      </CardHeader>
+      <CardContent className="flex-1 w-full">
+        {renderContent()}
       </CardContent>
     </Card>
   );

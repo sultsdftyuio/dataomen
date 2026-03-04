@@ -1,68 +1,96 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+import duckdb
+import pandas as pd
+import numpy as np
 
+from api.auth import get_current_user as get_tenant
 from api.database import get_db
 from models import Dataset
-from api.services.nl2sql_generator import NL2SQLGenerator
+from api.services.storage_manager import storage_manager
+from api.services.nl2sql_generator import nl2sql
 
+router = APIRouter(prefix="/query", tags=["Analytics"])
 logger = logging.getLogger(__name__)
-router = APIRouter(
-    prefix="/datasets",
-    tags=["Analytical Queries"]
-)
 
-# --- Request Schemas ---
-class DashboardRequest(BaseModel):
-    prompt: str = Field(..., description="The natural language analytical prompt from the user.")
+class QueryRequest(BaseModel):
+    dataset_id: str
+    natural_language_query: str
 
-
-@router.post("/{dataset_id}/dashboard", summary="Generate Dynamic Dashboard")
-async def generate_dashboard(
-    dataset_id: str,
-    payload: DashboardRequest,
+@router.post("/", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
+async def execute_natural_language_query(
+    request: QueryRequest,
+    tenant_id: str = Depends(get_tenant),
     db: Session = Depends(get_db)
-) -> dict:
+):
     """
-    Takes natural language input, generates an entire contextual dashboard configuration, 
-    and returns hydrated widget data.
-
-    Follows the Hybrid Performance Paradigm by isolating the HTTP request layer 
-    from the DuckDB/Pandas vectorized execution layer.
+    Orchestration Layer:
+    1. Validates dataset ownership (Security by Design).
+    2. Dynamically extracts Parquet schema from R2 via DuckDB without downloading data.
+    3. Translates NL to SQL via LLM (Contextual RAG).
+    4. Executes SQL analytically in-place on R2 and returns JSON results.
     """
-    prompt = payload.prompt.strip()
-    if not prompt:
-        raise HTTPException(status_code=400, detail="Prompt is required and cannot be empty.")
-
-    # 1. Security by Design: Tenant Isolation Check
-    # In a fully authenticated environment, filter by the current user's tenant_id as well.
-    # e.g., filter(Dataset.id == dataset_id, Dataset.tenant_id == current_tenant)
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+    # 1. Security by Design: Strictly validate the dataset belongs to the requesting tenant
+    dataset = db.query(Dataset).filter(
+        Dataset.id == request.dataset_id,
+        Dataset.tenant_id == tenant_id
+    ).first()
     
     if not dataset:
-        logger.warning(f"Unauthorized or invalid dataset access attempt for ID: {dataset_id}")
-        raise HTTPException(status_code=404, detail="Dataset not found or access denied.")
+        raise HTTPException(status_code=404, detail="Dataset not found or unauthorized.")
 
-    # 2. Dependency Injection: Initialize Modular Service
-    generator = NL2SQLGenerator()
+    # 2. Analytical Efficiency: Setup In-Memory DuckDB + R2 HTTP Streaming
+    conn = duckdb.connect(database=':memory:')
     
-    # 3. Orchestrate Generation & Execution
     try:
-        dashboard_data = await generator.execute_dashboard(dataset, prompt)
-        return dashboard_data
+        storage_manager.configure_duckdb_connection(conn)
+
+        # 3. Contextual RAG: Fetch Schema dynamically to prevent LLM token bloat
+        # Using DESCRIBE efficiently reads just the metadata footer from the cloud Parquet file
+        schema_query = f"DESCRIBE SELECT * FROM read_parquet('{dataset.storage_uri}') LIMIT 1"
+        try:
+            schema_df = conn.execute(schema_query).df()
+            schema_str = schema_df[['column_name', 'column_type']].to_string(index=False)
+        except Exception as e:
+            logger.error(f"Failed to read schema from R2 for dataset {dataset.id}: {e}")
+            raise HTTPException(status_code=500, detail="Could not retrieve schema from storage. The dataset may be corrupted or unavailable.")
         
-    except ValueError as ve:
-        # Catch explicit validation/security errors (like disallowed SQL keywords)
-        logger.warning(f"Validation error during dashboard generation for dataset {dataset_id}: {ve}")
-        raise HTTPException(status_code=400, detail=str(ve))
+        # 4. Generate SQL
+        generated_sql = await nl2sql.generate_sql(
+            user_query=request.natural_language_query,
+            schema_info=schema_str,
+            file_uri=dataset.storage_uri
+        )
+        logger.info(f"Generated SQL for Tenant {tenant_id}: {generated_sql}")
         
-    except FileNotFoundError as fnfe:
-        # Catch storage mapping errors
-        logger.error(f"Storage module error for dataset {dataset_id}: {fnfe}")
-        raise HTTPException(status_code=404, detail="Underlying analytical data not found.")
+        # 5. Computation Layer: Execute Generated SQL
+        try:
+            result_df = conn.execute(generated_sql).df()
+        except duckdb.Error as e:
+            logger.error(f"DuckDB Execution Error: {e}\nSQL: {generated_sql}")
+            raise HTTPException(status_code=400, detail=f"Generated SQL resulted in an error: {str(e)}")
         
+        # 6. Vectorized Sanitization for JSON mapping
+        # Convert NaN and Infinity to standard JSON nulls natively
+        result_df = result_df.replace([np.inf, -np.inf], None)
+        result_df = result_df.where(pd.notnull(result_df), None)
+        
+        return {
+            "status": "success",
+            "dataset_id": dataset.id,
+            "generated_sql": generated_sql,
+            "data": result_df.to_dict(orient="records")
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        # Catch-all for LLM network failures or DuckDB execution crashes
-        logger.error(f"Generative dashboard failure for dataset {dataset_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred while generating the dashboard.")
+        logger.error(f"Query pipeline failed for tenant {tenant_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during analytical execution: {str(e)}")
+        
+    finally:
+        # Guarantee memory release back to the Render instance
+        conn.close()

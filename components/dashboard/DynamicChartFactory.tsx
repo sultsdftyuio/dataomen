@@ -1,94 +1,74 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
-  BarChart, Bar, LineChart, Line, ScatterChart, Scatter, AreaChart, Area,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// 1. The Strict Contract
+// 1. The Strict Contract (Stateless mapping)
 export interface DynamicChartFactoryProps {
-  tenantId: string;
-}
-
-// 2. Data Shape Interfaces
-type ChartType = 'line' | 'bar' | 'area' | 'scatter';
-
-interface AnalyticalPayload {
-  chartType: ChartType;
-  title: string;
-  xAxisKey: string;
-  dataKeys: string[];
-  // Array of vectorized records (Pandas `to_dict('records')` output format)
-  data: Record<string, any>[]; 
+  data: Record<string, any>[]; // The vectorized JSON array from FastAPI
+  isLoading?: boolean;
+  title?: string;
+  tenantId?: string; // Maintained for security visualization
+  preferredType?: 'bar' | 'line' | 'area';
 }
 
 const COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed'];
 
-export function DynamicChartFactory({ tenantId }: DynamicChartFactoryProps) {
-  const [payload, setPayload] = useState<AnalyticalPayload | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+export function DynamicChartFactory({ 
+  data, 
+  isLoading = false,
+  title = "Analytical Trajectory",
+  tenantId,
+  preferredType = 'area'
+}: DynamicChartFactoryProps) {
+  
+  // 2. Computation Layer: Memoized dimensional inference to prevent re-renders
+  // Mathematically infers the X and Y axes regardless of what the LLM generates
+  const { xAxisKey, numericKeys } = useMemo(() => {
+    if (!data || data.length === 0) return { xAxisKey: '', numericKeys: [] };
+    
+    const keys = Object.keys(data[0]);
+    
+    // Find the first string or date column to use as the X-Axis naturally
+    const inferredXAxis = keys.find(key => typeof data[0][key] === 'string') || keys[0];
+    
+    // Filter out the X-axis and strictly keep properties that represent numeric data for Y-axis plotting
+    const inferredNumeric = keys.filter(
+      key => key !== inferredXAxis && typeof data[0][key] === 'number'
+    );
 
-  useEffect(() => {
-    // Fetch logic: In a real analytical SaaS, this queries your semantic router / RAG backend
-    // which processes DuckDB/Polars logic and returns a JSON payload of the computed metrics.
-    const fetchAnalyticalTrajectory = async () => {
-      setIsLoading(true);
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 900)); // Simulate compute
-        
-        // Mocking the result of an anomaly detection or forecasting EMA calculation
-        setPayload({
-          chartType: 'area',
-          title: 'Financial Trajectory (EMA Smoothed)',
-          xAxisKey: 'month',
-          dataKeys: ['revenue', 'projected'],
-          data: [
-            { month: 'Jan', revenue: 4000, projected: 4100 },
-            { month: 'Feb', revenue: 3000, projected: 3200 },
-            { month: 'Mar', revenue: 2000, projected: 2500 },
-            { month: 'Apr', revenue: 2780, projected: 2900 },
-            { month: 'May', revenue: 1890, projected: 2100 },
-            { month: 'Jun', revenue: 2390, projected: 2500 },
-            { month: 'Jul', revenue: 3490, projected: 3600 },
-          ]
-        });
-      } catch (err) {
-        console.error("[DynamicChartFactory] Failed to process payload:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    return { xAxisKey: inferredXAxis, numericKeys: inferredNumeric };
+  }, [data]);
 
-    fetchAnalyticalTrajectory();
-  }, [tenantId]);
-
-  // Vectorized translation layer: Memoize the chart generation so React doesn't needlessly rerender recharts SVGs
+  // 3. Vectorized translation layer: Renders exact SVG type based on preferred config
   const RenderedChart = useMemo(() => {
-    if (!payload || !payload.data) return null;
+    if (numericKeys.length === 0) return null;
 
-    const { chartType, data, xAxisKey, dataKeys } = payload;
+    const commonProps = { data, margin: { top: 10, right: 30, left: 0, bottom: 0 } };
 
-    switch (chartType) {
+    switch (preferredType) {
       case 'area':
         return (
-          <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <AreaChart {...commonProps}>
             <defs>
-              {dataKeys.map((key, index) => (
+              {numericKeys.map((key, index) => (
                 <linearGradient key={`color${key}`} id={`color${key}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0.8}/>
                   <stop offset="95%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0}/>
                 </linearGradient>
               ))}
             </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xAxisKey} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {dataKeys.map((key, index) => (
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+            <XAxis dataKey={xAxisKey} tick={{ fontSize: 12 }} stroke="#9ca3af" />
+            <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+            <Legend wrapperStyle={{ paddingTop: '10px' }} />
+            {numericKeys.map((key, index) => (
               <Area 
                 key={key} 
                 type="monotone" 
@@ -102,53 +82,84 @@ export function DynamicChartFactory({ tenantId }: DynamicChartFactoryProps) {
         );
       case 'line':
         return (
-          <LineChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xAxisKey} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {dataKeys.map((key, index) => (
-              <Line key={key} type="monotone" dataKey={key} stroke={COLORS[index % COLORS.length]} strokeWidth={2} activeDot={{ r: 8 }} />
+          <LineChart {...commonProps}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+            <XAxis dataKey={xAxisKey} tick={{ fontSize: 12 }} stroke="#9ca3af" />
+            <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+            <Legend wrapperStyle={{ paddingTop: '10px' }} />
+            {numericKeys.map((key, index) => (
+              <Line 
+                key={key} 
+                type="monotone" 
+                dataKey={key} 
+                stroke={COLORS[index % COLORS.length]} 
+                strokeWidth={3} 
+                activeDot={{ r: 8 }} 
+              />
             ))}
           </LineChart>
         );
       case 'bar':
+      default:
         return (
-          <BarChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xAxisKey} />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            {dataKeys.map((key, index) => (
-              <Bar key={key} dataKey={key} fill={COLORS[index % COLORS.length]} radius={[4, 4, 0, 0]} />
+          <BarChart {...commonProps}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+            <XAxis dataKey={xAxisKey} tick={{ fontSize: 12 }} stroke="#9ca3af" />
+            <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" />
+            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+            <Legend wrapperStyle={{ paddingTop: '10px' }} />
+            {numericKeys.map((key, index) => (
+              <Bar 
+                key={key} 
+                dataKey={key} 
+                fill={COLORS[index % COLORS.length]} 
+                radius={[4, 4, 0, 0]} 
+              />
             ))}
           </BarChart>
         );
-      default:
-        return (
-          <div className="flex h-full items-center justify-center text-muted-foreground">
-            Unsupported chart configuration derived from data payload.
-          </div>
-        );
     }
-  }, [payload]);
+  }, [data, xAxisKey, numericKeys, preferredType]);
+
+  // 4. State Rendering Fallbacks
+  const renderContent = () => {
+    if (isLoading) {
+      return <Skeleton className="w-full h-full min-h-[300px] rounded-lg" />;
+    }
+    if (!data || data.length === 0) {
+      return (
+        <div className="flex h-full min-h-[300px] items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+          No analytical data available to visualize.
+        </div>
+      );
+    }
+    if (numericKeys.length === 0) {
+      return (
+        <div className="flex h-full min-h-[300px] items-center justify-center text-sm text-muted-foreground border border-dashed rounded-lg bg-muted/20">
+          The generated dataset does not contain numeric fields for charting.
+        </div>
+      );
+    }
+    return (
+      <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+        {RenderedChart!}
+      </ResponsiveContainer>
+    );
+  };
 
   return (
-    <Card className="h-full min-h-[450px] flex flex-col bg-card border-border">
+    <Card className="h-full min-h-[450px] flex flex-col bg-card border-border shadow-sm">
       <CardHeader>
-        <CardTitle>{payload?.title || "Analytical Trajectory"}</CardTitle>
-        <CardDescription>Metrics scoped strictly to Tenant: <span className="font-mono text-xs">{tenantId}</span></CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 w-full min-h-[300px] mt-4">
-        {isLoading ? (
-          <Skeleton className="w-full h-full min-h-[300px] rounded-lg" />
-        ) : (
-          <ResponsiveContainer width="100%" height="100%" minHeight={300}>
-            {RenderedChart!}
-          </ResponsiveContainer>
+        <CardTitle>{title}</CardTitle>
+        {tenantId && (
+          <CardDescription>
+            Metrics scoped strictly to Tenant: <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">{tenantId}</span>
+          </CardDescription>
         )}
+      </CardHeader>
+      <CardContent className="flex-1 w-full min-h-[300px] mt-2">
+        {renderContent()}
       </CardContent>
     </Card>
   );
