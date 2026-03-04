@@ -1,36 +1,97 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-// Modular Strategy: Resolve API base URL based on environment variables
-// Falls back to localhost for development to prevent connection errors
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:10000';
+// Interaction Guidelines: Ensure we never default to localhost in a Vercel production build.
+// Vercel exposes NODE_ENV automatically.
+const isProd = process.env.NODE_ENV === 'production';
 
-export function useAsyncJob(jobId: string | null) {
-  const [status, setStatus] = useState<string>('idle');
-  const [result, setResult] = useState<any>(null);
+// Fallback to exactly your Render backend or local backend. 
+// NOTE: Make sure NEXT_PUBLIC_API_URL is configured in your Vercel Project Settings!
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || (isProd ? 'https://dataomen-api.onrender.com' : 'http://localhost:10000');
+
+export interface JobState {
+  status: 'idle' | 'waking_server' | 'loading' | 'success' | 'error';
+  // Note: Replace `any` with your specific DuckDB/Polars return type interface later
+  data: any | null; 
+  error: string | null;
+}
+
+export function useAsyncJob(jobId: string | null): JobState {
+  const [state, setState] = useState<JobState>({
+    status: 'idle',
+    data: null,
+    error: null
+  });
+
+  // We use AbortController to cancel out-of-date requests if the jobId changes
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId) {
+        setState(prev => ({ ...prev, status: 'idle' }));
+        return;
+    }
 
-    const checkStatus = async () => {
+    let mounted = true;
+    
+    const fetchJob = async () => {
+      // Step 1: Indicate potential cold-start to the UI immediately
+      setState(prev => ({ ...prev, status: 'waking_server' }));
+      
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       try {
-        // Engineering Excellence: Use environment-aware URLs
-        const response = await fetch(`${API_BASE_URL}/api/v1/datasets/job/${jobId}`);
-        if (!response.ok) throw new Error('Failed to fetch job status');
-        
-        const data = await response.json();
-        setStatus(data.status);
-        if (data.status === 'completed') {
-          setResult(data.result);
+        const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            // If you need to pass JWT to the backend for tenant security, do it here:
+            // 'Authorization': `Bearer ${sessionToken}` 
+          },
+          signal: abortControllerRef.current.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP Error: ${response.status} - ${response.statusText}`);
         }
-      } catch (error) {
-        console.error('Job polling error:', error);
-        setStatus('error');
+
+        const result = await response.json();
+        
+        if (mounted) {
+          setState({ status: 'success', data: result, error: null });
+        }
+      } catch (err: any) {
+        // Ignore errors caused by the fetch being aborted intentionally
+        if (err.name === 'AbortError') return;
+        
+        console.error("[Analytical Engine Error]", err);
+        
+        if (mounted) {
+          // If the error message mentions fetching, it's likely a CORS or URL issue
+          const isNetworkError = err.message.includes('fetch');
+          
+          setState({ 
+            status: 'error', 
+            data: null, 
+            error: isNetworkError 
+                ? `Network connection failed. Verify NEXT_PUBLIC_API_URL is set correctly to the Render URL.` 
+                : err.message || 'Failed to connect to the analytical engine.' 
+          });
+        }
       }
     };
 
-    const interval = setInterval(checkStatus, 3000);
-    return () => clearInterval(interval);
+    fetchJob();
+
+    return () => {
+      mounted = false;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [jobId]);
 
-  return { status, result };
+  return state;
 }
