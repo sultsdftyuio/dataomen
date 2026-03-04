@@ -1,216 +1,94 @@
+// components/dashboard/DashboardOrchestrator.tsx
 "use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { DynamicChartFactory } from './DynamicChartFactory';
-import { DataPreview } from './DataPreview';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/utils';
-import { Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-// -----------------------------------------------------------------------------
-// Type Safety: Strict interfaces for our analytical schema and calculated stats
-// -----------------------------------------------------------------------------
-export interface AnalyticalData {
-  id: string;
-  metric_name: string;
-  metric_value: number;
-  recorded_at: string;
-}
+// Changed to Named Imports based on your module architecture
+import { DataPreview } from "./DataPreview";
+import { DynamicChartFactory } from "./DynamicChartFactory";
 
-export interface AggregatedStats {
-  total: number;
-  mean: number;
-  stdDev: number;
-}
+// Initialize Supabase client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// -----------------------------------------------------------------------------
-// Computation (Execution) Layer: Pure, functional, and testable math modules
-// -----------------------------------------------------------------------------
+export default function DashboardOrchestrator() {
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-/**
- * Calculates standard statistical vectors (Total, Mean, Population StdDev).
- * Utilizing functional array methods (reduce) for JS-native vectorization equivalents.
- */
-function calculateVectorStats(data: AnalyticalData[]): AggregatedStats | null {
-  const len = data.length;
-  if (len === 0) return null;
-
-  // Pass 1: Sum and Mean
-  const total = data.reduce((acc, row) => acc + row.metric_value, 0);
-  const mean = total / len;
-
-  // Pass 2: Population Variance and Standard Deviation
-  const variance = data.reduce((acc, row) => acc + Math.pow(row.metric_value - mean, 2), 0) / len;
-  const stdDev = Math.sqrt(variance);
-
-  return { total, mean, stdDev };
-}
-
-/**
- * Pure function for mock generation ensuring the UI runs locally 
- * if the DB is empty, maintaining a deterministic, seeded output pattern.
- */
-function generateMockData(): AnalyticalData[] {
-  return Array.from({ length: 14 }).map((_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (14 - i));
-    return {
-      id: `mock-${i}`,
-      metric_name: 'Compute Load',
-      metric_value: Math.floor(200 + i * 15 + Math.random() * 50),
-      recorded_at: date.toISOString().split('T')[0],
-    };
-  });
-}
-
-// -----------------------------------------------------------------------------
-// Interaction (Frontend) Layer: Functional React Component
-// -----------------------------------------------------------------------------
-
-export function DashboardOrchestrator() {
-  const [dataset, setDataset] = useState<AnalyticalData[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Security by Design: RLS natively handles tenant data isolation
   useEffect(() => {
     let isMounted = true;
 
-    async function fetchTenantData() {
+    const enforceAuth = async () => {
       try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Fetch analytical data partitioned natively by tenant via Supabase RLS
-        const { data, error: queryError } = await supabase
-          .from('analytical_metrics')
-          .select('id, metric_name, metric_value, recorded_at')
-          .order('recorded_at', { ascending: true })
-          .limit(100);
+        // Instant, local-first session check (avoids network waterfall if cached)
+        const { data: { session }, error } = await supabase.auth.getSession();
 
-        if (queryError) throw queryError;
-        
-        // Graceful fallback to mock data strictly for visual scaffolding
-        const finalData = data && data.length > 0 ? data : generateMockData();
-        
-        if (isMounted) setDataset(finalData);
-      } catch (err: unknown) {
-        // Strict Type Safety: Avoid `any` in catch blocks
-        if (isMounted) {
-          const errorMessage = err instanceof Error ? err.message : 'Failed to fetch analytical metrics.';
-          setError(errorMessage);
+        if (error || !session) {
+          console.warn("[Auth Warning] No active tenant session found. Redirecting...");
+          window.location.replace('/login');
+          return;
         }
+
+        if (isMounted) {
+          // Security by Design: Explicit tenant isolation map
+          // Fallback to user.id if a dedicated tenant_id isn't in metadata yet
+          const activeTenantId = session.user.user_metadata?.tenant_id || session.user.id;
+          setTenantId(activeTenantId);
+        }
+      } catch (err) {
+        console.error("[Auth] Session validation failed:", err);
+        window.location.replace('/login');
       } finally {
         if (isMounted) setIsLoading(false);
       }
-    }
+    };
 
-    fetchTenantData();
-    
-    return () => { 
-      isMounted = false; 
+    // Execute immediately - eliminated artificial delays
+    enforceAuth();
+
+    // Listen for session expiry or logouts triggered in other browser tabs
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        window.location.replace('/login');
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
     };
   }, []);
 
-  // Isolate heavy math into a memoized value to prevent re-calculations on unrelated renders
-  const aggregatedStats = useMemo(() => calculateVectorStats(dataset), [dataset]);
-
-  // Finite State Render: Loading
   if (isLoading) {
     return (
-      <div className="flex min-h-[400px] flex-col items-center justify-center p-12 text-blue-600">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="mt-4 text-sm font-medium text-gray-500">Querying analytical engine...</p>
+      <div className="flex h-[60vh] w-full items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
       </div>
     );
   }
 
-  // Finite State Render: Error
-  if (error) {
-    return (
-      <Card className="border-red-200 bg-red-50 text-red-900 shadow-sm">
-        <CardHeader className="flex flex-row items-center gap-2 pb-2">
-          <AlertCircle className="h-5 w-5 text-red-600" />
-          <CardTitle className="text-red-800">Analytics Engine Error</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm">{error}</p>
-        </CardContent>
-      </Card>
-    );
-  }
+  if (!tenantId) return null;
 
-  // Finite State Render: Success
+  // The Modular Strategy: Pass tenantId down as a strict prop constraint to child data-fetching components
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      
-      {/* Sidebar: Data Management & Metrics */}
-      <div className="lg:col-span-1 flex flex-col gap-6">
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Calculated Metrics</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {aggregatedStats ? (
-              <div className="flex flex-col gap-4 text-sm">
-                <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
-                  <span className="text-gray-500 font-medium">Volume (Total)</span>
-                  <span className="font-bold text-gray-900 dark:text-gray-100">
-                    {aggregatedStats.total.toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
-                  <span className="text-gray-500 font-medium">Mean Baseline</span>
-                  <span className="font-bold text-gray-900 dark:text-gray-100">
-                    {aggregatedStats.mean.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
-                  <span className="text-gray-500 font-medium">Std Deviation</span>
-                  <span className="font-bold text-amber-600">
-                    ± {aggregatedStats.stdDev.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500 italic">Insufficient data for statistical modelling.</p>
-            )}
-          </CardContent>
-        </Card>
+    <div className="flex flex-col gap-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
+      <header className="flex items-center justify-between mb-2">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Analytical Overview</h1>
+          <p className="text-sm text-muted-foreground mt-1">Tenant ID: {tenantId}</p>
+        </div>
+      </header>
 
-        <Card className="shadow-sm flex-1">
-          <CardHeader>
-            <CardTitle className="text-lg">Raw Data Vector</CardTitle>
-          </CardHeader>
-          <CardContent>
-             <DataPreview data={dataset.slice(0, 5)} />
-             {dataset.length > 5 && (
-               <p className="text-xs text-gray-400 mt-4 text-right">
-                 Showing 5 of {dataset.length} entries
-               </p>
-             )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Column: Visualization Factory */}
-      <div className="lg:col-span-2">
-        <Card className="h-full flex flex-col shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Time Series Distribution</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 min-h-[400px]">
-             {/* The Modular Strategy: Delegating rendering to a swappable component */}
-             <DynamicChartFactory 
-               data={dataset} 
-               type="area" 
-               xKey="recorded_at" 
-               yKeys={['metric_value']} 
-             />
-          </CardContent>
-        </Card>
-      </div>
-      
+      <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <DynamicChartFactory tenantId={tenantId} />
+        </div>
+        <div className="space-y-6">
+          <DataPreview tenantId={tenantId} />
+        </div>
+      </main>
     </div>
   );
 }

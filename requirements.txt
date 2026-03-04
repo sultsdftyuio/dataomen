@@ -14,3 +14,4 @@ croniter
 tenacity==8.2.3
 anthropic==0.21.3
 python-jose[cryptography]
+sqlalchemy>=2.0.0

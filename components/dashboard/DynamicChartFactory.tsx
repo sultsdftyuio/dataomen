@@ -1,162 +1,155 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BarChart, Bar, LineChart, Line, ScatterChart, Scatter, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// 1. Strict Type Safety: Define the exact shape of props expected by the factory
+// 1. The Strict Contract
 export interface DynamicChartFactoryProps {
-  data: any[]; // Data payload from the backend (array of row objects)
-  type: 'bar' | 'line' | 'scatter' | 'area' | 'pie'; // Chart classification
-  xKey: string; // Key for the X-Axis (categorical, time-series, or independent variable)
-  yKeys: string[]; // Keys for the Y-Axis (numerical measures/dependent variables)
+  tenantId: string;
 }
 
-// 2. Theming: A sophisticated color palette for analytical dashboards. 
-// It attempts to use CSS variables for light/dark mode support, falling back to hex.
-const CHART_COLORS = [
-  'hsl(var(--chart-1, 220, 70%, 50%))',
-  'hsl(var(--chart-2, 160, 60%, 45%))',
-  'hsl(var(--chart-3, 30, 80%, 55%))',
-  'hsl(var(--chart-4, 280, 65%, 60%))',
-  'hsl(var(--chart-5, 340, 75%, 55%))',
-  '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00C49F'
-];
+// 2. Data Shape Interfaces
+type ChartType = 'line' | 'bar' | 'area' | 'scatter';
 
-export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ 
-  data, 
-  type = 'bar', 
-  xKey, 
-  yKeys = [] 
-}) => {
-  // Memoize the color assignment so it isn't recalculated on every React render tick
-  const colors = useMemo(() => CHART_COLORS, []);
+interface AnalyticalPayload {
+  chartType: ChartType;
+  title: string;
+  xAxisKey: string;
+  dataKeys: string[];
+  // Array of vectorized records (Pandas `to_dict('records')` output format)
+  data: Record<string, any>[]; 
+}
 
-  // Guard clause: Return an empty state if no data or axes are defined to prevent rendering crashes
-  if (!data || data.length === 0 || !xKey || yKeys.length === 0) {
-    return (
-      <div className="flex items-center justify-center w-full h-full text-sm text-muted-foreground bg-muted/5 rounded-xl border border-dashed border-muted">
-        Insufficient data or mapping to render visualization.
-      </div>
-    );
-  }
+const COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed'];
 
-  // Functional rendering strategy: Isolate chart construction based on the injected `type`
-  const renderChart = () => {
-    switch (type) {
-      case 'line':
-        return (
-          <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.4} vertical={false} />
-            <XAxis dataKey={xKey} tick={{ fontSize: 12 }} tickMargin={10} />
-            <YAxis tick={{ fontSize: 12 }} tickMargin={10} />
-            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-            {yKeys.map((key, index) => (
-              <Line 
-                key={key} 
-                type="monotone" 
-                dataKey={key} 
-                stroke={colors[index % colors.length]} 
-                strokeWidth={3}
-                dot={{ r: 4, strokeWidth: 2 }}
-                activeDot={{ r: 6, strokeWidth: 0 }}
-              />
-            ))}
-          </LineChart>
-        );
+export function DynamicChartFactory({ tenantId }: DynamicChartFactoryProps) {
+  const [payload, setPayload] = useState<AnalyticalPayload | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-      case 'scatter':
-        return (
-          <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.4} vertical={false} />
-            <XAxis dataKey={xKey} name={xKey} tick={{ fontSize: 12 }} tickMargin={10} />
-            <YAxis dataKey={yKeys[0]} name={yKeys[0]} tick={{ fontSize: 12 }} tickMargin={10} />
-            <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-            {yKeys.map((key, index) => (
-              <Scatter 
-                key={key} 
-                name={key} 
-                data={data} 
-                fill={colors[index % colors.length]} 
-              />
-            ))}
-          </ScatterChart>
-        );
+  useEffect(() => {
+    // Fetch logic: In a real analytical SaaS, this queries your semantic router / RAG backend
+    // which processes DuckDB/Polars logic and returns a JSON payload of the computed metrics.
+    const fetchAnalyticalTrajectory = async () => {
+      setIsLoading(true);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 900)); // Simulate compute
+        
+        // Mocking the result of an anomaly detection or forecasting EMA calculation
+        setPayload({
+          chartType: 'area',
+          title: 'Financial Trajectory (EMA Smoothed)',
+          xAxisKey: 'month',
+          dataKeys: ['revenue', 'projected'],
+          data: [
+            { month: 'Jan', revenue: 4000, projected: 4100 },
+            { month: 'Feb', revenue: 3000, projected: 3200 },
+            { month: 'Mar', revenue: 2000, projected: 2500 },
+            { month: 'Apr', revenue: 2780, projected: 2900 },
+            { month: 'May', revenue: 1890, projected: 2100 },
+            { month: 'Jun', revenue: 2390, projected: 2500 },
+            { month: 'Jul', revenue: 3490, projected: 3600 },
+          ]
+        });
+      } catch (err) {
+        console.error("[DynamicChartFactory] Failed to process payload:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
+    fetchAnalyticalTrajectory();
+  }, [tenantId]);
+
+  // Vectorized translation layer: Memoize the chart generation so React doesn't needlessly rerender recharts SVGs
+  const RenderedChart = useMemo(() => {
+    if (!payload || !payload.data) return null;
+
+    const { chartType, data, xAxisKey, dataKeys } = payload;
+
+    switch (chartType) {
       case 'area':
         return (
-          <AreaChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.4} vertical={false} />
-            <XAxis dataKey={xKey} tick={{ fontSize: 12 }} tickMargin={10} />
-            <YAxis tick={{ fontSize: 12 }} tickMargin={10} />
-            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-            {yKeys.map((key, index) => (
+          <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <defs>
+              {dataKeys.map((key, index) => (
+                <linearGradient key={`color${key}`} id={`color${key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor={COLORS[index % COLORS.length]} stopOpacity={0}/>
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey={xAxisKey} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            {dataKeys.map((key, index) => (
               <Area 
                 key={key} 
                 type="monotone" 
                 dataKey={key} 
-                fill={colors[index % colors.length]} 
-                stroke={colors[index % colors.length]} 
-                fillOpacity={0.2}
-                strokeWidth={2}
+                stroke={COLORS[index % COLORS.length]} 
+                fillOpacity={1} 
+                fill={`url(#color${key})`} 
               />
             ))}
           </AreaChart>
         );
-
-      case 'pie':
+      case 'line':
         return (
-          <PieChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-            <Pie 
-              data={data} 
-              dataKey={yKeys[0]} 
-              nameKey={xKey} 
-              cx="50%" 
-              cy="50%" 
-              innerRadius={60}
-              outerRadius={120} 
-              paddingAngle={2}
-            >
-              {data.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-              ))}
-            </Pie>
-          </PieChart>
+          <LineChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey={xAxisKey} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            {dataKeys.map((key, index) => (
+              <Line key={key} type="monotone" dataKey={key} stroke={COLORS[index % COLORS.length]} strokeWidth={2} activeDot={{ r: 8 }} />
+            ))}
+          </LineChart>
         );
-
       case 'bar':
-      default:
         return (
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" opacity={0.4} vertical={false} />
-            <XAxis dataKey={xKey} tick={{ fontSize: 12 }} tickMargin={10} />
-            <YAxis tick={{ fontSize: 12 }} tickMargin={10} />
-            <Tooltip cursor={{ fill: 'rgba(0,0,0,0.05)' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-            {yKeys.map((key, index) => (
-              <Bar 
-                key={key} 
-                dataKey={key} 
-                fill={colors[index % colors.length]} 
-                radius={[4, 4, 0, 0]} 
-                maxBarSize={60}
-              />
+          <BarChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey={xAxisKey} />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            {dataKeys.map((key, index) => (
+              <Bar key={key} dataKey={key} fill={COLORS[index % COLORS.length]} radius={[4, 4, 0, 0]} />
             ))}
           </BarChart>
         );
+      default:
+        return (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            Unsupported chart configuration derived from data payload.
+          </div>
+        );
     }
-  };
+  }, [payload]);
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      {renderChart()}
-    </ResponsiveContainer>
+    <Card className="h-full min-h-[450px] flex flex-col bg-card border-border">
+      <CardHeader>
+        <CardTitle>{payload?.title || "Analytical Trajectory"}</CardTitle>
+        <CardDescription>Metrics scoped strictly to Tenant: <span className="font-mono text-xs">{tenantId}</span></CardDescription>
+      </CardHeader>
+      <CardContent className="flex-1 w-full min-h-[300px] mt-4">
+        {isLoading ? (
+          <Skeleton className="w-full h-full min-h-[300px] rounded-lg" />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+            {RenderedChart!}
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
   );
-};
+}
