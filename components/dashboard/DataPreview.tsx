@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import React from 'react';
 import { 
   Table, 
   TableBody, 
@@ -10,148 +9,103 @@ import {
   TableHeader, 
   TableRow 
 } from '@/components/ui/table';
-import { Skeleton } from '@/components/ui/skeleton';
-import { FileDown, RefreshCw, AlertCircle } from 'lucide-react';
+import { FileDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-// 1. Strict Type Safety: Define props to resolve the IntrinsicAttributes missing property error
-export interface DataPreviewProps {
-  fileId: string;
+// Type Safety: Ensure this interface exactly matches the Orchestrator's expectations
+export interface AnalyticalData {
+  id: string;
+  metric_name: string;
+  metric_value: number;
+  recorded_at: string;
 }
 
-export function DataPreview({ fileId }: DataPreviewProps) {
-  const [data, setData] = useState<any[]>([]);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Explicitly declare the props to satisfy TypeScript's IntrinsicAttributes check
+export interface DataPreviewProps {
+  data: AnalyticalData[];
+}
 
-  const fetchPreviewData = useCallback(async () => {
-    if (!fileId) return;
+export function DataPreview({ data }: DataPreviewProps) {
+  
+  // Functional Interaction: Lightweight CSV export for analytical users
+  const handleExportCSV = () => {
+    if (!data || data.length === 0) return;
     
-    setIsLoading(true);
-    setError(null);
+    // Computation (Execution): Vectorized-style mapping to string for high-speed export
+    const headers = ["ID", "Metric Name", "Metric Value", "Recorded At"];
+    const csvContent = [
+      headers.join(","),
+      ...data.map(row => 
+        `"${row.id}","${row.metric_name}",${row.metric_value},"${row.recorded_at}"`
+      )
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
     
-    try {
-      // Analytical Efficiency: Route to backend which interacts with DuckDB/Parquet natively
-      const response = await axios.get(`/api/datasets/preview/${fileId}`);
-      
-      // Handle standard REST patterns gracefully
-      const payload = response.data?.data || response.data || [];
-      
-      if (Array.isArray(payload)) {
-        setData(payload);
-        if (payload.length > 0) {
-          setColumns(Object.keys(payload[0]));
-        }
-      } else {
-        throw new Error("Invalid tabular data format received from backend.");
-      }
+    link.setAttribute('href', url);
+    link.setAttribute('download', `telemetry_export_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-    } catch (err: any) {
-      console.error("Failed to fetch data preview:", err);
-      setError(
-        err.response?.data?.detail || 
-        err.message || 
-        "Unable to load data preview. Ensure the dataset is processed."
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [fileId]);
-
-  // Refetch when the Orchestrator passes down a new fileId
-  useEffect(() => {
-    fetchPreviewData();
-  }, [fetchPreviewData]);
-
-  // State 1: Processing/Fetching
-  if (isLoading) {
-    return (
-      <div className="p-6 border rounded-xl bg-card shadow-sm space-y-4">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="font-semibold text-sm">Raw Data Fragment</h3>
-        </div>
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-full rounded-md" />
-          <Skeleton className="h-12 w-full rounded-md" />
-          <Skeleton className="h-12 w-full rounded-md" />
-          <Skeleton className="h-12 w-full rounded-md" />
-        </div>
-      </div>
-    );
-  }
-
-  // State 2: Error Boundary
-  if (error) {
-    return (
-      <div className="p-6 border rounded-xl bg-card shadow-sm flex flex-col items-center justify-center space-y-3 min-h-[250px]">
-        <AlertCircle className="w-8 h-8 text-destructive" />
-        <p className="text-sm text-muted-foreground font-medium">{error}</p>
-        <Button variant="outline" size="sm" onClick={fetchPreviewData} className="mt-2">
-          <RefreshCw className="w-4 h-4 mr-2" /> Retry Request
-        </Button>
-      </div>
-    );
-  }
-
-  // State 3: Empty Data Output
+  // Graceful fallback for empty datasets
   if (!data || data.length === 0) {
     return (
-      <div className="p-6 border rounded-xl bg-card shadow-sm flex flex-col items-center justify-center min-h-[200px]">
-        <p className="text-sm text-muted-foreground">No tabular records found in this dataset.</p>
+      <div className="flex flex-col items-center justify-center p-8 text-center border rounded-md border-dashed border-gray-200 dark:border-gray-800">
+        <p className="text-sm text-gray-500">No raw data vectors available.</p>
       </div>
     );
   }
 
-  // State 4: Data Canvas 
   return (
-    <div className="p-6 border rounded-xl bg-card shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-semibold text-sm flex items-center gap-2">
-          Raw Data Fragment
-          <span className="text-xs font-normal text-muted-foreground px-2 py-0.5 bg-muted rounded-full">
-            Top 100 Rows
-          </span>
-        </h3>
-        <Button variant="ghost" size="sm" className="hidden sm:flex">
-          <FileDown className="w-4 h-4 mr-2" /> Export CSV
+    <div className="space-y-4">
+      {/* Interaction Layer: Action bar */}
+      <div className="flex justify-end">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleExportCSV}
+          className="text-xs flex items-center gap-2"
+        >
+          <FileDown className="h-4 w-4" />
+          Export CSV
         </Button>
       </div>
-      
-      <div className="rounded-md border overflow-x-auto max-h-[400px] relative">
+
+      {/* Presentation Layer: Tabular Data */}
+      <div className="rounded-md border border-gray-200 dark:border-gray-800 overflow-hidden">
         <Table>
-          <TableHeader className="sticky top-0 bg-background/95 backdrop-blur z-10">
-            <TableRow className="hover:bg-transparent">
-              {columns.map((col, idx) => (
-                <TableHead key={idx} className="whitespace-nowrap text-xs font-medium h-9">
-                  {col}
-                </TableHead>
-              ))}
+          <TableHeader className="bg-gray-50 dark:bg-gray-900">
+            <TableRow>
+              <TableHead className="text-xs font-semibold">Date</TableHead>
+              <TableHead className="text-xs font-semibold">Metric</TableHead>
+              <TableHead className="text-xs font-semibold text-right">Value</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {/* Limit UI rendering to 100 rows to maintain crisp DOM performance */}
-            {data.slice(0, 100).map((row, rowIdx) => (
-              <TableRow key={rowIdx}>
-                {columns.map((col, colIdx) => {
-                  const cellValue = row[col];
-                  return (
-                    <TableCell key={colIdx} className="whitespace-nowrap text-xs py-2.5">
-                      {cellValue !== null && cellValue !== undefined ? (
-                        String(cellValue)
-                      ) : (
-                        <span className="text-muted-foreground/50 italic">null</span>
-                      )}
-                    </TableCell>
-                  );
-                })}
+            {data.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-medium text-xs">
+                  {new Date(row.recorded_at).toLocaleDateString(undefined, { 
+                    month: 'short', 
+                    day: 'numeric' 
+                  })}
+                </TableCell>
+                <TableCell className="text-xs text-gray-600 dark:text-gray-400">
+                  {row.metric_name}
+                </TableCell>
+                <TableCell className="text-xs text-right font-mono text-blue-600 dark:text-blue-400">
+                  {row.metric_value.toLocaleString()}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
-      </div>
-      <div className="mt-4 text-xs text-muted-foreground flex justify-between items-center">
-        <span>Showing a subset of records to provide semantic context for the LLM.</span>
       </div>
     </div>
   );

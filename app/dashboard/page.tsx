@@ -5,98 +5,98 @@ import { useRouter } from 'next/navigation';
 import { DashboardOrchestrator } from '@/components/dashboard/DashboardOrchestrator';
 import { supabase } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { LogOut, LayoutDashboard, Activity } from 'lucide-react';
-import { toast } from 'sonner';
+import { LogOut, LayoutDashboard, Activity, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
-    const router = useRouter();
-    const [user, setUser] = useState<any>(null);
+  const router = useRouter();
+  const [isAuthenticating, setIsAuthenticating] = useState(true);
 
-    // Security & State Management: Ensure user is authenticated before mounting the dashboard
-    useEffect(() => {
-        const checkUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                router.replace('/login');
-            } else {
-                setUser(session.user);
-            }
-        };
-        checkUser();
-    }, [router]);
-
-    // Handle seamless session termination
-    const handleLogout = async () => {
-        try {
-            await supabase.auth.signOut();
-            toast.success("Successfully logged out");
-            router.replace('/login');
-        } catch (error) {
-            toast.error("Failed to log out");
-        }
+  // Security by Design: Verify tenant access at the edge of the interaction layer
+  useEffect(() => {
+    let isMounted = true;
+    
+    const verifySession = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error || !session) {
+        if (isMounted) router.replace('/login');
+      } else {
+        if (isMounted) setIsAuthenticating(false);
+      }
     };
 
-    // Clean loading state while session hydrates
-    if (!user) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-background">
-                <div className="animate-pulse flex flex-col items-center gap-4">
-                    <div className="bg-primary/10 p-3 rounded-xl">
-                        <Activity className="w-8 h-8 text-primary" />
-                    </div>
-                    <p className="text-muted-foreground font-medium">Authenticating workspace...</p>
-                </div>
-            </div>
-        );
-    }
+    verifySession();
+    
+    // Attach listener for real-time token invalidation
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        router.replace('/login');
+      }
+    });
 
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  };
+
+  if (isAuthenticating) {
     return (
-        <div className="min-h-screen bg-background flex flex-col overflow-hidden">
-            {/* High-Performance Header
-              Strictly configured to h-16 (4rem) to ensure the DashboardOrchestrator's
-              h-[calc(100vh-4rem)] fills the exact remaining screen space without scrolling.
-            */}
-            <header className="h-16 border-b flex items-center justify-between px-6 bg-card shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="bg-primary/10 p-2 rounded-lg">
-                        <LayoutDashboard className="w-5 h-5 text-primary" />
-                    </div>
-                    <h1 className="font-bold text-lg tracking-tight text-foreground">
-                        Proactive Analytics
-                    </h1>
-                </div>
-
-                <div className="flex items-center gap-4">
-                    <div className="text-sm font-medium text-muted-foreground hidden md:block px-3 py-1 bg-muted rounded-md border border-border">
-                        {user.email}
-                    </div>
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={handleLogout} 
-                        className="text-muted-foreground hover:text-foreground hover:bg-muted"
-                    >
-                        <LogOut className="w-4 h-4 mr-2" />
-                        Sign Out
-                    </Button>
-                </div>
-            </header>
-
-            {/* Main Content Area */}
-            <main className="flex-1 overflow-hidden">
-                {/* The Suspense boundary is strictly required by Next.js App Router 
-                  when using `useSearchParams` (which we do inside useAnomalyDeepLink).
-                  It guarantees safe static/client rendering handoffs. 
-                */}
-                <Suspense fallback={
-                    <div className="h-full flex items-center justify-center flex-col gap-4 p-8">
-                        <Activity className="w-8 h-8 text-primary/50 animate-bounce" />
-                        <p className="text-muted-foreground">Loading Analytical Context...</p>
-                    </div>
-                }>
-                    <DashboardOrchestrator />
-                </Suspense>
-            </main>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
+        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+      </div>
     );
+  }
+
+  // 100% Functional, Declarative UI
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-6 py-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="rounded-md bg-blue-600 p-2 text-white">
+            <LayoutDashboard className="h-5 w-5" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">Data Omen Analytics</h1>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleSignOut} 
+          className="flex items-center gap-2 border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-900"
+        >
+          <LogOut className="h-4 w-4" />
+          <span>Sign Out</span>
+        </Button>
+      </header>
+
+      <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-blue-600" />
+                <h2 className="text-2xl font-bold tracking-tight">Compute Telemetry</h2>
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
+                Real-time anomaly detection and metric forecasting via vectorized rollups.
+              </p>
+            </div>
+          </header>
+
+          <Suspense fallback={
+            <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-gray-300 dark:border-gray-800">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+          }>
+            <DashboardOrchestrator />
+          </Suspense>
+        </div>
+      </main>
+    </div>
+  );
 }
