@@ -3,20 +3,24 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardOrchestrator } from '@/components/dashboard/DashboardOrchestrator';
-import { supabase } from '@/lib/utils';
+import { createClient } from '@/utils/supabase/client'; // <-- Modular Strategy: Use the SSR-aware browser client
 import { Button } from '@/components/ui/button';
 import { LogOut, LayoutDashboard, Activity, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const supabase = createClient(); // <-- Initialize SSR client inside the component
+  
   // We initialize as true to prevent a flash of unauthenticated content
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(true);
+  const [tenantId, setTenantId] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
     const enforceTenantAuth = async () => {
       try {
+        // This now correctly checks the HTTP cookies synced by the SSR browser client
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error || !session) {
@@ -25,8 +29,11 @@ export default function DashboardPage() {
           return;
         }
         
-        // Security by Design: Auth successful, release the loading lock
-        if (mounted) setIsAuthenticating(false);
+        // Security by Design: Auth successful, secure the tenant ID, and release the loading lock
+        if (mounted) {
+          setTenantId(session.user.id);
+          setIsAuthenticating(false);
+        }
       } catch (err) {
         console.error("[Auth Error] Failed to verify tenant session:", err);
         if (mounted) router.replace('/login');
@@ -47,7 +54,7 @@ export default function DashboardPage() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router, supabase.auth]);
 
   // Determine what to show while auth is resolving
   if (isAuthenticating) {
@@ -92,7 +99,8 @@ export default function DashboardPage() {
             </div>
           </div>
         }>
-          <DashboardOrchestrator />
+          {/* Security by Design: Pass the tenant context downward to isolate compute */}
+          {tenantId && <DashboardOrchestrator tenantId={tenantId} />}
         </Suspense>
       </div>
     </div>

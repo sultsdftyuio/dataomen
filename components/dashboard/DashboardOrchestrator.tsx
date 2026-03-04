@@ -1,29 +1,30 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
+import React, { useState } from "react";
+// Modular Strategy: Use the SSR-aware client builder to maintain cookie synchronization
+import { createClient } from "@/utils/supabase/client";
 import { Search, Database, LayoutTemplate } from "lucide-react";
 
-// Functional UI Components
+// Functional UI Components (Stateless Presentation Layer)
 import { DataPreview } from "./DataPreview";
 import { DynamicChartFactory } from "./DynamicChartFactory";
 
-// Shadcn UI (Ensure these match your project structure)
+// Shadcn UI Components
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Type Safety: Strictly define the props boundary for dependency injection
+interface DashboardOrchestratorProps {
+  tenantId: string;
+}
 
-export function DashboardOrchestrator() {
-  // Authentication State
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+export function DashboardOrchestrator({ tenantId }: DashboardOrchestratorProps) {
+  // Hybrid Performance Paradigm: Initialize the swappable auth module locally
+  const supabase = createClient();
+  const { toast } = useToast();
 
   // Analytical Pipeline State
   const [datasetId, setDatasetId] = useState("");
@@ -34,50 +35,6 @@ export function DashboardOrchestrator() {
   const [analyticalData, setAnalyticalData] = useState<Record<string, any>[]>([]);
   const [generatedSql, setGeneratedSql] = useState<string | null>(null);
   const [chartType, setChartType] = useState<'area' | 'bar' | 'line'>('area');
-
-  const { toast } = useToast();
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const enforceAuth = async () => {
-      try {
-        // Instant, local-first session check
-        const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (error || !session) {
-          console.warn("[Auth Warning] No active tenant session found. Redirecting...");
-          window.location.replace('/login');
-          return;
-        }
-
-        if (isMounted) {
-          // Security by Design: Explicit tenant isolation map
-          const activeTenantId = session.user.user_metadata?.tenant_id || session.user.id;
-          setTenantId(activeTenantId);
-        }
-      } catch (err) {
-        console.error("[Auth] Session validation failed:", err);
-        window.location.replace('/login');
-      } finally {
-        if (isMounted) setIsAuthLoading(false);
-      }
-    };
-
-    enforceAuth();
-
-    // Listen for session expiry or logouts triggered in other browser tabs
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
-        window.location.replace('/login');
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
 
   // Execution Layer: The Contextual RAG Network Call
   const executeQuery = async () => {
@@ -94,11 +51,12 @@ export function DashboardOrchestrator() {
     setGeneratedSql(null);
 
     try {
-      // Fetch fresh token to pass to FastAPI for dependency injection (Depends(get_tenant))
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      if (!token) throw new Error("Authentication token expired.");
+      // Security by Design: Fetch fresh token just-in-time to pass to FastAPI (Depends(get_tenant))
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session?.access_token) {
+        throw new Error("Authentication token expired or unavailable.");
+      }
 
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       
@@ -106,7 +64,7 @@ export function DashboardOrchestrator() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
+          'Authorization': `Bearer ${session.access_token}` 
         },
         body: JSON.stringify({
           dataset_id: datasetId,
@@ -121,20 +79,20 @@ export function DashboardOrchestrator() {
 
       const result = await response.json();
       
-      // Update state to trigger Recharts and Data Table rendering
-      setAnalyticalData(result.data);
-      setGeneratedSql(result.generated_sql);
+      // Update state to trigger Recharts and Data Table rendering natively
+      setAnalyticalData(result.data || []);
+      setGeneratedSql(result.generated_sql || null);
       
       toast({
         title: "Query Successful",
-        description: `Processed ${result.data.length} records natively via DuckDB.`,
+        description: `Processed ${result.data?.length || 0} records natively via DuckDB.`,
       });
 
     } catch (error: any) {
       console.error("[Analytical Execution] Failed:", error);
       toast({
         title: "Query Failed",
-        description: error.message,
+        description: error.message || "An unexpected error occurred during execution.",
         variant: "destructive"
       });
     } finally {
@@ -142,23 +100,13 @@ export function DashboardOrchestrator() {
     }
   };
 
-  if (isAuthLoading) {
-    return (
-      <div className="flex h-[60vh] w-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
-  if (!tenantId) return null;
-
   return (
     <div className="flex flex-col gap-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-4 border-border">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Analytical Engine</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Tenant Boundary: <span className="font-mono bg-muted px-2 py-0.5 rounded">{tenantId}</span>
+          <p className="text-sm text-muted-foreground mt-1 flex items-center">
+            Tenant Boundary: <span className="font-mono bg-muted px-2 py-0.5 rounded ml-2 text-primary">{tenantId}</span>
           </p>
         </div>
         
@@ -205,7 +153,7 @@ export function DashboardOrchestrator() {
           </div>
           <div className="w-full md:w-1/4">
             <Button 
-              className="w-full h-10" 
+              className="w-full h-10 transition-all duration-200" 
               onClick={executeQuery} 
               disabled={isQuerying}
             >
@@ -215,9 +163,9 @@ export function DashboardOrchestrator() {
         </CardContent>
       </Card>
 
-      {/* Display Generated SQL if available */}
+      {/* Analytical Efficiency: Display Generated SQL if available */}
       {generatedSql && (
-        <div className="bg-muted/30 border border-border rounded-lg p-4 text-sm font-mono overflow-x-auto text-muted-foreground">
+        <div className="bg-muted/30 border border-border rounded-lg p-4 text-sm font-mono overflow-x-auto text-muted-foreground shadow-inner">
           <span className="text-primary font-semibold mr-2">DuckDB SQL:</span>
           {generatedSql}
         </div>
