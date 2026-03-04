@@ -9,94 +9,92 @@ import { LogOut, LayoutDashboard, Activity, Loader2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [isAuthenticating, setIsAuthenticating] = useState(true);
+  // We initialize as true to prevent a flash of unauthenticated content
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(true);
 
-  // Security by Design: Verify tenant access at the edge of the interaction layer
   useEffect(() => {
-    let isMounted = true;
-    
-    const verifySession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error || !session) {
-        if (isMounted) router.replace('/login');
-      } else {
-        if (isMounted) setIsAuthenticating(false);
+    let mounted = true;
+
+    const enforceTenantAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error || !session) {
+          console.warn("[Auth Warning] No active tenant session found. Redirecting...");
+          if (mounted) router.replace('/login');
+          return;
+        }
+        
+        // Security by Design: Auth successful, release the loading lock
+        if (mounted) setIsAuthenticating(false);
+      } catch (err) {
+        console.error("[Auth Error] Failed to verify tenant session:", err);
+        if (mounted) router.replace('/login');
       }
     };
 
-    verifySession();
-    
-    // Attach listener for real-time token invalidation
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
+    enforceTenantAuth();
+
+    // Modular Strategy: Reactive listener for session expiration/logout across tabs
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session && mounted) {
         router.replace('/login');
       }
     });
 
+    // Cleanup function to prevent memory leaks if the component unmounts mid-flight
     return () => {
-      isMounted = false;
+      mounted = false;
       subscription.unsubscribe();
     };
   }, [router]);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.replace('/login');
-  };
-
+  // Determine what to show while auth is resolving
   if (isAuthenticating) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+      <div className="flex h-screen w-full items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-sm text-gray-500 font-medium">Verifying tenant credentials...</p>
+        </div>
       </div>
     );
   }
 
-  // 100% Functional, Declarative UI
+  // Auth has passed; render the application shell
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-6 py-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="rounded-md bg-blue-600 p-2 text-white">
-            <LayoutDashboard className="h-5 w-5" />
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <LayoutDashboard className="h-6 w-6 text-blue-600" />
+            <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
           </div>
-          <h1 className="text-xl font-bold tracking-tight">Data Omen Analytics</h1>
-        </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleSignOut} 
-          className="flex items-center gap-2 border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-900"
-        >
-          <LogOut className="h-4 w-4" />
-          <span>Sign Out</span>
-        </Button>
-      </header>
+          <Button 
+            variant="outline" 
+            onClick={async () => {
+              // Functional execution: clean sign out
+              await supabase.auth.signOut();
+              router.replace('/login');
+            }}
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Sign Out
+          </Button>
+        </header>
 
-      <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-        <div className="mx-auto max-w-7xl space-y-8">
-          <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-blue-600" />
-                <h2 className="text-2xl font-bold tracking-tight">Compute Telemetry</h2>
-              </div>
-              <p className="text-gray-500 dark:text-gray-400 mt-1">
-                Real-time anomaly detection and metric forecasting via vectorized rollups.
-              </p>
+        {/* Hybrid Performance Paradigm: Wrap heavy client execution in a suspense boundary */}
+        <Suspense fallback={
+          <div className="flex h-64 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex flex-col items-center gap-2">
+               <Activity className="h-8 w-8 animate-pulse text-gray-400" />
+               <span className="text-sm text-gray-500">Initializing orchestrator...</span>
             </div>
-          </header>
-
-          <Suspense fallback={
-            <div className="flex h-64 items-center justify-center rounded-lg border border-dashed border-gray-300 dark:border-gray-800">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-            </div>
-          }>
-            <DashboardOrchestrator />
-          </Suspense>
-        </div>
-      </main>
+          </div>
+        }>
+          <DashboardOrchestrator />
+        </Suspense>
+      </div>
     </div>
   );
 }
