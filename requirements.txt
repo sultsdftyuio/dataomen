@@ -1,26 +1,37 @@
-# Web Framework & Server
+# 1. Web Framework & Server (Orchestration)
 fastapi
 uvicorn[standard]
 python-multipart
 
-# Computation & Analytical Engines
+# 2. Computation & Analytical Engines (Execution)
 pandas
 numpy
+polars         # High-performance dataframe engine
 duckdb
+pyarrow        # Crucial for Parquet file formats
 scikit-learn
 
-# AI & LLM Integrations
+# 3. AI, LLM & Routing (Contextual RAG)
 openai
 anthropic
 tenacity==8.2.3
 
-# Database & ORM (Fixes the ModuleNotFoundError)
+# 4. Database & ORM (Data Movement)
 supabase
 sqlalchemy
 pgvector
-psycopg2-binary
+psycopg2-binary # Fallback sync driver
+asyncpg         # High-concurrency async driver
 
-# Utilities & Config
+# 5. Auth & Security (Multi-tenant isolation)
+python-jose[cryptography]
+passlib[bcrypt] # Required if doing any manual password hash verifications
+
+# 6. Object Storage / Cloudflare R2 (Modular Strategy)
+boto3
+s3fs
+
+# 7. Utilities & Config
 python-dotenv
 pydantic
 openpyxl
