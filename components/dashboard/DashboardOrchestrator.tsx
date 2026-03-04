@@ -1,259 +1,171 @@
 "use client";
 
-import React, { useMemo } from 'react';
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  ScatterChart,
-  Scatter,
-  AreaChart,
-  Area,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
+import React, { useState, useMemo, useEffect } from 'react';
+import { DynamicChartFactory } from './DynamicChartFactory';
+import { DataPreview } from './DataPreview';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { supabase } from '@/lib/utils';
+import { Loader2 } from 'lucide-react';
 
-// 1. Strict Type Safety: Explicitly define all props injected by the Orchestrator
-export interface DynamicChartFactoryProps {
-  data: any[];
-  type: "bar" | "line" | "scatter" | "area" | "pie";
-  xKey: string;
-  yKeys: string[];
-  // FIX: Expose globalFilters and fileId to resolve IntrinsicAttributes mapping error
-  globalFilters?: Record<string, string>; 
-  fileId?: string; 
-  colors?: string[];
+// Type Safety: Strict interfaces for our analytical schema
+export interface AnalyticalData {
+  id: string;
+  metric_name: string;
+  metric_value: number;
+  recorded_at: string;
 }
 
-const DEFAULT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#6366f1'];
+export function DashboardOrchestrator() {
+  const [dataset, setDataset] = useState<AnalyticalData[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-export function DynamicChartFactory({
-  data = [],
-  type,
-  xKey,
-  yKeys,
-  globalFilters = {},
-  fileId, // Maintained for RAG context bridging if needed
-  colors = DEFAULT_COLORS
-}: DynamicChartFactoryProps) {
+  // Security by Design & Modular Strategy
+  // Fetch data specifically partitioned by the authenticated tenant ID using RLS.
+  useEffect(() => {
+    let isMounted = true;
 
-  // 2. Functional Operations: Isolate computation (filtering) off the render cycle 
-  const filteredData = useMemo(() => {
-    if (!globalFilters || Object.keys(globalFilters).length === 0) {
-      return data;
-    }
-    
-    return data.filter(item => {
-      for (const [key, value] of Object.entries(globalFilters)) {
-        if (item[key] !== undefined && String(item[key]).toLowerCase() !== String(value).toLowerCase()) {
-          return false;
-        }
+    async function fetchTenantData() {
+      try {
+        setIsLoading(true);
+        
+        // Supabase query to fetch analytical data - RLS ensures tenant isolation at the database layer
+        const { data, error: queryError } = await supabase
+          .from('analytical_metrics')
+          .select('id, metric_name, metric_value, recorded_at')
+          .order('recorded_at', { ascending: true })
+          .limit(100);
+
+        if (queryError) throw queryError;
+        
+        // Fallback to mock data strictly for visual scaffolding if the table is empty
+        const finalData = data && data.length > 0 ? data : generateMockData();
+        
+        if (isMounted) setDataset(finalData);
+      } catch (err: any) {
+        if (isMounted) setError(err.message || 'Failed to fetch analytical metrics.');
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-      return true;
-    });
-  }, [data, globalFilters]);
+    }
 
-  // Unified Tooltip Configuration
-  const renderTooltip = () => (
-    <Tooltip 
-      contentStyle={{ 
-        backgroundColor: 'rgba(17, 24, 39, 0.9)', 
-        borderColor: 'rgba(55, 65, 81, 1)', 
-        color: '#fff', 
-        borderRadius: '8px' 
-      }}
-      itemStyle={{ color: '#fff' }}
-    />
-  );
+    fetchTenantData();
+    return () => { isMounted = false; };
+  }, []);
 
-  // Structural Fallback
-  if (!filteredData || filteredData.length === 0) {
+  // Computation (Execution) layer
+  // Utilizing a functional, stateless approach to calculate baselines (Mean, SD) for anomaly detection.
+  const aggregatedStats = useMemo(() => {
+    if (!dataset.length) return null;
+    
+    // Mathematical Precision: Instead of a simple average, we isolate variance.
+    const total = dataset.reduce((acc, row) => acc + row.metric_value, 0);
+    const mean = total / dataset.length;
+    
+    // Calculate variance for standard deviation (useful for upper/lower bound anomaly flagging)
+    const variance = dataset.reduce((acc, row) => acc + Math.pow(row.metric_value - mean, 2), 0) / dataset.length;
+    const stdDev = Math.sqrt(variance);
+
+    return { 
+      total, 
+      mean, 
+      stdDev 
+    };
+  }, [dataset]);
+
+  if (isLoading) {
     return (
-      <div className="flex h-full w-full min-h-[350px] items-center justify-center bg-muted/20 rounded-lg border border-dashed p-4">
-        <p className="text-muted-foreground text-sm">No analytical data available for these parameters.</p>
+      <div className="flex min-h-[400px] items-center justify-center p-12">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
       </div>
     );
   }
 
-  const renderChart = () => {
-    switch (type) {
-      case 'bar':
-        return (
-          <BarChart data={filteredData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted-foreground)/0.2)" />
-            <XAxis 
-              dataKey={xKey} 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            <YAxis 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            {renderTooltip()}
-            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-            {yKeys.map((key, idx) => (
-              <Bar key={key} dataKey={key} fill={colors[idx % colors.length]} radius={[4, 4, 0, 0]} maxBarSize={50} />
-            ))}
-          </BarChart>
-        );
-
-      case 'line':
-        return (
-          <LineChart data={filteredData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted-foreground)/0.2)" />
-            <XAxis 
-              dataKey={xKey} 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            <YAxis 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            {renderTooltip()}
-            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-            {yKeys.map((key, idx) => (
-              <Line 
-                key={key} 
-                type="monotone" 
-                dataKey={key} 
-                stroke={colors[idx % colors.length]} 
-                strokeWidth={2} 
-                activeDot={{ r: 6 }} 
-                dot={{ r: 3, strokeWidth: 0 }} 
-              />
-            ))}
-          </LineChart>
-        );
-
-      case 'area':
-        return (
-          <AreaChart data={filteredData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <defs>
-              {yKeys.map((key, idx) => (
-                <linearGradient key={`color-${key}`} id={`color-${key}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={colors[idx % colors.length]} stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor={colors[idx % colors.length]} stopOpacity={0}/>
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--muted-foreground)/0.2)" />
-            <XAxis 
-              dataKey={xKey} 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            <YAxis 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            {renderTooltip()}
-            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-            {yKeys.map((key, idx) => (
-              <Area 
-                key={key} 
-                type="monotone" 
-                dataKey={key} 
-                stroke={colors[idx % colors.length]} 
-                fillOpacity={1} 
-                fill={`url(#color-${key})`} 
-                strokeWidth={2} 
-              />
-            ))}
-          </AreaChart>
-        );
-
-      case 'scatter':
-        return (
-          <ScatterChart margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted-foreground)/0.2)" />
-            <XAxis 
-              dataKey={xKey} 
-              type="number" 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            <YAxis 
-              dataKey={yKeys[0]} 
-              type="number" 
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} 
-              tickLine={false} 
-              axisLine={{ stroke: 'hsl(var(--muted-foreground)/0.2)' }} 
-            />
-            {renderTooltip()}
-            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-            <Scatter name={yKeys[0]} data={filteredData} fill={colors[0]} line shape="circle" />
-          </ScatterChart>
-        );
-
-      case 'pie':
-        return (
-          <PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-            {renderTooltip()}
-            <Legend wrapperStyle={{ fontSize: '12px' }} />
-            <Pie
-              data={filteredData}
-              dataKey={yKeys[0]}
-              nameKey={xKey}
-              cx="50%"
-              cy="50%"
-              outerRadius={80}
-              innerRadius={50}
-              paddingAngle={5}
-              label={({ cx, cy, midAngle, innerRadius, outerRadius, value, index }) => {
-                const RADIAN = Math.PI / 180;
-                const radius = 25 + innerRadius + (outerRadius - innerRadius);
-                const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                return (
-                  <text 
-                    x={x} 
-                    y={y} 
-                    fill={colors[index % colors.length]} 
-                    textAnchor={x > cx ? 'start' : 'end'} 
-                    dominantBaseline="central" 
-                    fontSize={12}
-                  >
-                    {`${filteredData[index]?.[xKey] || 'Unknown'} (${value})`}
-                  </text>
-                );
-              }}
-            >
-              {filteredData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-              ))}
-            </Pie>
-          </PieChart>
-        );
-
-      default:
-        return (
-          <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-            Unsupported analytical chart type: {type}
-          </div>
-        );
-    }
-  };
+  if (error) {
+    return (
+      <Card className="border-red-200 bg-red-50 text-red-900 p-6">
+        <CardTitle className="text-red-700">Analytics Load Error</CardTitle>
+        <CardContent className="mt-2">{error}</CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <ResponsiveContainer width="100%" height={350}>
-      {renderChart()}
-    </ResponsiveContainer>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Sidebar: Data Management & Metrics */}
+      <div className="lg:col-span-1 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Calculated Metrics</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {aggregatedStats ? (
+              <div className="flex flex-col gap-4">
+                <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                  <span className="text-gray-500 font-medium">Volume (Total)</span>
+                  <span className="font-bold">{aggregatedStats.total.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                  <span className="text-gray-500 font-medium">Mean Baseline</span>
+                  <span className="font-bold">{aggregatedStats.mean.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                  <span className="text-gray-500 font-medium">Std Deviation</span>
+                  <span className="font-bold text-amber-600">± {aggregatedStats.stdDev.toFixed(2)}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-gray-500">Insufficient data for statistical modelling.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Raw Data Vector</CardTitle>
+          </CardHeader>
+          <CardContent>
+             <DataPreview data={dataset.slice(0, 5)} />
+             {dataset.length > 5 && (
+               <p className="text-xs text-gray-400 mt-3 italic text-right">
+                 Showing 5 of {dataset.length} entries.
+               </p>
+             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Column: Visualization Factory */}
+      <div className="lg:col-span-2">
+        <Card className="h-full flex flex-col border border-gray-200 dark:border-gray-800 shadow-sm">
+          <CardHeader>
+            <CardTitle>Time Series Distribution</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 min-h-[400px]">
+             {/* The Modular Strategy: Delegating rendering to a swappable component */}
+             <DynamicChartFactory 
+               data={dataset} 
+               type="area" 
+               xKey="recorded_at" 
+               yKeys={['metric_value']} 
+             />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
+}
+
+// Pure function for mock generation ensuring the UI runs locally even if the DB is empty
+function generateMockData(): AnalyticalData[] {
+  return Array.from({ length: 14 }).map((_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (14 - i));
+    return {
+      id: `mock-${i}`,
+      metric_name: 'Compute Load',
+      metric_value: Math.floor(200 + i * 15 + Math.random() * 50),
+      recorded_at: date.toISOString().split('T')[0],
+    };
+  });
 }
