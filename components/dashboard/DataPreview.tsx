@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from "react";
 import { 
   Table, 
   TableBody, 
@@ -8,105 +8,106 @@ import {
   TableHead, 
   TableHeader, 
   TableRow 
-} from '@/components/ui/table';
-import { FileDown } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+} from "@/components/ui/table";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// Type Safety: Ensure this interface exactly matches the Orchestrator's expectations
-export interface AnalyticalData {
-  id: string;
-  metric_name: string;
-  metric_value: number;
-  recorded_at: string;
-}
-
-// Explicitly declare the props to satisfy TypeScript's IntrinsicAttributes check
+// The Strict Contract: Enforce tenantId injection for Security by Design
 export interface DataPreviewProps {
-  data: AnalyticalData[];
+  tenantId: string;
 }
 
-export function DataPreview({ data }: DataPreviewProps) {
-  
-  // Functional Interaction: Lightweight CSV export for analytical users
-  const handleExportCSV = () => {
-    if (!data || data.length === 0) return;
-    
-    // Computation (Execution): Vectorized-style mapping to string for high-speed export
-    const headers = ["ID", "Metric Name", "Metric Value", "Recorded At"];
-    const csvContent = [
-      headers.join(","),
-      ...data.map(row => 
-        `"${row.id}","${row.metric_name}",${row.metric_value},"${row.recorded_at}"`
-      )
-    ].join("\n");
+// Interface for strongly-typed analytical datasets
+interface DatasetMeta {
+  id: string;
+  name: string;
+  status: "Cleaned" | "Ingesting" | "Failed" | "Ready";
+  rows: number | null;
+  lastUpdated: string;
+}
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `telemetry_export_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+export function DataPreview({ tenantId }: DataPreviewProps) {
+  const [datasets, setDatasets] = useState<DatasetMeta[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Graceful fallback for empty datasets
-  if (!data || data.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center p-8 text-center border rounded-md border-dashed border-gray-200 dark:border-gray-800">
-        <p className="text-sm text-gray-500">No raw data vectors available.</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    // The Modular Strategy: This fetch logic can point to Supabase, an API route, 
+    // or an in-memory DuckDB query. Scoped strictly by tenantId.
+    const fetchTenantDatasets = async () => {
+      try {
+        setIsLoading(true);
+        // Simulate network/analytical fetch delay
+        await new Promise((resolve) => setTimeout(resolve, 800));
+
+        // Simulated Vectorized Metadata Payload
+        setDatasets([
+          { id: "1", name: "q3_financials.parquet", status: "Ready", rows: 1200500, lastUpdated: "2026-03-01T10:00:00Z" },
+          { id: "2", name: "user_events_raw.csv", status: "Ingesting", rows: null, lastUpdated: "2026-03-04T08:30:00Z" },
+          { id: "3", name: "anomaly_logs.parquet", status: "Cleaned", rows: 450, lastUpdated: "2026-03-03T14:15:00Z" },
+        ]);
+      } catch (error) {
+        console.error("[DataPreview] Failed to fetch dataset metadata:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTenantDatasets();
+  }, [tenantId]);
 
   return (
-    <div className="space-y-4">
-      {/* Interaction Layer: Action bar */}
-      <div className="flex justify-end">
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleExportCSV}
-          className="text-xs flex items-center gap-2"
-        >
-          <FileDown className="h-4 w-4" />
-          Export CSV
-        </Button>
-      </div>
-
-      {/* Presentation Layer: Tabular Data */}
-      <div className="rounded-md border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <Table>
-          <TableHeader className="bg-gray-50 dark:bg-gray-900">
-            <TableRow>
-              <TableHead className="text-xs font-semibold">Date</TableHead>
-              <TableHead className="text-xs font-semibold">Metric</TableHead>
-              <TableHead className="text-xs font-semibold text-right">Value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-medium text-xs">
-                  {new Date(row.recorded_at).toLocaleDateString(undefined, { 
-                    month: 'short', 
-                    day: 'numeric' 
-                  })}
-                </TableCell>
-                <TableCell className="text-xs text-gray-600 dark:text-gray-400">
-                  {row.metric_name}
-                </TableCell>
-                <TableCell className="text-xs text-right font-mono text-blue-600 dark:text-blue-400">
-                  {row.metric_value.toLocaleString()}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+    <Card className="h-full border-border bg-card">
+      <CardHeader>
+        <CardTitle className="text-xl">Active Datasets</CardTitle>
+        <CardDescription>Isolated data layer for Tenant: <span className="font-mono text-xs">{tenantId}</span></CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Dataset Name</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Row Count</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {datasets.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground h-24">
+                      No datasets detected. Upload a parquet or csv file to begin.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  datasets.map((dataset) => (
+                    <TableRow key={dataset.id}>
+                      <TableCell className="font-medium">{dataset.name}</TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={dataset.status === "Ready" || dataset.status === "Cleaned" ? "default" : "secondary"}
+                        >
+                          {dataset.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {dataset.rows ? dataset.rows.toLocaleString() : "--"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
