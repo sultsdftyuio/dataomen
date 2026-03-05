@@ -1,7 +1,6 @@
-// components/ingestion/FileUploadZone.tsx
 "use client";
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { UploadCloud, File as FileIcon, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export interface UploadSuccessData {
@@ -16,16 +15,22 @@ interface FileUploadZoneProps {
   onUploadSuccess: (data: UploadSuccessData) => void;
 }
 
+// DEFINING SUPPORTED TYPES WITHOUT SPACES + MIME TYPES FOR CROSS-OS COMPATIBILITY (Modular Strategy)
+const ACCEPTED_FORMATS = ".csv,.json,.parquet,.pq,.xlsx,text/csv,application/json,application/octet-stream,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
 export default function FileUploadZone({ 
   isEphemeral = false, 
   token, 
   onUploadSuccess 
 }: FileUploadZoneProps) {
   
-  const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<boolean>(false);
+  
+  // Reference to manually clear the input, enabling consecutive re-uploads of the same file
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -41,6 +46,7 @@ export default function FileUploadZone({
     // Prevent massive files from choking the browser memory immediately
     if (file.size > 100 * 1024 * 1024) { // 100MB limit for UI protection
         setError("File exceeds 100MB UI limit. Please use the API directly for larger files.");
+        if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
         return;
     }
 
@@ -93,6 +99,10 @@ export default function FileUploadZone({
     } finally {
       setIsUploading(false);
       setIsDragging(false);
+      // Reset file input so the exact same file can be selected again if there was an error
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''; 
+      }
     }
   };
 
@@ -119,7 +129,8 @@ export default function FileUploadZone({
     >
       <input 
         type="file" 
-        accept=".csv,.json,.parquet" 
+        ref={fileInputRef}
+        accept={ACCEPTED_FORMATS} 
         onChange={handleFileChange} 
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         disabled={isUploading || success}
@@ -149,6 +160,7 @@ export default function FileUploadZone({
             <span className="flex items-center gap-1"><FileIcon className="w-4 h-4"/> CSV</span>
             <span className="flex items-center gap-1"><FileIcon className="w-4 h-4"/> JSON</span>
             <span className="flex items-center gap-1"><FileIcon className="w-4 h-4"/> PARQUET</span>
+            <span className="flex items-center gap-1"><FileIcon className="w-4 h-4"/> XLSX</span>
           </div>
         </div>
       )}
