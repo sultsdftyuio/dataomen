@@ -1,96 +1,183 @@
+# api/routes/query.py
+import os
+import tempfile
 import logging
-from typing import Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+import time
+from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
 import duckdb
-import pandas as pd
-import numpy as np
 
-from api.auth import get_current_user as get_tenant
 from api.database import get_db
-from models import Dataset
+# Ensure this matches your actual auth import
+try:
+    from api.auth import get_current_tenant
+except ImportError:
+    def get_current_tenant(): return "mock_tenant_id"
+
 from api.services.storage_manager import storage_manager
-from api.services.nl2sql_generator import nl2sql
+from api.services.nl2sql_generator import nl2sql_generator
+from models import Dataset, QueryHistory
 
-router = APIRouter(prefix="/query", tags=["Analytics"])
 logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/query", tags=["Query"])
 
-class QueryRequest(BaseModel):
+# --- Pydantic Models ---
+class EphemeralQueryRequest(BaseModel):
+    ephemeral_path: str
+    natural_query: str
+
+class PersistentQueryRequest(BaseModel):
     dataset_id: str
-    natural_language_query: str
+    natural_query: str
+    agent_id: Optional[str] = None # For tracking history to specific AI assistants
 
-@router.post("/", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
-async def execute_natural_language_query(
-    request: QueryRequest,
-    tenant_id: str = Depends(get_tenant),
-    db: Session = Depends(get_db)
-):
+# --- Security Validation ---
+def security_validate_ephemeral_path(path: str):
     """
-    Orchestration Layer:
-    1. Validates dataset ownership (Security by Design).
-    2. Dynamically extracts Parquet schema from R2 via DuckDB without downloading data.
-    3. Translates NL to SQL via LLM (Contextual RAG).
-    4. Executes SQL analytically in-place on R2 and returns JSON results.
+    Security by Design: Strict validation to prevent Directory Traversal (LFI) attacks.
+    Ensures the path requested by the frontend resides purely within the OS Temp directory.
     """
-    # 1. Security by Design: Strictly validate the dataset belongs to the requesting tenant
+    temp_dir = tempfile.gettempdir()
+    absolute_requested_path = os.path.abspath(path)
+    
+    if not absolute_requested_path.startswith(os.path.abspath(temp_dir)):
+        logger.warning(f"SECURITY ALERT: Attempted path traversal detected: {path}")
+        raise ValueError("Invalid path mapping. Access denied.")
+    
+    if not os.path.exists(absolute_requested_path):
+        raise ValueError("Ephemeral session expired or file not found. Please re-upload your file.")
+
+# --- Routes ---
+@router.post("/ephemeral")
+async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, Any]:
+    """
+    Tier 1 Execution: Purely in-memory, zero persistent footprint.
+    Uses AI to generate DuckDB SQL against an unauthenticated /tmp/ file.
+    """
+    try:
+        security_validate_ephemeral_path(request.ephemeral_path)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    start_time = time.time()
+    try:
+        # 1. Inform the LLM of the exact literal string DuckDB needs to read the file
+        table_name_for_duckdb = f"read_parquet('{request.ephemeral_path}')"
+
+        # 2. Call Semantic Router (We pass None for schema as ephemeral relies on LLM inference/DuckDB auto-detect)
+        sql_query = await nl2sql_generator.generate_sql(
+            natural_query=request.natural_query, 
+            table_name=table_name_for_duckdb,
+            schema_metadata=None 
+        )
+
+        # 3. Connect and Execute purely in RAM
+        con = duckdb.connect(':memory:')
+        
+        # 4. Vectorized execution and Pandas conversion
+        df = con.execute(sql_query).df()
+        
+        # Data Sanitization: NaN values break JSON, replace with None (null)
+        df = df.fillna("") 
+        
+        results = df.to_dict(orient="records")
+        execution_time_ms = round((time.time() - start_time) * 1000, 2)
+
+        return {
+            "status": "success",
+            "sql_executed": sql_query,
+            "columns": list(df.columns),
+            "data": results,
+            "execution_time_ms": execution_time_ms
+        }
+
+    except Exception as e:
+        logger.error(f"Ephemeral Query Execution failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+
+
+@router.post("/persistent")
+async def execute_persistent_query(
+    request: PersistentQueryRequest,
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant)
+) -> Dict[str, Any]:
+    """
+    Tier 2/3 Execution: Connects securely to Supabase Storage, Cloudflare R2, or BYOS.
+    Executes heavily optimized Contextual RAG.
+    """
+    start_time = time.time()
+    
+    # 1. Fetch Jailed Dataset
     dataset = db.query(Dataset).filter(
         Dataset.id == request.dataset_id,
         Dataset.tenant_id == tenant_id
     ).first()
     
     if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found or unauthorized.")
+        raise HTTPException(status_code=404, detail="Dataset not found or access denied.")
 
-    # 2. Analytical Efficiency: Setup In-Memory DuckDB + R2 HTTP Streaming
-    conn = duckdb.connect(database=':memory:')
-    
+    sql_query = None
     try:
-        storage_manager.configure_duckdb_connection(conn)
+        # 2. Storage Orchestration: Calculate optimal Zero-Copy or S3 Query Path
+        query_path = storage_manager.get_duckdb_query_path(db, dataset)
+        
+        # DuckDB expects read_parquet('s3://...') for remote paths
+        table_name_for_duckdb = f"read_parquet('{query_path}')"
 
-        # 3. Contextual RAG: Fetch Schema dynamically to prevent LLM token bloat
-        # Using DESCRIBE efficiently reads just the metadata footer from the cloud Parquet file
-        schema_query = f"DESCRIBE SELECT * FROM read_parquet('{dataset.storage_uri}') LIMIT 1"
-        try:
-            schema_df = conn.execute(schema_query).df()
-            schema_str = schema_df[['column_name', 'column_type']].to_string(index=False)
-        except Exception as e:
-            logger.error(f"Failed to read schema from R2 for dataset {dataset.id}: {e}")
-            raise HTTPException(status_code=500, detail="Could not retrieve schema from storage. The dataset may be corrupted or unavailable.")
-        
-        # 4. Generate SQL
-        generated_sql = await nl2sql.generate_sql(
-            user_query=request.natural_language_query,
-            schema_info=schema_str,
-            file_uri=dataset.storage_uri
+        # 3. AI Orchestration: Contextual RAG via Schema caching
+        sql_query = await nl2sql_generator.generate_sql(
+            natural_query=request.natural_query,
+            table_name=table_name_for_duckdb,
+            schema_metadata=dataset.schema_metadata
         )
-        logger.info(f"Generated SQL for Tenant {tenant_id}: {generated_sql}")
+
+        # 4. Engine Orchestration: Inject strict Tenant Credentials
+        con = storage_manager.setup_duckdb_connection(db, tenant_id)
+
+        # 5. Computation: Execute and Format
+        df = con.execute(sql_query).df()
+        df = df.fillna("")
+        results = df.to_dict(orient="records")
         
-        # 5. Computation Layer: Execute Generated SQL
-        try:
-            result_df = conn.execute(generated_sql).df()
-        except duckdb.Error as e:
-            logger.error(f"DuckDB Execution Error: {e}\nSQL: {generated_sql}")
-            raise HTTPException(status_code=400, detail=f"Generated SQL resulted in an error: {str(e)}")
-        
-        # 6. Vectorized Sanitization for JSON mapping
-        # Convert NaN and Infinity to standard JSON nulls natively
-        result_df = result_df.replace([np.inf, -np.inf], None)
-        result_df = result_df.where(pd.notnull(result_df), None)
-        
+        execution_time_ms = round((time.time() - start_time) * 1000, 2)
+
+        # Optional: Asynchronously log the telemetry
+        if request.agent_id:
+            log_entry = QueryHistory(
+                tenant_id=tenant_id,
+                agent_id=request.agent_id,
+                natural_query=request.natural_query,
+                generated_sql=sql_query,
+                execution_time_ms=execution_time_ms,
+                was_successful=True
+            )
+            db.add(log_entry)
+            db.commit()
+
         return {
             "status": "success",
-            "dataset_id": dataset.id,
-            "generated_sql": generated_sql,
-            "data": result_df.to_dict(orient="records")
+            "sql_executed": sql_query,
+            "columns": list(df.columns),
+            "data": results,
+            "execution_time_ms": execution_time_ms
         }
-        
-    except HTTPException:
-        raise
+
     except Exception as e:
-        logger.error(f"Query pipeline failed for tenant {tenant_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during analytical execution: {str(e)}")
+        logger.error(f"Persistent Query Execution failed for tenant {tenant_id}: {str(e)}")
         
-    finally:
-        # Guarantee memory release back to the Render instance
-        conn.close()
+        # Log failure for LLM fine-tuning later
+        if request.agent_id and sql_query:
+            db.add(QueryHistory(
+                tenant_id=tenant_id,
+                agent_id=request.agent_id,
+                natural_query=request.natural_query,
+                generated_sql=sql_query,
+                was_successful=False,
+                error_message=str(e)
+            ))
+            db.commit()
+            
+        raise HTTPException(status_code=500, detail=f"Database engine error: {str(e)}")

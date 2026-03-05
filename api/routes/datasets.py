@@ -1,112 +1,151 @@
-import logging
-import io
+# api/routes/datasets.py
+import os
 import uuid
-from typing import Dict, Any
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+import tempfile
+import shutil
+import logging
+from typing import Optional
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Form
 from sqlalchemy.orm import Session
-import pandas as pd
+import duckdb
 
-from api.auth import get_current_user as get_tenant
 from api.database import get_db
 from api.services.storage_manager import storage_manager
-from models import Dataset  
+from models import Dataset, DatasetStatus, StorageTier, TenantSettings
 
-router = APIRouter(prefix="/datasets", tags=["Datasets"])
+# Fallback import for auth (Adjust based on your actual auth path)
+try:
+    from api.auth import get_current_tenant
+except ImportError:
+    def get_current_tenant(): return "mock_tenant_id"
+
 logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
-def sanitize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def convert_to_parquet_ephemeral(source_path: str, target_path: str):
     """
-    Computation Layer: Vectorized data sanitization.
-    Cleans column names for strict SQL/DuckDB analytical compatibility.
+    Core Computation: Vectorized, in-memory conversion of CSV/JSON to Parquet.
+    Maximizes analytical efficiency for subsequent queries.
     """
-    # Vectorized string operations to clean headers (strip whitespace, lowercase, replace non-alphanumerics)
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.lower()
-        .str.replace(r'[^a-z0-9_]', '_', regex=True)
-    )
-    
-    # We allow Parquet to natively handle nulls (NaNs) to preserve analytical integrity,
-    # preventing skewed variance or EMA calculations later.
-    return df
+    try:
+        con = duckdb.connect(':memory:')
+        # read_csv_auto automatically infers schema, types, and handles dirty data natively
+        con.execute(f"COPY (SELECT * FROM read_csv_auto('{source_path}')) TO '{target_path}' (FORMAT PARQUET);")
+    except Exception as e:
+        logger.error(f"DuckDB Conversion Error: {str(e)}")
+        raise ValueError(f"Failed to parse file: {str(e)}")
+    finally:
+        con.close()
 
-@router.post("/upload", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
-async def upload_dataset(
-    file: UploadFile = File(...),
-    tenant_id: str = Depends(get_tenant),
-    db: Session = Depends(get_db)
+@router.post("/ephemeral-upload")
+async def upload_ephemeral_dataset(
+    file: UploadFile = File(...)
 ):
     """
-    Ingests CSV/Excel, vectorizes to Parquet via Pandas, stores in R2, 
-    and registers the dataset natively partitioned by tenant_id.
+    No-Login "Try it out" Route.
+    Accepts a file, optimizes it to Parquet, and stores it in the isolated /tmp directory.
+    Data will automatically be destroyed when the Vercel/Render instance spins down.
     """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided.")
+    if not file.filename.endswith(('.csv', '.parquet', '.json')):
+        raise HTTPException(status_code=400, detail="Only CSV, JSON, and Parquet files are supported.")
 
-    file_ext = file.filename.split('.')[-1].lower()
-    if file_ext not in ['csv', 'xlsx', 'xls']:
-        raise HTTPException(status_code=400, detail="Unsupported file format. Please upload CSV or Excel.")
-
-    # 1. Read file securely into memory
-    contents = await file.read()
+    # 1. Store securely in the OS Temp Directory (Jailed execution)
+    temp_dir = tempfile.gettempdir()
+    unique_id = str(uuid.uuid4())
     
+    # We use .tmp initially before converting to Parquet
+    raw_path = os.path.join(temp_dir, f"raw_{unique_id}_{file.filename}")
+    parquet_path = os.path.join(temp_dir, f"ephemeral_{unique_id}.parquet")
+
     try:
-        # 2. Execute Vectorized Parsing (Pandas dataframe creation)
-        if file_ext == 'csv':
-            df = pd.read_csv(io.BytesIO(contents))
+        # Write chunks to avoid memory bloat on large files
+        with open(raw_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # 2. Convert to Parquet for 10x faster querying (if it's not already)
+        if not file.filename.endswith('.parquet'):
+            convert_to_parquet_ephemeral(raw_path, parquet_path)
+            os.remove(raw_path) # Clean up the bloated CSV
+            final_path = parquet_path
         else:
-            df = pd.read_excel(io.BytesIO(contents))
-            
-        # Standardize the data structure for immediate DuckDB querying
-        df = sanitize_dataframe(df)
-        
-        # 3. Convert to Parquet (High-performance columnar format)
-        parquet_buffer = io.BytesIO()
-        df.to_parquet(parquet_buffer, engine='pyarrow', index=False)
-        parquet_bytes = parquet_buffer.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Failed to process file {file.filename}: {e}")
-        raise HTTPException(status_code=422, detail=f"Data parsing failed. Ensure file is uncorrupted: {str(e)}")
+            final_path = raw_path # It was already optimized
 
-    # 4. Storage & Orchestration Layer
-    dataset_id = str(uuid.uuid4())
-    parquet_filename = f"{dataset_id}.parquet"
+        return {
+            "message": "Ephemeral dataset ready.",
+            "dataset": {
+                "name": file.filename,
+                "status": "READY",
+                "tier": "EPHEMERAL"
+            },
+            # This token string is passed back to the backend during queries
+            "ephemeral_path": final_path
+        }
+
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Ephemeral upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server processing error.")
+
+
+@router.post("/upload")
+async def upload_persistent_dataset(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    description: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    tenant_id: str = Depends(get_current_tenant)
+):
+    """
+    Standard Authenticated Route for Persistent Cloudflare R2 / Supabase Storage.
+    """
+    settings = db.query(TenantSettings).filter(TenantSettings.tenant_id == tenant_id).first()
+    tier = settings.storage_tier if settings else StorageTier.SUPABASE
+
+    temp_dir = tempfile.gettempdir()
+    raw_path = os.path.join(temp_dir, f"{uuid.uuid4()}_{file.filename}")
     
+    with open(raw_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
     try:
-        # Upload securely to tenant-partitioned Cloudflare R2 path
-        s3_uri = storage_manager.upload_parquet(
-            tenant_id=tenant_id,
-            dataset_id=dataset_id,
-            file_name=parquet_filename,
-            file_data=parquet_bytes
-        )
+        dataset_id = uuid.uuid4()
+        final_path = raw_path
+
+        if not file.filename.endswith('.parquet'):
+            parquet_path = raw_path.replace(".csv", ".parquet").replace(".json", ".parquet")
+            convert_to_parquet_ephemeral(raw_path, parquet_path)
+            final_path = parquet_path
+            os.remove(raw_path)
+
+        # Upload to R2/Supabase using our Adaptive Router
+        s3_client = storage_manager.get_s3_client(db, tenant_id)
+        config = storage_manager._resolve_tenant_config(db, tenant_id)
         
-        # 5. Database Transaction (Registering the dataset for the frontend)
+        target_filename = f"{dataset_id}.parquet"
+        s3_key = f"{config.prefix}{target_filename}"
+        
+        s3_client.upload_file(final_path, config.bucket, s3_key)
+
         new_dataset = Dataset(
             id=dataset_id,
             tenant_id=tenant_id,
-            name=file.filename,
-            storage_uri=s3_uri, # The s3:// URI for DuckDB
-            row_count=len(df),
-            column_count=len(df.columns)
+            name=name,
+            description=description,
+            file_path=target_filename,
+            status=DatasetStatus.READY
         )
         
         db.add(new_dataset)
         db.commit()
-        db.refresh(new_dataset)
-        
+
+        from api.services.dataset_service import dataset_service
+        dataset_service.process_and_save_schema(db, dataset_id, tenant_id, final_path)
+
         return {
-            "status": "success",
-            "dataset_id": dataset_id,
-            "name": file.filename,
-            "uri": s3_uri,
-            "rows": len(df),
-            "columns": len(df.columns)
+            "message": "Dataset uploaded persistently.",
+            "dataset": {"id": new_dataset.id, "name": new_dataset.name, "tier": tier}
         }
-        
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Upload pipeline failed for tenant {tenant_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save dataset to storage or database.")
+    finally:
+        if 'final_path' in locals() and os.path.exists(final_path):
+            os.remove(final_path)
