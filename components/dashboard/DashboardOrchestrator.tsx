@@ -1,196 +1,207 @@
 "use client";
 
-import React, { useState } from "react";
-// Modular Strategy: Use the SSR-aware client builder to maintain cookie synchronization
+import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { Search, Database, LayoutTemplate } from "lucide-react";
-
-// Functional UI Components (Stateless Presentation Layer)
-import { DataPreview } from "./DataPreview";
-import { DynamicChartFactory } from "./DynamicChartFactory";
-
-// Shadcn UI Components
-import { Button } from "@/components/ui/button";
+import { Search, Database, LayoutTemplate, AlertTriangle, ShieldCheck, Activity } from "lucide-react";
+import DataPreview from "./DataPreview";
+import DynamicChartFactory from "./DynamicChartFactory";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-// Type Safety: Strictly define the props boundary for dependency injection
-interface DashboardOrchestratorProps {
-  tenantId: string;
+// Strict typing for our analytical response payload
+interface AnalyticalResult {
+  status: string;
+  columns?: string[];
+  data?: any[];
+  visualization_hint?: 'bar' | 'line' | 'scatter' | 'table';
+  metrics?: Record<string, any>;
 }
 
-export function DashboardOrchestrator({ tenantId }: DashboardOrchestratorProps) {
-  // Hybrid Performance Paradigm: Initialize the swappable auth module locally
+export default function DashboardOrchestrator() {
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [datasetId, setDatasetId] = useState<string>("");
+  const [query, setQuery] = useState<string>("");
+  const [resultData, setResultData] = useState<AnalyticalResult | null>(null);
+  const [isQuerying, setIsQuerying] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
   const supabase = createClient();
-  const { toast } = useToast();
 
-  // Analytical Pipeline State
-  const [datasetId, setDatasetId] = useState("");
-  const [nlQuery, setNlQuery] = useState("");
-  const [isQuerying, setIsQuerying] = useState(false);
-  
-  // Data State (Trickled down to stateless child components)
-  const [analyticalData, setAnalyticalData] = useState<Record<string, any>[]>([]);
-  const [generatedSql, setGeneratedSql] = useState<string | null>(null);
-  const [chartType, setChartType] = useState<'area' | 'bar' | 'line'>('area');
-
-  // Execution Layer: The Contextual RAG Network Call
-  const executeQuery = async () => {
-    if (!datasetId.trim() || !nlQuery.trim()) {
-      toast({
-        title: "Missing Information",
-        description: "Please provide both a Dataset ID and a natural language query.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsQuerying(true);
-    setGeneratedSql(null);
-
-    try {
-      // Security by Design: Fetch fresh token just-in-time to pass to FastAPI (Depends(get_tenant))
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !session?.access_token) {
-        throw new Error("Authentication token expired or unavailable.");
+  useEffect(() => {
+    const initTenantContext = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        // Security by Design: Lock orchestrator to specific tenant boundary
+        setTenantId(session.user.id);
       }
+    };
+    initTenantContext();
+  }, [supabase.auth]);
 
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      
-      const response = await fetch(`${backendUrl}/query/`, {
+  const handleExecuteQuery = async () => {
+    if (!datasetId.trim() || !query.trim()) return;
+    setIsQuerying(true);
+    setError(null);
+    setResultData(null);
+    
+    try {
+      // Vectorized Execution routing (Next.js API -> FastAPI -> DuckDB)
+      const res = await fetch('/api/query', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}` 
-        },
-        body: JSON.stringify({
-          dataset_id: datasetId,
-          natural_language_query: nlQuery
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          dataset_id: datasetId, 
+          query: query,
+          tenant_id: tenantId // Enforce multi-tenant security
         })
       });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "Failed to execute analytical query.");
-      }
-
-      const result = await response.json();
       
-      // Update state to trigger Recharts and Data Table rendering natively
-      setAnalyticalData(result.data || []);
-      setGeneratedSql(result.generated_sql || null);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Execution engine failed to process query.");
       
-      toast({
-        title: "Query Successful",
-        description: `Processed ${result.data?.length || 0} records natively via DuckDB.`,
-      });
-
-    } catch (error: any) {
-      console.error("[Analytical Execution] Failed:", error);
-      toast({
-        title: "Query Failed",
-        description: error.message || "An unexpected error occurred during execution.",
-        variant: "destructive"
-      });
+      // Pass the fully materialized payload to pure functional components
+      setResultData(data.results || { status: "Success", data: [], columns: [] });
+      
+    } catch (err: any) {
+      console.error("Orchestration Error:", err);
+      setError(err.message);
     } finally {
       setIsQuerying(false);
     }
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6 md:p-8 max-w-7xl mx-auto w-full">
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b pb-4 border-border">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Analytical Engine</h1>
-          <p className="text-sm text-muted-foreground mt-1 flex items-center">
-            Tenant Boundary: <span className="font-mono bg-muted px-2 py-0.5 rounded ml-2 text-primary">{tenantId}</span>
-          </p>
-        </div>
-        
-        {/* Dynamic Chart Type Toggle */}
-        <div className="flex items-center gap-2">
-          <LayoutTemplate className="w-4 h-4 text-muted-foreground" />
-          <Select value={chartType} onValueChange={(val: any) => setChartType(val)}>
-            <SelectTrigger className="w-[140px] h-9">
-              <SelectValue placeholder="Chart Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="area">Area Chart</SelectItem>
-              <SelectItem value="bar">Bar Chart</SelectItem>
-              <SelectItem value="line">Line Chart</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </header>
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full font-sans">
+      
+      {/* Configuration & Contextual RAG Input Column */}
+      <div className="xl:col-span-4 space-y-6 flex flex-col">
+        <Card className="shadow-sm border-neutral-200 dark:border-neutral-800 flex-1 flex flex-col">
+          <CardHeader className="bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800 pb-4">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <Database className="w-5 h-5 text-blue-600 dark:text-blue-500" />
+              NL2SQL Execution Engine
+            </CardTitle>
+            <CardDescription className="text-xs leading-relaxed">
+              Contextual RAG dynamically translates natural language into optimized DuckDB queries.
+            </CardDescription>
+            
+            {/* Security Boundary Indicator */}
+            {tenantId && (
+              <Badge variant="outline" className="mt-3 text-[10px] w-fit font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50 flex gap-1.5 items-center px-2 py-0.5">
+                <ShieldCheck className="w-3 h-3" />
+                Tenant Boundary: {tenantId.split('-')[0]}***
+              </Badge>
+            )}
+          </CardHeader>
+          
+          <CardContent className="pt-6 space-y-5 flex-1 flex flex-col">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+                Target Dataset ID
+              </label>
+              <Input 
+                placeholder="e.g., ds_a1b2c3d4" 
+                value={datasetId}
+                onChange={(e) => setDatasetId(e.target.value)}
+                className="font-mono text-sm bg-neutral-50 dark:bg-neutral-900/50 focus-visible:ring-blue-500"
+              />
+            </div>
+            
+            <div className="space-y-2 flex-1">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
+                Analytical Query
+              </label>
+              <Input 
+                placeholder="e.g., Show 30-day moving average of revenue..." 
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleExecuteQuery()}
+                className="text-sm focus-visible:ring-blue-500"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Tip: Ask for "anomalies", "variance", or "trends" to engage the Vectorized Mathematical Engine.
+              </p>
+            </div>
 
-      {/* Control Panel (Query Input) */}
-      <Card className="bg-card border-border shadow-sm">
-        <CardContent className="p-4 sm:p-6 flex flex-col md:flex-row gap-4 items-start md:items-end">
-          <div className="w-full md:w-1/4 space-y-2">
-            <label className="text-sm font-medium flex items-center gap-2">
-              <Database className="w-4 h-4 text-primary" /> Dataset ID
-            </label>
-            <Input 
-              placeholder="e.g. 123e4567-e89b-12d3..." 
-              value={datasetId}
-              onChange={(e) => setDatasetId(e.target.value)}
-              className="font-mono text-sm"
-            />
-          </div>
-          <div className="w-full md:w-2/4 space-y-2">
-            <label className="text-sm font-medium flex items-center gap-2">
-              <Search className="w-4 h-4 text-primary" /> Natural Language Query
-            </label>
-            <Input 
-              placeholder="e.g. Show me total revenue grouped by month..." 
-              value={nlQuery}
-              onChange={(e) => setNlQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && executeQuery()}
-            />
-          </div>
-          <div className="w-full md:w-1/4">
             <Button 
-              className="w-full h-10 transition-all duration-200" 
-              onClick={executeQuery} 
-              disabled={isQuerying}
+              className="w-full font-semibold shadow-sm bg-blue-600 hover:bg-blue-700 text-white transition-all h-10 mt-auto" 
+              onClick={handleExecuteQuery}
+              disabled={isQuerying || !datasetId.trim() || !query.trim()}
             >
-              {isQuerying ? "Processing Analytics..." : "Execute Query"}
+              {isQuerying ? (
+                <span className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 animate-pulse" /> Executing via DuckDB...
+                </span>
+              ) : "Run Vectorized Query"}
             </Button>
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Analytical Efficiency: Display Generated SQL if available */}
-      {generatedSql && (
-        <div className="bg-muted/30 border border-border rounded-lg p-4 text-sm font-mono overflow-x-auto text-muted-foreground shadow-inner">
-          <span className="text-primary font-semibold mr-2">DuckDB SQL:</span>
-          {generatedSql}
-        </div>
-      )}
+            {error && (
+              <div className="p-3 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 rounded-md text-xs flex items-start gap-2 border border-red-200 dark:border-red-900/50">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span className="leading-relaxed font-medium">{error}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Visualization Grid: Rendering the pure stateless components */}
-      <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 min-h-[450px]">
-          <DynamicChartFactory 
-            data={analyticalData} 
-            isLoading={isQuerying}
-            tenantId={tenantId}
-            preferredType={chartType}
-            title={nlQuery ? `Results: ${nlQuery}` : "Analytical Trajectory"}
-          />
-        </div>
-        <div className="min-h-[450px]">
-          <DataPreview 
-            data={analyticalData} 
-            isLoading={isQuerying}
-            tenantId={tenantId}
-            title="Raw Data Preview"
-          />
-        </div>
-      </main>
+      {/* Output Engine / Visualization Layer */}
+      <div className="xl:col-span-8 flex flex-col gap-6 h-full">
+        
+        {/* Dynamic Visualization Canvas */}
+        <Card className="flex-1 shadow-sm border-neutral-200 dark:border-neutral-800 flex flex-col min-h-[350px]">
+          <CardHeader className="border-b border-neutral-100 dark:border-neutral-800 pb-3 py-4 bg-white dark:bg-black rounded-t-xl">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <LayoutTemplate className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              Dynamic Visualizations
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 p-1 flex flex-col relative bg-neutral-50/50 dark:bg-neutral-900/30 rounded-b-xl overflow-hidden">
+            {resultData ? (
+               <div className="absolute inset-0 p-4 overflow-auto">
+                 {/* Functional injection of visualization layer */}
+                 <DynamicChartFactory data={resultData} />
+               </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-center text-neutral-400 p-6">
+                 <div className="h-12 w-12 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 flex items-center justify-center mb-4">
+                    <Search className="w-5 h-5 opacity-60 text-neutral-500" />
+                 </div>
+                 <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Awaiting Execution</p>
+                 <p className="text-xs opacity-75 max-w-[250px] mt-1.5 leading-relaxed">
+                   Run a natural language query on the left. The engine will dynamically map results to the optimal charting format.
+                 </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Stateless Tabular Data Validation Block */}
+        <Card className="shadow-sm border-neutral-200 dark:border-neutral-800 flex flex-col h-fit max-h-[350px]">
+          <CardHeader className="bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800 pb-3 py-3 rounded-t-xl">
+            <CardTitle className="text-sm font-semibold flex items-center justify-between">
+              Raw Data Validation
+              {resultData && (
+                <span className="text-[10px] font-normal text-neutral-500 font-mono bg-white dark:bg-black px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800">
+                  {resultData.data?.length || 0} row(s) returned
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 overflow-auto flex-1 min-h-[150px] bg-white dark:bg-black rounded-b-xl">
+            {resultData ? (
+               <DataPreview data={resultData} />
+            ) : (
+               <div className="h-full w-full flex items-center justify-center p-6 text-center text-[11px] text-neutral-400 font-mono">
+                  &lt; No Vectorized Payload Extracted /&gt;
+               </div>
+            )}
+          </CardContent>
+        </Card>
+
+      </div>
     </div>
   );
 }
