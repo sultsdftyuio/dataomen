@@ -1,106 +1,92 @@
+# api/services/dataset_service.py
+import logging
+from typing import Dict, Any
 import duckdb
-import pandas as pd
-import numpy as np
-from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import NoResultFound
 
-# Assuming a standard Pydantic schema for inputs and SQLAlchemy model for ORM
-from pydantic import BaseModel
+# Import your modern SQLAlchemy models
+from models import Dataset
 
-class QueryRequest(BaseModel):
-    tenant_id: str
-    dataset_id: str
-    dimensions: List[str]
-    metrics: List[str]
+logger = logging.getLogger(__name__)
 
 class DatasetService:
     """
-    Hybrid Performance Service: 
-    - SQLAlchemy for Metadata & Tenant Orchestration
-    - DuckDB & Pandas for Vectorized Analytical Computation
+    Orchestrates high-performance data profiling and schema extraction.
+    Designed to feed strictly isolated context into the NL2SQL AI Pipeline.
     """
 
-    def __init__(self, db_session: Session):
-        self.db = db_session
-        
-        # Initialize an in-memory DuckDB connection. 
-        # In a real setup with Cloudflare R2, you would load the httpfs extension here.
-        self.duck = duckdb.connect(database=':memory:')
-        # self.duck.execute("INSTALL httpfs; LOAD httpfs;")
-        # self.duck.execute("SET s3_endpoint='<cloudflare_r2_endpoint>';")
-
-    def _get_dataset_metadata(self, dataset_id: str, tenant_id: str) -> Dict[str, Any]:
+    @staticmethod
+    def extract_schema_from_local_file(file_path: str) -> Dict[str, Any]:
         """
-        Orchestration Layer: Uses SQLAlchemy to enforce tenant isolation 
-        and fetch file routing data.
+        Core Computation: Extracts table structure purely from a local temporary file.
+        Uses DuckDB's DESCRIBE to read only the metadata headers of a Parquet/CSV file.
+        This operates in milliseconds and avoids loading the full dataset into memory.
         """
-        # NOTE: Replace `DatasetModel` with your actual SQLAlchemy model import
-        # metadata = self.db.query(DatasetModel).filter_by(
-        #     id=dataset_id, 
-        #     tenant_id=tenant_id
-        # ).first()
-        #
-        # if not metadata:
-        #     raise ValueError("Dataset not found or access denied.")
-        # return {"file_uri": metadata.file_uri}
-
-        # Mocking the ORM return for demonstration
-        return {
-            "file_uri": f"s3://tenant-data-{tenant_id}/{dataset_id}.parquet"
-        }
-
-    def execute_analytical_query(self, request: QueryRequest) -> pd.DataFrame:
-        """
-        Compute Layer: Uses DuckDB to run high-speed analytics directly on Parquet files,
-        falling back to Pandas for vectorized post-processing.
-        """
-        # 1. Orchestrate & Secure
-        metadata = self._get_dataset_metadata(
-            dataset_id=request.dataset_id, 
-            tenant_id=request.tenant_id
-        )
-        file_uri = metadata["file_uri"]
-
-        # 2. Query Generation (In-Process Analytics)
-        # DuckDB will intelligently read ONLY the required columns from the Parquet file
-        dims_str = ", ".join(request.dimensions) if request.dimensions else "1"
-        metrics_str = ", ".join([f"SUM({m}) AS total_{m}" for m in request.metrics])
-        
-        query = f"""
-            SELECT 
-                {dims_str}, 
-                {metrics_str}
-            FROM read_parquet('{file_uri}')
-            GROUP BY {dims_str}
-            ORDER BY {request.dimensions[0] if request.dimensions else '1'} DESC
-        """
-
         try:
-            # Execute query and convert directly to a Pandas DataFrame in C++ memory space
-            # (In a real scenario, you'd handle the case where the S3 file doesn't exist yet)
-            # df = self.duck.execute(query).df()
+            # Ephemeral, in-memory connection
+            con = duckdb.connect(':memory:')
             
-            # MOCK DATAFRAME for demonstration so the code doesn't crash on dummy S3 paths
-            df = pd.DataFrame({
-                request.dimensions[0]: ['A', 'B', 'C'],
-                f"total_{request.metrics[0]}": [100, 250, 50],
-                f"total_{request.metrics[1]}": [80, 200, 45]
-            })
-
-            # 3. Vectorized Post-Processing (Mathematical Precision over Loops)
-            # Example: Calculating a dynamic variance or ratio column across millions of rows instantly
-            m1, m2 = f"total_{request.metrics[0]}", f"total_{request.metrics[1]}"
-            if m1 in df.columns and m2 in df.columns:
-                # Vectorized operation (No iterrows!)
-                df['metric_ratio'] = np.where(df[m2] == 0, 0, df[m1] / df[m2])
-
-            return df
-
+            # DuckDB dynamically uses the correct reader based on file extension
+            read_function = "read_parquet" if file_path.endswith('.parquet') else "read_csv_auto"
+            
+            # DESCRIBE returns: column_name, column_type, null, key, default, extra
+            query = f"DESCRIBE SELECT * FROM {read_function}('{file_path}')"
+            
+            # Vectorized execution into Pandas for quick iteration
+            df = con.execute(query).df()
+            
+            columns = []
+            for _, row in df.iterrows():
+                columns.append({
+                    "name": str(row['column_name']),
+                    "type": str(row['column_type'])
+                })
+                
+            return {"columns": columns}
+            
         except Exception as e:
-            # Log exact analytical failure for debugging
-            raise RuntimeError(f"Analytical compute failed: {str(e)}")
+            logger.error(f"Failed to extract schema locally from {file_path}: {str(e)}")
+            # Return an empty schema block so the caller doesn't break
+            return {"columns": []}
+            
+        finally:
+            if 'con' in locals():
+                con.close()
 
-    def close(self):
-        """Clean up in-process analytical engine resources"""
-        self.duck.close()
+    def process_and_save_schema(self, db: Session, dataset_id: str, tenant_id: str, local_file_path: str) -> None:
+        """
+        Orchestration: Reads the local optimized file, extracts the schema, 
+        and patches the database record with the exact structure.
+        This ensures the LLM's Contextual RAG is instantly ready.
+        """
+        try:
+            # 1. Fetch the strictly jailed dataset
+            dataset = db.query(Dataset).filter(
+                Dataset.id == dataset_id,
+                Dataset.tenant_id == tenant_id
+            ).first()
+            
+            if not dataset:
+                logger.warning(f"Attempted to process schema for missing dataset {dataset_id}")
+                return
+                
+            # 2. Extract Schema Lightning Fast
+            schema_data = self.extract_schema_from_local_file(local_file_path)
+            
+            # 3. Save it to the JSON Database Column
+            if schema_data.get("columns"):
+                dataset.schema_metadata = schema_data
+                db.commit()
+                logger.info(f"Contextual RAG schema initialized for dataset: {dataset_id}")
+            else:
+                logger.warning(f"Schema extraction yielded empty columns for dataset: {dataset_id}")
+                
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error updating schema metadata for dataset {dataset_id}: {str(e)}")
+            # Note: We intentionally do not raise an HTTP Exception here.
+            # If schema extraction fails, we still want the dataset to be successfully 
+            # uploaded. The LLM will fall back to "guessing" the columns if schema_metadata is missing.
+
+# Export Singleton instance for easy import and dependency injection
+dataset_service = DatasetService()
