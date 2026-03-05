@@ -1,3 +1,4 @@
+// app/dashboard/page.tsx
 "use client";
 
 import React, { useEffect, useState } from 'react';
@@ -7,7 +8,10 @@ import { createClient } from '@/utils/supabase/client';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
 export default function DashboardPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  // Replace boolean with the strict cryptographic parameters required by the Orchestrator
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  
   const router = useRouter();
   const supabase = createClient();
 
@@ -21,7 +25,9 @@ export default function DashboardPage() {
       if (error || !session) {
         router.push('/login');
       } else if (isMounted) {
-        setIsAuthenticated(true);
+        // Extract the raw JWT and the immutable User UUID
+        setSessionToken(session.access_token);
+        setTenantId(session.user.id);
       }
     };
 
@@ -34,7 +40,7 @@ export default function DashboardPage() {
   }, [router, supabase]);
 
   // Loading State Canvas
-  if (isAuthenticated === null) {
+  if (!sessionToken || !tenantId) {
     return (
       <div className="flex h-[80vh] w-full items-center justify-center animate-in fade-in duration-500">
         <div className="flex flex-col items-center gap-4 text-neutral-500">
@@ -65,9 +71,12 @@ export default function DashboardPage() {
         </p>
       </div>
       
-      {/* Inject Orchestrator */}
+      {/* Inject Orchestrator with Strict Multi-Tenant Routing Props */}
       <div className="flex-1 min-h-0">
-        <DashboardOrchestrator />
+        <DashboardOrchestrator 
+          token={sessionToken} 
+          tenantId={tenantId} 
+        />
       </div>
       
     </div>
