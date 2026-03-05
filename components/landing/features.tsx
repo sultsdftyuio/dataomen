@@ -1,119 +1,75 @@
-'use client'
+'use client';
 
-import { useEffect, useRef, useState } from 'react'
-import { Database, MessageSquare, FileText, Bell, Sparkles, ArrowUpRight } from 'lucide-react'
+import { BrainCircuit, Activity, Server, ShieldCheck, DatabaseZap, Workflow } from 'lucide-react';
 
-const FEATURES = [
+const features = [
   {
-    icon: Database,
-    badge: Sparkles,
-    title: 'The Janitor',
-    description:
-      'Drop in messy CSVs. Our engine automatically standardizes, cleans, and structures your data in seconds.',
-    detail: 'Handles 50+ formats including JSON, Parquet, and legacy Excel files.',
+    title: "NL2SQL AI Agent",
+    description: "Semantic routing translates plain English into highly optimized SQL queries specific to your schema.",
+    icon: <BrainCircuit className="w-6 h-6 text-indigo-600" />,
+    className: "md:col-span-2 md:row-span-2",
   },
   {
-    icon: MessageSquare,
-    title: 'The Chatter',
-    description:
-      'Ask complex questions in plain English. Our strict NL2SQL translation layer handles the querying with zero syntax errors.',
-    detail: 'Supports joins, aggregations, window functions, and CTEs.',
+    title: "In-Process DuckDB",
+    description: "Query columnar Parquet formats directly. No more massive data transfer overloads.",
+    icon: <DatabaseZap className="w-6 h-6 text-emerald-600" />,
+    className: "md:col-span-1",
   },
   {
-    icon: FileText,
-    title: 'The Storyteller',
-    description:
-      "Don't just look at charts. Generate written, executive-level summaries of your data with one click.",
-    detail: 'Export as PDF, Notion page, or Slack message.',
+    title: "Vectorized Anomaly Detection",
+    description: "Pandas/NumPy powered linear algebra identifies statistical outliers in real-time.",
+    icon: <Activity className="w-6 h-6 text-rose-600" />,
+    className: "md:col-span-1",
   },
   {
-    icon: Bell,
-    title: 'The Proactive Watchdog',
-    description:
-      'Stop waiting to ask questions. Our agent runs in the background and alerts you to statistical anomalies before they become problems.',
-    detail: 'Customizable thresholds with Slack, email, and webhook integrations.',
+    title: "Multi-Tenant Isolation",
+    description: "Row-level security and strict tenant partitioning via Supabase auth.",
+    icon: <ShieldCheck className="w-6 h-6 text-blue-600" />,
+    className: "md:col-span-1",
   },
-]
+  {
+    title: "Black-Box Storage",
+    description: "Seamlessly swap between AWS S3, Cloudflare R2, or local without rewriting logic.",
+    icon: <Server className="w-6 h-6 text-orange-600" />,
+    className: "md:col-span-1",
+  },
+  {
+    title: "Async Job Orchestration",
+    description: "Heavy transformations run gracefully in the background without blocking the UI.",
+    icon: <Workflow className="w-6 h-6 text-purple-600" />,
+    className: "md:col-span-2",
+  }
+];
 
 export function Features() {
-  const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set())
-  const cardsRef = useRef<(HTMLDivElement | null)[]>([])
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const idx = Number(entry.target.getAttribute('data-idx'))
-            setVisibleCards((prev) => new Set(prev).add(idx))
-          }
-        })
-      },
-      { threshold: 0.15 }
-    )
-
-    cardsRef.current.forEach((el) => {
-      if (el) observer.observe(el)
-    })
-
-    return () => observer.disconnect()
-  }, [])
-
   return (
-    <section id="features" className="relative px-6 py-24 sm:py-32">
-      <div className="mx-auto max-w-6xl">
-        {/* Section header */}
-        <div className="mb-16 max-w-2xl">
-          <p className="mb-3 font-mono text-sm font-medium text-primary">The Paradigm Shift</p>
-          <h2 className="mb-4 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-            A completely new way to interact with your data.
-          </h2>
-          <p className="text-base leading-relaxed text-muted-foreground">
-            Four autonomous agents that replace your entire data workflow. No training required.
+    <section className="py-24 bg-white relative border-t border-slate-100">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-16">
+          <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4">Engineered for Excellence</h2>
+          <p className="text-slate-600 max-w-2xl text-lg leading-relaxed">
+            We discarded rigid boilerplate in favor of the Hybrid Performance Paradigm. 
+            Heavy math runs vectorized in Python, analytics run in DuckDB, and the UI stays 100% functional React.
           </p>
         </div>
 
-        {/* Bento-style Grid */}
-        <div className="grid gap-4 md:grid-cols-2">
-          {FEATURES.map((feature, i) => {
-            const Icon = feature.icon
-            const BadgeIcon = feature.badge
-            const isVisible = visibleCards.has(i)
-            return (
-              <div
-                key={feature.title}
-                ref={(el) => { cardsRef.current[i] = el }}
-                data-idx={i}
-                className={`group relative overflow-hidden rounded-xl border border-border bg-card p-6 transition-all duration-600 sm:p-8 ${
-                  isVisible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
-                }`}
-                style={{ transitionDelay: `${i * 100}ms` }}
-              >
-                {/* Hover glow */}
-                <div className="pointer-events-none absolute inset-0 rounded-xl opacity-0 transition-opacity duration-500 group-hover:opacity-100 bg-[radial-gradient(circle_at_50%_0%,var(--primary)_0%,transparent_70%)]" style={{ opacity: 0 }} />
-                <div className="pointer-events-none absolute inset-0 rounded-xl opacity-0 transition-opacity duration-500 group-hover:opacity-[0.04]" style={{ background: 'radial-gradient(circle at 50% 0%, var(--primary) 0%, transparent 70%)' }} />
-
-                <div className="relative">
-                  <div className="mb-4 flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                      <Icon className="h-5 w-5 text-primary" />
-                    </div>
-                    {BadgeIcon && <BadgeIcon className="h-3.5 w-3.5 text-muted-foreground" />}
-                  </div>
-
-                  <h3 className="mb-2 text-lg font-semibold text-foreground">{feature.title}</h3>
-                  <p className="mb-3 text-sm leading-relaxed text-muted-foreground">{feature.description}</p>
-
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                    <span>{feature.detail}</span>
-                    <ArrowUpRight className="h-3 w-3" />
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[200px]">
+          {features.map((feat, i) => (
+            <div 
+              key={i} 
+              className={`p-6 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all flex flex-col justify-between group ${feat.className}`}
+            >
+              <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                {feat.icon}
               </div>
-            )
-          })}
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">{feat.title}</h3>
+                <p className="text-slate-600 text-sm leading-relaxed">{feat.description}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
-  )
+  );
 }
