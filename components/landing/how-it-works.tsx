@@ -1,108 +1,56 @@
-'use client'
+'use client';
 
-import { useEffect, useRef, useState } from 'react'
-import { Upload, MessageCircle, Zap } from 'lucide-react'
+import { UploadCloud, Cpu, LineChart } from 'lucide-react';
 
-const STEPS = [
+const steps = [
   {
-    num: '01',
-    icon: Upload,
-    title: 'Ingest',
-    description: 'Connect your Postgres database or upload a file. We auto-detect schema, relationships, and data types.',
-    code: '$ dataomen connect postgres://user:***@host/db\n\n  Scanning schema...  3 tables found\n  users (12,847 rows)\n  orders (89,231 rows)\n  products (1,204 rows)\n\n  Ready.',
+    id: 1,
+    title: "Ingest & Sanitize",
+    description: "Upload raw CSVs or connect your DB. Our Data Sanitizer cleanses schemas and converts data to optimized Parquet formats stored in Cloudflare R2.",
+    icon: <UploadCloud className="w-8 h-8 text-indigo-600" />
   },
   {
-    num: '02',
-    icon: MessageCircle,
-    title: 'Explore',
-    description: 'Chat with your metrics to uncover hidden trends. Ask in plain English, get precise SQL under the hood.',
-    code: '> "Show me top customers by lifetime value\n   who churned in the last 90 days"\n\nGenerating SQL... done (234ms)\nFound 23 matching records\nRendering chart...',
+    id: 2,
+    title: "Vectorized Computation",
+    description: "DuckDB executes massive aggregations in-memory, while background Python watchdog services calculate EMAs and moving variances using NumPy.",
+    icon: <Cpu className="w-8 h-8 text-indigo-600" />
   },
   {
-    num: '03',
-    icon: Zap,
-    title: 'Dominate',
-    description: 'Receive automated, actionable narratives. Anomaly detection runs 24/7, alerting you before problems surface.',
-    code: '  ALERT: Revenue anomaly detected\n  \n  Segment: Mid-market (50-200 seats)\n  Deviation: -18.3% vs 30-day avg\n  Root cause: 3 enterprise downgrades\n  \n  Sent to: #revenue-alerts',
-  },
-]
+    id: 3,
+    title: "Interact & Visualize",
+    description: "The UI instantly renders insights via Next.js components. Use the semantic router to chat with your data and generate custom charts dynamically.",
+    icon: <LineChart className="w-8 h-8 text-indigo-600" />
+  }
+];
 
 export function HowItWorks() {
-  const [visibleSteps, setVisibleSteps] = useState<Set<number>>(new Set())
-  const stepsRef = useRef<(HTMLDivElement | null)[]>([])
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const idx = Number(entry.target.getAttribute('data-idx'))
-            setVisibleSteps((prev) => new Set(prev).add(idx))
-          }
-        })
-      },
-      { threshold: 0.2 }
-    )
-
-    stepsRef.current.forEach((el) => {
-      if (el) observer.observe(el)
-    })
-
-    return () => observer.disconnect()
-  }, [])
-
   return (
-    <section id="how-it-works" className="relative border-t border-border bg-secondary/30 px-6 py-24 sm:py-32">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-16 text-center">
-          <p className="mb-3 font-mono text-sm font-medium text-primary">How It Works</p>
-          <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-            Three steps. Zero complexity.
-          </h2>
+    <section className="py-24 bg-slate-50 relative border-t border-slate-200">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4">The Modular Pipeline</h2>
+          <p className="text-slate-600 max-w-2xl mx-auto text-lg">
+            A look under the hood at how data flows securely from ingestion to insight.
+          </p>
         </div>
 
-        <div className="space-y-6">
-          {STEPS.map((step, i) => {
-            const Icon = step.icon
-            const isVisible = visibleSteps.has(i)
-            return (
-              <div
-                key={step.num}
-                ref={(el) => { stepsRef.current[i] = el }}
-                data-idx={i}
-                className={`grid items-center gap-8 rounded-xl border border-border bg-card p-6 transition-all duration-600 sm:p-8 md:grid-cols-2 ${
-                  isVisible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
-                }`}
-                style={{ transitionDelay: `${i * 120}ms` }}
-              >
-                {/* Text */}
-                <div>
-                  <div className="mb-4 flex items-center gap-3">
-                    <span className="font-mono text-xs font-semibold text-primary">{step.num}</span>
-                    <div className="h-px flex-1 bg-border" />
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <h3 className="mb-2 text-2xl font-bold tracking-tight text-foreground">{step.title}</h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">{step.description}</p>
-                </div>
-
-                {/* Code Block */}
-                <div className="overflow-hidden rounded-lg border border-border bg-background">
-                  <div className="flex items-center gap-1.5 border-b border-border px-4 py-2.5">
-                    <div className="h-2 w-2 rounded-full bg-muted-foreground/20" />
-                    <div className="h-2 w-2 rounded-full bg-muted-foreground/20" />
-                    <div className="h-2 w-2 rounded-full bg-muted-foreground/20" />
-                    <span className="ml-2 font-mono text-[10px] text-muted-foreground">terminal</span>
-                  </div>
-                  <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed text-muted-foreground">
-                    <code>{step.code}</code>
-                  </pre>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {steps.map((step) => (
+            <div key={step.id} className="relative p-8 rounded-2xl bg-white border border-slate-200 shadow-sm">
+              <div className="absolute -top-5 -left-5 w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center font-bold text-white border-4 border-slate-50 shadow-sm z-10">
+                {step.id}
               </div>
-            )
-          })}
+              <div className="mb-6 p-4 bg-indigo-50 border border-indigo-100 inline-block rounded-xl">
+                {step.icon}
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 mb-3">{step.title}</h3>
+              <p className="text-slate-600 leading-relaxed">
+                {step.description}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
     </section>
-  )
+  );
 }

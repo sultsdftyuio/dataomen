@@ -1,45 +1,44 @@
-'use client'
+'use client';
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { ArrowRight } from 'lucide-react'
+import Link from 'next/link';
+import { TerminalSquare } from 'lucide-react';
 
 export function CTA() {
   return (
-    <section id="pricing" className="relative px-6 py-24 sm:py-32">
-      {/* Background Glow */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute bottom-0 left-1/2 h-[400px] w-[600px] -translate-x-1/2 translate-y-1/2 rounded-full bg-primary/5 blur-[100px] dark:bg-primary/10" />
-      </div>
+    <section className="py-24 relative overflow-hidden bg-white border-t border-slate-200">
+      <div className="container relative z-10 mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="max-w-4xl mx-auto p-10 md:p-20 rounded-3xl bg-indigo-600 shadow-2xl relative overflow-hidden">
+          
+          {/* Decorative background elements inside the CTA */}
+          <div className="absolute -top-24 -right-24 w-96 h-96 bg-white/10 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-black/10 rounded-full blur-2xl"></div>
 
-      <div className="relative mx-auto max-w-6xl">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="mb-4 text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-            Ready to stop wrestling{' '}
-            <br className="hidden sm:block" />
-            with your data?
-          </h2>
-          <p className="mb-8 text-base text-muted-foreground">
-            Join the waitlist and be among the first to experience autonomous data analysis.
-          </p>
-
-          <div className="mx-auto flex max-w-md flex-col gap-2 sm:flex-row">
-            <Input
-              type="email"
-              placeholder="you@company.com"
-              className="h-11 flex-1 bg-card"
-            />
-            <Button size="lg" className="h-11 gap-2 px-6">
-              Join Waitlist
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+          <div className="relative z-10">
+            <TerminalSquare className="w-14 h-14 text-indigo-200 mx-auto mb-6" />
+            <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6">
+              Ready for Analytical Efficiency?
+            </h2>
+            <p className="text-xl text-indigo-100 mb-10 max-w-2xl mx-auto">
+              Join the platform that treats logic as swappable modules and computation as a vectorized priority.
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-4">
+              <Link 
+                href="/register" 
+                className="px-8 py-4 bg-white hover:bg-slate-50 text-indigo-700 rounded-lg font-bold transition-all shadow-md hover:shadow-lg"
+              >
+                Create Workspace
+              </Link>
+              <Link 
+                href="https://github.com/your-repo" 
+                target="_blank"
+                className="px-8 py-4 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg font-bold border border-indigo-500 transition-all"
+              >
+                Read the Docs
+              </Link>
+            </div>
           </div>
-
-          <p className="mt-4 text-xs text-muted-foreground">
-            Free during beta. No credit card required.
-          </p>
         </div>
       </div>
     </section>
-  )
+  );
 }

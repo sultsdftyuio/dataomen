@@ -1,63 +1,50 @@
-'use client'
+'use client';
 
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ArrowRight } from 'lucide-react'
-import { ProductMockup } from './product-mockup'
-import Link from 'next/link'
+import { ArrowRight, Database, Zap } from 'lucide-react';
+import Link from 'next/link';
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden px-6 pb-24 pt-20 sm:pt-28 lg:pt-32">
-      {/* Background grid */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage:
-            'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)',
-          backgroundSize: '80px 80px',
-          maskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 30%, transparent 100%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 70% 50% at 50% 30%, black 30%, transparent 100%)',
-          opacity: 0.5,
-        }}
-      />
+    <section className="relative overflow-hidden pt-32 pb-20 lg:pt-48 lg:pb-32 bg-slate-50">
+      {/* Light Abstract Background */}
+      <div className="absolute inset-0 z-0 opacity-[0.4]" 
+           style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '32px 32px' }}>
+      </div>
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-gradient-to-b from-indigo-100/50 to-transparent z-0"></div>
 
-      {/* Glow */}
-      <div className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/8 blur-[120px] dark:bg-primary/15" />
-
-      <div className="relative mx-auto max-w-6xl">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="mb-6 text-balance text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
-            Your Autonomous{' '}
-            <span className="text-primary">
-              Data Department
-            </span>
-          </h1>
-
-          <p className="mx-auto mb-10 max-w-xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Connect your database, ask questions in plain English. AI cleans, queries, and narrates your business insights. No SQL. No dashboards. Just answers.
-          </p>
-
-          <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="gap-2" asChild>
-              <Link href="/login">
-                Get Started
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button size="lg" variant="outline" className="gap-2" asChild>
-              <Link href="/login">
-                Log In
-              </Link>
-            </Button>
-          </div>
+      <div className="container relative z-10 mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white text-indigo-700 text-sm font-semibold mb-8 border border-indigo-200 shadow-sm">
+          <Zap className="w-4 h-4 text-indigo-500" />
+          <span>DuckDB Powered Analytics Engine Live</span>
         </div>
-
-        {/* Product Mockup */}
-        <div className="mt-20">
-          <ProductMockup />
+        
+        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6 text-slate-900">
+          Analyze Millions of Rows. <br className="hidden md:block" />
+          <span className="text-indigo-600">In Milliseconds.</span>
+        </h1>
+        
+        <p className="max-w-2xl mx-auto text-lg md:text-xl text-slate-600 mb-10 leading-relaxed">
+          The high-performance, multi-tenant analytical SaaS built for modern teams. 
+          Ask questions in plain English, detect anomalies instantly, and query Parquet files with zero overhead.
+        </p>
+        
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <Link 
+            href="/register" 
+            className="flex items-center gap-2 px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-all transform hover:scale-[1.02] shadow-md hover:shadow-lg"
+          >
+            Start Analyzing Free
+            <ArrowRight className="w-5 h-5" />
+          </Link>
+          <Link 
+            href="/login" 
+            className="flex items-center gap-2 px-8 py-4 bg-white hover:bg-slate-50 text-slate-700 rounded-lg font-semibold border border-slate-200 transition-all shadow-sm hover:shadow"
+          >
+            <Database className="w-5 h-5 text-slate-400" />
+            View Demo Dashboard
+          </Link>
         </div>
       </div>
     </section>
-  )
+  );
 }
