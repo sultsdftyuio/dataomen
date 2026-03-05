@@ -3,20 +3,24 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Search, Database, LayoutTemplate, AlertTriangle, ShieldCheck, Activity } from "lucide-react";
-import DataPreview from "./DataPreview";
-import DynamicChartFactory from "./DynamicChartFactory";
+
+// Strict Named Imports: Prevents Turbopack build failures in Next.js
+import { DataPreview } from "./DataPreview";
+import { DynamicChartFactory } from "./DynamicChartFactory";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 // Strict typing for our analytical response payload
-interface AnalyticalResult {
+export interface AnalyticalResult {
   status: string;
   columns?: string[];
-  data?: any[];
+  data?: Record<string, any>[]; // Explicitly typing the data payload array
   visualization_hint?: 'bar' | 'line' | 'scatter' | 'table';
   metrics?: Record<string, any>;
+  error?: string;
 }
 
 export default function DashboardOrchestrator() {
@@ -38,7 +42,7 @@ export default function DashboardOrchestrator() {
       }
     };
     initTenantContext();
-  }, [supabase.auth]);
+  }, [supabase]);
 
   const handleExecuteQuery = async () => {
     if (!datasetId.trim() || !query.trim()) return;
@@ -61,12 +65,12 @@ export default function DashboardOrchestrator() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Execution engine failed to process query.");
       
-      // Pass the fully materialized payload to pure functional components
+      // Pass the fully materialized payload to state
       setResultData(data.results || { status: "Success", data: [], columns: [] });
       
     } catch (err: any) {
       console.error("Orchestration Error:", err);
-      setError(err.message);
+      setError(err.message || "An unexpected error occurred during execution.");
     } finally {
       setIsQuerying(false);
     }
@@ -159,10 +163,10 @@ export default function DashboardOrchestrator() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 p-1 flex flex-col relative bg-neutral-50/50 dark:bg-neutral-900/30 rounded-b-xl overflow-hidden">
-            {resultData ? (
+            {/* Array check injection: Only passing down the raw array to strict-typed sub-components */}
+            {resultData && resultData.data && resultData.data.length > 0 ? (
                <div className="absolute inset-0 p-4 overflow-auto">
-                 {/* Functional injection of visualization layer */}
-                 <DynamicChartFactory data={resultData} />
+                 <DynamicChartFactory data={resultData.data} />
                </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-neutral-400 p-6">
@@ -171,7 +175,7 @@ export default function DashboardOrchestrator() {
                  </div>
                  <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Awaiting Execution</p>
                  <p className="text-xs opacity-75 max-w-[250px] mt-1.5 leading-relaxed">
-                   Run a natural language query on the left. The engine will dynamically map results to the optimal charting format.
+                    Run a natural language query on the left. The engine will dynamically map results to the optimal charting format.
                  </p>
               </div>
             )}
@@ -183,16 +187,17 @@ export default function DashboardOrchestrator() {
           <CardHeader className="bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800 pb-3 py-3 rounded-t-xl">
             <CardTitle className="text-sm font-semibold flex items-center justify-between">
               Raw Data Validation
-              {resultData && (
+              {resultData && resultData.data && (
                 <span className="text-[10px] font-normal text-neutral-500 font-mono bg-white dark:bg-black px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800">
-                  {resultData.data?.length || 0} row(s) returned
+                  {resultData.data.length} row(s) returned
                 </span>
               )}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0 overflow-auto flex-1 min-h-[150px] bg-white dark:bg-black rounded-b-xl">
-            {resultData ? (
-               <DataPreview data={resultData} />
+            {/* Array check injection */}
+            {resultData && resultData.data && resultData.data.length > 0 ? (
+               <DataPreview data={resultData.data} />
             ) : (
                <div className="h-full w-full flex items-center justify-center p-6 text-center text-[11px] text-neutral-400 font-mono">
                   &lt; No Vectorized Payload Extracted /&gt;
