@@ -1,6 +1,9 @@
+"use client";
+
 import React from "react";
-// FIX: Added curly braces for a named import
-import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+// 1. Import the SidebarProvider from your UI module
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 export default function DashboardLayout({
   children,
@@ -8,13 +11,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      <DashboardSidebar />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+    /* 2. Wrap your layout in the Provider to initialize the context */
+    <SidebarProvider>
+      <div className="flex h-screen w-full bg-background overflow-hidden text-foreground">
+        <DashboardSidebar />
+        
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-background">
+          {/* We keep the dynamic children isolated here */}
           {children}
         </main>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }
