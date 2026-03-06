@@ -1,62 +1,62 @@
 import os
+import logging
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
-# Orchestration (Backend): Use standard HTTP Bearer for Supabase JWTs
+logger = logging.getLogger(__name__)
+
+# Orchestration (Backend): Clean Dependency Injection for Authorization
 security = HTTPBearer()
 
-# IMPORTANT: You must set SUPABASE_JWT_SECRET in your environment variables.
-# You can find this in your Supabase Dashboard > Project Settings > API > JWT Settings.
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
+# SUPABASE_JWT_SECRET should be defined in your environment (.env)
+# Found in Supabase Dashboard -> Project Settings -> API -> JWT Secret
+SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
 ALGORITHM = "HS256"
+AUDIENCE = "authenticated"
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def verify_tenant(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """
-    Modular JWT Validator: Verifies tokens issued by Supabase.
-    This replaces local authenticate_user logic entirely.
+    Validates the Supabase JWT and extracts the correct tenant ID.
+    Security by Design: Ensures tenant isolation at the request layer via token extraction.
     """
     if not SUPABASE_JWT_SECRET:
+        logger.error("SUPABASE_JWT_SECRET environment variable is missing.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SUPABASE_JWT_SECRET environment variable is not set."
+            detail="Authentication is not properly configured on the server."
         )
 
     token = credentials.credentials
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     
     try:
-        # Security by Design: Validate the token against Supabase's secret and audience
+        # Decode the Supabase JWT 
         payload = jwt.decode(
             token, 
             SUPABASE_JWT_SECRET, 
             algorithms=[ALGORITHM], 
-            audience="authenticated"
+            audience=AUDIENCE
         )
         
-        # Extract the Supabase 'sub' (User UUID) which we use as the tenant identifier
-        user_id: str = payload.get("sub")
-        email: Optional[str] = payload.get("email")
+        # In a standard Supabase Auth setup, the 'sub' acts as the unique user identifier.
+        # If your multi-tenancy is organization-based (e.g. many users to one org), 
+        # extract the specific tenant_id from the user's app_metadata:
+        # tenant_id: str = payload.get("app_metadata", {}).get("tenant_id")
         
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token is missing subject claim (sub).",
-            )
+        tenant_id: Optional[str] = payload.get("sub")
+        
+        if not tenant_id:
+            logger.warning("JWT validation failed: 'sub' (tenant_id) claim missing.")
+            raise credentials_exception
             
-        # Computation (Execution): Return a simplified user context for downstream routes
-        return {
-            "id": user_id,
-            "email": email,
-            "tenant_id": user_id  # Mapping Supabase UID directly to tenant_id for isolation
-        }
-
+        return tenant_id
+        
     except JWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Could not validate credentials: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-# Note: The register/login routes are now handled by the Next.js frontend directly 
-# with Supabase Client SDK, so they are removed from the backend orchestration layer.
+        logger.warning(f"JWT Verification failed: {str(e)}")
+        raise credentials_exception
