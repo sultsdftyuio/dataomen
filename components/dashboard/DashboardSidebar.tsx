@@ -19,80 +19,68 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarFooter
+  SidebarHeader,
 } from "@/components/ui/sidebar";
 
-const coreNavigation = [
-  { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Data Pipeline", href: "/dashboard/pipeline", icon: Database },
-  { name: "Anomaly Detection", href: "/dashboard/anomalies", icon: Activity },
-];
-
-const agentNavigation = [
-  { name: "Custom Agents", href: "/agents", icon: Bot },
-  { name: "Agent Chat", href: "/chat", icon: MessageSquare },
-];
-
-const systemNavigation = [
-  { name: "Settings", href: "/settings", icon: Settings },
+// 1. Centralized Navigation Config (The Modular Strategy)
+// Any future links should just be added to this array.
+const navItems = [
+  { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Datasets", url: "/datasets", icon: Database },
+  { title: "Agents", url: "/agents", icon: Bot },
+  { title: "Chat", url: "/chat", icon: MessageSquare }, // <-- Chat hub link
+  { title: "Activity", url: "/activity", icon: Activity },
+  { title: "Settings", url: "/settings", icon: Settings },
 ];
 
 export function DashboardSidebar() {
   const pathname = usePathname();
 
-  const renderNavItems = (items: typeof coreNavigation) => (
-    <SidebarMenu>
-      {items.map((item) => {
-        // Strict path matching to prevent layout layout thrashing on nested routes
-        const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-        
-        return (
-          <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton asChild isActive={isActive}>
-              <Link href={item.href} className="flex items-center gap-3">
-                <item.icon className="h-4 w-4" />
-                <span>{item.name}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        );
-      })}
-    </SidebarMenu>
-  );
-
   return (
-    <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="h-14 flex items-center px-4 border-b">
-        <span className="font-bold text-lg tracking-tight text-primary">Data Omen</span>
+    <Sidebar variant="inset">
+      <SidebarHeader className="px-6 py-4">
+        {/* Branding / Tenant Display */}
+        <div className="flex items-center gap-2 font-bold tracking-tight text-lg">
+          <Database className="h-5 w-5 text-primary" />
+          <span>Dataomen</span>
+        </div>
       </SidebarHeader>
-      
-      <SidebarContent className="gap-0">
-        <SidebarGroup>
-          <SidebarGroupLabel>Analytics Engine</SidebarGroupLabel>
-          <SidebarGroupContent>
-            {renderNavItems(coreNavigation)}
-          </SidebarGroupContent>
-        </SidebarGroup>
 
+      <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>AI Orchestration</SidebarGroupLabel>
+          <SidebarGroupLabel>Application</SidebarGroupLabel>
           <SidebarGroupContent>
-            {renderNavItems(agentNavigation)}
+            <SidebarMenu>
+              {navItems.map((item) => {
+                // Determine if active: either exact match or starts with base path (e.g. /chat/agent-id)
+                const isActive = pathname === item.url || pathname.startsWith(`${item.url}/`);
+
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton 
+                      asChild 
+                      isActive={isActive}
+                      tooltip={item.title}
+                      className={cn(
+                        "transition-colors",
+                        isActive ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"
+                      )}
+                    >
+                      <Link href={item.url}>
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            {renderNavItems(systemNavigation)}
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarFooter>
     </Sidebar>
   );
 }
