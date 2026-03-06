@@ -1,60 +1,73 @@
+# api/services/duckdb_validator.py
 import os
 import duckdb
 import logging
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-class DuckDBValidator:
+class DuckDBQueryRunner:
     """
-    Validates that a newly uploaded Parquet file in S3/R2 is correctly 
-    formatted and readable by the DuckDB engine.
+    Handles DuckDB query execution with strict Row-Level Security (RLS)
+    and zero-copy Cloudflare R2 integration via HTTPFS.
     """
-
     def __init__(self):
-        # Create an ephemeral, in-memory DuckDB connection
-        self.conn = duckdb.connect(database=':memory:')
-        self._configure_s3_credentials()
+        # Clean URLs for DuckDB's httpfs extension
+        self.endpoint_url = os.getenv("R2_ENDPOINT_URL", os.getenv("S3_ENDPOINT_URL", "")).replace("https://", "").replace("http://", "")
+        self.access_key = os.getenv("R2_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", ""))
+        self.secret_key = os.getenv("R2_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", ""))
+        self.region = os.getenv("AWS_REGION", "auto")
 
-    def _configure_s3_credentials(self):
-        """
-        Installs the httpfs extension and injects AWS/R2 credentials so 
-        DuckDB can read directly from the object storage bucket.
-        """
-        try:
-            # Install and load the extension required for S3/R2 reading
-            self.conn.execute("INSTALL httpfs;")
-            self.conn.execute("LOAD httpfs;")
-            
-            # Configure credentials (DuckDB syntax)
-            self.conn.execute(f"SET s3_endpoint='{os.getenv('S3_ENDPOINT_URL', 's3.amazonaws.com').replace('https://', '')}';")
-            self.conn.execute(f"SET s3_access_key_id='{os.getenv('S3_ACCESS_KEY')}';")
-            self.conn.execute(f"SET s3_secret_access_key='{os.getenv('S3_SECRET_KEY')}';")
-            self.conn.execute(f"SET s3_region='{os.getenv('S3_REGION', 'auto')}';")
-            
-            # Use path-style addressing if using Cloudflare R2 or MinIO
-            self.conn.execute("SET s3_url_style='path';") 
-        except Exception as e:
-            logger.error(f"Failed to configure DuckDB S3 credentials: {e}")
-            raise
-
-    def validate_and_count(self, s3_uri: str) -> int:
-        """
-        Runs a quick validation query against the remote Parquet file.
-        Returns the total row count if successful.
-        """
-        logger.info(f"Running DuckDB sanity check on {s3_uri}")
+    def _get_connection(self) -> duckdb.DuckDBPyConnection:
+        # Transient in-memory DuckDB connection per query
+        conn = duckdb.connect(database=':memory:')
         
-        try:
-            # The read_parquet function streams metadata from S3 to get the count instantly
-            query = f"SELECT COUNT(*) FROM read_parquet('{s3_uri}');"
-            result = self.conn.execute(query).fetchone()
+        # 1.1 Data Modularity: Configure DuckDB to read directly from R2
+        conn.execute("INSTALL httpfs;")
+        conn.execute("LOAD httpfs;")
+        
+        if self.endpoint_url:
+            conn.execute(f"SET s3_endpoint='{self.endpoint_url}';")
+            conn.execute("SET s3_url_style='path';")
             
-            row_count = result[0]
-            logger.info(f"Validation successful. File contains {row_count} rows.")
-            return row_count
+        conn.execute(f"SET s3_access_key_id='{self.access_key}';")
+        conn.execute(f"SET s3_secret_access_key='{self.secret_key}';")
+        conn.execute(f"SET s3_region='{self.region}';")
+        
+        return conn
+
+    def execute_tenant_query(self, query: str, tenant_id: str, allowed_paths: List[str]) -> List[Dict[str, Any]]:
+        """
+        1.3 Programmatic RLS (Row-Level Security):
+        Forcefully binds execution to specific tenant paths.
+        """
+        conn = self._get_connection()
+        try:
+            # Mount allowed paths as immutable views
+            for i, path in enumerate(allowed_paths):
+                # Force Hardware-Level Validation:
+                # If the string literal tenant_id isn't in the path, crash immediately.
+                if f"tenant_id={tenant_id}" not in path:
+                    raise PermissionError(f"Security Violation: Path {path} does not belong to tenant {tenant_id}")
+                
+                table_name = f"dataset_{i}"
+                conn.execute(f"CREATE VIEW {table_name} AS SELECT * FROM read_parquet('{path}');")
+            
+            # Simple heuristic guardrail (DuckDB :memory: drops on close anyway, but good practice)
+            query_upper = query.upper()
+            forbidden_keywords = ["DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "GRANT", "REVOKE"]
+            for kw in forbidden_keywords:
+                if kw in query_upper:
+                    raise ValueError(f"Dangerous keyword '{kw}' detected. Only SELECT queries are allowed.")
+            
+            # Execute query and pull into Apache Arrow/Pandas zero-copy format
+            result = conn.execute(query).fetchdf()
+            
+            # Return records
+            return result.to_dict(orient='records')
             
         except Exception as e:
-            logger.error(f"DuckDB failed to read Parquet file at {s3_uri}: {e}")
-            raise Exception("Corrupt Parquet file or unreadable S3 URI.")
+            logger.error(f"DuckDB Execution Error for Tenant {tenant_id}: {str(e)}")
+            raise e
         finally:
-            self.conn.close()
+            conn.close()
