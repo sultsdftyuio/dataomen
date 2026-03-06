@@ -3,13 +3,13 @@ import os
 import tempfile
 import logging
 import time
+import uuid
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 import duckdb
-import pandas as pd
-import numpy as np
+import polars as pl  # Replaced pandas with strictly vectorized Polars
 
 from api.database import get_db
 # Ensure this matches your actual auth import
@@ -22,6 +22,11 @@ from api.services.storage_manager import storage_manager
 from api.services.nl2sql_generator import nl2sql_generator
 from models import Dataset, QueryHistory
 
+# Phase 2 Modules
+from api.services.metric_governance import metric_registry
+from api.services.compute_engine import ComputeRouter
+from api.services.ab_testing import ab_tester
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/query", tags=["Query"])
 
@@ -30,10 +35,17 @@ class EphemeralQueryRequest(BaseModel):
     ephemeral_path: str
     natural_query: str
 
+class ABTestConfig(BaseModel):
+    metric_col: str
+    group_col: str
+    control: str
+    treatment: str
+
 class PersistentQueryRequest(BaseModel):
     dataset_id: str
     natural_query: str
     agent_id: Optional[str] = None # For tracking history to specific AI assistants
+    ab_test_config: Optional[ABTestConfig] = None # Phase 2: Diagnostic Intel
 
 # --- Security Validation & Background Workers ---
 def security_validate_ephemeral_path(path: str) -> str:
@@ -99,19 +111,25 @@ async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, A
             schema_metadata=None 
         )
 
-        # Vectorized Execution (PyArrow backing)
-        df = con.execute(sql_query).fetch_arrow_table().to_pandas()
+        # Phase 2.1: Semantic Math Resolution
+        for metric_name in metric_registry._metrics.keys():
+            macro_tag = f"{{{metric_name}}}"
+            if macro_tag in sql_query:
+                sql_query = sql_query.replace(macro_tag, metric_registry.get_sql_expression(metric_name))
+
+        # Phase 2.3: Vectorized Execution via Apache Arrow -> Polars Transit Layer
+        arrow_table = con.execute(sql_query).arrow()
+        df = pl.from_arrow(arrow_table)
         
-        # Data Sanitization: Replace NaNs with strict JSON nulls to prevent React frontend crashes
-        df = df.replace({np.nan: None}) 
-        
-        results = df.to_dict(orient="records")
+        # Polars native to_dicts correctly maps nulls to JSON nulls automatically (No Pandas NaN crashes)
+        results = df.to_dicts()
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
         return {
             "status": "success",
+            "execution_mode": "sync",
             "sql_executed": sql_query,
-            "columns": list(df.columns),
+            "columns": df.columns,
             "data": results,
             "execution_time_ms": execution_time_ms
         }
@@ -133,7 +151,7 @@ async def execute_persistent_query(
 ) -> Dict[str, Any]:
     """
     Tier 2/3 Execution: Connects securely to Supabase Storage, Cloudflare R2, or BYOS.
-    Executes heavily optimized Contextual RAG with PyArrow vectorization.
+    Executes heavily optimized Contextual RAG with Arrow/Polars vectorization and diagnostic offloading.
     """
     start_time = time.time()
     
@@ -166,10 +184,28 @@ async def execute_persistent_query(
             schema_metadata=dataset.schema_metadata
         )
 
-        # 5. Computation: Execute via PyArrow for Zero-Copy transfer into Pandas memory
-        df = con.execute(sql_query).fetch_arrow_table().to_pandas()
-        df = df.replace({np.nan: None})
-        results = df.to_dict(orient="records")
+        # Phase 2.1: Semantic Math Resolution
+        for metric_name in metric_registry._metrics.keys():
+            macro_tag = f"{{{metric_name}}}"
+            if macro_tag in sql_query:
+                sql_query = sql_query.replace(macro_tag, metric_registry.get_sql_expression(metric_name))
+
+        # Phase 2.2: Compute Router ("Noisy Neighbor" Defense)
+        if ComputeRouter.requires_background_worker(sql_query):
+            job_id = str(uuid.uuid4())
+            # In a full deployment, dispatch this to your Render workers via Celery/Redis here
+            # e.g., redis.rpush("tenant_jobs", json.dumps({"sql": sql_query}))
+            return {
+                "status": "processing",
+                "execution_mode": "async",
+                "job_id": job_id,
+                "message": "Query complexity exceeded sync thresholds. Routed to asynchronous diagnostic tier."
+            }
+
+        # 5. Computation: Execute via PyArrow for Zero-Copy transfer into Polars
+        arrow_table = con.execute(sql_query).arrow()
+        df = pl.from_arrow(arrow_table)
+        results = df.to_dicts()
         
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
@@ -180,13 +216,27 @@ async def execute_persistent_query(
                 request.natural_query, sql_query, execution_time_ms, True
             )
 
-        return {
+        response_data = {
             "status": "success",
+            "execution_mode": "sync",
             "sql_executed": sql_query,
-            "columns": list(df.columns),
+            "columns": df.columns,
             "data": results,
             "execution_time_ms": execution_time_ms
         }
+
+        # Phase 2.4: Automated Diagnostic Intelligence (A/B Testing)
+        if request.ab_test_config:
+            diagnostic_insights = ab_tester.analyze_experiment(
+                df=df,
+                metric_col=request.ab_test_config.metric_col,
+                group_col=request.ab_test_config.group_col,
+                control_val=request.ab_test_config.control,
+                treatment_val=request.ab_test_config.treatment
+            )
+            response_data["diagnostic_insights"] = diagnostic_insights
+
+        return response_data
 
     except Exception as e:
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
