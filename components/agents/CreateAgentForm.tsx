@@ -1,7 +1,14 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Save, AlertCircle } from 'lucide-react';
+import React, { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Bot, Target, Zap, AlertCircle, Sparkles, Code2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface CreateAgentFormProps {
   onSuccess?: () => void;
@@ -9,100 +16,151 @@ interface CreateAgentFormProps {
 
 export function CreateAgentForm({ onSuccess }: CreateAgentFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // State for the payload
+  const [agentName, setAgentName] = useState("");
+  const [dataset, setDataset] = useState("");
+  const [promptMode, setPromptMode] = useState("natural-language");
+  const [nlPrompt, setNlPrompt] = useState("");
+  const [sqlCondition, setSqlCondition] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
-    // In production: await fetch('/api/routes/agents', { method: 'POST', body: ... })
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setError(null);
+
+    // Payload construction: If in NL mode, the backend's semantic router 
+    // will intercept this and compile the SQL dynamically before saving.
+    const payload = {
+      name: agentName,
+      dataset: dataset,
+      mode: promptMode,
+      logic: promptMode === "natural-language" ? nlPrompt : sqlCondition
+    };
+
+    try {
+      // Simulate API transit time 
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      console.log("Deploying agent payload:", payload);
       if (onSuccess) onSuccess();
-    }, 800);
+    } catch (err) {
+      setError("Failed to deploy agent. Please check your connection.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-8 border border-indigo-100 shadow-lg shadow-indigo-100/50">
-      <div className="flex items-center gap-3 mb-6 pb-6 border-b border-slate-100">
-        <div className="w-10 h-10 bg-indigo-50 flex items-center justify-center rounded-lg border border-indigo-100">
-          <Save className="w-5 h-5 text-indigo-600" />
+    <form onSubmit={handleSubmit} className="space-y-6 py-4">
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Deployment Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* General Configuration */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="name" className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-muted-foreground" />
+            Agent Name
+          </Label>
+          <Input 
+            id="name" 
+            placeholder="e.g., Revenue Drop Monitor" 
+            value={agentName}
+            onChange={(e) => setAgentName(e.target.value)}
+            required 
+          />
         </div>
-        <div>
-          <h2 className="text-xl font-bold text-slate-900">Configure New Agent</h2>
-          <p className="text-sm text-slate-500">Deploy a swappable logic module to monitor your datasets.</p>
+
+        <div className="space-y-2">
+          <Label htmlFor="dataset" className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-muted-foreground" />
+            Target Dataset
+          </Label>
+          <Select required value={dataset} onValueChange={setDataset}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select dataset" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="stripe_prod">Stripe_Transactions_Prod</SelectItem>
+              <SelectItem value="user_events">User_Events_Log</SelectItem>
+              <SelectItem value="postgres_replica">Postgres_Replica_DB</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        {/* Basic Info */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Agent Name</label>
-            <input 
-              type="text" 
-              required
-              placeholder="e.g. Unusual Spike Detector" 
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-900"
+      <div className="h-px bg-border my-2" />
+
+      {/* Agent Logic Configuration (No-Code vs Code) */}
+      <div className="space-y-3">
+        <Label>When should this agent trigger?</Label>
+        
+        <Tabs value={promptMode} onValueChange={setPromptMode} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="natural-language" className="gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Describe (AI)
+            </TabsTrigger>
+            <TabsTrigger value="sql" className="gap-2">
+              <Code2 className="h-4 w-4 text-muted-foreground" />
+              Advanced (SQL)
+            </TabsTrigger>
+          </TabsList>
+
+          {/* No-Code / Non-Technical Interface */}
+          <TabsContent value="natural-language" className="space-y-2">
+            <Textarea 
+              placeholder="e.g., Alert me immediately if daily active users drop below 10,000 or if the error rate exceeds 2%." 
+              className="resize-none h-24 bg-primary/5 border-primary/20 focus-visible:ring-primary/50"
+              value={nlPrompt}
+              onChange={(e) => setNlPrompt(e.target.value)}
+              required={promptMode === "natural-language"}
             />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Agent Strategy / Type</label>
-            <select required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-900 appearance-none">
-              <option value="anomaly_detector">Vectorized Anomaly Detector (NumPy)</option>
-              <option value="nl2sql">Semantic NL2SQL Router</option>
-              <option value="watchdog">Basic Threshold Watchdog</option>
-            </select>
-          </div>
-        </div>
+            <p className="text-[11px] text-muted-foreground">
+              Our AI will translate your instructions into an autonomous monitoring script.
+            </p>
+          </TabsContent>
 
-        {/* Configuration */}
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Target Dataset (Parquet/DuckDB)</label>
-            <select required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-900 appearance-none">
-              <option value="ds_1">stripe_mrr_prod</option>
-              <option value="ds_2">user_events_parquet</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">Execution Schedule (Cron)</label>
-            <input 
-              type="text" 
-              placeholder="*/15 * * * *" 
-              defaultValue="*/15 * * * *"
-              className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-900 font-mono text-sm"
+          {/* Data Engineer / Technical Interface */}
+          <TabsContent value="sql" className="space-y-2">
+            <Textarea 
+              placeholder="SELECT * FROM target WHERE anomaly_score > 0.9" 
+              className="font-mono text-sm resize-none h-24 bg-muted/50 border-border focus-visible:ring-muted-foreground"
+              value={sqlCondition}
+              onChange={(e) => setSqlCondition(e.target.value)}
+              required={promptMode === "sql"}
             />
-          </div>
-        </div>
+            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              Actions fire when this query returns one or more rows.
+            </p>
+          </TabsContent>
+        </Tabs>
       </div>
 
-      {/* Advanced Config / JSON */}
-      <div className="mb-8">
-        <label className="block text-sm font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-          <span>Sensitivity Configuration (JSON)</span>
-          <span className="text-xs text-indigo-600 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> Parameters for EMA/Linear Algebra</span>
-        </label>
-        <textarea 
-          rows={4}
-          className="w-full px-4 py-3 bg-slate-900 border border-slate-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-emerald-400 font-mono text-sm"
-          defaultValue={JSON.stringify({ sensitivity_multiplier: 2.5, ema_window: 14 }, null, 2)}
-        />
-      </div>
-
-      <div className="flex justify-end gap-3">
-        <button 
-          type="button"
-          onClick={onSuccess}
-          className="px-6 py-2.5 rounded-lg font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-        >
+      {/* Action Footers */}
+      <div className="pt-4 flex items-center justify-end gap-3 border-t mt-4">
+        <Button type="button" variant="ghost" onClick={onSuccess}>
           Cancel
-        </button>
-        <button 
-          type="submit"
-          disabled={isSubmitting}
-          className="px-6 py-2.5 rounded-lg font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm hover:shadow transition-all disabled:opacity-70 flex items-center gap-2"
-        >
-          {isSubmitting ? 'Deploying Logic...' : 'Deploy Agent'}
-        </button>
+        </Button>
+        <Button type="submit" disabled={isSubmitting || !dataset} className="min-w-[120px] gap-2">
+          {isSubmitting ? (
+            "Deploying..."
+          ) : promptMode === "natural-language" ? (
+            <>
+              <Sparkles className="h-4 w-4 fill-current" />
+              Generate & Deploy
+            </>
+          ) : (
+            "Deploy Agent"
+          )}
+        </Button>
       </div>
     </form>
   );
