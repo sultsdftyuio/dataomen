@@ -1,34 +1,36 @@
 "use client";
 
-import React, { useState, useCallback, useRef } from 'react';
-import { UploadCloud, File as FileIcon, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
+import React, { useState, useCallback } from "react";
+import { UploadCloud, CheckCircle, AlertCircle, FileType } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface UploadSuccessData {
-  datasetId?: string;
-  ephemeralPath?: string;
-  datasetName: string;
+  dataset_id?: string;
+  filename: string;
+  status: string;
+  row_count?: number;
+  columns?: string[];
+  [key: string]: any;
 }
 
-interface FileUploadZoneProps {
+export interface FileUploadZoneProps {
   isEphemeral?: boolean;
+  token?: string; // Added token to fix the TypeScript error
   onUploadSuccess?: (data: UploadSuccessData) => void;
   className?: string;
 }
 
-export default function FileUploadZone({ 
-  isEphemeral = false, 
-  onUploadSuccess, 
-  className 
+export default function FileUploadZone({
+  isEphemeral = false,
+  token,
+  onUploadSuccess,
+  className,
 }: FileUploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -44,154 +46,148 @@ export default function FileUploadZone({
 
   const uploadFile = async (file: File) => {
     setIsUploading(true);
-    setUploadStatus('idle');
-    setErrorMessage('');
+    setError(null);
+    setSuccess(false);
+    setUploadProgress(0);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    // Explicitly let the backend know if this is an ephemeral (sandbox) dataset or persistent multi-tenant dataset
-    formData.append('is_ephemeral', String(isEphemeral));
+    // Simulated progress for UI UX
+    const interval = setInterval(() => {
+      setUploadProgress((prev) => Math.min(prev + 10, 90));
+    }, 100);
 
     try {
-      // EXACT ROUTE MATCHING: No trailing slash!
-      // This prevents the FastAPI 307 Temporary Redirect that drops the POST body and causes a 405 Method Not Allowed.
-      // Note: We deliberately do NOT set 'Content-Type' headers. The browser automatically injects 'multipart/form-data' with the boundary.
-      const response = await fetch('/api/datasets/upload', {
-        method: 'POST',
+      const formData = new FormData();
+      formData.append("file", file);
+      if (isEphemeral) {
+        formData.append("ephemeral", "true");
+      }
+
+      const headers: HeadersInit = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      // Forward to backend ingestion route
+      const response = await fetch("/api/datasets/upload", {
+        method: "POST",
+        headers,
         body: formData,
       });
 
+      clearInterval(interval);
+      setUploadProgress(100);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Ingestion failed with status ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || "Upload failed");
       }
 
       const data = await response.json();
+      setSuccess(true);
       
-      setUploadStatus('success');
-      toast({
-        title: "Ingestion Complete",
-        description: `${data.filename || file.name} has been securely staged.`,
-      });
-
       if (onUploadSuccess) {
-        onUploadSuccess({
-          datasetId: data.dataset_id || data.id, // Handles both ephemeral and persistent schema responses
-          datasetName: data.filename || file.name,
-          ephemeralPath: data.file_path,
-        });
+        onUploadSuccess(data);
       }
-
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      setUploadStatus('error');
-      setErrorMessage(error.message || "An unexpected error occurred during ingestion.");
-      toast({
-        title: "Upload Failed",
-        description: error.message || "Could not stage dataset.",
-        variant: "destructive",
-      });
+    } catch (err: any) {
+      clearInterval(interval);
+      setError(err.message || "An error occurred during the data upload.");
     } finally {
       setIsUploading(false);
+      // Reset the success state after a few seconds
+      setTimeout(() => {
+        if (success) setSuccess(false);
+        setUploadProgress(0);
+      }, 4000);
     }
   };
 
-  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      // Prioritize vectorized analytical formats
-      const allowedTypes = ['.csv', '.parquet', '.json'];
-      const fileName = files[0].name.toLowerCase();
-      const isValid = allowedTypes.some(ext => fileName.endsWith(ext));
-
-      if (!isValid) {
-        setUploadStatus('error');
-        setErrorMessage("Unsupported file type. Please upload CSV, Parquet, or JSON.");
-        return;
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        uploadFile(file);
       }
+    },
+    [isEphemeral, token, onUploadSuccess]
+  );
 
-      uploadFile(files[0]);
-    }
-  }, []);
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      uploadFile(files[0]);
-    }
-  }, []);
-
-  // Automatically reset UI after a few seconds of success
-  React.useEffect(() => {
-    if (uploadStatus === 'success') {
-      const timer = setTimeout(() => {
-        setUploadStatus('idle');
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [uploadStatus]);
+  const handleFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+        const file = e.target.files[0];
+        uploadFile(file);
+      }
+    },
+    [isEphemeral, token, onUploadSuccess]
+  );
 
   return (
     <div
+      className={cn(
+        "relative flex flex-col items-center justify-center w-full p-10 border-2 border-dashed rounded-xl transition-all duration-200",
+        isDragging
+          ? "border-primary bg-primary/5 scale-[1.01]"
+          : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50",
+        isUploading && "opacity-75 pointer-events-none",
+        className
+      )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onClick={() => !isUploading && fileInputRef.current?.click()}
-      className={cn(
-        "relative flex flex-col items-center justify-center w-full max-w-2xl p-12 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-200 ease-in-out",
-        isDragging 
-          ? "border-blue-500 bg-blue-50/50 dark:bg-blue-900/20 shadow-inner" 
-          : "border-slate-300 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600 bg-white/50 dark:bg-slate-900/50",
-        isUploading && "pointer-events-none opacity-80",
-        uploadStatus === 'error' && "border-red-400 bg-red-50/50 dark:bg-red-900/10",
-        uploadStatus === 'success' && "border-green-400 bg-green-50/50 dark:bg-green-900/10",
-        className
-      )}
     >
       <input
         type="file"
-        ref={fileInputRef}
-        onChange={handleFileSelect}
-        className="hidden"
-        accept=".csv,.parquet,.json"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        onChange={handleFileInput}
+        disabled={isUploading}
+        accept=".csv,.json,.parquet"
       />
-      
-      <div className="flex flex-col items-center gap-4 text-center">
-        {isUploading && <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />}
-        {!isUploading && uploadStatus === 'idle' && <UploadCloud className={cn("w-12 h-12 transition-colors", isDragging ? "text-blue-500" : "text-slate-400")} />}
-        {!isUploading && uploadStatus === 'success' && <CheckCircle2 className="w-12 h-12 text-green-500" />}
-        {!isUploading && uploadStatus === 'error' && <AlertCircle className="w-12 h-12 text-red-500" />}
-        
-        <div className="space-y-1">
-          <h3 className={cn(
-            "text-lg font-semibold tracking-tight",
-            uploadStatus === 'error' ? "text-red-600 dark:text-red-400" : "text-slate-900 dark:text-slate-100"
-          )}>
-            {isUploading && 'Ingesting data...'}
-            {!isUploading && uploadStatus === 'idle' && (isDragging ? 'Drop file to ingest' : 'Upload your dataset')}
-            {!isUploading && uploadStatus === 'success' && 'Ingestion successful'}
-            {!isUploading && uploadStatus === 'error' && 'Upload failed'}
-          </h3>
-          
-          <p className={cn(
-            "text-sm max-w-sm",
-            uploadStatus === 'error' ? "text-red-500" : "text-slate-500 dark:text-slate-400"
-          )}>
-            {uploadStatus === 'error' 
-              ? errorMessage 
-              : "Drag and drop your file here, or click to browse. Max size 5GB."}
-          </p>
+
+      <div className="flex flex-col items-center text-center space-y-4">
+        <div className="p-4 bg-background rounded-full shadow-sm border transition-transform">
+          {success ? (
+            <CheckCircle className="w-8 h-8 text-green-500 animate-in zoom-in" />
+          ) : error ? (
+            <AlertCircle className="w-8 h-8 text-destructive animate-in zoom-in" />
+          ) : isUploading ? (
+            <FileType className="w-8 h-8 text-primary animate-pulse" />
+          ) : (
+            <UploadCloud className="w-8 h-8 text-muted-foreground" />
+          )}
         </div>
 
-        {uploadStatus === 'idle' && !isUploading && (
-          <div className="flex items-center gap-2 mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-            <span className="px-2 py-1 border border-slate-200 dark:border-slate-800 rounded bg-slate-100/50 dark:bg-slate-800/50">CSV</span>
-            <span className="px-2 py-1 border border-slate-200 dark:border-slate-800 rounded bg-slate-100/50 dark:bg-slate-800/50 text-blue-600 dark:text-blue-400">Parquet</span>
-            <span className="px-2 py-1 border border-slate-200 dark:border-slate-800 rounded bg-slate-100/50 dark:bg-slate-800/50">JSON</span>
+        <div className="space-y-1">
+          <p className="text-sm font-medium">
+            {isUploading ? (
+              "Ingesting Data..."
+            ) : success ? (
+              "Ingestion Complete!"
+            ) : error ? (
+              <span className="text-destructive">{error}</span>
+            ) : (
+              <>
+                <span className="text-primary font-semibold">Click to upload</span> or drag and
+                drop your dataset
+              </>
+            )}
+          </p>
+          {!isUploading && !success && !error && (
+            <p className="text-xs text-muted-foreground">
+              Supports CSV, JSON, or Parquet (Columnar highly recommended for speed)
+            </p>
+          )}
+        </div>
+
+        {isUploading && (
+          <div className="w-full max-w-xs h-2 bg-secondary rounded-full overflow-hidden mt-4">
+            <div
+              className="h-full bg-primary transition-all duration-300 ease-out"
+              style={{ width: `${uploadProgress}%` }}
+            />
           </div>
         )}
       </div>
