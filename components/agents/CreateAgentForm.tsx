@@ -146,9 +146,9 @@ export function CreateAgentForm({ onSubmit, isLoading = false }: CreateAgentForm
               disabled={isLoading}
             />
             <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Zap className="h-3 w-3 text-amber-500" />
-              Actions fire when this query evaluates to true (returns >= 1 row).
-            </p>
+            <Zap className="h-3 w-3 text-amber-500" />
+             Actions fire when this query evaluates to true (returns &gt;= 1 row).
+           </p>
           </TabsContent>
         </Tabs>
       </div>
