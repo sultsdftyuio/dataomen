@@ -1,31 +1,31 @@
-# api/models/agent.py
-from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-from uuid import UUID
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
-class NotificationChannel(BaseModel):
-    provider: str = Field(..., description="e.g., 'slack', 'teams', 'email'")
-    target: str = Field(..., description="Channel ID, Webhook URL, or Email Address")
-    enabled: bool = True
+class AgentBase(BaseModel):
+    """
+    Base attributes for an Analytical Agent.
+    """
+    name: str = Field(..., description="The display name of the agent.")
+    description: Optional[str] = Field(None, description="Short description of what the agent does.")
+    system_prompt: str = Field(..., description="The core instruction set for the LLM.")
+    dataset_ids: List[str] = Field(default_factory=list, description="List of dataset IDs this agent can access.")
 
-class AgentRuleBase(BaseModel):
-    dataset_id: str = Field(..., description="ID of the dataset (Parquet file reference)")
-    metric_column: str = Field(..., description="The numerical column to monitor")
-    time_column: str = Field(..., description="The time dimension column")
-    cron_schedule: str = Field(..., description="Cron expression for execution frequency")
-    sensitivity_threshold: float = Field(default=2.0, description="Z-score threshold for anomaly detection")
-    notification_channels: List[NotificationChannel] = Field(default_factory=list)
-
-class AgentRuleCreate(AgentRuleBase):
+class AgentCreate(AgentBase):
+    """
+    Payload validation for creating a new agent. 
+    (Inherits all fields from AgentBase).
+    """
     pass
 
-class AgentRuleInDB(AgentRuleBase):
-    id: UUID
-    tenant_id: str
-    created_at: datetime
-    last_run_at: Optional[datetime] = None
-    is_active: bool = True
+class AgentInDB(AgentBase):
+    """
+    Database serialization model. Includes server-generated fields and strict tenant partitioning.
+    """
+    id: UUID = Field(default_factory=uuid4)
+    tenant_id: str = Field(..., description="The Supabase user ID owning this agent.")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Config:
         from_attributes = True
