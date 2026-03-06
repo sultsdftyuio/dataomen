@@ -1,79 +1,79 @@
-import os
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
+from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Dict
+from uuid import UUID
 
-from api.models.agent import AgentRuleCreate, AgentRuleInDB
-from api.services.agent_service import AgentService
+from api.models.agent import AgentCreate, AgentInDB
+from api.auth import get_current_user
 
-# Assuming you have these dependencies established in your codebase
-# Adjust import paths if your file structure differs slightly
-from api.auth import get_current_user 
-from api.database import get_supabase_client 
+router = APIRouter(prefix="/agents", tags=["agents"])
 
-router = APIRouter(prefix="/agents", tags=["Agents"])
+# NOTE: Per the Modular Strategy, this is an in-memory orchestration skeleton.
+# In a production environment, inject your DB session (e.g., asyncpg pool or SQLAlchemy session)
+# as a dependency into these routes to maintain swappability.
+_MOCK_DB: Dict[UUID, AgentInDB] = {}
 
-# Environment Variable for Cron Authentication (Fallback for dev)
-CRON_SECRET_TOKEN = os.environ.get("CRON_SECRET_TOKEN", "YOUR_SECURE_INTERNAL_CRON_TOKEN")
-
-def get_agent_service(supabase=Depends(get_supabase_client)) -> AgentService:
-    """Dependency injection wrapper for the Agent Service"""
-    return AgentService(supabase_client=supabase)
-
-@router.post("/", response_model=AgentRuleInDB, status_code=status.HTTP_201_CREATED)
-async def create_agent_rule(
-    rule: AgentRuleCreate,
-    current_user: dict = Depends(get_current_user),
-    agent_service: AgentService = Depends(get_agent_service)
-):
-    """
-    Creates a new autonomous proactive data monitoring agent.
-    Secured to the authenticated tenant.
-    """
-    tenant_id = current_user.get("tenant_id") or current_user.get("sub")
+@router.post("/", response_model=AgentInDB, status_code=status.HTTP_201_CREATED)
+async def create_agent(
+    payload: AgentCreate, 
+    user: dict = Depends(get_current_user)
+) -> AgentInDB:
+    # Security by Design: Extract tenant_id strictly from the verified JWT
+    tenant_id = user.get("sub")
     if not tenant_id:
-        raise HTTPException(status_code=401, detail="Tenant context missing from user token.")
-
-    try:
-        created_agent = await agent_service.create_agent(tenant_id=tenant_id, rule=rule)
-        return created_agent
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
-
-@router.get("/", response_model=List[AgentRuleInDB])
-async def list_agent_rules(
-    current_user: dict = Depends(get_current_user),
-    agent_service: AgentService = Depends(get_agent_service)
-):
-    """
-    Lists all active agents for the current tenant.
-    """
-    tenant_id = current_user.get("tenant_id") or current_user.get("sub")
-    if not tenant_id:
-        raise HTTPException(status_code=401, detail="Tenant context missing from user token.")
-
-    try:
-        agents = await agent_service.list_agents(tenant_id=tenant_id)
-        return agents
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
-
-@router.post("/tick", status_code=status.HTTP_202_ACCEPTED)
-async def trigger_agent_heartbeat(
-    background_tasks: BackgroundTasks,
-    authorization: str = Header(None),
-    agent_service: AgentService = Depends(get_agent_service)
-):
-    """
-    Internal Orchestration endpoint called by Supabase pg_cron every minute.
-    Evaluates which agents are due and dispatches them to background threads 
-    without blocking the web server.
-    """
-    # 1. Verify the caller is actually our internal Supabase Cron Job
-    if not authorization or authorization != f"Bearer {CRON_SECRET_TOKEN}":
-        raise HTTPException(status_code=401, detail="Unauthorized Cron Execution")
-
-    # 2. Evaluate and dispatch
-    # Using background_tasks allows this request to return a 202 Accepted almost instantly
-    result = await agent_service.check_and_dispatch_agents(background_tasks)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid authentication credentials: No subject claim"
+        )
     
-    return result
+    new_agent = AgentInDB(
+        tenant_id=tenant_id,
+        **payload.model_dump()
+    )
+    
+    # Store in DB
+    _MOCK_DB[new_agent.id] = new_agent
+    return new_agent
+
+
+@router.get("/", response_model=List[AgentInDB])
+async def list_agents(user: dict = Depends(get_current_user)) -> List[AgentInDB]:
+    tenant_id = user.get("sub")
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid authentication credentials"
+        )
+        
+    # Security by Design: Strict tenant isolation during read operations
+    user_agents = [agent for agent in _MOCK_DB.values() if agent.tenant_id == tenant_id]
+    
+    # Sort by created_at descending for a better UI experience
+    user_agents.sort(key=lambda x: x.created_at, reverse=True)
+    return user_agents
+
+
+@router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent(agent_id: UUID, user: dict = Depends(get_current_user)) -> None:
+    tenant_id = user.get("sub")
+    if not tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid authentication credentials"
+        )
+    
+    agent = _MOCK_DB.get(agent_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Agent not found"
+        )
+        
+    # Security by Design: Strict tenant isolation validation before destructive action
+    if agent.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Not authorized to delete this agent"
+        )
+        
+    del _MOCK_DB[agent_id]
+    return None
