@@ -3,11 +3,13 @@ import os
 import tempfile
 import logging
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 import duckdb
+import pandas as pd
+import numpy as np
 
 from api.database import get_db
 # Ensure this matches your actual auth import
@@ -33,8 +35,8 @@ class PersistentQueryRequest(BaseModel):
     natural_query: str
     agent_id: Optional[str] = None # For tracking history to specific AI assistants
 
-# --- Security Validation ---
-def security_validate_ephemeral_path(path: str):
+# --- Security Validation & Background Workers ---
+def security_validate_ephemeral_path(path: str) -> str:
     """
     Security by Design: Strict validation to prevent Directory Traversal (LFI) attacks.
     Ensures the path requested by the frontend resides purely within the OS Temp directory.
@@ -48,39 +50,60 @@ def security_validate_ephemeral_path(path: str):
     
     if not os.path.exists(absolute_requested_path):
         raise ValueError("Ephemeral session expired or file not found. Please re-upload your file.")
+        
+    return absolute_requested_path
+
+def async_audit_logger(db: Session, tenant_id: str, agent_id: str, query: str, sql: str, duration: float, success: bool, error: str = None):
+    """
+    Phase 1.4 Immutable Audit Logging:
+    Offloads Postgres commits to a background thread to keep the Vercel/Render HTTP response instantaneous.
+    """
+    try:
+        log_entry = QueryHistory(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            natural_query=query,
+            generated_sql=sql,
+            execution_time_ms=duration,
+            was_successful=success,
+            error_message=error
+        )
+        db.add(log_entry)
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to write async audit log: {str(e)}")
 
 # --- Routes ---
 @router.post("/ephemeral")
 async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, Any]:
     """
     Tier 1 Execution: Purely in-memory, zero persistent footprint.
-    Uses AI to generate DuckDB SQL against an unauthenticated /tmp/ file.
+    Uses Ephemeral View mapping to execute against Vercel /tmp/.
     """
     try:
-        security_validate_ephemeral_path(request.ephemeral_path)
+        safe_path = security_validate_ephemeral_path(request.ephemeral_path)
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
     start_time = time.time()
     try:
-        # 1. Inform the LLM of the exact literal string DuckDB needs to read the file
-        table_name_for_duckdb = f"read_parquet('{request.ephemeral_path}')"
+        # Phase 1.3 Programmatic RLS: Bind path to a view. The LLM never sees the physical path.
+        view_name = "ephemeral_data"
+        con = duckdb.connect(':memory:')
+        con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{safe_path}')")
 
-        # 2. Call Semantic Router (We pass None for schema as ephemeral relies on LLM inference/DuckDB auto-detect)
+        # Call Semantic Router
         sql_query = await nl2sql_generator.generate_sql(
             natural_query=request.natural_query, 
-            table_name=table_name_for_duckdb,
+            table_name=view_name,
             schema_metadata=None 
         )
 
-        # 3. Connect and Execute purely in RAM
-        con = duckdb.connect(':memory:')
+        # Vectorized Execution (PyArrow backing)
+        df = con.execute(sql_query).fetch_arrow_table().to_pandas()
         
-        # 4. Vectorized execution and Pandas conversion
-        df = con.execute(sql_query).df()
-        
-        # Data Sanitization: NaN values break JSON, replace with None (null)
-        df = df.fillna("") 
+        # Data Sanitization: Replace NaNs with strict JSON nulls to prevent React frontend crashes
+        df = df.replace({np.nan: None}) 
         
         results = df.to_dict(orient="records")
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
@@ -95,22 +118,26 @@ async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, A
 
     except Exception as e:
         logger.error(f"Ephemeral Query Execution failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query computation failed: {str(e)}")
+    finally:
+        # Ensure memory is released gracefully
+        if 'con' in locals(): con.close()
 
 
 @router.post("/persistent")
 async def execute_persistent_query(
     request: PersistentQueryRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     tenant_id: str = Depends(get_current_tenant)
 ) -> Dict[str, Any]:
     """
     Tier 2/3 Execution: Connects securely to Supabase Storage, Cloudflare R2, or BYOS.
-    Executes heavily optimized Contextual RAG.
+    Executes heavily optimized Contextual RAG with PyArrow vectorization.
     """
     start_time = time.time()
     
-    # 1. Fetch Jailed Dataset
+    # 1. STRICT Physical Jailing
     dataset = db.query(Dataset).filter(
         Dataset.id == request.dataset_id,
         Dataset.tenant_id == tenant_id
@@ -121,41 +148,37 @@ async def execute_persistent_query(
 
     sql_query = None
     try:
-        # 2. Storage Orchestration: Calculate optimal Zero-Copy or S3 Query Path
+        # 2. Storage Orchestration
         query_path = storage_manager.get_duckdb_query_path(db, dataset)
         
-        # DuckDB expects read_parquet('s3://...') for remote paths
-        table_name_for_duckdb = f"read_parquet('{query_path}')"
+        # 3. Engine Orchestration: Inject credentials
+        con = storage_manager.setup_duckdb_connection(db, tenant_id)
 
-        # 3. AI Orchestration: Contextual RAG via Schema caching
+        # Phase 1.3 Programmatic RLS: 
+        # Create an immutable view. LLM targets `dataset_view` and physically cannot read other paths.
+        view_name = f"dataset_{dataset.id.replace('-', '_')}"
+        con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{query_path}')")
+
+        # 4. AI Orchestration: Contextual RAG
         sql_query = await nl2sql_generator.generate_sql(
             natural_query=request.natural_query,
-            table_name=table_name_for_duckdb,
+            table_name=view_name,
             schema_metadata=dataset.schema_metadata
         )
 
-        # 4. Engine Orchestration: Inject strict Tenant Credentials
-        con = storage_manager.setup_duckdb_connection(db, tenant_id)
-
-        # 5. Computation: Execute and Format
-        df = con.execute(sql_query).df()
-        df = df.fillna("")
+        # 5. Computation: Execute via PyArrow for Zero-Copy transfer into Pandas memory
+        df = con.execute(sql_query).fetch_arrow_table().to_pandas()
+        df = df.replace({np.nan: None})
         results = df.to_dict(orient="records")
         
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
-        # Optional: Asynchronously log the telemetry
+        # Phase 1.4: Immutable Audit Logging via Background Task (UI stays snappy)
         if request.agent_id:
-            log_entry = QueryHistory(
-                tenant_id=tenant_id,
-                agent_id=request.agent_id,
-                natural_query=request.natural_query,
-                generated_sql=sql_query,
-                execution_time_ms=execution_time_ms,
-                was_successful=True
+            background_tasks.add_task(
+                async_audit_logger, db, tenant_id, request.agent_id, 
+                request.natural_query, sql_query, execution_time_ms, True
             )
-            db.add(log_entry)
-            db.commit()
 
         return {
             "status": "success",
@@ -166,18 +189,16 @@ async def execute_persistent_query(
         }
 
     except Exception as e:
+        execution_time_ms = round((time.time() - start_time) * 1000, 2)
         logger.error(f"Persistent Query Execution failed for tenant {tenant_id}: {str(e)}")
         
-        # Log failure for LLM fine-tuning later
+        # Log failure for LLM fine-tuning via Background Task
         if request.agent_id and sql_query:
-            db.add(QueryHistory(
-                tenant_id=tenant_id,
-                agent_id=request.agent_id,
-                natural_query=request.natural_query,
-                generated_sql=sql_query,
-                was_successful=False,
-                error_message=str(e)
-            ))
-            db.commit()
+            background_tasks.add_task(
+                async_audit_logger, db, tenant_id, request.agent_id, 
+                request.natural_query, sql_query, execution_time_ms, False, str(e)
+            )
             
         raise HTTPException(status_code=500, detail=f"Database engine error: {str(e)}")
+    finally:
+        if 'con' in locals(): con.close()
