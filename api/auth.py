@@ -1,62 +1,95 @@
+# api/auth.py
 import os
 import logging
-from typing import Optional
+from typing import Dict, Any, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import jwt, JWTError
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
+# Configure logging
 logger = logging.getLogger(__name__)
 
-# Orchestration (Backend): Clean Dependency Injection for Authorization
+# Load environment variables
+load_dotenv()
+
+# Initialize Supabase client for token verification
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.warning("SUPABASE_URL or SUPABASE_ANON_KEY is missing. Authentication will fail.")
+
+# Note: In a production environment with high concurrency, you might want to use a 
+# stateless JWT verification library (like PyJWT) to verify tokens without making a network 
+# call to Supabase for every single request, relying on Supabase's JWT secret. 
+# However, using the client's `get_user` ensures the user hasn't been recently disabled.
+supabase: Client = create_client(
+    SUPABASE_URL or "https://placeholder.supabase.co", 
+    SUPABASE_KEY or "placeholder"
+)
+
+# Standard HTTP Bearer scheme for Swagger UI & general token parsing
 security = HTTPBearer()
 
-# SUPABASE_JWT_SECRET should be defined in your environment (.env)
-# Found in Supabase Dashboard -> Project Settings -> API -> JWT Secret
-SUPABASE_JWT_SECRET = os.environ.get("SUPABASE_JWT_SECRET", "")
-ALGORITHM = "HS256"
-AUDIENCE = "authenticated"
-
-def verify_tenant(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """
-    Validates the Supabase JWT and extracts the correct tenant ID.
-    Security by Design: Ensures tenant isolation at the request layer via token extraction.
+    Dependency to verify a JWT token and retrieve the current authenticated user.
+    Uses the Supabase Auth API to validate the token.
+    
+    Returns:
+        Dict[str, Any]: A dictionary containing user information (e.g., id, email).
+        
+    Raises:
+        HTTPException: 401 Unauthorized if the token is invalid or missing.
     """
-    if not SUPABASE_JWT_SECRET:
-        logger.error("SUPABASE_JWT_SECRET environment variable is missing.")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication is not properly configured on the server."
-        )
-
     token = credentials.credentials
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     
     try:
-        # Decode the Supabase JWT 
-        payload = jwt.decode(
-            token, 
-            SUPABASE_JWT_SECRET, 
-            algorithms=[ALGORITHM], 
-            audience=AUDIENCE
-        )
+        # Ask Supabase to validate the token and return the user
+        response = supabase.auth.get_user(token)
         
-        # In a standard Supabase Auth setup, the 'sub' acts as the unique user identifier.
-        # If your multi-tenancy is organization-based (e.g. many users to one org), 
-        # extract the specific tenant_id from the user's app_metadata:
-        # tenant_id: str = payload.get("app_metadata", {}).get("tenant_id")
-        
-        tenant_id: Optional[str] = payload.get("sub")
-        
-        if not tenant_id:
-            logger.warning("JWT validation failed: 'sub' (tenant_id) claim missing.")
-            raise credentials_exception
+        # Ensure we actually got a user back
+        if not response or not response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
             
-        return tenant_id
+        # Supabase's GoTrue client returns a User object.
+        # We'll transform this into a simple dictionary so downstream route handlers
+        # can easily access properties like user["id"] or user.get("id").
+        user_dict = {
+            "id": getattr(response.user, "id", None),
+            "email": getattr(response.user, "email", None),
+            "role": getattr(response.user, "role", "authenticated"),
+            "aud": getattr(response.user, "aud", "authenticated"),
+            # Include raw app_metadata / user_metadata if needed for tenant isolation
+            "app_metadata": getattr(response.user, "app_metadata", {}),
+            "user_metadata": getattr(response.user, "user_metadata", {}),
+        }
         
-    except JWTError as e:
-        logger.warning(f"JWT Verification failed: {str(e)}")
-        raise credentials_exception
+        return user_dict
+        
+    except Exception as e:
+        logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+# Optional helper dependency if you need strict role-based checks
+def require_role(required_role: str):
+    """
+    Dependency factory to check if the user has a specific role.
+    """
+    async def role_checker(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+        if user.get("role") != required_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action",
+            )
+        return user
+    return role_checker
