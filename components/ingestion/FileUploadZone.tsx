@@ -5,6 +5,22 @@ import React, { useCallback, useState } from "react";
 import { UploadCloud, File as FileIcon, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
+// 1. Export the Success Data interface so the Orchestrator can use it
+export interface UploadSuccessData {
+  datasetId?: string;
+  fileName: string;
+  rowCount?: number;
+  columns?: string[];
+  message?: string;
+}
+
+// 2. Explicitly define the props the component accepts
+export interface FileUploadZoneProps {
+  isEphemeral?: boolean;
+  token?: string;
+  onUploadSuccess?: (data: UploadSuccessData) => void;
+}
+
 interface FileUploadState {
   file: File;
   progress: number;
@@ -12,7 +28,12 @@ interface FileUploadState {
   id: string;
 }
 
-export const FileUploadZone = () => {
+// 3. Named export matching the strict import in DashboardOrchestrator with typed props
+export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ 
+  isEphemeral = false, 
+  token, 
+  onUploadSuccess 
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<FileUploadState[]>([]);
   const { toast } = useToast();
@@ -106,6 +127,16 @@ export const FileUploadZone = () => {
         title: "Upload complete",
         description: `${fileObj.file.name} has been processed successfully.`
       });
+
+      // 4. Safely call the prop if provided so the Orchestrator updates
+      if (onUploadSuccess) {
+        onUploadSuccess({
+          fileName: fileObj.file.name,
+          rowCount: 1000, // Mock row count, replace with actual backend response later
+          columns: ["id", "value", "timestamp"], // Mock columns
+          message: "Upload completed successfully."
+        });
+      }
     }
   };
 
