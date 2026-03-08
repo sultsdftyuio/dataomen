@@ -7,32 +7,40 @@ python-multipart
 pandas
 numpy
 polars         # High-performance dataframe engine
-duckdb
+scipy          # Mathematical algorithms and convenience functions
+duckdb         # In-process analytical engine
 pyarrow        # Crucial for Parquet file formats
 scikit-learn
 
-# 3. AI, LLM & Routing (Contextual RAG)
+# 3. AI, LLM & Routing (Intelligence)
 openai
-anthropic
-tenacity==8.2.3
+langchain
+langchain-openai
+sentence-transformers
+tiktoken
+chromadb
+faiss-cpu
 
-# 4. Database & ORM (Data Movement)
-supabase
+# 4. Database, Security & Services (Infrastructure)
+supabase       # Supabase client library
+postgrest
+psycopg2-binary
 sqlalchemy
-pgvector
-psycopg2-binary # Fallback sync driver
-asyncpg         # High-concurrency async driver
-
-# 5. Auth & Security (Multi-tenant isolation)
-python-jose[cryptography]
-passlib[bcrypt] # Required if doing any manual password hash verifications
-
-# 6. Object Storage / Cloudflare R2 (Modular Strategy)
-boto3
-s3fs
-
-# 7. Utilities & Config
 python-dotenv
 pydantic
+pydantic-settings
+bcrypt
+pyjwt
+cryptography
+fsspec         # Unified interface to remote file systems
+
+# 5. Background Jobs & Utilities
+celery
+redis
+croniter       # Datetime handler for cron-like schedules
+python-dateutil
 openpyxl
-croniter
+
+# 6. Observability & Telemetry
+prometheus-client
+structlog

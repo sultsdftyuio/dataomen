@@ -1,4 +1,3 @@
-// components/chat/MessageInput.tsx
 "use client";
 
 import { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent, ChangeEvent } from "react";
@@ -66,7 +65,9 @@ export function MessageInput({ onSendMessage, pendingAttachments, setPendingAtta
     setPendingAttachments((prev) => [...prev, ...newAttachments]);
   };
 
-  const removeAttachment = (id: string) => {
+  // Accept undefined to satisfy TS, return early if no ID exists
+  const removeAttachment = (id?: string) => {
+    if (!id) return;
     setPendingAttachments(prev => prev.filter(a => a.id !== id));
   };
 
@@ -75,14 +76,22 @@ export function MessageInput({ onSendMessage, pendingAttachments, setPendingAtta
       {/* File Pills Context Area */}
       {pendingAttachments.length > 0 && (
         <div className="flex flex-wrap gap-2 p-3 pb-0">
-          {pendingAttachments.map((att) => (
-            <div key={att.id} className="group relative flex items-center gap-2 bg-muted pr-2 pl-3 py-1.5 rounded-full text-sm border border-border animate-in fade-in zoom-in-95">
-              {att.file.type.startsWith("image/") ? (
+          {pendingAttachments.map((att, index) => (
+            <div 
+              // Provide a fallback key to satisfy React if att.id is somehow undefined
+              key={att.id || `pending-att-${index}`} 
+              className="group relative flex items-center gap-2 bg-muted pr-2 pl-3 py-1.5 rounded-full text-sm border border-border animate-in fade-in zoom-in-95"
+            >
+              {/* Safely check for file type using optional chaining */}
+              {att.file?.type.startsWith("image/") ? (
                  <ImageIcon className="w-4 h-4 text-blue-500" />
               ) : (
                  <FileSpreadsheet className="w-4 h-4 text-green-600" />
               )}
-              <span className="truncate max-w-[150px] font-medium">{att.file.name}</span>
+              {/* Safely access file name with a fallback */}
+              <span className="truncate max-w-[150px] font-medium">
+                {att.file?.name || "Attached File"}
+              </span>
               <button 
                 onClick={() => removeAttachment(att.id)}
                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-background text-muted-foreground hover:text-foreground transition-all"
