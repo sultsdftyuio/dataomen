@@ -1,352 +1,258 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { Search, Database, LayoutTemplate, AlertTriangle, ShieldCheck, Activity, Sparkles, XCircle } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { OmniMessageInput } from "@/components/chat/OmniMessageInput";
+import { DynamicChartFactory, ExecutionPayload } from "@/components/dashboard/DynamicChartFactory";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { User, Bot, FileText, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
 
-// Strict Named Imports: Prevents Turbopack build failures in Next.js
-import { DataPreview } from "./DataPreview";
-import { DynamicChartFactory } from "./DynamicChartFactory";
-import { FileUploadZone, UploadSuccessData } from "@/components/ingestion/FileUploadZone";
-
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-
-// ----------------------------------------------------------------------
-// Interfaces & Types
-// ----------------------------------------------------------------------
-
-export interface DashboardOrchestratorProps {
-  token: string;
-  tenantId: string;
+// -----------------------------------------------------------------------------
+// Type Definitions
+// -----------------------------------------------------------------------------
+interface RichMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content?: string;
+  files?: File[];
+  payload?: ExecutionPayload; // Binds to Phase 5: Dynamic Render Factory
+  timestamp: Date;
 }
 
-export interface AnalyticalResult {
-  status: string;
-  columns?: string[];
-  data?: Record<string, any>[]; 
-  visualization_hint?: 'bar' | 'line' | 'scatter' | 'table';
-  metrics?: Record<string, any>;
-  error?: string;
-  sql_executed?: string;       
-  execution_time_ms?: number;  
-}
-
-// ----------------------------------------------------------------------
-// Main Orchestrator Component
-// ----------------------------------------------------------------------
-
-export default function DashboardOrchestrator({ token, tenantId }: DashboardOrchestratorProps) {
-  // Application State
-  const [activeDataset, setActiveDataset] = useState<UploadSuccessData | null>(null);
+// -----------------------------------------------------------------------------
+// Component
+// -----------------------------------------------------------------------------
+export const DashboardOrchestrator: React.FC = () => {
+  const [messages, setMessages] = useState<RichMessage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progressStatus, setProgressStatus] = useState("");
   
-  // Execution State
-  const [query, setQuery] = useState<string>("");
-  const [resultData, setResultData] = useState<AnalyticalResult | null>(null);
-  const [isQuerying, setIsQuerying] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  // Maintains Contextual RAG state: Which datasets are active in this session?
+  const [activeDatasetIds, setActiveDatasetIds] = useState<string[]>([]);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  // useCallback prevents re-instantiating the function on every keystroke in the Input
-  const handleExecuteQuery = useCallback(async () => {
-    if (!activeDataset || !query.trim()) return;
-    
-    setIsQuerying(true);
-    setError(null);
-    setResultData(null);
-    
-    try {
-      // Intelligently route based on the dataset type (Memory vs Persistent)
-      // Relying on datasetId existence to determine persistence routing
-      const isEphemeral = !activeDataset.datasetId;
-      const endpoint = isEphemeral ? '/api/query/ephemeral' : '/api/query/persistent';
-      
-      const payload = isEphemeral 
-        ? { ephemeral_path: activeDataset.fileName, natural_query: query }
-        : { dataset_id: activeDataset.datasetId, natural_query: query };
-
-      // Vectorized Execution routing (Next.js API -> FastAPI -> DuckDB)
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Enforce strict JWT security boundary
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      // Handle non-JSON crash responses (e.g., 502 Bad Gateway)
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error(`Server returned unexpected format: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || data.error || "Execution engine failed to process query.");
-      }
-      
-      // Pass the fully materialized payload to state
-      setResultData({
-        status: "Success",
-        columns: data.columns || [],
-        data: data.data || [],
-        sql_executed: data.sql_executed,
-        execution_time_ms: data.execution_time_ms
-      });
-      
-    } catch (err: any) {
-      console.error("[DashboardOrchestrator] Execution Error:", err);
-      setError(err.message || "An unexpected error occurred during execution.");
-    } finally {
-      setIsQuerying(false);
+  // Auto-scroll to bottom when messages update
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [activeDataset, query, token]);
+  }, [messages, progressStatus]);
 
-  const handleCloseDataset = useCallback(() => {
-    setActiveDataset(null);
-    setResultData(null);
-    setQuery("");
-    setError(null);
-  }, []);
+  // ---------------------------------------------------------------------------
+  // Phase 2: Direct-to-R2 Upload Pipeline (Bandwidth Optimization)
+  // ---------------------------------------------------------------------------
+  const uploadDirectToR2 = async (file: File): Promise<string> => {
+    // 1. Fetch pre-signed conditions from the Python backend
+    const initRes = await fetch("/api/ingestion/presigned-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_name: file.name, content_type: file.type }),
+    });
+    
+    if (!initRes.ok) throw new Error("Failed to initialize secure upload.");
+    const { url, fields, object_key, dataset_id } = await initRes.json();
 
-  // ----------------------------------------------------------------------
-  // Render Routing
-  // ----------------------------------------------------------------------
-  
-  if (!activeDataset) {
-    return (
-      <IngestionWorkspace 
-        token={token} 
-        onUploadSuccess={setActiveDataset} 
-      />
-    );
-  }
+    // 2. Direct upload to Cloudflare R2 bypassing Vercel/Render limits
+    const formData = new FormData();
+    Object.entries(fields).forEach(([key, value]) => {
+      formData.append(key, value as string);
+    });
+    formData.append("file", file); // File must strictly be the last appended field
 
-  return (
-    <AnalyticalWorkspace 
-      tenantId={tenantId}
-      activeDataset={activeDataset}
-      query={query}
-      setQuery={setQuery}
-      resultData={resultData}
-      isQuerying={isQuerying}
-      error={error}
-      onExecute={handleExecuteQuery}
-      onClose={handleCloseDataset}
-    />
-  );
-}
+    const uploadRes = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
 
-// ----------------------------------------------------------------------
-// Sub-Components (Bite-Sized Modularization)
-// ----------------------------------------------------------------------
+    if (!uploadRes.ok) throw new Error(`Storage upload failed for ${file.name}`);
 
-interface IngestionWorkspaceProps {
-  token: string;
-  onUploadSuccess: (data: UploadSuccessData) => void;
-}
+    // 3. Trigger Event-Driven Profiling Worker (CSV -> Parquet & Schema Extraction)
+    setProgressStatus(`Profiling and compressing ${file.name}...`);
+    const workerRes = await fetch("/api/ingestion/process-parquet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_id, object_key }),
+    });
 
-function IngestionWorkspace({ token, onUploadSuccess }: IngestionWorkspaceProps) {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 overflow-y-auto h-full w-full">
-      <div className="max-w-2xl w-full text-center mb-8">
-        <h1 className="text-3xl font-bold text-neutral-900 dark:text-white mb-4 tracking-tight">
-          Instantiate Workspace.
-        </h1>
-        <p className="text-neutral-500 dark:text-neutral-400">
-          Drop a dataset below. It will be seamlessly converted to compressed Parquet format and mounted securely.
-        </p>
-      </div>
-      
-      <FileUploadZone 
-        isEphemeral={false} 
-        token={token}
-        onUploadSuccess={onUploadSuccess} 
-      />
-    </div>
-  );
-}
+    if (!workerRes.ok) throw new Error("Data profiling worker failed.");
 
-interface AnalyticalWorkspaceProps {
-  tenantId: string;
-  activeDataset: UploadSuccessData;
-  query: string;
-  setQuery: (q: string) => void;
-  resultData: AnalyticalResult | null;
-  isQuerying: boolean;
-  error: string | null;
-  onExecute: () => void;
-  onClose: () => void;
-}
+    return dataset_id;
+  };
 
-function AnalyticalWorkspace({
-  tenantId,
-  activeDataset,
-  query,
-  setQuery,
-  resultData,
-  isQuerying,
-  error,
-  onExecute,
-  onClose
-}: AnalyticalWorkspaceProps) {
-  return (
-    <div className="flex-1 p-6 overflow-hidden">
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full font-sans max-w-7xl mx-auto">
+  // ---------------------------------------------------------------------------
+  // Phase 3 & 4: Orchestration & Execution 
+  // ---------------------------------------------------------------------------
+  const handleSendMessage = async (text: string, files: File[]) => {
+    // 1. Optimistic UI Update
+    const newUserMsg: RichMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: text,
+      files: files,
+      timestamp: new Date(),
+    };
+    
+    setMessages((prev) => [...prev, newUserMsg]);
+    setIsProcessing(true);
+
+    try {
+      let newlyUploadedIds: string[] = [];
+
+      // 2. Execute Upload Pipeline if files are dropped
+      if (files.length > 0) {
+        setProgressStatus("Uploading to secure analytical storage...");
+        newlyUploadedIds = await Promise.all(files.map(file => uploadDirectToR2(file)));
         
-        {/* Configuration & Contextual RAG Input Column */}
-        <div className="xl:col-span-4 space-y-6 flex flex-col h-full">
-          <Card className="shadow-sm border-neutral-200 dark:border-neutral-800 flex flex-col min-h-[400px]">
-            <CardHeader className="bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800 pb-4">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-600 dark:text-blue-500" />
-                NL2SQL Execution Engine
-              </CardTitle>
-              <CardDescription className="text-xs leading-relaxed">
-                Contextual RAG dynamically translates natural language into optimized DuckDB queries.
-              </CardDescription>
-              
-              {/* Security Boundary Indicator */}
-              <div className="flex flex-col gap-2 mt-3">
-                <Badge variant="outline" className="text-[10px] w-fit font-mono bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50 flex gap-1.5 items-center px-2 py-0.5">
-                  <ShieldCheck className="w-3 h-3" />
-                  Tenant Boundary: {tenantId.split('-')[0]}***
-                </Badge>
-              </div>
-            </CardHeader>
-            
-            <CardContent className="pt-6 space-y-5 flex-1 flex flex-col">
-              {/* Active Dataset Display */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center justify-between">
-                  <span>Mounted Dataset</span>
-                  <button onClick={onClose} className="text-red-500 hover:text-red-600 flex items-center gap-1 transition-colors">
-                    <XCircle className="w-3 h-3" /> Unmount
-                  </button>
-                </label>
-                <div className="flex items-center gap-2 p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-md">
-                  <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <span className="text-sm font-semibold text-blue-800 dark:text-blue-300 truncate" title={activeDataset.fileName}>
-                    {activeDataset.fileName}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="space-y-2 flex-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
-                  Analytical Query
-                </label>
-                <Input 
-                  placeholder="e.g., Show total revenue by category..." 
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && onExecute()}
-                  className="text-sm focus-visible:ring-blue-500"
-                  disabled={isQuerying}
-                />
-                <p className="text-[10px] text-neutral-400 mt-1">
-                  Tip: Ask for "anomalies", "variance", or "trends" to engage the Vectorized Mathematical Engine.
-                </p>
-              </div>
+        // Update context with strictly verified Parquet datasets
+        setActiveDatasetIds((prev) => [...new Set([...prev, ...newlyUploadedIds])]);
+      }
 
-              <Button 
-                className="w-full font-semibold shadow-sm bg-blue-600 hover:bg-blue-700 text-white transition-all h-10 mt-auto" 
-                onClick={onExecute}
-                disabled={isQuerying || !query.trim()}
-              >
-                {isQuerying ? (
-                  <span className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 animate-pulse" /> Executing via DuckDB...
-                  </span>
-                ) : "Run Vectorized Query"}
-              </Button>
+      // 3. Route to Semantic Router (Contextual RAG)
+      setProgressStatus("Analyzing semantics & generating execution plan...");
+      
+      const currentActiveIds = [...new Set([...activeDatasetIds, ...newlyUploadedIds])];
+      
+      // Strip payload bloat: Send only role and text history to the LLM
+      const historyContext = messages.slice(-6).map(m => ({ role: m.role, content: m.content }));
 
-              {error && (
-                <div className="p-3 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 rounded-md text-xs flex items-start gap-2 border border-red-200 dark:border-red-900/50">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span className="leading-relaxed font-medium">{error}</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      const queryRes = await fetch("/api/chat/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: text,
+          active_dataset_ids: currentActiveIds,
+          history: historyContext,
+        }),
+      });
+
+      if (!queryRes.ok) throw new Error("The Analytical Engine encountered a routing error.");
+      
+      // 4. Receive Structured Payload from DuckDB / Python execution
+      const payload: ExecutionPayload = await queryRes.json();
+
+      // 5. Append Factory Payload to UI
+      const assistantMsg: RichMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        payload: payload,
+        timestamp: new Date(),
+      };
+      
+      setMessages((prev) => [...prev, assistantMsg]);
+
+    } catch (error: any) {
+      toast({
+        title: "Execution Error",
+        description: error.message || "An unexpected analytical error occurred.",
+        variant: "destructive",
+      });
+      
+      // Graceful error state injection into the chat stream
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          payload: { type: "error", message: error.message },
+          timestamp: new Date(),
+        }
+      ]);
+    } finally {
+      setIsProcessing(false);
+      setProgressStatus("");
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden">
+      {/* Navbar / Header (Optional context indicator) */}
+      <header className="flex-shrink-0 h-14 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-950/50 backdrop-blur-md z-10">
+        <div className="flex items-center space-x-3">
+          <Bot className="w-5 h-5 text-emerald-400" />
+          <h1 className="font-semibold text-sm tracking-tight">Dataomen Analytical Engine</h1>
         </div>
+        <div className="text-xs text-slate-500 font-medium bg-slate-900 px-3 py-1 rounded-full border border-slate-800">
+          {activeDatasetIds.length} Active Datasets
+        </div>
+      </header>
 
-        {/* Output Engine / Visualization Layer */}
-        <div className="xl:col-span-8 flex flex-col gap-6 h-full">
+      {/* Main Chat & Execution Stream */}
+      <ScrollArea className="flex-1 px-4 py-6 md:px-8 lg:px-12 scroll-smooth">
+        <div className="max-w-5xl mx-auto space-y-8 pb-12">
           
-          {/* Dynamic Visualization Canvas */}
-          <Card className="flex-1 shadow-sm border-neutral-200 dark:border-neutral-800 flex flex-col min-h-[350px]">
-            <CardHeader className="border-b border-neutral-100 dark:border-neutral-800 pb-3 py-4 bg-white dark:bg-black rounded-t-xl flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <LayoutTemplate className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                Dynamic Visualizations
-              </CardTitle>
-              {resultData?.execution_time_ms && (
-                <Badge variant="secondary" className="text-[10px] font-mono bg-neutral-100 dark:bg-neutral-800">
-                  {resultData.execution_time_ms}ms execution
-                </Badge>
-              )}
-            </CardHeader>
-            <CardContent className="flex-1 p-1 flex flex-col relative bg-neutral-50/50 dark:bg-neutral-900/30 rounded-b-xl overflow-hidden">
-              {/* Array check injection: Only passing down the raw array to strict-typed sub-components */}
-              {resultData && resultData.data && resultData.data.length > 0 ? (
-                 <div className="absolute inset-0 p-4 overflow-auto">
-                   <DynamicChartFactory data={resultData.data} />
-                 </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center text-neutral-400 p-6">
-                   <div className="h-12 w-12 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 flex items-center justify-center mb-4 transition-transform hover:scale-105">
-                      <Search className="w-5 h-5 opacity-60 text-neutral-500" />
-                   </div>
-                   <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Awaiting Execution</p>
-                   <p className="text-xs opacity-75 max-w-[250px] mt-1.5 leading-relaxed">
-                      Run a natural language query on the left. The engine will dynamically map results to the optimal charting format.
-                   </p>
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-[50vh] text-slate-500 space-y-4">
+              <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800 shadow-xl">
+                <Bot className="w-10 h-10 text-emerald-500/50" />
+              </div>
+              <p className="text-sm font-medium">Drop a CSV or type a query to spin up the engine.</p>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex w-full space-x-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              {/* Avatar for Assistant */}
+              {msg.role === "assistant" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mt-1">
+                  <Bot className="w-4 h-4 text-emerald-400" />
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Stateless Tabular Data Validation Block */}
-          <Card className="shadow-sm border-neutral-200 dark:border-neutral-800 flex flex-col h-[350px]">
-            <CardHeader className="bg-neutral-50/50 dark:bg-neutral-900/50 border-b border-neutral-100 dark:border-neutral-800 pb-3 py-3 rounded-t-xl">
-              <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                Raw Data Validation
-                {resultData && resultData.data && (
-                  <span className="text-[10px] font-normal text-neutral-500 font-mono bg-white dark:bg-black px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800">
-                    {resultData.data.length} row(s) returned
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 overflow-auto flex-1 bg-white dark:bg-black rounded-b-xl flex flex-col relative">
-              {/* Telemetry: Display generated SQL to build user trust */}
-              {resultData?.sql_executed && (
-                 <div className="px-4 py-2 border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50">
-                   <p className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider mb-1">Generated SQL</p>
-                   <code className="text-xs text-emerald-600 dark:text-emerald-400 break-words whitespace-pre-wrap">
-                     {resultData.sql_executed}
-                   </code>
-                 </div>
-              )}
-
-              <div className="flex-1 relative">
-                {resultData && resultData.data && resultData.data.length > 0 ? (
-                  <div className="absolute inset-0">
-                    <DataPreview data={resultData.data} />
+              {/* Message Bubble Container */}
+              <div className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                
+                {/* User Text Bubble */}
+                {msg.role === "user" && msg.content && (
+                  <div className="bg-slate-800 text-slate-200 px-5 py-3 rounded-2xl rounded-tr-sm text-sm border border-slate-700 shadow-md">
+                    {msg.content}
                   </div>
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-[11px] text-neutral-400 font-mono bg-neutral-50/30 dark:bg-neutral-900/20">
-                      &lt; No Vectorized Payload Extracted /&gt;
+                )}
+                
+                {/* User Uploaded File Pills */}
+                {msg.role === "user" && msg.files && msg.files.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 justify-end">
+                    {msg.files.map((f, i) => (
+                      <div key={i} className="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700 text-xs text-slate-300">
+                        <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="max-w-[150px] truncate">{f.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Assistant Output: Delegated entirely to Phase 5 Factory */}
+                {msg.role === "assistant" && msg.payload && (
+                  <div className="w-full mt-1">
+                    <DynamicChartFactory payload={msg.payload} />
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
 
+              {/* Avatar for User */}
+              {msg.role === "user" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mt-1 shadow-sm">
+                  <User className="w-4 h-4 text-slate-400" />
+                </div>
+              )}
+            </div>
+          ))}
+          
+          <div ref={scrollRef} />
         </div>
+      </ScrollArea>
+
+      {/* Phase 1: Omni-Input Container */}
+      <div className="flex-shrink-0 w-full bg-gradient-to-t from-slate-950 via-slate-950 to-transparent pt-6 pb-6">
+        <OmniMessageInput
+          onSendMessage={handleSendMessage}
+          isProcessing={isProcessing}
+          progressStatus={progressStatus}
+        />
       </div>
     </div>
   );
-}
+};

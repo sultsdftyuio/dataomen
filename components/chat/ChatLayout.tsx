@@ -1,214 +1,256 @@
-// components/chat/ChatLayout.tsx
 "use client";
 
-import { useState, useCallback, DragEvent, useEffect } from "react";
-import { MessageList } from "./MessageList";
-import { MessageInput } from "./MessageInput";
-import { ChatMessage, Attachment } from "@/types/chat";
-import { createClient } from "@/utils/supabase/client";
-import { toast } from "sonner"; 
+import React, { useState, useRef, useEffect } from "react";
+import { OmniMessageInput } from "@/components/chat/OmniMessageInput";
+import { DynamicChartFactory, ExecutionPayload } from "@/components/dashboard/DynamicChartFactory";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Bot, User, FileText, Settings2 } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
 
-interface ChatLayoutProps {
-  agentId?: string; // Preserve your existing agent logic
-  initialMessages?: ChatMessage[]; // If you fetch history on the server or parent
+// -----------------------------------------------------------------------------
+// Type Definitions
+// -----------------------------------------------------------------------------
+export interface RichMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content?: string;
+  files?: File[];
+  payload?: ExecutionPayload;
+  timestamp: Date;
 }
 
-export function ChatLayout({ agentId, initialMessages = [] }: ChatLayoutProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [isDragging, setIsDragging] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const supabase = createClient();
+interface ChatLayoutProps {
+  /**
+   * The ID of the specific specialized agent this room is communicating with.
+   * If omitted, it defaults to the standard Semantic Router.
+   */
+  agentId?: string;
+  agentName?: string;
+}
+
+// -----------------------------------------------------------------------------
+// Component
+// -----------------------------------------------------------------------------
+export const ChatLayout: React.FC<ChatLayoutProps> = ({ 
+  agentId = "default-router", 
+  agentName = "Analytical Agent" 
+}) => {
+  const [messages, setMessages] = useState<RichMessage[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progressStatus, setProgressStatus] = useState("");
+  
+  // Contextual RAG: Scoped to this specific chat room
+  const [activeDatasetIds, setActiveDatasetIds] = useState<string[]>([]);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll mechanism for new messages and streaming progress
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, progressStatus]);
 
   // ---------------------------------------------------------------------------
-  // Global Drag & Drop Logistics (UI Feature)
+  // Phase 2: Direct-to-R2 Upload Pipeline
   // ---------------------------------------------------------------------------
-  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isDragging) setIsDragging(true);
-  }, [isDragging]);
-
-  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const uploadDirectToR2 = async (file: File): Promise<string> => {
+    const initRes = await fetch("/api/ingestion/presigned-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_name: file.name, content_type: file.type }),
+    });
     
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (e.clientX <= rect.left || e.clientX >= rect.right || e.clientY <= rect.top || e.clientY >= rect.bottom) {
-      setIsDragging(false);
-    }
-  }, []);
+    if (!initRes.ok) throw new Error(`Failed to initialize upload for ${file.name}`);
+    const { url, fields, object_key, dataset_id } = await initRes.json();
 
-  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
+    const formData = new FormData();
+    Object.entries(fields).forEach(([key, value]) => {
+      formData.append(key, value as string);
+    });
+    formData.append("file", file);
 
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const newAttachments: Attachment[] = files.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        status: "pending",
-        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
-      }));
-      setPendingAttachments((prev) => [...prev, ...newAttachments]);
-    }
-  }, []);
+    const uploadRes = await fetch(url, { method: "POST", body: formData });
+    if (!uploadRes.ok) throw new Error(`Storage upload failed for ${file.name}`);
 
-  // ---------------------------------------------------------------------------
-  // Phase 2: Ingestion Pipeline & Chat Integration
-  // ---------------------------------------------------------------------------
-  const handleSendMessage = async (text: string, attachments: Attachment[]) => {
-    if (!text.trim() && attachments.length === 0) return;
+    setProgressStatus(`Profiling and compressing ${file.name}...`);
+    const workerRes = await fetch("/api/ingestion/process-parquet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dataset_id, object_key }),
+    });
 
-    // 1. Construct Optimistic User Message
-    const userMessageId = crypto.randomUUID();
-    const newMessage: ChatMessage = {
-      id: userMessageId,
-      role: "user",
-      content: text,
-      attachments: attachments,
-      status: attachments.length > 0 ? "uploading" : "executing",
-      createdAt: new Date(),
-    };
+    if (!workerRes.ok) throw new Error("Data profiling worker failed.");
 
-    setMessages((prev) => [...prev, newMessage]);
-    setPendingAttachments([]); // Reset input
-    setIsLoading(true);
-
-    try {
-      // 2. Get Auth Session (Supabase JWT used for backend verification)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Unauthorized: Please log in again.");
-
-      const activeContextMetadata = [];
-
-      // 3. Process Attachments via Direct-to-Object Pipeline
-      for (const attachment of attachments) {
-        updateMessageStatus(userMessageId, "uploading");
-        
-        // A. Request Presigned URL from Backend
-        const presignedRes = await fetch('/api/datasets/presigned-url', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-              'X-Tenant-ID': session.user.id // Or grab from user metadata if scoped differently
-            },
-            body: JSON.stringify({ file_name: attachment.file.name })
-        });
-        
-        if (!presignedRes.ok) throw new Error(`Failed to secure upload link for ${attachment.file.name}`);
-        const { upload_url, object_key } = await presignedRes.json();
-
-        // B. Upload Bytes Direct to Cloudflare R2 (Bypassing Vercel API limits)
-        const uploadRes = await fetch(upload_url, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: attachment.file
-        });
-        
-        if (!uploadRes.ok) throw new Error(`Direct upload failed for ${attachment.file.name}`);
-
-        // C. Trigger DuckDB Parquet Conversion & Profiling worker
-        updateMessageStatus(userMessageId, "profiling");
-        const processRes = await fetch('/api/datasets/process-file', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-              'X-Tenant-ID': session.user.id
-            },
-            body: JSON.stringify({ object_key, dataset_name: attachment.file.name })
-        });
-        
-        if (!processRes.ok) throw new Error(`Data profiling failed for ${attachment.file.name}`);
-        const processData = await processRes.json();
-        
-        // D. Collect the generated schema to feed the LLM Contextual RAG
-        activeContextMetadata.push(processData);
-      }
-
-      // 4. Semantic Routing & SQL Generation (Hitting the Core Chat Engine)
-      updateMessageStatus(userMessageId, "generating_sql");
-      
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          agent_id: agentId,
-          message: text,
-          // Pass the extracted schema metadata as context, NOT the raw files
-          active_datasets: activeContextMetadata 
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to send message to Agent.');
-
-      const data = await response.json();
-
-      // 5. Resolve User Message Status
-      updateMessageStatus(userMessageId, "complete");
-
-      // 6. Append Assistant Response
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.reply || data.message, 
-        createdAt: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-
-    } catch (error: any) {
-      console.error("Chat error:", error);
-      updateMessageStatus(userMessageId, "error");
-      toast.error(error.message || "Failed to process request. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
+    return dataset_id;
   };
 
-  const updateMessageStatus = (id: string, status: ChatMessage['status']) => {
-      setMessages(prev => prev.map(m => m.id === id ? { ...m, status } : m));
+  // ---------------------------------------------------------------------------
+  // Phase 3 & 4: Orchestration & Execution
+  // ---------------------------------------------------------------------------
+  const handleSendMessage = async (text: string, files: File[]) => {
+    const newUserMsg: RichMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: text,
+      files: files,
+      timestamp: new Date(),
+    };
+    
+    setMessages((prev) => [...prev, newUserMsg]);
+    setIsProcessing(true);
+
+    try {
+      let newlyUploadedIds: string[] = [];
+
+      if (files.length > 0) {
+        setProgressStatus("Uploading to secure analytical storage...");
+        newlyUploadedIds = await Promise.all(files.map(file => uploadDirectToR2(file)));
+        setActiveDatasetIds((prev) => [...new Set([...prev, ...newlyUploadedIds])]);
+      }
+
+      setProgressStatus("Analyzing semantics & generating execution plan...");
+      const currentActiveIds = [...new Set([...activeDatasetIds, ...newlyUploadedIds])];
+      const historyContext = messages.slice(-8).map(m => ({ role: m.role, content: m.content }));
+
+      // Call the Orchestrator, passing the agentId if we want to bypass the Semantic Router
+      // and target a specialized prompt/agent.
+      const queryRes = await fetch("/api/chat/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent_id: agentId,
+          prompt: text,
+          active_dataset_ids: currentActiveIds,
+          history: historyContext,
+        }),
+      });
+
+      if (!queryRes.ok) throw new Error("The Analytical Engine encountered an error.");
+      
+      const payload: ExecutionPayload = await queryRes.json();
+
+      const assistantMsg: RichMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        payload: payload,
+        timestamp: new Date(),
+      };
+      
+      setMessages((prev) => [...prev, assistantMsg]);
+
+    } catch (error: any) {
+      toast({
+        title: "Execution Error",
+        description: error.message || "An unexpected analytical error occurred.",
+        variant: "destructive",
+      });
+      
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          payload: { type: "error", message: error.message },
+          timestamp: new Date(),
+        }
+      ]);
+    } finally {
+      setIsProcessing(false);
+      setProgressStatus("");
+    }
   };
 
   return (
-    <div 
-      className="relative flex flex-col h-full w-full overflow-hidden bg-background"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {/* Absolute Drag Overlay */}
-      {isDragging && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg m-4 pointer-events-none animate-in fade-in">
-          <div className="flex flex-col items-center p-8 bg-card rounded-2xl shadow-xl">
-             <div className="text-2xl font-bold tracking-tight text-primary">Drop to analyze</div>
-             <p className="text-muted-foreground mt-2">Data will be securely streamed to your Workspace context.</p>
+    <div className="flex flex-col h-full bg-slate-950/50 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+      {/* Standalone Chat Header */}
+      <header className="flex-shrink-0 h-14 flex items-center justify-between px-5 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md z-10">
+        <div className="flex items-center space-x-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+            <Bot className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-sm text-slate-100 tracking-tight">{agentName}</h2>
+            <p className="text-[10px] text-slate-400 font-medium">{activeDatasetIds.length} Data Sources Active</p>
           </div>
         </div>
-      )}
+        <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-100 h-8 w-8 rounded-lg">
+          <Settings2 className="w-4 h-4" />
+        </Button>
+      </header>
 
-      {/* Main Chat Interface */}
-      <div className="flex-1 overflow-y-auto scroll-smooth">
-        <MessageList messages={messages} />
-      </div>
+      {/* Message Stream */}
+      <ScrollArea className="flex-1 p-4 scroll-smooth bg-slate-950/30">
+        <div className="max-w-4xl mx-auto space-y-6 pb-6">
+          
+          {/* Empty State */}
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-[40vh] text-slate-500 space-y-3">
+              <Bot className="w-12 h-12 text-emerald-500/20" />
+              <p className="text-sm font-medium">Hello! Drop a dataset here or ask me a question.</p>
+            </div>
+          )}
 
-      {/* Unified Omni-Input */}
-      <div className="p-4 pt-2 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10">
-        <div className="max-w-4xl mx-auto">
-          <MessageInput 
-              onSendMessage={handleSendMessage} 
-              pendingAttachments={pendingAttachments}
-              setPendingAttachments={setPendingAttachments}
-          />
+          {/* Message Bubbles */}
+          {messages.map((msg) => (
+            <div key={msg.id} className={`flex w-full space-x-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              {msg.role === "assistant" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mt-1">
+                  <Bot className="w-4 h-4 text-emerald-400" />
+                </div>
+              )}
+
+              <div className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                
+                {/* Standard Text */}
+                {msg.role === "user" && msg.content && (
+                  <div className="bg-slate-800 text-slate-200 px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm border border-slate-700 shadow-md">
+                    {msg.content}
+                  </div>
+                )}
+                
+                {/* Uploaded Files Indicator */}
+                {msg.role === "user" && msg.files && msg.files.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-1.5 justify-end">
+                    {msg.files.map((f, i) => (
+                      <div key={i} className="flex items-center space-x-1.5 bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700 text-xs text-slate-300">
+                        <FileText className="w-3 h-3 text-emerald-400" />
+                        <span className="max-w-[120px] truncate">{f.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Rich Factory Payload (Tables/Charts/Errors) */}
+                {msg.role === "assistant" && msg.payload && (
+                  <div className="w-full mt-1">
+                    <DynamicChartFactory payload={msg.payload} />
+                  </div>
+                )}
+              </div>
+
+              {msg.role === "user" && (
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mt-1 shadow-sm">
+                  <User className="w-4 h-4 text-slate-400" />
+                </div>
+              )}
+            </div>
+          ))}
+          
+          {/* Invisible ref to snap to bottom */}
+          <div ref={scrollRef} />
         </div>
+      </ScrollArea>
+
+      {/* Unified Omni-Input Bar */}
+      <div className="flex-shrink-0 w-full bg-slate-950 p-4 border-t border-slate-800">
+        <OmniMessageInput
+          onSendMessage={handleSendMessage}
+          isProcessing={isProcessing}
+          progressStatus={progressStatus}
+        />
       </div>
     </div>
   );
-}
+};

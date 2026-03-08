@@ -1,103 +1,138 @@
-# api/services/nl2sql_generator.py
-import os
-import re
 import logging
-from typing import Dict, Any, Optional
-from openai import AsyncOpenAI
+import json
+from typing import List, Dict, Any, Optional, Tuple
+from pydantic import BaseModel, Field
 
+# Setup structured logger
 logger = logging.getLogger(__name__)
+
+class NL2SQLOutput(BaseModel):
+    """Structured output schema for the LLM to guarantee parsable execution plans."""
+    reasoning: str = Field(
+        ..., 
+        description="Brief step-by-step logic explaining how the SQL and chart answer the prompt."
+    )
+    sql_query: str = Field(
+        ..., 
+        description="The highly optimized, read-only DuckDB SQL query."
+    )
+    chart_spec: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="A valid Vega-Lite JSON specification if the user asked for a chart or visualization. Null if only a table is needed."
+    )
 
 class NL2SQLGenerator:
     """
-    Modular Semantic Router. 
-    Translates Natural Language to highly optimized DuckDB SQL using Contextual RAG.
+    Phase 3: Contextual RAG & NL2SQL Generation
+    
+    Translates natural language into blazing fast DuckDB SQL queries. 
+    Strictly constrained by the active schemas to prevent hallucinated columns.
+    Generates declarative chart specifications (Vega-Lite) when visualizations are requested.
     """
-    def __init__(self):
-        # We use AsyncOpenAI to prevent blocking the FastAPI event loop during LLM generation.
-        # This can be configured to point to OpenAI, Anthropic, or local vLLM via base_url.
-        self.client = AsyncOpenAI(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1") 
-        )
-        # Defaulting to a fast, cheap model for standard analytical queries.
-        self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
-    def _format_schema_context(self, schema_metadata: Dict[str, Any]) -> str:
+    def __init__(self, llm_client: Any):
         """
-        Contextual RAG: Flattens the dataset schema into a strict, token-efficient string.
-        Prevents LLM hallucinations by restricting its knowledge entirely to available columns.
+        Dependency injection for the LLM client (swappable for OpenAI, Anthropic, etc.)
         """
-        if not schema_metadata or "columns" not in schema_metadata:
-            return "No strict schema provided. Infer columns from the natural context if possible."
+        self.llm = llm_client
 
-        lines = ["Available Columns:"]
-        for col in schema_metadata["columns"]:
-            col_name = col.get("name", "unknown")
-            col_type = col.get("type", "VARCHAR")
-            lines.append(f"- {col_name} ({col_type})")
-            
-        return "\n".join(lines)
-
-    def _extract_sql_from_response(self, text: str) -> str:
+    def _build_system_prompt(self, schemas: List[Dict[str, Any]]) -> str:
         """
-        Safety filter: LLMs often wrap SQL in markdown (e.g., ```sql ... ```) or add chatty text.
-        This strips everything except the raw executable SQL.
+        Constructs the highly constrained system prompt for the LLM.
+        Enforces DuckDB dialect, read-only security, and Contextual RAG limitations.
         """
-        # 1. Look for markdown sql blocks
-        match = re.search(r"```sql\s*(.*?)\s*```", text, re.IGNORECASE | re.DOTALL)
-        if match:
-            sql = match.group(1).strip()
-        else:
-            # 2. Fallback: Assume the whole response is SQL, strip generic markdown ticks
-            sql = text.replace("```", "").strip()
-            
-        # 3. Security sanitization: Strip trailing semicolons and take the first statement
-        # to prevent piggybacked multi-statement execution.
-        sql = sql.split(";")[0] + ";"
-        return sql
-
-    async def generate_sql(self, natural_query: str, table_name: str, schema_metadata: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Core Orchestration method.
-        Constructs the strict DuckDB analytical prompt, invokes the LLM, and sanitizes the output.
-        """
-        schema_context = self._format_schema_context(schema_metadata) if schema_metadata else "Schema unknown."
-
-        system_prompt = f"""You are an elite data engineer specializing in the DuckDB SQL dialect.
-Your task is to translate a user's natural language question into a SINGLE, highly optimized SQL query.
-
-CRITICAL RULES:
-1. You are querying a table named precisely: {table_name}
-2. ONLY use the columns provided in the schema context below. Do NOT hallucinate columns.
-3. ALWAYS return valid DuckDB SQL. DuckDB supports advanced analytical functions like DATE_TRUNC, ILIKE, and APPROX_COUNT_DISTINCT.
-4. DO NOT wrap the table name in quotes unless necessary.
-5. Provide ONLY the raw SQL. Do not provide explanations, conversational text, or markdown formatting outside of the SQL block.
-
-{schema_context}
-"""
+        schema_context = json.dumps(schemas, indent=2)
         
-        user_prompt = f"Question: {natural_query}"
+        return f"""
+        You are an expert Data Engineer and DuckDB SQL optimizer for a high-performance analytical SaaS.
+        Your job is to translate user prompts into read-only DuckDB SQL queries based EXACTLY on the provided schemas.
 
+        ACTIVE DATASET SCHEMAS:
+        {schema_context}
+
+        CRITICAL RULES:
+        1. NO HALLUCINATIONS: You may ONLY select columns that explicitly exist in the schemas above.
+        2. TABLE REFERENCING: Treat the dataset `id` as the table name. Wrap it in double quotes. 
+           Example: SELECT * FROM "dataset_a1b2c3"
+        3. DUCKDB DIALECT: Use DuckDB specific functions for date parsing, string manipulation, and aggregations.
+        4. READ-ONLY STRICT: NEVER output INSERT, UPDATE, DELETE, DROP, or ALTER. SELECT statements only.
+        5. VECTORIZED AGGREGATIONS: If the user asks for high-level metrics, use grouped aggregations (SUM, AVG, COUNT) 
+           rather than returning raw rows to ensure frontend charting is fast.
+
+        CHARTING RULES:
+        If the user prompt implies or explicitly asks for a visualization (chart, graph, plot):
+        - Output a valid `Vega-Lite` JSON configuration in the `chart_spec` field.
+        - Ensure the fields in the Vega-Lite spec EXACTLY match the aliases in your SQL SELECT statement.
+        - If no chart is requested, return null for `chart_spec`.
+        """
+
+    async def generate_sql(
+        self, 
+        prompt: str, 
+        schemas: List[Dict[str, Any]], 
+        history: List[Dict[str, Any]]
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """
+        Generates the SQL and optional chart config based on the user's prompt and active context.
+        """
+        logger.info("Generating DuckDB SQL execution plan.")
+        
+        system_prompt = self._build_system_prompt(schemas)
+        
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.0, # 0.0 forces deterministic, factual SQL generation (Zero Hallucinations)
-                max_tokens=500
+            result: NL2SQLOutput = await self.llm.generate_structured(
+                system_prompt=system_prompt,
+                prompt=prompt,
+                history=history,
+                response_model=NL2SQLOutput
             )
             
-            raw_output = response.choices[0].message.content
-            clean_sql = self._extract_sql_from_response(raw_output)
+            logger.debug(f"Generated SQL: {result.sql_query}")
+            return result.sql_query, result.chart_spec
             
-            logger.info(f"Generated SQL: {clean_sql}")
-            return clean_sql
-
         except Exception as e:
-            logger.error(f"NL2SQL Generation failed: {str(e)}")
-            raise ValueError(f"Failed to generate analytical query from AI model: {str(e)}")
+            logger.error(f"Failed to generate SQL: {str(e)}")
+            raise RuntimeError(f"NL2SQL Generation failed: {str(e)}")
 
-# Export singleton instance
-nl2sql_generator = NL2SQLGenerator()
+    async def correct_sql(
+        self, 
+        failed_query: str, 
+        error_msg: str, 
+        schemas: List[Dict[str, Any]]
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """
+        Phase 4: Error Feedback Loop.
+        If the Compute Engine fails to execute the query (e.g., syntax error, column not found),
+        this method feeds the error back to the LLM for immediate self-correction.
+        """
+        logger.warning("Initiating SQL Auto-Correction loop.")
+        
+        system_prompt = self._build_system_prompt(schemas)
+        
+        correction_prompt = f"""
+        The following DuckDB SQL query failed to execute.
+        
+        FAILED QUERY:
+        {failed_query}
+        
+        ERROR MESSAGE RETURNED BY DUCKDB:
+        {error_msg}
+        
+        Please analyze the error message against the active schemas, fix the syntax or column names, 
+        and provide the corrected DuckDB SQL query. Keep the same chart specification if applicable.
+        """
+        
+        try:
+            result: NL2SQLOutput = await self.llm.generate_structured(
+                system_prompt=system_prompt,
+                prompt=correction_prompt,
+                history=[], # Skip standard chat history to focus strictly on the error
+                response_model=NL2SQLOutput
+            )
+            
+            logger.info(f"Successfully auto-corrected SQL: {result.sql_query}")
+            return result.sql_query, result.chart_spec
+            
+        except Exception as e:
+            logger.error(f"Auto-correction failed: {str(e)}")
+            raise RuntimeError("Could not self-correct the query based on the database error.")
