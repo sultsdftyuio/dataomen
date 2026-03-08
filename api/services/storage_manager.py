@@ -1,7 +1,9 @@
+# api/services/storage_manager.py
 import os
+import uuid
 import logging
 from dataclasses import dataclass
-from typing import Optional, Any, Union
+from typing import Optional, Any, Union, Dict
 import boto3
 import duckdb
 import fsspec
@@ -31,11 +33,13 @@ class ResolvedStorage:
     prefix: str
     tier: StorageTier
 
+
 class AdaptiveStorageManager:
     """
     Core infrastructure router. Dynamically shifts multi-tenant operations between 
     Ephemeral memory, Supabase free-tier storage, Cloudflare R2 Pro, and BYOS.
-    Now supercharged with fsspec for zero-copy Polars/Pandas transit.
+    Now supercharged with fsspec for zero-copy Polars/Pandas transit and 
+    DuckDB HTTPFS for in-process Parquet conversion.
     """
     def __init__(self):
         # 1. Cloudflare R2 (Pro Tier)
@@ -88,6 +92,25 @@ class AdaptiveStorageManager:
             self.supa_endpoint, self.supa_bucket, self.supa_access, self.supa_secret, prefix, tier
         )
 
+    def get_s3_client(self, db: Session, tenant_id: str):
+        """
+        Returns a Boto3 client pointing to the user's resolved storage tier.
+        Maintained for generating presigned URLs or low-level API operations.
+        """
+        config = self._resolve_tenant_config(db, tenant_id)
+        
+        if config.tier == StorageTier.EPHEMERAL:
+            raise ValueError("Ephemeral tier does not support persistent S3 access.")
+
+        return boto3.client(
+            's3',
+            endpoint_url=config.endpoint,
+            aws_access_key_id=config.access_key,
+            aws_secret_access_key=config.secret_key,
+            region_name="auto", 
+            config=Config(s3={'addressing_style': 'path'}, signature_version='s3v4')
+        )
+
     def get_fsspec_fs(self, db: Session, tenant_id: str) -> fsspec.AbstractFileSystem:
         """
         1.1 Data Modularity: Returns a zero-copy filesystem interface.
@@ -104,6 +127,112 @@ class AdaptiveStorageManager:
             "client_kwargs": {"endpoint_url": config.endpoint}
         }
         return fsspec.filesystem('s3', **storage_options)
+
+    # --------------------------------------------------------------------------
+    # Phase 2: Ingestion & Parquet Pipeline Operations
+    # --------------------------------------------------------------------------
+
+    def generate_presigned_url(self, db: Session, tenant_id: str, file_name: str) -> Dict[str, str]:
+        """
+        Direct-to-Object Storage: Generates an upload URL allowing the frontend 
+        to bypass the backend API. Enforces Security by Design via tenant_id prefix.
+        """
+        config = self._resolve_tenant_config(db, tenant_id)
+        if config.tier == StorageTier.EPHEMERAL:
+            raise ValueError("Ephemeral storage does not support direct browser uploads via Presigned URLs.")
+
+        s3_client = self.get_s3_client(db, tenant_id)
+        
+        # Security: Unique ID to prevent overwrites, strip unsafe characters
+        unique_id = str(uuid.uuid4())[:8]
+        clean_name = "".join(c for c in file_name if c.isalnum() or c in ".-_")
+        
+        object_key = f"{config.prefix}raw/{unique_id}_{clean_name}"
+
+        try:
+            url = s3_client.generate_presigned_url(
+                'put_object',
+                Params={
+                    'Bucket': config.bucket,
+                    'Key': object_key,
+                    'ContentType': 'application/octet-stream'
+                },
+                ExpiresIn=3600
+            )
+            return {"upload_url": url, "object_key": object_key}
+        except Exception as e:
+            logger.error(f"Failed to generate presigned URL for tenant {tenant_id}: {e}")
+            raise Exception("Storage error generating presigned URL")
+
+    def convert_to_parquet_and_profile(self, db: Session, tenant_id: str, raw_object_key: str) -> Dict[str, Any]:
+        """
+        Event-Driven Profiling Worker:
+        Uses DuckDB HTTPFS to stream the raw S3 object, auto-sanitize names, 
+        rewrite to S3 as ZSTD Parquet, and extract RAG Context Metadata.
+        """
+        config = self._resolve_tenant_config(db, tenant_id)
+        if config.tier == StorageTier.EPHEMERAL:
+            raise ValueError("Ephemeral storage does not support persistent background workers.")
+
+        # Determine output path
+        parquet_key = raw_object_key.replace('/raw/', '/analytical/')
+        for ext in ['.csv', '.xlsx', '.xls', '.json']:
+            if parquet_key.lower().endswith(ext):
+                parquet_key = parquet_key[:parquet_key.rfind(ext)] + '.parquet'
+                break
+        else:
+            if not parquet_key.endswith('.parquet'):
+                parquet_key += '.parquet'
+
+        raw_s3_path = f"s3://{config.bucket}/{raw_object_key}"
+        parquet_s3_path = f"s3://{config.bucket}/{parquet_key}"
+
+        # Utilize existing secure, isolated DuckDB setup
+        con = self.setup_duckdb_connection(db, tenant_id)
+        
+        try:
+            # 1. Vectorized Conversion (Memory Efficient Streaming)
+            if raw_object_key.lower().endswith('.csv'):
+                read_query = f"read_csv_auto('{raw_s3_path}', normalize_names=True)"
+            elif raw_object_key.lower().endswith(('.xlsx', '.xls')):
+                con.execute("INSTALL spatial; LOAD spatial;")
+                read_query = f"st_read('{raw_s3_path}')"
+            elif raw_object_key.lower().endswith('.json'):
+                 read_query = f"read_json_auto('{raw_s3_path}')"
+            else:
+                read_query = f"read_csv_auto('{raw_s3_path}', normalize_names=True)"
+
+            con.execute(f"""
+                COPY (SELECT * FROM {read_query}) 
+                TO '{parquet_s3_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
+            """)
+
+            # 2. Schema Extraction (Zero-Dependency RAG Prep)
+            # Utilizing .fetchall() to prevent Pandas dependency on background workers
+            metadata_rows = con.execute(f"DESCRIBE SELECT * FROM '{parquet_s3_path}';").fetchall()
+            columns_info = [{"name": row[0], "type": row[1]} for row in metadata_rows]
+            
+            # Extract sample rows
+            sample_query = con.execute(f"SELECT * FROM '{parquet_s3_path}' LIMIT 3;")
+            sample_data = sample_query.fetchall()
+            col_names = [col[0] for col in sample_query.description]
+            sample_rows = [dict(zip(col_names, row)) for row in sample_data]
+
+            return {
+                "parquet_path": parquet_key,
+                "columns": columns_info,
+                "sample": sample_rows
+            }
+
+        except Exception as e:
+            logger.error(f"Parquet pipeline failed for {raw_object_key}: {e}")
+            raise Exception(f"Failed to process dataset pipeline: {str(e)}")
+        finally:
+            con.close()
+
+    # --------------------------------------------------------------------------
+    # General Compute & Write Engine Operations
+    # --------------------------------------------------------------------------
 
     def write_dataframe(self, db: Session, df: DATAFRAME_TYPE, tenant_id: str, dataset_id: str, format: str = "parquet") -> str:
         """
@@ -155,25 +284,6 @@ class AdaptiveStorageManager:
         except Exception as e:
             logger.error(f"Storage Write Exception (Tenant: {tenant_id}, Dataset: {dataset_id}): {str(e)}")
             raise e
-
-    def get_s3_client(self, db: Session, tenant_id: str):
-        """
-        Returns a Boto3 client pointing to the user's resolved storage tier.
-        Maintained for generating presigned URLs or low-level API operations.
-        """
-        config = self._resolve_tenant_config(db, tenant_id)
-        
-        if config.tier == StorageTier.EPHEMERAL:
-            raise ValueError("Ephemeral tier does not support persistent S3 access.")
-
-        return boto3.client(
-            's3',
-            endpoint_url=config.endpoint,
-            aws_access_key_id=config.access_key,
-            aws_secret_access_key=config.secret_key,
-            region_name="auto", 
-            config=Config(s3={'addressing_style': 'path'})
-        )
 
     def get_duckdb_query_path(self, db: Session, dataset: Dataset, local_tmp_path: Optional[str] = None) -> str:
         """

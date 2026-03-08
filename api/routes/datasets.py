@@ -1,18 +1,13 @@
 # api/routes/datasets.py
-import os
-import uuid
-import tempfile
-import shutil
 import logging
+import uuid
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-import duckdb
 
 # Adjust imports according to your actual project structure
 from api.database import get_db
-# Assuming you have a StorageManager and Dataset model set up
 from api.services.storage_manager import storage_manager 
 from models import Dataset, DatasetStatus  
 
@@ -23,87 +18,102 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------------------
+# Pydantic Schemas
+# ------------------------------------------------------------------------------
+
 class DatasetResponse(BaseModel):
     id: str
     filename: str
-    size_bytes: int
+    size_bytes: Optional[int] = 0
     row_count: Optional[int] = None
-    schema_definition: Optional[List[Dict[str, str]]] = None
+    schema_definition: Optional[List[Dict[str, Any]]] = None
+    sample_data: Optional[List[Dict[str, Any]]] = None  # Crucial for Phase 3 LLM Context
     status: str
     message: str
 
     class Config:
         from_attributes = True
 
-# STRICT ROUTING: No trailing slash.
-# Matches exactly to POST /api/datasets/upload from the Next.js frontend proxy.
-@router.post("/upload", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
-async def upload_dataset(
-    file: UploadFile = File(...),
-    tenant_id: str = Form("default_tenant"),  # Use auth dependency to inject tenant_id in production
+class PresignedUrlRequest(BaseModel):
+    file_name: str
+
+class PresignedUrlResponse(BaseModel):
+    upload_url: str
+    object_key: str
+
+class ProcessFileRequest(BaseModel):
+    object_key: str
+    dataset_name: str
+
+# ------------------------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------------------------
+
+def get_current_tenant(tenant_id: str = Header("default_tenant", alias="X-Tenant-ID")) -> str:
+    """
+    Security by Design: Dependency to resolve the active tenant.
+    In production, this should extract the tenant_id from the Supabase JWT.
+    """
+    if not tenant_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Tenant ID")
+    return tenant_id
+
+# ------------------------------------------------------------------------------
+# Routes
+# ------------------------------------------------------------------------------
+
+@router.post("/presigned-url", response_model=PresignedUrlResponse)
+def get_presigned_url(
+    request: PresignedUrlRequest,
+    tenant_id: str = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
     """
-    Ingests, validates, and stages analytical datasets (CSV, Parquet, JSON).
-    Vectorized schema extraction via DuckDB ensures instant read-validation.
+    Phase 2: Direct-to-Object Storage.
+    Generates a secure, temporary upload URL for the frontend to bypass the backend API.
+    Enforces strict path jailing via the storage manager.
     """
-    allowed_extensions = {".csv", ".parquet", ".json"}
-    file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
-    
-    if file_ext not in allowed_extensions:
+    try:
+        data = storage_manager.generate_presigned_url(db, tenant_id, request.file_name)
+        return PresignedUrlResponse(
+            upload_url=data["upload_url"],
+            object_key=data["object_key"]
+        )
+    except Exception as e:
+        logger.error(f"Error generating presigned URL for tenant {tenant_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Unsupported file type '{file_ext}'. Allowed: {', '.join(allowed_extensions)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail="Storage infrastructure error while generating upload link."
         )
 
+@router.post("/process-file", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
+def process_uploaded_file(
+    request: ProcessFileRequest,
+    tenant_id: str = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Phase 2: Event-Driven Profiling Worker.
+    Triggers DuckDB to stream the newly uploaded S3 object, convert it to highly compressed 
+    Parquet, and immediately extract the RAG schema context.
+    """
     dataset_id = str(uuid.uuid4())
-    secure_filename = f"{dataset_id}{file_ext}"
-    
-    # Modular Strategy: Write to a secure temp directory for staging.
-    temp_dir = tempfile.gettempdir()
-    file_path = os.path.join(temp_dir, secure_filename)
 
     try:
-        # Hybrid Performance Paradigm: Stream upload to disk to prevent memory exhaustion
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Pipeline: Raw S3 -> DuckDB Stream -> Parquet S3 -> Schema Metadata
+        metadata = storage_manager.convert_to_parquet_and_profile(db, tenant_id, request.object_key)
         
-        file_size = os.path.getsize(file_path)
-        logger.info(f"Tenant {tenant_id} uploaded {file.filename} ({file_size} bytes).")
-
-        # Analytical Efficiency: Use DuckDB to efficiently extract the schema and row count
-        row_count = 0
-        schema_definition = []
-        
-        with duckdb.connect(database=':memory:') as con:
-            # DuckDB automatically infers schemas for Parquet and CSV files
-            if file_ext == ".parquet":
-                rel = con.read_parquet(file_path)
-            elif file_ext == ".csv":
-                rel = con.read_csv(file_path, header=True, auto_detect=True)
-            elif file_ext == ".json":
-                rel = con.read_json(file_path)
-            else:
-                rel = None
-
-            if rel:
-                row_count = rel.count('*').fetchone()[0]
-                columns = rel.columns
-                types = rel.dtypes
-                schema_definition = [{"name": col, "type": str(dtype)} for col, dtype in zip(columns, types)]
-
-        # (Optional) Async handoff: storage_manager.upload_file_async(file_path, destination="s3_or_r2")
-        
-        # Save Metadata to the Database layer
+        # Persist the active dataset context to Postgres
         new_dataset = Dataset(
             id=dataset_id,
             tenant_id=tenant_id,
-            filename=file.filename or secure_filename,
-            file_path=file_path,  # Or an S3 URI once uploaded
-            size_bytes=file_size,
-            row_count=row_count,
-            schema_definition=schema_definition,
-            status=DatasetStatus.STAGED.value if hasattr(DatasetStatus, 'STAGED') else "STAGED"
+            filename=request.dataset_name,
+            file_path=metadata["parquet_path"],
+            size_bytes=0,     # Resolved asynchronously or upon first read
+            row_count=None,   # Resolved upon first execution
+            schema_definition=metadata["columns"],
+            status=DatasetStatus.READY.value if hasattr(DatasetStatus, 'READY') else "READY"
         )
         
         db.add(new_dataset)
@@ -111,40 +121,34 @@ async def upload_dataset(
         db.refresh(new_dataset)
 
         return DatasetResponse(
-            id=dataset_id,
+            id=new_dataset.id,
             filename=new_dataset.filename,
             size_bytes=new_dataset.size_bytes,
             row_count=new_dataset.row_count,
             schema_definition=new_dataset.schema_definition,
+            sample_data=metadata.get("sample"),
             status=new_dataset.status,
-            message="Dataset uploaded and schema validated successfully."
+            message="Dataset securely converted to Parquet and profiled via DuckDB."
         )
 
     except Exception as e:
-        logger.error(f"Upload failed for dataset {dataset_id}: {str(e)}")
-        # Clean up the staged file on failure
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
+        logger.error(f"Parquet conversion pipeline failed for {request.object_key}: {e}")
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while processing the upload: {str(e)}"
+            detail=f"An error occurred while profiling the dataset: {str(e)}"
         )
-    finally:
-        # Explicitly close the file descriptor
-        file.file.close()
 
 @router.get("/", response_model=List[DatasetResponse])
 def list_datasets(
-    tenant_id: str = "default_tenant",  # Injected via Auth in production
+    tenant_id: str = Depends(get_current_tenant),
     db: Session = Depends(get_db)
 ):
     """
-    Returns a multi-tenant partitioned list of datasets.
+    Returns a multi-tenant partitioned list of available datasets.
     """
     datasets = db.query(Dataset).filter(Dataset.tenant_id == tenant_id).all()
     
-    # We construct the response dynamically to fit the Pydantic model
     return [
         DatasetResponse(
             id=d.id,
