@@ -1,196 +1,215 @@
+// components/ingestion/FileUploadZone.tsx
 "use client";
 
-import React, { useState, useCallback } from "react";
-import { UploadCloud, CheckCircle, AlertCircle, FileType } from "lucide-react";
-import { cn } from "@/lib/utils";
+import React, { useCallback, useState } from "react";
+import { UploadCloud, File as FileIcon, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
-export interface UploadSuccessData {
-  dataset_id?: string;
-  filename: string;
-  status: string;
-  row_count?: number;
-  columns?: string[];
-  [key: string]: any;
+interface FileUploadState {
+  file: File;
+  progress: number;
+  status: 'pending' | 'uploading' | 'completed' | 'error';
+  id: string;
 }
 
-export interface FileUploadZoneProps {
-  isEphemeral?: boolean;
-  token?: string; // Added token to fix the TypeScript error
-  onUploadSuccess?: (data: UploadSuccessData) => void;
-  className?: string;
-}
-
-export default function FileUploadZone({
-  isEphemeral = false,
-  token,
-  onUploadSuccess,
-  className,
-}: FileUploadZoneProps) {
+export const FileUploadZone = () => {
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [files, setFiles] = useState<FileUploadState[]>([]);
+  const { toast } = useToast();
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragging(true);
   }, []);
 
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const onDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     setIsDragging(false);
   }, []);
 
-  const uploadFile = async (file: File) => {
-    setIsUploading(true);
-    setError(null);
-    setSuccess(false);
-    setUploadProgress(0);
+  const handleFiles = useCallback((newFiles: File[]) => {
+    // Validate files and handle case-insensitive extensions
+    const validFiles = newFiles.filter(file => {
+      const fileName = file.name.toLowerCase();
+      const isValidType = fileName.endsWith('.csv') || fileName.endsWith('.json') || fileName.endsWith('.parquet');
+      const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB
 
-    // Simulated progress for UI UX
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => Math.min(prev + 10, 90));
-    }, 100);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (isEphemeral) {
-        formData.append("ephemeral", "true");
+      if (!isValidType) {
+        toast({ 
+          title: "Invalid file type", 
+          description: `${file.name} is not supported.`, 
+          variant: "destructive" 
+        });
       }
-
-      const headers: HeadersInit = {};
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+      if (!isValidSize) {
+        toast({ 
+          title: "File too large", 
+          description: `${file.name} exceeds 50MB limit.`, 
+          variant: "destructive" 
+        });
       }
-
-      // Forward to backend ingestion route
-      const response = await fetch("/api/datasets/upload", {
-        method: "POST",
-        headers,
-        body: formData,
-      });
-
-      clearInterval(interval);
-      setUploadProgress(100);
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || "Upload failed");
-      }
-
-      const data = await response.json();
-      setSuccess(true);
       
-      if (onUploadSuccess) {
-        onUploadSuccess(data);
-      }
-    } catch (err: any) {
-      clearInterval(interval);
-      setError(err.message || "An error occurred during the data upload.");
-    } finally {
-      setIsUploading(false);
-      // Reset the success state after a few seconds
-      setTimeout(() => {
-        if (success) setSuccess(false);
-        setUploadProgress(0);
-      }, 4000);
+      return isValidType && isValidSize;
+    }).map(file => ({
+      file,
+      id: Math.random().toString(36).substring(7),
+      progress: 0,
+      status: 'pending' as const
+    }));
+
+    setFiles(prev => [...prev, ...validFiles]);
+  }, [toast]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(Array.from(e.dataTransfer.files));
+    }
+  }, [handleFiles]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      handleFiles(Array.from(e.target.files));
+      // Reset input value to allow selecting the same file again if removed
+      e.target.value = '';
     }
   };
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragging(false);
+  const removeFile = (id: string) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+  };
 
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        const file = e.dataTransfer.files[0];
-        uploadFile(file);
-      }
-    },
-    [isEphemeral, token, onUploadSuccess]
-  );
+  const uploadFiles = async () => {
+    // Mock upload process
+    const pendingFiles = files.filter(f => f.status === 'pending');
+    
+    for (const fileObj of pendingFiles) {
+      setFiles(prev => prev.map(f => 
+        f.id === fileObj.id ? { ...f, status: 'uploading' } : f
+      ));
 
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files.length > 0) {
-        const file = e.target.files[0];
-        uploadFile(file);
+      // Simulate progress
+      for (let i = 0; i <= 100; i += 10) {
+        await new Promise(r => setTimeout(r, 100));
+        setFiles(prev => prev.map(f => 
+          f.id === fileObj.id ? { ...f, progress: i } : f
+        ));
       }
-    },
-    [isEphemeral, token, onUploadSuccess]
-  );
+
+      setFiles(prev => prev.map(f => 
+        f.id === fileObj.id ? { ...f, status: 'completed' } : f
+      ));
+      
+      toast({
+        title: "Upload complete",
+        description: `${fileObj.file.name} has been processed successfully.`
+      });
+    }
+  };
 
   return (
-    <div
-      className={cn(
-        "relative flex flex-col items-center justify-center w-full p-10 border-2 border-dashed rounded-xl transition-all duration-200",
-        isDragging
-          ? "border-primary bg-primary/5 scale-[1.01]"
-          : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50",
-        isUploading && "opacity-75 pointer-events-none",
-        className
-      )}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <input
-        type="file"
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        onChange={handleFileInput}
-        disabled={isUploading}
-        accept=".csv,.json,.parquet"
-      />
-
-      <div className="flex flex-col items-center text-center space-y-4">
-        <div className="p-4 bg-background rounded-full shadow-sm border transition-transform">
-          {success ? (
-            <CheckCircle className="w-8 h-8 text-green-500 animate-in zoom-in" />
-          ) : error ? (
-            <AlertCircle className="w-8 h-8 text-destructive animate-in zoom-in" />
-          ) : isUploading ? (
-            <FileType className="w-8 h-8 text-primary animate-pulse" />
-          ) : (
-            <UploadCloud className="w-8 h-8 text-muted-foreground" />
-          )}
+    <div className="w-full max-w-2xl mx-auto p-4">
+      <label 
+        className={`cursor-pointer flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-all group relative overflow-hidden ${
+          isDragging 
+            ? 'border-indigo-500 bg-indigo-500/10' 
+            : 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 hover:bg-zinc-800/50'
+        }`}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        htmlFor="file-upload"
+      >
+        <UploadCloud className={`w-12 h-12 mb-4 transition-colors ${isDragging ? 'text-indigo-400' : 'text-zinc-500 group-hover:text-indigo-400'}`} />
+        <p className="text-sm text-zinc-300 font-medium mb-1">
+          Drag and drop files here or click to browse
+        </p>
+        <p className="text-xs text-zinc-500 mb-4">
+          Supported formats: CSV, JSON, Parquet (Max 50MB)
+        </p>
+        
+        <input
+          id="file-upload"
+          type="file"
+          className="hidden"
+          onChange={handleFileSelect}
+          // Added extensive MIME types to fix OS-level greyed out files
+          accept=".csv,text/csv,application/csv,.json,application/json,.parquet,application/vnd.apache.parquet"
+          multiple
+        />
+        
+        {/* Changed from <button> to <div> to avoid nested interactive elements issues in forms/labels */}
+        <div className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium text-sm transition-colors shadow-sm">
+          Select Files
         </div>
+      </label>
 
-        <div className="space-y-1">
-          <p className="text-sm font-medium">
-            {isUploading ? (
-              "Ingesting Data..."
-            ) : success ? (
-              "Ingestion Complete!"
-            ) : error ? (
-              <span className="text-destructive">{error}</span>
-            ) : (
-              <>
-                <span className="text-primary font-semibold">Click to upload</span> or drag and
-                drop your dataset
-              </>
-            )}
-          </p>
-          {!isUploading && !success && !error && (
-            <p className="text-xs text-muted-foreground">
-              Supports CSV, JSON, or Parquet (Columnar highly recommended for speed)
-            </p>
-          )}
-        </div>
+      {files.length > 0 && (
+        <div className="mt-6 space-y-3">
+          {files.map((fileObj) => (
+            <div 
+              key={fileObj.id}
+              className="flex items-center justify-between p-3 rounded-lg border border-zinc-800 bg-zinc-900/50"
+            >
+              <div className="flex items-center space-x-3 flex-1 min-w-0">
+                <FileIcon className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-200 truncate">
+                    {fileObj.file.name}
+                  </p>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <span className="text-xs text-zinc-500">
+                      {(fileObj.file.size / 1024 / 1024).toFixed(2)} MB
+                    </span>
+                    {fileObj.status === 'uploading' && (
+                      <>
+                        <span className="text-xs text-zinc-600">•</span>
+                        <span className="text-xs text-indigo-400">{fileObj.progress}%</span>
+                      </>
+                    )}
+                  </div>
+                  {fileObj.status === 'uploading' && (
+                    <div className="h-1 w-full bg-zinc-800 rounded-full mt-2 overflow-hidden">
+                      <div 
+                        className="h-full bg-indigo-500 transition-all duration-300"
+                        style={{ width: `${fileObj.progress}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center ml-4 space-x-2">
+                {fileObj.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+                {fileObj.status === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
+                {fileObj.status === 'pending' && (
+                  <button 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      removeFile(fileObj.id);
+                    }}
+                    className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-200 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
 
-        {isUploading && (
-          <div className="w-full max-w-xs h-2 bg-secondary rounded-full overflow-hidden mt-4">
-            <div
-              className="h-full bg-primary transition-all duration-300 ease-out"
-              style={{ width: `${uploadProgress}%` }}
-            />
+          <div className="flex justify-end pt-4">
+            <button
+              onClick={uploadFiles}
+              disabled={!files.some(f => f.status === 'pending')}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded font-medium text-sm transition-colors shadow-sm"
+            >
+              Upload Pending Files
+            </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
-}
+};
