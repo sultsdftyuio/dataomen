@@ -9,12 +9,13 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileUploadZone } from '@/components/ingestion/FileUploadZone'
 import { Badge } from '@/components/ui/badge'
+import { IntegrationConnectModal } from '@/components/integrations/IntegrationConnectModal'
 
 // Mock interface for type safety - eventually this connects to your dataset_service.py types
 interface Dataset {
   id: string
   name: string
-  type: 'csv' | 'postgres' | 'snowflake'
+  type: 'csv' | 'postgres' | 'snowflake' | 'stripe' | 'shopify'
   size: string
   lastUpdated: string
   status: 'ready' | 'processing' | 'error'
@@ -22,7 +23,7 @@ interface Dataset {
 
 const mockDatasets: Dataset[] = [
   { id: '1', name: 'Q4_Financials.csv', type: 'csv', size: '2.4 MB', lastUpdated: '10 mins ago', status: 'ready' },
-  { id: '2', name: 'Production_DB_Read_Only', type: 'postgres', size: 'Live', lastUpdated: 'Just now', status: 'ready' },
+  { id: '2', name: 'Stripe_Live_Revenue', type: 'stripe', size: 'Live Sync', lastUpdated: 'Just now', status: 'ready' },
 ]
 
 export default function DatasetsPage() {
@@ -38,27 +39,37 @@ export default function DatasetsPage() {
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Datasets</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Datasets & Integrations</h1>
           <p className="text-muted-foreground mt-1">
-            Connect your databases or upload flat files for DuckDB analytical processing.
+            Connect live SaaS platforms via OAuth or upload flat files for Zero-ETL analytics.
           </p>
         </div>
-        <Button onClick={() => setIsUploading(!isUploading)} className="flex items-center gap-2">
-          {isUploading ? 'Cancel Upload' : (
-            <>
-              <Plus className="h-4 w-4" />
-              Add Data Source
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* The New OAuth Connection Modal */}
+          <IntegrationConnectModal />
+          
+          {/* The File Upload Toggle */}
+          <Button 
+            onClick={() => setIsUploading(!isUploading)} 
+            variant={isUploading ? "secondary" : "outline"}
+            className="flex items-center gap-2"
+          >
+            {isUploading ? 'Cancel Upload' : (
+              <>
+                <Plus className="h-4 w-4" />
+                Upload File
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Conditional Upload Zone */}
       {isUploading && (
         <Card className="border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-top-4">
           <CardHeader>
-            <CardTitle>Ingest New Data</CardTitle>
-            <CardDescription>Upload CSV/Parquet files directly, or configure a secure database connection.</CardDescription>
+            <CardTitle>Ingest Flat Files</CardTitle>
+            <CardDescription>Upload CSV or Parquet files directly. We will automatically normalize them.</CardDescription>
           </CardHeader>
           <CardContent>
             {/* Reusing your existing FileUploadZone component */}
@@ -89,6 +100,10 @@ export default function DatasetsPage() {
                 <div className="p-2 bg-secondary rounded-md">
                   {dataset.type === 'csv' ? (
                     <TableIcon className="h-4 w-4 text-secondary-foreground" />
+                  ) : dataset.type === 'stripe' ? (
+                    <span className="text-xl">💳</span>
+                  ) : dataset.type === 'shopify' ? (
+                    <span className="text-xl">🛍️</span>
                   ) : (
                     <Database className="h-4 w-4 text-secondary-foreground" />
                   )}

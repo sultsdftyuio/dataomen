@@ -1,8 +1,14 @@
+// components/dashboard/DynamicChartFactory.tsx
+
+"use client";
+
 import React, { useState, useMemo } from "react";
-import { Download, Table2, BarChart3, Code2, AlertCircle } from "lucide-react";
+import { Download, Table2, BarChart3, LineChart as LineChartIcon, Code2, AlertCircle } from "lucide-react";
 import { 
   BarChart, 
   Bar, 
+  LineChart,
+  Line,
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -16,11 +22,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 // -----------------------------------------------------------------------------
 // Type Definitions
 // -----------------------------------------------------------------------------
+export interface ChartConfig {
+  type: "bar" | "line";
+  xAxisKey: string;
+  yAxisKeys: string[];
+}
+
 export interface ExecutionPayload {
   type: "chart" | "table" | "ml_result" | "error" | "text";
   data?: Record<string, any>[];
   message?: string;
   sql_used?: string;
+  chart_config?: ChartConfig;
 }
 
 interface DynamicChartFactoryProps {
@@ -62,37 +75,54 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     document.body.removeChild(link);
   };
 
-  // 2. Intelligent Auto-Axis Detection for Dynamic Recharts
-  const chartConfig = useMemo(() => {
+  // 2. Hybrid Axis Detection (Backend explicitly defines it OR we auto-guess)
+  const resolvedChartConfig = useMemo((): ChartConfig | null => {
     if (!payload.data || payload.data.length === 0) return null;
     
+    // Prioritize explicit configuration from the Semantic Router/LLM
+    if (payload.chart_config) {
+      return payload.chart_config;
+    }
+    
+    // Fallback: Intelligent Auto-Detection
     const sampleRow = payload.data[0];
     const keys = Object.keys(sampleRow);
     
-    // Automatically detect strings/dates for the X-Axis, default to the first column
     const xAxisKey = keys.find(k => typeof sampleRow[k] === 'string') || keys[0];
-    
-    // Automatically extract numerical values for Y-Axis bars
     const yAxisKeys = keys.filter(k => k !== xAxisKey && typeof sampleRow[k] === 'number');
 
-    return { xAxisKey, yAxisKeys };
-  }, [payload.data]);
+    return { 
+      type: "bar", // Default fallback type
+      xAxisKey, 
+      yAxisKeys 
+    };
+  }, [payload.data, payload.chart_config]);
 
   const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
+
+  // Helper function to format large numbers cleanly
+  const formatNumber = (val: any) => {
+    if (typeof val !== 'number') return val;
+    return new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(val);
+  };
 
   // Handle Error States
   if (payload.type === "error") {
     return (
-      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start space-x-3 text-red-500">
+      <div className="p-4 bg-red-950/40 border border-red-900/50 rounded-xl flex items-start space-x-3 text-red-400 mt-2">
         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <p className="text-sm">{payload.message || "An unknown execution error occurred."}</p>
+        <p className="text-sm font-medium">{payload.message || "An unknown execution error occurred."}</p>
       </div>
     );
   }
 
   // Handle Standard Text/Fallback
   if (payload.type === "text" || !payload.data) {
-    return <div className="text-sm text-slate-200">{payload.message}</div>;
+    return (
+      <div className="text-sm text-slate-200 bg-slate-800/80 px-4 py-3 rounded-xl border border-slate-700 shadow-sm mt-2">
+        {payload.message}
+      </div>
+    );
   }
 
   const tableHeaders = Object.keys(payload.data[0] || {});
@@ -103,21 +133,26 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
       {/* Top Toolbar: Context & Actions */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-800">
         <div className="flex space-x-1">
-          {payload.type === "chart" && chartConfig && chartConfig.yAxisKeys.length > 0 && (
+          {payload.type === "chart" && resolvedChartConfig && resolvedChartConfig.yAxisKeys.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setActiveTab("chart")}
-              className={`h-8 px-2 text-xs ${activeTab === "chart" ? "bg-slate-700 text-white" : "text-slate-400"}`}
+              className={`h-8 px-2 text-xs ${activeTab === "chart" ? "bg-slate-700 text-white shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
             >
-              <BarChart3 className="w-3.5 h-3.5 mr-1.5" /> Chart
+              {resolvedChartConfig.type === "line" ? (
+                <LineChartIcon className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+              ) : (
+                <BarChart3 className="w-3.5 h-3.5 mr-1.5 text-indigo-400" />
+              )}
+              Chart
             </Button>
           )}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setActiveTab("table")}
-            className={`h-8 px-2 text-xs ${activeTab === "table" ? "bg-slate-700 text-white" : "text-slate-400"}`}
+            className={`h-8 px-2 text-xs ${activeTab === "table" ? "bg-slate-700 text-white shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
           >
             <Table2 className="w-3.5 h-3.5 mr-1.5" /> Data ({payload.data.length})
           </Button>
@@ -126,14 +161,14 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
               variant="ghost"
               size="sm"
               onClick={() => setActiveTab("sql")}
-              className={`h-8 px-2 text-xs ${activeTab === "sql" ? "bg-slate-700 text-white" : "text-slate-400"}`}
+              className={`h-8 px-2 text-xs ${activeTab === "sql" ? "bg-slate-700 text-white shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
             >
               <Code2 className="w-3.5 h-3.5 mr-1.5" /> SQL
             </Button>
           )}
         </div>
 
-        <Button variant="ghost" size="sm" onClick={downloadCSV} className="h-8 px-2 text-xs text-slate-400 hover:text-white">
+        <Button variant="ghost" size="sm" onClick={downloadCSV} className="h-8 px-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800">
           <Download className="w-3.5 h-3.5 mr-1.5" /> Export CSV
         </Button>
       </div>
@@ -142,39 +177,77 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
       <div className="p-4 w-full overflow-hidden">
         
         {/* CHART VIEW */}
-        {activeTab === "chart" && chartConfig && chartConfig.yAxisKeys.length > 0 && (
+        {activeTab === "chart" && resolvedChartConfig && resolvedChartConfig.yAxisKeys.length > 0 && (
           <div className="w-full h-[300px] sm:h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis 
-                  dataKey={chartConfig.xAxisKey} 
-                  stroke="#94a3b8" 
-                  fontSize={12} 
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis 
-                  stroke="#94a3b8" 
-                  fontSize={12} 
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact" }).format(val)}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
-                  itemStyle={{ color: '#e2e8f0' }}
-                />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                {chartConfig.yAxisKeys.map((key, idx) => (
-                  <Bar 
-                    key={key} 
-                    dataKey={key} 
-                    fill={CHART_COLORS[idx % CHART_COLORS.length]} 
-                    radius={[4, 4, 0, 0]} 
+              {resolvedChartConfig.type === "bar" ? (
+                <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis 
+                    dataKey={resolvedChartConfig.xAxisKey} 
+                    stroke="#94a3b8" 
+                    fontSize={12} 
+                    tickLine={false}
+                    axisLine={false}
                   />
-                ))}
-              </BarChart>
+                  <YAxis 
+                    stroke="#94a3b8" 
+                    fontSize={12} 
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatNumber}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                    itemStyle={{ color: '#e2e8f0' }}
+                    formatter={(value: any) => [formatNumber(value), undefined]}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                  {resolvedChartConfig.yAxisKeys.map((key, idx) => (
+                    <Bar 
+                      key={key} 
+                      dataKey={key} 
+                      fill={CHART_COLORS[idx % CHART_COLORS.length]} 
+                      radius={[4, 4, 0, 0]} 
+                    />
+                  ))}
+                </BarChart>
+              ) : (
+                <LineChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                  <XAxis 
+                    dataKey={resolvedChartConfig.xAxisKey} 
+                    stroke="#94a3b8" 
+                    fontSize={12} 
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="#94a3b8" 
+                    fontSize={12} 
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatNumber}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                    itemStyle={{ color: '#e2e8f0' }}
+                    formatter={(value: any) => [formatNumber(value), undefined]}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                  {resolvedChartConfig.yAxisKeys.map((key, idx) => (
+                    <Line 
+                      key={key} 
+                      type="monotone"
+                      dataKey={key} 
+                      stroke={CHART_COLORS[idx % CHART_COLORS.length]} 
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#0f172a', strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  ))}
+                </LineChart>
+              )}
             </ResponsiveContainer>
           </div>
         )}
@@ -187,7 +260,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                 <tr>
                   {tableHeaders.map((header) => (
                     <th key={header} className="px-4 py-3 font-medium whitespace-nowrap">
-                      {header}
+                      {header.replace(/_/g, ' ')}
                     </th>
                   ))}
                 </tr>
@@ -196,7 +269,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                 {payload.data.map((row, i) => (
                   <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                     {tableHeaders.map((header) => (
-                      <td key={`${i}-${header}`} className="px-4 py-2 text-slate-300 whitespace-nowrap">
+                      <td key={`${i}-${header}`} className="px-4 py-2.5 text-slate-300 whitespace-nowrap font-mono text-xs">
                         {typeof row[header] === 'number' 
                           ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(row[header])
                           : String(row[header])}
@@ -211,8 +284,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
 
         {/* SQL DEBUG VIEW */}
         {activeTab === "sql" && payload.sql_used && (
-          <div className="w-full max-h-[400px] overflow-auto rounded-md bg-slate-950 border border-slate-800 p-4">
-            <pre className="text-xs text-emerald-400 font-mono whitespace-pre-wrap">
+          <div className="w-full max-h-[400px] overflow-auto rounded-md bg-[#0d1117] border border-slate-800 p-4">
+            <pre className="text-[13px] leading-relaxed text-emerald-400 font-mono whitespace-pre-wrap">
               {payload.sql_used}
             </pre>
           </div>
@@ -221,7 +294,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
 
       {/* Optional Metadata Message */}
       {payload.message && activeTab !== "sql" && (
-        <div className="px-4 py-2 border-t border-slate-800 bg-slate-800/30 text-xs text-slate-400">
+        <div className="px-4 py-2.5 border-t border-slate-800 bg-slate-800/30 text-xs text-slate-400 flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           {payload.message}
         </div>
       )}

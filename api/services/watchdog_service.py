@@ -1,6 +1,10 @@
+# api/services/watchdog_service.py
+
 import logging
 import duckdb
 import pandas as pd
+import polars as pl
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 from api.services.anomaly_detector import AnomalyDetector
@@ -10,14 +14,32 @@ logger = logging.getLogger(__name__)
 
 class WatchdogService:
     """
-    The Orchestration Engine (Backend):
-    Executes scheduled background checks securely across tenants, prioritizing
-    in-process analytical engines (DuckDB) and vectorized math (NumPy/Pandas).
+    The Orchestration Engine (Backend) & Governance Watchdog:
+    Layer 1: Evaluates scheduled business anomaly checks securely across tenants, 
+             prioritizing in-process analytical engines (DuckDB).
+    Layer 2: Monitors data pipeline integrity using vectorized math (Polars/EMA) 
+             to detect silent sync failures.
     """
-    def __init__(self, db_path: str = ":memory:"):
+    def __init__(
+        self, 
+        db_path: str = ":memory:", 
+        db_client: Any = None, 
+        notification_service: Any = None
+    ):
+        # Core Analytical Dependencies
         self.db_path = db_path
         self.anomaly_detector = AnomalyDetector()
         self.narrative_service = NarrativeService()
+        
+        # Pipeline Governance Dependencies
+        self.db = db_client
+        self.notifications = notification_service
+        self.span = 7  # 7-day EMA smoothing for pipeline checks
+        self.z_score_threshold = 2.5 # Alert if volume deviates by > 2.5 standard deviations
+
+    # ==========================================
+    # LAYER 1: BUSINESS METRIC GOVERNANCE (DuckDB)
+    # ==========================================
 
     def _get_time_series(
         self, 
@@ -205,3 +227,116 @@ class WatchdogService:
         finally:
             # Always close the local connection to free memory
             conn.close()
+
+
+    # ==========================================
+    # LAYER 2: PIPELINE INTEGRITY GOVERNANCE (Polars)
+    # ==========================================
+
+    async def _fetch_sync_history(self, tenant_id: str, integration_id: str, days: int = 30) -> List[Dict[str, Any]]:
+        """
+        Pulls the raw ingestion telemetry logs for a specific pipeline.
+        Expected schema: { 'timestamp': str, 'rows_synced': int, 'status': str }
+        """
+        if not self.db:
+            logger.warning("DB client not initialized for pipeline inspection.")
+            return []
+
+        target_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        
+        try:
+            response = self.db.table("sync_logs") \
+                .select("timestamp, rows_synced, status") \
+                .eq("tenant_id", tenant_id) \
+                .eq("integration_id", integration_id) \
+                .gte("timestamp", target_date) \
+                .order("timestamp") \
+                .execute()
+                
+            return response.data if response.data else []
+        except Exception as e:
+            logger.error(f"Watchdog DB read failed for tenant {tenant_id}: {str(e)}")
+            return []
+
+    def _compute_anomalies_polars(self, history: List[Dict[str, Any]], latest_volume: int) -> Dict[str, Any]:
+        """
+        The Mathematical Core for Telemetry.
+        Uses Polars to calculate the EMA and Rolling Standard Deviation to detect anomalies.
+        """
+        if len(history) < 3:
+            return {"is_anomaly": False, "reason": "Insufficient historical data to establish a baseline."}
+
+        # Load telemetry into a vectorized Polars DataFrame
+        df = pl.DataFrame(history)
+        
+        # Ensure we are purely looking at successful sync volumes
+        df = df.filter(pl.col("status") == "success")
+        
+        if df.height < 3:
+             return {"is_anomaly": False, "reason": "Insufficient successful syncs for baseline."}
+
+        # Calculate EMA using Polars' native exponentially weighted moving average
+        df = df.with_columns(
+            ema=pl.col("rows_synced").ewm_mean(span=self.span, ignore_nulls=True),
+            std_dev=pl.col("rows_synced").ewm_std(span=self.span, ignore_nulls=True)
+        )
+
+        # Get the most recent baseline metrics
+        last_row = df.row(-1, named=True)
+        expected_ema = last_row["ema"]
+        current_std_dev = last_row["std_dev"] if last_row["std_dev"] is not None else 1.0
+
+        # Avoid division by zero if variance is completely flat
+        if current_std_dev == 0:
+            current_std_dev = 1.0
+
+        # Calculate Z-Score of the *newest* sync against the historical EMA
+        residual = abs(latest_volume - expected_ema)
+        z_score = residual / current_std_dev
+
+        # Detection Logic: Is this a critical drop-off?
+        is_anomaly = False
+        if z_score > self.z_score_threshold and latest_volume < expected_ema:
+            is_anomaly = True
+
+        return {
+            "is_anomaly": is_anomaly,
+            "expected_volume_ema": round(expected_ema, 2),
+            "actual_volume": latest_volume,
+            "z_score": round(z_score, 2),
+            "reason": f"Volume dropped significantly. Expected ~{int(expected_ema)} rows, got {latest_volume}." if is_anomaly else "Volume within normal bounds."
+        }
+
+    async def inspect_pipeline(self, tenant_id: str, integration_id: str, latest_volume: int) -> bool:
+        """
+        Main entry point for the background worker to evaluate a just-completed sync job.
+        Returns True if the pipeline is healthy, False if an anomaly was detected.
+        """
+        logger.info(f"Watchdog inspecting pipeline {integration_id} for tenant {tenant_id}...")
+
+        # 1. Fetch the temporal context
+        history = await self._fetch_sync_history(tenant_id, integration_id)
+
+        # 2. Run the vectorized anomaly detection
+        analysis = self._compute_anomalies_polars(history, latest_volume)
+
+        # 3. Governance Routing
+        if analysis["is_anomaly"]:
+            logger.warning(f"🚨 Pipeline Anomaly Detected! Tenant: {tenant_id} | {analysis['reason']}")
+            
+            # Dispatch to the notification router (e.g., UI alert, Email)
+            if self.notifications:
+                await self.notifications.dispatch_alert(
+                    tenant_id=tenant_id,
+                    alert_type="PIPELINE_SILENT_FAILURE",
+                    metadata={
+                        "integration_id": integration_id,
+                        "expected": analysis["expected_volume_ema"],
+                        "actual": analysis["actual_volume"],
+                        "severity": "HIGH"
+                    }
+                )
+            return False
+            
+        logger.info(f"Pipeline {integration_id} healthy. Z-Score: {analysis.get('z_score', 'N/A')}")
+        return True

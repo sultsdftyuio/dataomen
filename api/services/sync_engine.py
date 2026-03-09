@@ -4,13 +4,14 @@ import logging
 import asyncio
 import time
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
 # Core dependencies
 from api.services.storage_manager import storage_manager
 from api.services.json_normalizer import PolarsNormalizer
 from api.services.integrations.base_integration import BaseIntegration
+from api.services.watchdog_service import WatchdogService
 
 # Assuming you have a Dataset model to update statuses 
 # from models import Dataset 
@@ -25,8 +26,13 @@ class SyncEngine:
     Includes built-in telemetry and state management for watchdog monitoring.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, watchdog: Optional[WatchdogService] = None):
+        """
+        Dependency injection for the database and the EMA Watchdog.
+        """
         self.db = db
+        # Initialize Watchdog for Pipeline Governance if not explicitly provided
+        self.watchdog = watchdog or WatchdogService(db_client=self.db)
 
     async def run_historical_sync(
         self, 
@@ -104,6 +110,17 @@ class SyncEngine:
             duration = round(time.perf_counter() - start_time, 2)
             logger.info(f"✅ [{tenant_id}] Sync Complete | {stream_name} | {total_rows_processed} rows in {duration}s")
             
+            # --- THE WATCHDOG INJECTION ---
+            # Fire-and-forget the math anomaly check so we don't block the API response
+            # This ensures your users get an instant success response while Polars crunches the math in the background.
+            asyncio.create_task(
+                self.watchdog.inspect_pipeline(
+                    tenant_id=tenant_id,
+                    integration_id=integration_name,
+                    latest_volume=total_rows_processed
+                )
+            )
+            
             # if dataset:
             #     dataset.status = "ACTIVE"
             #     dataset.last_synced_at = datetime.utcnow()
@@ -129,8 +146,16 @@ class SyncEngine:
             #     dataset.status = "FAILED"
             #     self.db.commit()
             
-            # Note: Here is where you would hook into watchdog_service.py to alert the user
-            # watchdog.trigger_alert(tenant_id, "sync_failed", error=str(e))
+            # Watchdog Failure Alert Injection:
+            # If the notifications service is attached to the watchdog, dispatch a hard-crash alert here
+            if self.watchdog.notifications:
+                asyncio.create_task(
+                    self.watchdog.notifications.dispatch_alert(
+                        tenant_id=tenant_id,
+                        alert_type="SYNC_ENGINE_HARD_CRASH",
+                        metadata={"integration_id": integration_name, "error": str(e)}
+                    )
+                )
             
             raise e
 
