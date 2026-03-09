@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +29,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 // 1. Type Safety: Strict interfaces for our multi-tenant Agent structures
 interface Agent {
@@ -40,8 +51,8 @@ interface Agent {
   themeColor: string;
 }
 
-// 2. Mock State: Standardized entirely on GPT-5 Nano
-const mockAgents: Agent[] = [
+// 2. Initial State: Standardized entirely on GPT-5 Nano
+const INITIAL_AGENTS: Agent[] = [
   {
     id: 'agt_1',
     name: 'Revenue Forecaster',
@@ -84,29 +95,72 @@ const mockAgents: Agent[] = [
   }
 ]
 
+// Pre-defined themes for dynamic assignment
+const THEME_COLORS = ['bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-cyan-500']
+
 export default function AgentsPage() {
+  const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS)
   const [searchQuery, setSearchQuery] = useState('')
+  const [isDeployOpen, setIsDeployOpen] = useState(false)
+
+  // New Agent Form State
+  const [newName, setNewName] = useState('')
+  const [newDescription, setNewDescription] = useState('')
 
   // 3. Compute Efficiency: Memoized client-side filtering (Vectorized masking approach)
   const filteredAgents = useMemo(() => {
-    return mockAgents.filter(agent => 
+    return agents.filter(agent => 
       agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       agent.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       agent.model.toLowerCase().includes(searchQuery.toLowerCase())
     )
-  }, [searchQuery])
+  }, [searchQuery, agents])
+
+  // Agent State Mutations
+  const handleDeployAgent = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newName.trim() || !newDescription.trim()) return
+
+    const randomColor = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)]
+    
+    const newAgent: Agent = {
+      id: `agt_${Date.now()}`,
+      name: newName.trim(),
+      description: newDescription.trim(),
+      model: 'gpt-5-nano', // Forced engine standardization
+      status: 'Training',  // New agents start in training
+      linkedDatasets: 0,
+      lastActive: 'Initializing...',
+      themeColor: randomColor,
+    }
+
+    setAgents(prev => [newAgent, ...prev])
+    setNewName('')
+    setNewDescription('')
+    setIsDeployOpen(false)
+  }
+
+  const toggleAgentStatus = (id: string, currentStatus: string) => {
+    if (currentStatus === 'Training' || currentStatus === 'Failed') return; // Cannot toggle these states
+    const newStatus = currentStatus === 'Active' ? 'Paused' : 'Active';
+    setAgents(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
+  }
+
+  const deleteAgent = (id: string) => {
+    setAgents(prev => prev.filter(a => a.id !== id))
+  }
 
   // Helper for status badge rendering
   const getStatusBadge = (status: Agent['status']) => {
     switch (status) {
       case 'Active':
-        return <Badge variant="default" className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-200"><Activity className="w-3 h-3 mr-1 animate-pulse" /> Active</Badge>
+        return <Badge variant="default" className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 border-emerald-200 shadow-none"><Activity className="w-3 h-3 mr-1 animate-pulse" /> Active</Badge>
       case 'Paused':
-        return <Badge variant="secondary" className="text-muted-foreground"><Square className="w-3 h-3 mr-1" /> Paused</Badge>
+        return <Badge variant="secondary" className="text-muted-foreground shadow-none"><Square className="w-3 h-3 mr-1" /> Paused</Badge>
       case 'Training':
-        return <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50"><Clock className="w-3 h-3 mr-1 animate-spin" /> Training</Badge>
+        return <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50 shadow-none"><Clock className="w-3 h-3 mr-1 animate-spin" /> Training</Badge>
       case 'Failed':
-        return <Badge variant="destructive">Failed</Badge>
+        return <Badge variant="destructive" className="shadow-none">Failed</Badge>
     }
   }
 
@@ -121,10 +175,53 @@ export default function AgentsPage() {
             Deploy and manage custom analytical agents strictly partitioned to your tenant workspace.
           </p>
         </div>
-        <Button className="shrink-0 group hidden sm:flex">
-          <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
-          Quick Deploy
-        </Button>
+
+        {/* Deploy Agent Modal */}
+        <Dialog open={isDeployOpen} onOpenChange={setIsDeployOpen}>
+          <DialogTrigger asChild>
+            <Button className="shrink-0 group">
+              <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
+              Quick Deploy
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <form onSubmit={handleDeployAgent}>
+              <DialogHeader>
+                <DialogTitle>Deploy Analytical Agent</DialogTitle>
+                <DialogDescription>
+                  Configure a new GPT-5 Nano worker to monitor your connected schemas.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Agent Name</Label>
+                  <Input 
+                    id="name" 
+                    placeholder="e.g., Support Ticket Classifier" 
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Instructions / Core Task</Label>
+                  <Textarea 
+                    id="description" 
+                    placeholder="Describe the specific analytical task this agent will perform..."
+                    className="resize-none h-20"
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsDeployOpen(false)}>Cancel</Button>
+                <Button type="submit">Initialize Agent</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <div className="flex flex-col gap-6">
@@ -150,9 +247,12 @@ export default function AgentsPage() {
               <Bot className="h-6 w-6 text-muted-foreground/60" />
             </div>
             <h3 className="text-lg font-medium text-foreground">No agents found</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-              We couldn't find any agents matching your search query. Try adjusting your filters.
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mb-4">
+              We couldn't find any agents matching your search query, or your fleet is empty.
             </p>
+            <Button variant="outline" onClick={() => setIsDeployOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" /> Deploy First Agent
+            </Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max pb-6">
@@ -164,7 +264,7 @@ export default function AgentsPage() {
                       <Bot className="h-5 w-5" />
                     </div>
                     <div className="flex flex-col">
-                      <CardTitle className="text-base tracking-tight truncate max-w-[140px] sm:max-w-[180px]">
+                      <CardTitle className="text-base tracking-tight truncate max-w-[140px] sm:max-w-[180px]" title={agent.name}>
                         {agent.name}
                       </CardTitle>
                       {/* Enforces GPT-5 Nano Display */}
@@ -177,7 +277,7 @@ export default function AgentsPage() {
                 </CardHeader>
                 
                 <CardContent className="pb-4 flex-1">
-                  <CardDescription className="text-sm text-muted-foreground line-clamp-3">
+                  <CardDescription className="text-sm text-foreground/80 leading-relaxed line-clamp-3">
                     {agent.description}
                   </CardDescription>
                 </CardContent>
@@ -204,11 +304,18 @@ export default function AgentsPage() {
                       <DropdownMenuLabel>Controls</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       {agent.status === 'Paused' ? (
-                        <DropdownMenuItem className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-500/10">
+                        <DropdownMenuItem 
+                          className="cursor-pointer text-emerald-600 focus:text-emerald-600 focus:bg-emerald-500/10"
+                          onClick={() => toggleAgentStatus(agent.id, agent.status)}
+                        >
                           <Play className="mr-2 h-4 w-4" /> Resume Agent
                         </DropdownMenuItem>
                       ) : (
-                        <DropdownMenuItem className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-500/10">
+                        <DropdownMenuItem 
+                          className="cursor-pointer text-amber-600 focus:text-amber-600 focus:bg-amber-500/10"
+                          onClick={() => toggleAgentStatus(agent.id, agent.status)}
+                          disabled={agent.status === 'Training'}
+                        >
                           <Square className="mr-2 h-4 w-4" /> Pause Agent
                         </DropdownMenuItem>
                       )}
@@ -216,7 +323,10 @@ export default function AgentsPage() {
                         <Settings className="mr-2 h-4 w-4" /> Configuration
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10">
+                      <DropdownMenuItem 
+                        className="cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+                        onClick={() => deleteAgent(agent.id)}
+                      >
                         <Trash2 className="mr-2 h-4 w-4" /> Decommission
                       </DropdownMenuItem>
                     </DropdownMenuContent>

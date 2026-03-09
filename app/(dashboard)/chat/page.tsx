@@ -23,7 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 // 1. Type Safety: Strict interfaces for our Chat multi-tenant payload
 type Role = 'user' | 'assistant' | 'system'
 
-interface Message {
+export interface Message {
   id: string;
   role: Role;
   content: string;
@@ -55,7 +55,7 @@ export default function ChatPage() {
     }
   }, [messages])
 
-  // 3. Stateless Execution Handler
+  // 3. Orchestration Integration
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
@@ -70,20 +70,42 @@ export default function ChatPage() {
     setInputValue('')
     setIsLoading(true)
 
-    // Simulate Backend Orchestration (Contextual RAG & Text-to-SQL)
-    // In production, this hits your secure api/chat endpoint
-    setTimeout(() => {
+    try {
+      // Direct call to our backend Orchestration route
+      const response = await fetch("/api/chat/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: newUserMessage.content, history: messages }),
+      });
+
+      if (!response.ok) throw new Error("Failed to process request");
+
+      const data = await response.json();
+
       const newAssistantMessage: Message = {
         id: `msg_${Date.now() + 1}`,
         role: 'assistant',
-        content: "I've analyzed the recent telemetry events. It appears there was a 14% drop in active sessions starting exactly when the new marketing campaign launched. I've generated the SQL to isolate these specific user IDs.",
+        content: data.reply || "I've processed your request.",
         timestamp: new Date(),
-        contextUsed: ['core_users_production', 'telemetry_events_2026'],
-        isQueryExecution: true,
+        contextUsed: data.schemas || [], 
+        isQueryExecution: data.isQueryExecution || false,
       }
+      
       setMessages(prev => [...prev, newAssistantMessage])
+    } catch (error) {
+      console.error("Chat Error:", error)
+      setMessages(prev => [
+        ...prev, 
+        {
+          id: `msg_err_${Date.now()}`,
+          role: 'assistant',
+          content: "I encountered an error trying to process that request. Please try again or verify your connection.",
+          timestamp: new Date()
+        }
+      ])
+    } finally {
       setIsLoading(false)
-    }, 1800)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -131,7 +153,7 @@ export default function ChatPage() {
               
               <div className={`flex flex-col gap-2 max-w-[85%] sm:max-w-[75%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <div 
-                  className={`rounded-2xl px-5 py-3.5 text-sm shadow-sm ${
+                  className={`rounded-2xl px-5 py-3.5 text-sm shadow-sm leading-relaxed ${
                     message.role === 'user' 
                       ? 'bg-primary text-primary-foreground rounded-tr-sm' 
                       : 'bg-card border border-border text-foreground rounded-tl-sm'
@@ -140,14 +162,14 @@ export default function ChatPage() {
                   {message.content}
                 </div>
 
-                {/* Contextual Meta-Data Tags */}
+                {/* Contextual Meta-Data Tags (Perfectly spaced dynamically) */}
                 {message.contextUsed && message.contextUsed.length > 0 && (
-                  <div className="flex items-center gap-2 mt-1 animate-in slide-in-from-top-2 duration-300">
+                  <div className="flex flex-wrap items-center gap-2 mt-1 animate-in slide-in-from-top-2 duration-300">
                     <span className="text-xs font-medium text-muted-foreground flex items-center">
                       <TerminalSquare className="h-3 w-3 mr-1" /> Source Schema:
                     </span>
                     {message.contextUsed.map(ctx => (
-                      <Badge key={ctx} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-muted/50 text-muted-foreground">
+                      <Badge key={ctx} variant="secondary" className="text-[10px] px-2 py-0.5 h-auto bg-muted/80 text-muted-foreground border border-border/50">
                         {ctx}
                       </Badge>
                     ))}
@@ -168,9 +190,9 @@ export default function ChatPage() {
               <Avatar className="h-8 w-8 shrink-0 border border-primary/20 bg-primary/10">
                 <AvatarFallback><Bot className="h-4 w-4 text-primary" /></AvatarFallback>
               </Avatar>
-              <Card className="rounded-2xl rounded-tl-sm px-5 py-4 border border-border shadow-sm flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Querying analytical engine...</span>
+              <Card className="rounded-2xl rounded-tl-sm px-5 py-4 border border-border shadow-sm flex items-center gap-3 bg-card">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground font-medium">Querying analytical engine...</span>
               </Card>
             </div>
           )}
@@ -191,6 +213,7 @@ export default function ChatPage() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={isLoading}
           />
           
           <Button 
