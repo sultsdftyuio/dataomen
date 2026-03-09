@@ -6,7 +6,6 @@ from tenacity import retry, wait_exponential, stop_after_attempt
 
 # SDK Imports
 from openai import OpenAI
-from anthropic import Anthropic
 
 class BaseLLMProvider(ABC):
     """The Modular Strategy: Abstract LLM interface ensuring zero vendor lock-in."""
@@ -30,27 +29,27 @@ class OpenAIProvider(BaseLLMProvider):
         )
         return response.choices[0].message.content.strip()
 
-class AnthropicProvider(BaseLLMProvider):
+class FallbackOpenAIProvider(BaseLLMProvider):
     def __init__(self):
-        # Relies on ANTHROPIC_API_KEY in your .env
-        self.client = Anthropic()
+        # Relies on OPENAI_API_KEY in your .env
+        self.client = OpenAI()
 
     def generate_diagnostic(self, prompt: str) -> str:
-        response = self.client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=500,
+        response = self.client.chat.completions.create(
+            model="gpt-5-nano",  # Changed from Claude to GPT-5 Nano
             temperature=0.0,
             messages=[
+                {"role": "system", "content": "You are a precise analytical data agent."},
                 {"role": "user", "content": prompt}
             ]
         )
-        return response.content[0].text
+        return response.choices[0].message.content.strip()
 
 class NarrativeService:
     def __init__(self):
         # Dependency Injection of our swappable modules
         self.primary_provider = OpenAIProvider()
-        self.fallback_provider = AnthropicProvider()
+        self.fallback_provider = FallbackOpenAIProvider()
 
     # If OpenAI hits a rate limit (429) or 500 error, retry up to 3 times
     # Wait 2^x * 1 seconds between each retry, up to 10 seconds max
@@ -86,5 +85,5 @@ class NarrativeService:
         try:
             return self._execute_with_primary(prompt)
         except Exception as primary_error:
-            print(f"Primary LLM (OpenAI) failed after retries: {primary_error}. Seamlessly falling back to Anthropic.")
+            print(f"Primary LLM (gpt-4o-mini) failed after retries: {primary_error}. Seamlessly falling back to gpt-5-nano.")
             return self.fallback_provider.generate_diagnostic(prompt)
