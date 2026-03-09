@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DashboardOrchestrator from '@/components/dashboard/DashboardOrchestrator';
+import { DashboardOrchestrator } from '@/components/dashboard/DashboardOrchestrator';
 import { createClient } from '@/utils/supabase/client';
 import { Loader2, ShieldCheck } from 'lucide-react';
 

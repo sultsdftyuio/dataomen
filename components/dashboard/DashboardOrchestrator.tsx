@@ -10,6 +10,11 @@ import { toast } from "@/components/ui/use-toast";
 // -----------------------------------------------------------------------------
 // Type Definitions
 // -----------------------------------------------------------------------------
+interface DashboardOrchestratorProps {
+  token: string;
+  tenantId: string;
+}
+
 interface RichMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -22,7 +27,7 @@ interface RichMessage {
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
-export const DashboardOrchestrator: React.FC = () => {
+export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ token, tenantId }) => {
   const [messages, setMessages] = useState<RichMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState("");
@@ -43,10 +48,13 @@ export const DashboardOrchestrator: React.FC = () => {
   // Phase 2: Direct-to-R2 Upload Pipeline (Bandwidth Optimization)
   // ---------------------------------------------------------------------------
   const uploadDirectToR2 = async (file: File): Promise<string> => {
-    // 1. Fetch pre-signed conditions from the Python backend
+    // 1. Fetch pre-signed conditions from the Python backend (Secured by Token)
     const initRes = await fetch("/api/ingestion/presigned-url", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}` 
+      },
       body: JSON.stringify({ file_name: file.name, content_type: file.type }),
     });
     
@@ -71,7 +79,10 @@ export const DashboardOrchestrator: React.FC = () => {
     setProgressStatus(`Profiling and compressing ${file.name}...`);
     const workerRes = await fetch("/api/ingestion/process-parquet", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}` 
+      },
       body: JSON.stringify({ dataset_id, object_key }),
     });
 
@@ -118,7 +129,10 @@ export const DashboardOrchestrator: React.FC = () => {
 
       const queryRes = await fetch("/api/chat/orchestrate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` 
+        },
         body: JSON.stringify({
           prompt: text,
           active_dataset_ids: currentActiveIds,
