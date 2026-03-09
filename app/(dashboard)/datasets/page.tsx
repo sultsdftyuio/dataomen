@@ -34,7 +34,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-// 1. Type Safety: Strict interfaces defining our multi-tenant data structures
+// Import our new Modular Modal
+import { IntegrationConnectModal } from "@/components/ingestion/IntegrationConnectModal"
+
+// 1. Type Safety
 interface Dataset {
   id: string;
   name: string;
@@ -45,7 +48,7 @@ interface Dataset {
   status: 'Ready' | 'Syncing' | 'Failed';
 }
 
-// 2. Mock State: Representing our high-performance backend analytical engines
+// 2. Mock State representing high-performance analytical engines
 const mockDatasets: Dataset[] = [
   {
     id: 'ds_1',
@@ -85,14 +88,14 @@ const mockDatasets: Dataset[] = [
   }
 ]
 
-// Helper for fast, localized number formatting
 const formatNumber = (num: number) => new Intl.NumberFormat('en-US').format(num)
 
 export default function DatasetsPage() {
   const [searchQuery, setSearchQuery] = useState('')
+  // 3. State Management for the Connection Workflow
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false)
 
-  // 3. Compute Efficiency: Memoize the filtered list to prevent unnecessary re-renders
-  // This acts like a vectorized mask in pandas—filtering the array only when dependencies change.
+  // Compute Efficiency: Vectorized-style client filtering
   const filteredDatasets = useMemo(() => {
     return mockDatasets.filter(ds => 
       ds.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -100,7 +103,6 @@ export default function DatasetsPage() {
     )
   }, [searchQuery])
 
-  // Helper to dynamically resolve icons based on underlying storage methodology
   const getSourceIcon = (type: Dataset['sourceType']) => {
     switch (type) {
       case 'PostgreSQL': return <Database className="h-4 w-4 text-blue-500" />
@@ -120,7 +122,10 @@ export default function DatasetsPage() {
             Manage your connected data sources, data lakes, and tabular files.
           </p>
         </div>
-        <Button className="shrink-0 group">
+        <Button 
+          className="shrink-0 group"
+          onClick={() => setIsConnectModalOpen(true)} // Trigger the modal
+        >
           <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
           Connect Source
         </Button>
@@ -138,7 +143,6 @@ export default function DatasetsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        {/* Placeholder for future advanced filters (e.g., sort by size, status) */}
       </div>
 
       {/* Data Table Section */}
@@ -221,6 +225,16 @@ export default function DatasetsPage() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* 4. Injection Point: The Black-Box Modal Component */}
+      <IntegrationConnectModal 
+        isOpen={isConnectModalOpen} 
+        onClose={() => setIsConnectModalOpen(false)} 
+        onSuccess={() => {
+          // Future: Trigger a React Query invalidation or mutate to refresh the datasets list
+          console.log("Integration connected successfully. Refreshing datasets...")
+        }}
+      />
     </div>
   )
 }
