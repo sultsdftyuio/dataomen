@@ -1,0 +1,48 @@
+# sultsdftyuio/dataomen/.gitignore
+
+# --- Python Environment & Bloat ---
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Next.js & Node.js ---
+node_modules/
+.next/
+out/
+.vercel
+.turbo
+
+# --- Analytical Data (Externalize to Cloudflare R2) ---
+*.db
+*.duckdb
+*.sqlite
+*.sqlite3
+*.csv
+*.parquet
+*.jsonl
+
+# --- OS & Config ---
+.env
+.env*.local
+.DS_Store
