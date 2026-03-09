@@ -1,5 +1,7 @@
 // cloudflare_workers/webhook_catcher/src/index.ts
 
+import type { Queue, ExecutionContext } from '@cloudflare/workers-types';
+
 export interface Env {
   // Binding to Cloudflare Queues
   INGESTION_QUEUE: Queue<any>;

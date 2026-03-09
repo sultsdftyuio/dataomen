@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FileUploadZone } from '@/components/ingestion/FileUploadZone'
 import { Badge } from '@/components/ui/badge'
-import { IntegrationConnectModal } from '@/components/integrations/IntegrationConnectModal'
+// Corrected the import path from integrations to ingestion
+import { IntegrationConnectModal } from '@/components/ingestion/IntegrationConnectModal'
 
 // Mock interface for type safety - eventually this connects to your dataset_service.py types
 interface Dataset {
