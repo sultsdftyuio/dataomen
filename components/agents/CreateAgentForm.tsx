@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bot, Target, Zap, Sparkles, Code2, AlignLeft } from "lucide-react";
+import { Bot, Target, Zap, Sparkles, Code2, AlignLeft, Cpu } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { AgentCreatePayload } from "@/types/agent";
 
 interface CreateAgentFormProps {
@@ -34,12 +35,14 @@ export function CreateAgentForm({ onSubmit, isLoading = false }: CreateAgentForm
       ? `You are an autonomous analytical agent. Monitor the assigned dataset based on these instructions: ${nlPrompt}. Generate necessary DuckDB SQL to evaluate this continuously.`
       : `You are a strict SQL execution agent. Evaluate the following DuckDB condition to detect anomalies: \n\n${sqlCondition}\n\nTrigger actions only when this query returns rows.`;
 
+    // Standardize all new agents on GPT-5 Nano
     const payload: AgentCreatePayload = {
       name: agentName,
       description: description || undefined,
       system_prompt: systemPrompt,
       dataset_ids: dataset ? [dataset] : [],
-    };
+      model: "gpt-5-nano", // <-- Forcefully writes GPT-5 Nano to the backend/Supabase
+    } as AgentCreatePayload & { model: string }; // Type assertion in case your types/agent.ts isn't updated yet
 
     await onSubmit(payload);
 
@@ -100,6 +103,23 @@ export function CreateAgentForm({ onSubmit, isLoading = false }: CreateAgentForm
             </SelectContent>
           </Select>
         </div>
+
+        {/* Locked Intelligence Engine Display */}
+        <div className="space-y-2 pt-1">
+          <Label className="flex items-center gap-2 text-muted-foreground">
+            <Cpu className="h-4 w-4" />
+            Intelligence Engine
+          </Label>
+          <div className="flex items-center justify-between p-3 border rounded-md bg-muted/10 shadow-sm cursor-not-allowed">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary animate-pulse" />
+              <span className="text-sm font-medium tracking-tight">GPT-5 Nano</span>
+            </div>
+            <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider bg-primary/10 text-primary hover:bg-primary/10">
+              Standardized
+            </Badge>
+          </div>
+        </div>
       </div>
 
       <div className="h-px bg-border/60 my-2" />
@@ -131,7 +151,7 @@ export function CreateAgentForm({ onSubmit, isLoading = false }: CreateAgentForm
               disabled={isLoading}
             />
             <p className="text-[11px] text-muted-foreground">
-              Our semantic router will dynamically translate your instructions into a vectorized DuckDB query.
+              Our semantic router will dynamically translate your instructions into a vectorized DuckDB query using GPT-5 Nano.
             </p>
           </TabsContent>
 
@@ -155,12 +175,12 @@ export function CreateAgentForm({ onSubmit, isLoading = false }: CreateAgentForm
 
       {/* Action Footer */}
       <div className="pt-4 flex items-center justify-end border-t mt-6">
-        <Button type="submit" disabled={isLoading || !dataset} className="w-full gap-2 font-medium">
+        <Button type="submit" disabled={isLoading || !dataset} className="w-full gap-2 font-medium group">
           {isLoading ? (
             "Provisioning Instance..."
           ) : promptMode === "natural-language" ? (
             <>
-              <Sparkles className="h-4 w-4 fill-current" />
+              <Sparkles className="h-4 w-4 fill-current group-hover:animate-pulse" />
               Generate & Deploy Agent
             </>
           ) : (
