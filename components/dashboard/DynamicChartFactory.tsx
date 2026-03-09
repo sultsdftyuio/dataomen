@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Download, Table2, BarChart3, Code2, AlertCircle } from "lucide-react";
-import { VegaLite } from "react-vega";
+import { Vega } from "react-vega";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -28,7 +28,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     payload.type === "chart" ? "chart" : "table"
   );
 
-  // 1. Data Export: CSV Generation Loop
+  // 1. Data Export: CSV Generation Loop (Vectorized logic kept at the edge)
   const downloadCSV = () => {
     if (!payload.data || payload.data.length === 0) return;
 
@@ -56,7 +56,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     document.body.removeChild(link);
   };
 
-  // 2. Vega-Lite Spec Patching (Ensures the chart is responsive to the chat bubble)
+  // 2. Vega Spec Patching (Ensures the chart is responsive to the chat bubble)
   const patchedChartSpec = useMemo(() => {
     if (!payload.chart_config) return null;
     return {
@@ -130,8 +130,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         {/* CHART VIEW */}
         {activeTab === "chart" && patchedChartSpec && (
           <div className="w-full h-[300px] sm:h-[400px] flex items-center justify-center">
-            {/* VegaLite mounts the declarative JSON against the raw data array */}
-            <VegaLite spec={patchedChartSpec} data={{ table: payload.data }} actions={false} />
+            {/* The unified Vega component handles both Vega and VegaLite specs */}
+            <Vega spec={patchedChartSpec} data={{ table: payload.data }} actions={false} />
           </div>
         )}
 
