@@ -1,77 +1,59 @@
+/* app/globals.css */
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-@custom-variant dark (&:is(.dark *));
+/* Removed the @custom-variant dark to completely disable Tailwind dark mode.
+  This guarantees no system-level dark theme media queries can turn components black.
+*/
 
 :root {
-  --background: oklch(0.985 0.002 260);
-  --foreground: oklch(0.13 0.02 260);
+  /* Core layout - strictly white/light */
+  --background: oklch(0.99 0 0); /* Pure white background */
+  --foreground: oklch(0.13 0.02 260); /* Dark text for readability */
+  
+  /* Cards and Popovers */
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.13 0.02 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.13 0.02 260);
-  --primary: oklch(0.45 0.18 260);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.955 0.01 260);
+  
+  /* Primary components (Buttons, etc.) 
+    Change this if you want buttons to be a lighter brand color instead of dark blue/black.
+  */
+  --primary: oklch(0.55 0.18 260); /* Lightened to a clear blue rather than near-black */
+  --primary-foreground: oklch(0.98 0 0); /* White text on primary buttons */
+  
+  --secondary: oklch(0.96 0.01 260);
   --secondary-foreground: oklch(0.25 0.02 260);
-  --muted: oklch(0.955 0.01 260);
+  --muted: oklch(0.96 0.01 260);
   --muted-foreground: oklch(0.45 0.02 260);
-  --accent: oklch(0.955 0.01 260);
+  --accent: oklch(0.96 0.01 260);
   --accent-foreground: oklch(0.25 0.02 260);
+  
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0 0);
+  
   --border: oklch(0.91 0.01 260);
   --input: oklch(0.91 0.01 260);
-  --ring: oklch(0.45 0.18 260);
+  --ring: oklch(0.55 0.18 260);
+  
+  /* Charts */
   --chart-1: oklch(0.45 0.18 260);
   --chart-2: oklch(0.55 0.15 290);
   --chart-3: oklch(0.5 0.12 230);
   --chart-4: oklch(0.6 0.18 270);
   --chart-5: oklch(0.4 0.15 250);
   --radius: 0.625rem;
+  
+  /* Sidebar */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.45 0.18 260);
+  --sidebar-primary: oklch(0.55 0.18 260);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.1 0.015 265);
-  --foreground: oklch(0.95 0.005 260);
-  --card: oklch(0.14 0.015 265);
-  --card-foreground: oklch(0.95 0.005 260);
-  --popover: oklch(0.14 0.015 265);
-  --popover-foreground: oklch(0.95 0.005 260);
-  --primary: oklch(0.6 0.2 260);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.18 0.015 265);
-  --secondary-foreground: oklch(0.9 0.005 260);
-  --muted: oklch(0.18 0.015 265);
-  --muted-foreground: oklch(0.6 0.02 265);
-  --accent: oklch(0.18 0.015 265);
-  --accent-foreground: oklch(0.9 0.005 260);
-  --destructive: oklch(0.55 0.22 15);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.22 0.015 265);
-  --input: oklch(0.18 0.015 265);
-  --ring: oklch(0.6 0.2 260);
-  --chart-1: oklch(0.6 0.2 260);
-  --chart-2: oklch(0.55 0.18 290);
-  --chart-3: oklch(0.5 0.15 240);
-  --chart-4: oklch(0.65 0.18 270);
-  --chart-5: oklch(0.45 0.15 250);
-  --sidebar: oklch(0.14 0.015 265);
-  --sidebar-foreground: oklch(0.95 0.005 260);
-  --sidebar-primary: oklch(0.6 0.2 260);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.18 0.015 265);
-  --sidebar-accent-foreground: oklch(0.9 0.005 260);
-  --sidebar-border: oklch(0.22 0.015 265);
-  --sidebar-ring: oklch(0.6 0.2 260);
 }
 
 @theme inline {
