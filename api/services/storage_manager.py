@@ -3,7 +3,7 @@ import os
 import uuid
 import logging
 from dataclasses import dataclass
-from typing import Optional, Any, Union, Dict
+from typing import Optional, Any, Dict, List
 import boto3
 import duckdb
 import fsspec
@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session
 # Import modern models
 from models import Dataset, TenantSettings, StorageTier
 
-# Optional imports for type hinting Vectorized engines (Phase 2 Readiness)
+# Optional imports for type hinting Vectorized engines & pyarrow for partitioned data lake writes
 try:
     import pandas as pd
     import polars as pl
-    DATAFRAME_TYPE = Union[pd.DataFrame, pl.DataFrame, Any]
+    import pyarrow as pa
+    import pyarrow.dataset as ds
 except ImportError:
-    DATAFRAME_TYPE = Any
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,7 @@ class AdaptiveStorageManager:
     """
     Core infrastructure router. Dynamically shifts multi-tenant operations between 
     Ephemeral memory, Supabase free-tier storage, Cloudflare R2 Pro, and BYOS.
-    Now supercharged with fsspec for zero-copy Polars/Pandas transit and 
-    DuckDB HTTPFS for in-process Parquet conversion.
+    Now supercharged with PyArrow Dataset API for Hive-partitioned Data Lake writes.
     """
     def __init__(self):
         # 1. Cloudflare R2 (Pro Tier)
@@ -208,7 +208,6 @@ class AdaptiveStorageManager:
             """)
 
             # 2. Schema Extraction (Zero-Dependency RAG Prep)
-            # Utilizing .fetchall() to prevent Pandas dependency on background workers
             metadata_rows = con.execute(f"DESCRIBE SELECT * FROM '{parquet_s3_path}';").fetchall()
             columns_info = [{"name": row[0], "type": row[1]} for row in metadata_rows]
             
@@ -231,55 +230,61 @@ class AdaptiveStorageManager:
             con.close()
 
     # --------------------------------------------------------------------------
-    # General Compute & Write Engine Operations
+    # The Upgraded Computation Layer: Hive-Partitioned Write Engine
     # --------------------------------------------------------------------------
 
-    def write_dataframe(self, db: Session, df: DATAFRAME_TYPE, tenant_id: str, dataset_id: str, format: str = "parquet") -> str:
+    def write_dataframe(self, db: Session, df: Any, tenant_id: str, dataset_id: str, 
+                        format: str = "parquet", partition_cols: Optional[List[str]] = None) -> str:
         """
-        Vectorized Write Engine. Streams a Pandas or Polars dataframe directly 
-        to the modular storage vector in columnar format. 
+        Vectorized Write Engine with Hive Partitioning. 
+        Streams a Pandas or Polars dataframe directly to Cloudflare R2.
+        If partition_cols are provided (e.g., ["year", "month"]), it writes a directory structure 
+        optimized for DuckDB predicate pushdown.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         
-        # Format routing prepares the directory structure for Apache Iceberg / Delta Lake
         base_uri = f"s3://{config.bucket}/{config.prefix}datasets/{dataset_id}"
-        file_path = f"{base_uri}/" if format in ["delta", "iceberg"] else f"{base_uri}/data.parquet"
-
+        
         if config.tier == StorageTier.EPHEMERAL:
-            # For ephemeral, we write to the local tmp mount so DuckDB can read it transiently
-            file_path = f"/tmp/{config.prefix}datasets/{dataset_id}/data.parquet"
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            base_uri = f"/tmp/{config.prefix}datasets/{dataset_id}"
+            os.makedirs(base_uri, exist_ok=True)
 
         try:
             if format == "parquet":
-                # Polars Vectorized Engine (Fastest)
-                if hasattr(df, "write_parquet"):
-                    if config.tier == StorageTier.EPHEMERAL:
-                        df.write_parquet(file_path)
-                    else:
-                        fs = self.get_fsspec_fs(db, tenant_id)
-                        with fs.open(file_path, mode='wb') as f:
-                            df.write_parquet(f)
-                            
-                # Pandas DataFrame (Fallback)
-                elif hasattr(df, "to_parquet"):
-                    if config.tier == StorageTier.EPHEMERAL:
-                        df.to_parquet(file_path, engine='pyarrow', index=False)
-                    else:
-                        storage_options = {
-                            "key": config.access_key,
-                            "secret": config.secret_key,
-                            "client_kwargs": {"endpoint_url": config.endpoint}
-                        }
-                        df.to_parquet(file_path, storage_options=storage_options, engine='pyarrow', index=False)
+                # Convert Polars to PyArrow Table for zero-copy partitioned writing
+                if hasattr(df, "to_arrow"):
+                    arrow_table = df.to_arrow()
+                elif hasattr(df, "to_parquet"): # Pandas fallback
+                    import pyarrow as pa
+                    arrow_table = pa.Table.from_pandas(df)
                 else:
-                    raise TypeError("Compute Error: Provided object is not a supported DataFrame type (Pandas/Polars).")
+                    raise TypeError("Compute Error: Provided object is not a supported DataFrame type.")
+
+                if config.tier == StorageTier.EPHEMERAL:
+                    ds.write_dataset(
+                        arrow_table, 
+                        base_uri, 
+                        format="parquet", 
+                        partitioning=partition_cols,
+                        existing_data_behavior="overwrite_or_ignore"
+                    )
+                else:
+                    fs = self.get_fsspec_fs(db, tenant_id)
+                    # Use PyArrow dataset writer over the fsspec filesystem interface
+                    ds.write_dataset(
+                        arrow_table, 
+                        base_uri, 
+                        filesystem=fs, 
+                        format="parquet", 
+                        partitioning=partition_cols,
+                        existing_data_behavior="overwrite_or_ignore"
+                    )
                     
             else:
                 raise NotImplementedError(f"Table format '{format}' writes are not active in this pipeline phase.")
             
-            logger.info(f"Successfully wrote dataset '{dataset_id}' for tenant '{tenant_id}' to {file_path}")
-            return file_path
+            logger.info(f"Successfully wrote partitioned dataset '{dataset_id}' for tenant '{tenant_id}' to {base_uri}")
+            return base_uri
             
         except Exception as e:
             logger.error(f"Storage Write Exception (Tenant: {tenant_id}, Dataset: {dataset_id}): {str(e)}")
@@ -288,20 +293,29 @@ class AdaptiveStorageManager:
     def get_duckdb_query_path(self, db: Session, dataset: Dataset, local_tmp_path: Optional[str] = None) -> str:
         """
         Calculates the optimal zero-copy path for DuckDB to execute against.
-        Returns HTTP URLs for samples, Local /tmp/ for Ephemeral, or s3:// for persistent.
+        Now supports glob-based directory reading (/**/*.parquet) for Hive-partitioned folders.
         """
         if dataset.is_sample and dataset.sample_uri:
-            return dataset.sample_uri
+            return f"'{dataset.sample_uri}'"
 
         config = self._resolve_tenant_config(db, dataset.tenant_id)
 
-        if config.tier == StorageTier.EPHEMERAL:
-            if not local_tmp_path or not os.path.exists(local_tmp_path):
-                raise FileNotFoundError("Ephemeral dataset missing from Vercel/Lambda session. File must be re-uploaded.")
-            return f"'{local_tmp_path}'" 
+        # Check if the file_path is a directory (partitioned) or a single file
+        path_suffix = "/**/*.parquet" if not dataset.file_path.endswith(".parquet") else ""
 
-        # DuckDB natively reads s3:// URIs when the httpfs and aws extensions are loaded
-        return f"s3://{config.bucket}/{config.prefix}{dataset.file_path}"
+        if config.tier == StorageTier.EPHEMERAL:
+            if not local_tmp_path:
+                local_path = f"/tmp/{config.prefix}{dataset.file_path}"
+            else:
+                local_path = local_tmp_path
+                
+            if not os.path.exists(local_path.replace('/**/*.parquet', '')):
+                raise FileNotFoundError("Ephemeral dataset missing from session. File must be re-uploaded.")
+            
+            return f"'{local_path}{path_suffix}'" 
+
+        # DuckDB natively reads partitioned s3:// URIs and extracts partition columns automatically
+        return f"'s3://{config.bucket}/{config.prefix}{dataset.file_path}{path_suffix}'"
 
     def setup_duckdb_connection(self, db: Session, tenant_id: str) -> duckdb.DuckDBPyConnection:
         """

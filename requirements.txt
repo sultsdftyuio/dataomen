@@ -44,3 +44,9 @@ openpyxl
 # 6. Observability & Telemetry
 prometheus-client
 structlog
+polars>=0.20.0
+pyarrow>=14.0.0
+fsspec>=2023.12.2
+s3fs>=2023.12.2
+pandas>=2.1.0
+boto3>=1.34.0
