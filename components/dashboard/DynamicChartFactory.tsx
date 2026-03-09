@@ -1,6 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Download, Table2, BarChart3, Code2, AlertCircle } from "lucide-react";
-import { Vega } from "react-vega";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  Legend
+} from "recharts";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -10,7 +19,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 export interface ExecutionPayload {
   type: "chart" | "table" | "ml_result" | "error" | "text";
   data?: Record<string, any>[];
-  chart_config?: Record<string, any>;
   message?: string;
   sql_used?: string;
 }
@@ -23,12 +31,11 @@ interface DynamicChartFactoryProps {
 // Component
 // -----------------------------------------------------------------------------
 export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payload }) => {
-  // Default to chart view if it's a chart payload, otherwise table view
   const [activeTab, setActiveTab] = useState<"chart" | "table" | "sql">(
     payload.type === "chart" ? "chart" : "table"
   );
 
-  // 1. Data Export: CSV Generation Loop (Vectorized logic kept at the edge)
+  // 1. Data Export: Optimized Vectorized CSV Generation
   const downloadCSV = () => {
     if (!payload.data || payload.data.length === 0) return;
 
@@ -39,7 +46,6 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         headers
           .map((fieldName) => {
             const val = row[fieldName] === null ? "" : String(row[fieldName]);
-            // Escape quotes and wrap in quotes for safety
             return `"${val.replace(/"/g, '""')}"`;
           })
           .join(",")
@@ -56,16 +62,23 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     document.body.removeChild(link);
   };
 
-  // 2. Vega Spec Patching (Ensures the chart is responsive to the chat bubble)
-  const patchedChartSpec = useMemo(() => {
-    if (!payload.chart_config) return null;
-    return {
-      ...payload.chart_config,
-      width: "container",
-      autosize: { type: "fit", contains: "padding" },
-      background: "transparent",
-    };
-  }, [payload.chart_config]);
+  // 2. Intelligent Auto-Axis Detection for Dynamic Recharts
+  const chartConfig = useMemo(() => {
+    if (!payload.data || payload.data.length === 0) return null;
+    
+    const sampleRow = payload.data[0];
+    const keys = Object.keys(sampleRow);
+    
+    // Automatically detect strings/dates for the X-Axis, default to the first column
+    const xAxisKey = keys.find(k => typeof sampleRow[k] === 'string') || keys[0];
+    
+    // Automatically extract numerical values for Y-Axis bars
+    const yAxisKeys = keys.filter(k => k !== xAxisKey && typeof sampleRow[k] === 'number');
+
+    return { xAxisKey, yAxisKeys };
+  }, [payload.data]);
+
+  const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6"];
 
   // Handle Error States
   if (payload.type === "error") {
@@ -90,7 +103,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
       {/* Top Toolbar: Context & Actions */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-800/50 border-b border-slate-800">
         <div className="flex space-x-1">
-          {payload.type === "chart" && (
+          {payload.type === "chart" && chartConfig && chartConfig.yAxisKeys.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
@@ -127,11 +140,42 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
 
       {/* Dynamic Render Zone */}
       <div className="p-4 w-full overflow-hidden">
+        
         {/* CHART VIEW */}
-        {activeTab === "chart" && patchedChartSpec && (
-          <div className="w-full h-[300px] sm:h-[400px] flex items-center justify-center">
-            {/* The unified Vega component handles both Vega and VegaLite specs */}
-            <Vega spec={patchedChartSpec} data={{ table: payload.data }} actions={false} />
+        {activeTab === "chart" && chartConfig && chartConfig.yAxisKeys.length > 0 && (
+          <div className="w-full h-[300px] sm:h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis 
+                  dataKey={chartConfig.xAxisKey} 
+                  stroke="#94a3b8" 
+                  fontSize={12} 
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  stroke="#94a3b8" 
+                  fontSize={12} 
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => new Intl.NumberFormat('en-US', { notation: "compact" }).format(val)}
+                />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px' }}
+                  itemStyle={{ color: '#e2e8f0' }}
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                {chartConfig.yAxisKeys.map((key, idx) => (
+                  <Bar 
+                    key={key} 
+                    dataKey={key} 
+                    fill={CHART_COLORS[idx % CHART_COLORS.length]} 
+                    radius={[4, 4, 0, 0]} 
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         )}
 
@@ -153,7 +197,6 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   <tr key={i} className="hover:bg-slate-800/30 transition-colors">
                     {tableHeaders.map((header) => (
                       <td key={`${i}-${header}`} className="px-4 py-2 text-slate-300 whitespace-nowrap">
-                        {/* Format numbers for cleaner analytical readability */}
                         {typeof row[header] === 'number' 
                           ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(row[header])
                           : String(row[header])}
