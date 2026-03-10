@@ -1,7 +1,9 @@
+# api/routes/datasets.py
+
 import logging
 import uuid
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -10,10 +12,12 @@ from api.database import get_db
 from models import Dataset, DatasetStatus, Organization
 
 # Core Security & SaaS Identity
-from api.auth import verify_tenant, TenantContext
+from api.services.tenant_security_provider import tenant_security, TenantContext
+# Re-using the Dual-Auth gateway standard established in query.py
+from api.routes.query import verify_tenant_auth 
 
-# Core Infrastructure & Compute Services
-from api.services.storage_manager import storage_manager 
+# Core Infrastructure Orchestrators
+from api.services.ingestion_service import ingestion_service 
 from api.services.sync_engine import SyncEngine, get_sync_engine
 from api.services.integrations.base_integration import IntegrationConfig
 from api.services.integrations.stripe_connector import StripeIntegration
@@ -34,8 +38,7 @@ class DatasetResponse(BaseModel):
     filename: str
     size_bytes: Optional[int] = 0
     row_count: Optional[int] = None
-    # Updated to Dict to match the new Postgres JSONB structure
-    schema_definition: Optional[Dict[str, Any]] = None 
+    schema_definition: Optional[List[Dict[str, Any]]] = None 
     sample_data: Optional[List[Dict[str, Any]]] = None  
     status: str
     message: str
@@ -45,15 +48,19 @@ class DatasetResponse(BaseModel):
 
 class PresignedUrlRequest(BaseModel):
     file_name: str
-    estimated_size_mb: Optional[float] = 0.0 # SaaS feature: pre-flight check
+    dataset_name: str
+    content_type: str = "text/csv"
+    estimated_size_mb: Optional[float] = 0.0 
 
 class PresignedUrlResponse(BaseModel):
+    dataset_id: str
     upload_url: str
     object_key: str
+    fields: Dict[str, str]
 
 class ProcessFileRequest(BaseModel):
+    dataset_id: str
     object_key: str
-    dataset_name: str
 
 # ------------------------------------------------------------------------------
 # Pydantic Schemas: SaaS Integrations (Zero-ETL)
@@ -77,92 +84,115 @@ class SyncTriggerResponse(BaseModel):
 @router.post("/presigned-url", response_model=PresignedUrlResponse)
 def get_presigned_url(
     request: PresignedUrlRequest,
-    tenant: TenantContext = Depends(verify_tenant), # SECURITY: Cryptographically verified tenant
+    context: TenantContext = Depends(verify_tenant_auth), # Security Phase 1: Dual-Auth Check
     db: Session = Depends(get_db)
 ):
     """
     Direct-to-Object Storage Gateway with SaaS Billing Guardrails.
-    Checks subscription limits before issuing an upload ticket.
+    Creates a PENDING dataset and issues a cryptographically secure upload ticket.
     """
     # 1. Billing & Usage Guardrail
-    org = db.query(Organization).filter(Organization.id == tenant.tenant_id).first()
+    org = db.query(Organization).filter(Organization.id == context.tenant_id).first()
     if not org:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
         
     projected_storage = org.current_storage_mb + (request.estimated_size_mb or 0)
     if projected_storage > org.max_storage_mb:
-        logger.warning(f"[{tenant.tenant_id}] Blocked upload. Storage limit exceeded.")
+        logger.warning(f"[{context.tenant_id}] Blocked upload. Storage limit exceeded.")
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED, 
             detail=f"Storage limit exceeded ({org.max_storage_mb} MB). Please upgrade your plan."
         )
 
-    # 2. Generate secure ticket
     try:
-        data = storage_manager.generate_presigned_url(db, tenant.tenant_id, request.file_name)
-        return PresignedUrlResponse(
-            upload_url=data["upload_url"],
-            object_key=data["object_key"]
+        # 2. Pre-register the dataset in Postgres (PENDING state)
+        dataset_id = uuid.uuid4()
+        new_dataset = Dataset(
+            id=dataset_id,
+            tenant_id=context.tenant_id,
+            name=request.dataset_name,
+            status=DatasetStatus.PENDING
         )
+        db.add(new_dataset)
+        db.commit()
+
+        # 3. Generate secure ticket via Orchestrator
+        upload_data = ingestion_service.generate_presigned_upload(
+            db=db, 
+            tenant_id=context.tenant_id, 
+            file_name=request.file_name,
+            content_type=request.content_type
+        )
+        
+        return PresignedUrlResponse(
+            dataset_id=str(dataset_id),
+            upload_url=upload_data["url"],
+            object_key=upload_data["object_key"],
+            fields=upload_data["fields"]
+        )
+        
     except Exception as e:
-        logger.error(f"Error generating presigned URL for tenant {tenant.tenant_id}: {e}")
+        db.rollback()
+        logger.error(f"Error generating presigned URL for tenant {context.tenant_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="Storage infrastructure error while generating upload link."
         )
 
 @router.post("/process-file", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
-def process_uploaded_file(
+async def process_uploaded_file(
     request: ProcessFileRequest,
-    tenant: TenantContext = Depends(verify_tenant),
+    context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
 ):
     """
     Event-Driven Profiling Worker.
-    Triggers DuckDB to stream the newly uploaded S3 object, convert it to highly compressed 
-    Parquet, and immediately extract the semantic schema context for the LLM.
+    Delegates heavily vectorized DuckDB processing to the ingestion_service.
     """
-    dataset_id = str(uuid.uuid4())
+    # 1. Verify Dataset Ownership
+    dataset = db.query(Dataset).filter(
+        Dataset.id == request.dataset_id,
+        Dataset.tenant_id == context.tenant_id
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or unauthorized.")
 
     try:
-        # Pipeline: Raw S3 -> DuckDB Stream -> Parquet S3 -> Schema Metadata
-        metadata = storage_manager.convert_to_parquet_and_profile(db, tenant.tenant_id, request.object_key)
-        
-        # Persist the active dataset context to Postgres
-        new_dataset = Dataset(
-            id=dataset_id,
-            tenant_id=tenant.tenant_id, # Bound to isolated tenant context
-            name=request.dataset_name, 
-            file_path=metadata.get("parquet_path"),
-            schema_metadata={"columns": metadata.get("columns", [])}, # Stored as JSONB
-            status=DatasetStatus.READY
+        dataset.status = DatasetStatus.PROCESSING
+        db.commit()
+
+        # 2. Execute via the Orchestrator (Handles DuckDB -> Parquet conversion safely)
+        result = await ingestion_service.process_raw_to_parquet(
+            db=db,
+            tenant_id=context.tenant_id,
+            dataset_id=str(dataset.id),
+            raw_object_key=request.object_key
         )
         
-        db.add(new_dataset)
+        # Refresh the ORM model to get the updated status and schema metadata
+        db.refresh(dataset)
         
-        # Increment SaaS Usage
-        org = db.query(Organization).filter(Organization.id == tenant.tenant_id).first()
-        if org and metadata.get("size_bytes"):
-            # Convert bytes to MB and add to usage
-            org.current_storage_mb += (metadata["size_bytes"] / (1024 * 1024))
-            
-        db.commit()
-        db.refresh(new_dataset)
+        # 3. Increment SaaS Storage Usage safely
+        org = db.query(Organization).filter(Organization.id == context.tenant_id).first()
+        if org:
+            # Add standard buffer or actual computed size based on ingestion outputs
+            org.current_storage_mb += 1.0 
+            db.commit()
 
         return DatasetResponse(
-            id=str(new_dataset.id),
-            filename=new_dataset.name,
-            size_bytes=metadata.get("size_bytes", 0),
-            row_count=metadata.get("row_count"),
-            schema_definition=new_dataset.schema_metadata,
-            sample_data=metadata.get("sample"),
-            status=new_dataset.status.value,
+            id=str(dataset.id),
+            filename=dataset.name,
+            schema_definition=dataset.schema_metadata,
+            status=dataset.status.value,
             message="Dataset securely converted to Parquet and profiled via DuckDB."
         )
 
     except Exception as e:
         logger.error(f"Parquet conversion pipeline failed for {request.object_key}: {e}")
-        db.rollback()
+        # Revert dataset to failed state
+        dataset.status = DatasetStatus.FAILED
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while profiling the dataset: {str(e)}"
@@ -177,17 +207,20 @@ async def trigger_historical_sync(
     dataset_id: str,
     payload: SyncTriggerRequest,
     background_tasks: BackgroundTasks,
-    tenant: TenantContext = Depends(verify_tenant),
+    context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
 ):
     """
     The Orchestration Gateway (Zero-ETL).
-    Pushes heavy sync pipeline to background workers, heavily authenticated via JWT.
+    Pushes heavy sync pipeline to background workers, heavily authenticated via Dual-Auth.
     """
-    logger.info(f"[{tenant.tenant_id}] Received sync request for dataset {dataset_id}")
+    logger.info(f"[{context.tenant_id}] Received sync request for dataset {dataset_id}")
 
-    # Verify the dataset actually belongs to the user
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.tenant_id == tenant.tenant_id).first()
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id, 
+        Dataset.tenant_id == context.tenant_id
+    ).first()
+    
     if not dataset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or unauthorized.")
 
@@ -196,7 +229,7 @@ async def trigger_historical_sync(
 
     # 2. Integration Factory
     integration_config = IntegrationConfig(
-        tenant_id=tenant.tenant_id,
+        tenant_id=context.tenant_id,
         integration_name=payload.integration_name,
         credentials=mock_credentials
     )
@@ -211,7 +244,7 @@ async def trigger_historical_sync(
 
     sync_engine = get_sync_engine(db)
 
-    # 4. Background Task Handoff
+    # 3. Background Task Handoff
     background_tasks.add_task(
         sync_engine.run_historical_sync,
         integration=integration_instance,
@@ -230,14 +263,17 @@ async def trigger_historical_sync(
 @router.get("/{dataset_id}/status")
 async def get_sync_status(
     dataset_id: str,
-    tenant: TenantContext = Depends(verify_tenant),
+    context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
 ):
     """
-    Polling Endpoint.
-    The React frontend calls this periodically while syncing to update the UI progress bar.
+    Polling Endpoint for the Frontend UI progress bars.
     """
-    dataset = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.tenant_id == tenant.tenant_id).first()
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id, 
+        Dataset.tenant_id == context.tenant_id
+    ).first()
+    
     if not dataset: 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
         
@@ -253,20 +289,20 @@ async def get_sync_status(
 
 @router.get("/", response_model=List[DatasetResponse])
 def list_datasets(
-    tenant: TenantContext = Depends(verify_tenant),
+    context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
 ):
     """
     Returns a strictly isolated, multi-tenant partitioned list of available datasets.
     """
-    datasets = db.query(Dataset).filter(Dataset.tenant_id == tenant.tenant_id).all()
+    datasets = db.query(Dataset).filter(Dataset.tenant_id == context.tenant_id).all()
     
     return [
         DatasetResponse(
             id=str(d.id),
             filename=d.name,
-            size_bytes=0, # Retrieve from your storage engine or pre-computed metadata
-            schema_definition=d.schema_metadata,
+            size_bytes=0, 
+            schema_definition=d.schema_metadata if isinstance(d.schema_metadata, list) else [],
             status=d.status.value,
             message="OK"
         ) for d in datasets

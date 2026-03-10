@@ -1,10 +1,15 @@
+# api/services/notification_router.py
+
 import os
 import uuid
 import logging
 import requests
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-from supabase import create_client, Client
+
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -21,27 +26,31 @@ class BaseNotifier(ABC):
         pass
 
 class SlackNotifier(BaseNotifier):
-    def __init__(self, tenant_id: str, db_client: Client):
+    def __init__(self, db: Session, tenant_id: str):
+        self.db = db
         self.tenant_id = tenant_id
-        self.db_client = db_client
         self.webhook_url = self._fetch_tenant_slack_webhook()
 
     def _fetch_tenant_slack_webhook(self) -> Optional[str]:
         """
         Security by Design: Retrieve the encrypted OAuth token or Webhook URL 
-        for this specific tenant_id. 
+        for this specific tenant_id using secure SQLAlchemy execution.
         """
-        # Note: In production, ensure this is a secure, encrypted column or vault lookup.
         try:
-            response = self.db_client.table("tenant_integrations") \
-                .select("slack_webhook_url") \
-                .eq("tenant_id", self.tenant_id) \
-                .execute()
+            # Using parameterized text queries to avoid needing a dedicated ORM model 
+            # for integrations just yet, keeping the system lightweight.
+            query = text("""
+                SELECT slack_webhook_url 
+                FROM tenant_integrations 
+                WHERE tenant_id = :tenant_id
+            """)
+            result = self.db.execute(query, {"tenant_id": self.tenant_id}).fetchone()
             
-            if response.data and len(response.data) > 0:
-                return response.data[0].get("slack_webhook_url")
+            if result and result.slack_webhook_url:
+                return result.slack_webhook_url
             return None
-        except Exception as e:
+            
+        except SQLAlchemyError as e:
             logger.error(f"Failed to fetch Slack config for tenant {self.tenant_id}: {e}")
             return None
 
@@ -51,7 +60,8 @@ class SlackNotifier(BaseNotifier):
             return False
 
         metric = anomaly_data.get('metric', 'Unknown Metric')
-        pct_change = anomaly_data.get('percentage_change', 0.0)
+        # Map correctly to the output provided by our newly fixed anomaly_detector.py
+        pct_change = anomaly_data.get('variance_pct', 0.0) 
         direction = "dropped" if pct_change < 0 else "spiked"
         emoji = "📉" if pct_change < 0 else "📈"
 
@@ -70,7 +80,7 @@ class SlackNotifier(BaseNotifier):
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"*AI Diagnostic Summary:*\n{anomaly_data.get('diagnostic_summary', 'No summary generated.')}"
+                        "text": f"*AI Diagnostic Summary:*\n{anomaly_data.get('diagnostic_summary', 'Pending AI context generation.')}"
                     }
                 },
                 {
@@ -108,39 +118,47 @@ class SlackNotifier(BaseNotifier):
 
 class NotificationRouter:
     """
-    Handles state generation (Supabase) and routes the payload to the active
-    swappable notification modules.
+    Handles state generation and routes the payload to the active
+    swappable notification modules via SQLAlchemy.
     """
     def __init__(self):
-        # Instantiate Supabase client using Service Role for backend worker tasks
-        supabase_url = os.getenv("SUPABASE_URL", "")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-        self.db_client = create_client(supabase_url, supabase_key)
         self.frontend_base_url = os.getenv("FRONTEND_BASE_URL", "https://app.yourdomain.com")
 
-    def _save_anomaly_state(self, anomaly_data: Dict[str, Any]) -> str:
+    def _save_anomaly_state(self, db: Session, anomaly_data: Dict[str, Any]) -> str:
         """
         Interaction (Frontend) methodology: 
         Saves the anomaly payload to generate a clean, short deep-link ID.
         """
         anomaly_id = str(uuid.uuid4())
         
-        # We store the state so the React frontend can fetch and hydrate context
-        payload = {
-            "id": anomaly_id,
-            "tenant_id": anomaly_data['tenant_id'],
-            "agent_id": anomaly_data['agent_id'],
-            "metric": anomaly_data['metric'],
-            "date": anomaly_data['date'],
-            "filters": anomaly_data['top_variance_drivers'], # Pass top drivers to auto-filter the UI
-            "diagnostic_summary": anomaly_data['diagnostic_summary'],
-            "status": "unresolved"
-        }
+        try:
+            # We store the state so the React frontend can fetch and hydrate context
+            query = text("""
+                INSERT INTO anomaly_states 
+                (id, tenant_id, agent_id, metric, date, filters, diagnostic_summary, status)
+                VALUES 
+                (:id, :tenant_id, :agent_id, :metric, :date, :filters, :diagnostic_summary, :status)
+            """)
+            
+            db.execute(query, {
+                "id": anomaly_id,
+                "tenant_id": anomaly_data.get('tenant_id'),
+                "agent_id": anomaly_data.get('dataset_id'), # Mapped from detector output
+                "metric": anomaly_data.get('metric'),
+                "date": anomaly_data.get('date'),
+                "filters": anomaly_data.get('top_variance_drivers', "{}"),
+                "diagnostic_summary": anomaly_data.get('diagnostic_summary', ''),
+                "status": "unresolved"
+            })
+            db.commit()
+            return anomaly_id
+            
+        except SQLAlchemyError as e:
+            db.rollback()
+            logger.error(f"Failed to save anomaly state to database: {e}")
+            raise RuntimeError("Database error during anomaly state persistence.")
 
-        self.db_client.table("anomaly_states").insert(payload).execute()
-        return anomaly_id
-
-    def process_and_route(self, anomaly_data: Dict[str, Any], channels: List[str] = ['slack']) -> None:
+    def process_and_route(self, db: Session, anomaly_data: Dict[str, Any], channels: List[str] = ['slack']) -> None:
         """
         The entry point for Phase 4. Called by watchdog_service after AI diagnostic completes.
         """
@@ -151,9 +169,9 @@ class NotificationRouter:
 
         # 1. State Management: Save to DB and generate short ID
         try:
-            anomaly_id = self._save_anomaly_state(anomaly_data)
+            anomaly_id = self._save_anomaly_state(db, anomaly_data)
         except Exception as e:
-            logger.error(f"Failed to save anomaly state: {e}")
+            logger.error(f"Routing aborted. Failed to save state: {e}")
             return
 
         # 2. Deep Linking: Construct the clean URL
@@ -161,10 +179,8 @@ class NotificationRouter:
 
         # 3. Dynamic Routing to requested channels
         if 'slack' in channels:
-            slack = SlackNotifier(tenant_id=tenant_id, db_client=self.db_client)
+            slack = SlackNotifier(db=db, tenant_id=tenant_id)
             slack.send_alert(anomaly_data, deep_link)
-            
-        # Example of how easily we can extend later:
-        # if 'teams' in channels:
-        #     teams = TeamsNotifier(tenant_id=tenant_id, db_client=self.db_client)
-        #     teams.send_alert(anomaly_data, deep_link)
+
+# Export singleton instance
+notification_router = NotificationRouter()

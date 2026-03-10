@@ -6,7 +6,7 @@ import logging
 import contextlib
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Union
 
 import boto3
 import duckdb
@@ -59,12 +59,11 @@ class AdaptiveStorageManager:
     def _resolve_tenant_config(self, db: Session, tenant_id: str) -> ResolvedStorage:
         """
         Interrogates the database to find the user's current billing/storage tier.
-        Applies mathematical tenant_id jailing to strictly isolate data.
+        Applies strict mathematical tenant_id jailing to isolate data.
         """
         if not tenant_id:
             raise ValueError("Security Violation: tenant_id strictly required for storage resolution.")
 
-        # SaaS Upgrade: Actively fetch the tenant's tier from the DB to support dynamic upgrades
         try:
             settings = db.query(TenantSettings).filter(TenantSettings.tenant_id == tenant_id).first()
             tier = settings.storage_tier if settings else StorageTier.SUPABASE
@@ -72,7 +71,7 @@ class AdaptiveStorageManager:
             logger.error(f"Database error resolving tenant storage: {e}")
             tier = StorageTier.SUPABASE # Safe fallback
 
-        # 1.2 STRICT PHYSICAL PARTITIONING: DuckDB and fsspec will ONLY ever see this folder
+        # STRICT PHYSICAL PARTITIONING: The compute layers ONLY see this directory
         prefix = f"tenants/tenant_id={tenant_id}/"
 
         if tier == StorageTier.EPHEMERAL:
@@ -80,20 +79,20 @@ class AdaptiveStorageManager:
         elif tier == StorageTier.R2_PRO and self.r2_endpoint:
             return ResolvedStorage(self.r2_endpoint, self.r2_bucket, self.r2_access, self.r2_secret, prefix, tier)
 
-        # Fallback to Supabase S3
         return ResolvedStorage(self.supa_endpoint, self.supa_bucket, self.supa_access, self.supa_secret, prefix, tier)
 
     def get_s3_client(self, db: Session, tenant_id: str):
-        """Returns a Boto3 client pointing to the user's resolved storage tier for API operations."""
+        """Returns an optimized Boto3 client pointing to the user's resolved storage tier."""
         config = self._resolve_tenant_config(db, tenant_id)
         if config.tier == StorageTier.EPHEMERAL:
             raise ValueError("Ephemeral tier does not support persistent S3 access.")
 
-        # Use increased max_pool_connections for high-concurrency serverless environments
+        # High-concurrency tuning for serverless architectures
         boto_config = Config(
             s3={'addressing_style': 'path'}, 
             signature_version='s3v4',
-            max_pool_connections=50 
+            max_pool_connections=100,
+            retries={'max_attempts': 3}
         )
 
         return boto3.client(
@@ -106,10 +105,7 @@ class AdaptiveStorageManager:
         )
 
     def get_fsspec_fs(self, db: Session, tenant_id: str) -> fsspec.AbstractFileSystem:
-        """
-        1.1 Data Modularity: Returns a zero-copy filesystem interface.
-        Allows Polars to stream bytes directly to Cloudflare R2 over the network.
-        """
+        """Unified filesystem interface for generic operations or memory fallbacks."""
         config = self._resolve_tenant_config(db, tenant_id)
         if config.tier == StorageTier.EPHEMERAL:
             return fsspec.filesystem('memory')
@@ -127,8 +123,8 @@ class AdaptiveStorageManager:
 
     def write_dataframe(self, db: Session, df: Any, tenant_id: str, dataset_id: str, format: str = "parquet") -> str:
         """
-        The Upgraded Computation Layer: Native Streaming Sink.
-        Takes a Polars DataFrame and streams it directly to Cloudflare R2 as ZSTD Parquet.
+        The Upgraded Computation Layer: Rust-Native Streaming Sink.
+        Bypasses Python memory buffers to stream Polars directly to R2/S3.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         
@@ -139,58 +135,68 @@ class AdaptiveStorageManager:
         else:
             object_key = dataset_id
 
-        full_s3_uri = f"{config.bucket}/{config.prefix}datasets/{object_key}"
+        full_s3_uri = f"s3://{config.bucket}/{config.prefix}datasets/{object_key}"
         
         try:
-            fs = self.get_fsspec_fs(db, tenant_id)
-            
-            if format == "parquet":
-                if hasattr(df, "write_parquet"):
-                    # Native Polars streaming: Zero-copy, maximum CPU efficiency
+            if format == "parquet" and hasattr(df, "write_parquet"):
+                # Hybrid Performance: Use Polars' native object_store (Rust) when hitting cloud storage
+                if config.tier != StorageTier.EPHEMERAL:
+                    storage_options = {
+                        "aws_access_key_id": config.access_key,
+                        "aws_secret_access_key": config.secret_key,
+                        "aws_endpoint_url": config.endpoint,
+                        "aws_region": "auto"
+                    }
+                    df.write_parquet(full_s3_uri, compression="zstd", storage_options=storage_options)
+                else:
+                    # Fallback to fsspec memory filesystem for ephemeral layer
+                    fs = self.get_fsspec_fs(db, tenant_id)
                     with fs.open(full_s3_uri, "wb") as f:
                         df.write_parquet(f, compression="zstd")
-                else:
-                    raise TypeError("Compute Error: Provided object does not support write_parquet(). Pass a Polars/Pandas DataFrame.")
             else:
-                raise NotImplementedError(f"Format '{format}' not supported.")
+                raise TypeError("Compute Error: Requires Polars/Pandas DataFrame and Parquet format.")
             
-            logger.debug(f"[{tenant_id}] Wrote optimized dataset -> s3://{full_s3_uri}")
-            return f"s3://{full_s3_uri}"
+            logger.debug(f"[{tenant_id}] Wrote optimized dataset -> {full_s3_uri}")
+            return full_s3_uri
 
         except Exception as e:
             logger.error(f"Storage Write Exception (Tenant: {tenant_id}): {str(e)}")
             raise
 
     def get_duckdb_query_path(self, db: Session, dataset: Dataset) -> str:
-        """
-        Calculates the optimal zero-copy path for DuckDB to execute against.
-        """
+        """Calculates the optimal zero-copy path for DuckDB, gracefully handling absolute URIs."""
         if dataset.is_sample and dataset.sample_uri:
             return f"'{dataset.sample_uri}'"
 
-        config = self._resolve_tenant_config(db, dataset.tenant_id)
-        path_suffix = "/**/*.parquet" if not dataset.file_path.endswith(".parquet") else ""
-        return f"'s3://{config.bucket}/{config.prefix}{dataset.file_path}{path_suffix}'"
+        # Fix: Prevent double-prefixing if the DB already stores the absolute S3 URI
+        if dataset.file_path.startswith("s3://"):
+            base_path = dataset.file_path
+        else:
+            config = self._resolve_tenant_config(db, dataset.tenant_id)
+            base_path = f"s3://{config.bucket}/{config.prefix}{dataset.file_path.lstrip('/')}"
+            
+        path_suffix = "/**/*.parquet" if not base_path.endswith(".parquet") else ""
+        return f"'{base_path}{path_suffix}'"
 
     @contextlib.contextmanager
     def duckdb_session(self, db: Session, tenant_id: str):
         """
-        SaaS Memory Management: Context manager that yields a securely scoped DuckDB connection.
-        Ensures the connection is ALWAYS closed, preventing out-of-memory container crashes.
+        SaaS Memory Management: Scoped connection with connection-level secrets.
+        Ensures tenant isolation without polluting a global DuckDB instance.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         con = duckdb.connect(database=':memory:')
         
         try:
             if config.tier != StorageTier.EPHEMERAL:
+                # Load HTTPFS (avoids slow network INSTALL if already cached/pre-installed in container)
                 con.execute("INSTALL httpfs; LOAD httpfs;")
                 
                 endpoint_clean = config.endpoint.replace('https://', '').replace('http://', '')
-                secret_name = f"s3_secret_{tenant_id.replace('-', '_')}"
                 
-                # Security by Design: Modern DuckDB Secrets mapped per-tenant
+                # Security by Design: Anonymous S3 secret mapped solely to this connection lifecycle
                 con.execute(f"""
-                    CREATE OR REPLACE SECRET {secret_name} (
+                    CREATE OR REPLACE SECRET (
                         TYPE S3,
                         KEY_ID '{config.access_key}',
                         SECRET '{config.secret_key}',
@@ -206,8 +212,7 @@ class AdaptiveStorageManager:
     def convert_to_parquet_and_profile(self, db: Session, tenant_id: str, raw_object_key: str) -> Dict[str, Any]:
         """
         Event-Driven Profiling Worker.
-        Uses DuckDB to stream the raw S3 object, rewrite to S3 as ZSTD Parquet, 
-        and extract Context Metadata for the AI Agents.
+        Streams raw S3 to Parquet natively inside DuckDB, mapping Schema for Semantic Routing.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         if config.tier == StorageTier.EPHEMERAL:
@@ -225,7 +230,6 @@ class AdaptiveStorageManager:
         raw_s3_path = f"s3://{config.bucket}/{raw_object_key}"
         parquet_s3_path = f"s3://{config.bucket}/{parquet_key}"
 
-        # Safe execution using the context manager to prevent memory leaks
         with self.duckdb_session(db, tenant_id) as con:
             try:
                 # 1. Vectorized Conversion via DuckDB Compute Engine
@@ -236,12 +240,13 @@ class AdaptiveStorageManager:
                 else:
                     read_query = f"read_csv_auto('{raw_s3_path}', normalize_names=True)"
 
+                # Direct stream: Cloud -> Compute -> Cloud (no local disk overhead)
                 con.execute(f"""
                     COPY (SELECT * FROM {read_query}) 
                     TO '{parquet_s3_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
                 """)
 
-                # 2. Schema Extraction (Zero-Dependency RAG Prep)
+                # 2. Schema Extraction (Contextual RAG Prep)
                 metadata_rows = con.execute(f"DESCRIBE SELECT * FROM '{parquet_s3_path}';").fetchall()
                 columns_info = [{"name": row[0], "type": row[1]} for row in metadata_rows]
                 

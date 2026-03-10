@@ -13,8 +13,12 @@ from pydantic import BaseModel, Field
 from api.database import get_db
 from models import Agent, Dataset
 
-# Core Security & SaaS Identity
-from api.auth import verify_tenant, TenantContext
+# Core Security & SaaS Identity (Standardized Dual-Auth Gateway)
+from api.routes.query import verify_tenant_auth
+from api.services.tenant_security_provider import TenantContext
+
+# Core Services
+from api.services.agent_service import agent_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +32,20 @@ class AgentCreate(BaseModel):
     name: str = Field(..., example="Financial Analyst Agent")
     dataset_id: str = Field(..., description="The UUID of the dataset this agent will query.")
     role_description: Optional[str] = Field(None, description="Custom prompt instructions for the LLM.")
+    
+    # NEW: Autonomous Monitoring Fields
+    cron_schedule: Optional[str] = Field(None, description="Standard cron string, e.g., '0 * * * *' (hourly)")
+    metric_column: Optional[str] = Field(None, description="The specific numeric column to monitor")
+    time_column: Optional[str] = Field(None, description="The datetime column in the dataset")
+    sensitivity_threshold: float = Field(2.0, description="Z-score threshold for anomaly flagging")
 
 class AgentResponse(BaseModel):
     id: str
     name: str
     dataset_id: str
     role_description: Optional[str] = None
+    cron_schedule: Optional[str] = None
+    is_active: bool
     created_at: datetime
 
     class Config:
@@ -46,65 +58,35 @@ class AgentResponse(BaseModel):
 @router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 def create_agent(
     payload: AgentCreate, 
-    tenant: TenantContext = Depends(verify_tenant), # SECURITY: Cryptographically verified tenant
+    context: TenantContext = Depends(verify_tenant_auth), # Security Phase 1: Dual-Auth Check
     db: Session = Depends(get_db)
 ):
     """
     Creates a new AI Agent dedicated to a specific dataset.
-    Security by Design: Validates that the requested dataset actually belongs to the requesting tenant.
+    Automatically provisions background monitoring if cron parameters are provided.
     """
-    logger.info(f"[{tenant.tenant_id}] Attempting to create agent '{payload.name}'")
+    logger.info(f"[{context.tenant_id}] Attempting to create agent '{payload.name}'")
 
     try:
-        # 1. Strict Tenant Boundary Check: Ensure the user owns the dataset
-        dataset = db.query(Dataset).filter(
-            Dataset.id == payload.dataset_id,
-            Dataset.tenant_id == tenant.tenant_id
-        ).first()
-
-        if not dataset:
-            logger.warning(f"[{tenant.tenant_id}] Failed to bind agent. Dataset {payload.dataset_id} not found or unauthorized.")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="Dataset not found or you do not have permission to access it."
-            )
-        
-        # 2. Persist Agent natively in PostgreSQL
-        new_agent = Agent(
-            tenant_id=tenant.tenant_id,
-            dataset_id=dataset.id,
-            name=payload.name,
-            role_description=payload.role_description
+        # Delegate to the strictly isolated agent_service we built
+        new_agent = agent_service.create_agent(
+            db=db,
+            tenant_id=context.tenant_id,
+            rule=payload
         )
+        return new_agent
         
-        db.add(new_agent)
-        db.commit()
-        db.refresh(new_agent)
-        
-        logger.info(f"[{tenant.tenant_id}] Successfully created agent {new_agent.id}")
-        
-        return AgentResponse(
-            id=str(new_agent.id),
-            name=new_agent.name,
-            dataset_id=str(new_agent.dataset_id),
-            role_description=new_agent.role_description,
-            created_at=new_agent.created_at
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[{tenant.tenant_id}] Database error during agent creation: {e}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="An internal database error occurred while creating the agent."
-        )
+    except ValueError as ve:
+        logger.warning(f"[{context.tenant_id}] Failed to bind agent: {ve}")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except RuntimeError as re:
+        logger.error(f"[{context.tenant_id}] Runtime error during agent creation: {re}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(re))
 
 
 @router.get("/", response_model=List[AgentResponse])
 def list_agents(
-    tenant: TenantContext = Depends(verify_tenant),
+    context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
 ):
     """
@@ -112,22 +94,11 @@ def list_agents(
     Security by Design: Filters purely by the injected tenant context.
     """
     try:
-        # Vectorized / Optimized retrieval using SQLAlchemy
-        agents = db.query(Agent).filter(
-            Agent.tenant_id == tenant.tenant_id
-        ).order_by(Agent.created_at.desc()).all()
-        
-        return [
-            AgentResponse(
-                id=str(agent.id),
-                name=agent.name,
-                dataset_id=str(agent.dataset_id),
-                role_description=agent.role_description,
-                created_at=agent.created_at
-            ) for agent in agents
-        ]
+        # Delegate to agent_service for tenant-isolated retrieval
+        agents = agent_service.list_agents(db, context.tenant_id)
+        return agents
     except Exception as e:
-        logger.error(f"[{tenant.tenant_id}] Failed to list agents: {e}")
+        logger.error(f"[{context.tenant_id}] Failed to list agents: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="Failed to retrieve agents."
@@ -137,17 +108,18 @@ def list_agents(
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_agent(
     agent_id: str, 
-    tenant: TenantContext = Depends(verify_tenant),
+    context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
 ):
     """
-    Deletes an AI agent and cascadingly wipes its Contextual RAG knowledge.
+    Deletes an AI agent and halts its autonomous background monitoring loops.
+    Cascadingly wipes its Contextual RAG knowledge via DB constraints.
     """
     try:
         # Fetch with strict tenant isolation
         agent = db.query(Agent).filter(
             Agent.id == agent_id,
-            Agent.tenant_id == tenant.tenant_id
+            Agent.tenant_id == context.tenant_id
         ).first()
         
         if not agent:
@@ -159,14 +131,14 @@ def delete_agent(
         db.delete(agent)
         db.commit()
         
-        logger.info(f"[{tenant.tenant_id}] Successfully deleted agent {agent_id}")
+        logger.info(f"[{context.tenant_id}] Successfully deleted agent {agent_id}")
         return None
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[{tenant.tenant_id}] Failed to delete agent {agent_id}: {e}")
         db.rollback()
+        logger.error(f"[{context.tenant_id}] Failed to delete agent {agent_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail="Failed to delete the agent."

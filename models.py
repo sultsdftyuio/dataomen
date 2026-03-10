@@ -54,7 +54,7 @@ class SubscriptionTier(str, enum.Enum):
     ENTERPRISE = "ENTERPRISE"
 
 # ==========================================
-# SAAS IDENTITY & BILLING (NEW)
+# SAAS IDENTITY & BILLING
 # ==========================================
 class Organization(Base):
     """
@@ -100,7 +100,7 @@ class User(Base):
 
 
 # ==========================================
-# TENANT CONFIGURATION (IMPROVED)
+# TENANT CONFIGURATION & SECURITY
 # ==========================================
 class TenantSettings(Base, TenantAwareMixin):
     """
@@ -124,8 +124,35 @@ class TenantSettings(Base, TenantAwareMixin):
     organization: Mapped["Organization"] = relationship("Organization", back_populates="settings")
 
 
+class TenantApiKey(Base, TenantAwareMixin):
+    """
+    Manages hashed API keys for server-to-server operations.
+    """
+    __tablename__ = "tenant_api_keys"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    key_hash: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    label: Mapped[str] = mapped_column(String, default="Default Key")
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_used: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TenantErrorLog(Base, TenantAwareMixin):
+    """
+    Stores tenant-isolated application failure telemetry.
+    """
+    __tablename__ = "tenant_error_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    operation: Mapped[str] = mapped_column(String, nullable=False)
+    error_message: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 # ==========================================
-# DATASETS (IMPROVED)
+# DATASETS
 # ==========================================
 class Dataset(Base, TenantAwareMixin):
     """
@@ -160,10 +187,10 @@ class Dataset(Base, TenantAwareMixin):
 
 
 # ==========================================
-# AGENTS & QUERY LOGS (IMPROVED)
+# AGENTS & QUERY LOGS
 # ==========================================
 class Agent(Base, TenantAwareMixin):
-    """AI Assistant assigned to a specific dataset."""
+    """AI Assistant & Autonomous Background Worker assigned to a specific dataset."""
     __tablename__ = "agents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -171,6 +198,14 @@ class Agent(Base, TenantAwareMixin):
     
     name: Mapped[str] = mapped_column(String, nullable=False)
     role_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # --- NEW: Autonomous Monitoring Fields ---
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    cron_schedule: Mapped[Optional[str]] = mapped_column(String, nullable=True) # e.g., "0 * * * *" (hourly)
+    metric_column: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    time_column: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    sensitivity_threshold: Mapped[float] = mapped_column(Float, default=2.0)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

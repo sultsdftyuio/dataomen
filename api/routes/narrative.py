@@ -1,13 +1,17 @@
+# api/routes/narrative.py
+
 import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-# Corrected Import: Changed CFONarrativeService to NarrativeService
+from api.database import get_db
+# Core Security & SaaS Identity (Standardized Dual-Auth Gateway)
+from api.routes.query import verify_tenant_auth
+from api.services.tenant_security_provider import tenant_security, TenantContext
 from api.services.narrative_service import NarrativeService
-from api.auth import get_current_user # Assumes your modular auth dependency
 
-# Configure logging for observability
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -30,29 +34,30 @@ class NarrativeResponse(BaseModel):
 @router.post("/generate", response_model=NarrativeResponse)
 async def generate_narrative(
     request: NarrativeRequest,
-    user: dict = Depends(get_current_user)  # Tenant isolation via auth dependency
+    context: TenantContext = Depends(verify_tenant_auth), # Security Phase 1: Dual-Auth Check
+    db: Session = Depends(get_db)
 ):
     """
     Generates a contextual, analytical narrative based on user query and data.
+    Securely metered via the SubscriptionManager to prevent LLM credit abuse.
     """
     try:
-        # Enforce multi-tenant security by passing tenant_id to the service
-        tenant_id = user.get("tenant_id")
-        if not tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tenant ID missing from authenticated user."
-            )
-
-        # Instantiate the corrected service class
         service = NarrativeService()
         
-        # We assume the service logic handles semantic routing and vectorized data fetching
-        result = await service.generate(
-            tenant_id=tenant_id,
-            dataset_id=request.dataset_id,
-            query=request.query,
-            context=request.context or {}
+        # Security Phase 2: Wrap the expensive LLM call in the metering context
+        async def execute_narrative():
+            return await service.generate(
+                tenant_id=context.tenant_id,
+                dataset_id=request.dataset_id,
+                query=request.query,
+                context=request.context or {}
+            )
+            
+        result = await tenant_security.execute_in_context(
+            db=db,
+            tenant_id=context.tenant_id,
+            operation_name="generate_narrative",
+            func=execute_narrative
         )
         
         return NarrativeResponse(
@@ -61,12 +66,12 @@ async def generate_narrative(
             insights=result.get("insights", [])
         )
 
+    except PermissionError as pe:
+        # 402 Payment Required: Blocks execution before OpenAI is hit
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(pe))
     except ValueError as ve:
         logger.warning(f"Validation error in narrative generation: {str(ve)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(ve)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
         logger.error(f"Unexpected error in narrative generation: {str(e)}", exc_info=True)
         raise HTTPException(
