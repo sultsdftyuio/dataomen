@@ -1,52 +1,51 @@
-# 1. Web Framework & Server (Orchestration)
-fastapi
-uvicorn[standard]
-python-multipart
+# --- Web Framework & Production Server ---
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+gunicorn==21.2.0              # Essential for process management on Render
+python-multipart==0.0.9       # Required for file uploads in ingestion_service
 
-# 2. Computation & Analytical Engines (Execution)
-pandas
-numpy
-polars         # High-performance dataframe engine
-scipy          # Mathematical algorithms and convenience functions
-duckdb         # In-process analytical engine
-pyarrow        # Crucial for Parquet file formats
-scikit-learn
-
-# 3. AI, LLM & Routing (Intelligence)
-openai
-langchain
-langchain-openai
-sentence-transformers
-tiktoken
-chromadb
-faiss-cpu
-
-# 4. Database, Security & Services (Infrastructure)
-supabase       # Supabase client library
-postgrest
-psycopg2-binary
-sqlalchemy
-python-dotenv
-pydantic
-pydantic-settings
-bcrypt
-pyjwt
-cryptography
-fsspec         # Unified interface to remote file systems
-
-# 5. Background Jobs & Utilities
-celery
-redis
-croniter       # Datetime handler for cron-like schedules
-python-dateutil
-openpyxl
-
-# 6. Observability & Telemetry
-prometheus-client
-structlog
-polars>=0.20.0
-pyarrow>=14.0.0
-fsspec>=2023.12.2
-s3fs>=2023.12.2
+# --- Computation & Analytical Engines (Execution Layer) ---
 pandas>=2.1.0
-boto3>=1.34.0
+numpy>=1.26.0
+polars>=0.20.0                # Vectorized dataframe engine
+scipy>=1.12.0                 # Mathematical precision & anomaly detection
+duckdb>=0.10.0                # In-process analytical engine
+pyarrow>=14.0.0               # Parquet support for DuckDB/Polars
+scikit-learn>=1.4.0           # ML utilities
+
+# --- Intelligence & RAG (Intelligence Layer) ---
+openai>=1.12.0
+langchain>=0.1.0
+langchain-openai>=0.0.5
+sentence-transformers>=2.5.0
+tiktoken>=0.6.0
+chromadb>=0.4.24
+faiss-cpu>=1.7.4
+
+# --- Database & Multi-Tenant Infrastructure ---
+supabase>=2.4.0               # Auth and DB management
+postgrest>=0.10.0
+psycopg2-binary>=2.9.9        # Postgres adapter
+sqlalchemy>=2.0.27            # ORM for models.py
+pgvector>=0.2.5               # FIX: Required for Vector type in models.py
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# --- Storage & Cloud Strategy (Modular Infrastructure) ---
+boto3>=1.34.0                 # S3/R2 interaction
+s3fs>=2023.12.2               # Filesystem interface for S3/R2
+fsspec>=2023.12.2             # Unified remote file handling
+
+# --- Security & Utilities ---
+python-dotenv==1.0.1
+bcrypt==4.1.2
+pyjwt==2.8.0
+cryptography==42.0.5
+python-dateutil==2.8.2
+croniter==2.0.1               # Schedule handling
+openpyxl==3.1.2               # Excel ingestion support
+httpx==0.27.0                 # Async HTTP client for AI streaming/Supabase calls
+
+# --- Observability & Telemetry ---
+prometheus-client==0.20.0
+structlog==24.1.0

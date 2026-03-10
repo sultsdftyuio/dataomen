@@ -1,133 +1,258 @@
-"""
-api/services/subscription_manager.py
-Objective: Manage multi-tenant entitlements, feature gating, and usage-based metering.
-Methodology: Modular Strategy (provider-agnostic) and Security by Design.
-"""
+"use client";
 
-from typing import Dict, Any, Optional
-from datetime import datetime
-from enum import Enum
-from pydantic import BaseModel
-from api.database import get_db_client # Assuming supabase/postgres wrapper
-from api.services.integrations.stripe_connector import StripeConnector
-from api.services.audit_logger import AuditLogger
+import { useState, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/use-toast";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Check, Zap, HardDrive, Activity, Loader2, Info } from "lucide-react";
 
-class PlanTier(Enum):
-    FREE = "free"
-    PRO = "pro"
-    ENTERPRISE = "enterprise"
+// --- Modular Plan Configuration ---
+const PLAN_CONFIG = {
+  FREE: {
+    name: "Starter",
+    price: { monthly: 0, yearly: 0 },
+    priceIds: { monthly: "price_free", yearly: "price_free" },
+    features: ["1GB Storage Limit", "1,000 Queries / Month", "Standard Support"],
+  },
+  PRO: {
+    name: "Pro",
+    price: { monthly: 25, yearly: 240 }, // $240/yr = $20/mo
+    priceIds: { monthly: "price_pro_monthly_25", yearly: "price_pro_yearly_240" },
+    features: ["50GB R2 Storage", "50,000 Queries / Month", "Priority Compute Routing", "Advanced AI Analytics"],
+  },
+  ENTERPRISE: {
+    name: "Enterprise",
+    price: { monthly: "Custom", yearly: "Custom" },
+    features: ["Unlimited R2 Storage", "Bring Your Own Storage (BYOS)", "Unlimited Queries", "Dedicated Support"],
+  }
+};
 
-class UsageMetric(Enum):
-    ROWS_INGESTED = "rows_ingested"
-    COMPUTE_SECONDS = "compute_seconds"
-    AGENT_COUNT = "agent_count"
-    LLM_TOKENS = "llm_tokens"
-
-class PlanLimits(BaseModel):
-    max_agents: int
-    max_rows_per_dataset: int
-    features: list[str]
-    is_metered: bool
-
-# Configuration for Tiers
-TIER_CONFIGS = {
-    PlanTier.FREE: PlanLimits(
-        max_agents=2,
-        max_rows_per_dataset=10000,
-        features=["basic_chat"],
-        is_metered=False
-    ),
-    PlanTier.PRO: PlanLimits(
-        max_agents=20,
-        max_rows_per_dataset=1000000,
-        features=["basic_chat", "anomaly_detection", "ab_testing", "api_access"],
-        is_metered=True
-    ),
-    PlanTier.ENTERPRISE: PlanLimits(
-        max_agents=999,
-        max_rows_per_dataset=1000000000,
-        features=["all"],
-        is_metered=True
-    )
+interface UsageMetrics {
+  subscription_tier: "FREE" | "PRO" | "ENTERPRISE";
+  current_storage_mb: number;
+  max_storage_mb: number;
+  current_month_queries: number;
+  monthly_query_limit: number;
 }
 
-class SubscriptionManager:
-    def __init__(self, tenant_id: str):
-        self.tenant_id = tenant_id
-        self.db = get_db_client()
-        self.stripe = StripeConnector() # Modular: Can swap for Paddle/Chargebee
-        self.logger = AuditLogger()
+export default function BillingPage() {
+  const [usage, setUsage] = useState<UsageMetrics | null>(null);
+  const [interval, setInterval] = useState<"monthly" | "yearly">("monthly");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const { toast } = useToast();
+  const supabase = createClient();
 
-    async def get_current_subscription(self) -> Dict[str, Any]:
-        """Retrieves the current subscription state for the tenant."""
-        # Query Supabase for the cached subscription status
-        res = self.db.table("subscriptions").select("*").eq("tenant_id", self.tenant_id).single().execute()
-        
-        if not res.data:
-            return {"tier": PlanTier.FREE, "status": "active"}
-        
-        return res.data
+  useEffect(() => {
+    fetchUsageMetrics();
+  }, []);
 
-    async def check_entitlement(self, feature: str) -> bool:
-        """Determines if a tenant is allowed to use a specific feature."""
-        sub = await self.get_current_subscription()
-        tier = PlanTier(sub.get("tier", "free"))
-        config = TIER_CONFIGS[tier]
-        
-        if "all" in config.features:
-            return True
-        return feature in config.features
+  const fetchUsageMetrics = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
 
-    async def track_usage(self, metric: UsageMetric, amount: int):
-        """
-        Records consumption for usage-based billing.
-        In a high-performance setup, this should be buffered/batched.
-        """
-        # 1. Update internal database for real-time dashboard feedback
-        self.db.rpc("increment_tenant_usage", {
-            "t_id": self.tenant_id,
-            "m_name": metric.value,
-            "inc_val": amount
-        }).execute()
+      const response = await fetch("/api/organizations/me", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
 
-        # 2. Sync to Stripe if the plan is metered
-        sub = await self.get_current_subscription()
-        if sub.get("stripe_subscription_id") and TIER_CONFIGS[PlanTier(sub["tier"])].is_metered:
-            # We map UsageMetric to Stripe Price IDs
-            await self.stripe.report_usage(
-                subscription_item_id=sub["stripe_item_id"],
-                quantity=amount
-            )
-        
-        self.logger.log_info(
-            tenant_id=self.tenant_id,
-            action=f"usage_tracked_{metric.value}",
-            metadata={"amount": amount}
-        )
+      if (!response.ok) throw new Error("Failed to fetch usage data");
+      const data = await response.json();
+      setUsage(data);
+    } catch (error) {
+      toast({
+        title: "Sync Error",
+        description: "Could not retrieve real-time usage metrics.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    async def can_ingest_data(self, row_count: int) -> bool:
-        """Validation logic before a heavy compute/storage operation."""
-        sub = await self.get_current_subscription()
-        tier = PlanTier(sub.get("tier", "free"))
-        limit = TIER_CONFIGS[tier].max_rows_per_dataset
-        
-        # Check current row count across all datasets
-        current_rows_res = self.db.table("datasets").select("row_count").eq("tenant_id", self.tenant_id).execute()
-        total_rows = sum(d['row_count'] for d in current_rows_res.data)
-        
-        if total_rows + row_count > limit:
-            return False
-        return True
+  const handleUpgrade = async (priceId: string) => {
+    if (priceId === "price_free") return;
+    setIsCheckoutLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Unauthenticated");
 
-    async def upgrade_tenant(self, new_tier: PlanTier):
-        """Programmatic upgrade (usually triggered by Stripe Webhook)."""
-        self.db.table("subscriptions").update({
-            "tier": new_tier.value,
-            "updated_at": datetime.utcnow().isoformat()
-        }).eq("tenant_id", self.tenant_id).execute()
+      const response = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ priceId, interval }),
+      });
+
+      const { url, error } = await response.json();
+      if (error) throw new Error(error);
+      if (url) window.location.href = url;
+    } catch (error: any) {
+      toast({
+        title: "Checkout failed",
+        description: error.message || "Stripe routing error. Try again.",
+        variant: "destructive",
+      });
+      setIsCheckoutLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const storagePercent = usage ? Math.min((usage.current_storage_mb / usage.max_storage_mb) * 100, 100) : 0;
+  const queryPercent = usage ? Math.min((usage.current_month_queries / usage.monthly_query_limit) * 100, 100) : 0;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-8 p-6">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Billing & Entitlements</h1>
+          <p className="text-muted-foreground mt-2">
+            Multi-tenant compute consumption and subscription management.
+          </p>
+        </div>
         
-        self.logger.log_info(
-            tenant_id=self.tenant_id,
-            action="subscription_upgraded",
-            metadata={"new_tier": new_tier.value}
-        )
+        {/* Interval Toggle */}
+        <div className="flex items-center gap-3 bg-muted p-1 rounded-lg">
+          <Tabs value={interval} onValueChange={(v) => setInterval(v as any)}>
+            <TabsList>
+              <TabsTrigger value="monthly">Monthly</TabsTrigger>
+              <TabsTrigger value="yearly">Yearly</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {interval === "yearly" && (
+            <Badge variant="secondary" className="bg-green-100 text-green-700 hover:bg-green-100 border-none">
+              Save 20%
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {/* --- Real-time Usage Metrics --- */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="border-l-4 border-l-blue-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <HardDrive className="h-4 w-4" /> Storage Usage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{usage?.current_storage_mb.toFixed(1)} / {usage?.max_storage_mb} MB</div>
+            <Progress value={storagePercent} className="h-1.5 mt-3" />
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-green-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Activity className="h-4 w-4" /> Compute Credits
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{usage?.current_month_queries.toLocaleString()} / {usage?.monthly_query_limit.toLocaleString()}</div>
+            <Progress value={queryPercent} className={`h-1.5 mt-3 ${queryPercent > 90 ? "bg-red-500" : ""}`} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* --- Pricing Matrix --- */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Starter Plan */}
+        <Card className={usage?.subscription_tier === "FREE" ? "border-primary ring-1 ring-primary" : ""}>
+          <CardHeader>
+            <CardTitle>{PLAN_CONFIG.FREE.name}</CardTitle>
+            <CardDescription>Core analytical features.</CardDescription>
+            <div className="text-3xl font-bold mt-4">$0</div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              {PLAN_CONFIG.FREE.features.map(f => (
+                <li key={f} className="flex items-center gap-2"><Check className="h-4 w-4 text-green-500" /> {f}</li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter>
+            <Button className="w-full" variant="outline" disabled>
+              {usage?.subscription_tier === "FREE" ? "Current Plan" : "Downgrade"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* Pro Plan (Updated) */}
+        <Card className={`relative border-2 ${usage?.subscription_tier === "PRO" ? "border-primary" : "border-blue-600 shadow-blue-50/50 shadow-xl"}`}>
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+            <Badge className="bg-blue-600">Most Efficient</Badge>
+          </div>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">Pro <Zap className="h-4 w-4 fill-blue-600 text-blue-600" /></CardTitle>
+            <CardDescription>High-performance scaling.</CardDescription>
+            <div className="mt-4">
+              <span className="text-4xl font-bold">
+                ${interval === "monthly" ? PLAN_CONFIG.PRO.price.monthly : PLAN_CONFIG.PRO.price.yearly / 12}
+              </span>
+              <span className="text-muted-foreground ml-1">/mo</span>
+              {interval === "yearly" && (
+                <div className="text-xs text-green-600 font-medium mt-1">
+                  Billed as ${PLAN_CONFIG.PRO.price.yearly}/year (Save $60)
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="space-y-2 text-sm">
+              {PLAN_CONFIG.PRO.features.map(f => (
+                <li key={f} className="flex items-center gap-2"><Check className="h-4 w-4 text-blue-600" /> {f}</li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter>
+            <Button 
+              className="w-full bg-blue-600 hover:bg-blue-700" 
+              onClick={() => handleUpgrade(PLAN_CONFIG.PRO.priceIds[interval])}
+              disabled={isCheckoutLoading || usage?.subscription_tier === "PRO"}
+            >
+              {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {usage?.subscription_tier === "PRO" ? "Current Plan" : "Upgrade Now"}
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* Enterprise Plan */}
+        <Card>
+          <CardHeader>
+            <CardTitle>{PLAN_CONFIG.ENTERPRISE.name}</CardTitle>
+            <CardDescription>Full isolation & custom RAG.</CardDescription>
+            <div className="text-3xl font-bold mt-4">Contact</div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              {PLAN_CONFIG.ENTERPRISE.features.map(f => (
+                <li key={f} className="flex items-center gap-2"><Check className="h-4 w-4 text-primary" /> {f}</li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter>
+            <Button className="w-full" variant="outline">Contact Sales</Button>
+          </CardFooter>
+        </Card>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center bg-muted/30 p-4 rounded-lg">
+        <Info className="h-3 w-3" />
+        Payments are securely processed by Stripe. All plans include multi-tenant security by design.
+      </div>
+    </div>
+  );
+}
