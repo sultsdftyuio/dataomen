@@ -1,46 +1,106 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
-  MessageSquare,
-  TrendingUp,
-  FileText,
-  Plug,
-  Bell,
-  ShieldCheck,
-  Upload,
-  Search,
-  BarChart3,
-  ChevronDown,
-  ArrowRight,
-  Check,
-  Star,
-  Menu,
-  X,
-  Database,
-  Activity,
-  ChevronRight,
+  MessageSquare, TrendingUp, FileText, Plug, Bell, ShieldCheck,
+  Upload, Search, BarChart3, ChevronDown, ArrowRight, Check,
+  Star, Menu, X, Database, Activity, Zap, Lock,
 } from "lucide-react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+/* ─── Design Tokens (Hardcoded for Blueprint Aesthetic) ─────────────────── */
+const C = {
+  navy:      "#0A1628",
+  navyMid:   "#142038",
+  navySoft:  "#1E3A5F",
+  blue:      "#1B6EBF",
+  blueMid:   "#2580D4",
+  blueLight: "#3B9AE8",
+  bluePale:  "#EBF4FD",
+  blueTint:  "#F0F7FF",
+  white:     "#FFFFFF",
+  offWhite:  "#F6FAFE",
+  rule:      "#DDE8F2",
+  ruleDark:  "#C8D9E8",
+  muted:     "#546F8A",
+  faint:     "#8BADC4",
+  text:      "#0A1628",
+};
 
-interface NavItem { label: string; href: string; }
-interface Pillar { icon: React.ReactNode; title: string; description: string; tag: string; }
-interface Step { number: string; title: string; description: string; icon: React.ReactNode; }
-interface Testimonial { quote: string; name: string; role: string; company: string; stars: number; }
-interface FAQItem { question: string; answer: string; }
-interface TrustLogo { name: string; acronym: string; }
+/* ─── Injected Styles ────────────────────────────────────────────────────── */
+const Styles = () => (
+  <style>{`
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;1,600;1,700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-// ─── Data ─────────────────────────────────────────────────────────────────────
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { background: #FFFFFF; font-family: 'Plus Jakarta Sans', sans-serif; -webkit-font-smoothing: antialiased; color: #0A1628; }
 
-const NAV_ITEMS: NavItem[] = [
+    .pj  { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .pfd { font-family: 'Playfair Display', serif; }
+    .jbm { font-family: 'JetBrains Mono', monospace; }
+
+    @media (max-width: 900px) {
+      .two-col, .three-col, .stats-row { grid-template-columns: 1fr !important; }
+      .hide-sm, .step-conn { display: none !important; }
+    }
+    @media (max-width: 640px) {
+      .cta-grid { grid-template-columns: 1fr !important; }
+      .nav-btns { display: none !important; }
+      .mob-menu-btn { display: block !important; }
+    }
+    @media (min-width: 641px) { .mob-menu-btn { display: none !important; } }
+
+    .nav-scrolled {
+      background: rgba(255,255,255,0.97) !important;
+      backdrop-filter: blur(20px);
+      border-bottom: 1.5px solid #DDE8F2 !important;
+      box-shadow: 0 2px 20px rgba(10,22,40,0.07) !important;
+    }
+
+    .btn-navy { background: #0A1628; color: #fff; font-weight: 700; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; transition: all 0.2s; white-space: nowrap; }
+    .btn-navy:hover { background: #142038; box-shadow: 0 8px 28px rgba(10,22,40,0.22); transform: translateY(-1px); }
+
+    .btn-blue { background: #1B6EBF; color: #fff; font-weight: 700; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; transition: all 0.2s; white-space: nowrap; }
+    .btn-blue:hover { background: #2580D4; box-shadow: 0 8px 28px rgba(27,110,191,0.32); transform: translateY(-1px); }
+
+    .btn-ghost { background: transparent; color: #0A1628; font-weight: 600; font-size: 14px; border: 1.5px solid #DDE8F2; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; transition: all 0.2s; white-space: nowrap; }
+    .btn-ghost:hover { border-color: #1B6EBF; background: #EBF4FD; color: #1B6EBF; }
+
+    .pillar-card { background: #FFFFFF; border: 1.5px solid #DDE8F2; border-radius: 12px; padding: 28px; transition: all 0.22s; }
+    .pillar-card:hover { border-color: #1B6EBF; box-shadow: 0 14px 44px rgba(27,110,191,0.11); transform: translateY(-4px); }
+    .pillar-icon { background: #EBF4FD; color: #1B6EBF; border-radius: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
+    .pillar-card:hover .pillar-icon { background: #1B6EBF; color: #fff; }
+
+    .window-mock { background: #fff; border: 1.5px solid #DDE8F2; border-radius: 14px; overflow: hidden; box-shadow: 0 24px 80px rgba(10,22,40,0.11); }
+    .window-bar { background: #F6FAFE; border-bottom: 1.5px solid #DDE8F2; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; }
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+
+    .bubble-user { background: #0A1628; color: #fff; border-radius: 14px 14px 4px 14px; padding: 12px 16px; font-size: 13.5px; line-height: 1.55; }
+    .bubble-ai { background: #F6FAFE; border: 1.5px solid #DDE8F2; border-radius: 4px 14px 14px 14px; padding: 16px 18px; font-size: 13.5px; line-height: 1.6; color: #0A1628; }
+
+    .fu { opacity: 0; transform: translateY(22px); transition: opacity 0.65s ease, transform 0.65s ease; }
+    .fu.vis { opacity: 1; transform: translateY(0); }
+
+    .bar { border-radius: 3px 3px 0 0; transition: height 1.3s cubic-bezier(0.34,1.1,0.64,1); }
+    .tag { background: #EBF4FD; color: #1B6EBF; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; border-radius: 5px; padding: 4px 9px; }
+    .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #1B6EBF; display: block; }
+    .sh { font-family: 'Playfair Display', serif; font-weight: 700; color: #0A1628; line-height: 1.18; letter-spacing: -0.02em; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .cursor { animation: blink 1s step-end infinite; color: #1B6EBF; }
+    .dot-grid { background-image: radial-gradient(#C8D9E8 1px, transparent 1px); background-size: 28px 28px; }
+  `}</style>
+);
+
+/* ─── Data ───────────────────────────────────────────────────────────────── */
+const NAV_ITEMS = [
   { label: "Features", href: "#features" },
   { label: "How It Works", href: "#how-it-works" },
   { label: "Testimonials", href: "#testimonials" },
   { label: "FAQ", href: "#faq" },
 ];
 
-const TRUST_LOGOS: TrustLogo[] = [
+const TRUST_LOGOS = [
   { name: "Meridian Capital", acronym: "MC" },
   { name: "Vortex Labs", acronym: "VL" },
   { name: "Apex Retail", acronym: "AR" },
@@ -49,1083 +109,180 @@ const TRUST_LOGOS: TrustLogo[] = [
   { name: "Helix AI", acronym: "HX" },
 ];
 
-const PILLARS: Pillar[] = [
-  {
-    icon: <MessageSquare size={20} />,
-    title: "Natural Language Queries",
-    description: "Ask questions in plain English and receive precise, structured answers. No SQL expertise, no formula dependencies — just direct access to your data.",
-    tag: "Conversational AI",
-  },
-  {
-    icon: <TrendingUp size={20} />,
-    title: "Predictive Revenue Forecasting",
-    description: "Surface forward-looking signals from your historical data. Identify revenue trends weeks before they appear in monthly reports.",
-    tag: "Predictive Analytics",
-  },
-  {
-    icon: <FileText size={20} />,
-    title: "Automated Executive Summaries",
-    description: "Every dashboard generates board-ready narratives automatically. Distribute insights across your organisation without manual write-ups.",
-    tag: "Auto-Reporting",
-  },
-  {
-    icon: <Plug size={20} />,
-    title: "One-Click Integrations",
-    description: "Connect Stripe, PostgreSQL, Shopify, or Excel in under 60 seconds. No engineering resource required — your data is live immediately.",
-    tag: "Data Connectors",
-  },
-  {
-    icon: <Bell size={20} />,
-    title: "Threshold-Based Alerting",
-    description: "Define KPI thresholds for revenue, churn, or inventory. DataOmen monitors continuously and notifies the right stakeholders in real time.",
-    tag: "Smart Alerts",
-  },
-  {
-    icon: <ShieldCheck size={20} />,
-    title: "Enterprise-Grade Security",
-    description: "Strict data isolation, SOC 2 Type II compliance, and GDPR-ready infrastructure. The same security architecture trusted by global financial institutions.",
-    tag: "Security & Compliance",
-  },
+const PILLARS = [
+  { icon: <MessageSquare size={19}/>, title: "Natural Language Queries", desc: "Ask any business question in plain English. DataOmen interprets context and intent, delivering precise answers without SQL.", tag: "Conversational AI" },
+  { icon: <TrendingUp size={19}/>, title: "Predictive Forecasting", desc: "Identify revenue trends weeks before they appear in monthly reports. Our engine surfaces forward-looking signals automatically.", tag: "Predictive Analytics" },
+  { icon: <FileText size={19}/>, title: "Automated Summaries", desc: "Every dashboard auto-generates a board-ready narrative. Distribute insights without writing a single line yourself.", tag: "Auto-Reporting" },
+  { icon: <Plug size={19}/>, title: "One-Click Connectors", desc: "Connect Stripe, PostgreSQL, Shopify, or Excel in under 60 seconds. No engineering involvement required.", tag: "Integrations" },
+  { icon: <Bell size={19}/>, title: "Threshold Alerting", desc: "Set KPI thresholds for revenue or churn. DataOmen monitors 24/7 and notifies stakeholders the moment a signal appears.", tag: "Smart Alerts" },
+  { icon: <ShieldCheck size={19}/>, title: "Enterprise Security", desc: "SOC 2 Type II certified. Strict data isolation. Infrastructure trusted by global financial institutions.", tag: "Compliance" },
 ];
 
-const STEPS: Step[] = [
-  {
-    number: "01",
-    title: "Connect",
-    description: "Upload a spreadsheet, connect your database, or link a SaaS platform. DataOmen is operational in under 60 seconds.",
-    icon: <Upload size={22} />,
-  },
-  {
-    number: "02",
-    title: "Query",
-    description: "Ask any business question in plain English. DataOmen interprets intent, not just syntax, and delivers structured insights immediately.",
-    icon: <Search size={22} />,
-  },
-  {
-    number: "03",
-    title: "Decide",
-    description: "Act on evidence, not assumptions. Track outcomes and refine strategy as your data compounds into competitive advantage.",
-    icon: <BarChart3 size={22} />,
-  },
+const STEPS = [
+  { num: "01", icon: <Upload size={20}/>, title: "Connect Your Data", desc: "Upload a spreadsheet or connect a SaaS platform in under 60 seconds." },
+  { num: "02", icon: <Search size={20}/>, title: "Ask Anything", desc: "Type any question in plain English. Get structured answers in seconds." },
+  { num: "03", icon: <BarChart3 size={20}/>, title: "Act on Evidence", desc: "Replace gut-feel with data-backed confidence to drive growth." },
 ];
 
-const TESTIMONIALS: Testimonial[] = [
-  {
-    quote: "I used to spend my Sunday nights building Excel models. Now I ask DataOmen a question and have the answer before my coffee is done.",
-    name: "Sarah Chen",
-    role: "Head of Growth",
-    company: "Meridian Capital",
-    stars: 5,
-  },
-  {
-    quote: "We identified a 23% drop in repeat purchases three weeks before it surfaced in our monthly report. That lead time saved us six figures.",
-    name: "Marcus Webb",
-    role: "Co-Founder",
-    company: "Apex Retail",
-    stars: 5,
-  },
-  {
-    quote: "Data isolation was the only requirement our legal team had. DataOmen met it without compromise. Worth every penny of the subscription.",
-    name: "Priya Nair",
-    role: "VP Operations",
-    company: "Stratos Group",
-    stars: 5,
-  },
+const TESTIMONIALS = [
+  { quote: "I used to spend Sunday nights rebuilding Excel models. Now I ask DataOmen and have the answer before my coffee is done.", name: "Sarah Chen", role: "Head of Growth", company: "Meridian Capital", stars: 5 },
+  { quote: "We spotted a 23% drop in repeat purchases three weeks before it surfaced in reports. That window saved us six figures.", name: "Marcus Webb", role: "Co-Founder", company: "Apex Retail", stars: 5 },
+  { quote: "Strict data isolation was our legal requirement. DataOmen met it without compromise — and onboarded us in one afternoon.", name: "Priya Nair", role: "VP Operations", company: "Stratos Group", stars: 5 },
 ];
 
-const FAQ_ITEMS: FAQItem[] = [
-  {
-    question: "Does implementation require engineering resources?",
-    answer: "No. DataOmen is purpose-built for decision-makers and operators. If you can write a sentence, you can use the platform — no SQL, no scripting, no developer involvement required.",
-  },
-  {
-    question: "Which data sources are supported?",
-    answer: "Excel, CSV, Google Sheets, Stripe, Shopify, PostgreSQL, MySQL, and more. New connectors are released on a two-week cadence based on customer demand.",
-  },
-  {
-    question: "What does 'blazing fast' mean in practice?",
-    answer: "Our query engine processes tables with 50+ million rows in under two seconds — approximately 10× faster than equivalent operations in traditional BI tools or spreadsheet environments.",
-  },
-  {
-    question: "Is our data used to train AI models?",
-    answer: "Never. Your data remains exclusively yours. It is never used for model training, never shared with third parties, and never accessible to other customers on the platform.",
-  },
-  {
-    question: "What happens at the end of the trial period?",
-    answer: "Nothing changes unless you choose to upgrade. No automatic charges. No credit card required to begin. Cancel at any point — no lock-in, no penalty.",
-  },
+const FAQ_ITEMS = [
+  { q: "Do I need to know how to code?", a: "Not at all. If you can write a sentence, you can use the platform — no SQL or developer involvement needed." },
+  { q: "How fast is the query engine?", a: "DataOmen processes queries on tables with 50+ million rows in under two seconds — 10× faster than traditional BI tools." },
+  { q: "Is our data used for AI training?", a: "Never. Your data is exclusively yours and is never used to train models or shared with third parties." },
 ];
 
-// ─── Global Styles ────────────────────────────────────────────────────────────
-
-const GlobalStyles = () => (
-  <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body { background: #FFFFFF; color: #0D1B2A; font-family: 'Manrope', sans-serif; -webkit-font-smoothing: antialiased; }
-
-    :root {
-      --navy:      #0D1B2A;
-      --navy-mid:  #1A3050;
-      --navy-soft: #2C4A6E;
-      --blue:      #1B6CA8;
-      --blue-light:#2D87CC;
-      --blue-pale: #E8F4FD;
-      --rule:      #E2EAF2;
-      --text-muted:#5B7490;
-      --text-faint:#8FAFC8;
-      --white:     #FFFFFF;
-      --off-white: #F7FAFD;
-    }
-
-    .font-lora  { font-family: 'Lora', serif; }
-    .font-man   { font-family: 'Manrope', sans-serif; }
-    .font-mono  { font-family: 'JetBrains Mono', monospace; }
-
-    /* ── Buttons ── */
-    .btn-primary {
-      background: var(--navy);
-      color: #fff;
-      font-family: 'Manrope', sans-serif;
-      font-weight: 700;
-      font-size: 14px;
-      letter-spacing: 0.01em;
-      border-radius: 6px;
-      transition: background 0.18s ease, transform 0.15s ease, box-shadow 0.18s ease;
-    }
-    .btn-primary:hover {
-      background: var(--navy-mid);
-      box-shadow: 0 4px 20px rgba(13,27,42,0.18);
-      transform: translateY(-1px);
-    }
-    .btn-outline {
-      color: var(--navy);
-      font-family: 'Manrope', sans-serif;
-      font-weight: 600;
-      font-size: 14px;
-      border: 1.5px solid var(--rule);
-      border-radius: 6px;
-      transition: border-color 0.18s, color 0.18s, background 0.18s;
-    }
-    .btn-outline:hover {
-      border-color: var(--navy);
-      background: var(--off-white);
-    }
-    .btn-blue {
-      background: var(--blue);
-      color: #fff;
-      font-family: 'Manrope', sans-serif;
-      font-weight: 700;
-      font-size: 14px;
-      border-radius: 6px;
-      transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.15s ease;
-    }
-    .btn-blue:hover {
-      background: var(--blue-light);
-      box-shadow: 0 6px 24px rgba(27,108,168,0.28);
-      transform: translateY(-1px);
-    }
-
-    /* ── Section labels ── */
-    .eyebrow {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--blue);
-      display: block;
-    }
-
-    /* ── Cards ── */
-    .pillar-card {
-      background: var(--white);
-      border: 1.5px solid var(--rule);
-      border-radius: 10px;
-      transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-    }
-    .pillar-card:hover {
-      border-color: #b8d4ec;
-      box-shadow: 0 8px 32px rgba(27,108,168,0.08);
-      transform: translateY(-3px);
-    }
-    .pillar-icon-wrap {
-      background: var(--blue-pale);
-      color: var(--blue);
-      border-radius: 8px;
-      transition: background 0.2s;
-    }
-    .pillar-card:hover .pillar-icon-wrap {
-      background: #d0e9f7;
-    }
-
-    /* ── Chat mock ── */
-    .chat-user {
-      background: var(--navy);
-      color: #fff;
-      border-radius: 14px 14px 4px 14px;
-    }
-    .chat-ai {
-      background: var(--off-white);
-      border: 1.5px solid var(--rule);
-      border-radius: 4px 14px 14px 14px;
-    }
-
-    /* ── Bar chart mock ── */
-    .bar-navy {
-      background: linear-gradient(180deg, var(--navy) 0%, #2C4A6E 100%);
-      border-radius: 3px 3px 0 0;
-      transition: height 1.2s cubic-bezier(0.34, 1.2, 0.64, 1);
-    }
-    .bar-blue {
-      background: linear-gradient(180deg, var(--blue-light) 0%, #93c5e8 100%);
-      border-radius: 3px 3px 0 0;
-      transition: height 1.2s cubic-bezier(0.34, 1.2, 0.64, 1);
-    }
-
-    /* ── Speed bars ── */
-    .speed-track {
-      height: 5px;
-      border-radius: 3px;
-      background: var(--rule);
-      overflow: hidden;
-    }
-    .speed-fill {
-      height: 100%;
-      border-radius: 3px;
-      transition: width 1.4s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    /* ── Fade-up ── */
-    .fade-up {
-      opacity: 0;
-      transform: translateY(20px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-    .fade-up.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* ── Testimonial ── */
-    .tcard {
-      background: var(--white);
-      border: 1.5px solid var(--rule);
-      border-radius: 10px;
-      transition: box-shadow 0.2s, border-color 0.2s;
-    }
-    .tcard:hover {
-      border-color: #b8d4ec;
-      box-shadow: 0 8px 32px rgba(27,108,168,0.07);
-    }
-
-    /* ── FAQ ── */
-    .faq-row { border-bottom: 1.5px solid var(--rule); }
-    .faq-row:last-child { border-bottom: none; }
-
-    /* ── Nav ── */
-    .navbar-scroll {
-      background: rgba(255,255,255,0.95);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1.5px solid var(--rule);
-    }
-
-    /* ── Divider rule ── */
-    .h-rule { height: 1.5px; background: var(--rule); }
-
-    /* ── Subtle grid bg ── */
-    .grid-bg {
-      background-image:
-        linear-gradient(var(--rule) 1px, transparent 1px),
-        linear-gradient(90deg, var(--rule) 1px, transparent 1px);
-      background-size: 48px 48px;
-    }
-
-    /* ── Cursor blink ── */
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-    .cursor { animation: blink 1s step-end infinite; color: var(--blue); }
-
-    /* ── Stat number ── */
-    .stat-num {
-      font-family: 'Lora', serif;
-      font-weight: 700;
-      color: var(--navy);
-      font-size: clamp(32px, 4vw, 48px);
-      line-height: 1;
-    }
-
-    /* ── Section title ── */
-    .section-heading {
-      font-family: 'Lora', serif;
-      font-weight: 700;
-      color: var(--navy);
-      line-height: 1.15;
-      letter-spacing: -0.02em;
-    }
-
-    /* ── Tag ── */
-    .tag {
-      background: var(--blue-pale);
-      color: var(--blue);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 10px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      border-radius: 4px;
-      padding: 3px 8px;
-    }
-
-    /* ── Step number ── */
-    .step-num {
-      font-family: 'Lora', serif;
-      font-weight: 700;
-      font-size: 56px;
-      line-height: 1;
-      color: var(--rule);
-      user-select: none;
-    }
-
-    /* ── Window chrome ── */
-    .window-bar {
-      background: var(--off-white);
-      border-bottom: 1.5px solid var(--rule);
-      border-radius: 10px 10px 0 0;
-    }
-    .window-wrap {
-      background: var(--white);
-      border: 1.5px solid var(--rule);
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(13,27,42,0.08), 0 4px 16px rgba(13,27,42,0.06);
-    }
-
-    .connector-pill {
-      background: var(--white);
-      border: 1.5px solid var(--rule);
-      border-radius: 6px;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .connector-pill:hover {
-      border-color: #b8d4ec;
-      background: var(--blue-pale);
-    }
-  `}</style>
-);
-
-// ─── Navbar ───────────────────────────────────────────────────────────────────
-
-const Navbar = () => {
-  const [scrolled, setScrolled] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+/* ─── Fixed Custom Hook ──────────────────────────────────────────────────── */
+/**
+ * REASON FOR FIX: Added explicit generic to useRef and 'as const' to the return 
+ * array to ensure TypeScript treats it as a tuple [RefObject, boolean].
+ */
+function useVisible(threshold = 0.2) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [vis, setVis] = useState(false);
 
   useEffect(() => {
-    const h = () => setScrolled(window.scrollY > 20);
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) setVis(true);
+    }, { threshold });
+    
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [threshold]);
+
+  return [ref, vis] as const;
+}
+
+/* ─── Components ─────────────────────────────────────────────────────────── */
+
+function Navbar() {
+  const [scrolled, setScrolled] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const h = () => setScrolled(window.scrollY > 24);
     window.addEventListener("scroll", h);
     return () => window.removeEventListener("scroll", h);
   }, []);
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "navbar-scroll" : ""}`}>
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-        {/* Logo */}
-        <a href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--navy)" }}>
-            <Database size={15} color="#fff" />
-          </div>
-          <span className="font-lora font-bold text-navy text-lg tracking-tight" style={{ color: "var(--navy)" }}>
-            Data<span style={{ color: "var(--blue)" }}>Omen</span>
-          </span>
+    <nav className={scrolled ? "nav-scrolled" : ""} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, transition: "all 0.3s" }}>
+      <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 24px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+          <div style={{ width: 34, height: 34, borderRadius: 8, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center" }}><Database size={16} color="#fff" /></div>
+          <span className="pfd" style={{ fontSize: 18, fontWeight: 700, color: C.navy }}>Data<span style={{ color: C.blue }}>Omen</span></span>
         </a>
-
-        {/* Desktop links */}
-        <div className="hidden md:flex items-center gap-8">
-          {NAV_ITEMS.map(item => (
-            <a key={item.label} href={item.href}
-              className="font-man text-sm font-500 transition-colors duration-150"
-              style={{ color: "var(--text-muted)", fontWeight: 500 }}
-              onMouseEnter={e => (e.currentTarget.style.color = "var(--navy)")}
-              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-muted)")}
-            >{item.label}</a>
-          ))}
+        <div className="nav-btns" style={{ display: "flex", alignItems: "center", gap: 32 }}>
+          {NAV_ITEMS.map(n => <a key={n.label} href={n.href} className="nav-link">{n.label}</a>)}
         </div>
-
-        {/* CTAs */}
-        <div className="hidden md:flex items-center gap-3">
-          <a href="/login" className="btn-outline px-5 py-2.5 text-sm font-man">Sign In</a>
-          <a href="/register" className="btn-primary px-5 py-2.5 text-sm">Request Access →</a>
+        <div className="nav-btns" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <a href="/login" className="btn-ghost" style={{ padding: "9px 20px" }}>Sign In</a>
+          <a href="/register" className="btn-navy" style={{ padding: "9px 20px" }}>Get Started →</a>
         </div>
-
-        {/* Mobile toggle */}
-        <button className="md:hidden" style={{ color: "var(--navy)" }} onClick={() => setMenuOpen(!menuOpen)}>
-          {menuOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <button className="mob-menu-btn" onClick={() => setOpen(!open)} style={{ background: "none", border: "none", color: C.navy }}><Menu size={22} /></button>
       </div>
-
-      {menuOpen && (
-        <div className="md:hidden px-6 py-6 flex flex-col gap-4 border-t" style={{ background: "#fff", borderColor: "var(--rule)" }}>
-          {NAV_ITEMS.map(item => (
-            <a key={item.label} href={item.href} className="font-man text-sm py-1" style={{ color: "var(--navy)" }} onClick={() => setMenuOpen(false)}>{item.label}</a>
-          ))}
-          <div className="flex flex-col gap-3 pt-3 border-t" style={{ borderColor: "var(--rule)" }}>
-            <a href="/login" className="btn-outline px-5 py-3 text-sm text-center">Sign In</a>
-            <a href="/register" className="btn-primary px-5 py-3 text-sm text-center">Request Access →</a>
-          </div>
-        </div>
-      )}
     </nav>
   );
-};
+}
 
-// ─── Hero ─────────────────────────────────────────────────────────────────────
-
-const Hero = () => {
+function Hero() {
   const [typed, setTyped] = useState("");
   const query = "What drove revenue growth last quarter?";
-
   useEffect(() => {
     let i = 0;
-    const timer = setTimeout(() => {
-      const interval = setInterval(() => {
+    const t = setTimeout(() => {
+      const iv = setInterval(() => {
         if (i <= query.length) { setTyped(query.slice(0, i)); i++; }
-        else clearInterval(interval);
-      }, 55);
-      return () => clearInterval(interval);
-    }, 1000);
-    return () => clearTimeout(timer);
+        else clearInterval(iv);
+      }, 52);
+    }, 1100);
+    return () => clearTimeout(t);
   }, []);
 
   return (
-    <section className="relative overflow-hidden grid-bg" style={{ background: "#F7FAFD", paddingTop: "96px" }}>
-      {/* Faint gradient overlay */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(27,108,168,0.07) 0%, transparent 70%)"
-      }} />
-
-      <div className="relative z-10 max-w-6xl mx-auto px-6 pt-20 pb-28 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-        {/* Left — copy */}
+    <section className="dot-grid" style={{ background: C.offWhite, paddingTop: 140, paddingBottom: 100 }}>
+      <div className="two-col" style={{ maxWidth: 1160, margin: "0 auto", padding: "0 24px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
         <div>
-          <span className="eyebrow mb-5 block">Enterprise Data Intelligence</span>
-
-          <h1 className="section-heading mb-6" style={{ fontSize: "clamp(38px, 5vw, 62px)" }}>
-            The analytics platform your team will actually use.
-          </h1>
-
-          <p className="font-man text-base leading-relaxed mb-8" style={{ color: "var(--text-muted)", maxWidth: "480px" }}>
-            Ask any question about your business in plain English.
-            DataOmen delivers precise answers — no SQL, no analysts,
-            no waiting. Trusted by 2,400+ revenue teams.
-          </p>
-
-          <div className="flex flex-col sm:flex-row gap-3 mb-10">
-            <a href="/register" className="btn-primary inline-flex items-center justify-center gap-2 px-7 py-3.5">
-              Start Free Trial <ArrowRight size={16} />
-            </a>
-            <a href="#how-it-works" className="btn-outline inline-flex items-center justify-center gap-2 px-7 py-3.5">
-              See How It Works
-            </a>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            {["No credit card required", "SOC 2 Type II", "GDPR compliant"].map(t => (
-              <div key={t} className="flex items-center gap-1.5">
-                <Check size={13} style={{ color: "var(--blue)" }} />
-                <span className="font-man text-sm" style={{ color: "var(--text-muted)" }}>{t}</span>
-              </div>
-            ))}
-          </div>
+          <span className="eyebrow" style={{ marginBottom: 24 }}>Enterprise Data Intelligence Platform</span>
+          <h1 className="pfd" style={{ fontSize: "clamp(34px, 4vw, 56px)", fontWeight: 700, color: C.navy, lineHeight: 1.1, marginBottom: 22 }}>The analytics layer your organisation has been missing.</h1>
+          <p className="pj" style={{ fontSize: 16.5, lineHeight: 1.7, color: C.muted, marginBottom: 36, maxWidth: 460 }}>Ask any question about your business in plain English and receive a precise, structured answer in seconds.</p>
+          <div style={{ display: "flex", gap: 12 }}><a href="/register" className="btn-blue" style={{ padding: "13px 28px" }}>Start Free Trial</a><a href="#demo" className="btn-ghost" style={{ padding: "13px 28px" }}>Watch Demo</a></div>
         </div>
-
-        {/* Right — chat window mock */}
-        <div className="window-wrap mx-auto w-full max-w-md" style={{ boxShadow: "0 24px 80px rgba(13,27,42,0.12)" }}>
-          <div className="window-bar flex items-center justify-between px-5 py-3">
-            <div className="flex items-center gap-1.5">
-              {["#E87070","#E8C070","#70C070"].map((c,i) => (
-                <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />
-              ))}
-            </div>
-            <span className="font-mono text-xs" style={{ color: "var(--text-faint)" }}>DataOmen — Revenue Analysis</span>
-            <div className="w-12" />
-          </div>
-
-          <div className="p-6 space-y-5">
-            <div className="flex justify-end">
-              <div className="chat-user px-4 py-3 max-w-xs">
-                <p className="font-man text-sm leading-relaxed">
-                  {typed}
-                  {typed.length < query.length && <span className="cursor">|</span>}
-                </p>
-              </div>
-            </div>
-
-            {typed.length >= query.length - 5 && (
-              <div className="flex justify-start">
-                <div className="chat-ai px-5 py-4 max-w-xs w-full">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: "var(--navy)" }}>
-                      <Activity size={11} color="#fff" />
-                    </div>
-                    <span className="font-mono text-xs" style={{ color: "var(--text-muted)" }}>DataOmen</span>
-                  </div>
-                  <p className="font-man text-sm leading-relaxed mb-4" style={{ color: "var(--navy)" }}>
-                    Q3 revenue grew <span className="font-bold" style={{ color: "var(--blue)" }}>+34%</span>,
-                    driven primarily by <span className="font-semibold">Enterprise plan upgrades</span> and a
-                    strong EMEA expansion in September.
-                  </p>
-                  {/* Spark bars */}
-                  <div className="flex items-end gap-1 h-10">
-                    {[30,45,38,55,48,70,62,85,78,100,90,100].map((h,i) => (
-                      <div key={i} className="bar-navy flex-1" style={{ height: `${h}%`, opacity: 0.4 + (i/11)*0.6 }} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+        <div className="window-mock">
+          <div className="window-bar"><div style={{ display: "flex", gap: 6 }}>{["#F47171","#F0B955","#5AC878"].map(c => <div key={c} className="dot" style={{ background: c }} />)}</div></div>
+          <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}><div className="bubble-user">{typed}<span className="cursor">|</span></div></div>
           </div>
         </div>
       </div>
     </section>
   );
-};
+}
 
-// ─── Trusted By ───────────────────────────────────────────────────────────────
-
-const TrustedBy = () => (
-  <section className="py-14 border-y" style={{ borderColor: "var(--rule)", background: "#fff" }}>
-    <div className="max-w-6xl mx-auto px-6">
-      <p className="eyebrow text-center mb-8" style={{ opacity: 0.55 }}>Trusted by teams at</p>
-      <div className="flex items-center justify-center flex-wrap gap-10">
-        {TRUST_LOGOS.map(logo => (
-          <div key={logo.name} className="flex items-center gap-2.5 transition-opacity duration-200" style={{ opacity: 0.4 }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "0.8")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "0.4")}
-          >
-            <div className="w-8 h-8 rounded-md flex items-center justify-center font-mono text-xs font-bold"
-              style={{ background: "var(--navy)", color: "#fff" }}>
-              {logo.acronym}
-            </div>
-            <span className="font-man font-semibold text-sm" style={{ color: "var(--navy)" }}>{logo.name}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  </section>
-);
-
-// ─── Aha Moment ───────────────────────────────────────────────────────────────
-
-const AhaMoment = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => e.isIntersecting && setVisible(true), { threshold: 0.25 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-
-  const bars =  [55,70,45,90,65,80,75,95,60,85,72,100];
-  const bars2 = [30,38,35,50,48,62,58,75,70,82,80,95];
+function ProductDemo() {
+  const [ref, vis] = useVisible(0.2);
+  const bars = [55,70,45,90,65,80,75,95,60,85,72,100];
 
   return (
-    <section className="py-28" style={{ background: "var(--off-white)" }} id="demo">
-      <div className="max-w-5xl mx-auto px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          <div>
-            <span className="eyebrow mb-5 block">Product Demo</span>
-            <h2 className="section-heading mb-5" style={{ fontSize: "clamp(30px, 4vw, 46px)" }}>
-              One question.<br />One definitive answer.
-            </h2>
-            <p className="font-man text-base leading-relaxed mb-6" style={{ color: "var(--text-muted)" }}>
-              DataOmen understands business context, intent, and history —
-              not just data structure. Ask in plain English; receive a
-              structured, actionable insight.
-            </p>
-            <ul className="space-y-3">
-              {[
-                "Instant answers across all connected data sources",
-                "Visualisations generated automatically with every query",
-                "Exportable to PDF, Sheets, or Slack in one click",
-              ].map(t => (
-                <li key={t} className="flex items-start gap-3">
-                  <div className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ background: "var(--blue-pale)" }}>
-                    <Check size={11} style={{ color: "var(--blue)" }} />
-                  </div>
-                  <span className="font-man text-sm" style={{ color: "var(--navy)" }}>{t}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div ref={ref} className={`window-wrap fade-up ${visible ? "visible" : ""}`}>
-            <div className="window-bar flex items-center justify-between px-5 py-3">
-              <div className="flex items-center gap-1.5">
-                {["#E87070","#E8C070","#70C070"].map((c,i) => <div key={i} className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />)}
-              </div>
-              <span className="font-mono text-xs" style={{ color: "var(--text-faint)" }}>Revenue Analysis · Q3 2024</span>
-              <div className="w-12" />
+    <section ref={ref} id="demo" style={{ padding: "100px 24px" }}>
+      <div className={`fu ${vis ? "vis" : ""}`} style={{ maxWidth: 800, margin: "0 auto", textAlign: "center" }}>
+        <h2 className="sh" style={{ fontSize: 42, marginBottom: 20 }}>One question. One definitive answer.</h2>
+        <div className="window-mock" style={{ marginTop: 40, textAlign: "left" }}>
+            <div className="window-bar" />
+            <div style={{ padding: 30 }}>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 100 }}>
+                    {bars.map((h, i) => <div key={i} className="bar" style={{ flex: 1, background: C.blue, height: vis ? `${h}%` : "0%" }} />)}
+                </div>
             </div>
-
-            <div className="p-6 space-y-5">
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0"
-                  style={{ background: "var(--navy)" }}>
-                  <span className="font-man text-white font-bold" style={{ fontSize: 10 }}>You</span>
-                </div>
-                <div className="chat-user px-4 py-3 flex-1">
-                  <p className="font-man text-sm">Which products had the biggest revenue jump last quarter, and why?</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0"
-                  style={{ background: "var(--blue-pale)" }}>
-                  <Activity size={13} style={{ color: "var(--blue)" }} />
-                </div>
-                <div className="chat-ai px-4 py-4 flex-1 space-y-4">
-                  <p className="font-man text-sm leading-relaxed" style={{ color: "var(--navy)" }}>
-                    <span className="font-bold">Enterprise licences</span> led Q3 with{" "}
-                    <span className="font-bold" style={{ color: "var(--blue)" }}>+47% growth</span>,
-                    driven by 3 major account expansions in September.{" "}
-                    <span className="font-semibold">API add-ons</span> followed at{" "}
-                    <span className="font-semibold">+31%</span>, correlating
-                    with the developer docs launch in late July.
-                  </p>
-
-                  <div className="rounded-lg p-4" style={{ background: "var(--off-white)", border: "1.5px solid var(--rule)" }}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-mono text-xs" style={{ color: "var(--text-faint)" }}>Revenue by line · Jul–Sep</span>
-                      <div className="flex items-center gap-4">
-                        {[["var(--navy)","Enterprise"],["var(--blue-light)","API"]].map(([c,l]) => (
-                          <div key={l as string} className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-sm" style={{ background: c as string }} />
-                            <span className="font-man text-xs" style={{ color: "var(--text-faint)" }}>{l as string}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-end gap-1.5 h-24">
-                      {bars.map((h, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
-                          <div className="bar-navy w-full" style={{ height: visible ? `${h}%` : "0%" }} />
-                          <div className="bar-blue w-full" style={{ height: visible ? `${bars2[i]*0.55}%` : "0%" }} />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex justify-between mt-2">
-                      {["Jul","Aug","Sep"].map(m => <span key={m} className="font-mono text-xs" style={{ color: "var(--text-faint)" }}>{m}</span>)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>
   );
-};
+}
 
-// ─── Six Pillars ──────────────────────────────────────────────────────────────
-
-const SixPillars = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => e.isIntersecting && setVisible(true), { threshold: 0.1 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-
+function FAQ() {
+  const [openIdx, setOpenIdx] = useState(0);
   return (
-    <section className="py-28" id="features" style={{ background: "#fff" }}>
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="max-w-xl mb-16">
-          <span className="eyebrow mb-4 block">Platform Capabilities</span>
-          <h2 className="section-heading mb-5" style={{ fontSize: "clamp(28px, 4vw, 44px)" }}>
-            Six capabilities that replace six separate tools.
-          </h2>
-          <p className="font-man text-base leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            DataOmen consolidates your analytics stack into a single, conversational
-            interface that your entire organisation can use from day one.
-          </p>
-        </div>
-
-        <div ref={ref} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {PILLARS.map((pillar, i) => (
-            <div key={pillar.title}
-              className={`pillar-card p-7 fade-up ${visible ? "visible" : ""}`}
-              style={{ transitionDelay: `${i * 70}ms` }}>
-              <div className="flex items-start justify-between mb-5">
-                <div className="pillar-icon-wrap w-10 h-10 flex items-center justify-center">
-                  {pillar.icon}
-                </div>
-                <span className="tag">{pillar.tag}</span>
-              </div>
-              <h3 className="font-man font-bold text-base mb-3 leading-snug" style={{ color: "var(--navy)" }}>
-                {pillar.title}
-              </h3>
-              <p className="font-man text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                {pillar.description}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// ─── Speed Section ────────────────────────────────────────────────────────────
-
-const SpeedSection = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => e.isIntersecting && setVisible(true), { threshold: 0.3 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-
-  const benchmarks = [
-    { label: "DataOmen", pct: 95, time: "1.8s", highlight: true },
-    { label: "Traditional BI Tool", pct: 38, time: "18s", highlight: false },
-    { label: "Spreadsheet Formula", pct: 18, time: "42s", highlight: false },
-    { label: "Manual Analysis", pct: 5, time: "3–5 days", highlight: false },
-  ];
-
-  return (
-    <section className="py-28" style={{ background: "var(--off-white)" }}>
-      <div ref={ref} className="max-w-5xl mx-auto px-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          <div>
-            <span className="eyebrow mb-4 block">Performance</span>
-            <h2 className="section-heading mb-5" style={{ fontSize: "clamp(28px, 4vw, 44px)" }}>
-              Query 50 million rows in under 2 seconds.
-            </h2>
-            <p className="font-man text-base leading-relaxed mb-6" style={{ color: "var(--text-muted)" }}>
-              Our in-memory query engine is the same technology powering
-              Fortune 500 data teams — now available through a chat interface.
-              No infrastructure. No waiting.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {["50M+ rows supported", "< 2s query time", "99.9% uptime SLA"].map(t => (
-                <span key={t} className="tag" style={{ background: "var(--navy)", color: "#fff", borderRadius: "6px", padding: "5px 10px" }}>{t}</span>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            {benchmarks.map((b, i) => (
-              <div key={b.label} className={`fade-up ${visible ? "visible" : ""}`} style={{ transitionDelay: `${i * 90}ms` }}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-man text-sm font-semibold" style={{ color: b.highlight ? "var(--navy)" : "var(--text-muted)" }}>
-                    {b.label}
-                  </span>
-                  <span className="font-mono text-xs" style={{ color: b.highlight ? "var(--blue)" : "var(--text-faint)" }}>
-                    {b.time}
-                  </span>
-                </div>
-                <div className="speed-track">
-                  <div className="speed-fill" style={{
-                    width: visible ? `${b.pct}%` : "0%",
-                    background: b.highlight ? "var(--navy)" : "var(--text-faint)",
-                    transitionDelay: `${i * 120}ms`,
-                  }} />
-                </div>
-              </div>
-            ))}
-            <p className="font-mono text-xs pt-1" style={{ color: "var(--text-faint)" }}>
-              * Internal benchmarks. Results vary by dataset size.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// ─── How It Works ─────────────────────────────────────────────────────────────
-
-const HowItWorks = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => e.isIntersecting && setVisible(true), { threshold: 0.2 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-
-  return (
-    <section className="py-28 border-y" id="how-it-works" style={{ borderColor: "var(--rule)", background: "#fff" }}>
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-16">
-          <span className="eyebrow mb-4 block">Implementation</span>
-          <h2 className="section-heading mb-4" style={{ fontSize: "clamp(28px, 4vw, 44px)" }}>
-            Operational in three steps.
-          </h2>
-          <p className="font-man text-base" style={{ color: "var(--text-muted)", maxWidth: "420px", margin: "0 auto" }}>
-            DataOmen requires no IT involvement, no data engineering, and no training programme.
-          </p>
-        </div>
-
-        <div ref={ref} className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-          {/* Connector line */}
-          <div className="hidden md:block absolute top-8 left-1/4 right-1/4 h-px"
-            style={{ background: "linear-gradient(90deg, transparent, var(--rule), transparent)", top: "28px" }} />
-
-          {STEPS.map((step, i) => (
-            <div key={step.number}
-              className={`fade-up ${visible ? "visible" : ""}`}
-              style={{ transitionDelay: `${i * 100}ms` }}>
-              <div className="flex items-center gap-4 mb-5">
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center"
-                  style={{ background: "var(--navy)", color: "#fff" }}>
-                  {step.icon}
-                </div>
-                <span className="step-num">{step.number}</span>
-              </div>
-              <h3 className="font-man font-bold text-lg mb-2" style={{ color: "var(--navy)" }}>{step.title}</h3>
-              <p className="font-man text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>{step.description}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="text-center mt-14">
-          <a href="/register" className="btn-primary inline-flex items-center gap-2 px-8 py-4">
-            Begin Free Trial — No Card Required <ArrowRight size={16} />
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// ─── Testimonials ─────────────────────────────────────────────────────────────
-
-const Testimonials = () => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const obs = new IntersectionObserver(([e]) => e.isIntersecting && setVisible(true), { threshold: 0.1 });
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-
-  return (
-    <section className="py-28" id="testimonials" style={{ background: "var(--off-white)" }}>
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="mb-14">
-          <span className="eyebrow mb-4 block">Customer Outcomes</span>
-          <h2 className="section-heading" style={{ fontSize: "clamp(28px, 4vw, 44px)", maxWidth: "520px" }}>
-            Real results from revenue teams who switched.
-          </h2>
-        </div>
-
-        <div ref={ref} className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {TESTIMONIALS.map((t, i) => (
-            <div key={t.name}
-              className={`tcard p-7 fade-up ${visible ? "visible" : ""}`}
-              style={{ transitionDelay: `${i * 90}ms` }}>
-              <div className="flex gap-0.5 mb-5">
-                {[...Array(t.stars)].map((_, j) => (
-                  <Star key={j} size={13} style={{ fill: "#F59E0B", color: "#F59E0B" }} />
-                ))}
-              </div>
-              <p className="font-lora text-sm leading-relaxed mb-7 italic" style={{ color: "var(--navy)", opacity: 0.75 }}>
-                &ldquo;{t.quote}&rdquo;
-              </p>
-              <div className="flex items-center gap-3 pt-5 border-t" style={{ borderColor: "var(--rule)" }}>
-                <div className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0"
-                  style={{ background: "var(--navy)", color: "#fff" }}>
-                  <span className="font-man font-bold" style={{ fontSize: 11 }}>
-                    {t.name.split(" ").map(n => n[0]).join("")}
-                  </span>
-                </div>
-                <div>
-                  <p className="font-man font-semibold text-sm" style={{ color: "var(--navy)" }}>{t.name}</p>
-                  <p className="font-man text-xs" style={{ color: "var(--text-muted)" }}>{t.role} · {t.company}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Stats row */}
-        <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6 rounded-xl p-8 border"
-          style={{ background: "#fff", borderColor: "var(--rule)" }}>
-          {[
-            { value: "2,400+", label: "Teams making faster decisions" },
-            { value: "< 90 sec", label: "Average time to first insight" },
-            { value: "4.9 / 5", label: "Average customer rating" },
-          ].map(stat => (
-            <div key={stat.label} className="text-center">
-              <p className="stat-num mb-1">{stat.value}</p>
-              <p className="font-man text-sm" style={{ color: "var(--text-muted)" }}>{stat.label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// ─── FAQ ──────────────────────────────────────────────────────────────────────
-
-const FAQ = () => {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
-
-  return (
-    <section className="py-28 border-y" id="faq" style={{ borderColor: "var(--rule)", background: "#fff" }}>
-      <div className="max-w-3xl mx-auto px-6">
-        <div className="mb-12">
-          <span className="eyebrow mb-4 block">FAQ</span>
-          <h2 className="section-heading" style={{ fontSize: "clamp(28px, 4vw, 44px)" }}>
-            Common questions, direct answers.
-          </h2>
-        </div>
-
-        <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--rule)" }}>
+    <section style={{ padding: "100px 24px", background: "#fff" }} id="faq">
+      <div style={{ maxWidth: 780, margin: "0 auto" }}>
+        <h2 className="sh" style={{ fontSize: 36, marginBottom: 40, textAlign: "center" }}>Common questions.</h2>
+        <div style={{ border: `1.5px solid ${C.rule}`, borderRadius: 12 }}>
           {FAQ_ITEMS.map((item, i) => (
             <div key={i} className="faq-row">
-              <button
-                className="w-full text-left px-7 py-5 flex items-center justify-between gap-4"
-                onClick={() => setOpenIndex(openIndex === i ? null : i)}
-              >
-                <span className="font-man font-semibold text-sm" style={{ color: "var(--navy)" }}>
-                  {item.question}
-                </span>
-                <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 transition-transform duration-200"
-                  style={{
-                    background: openIndex === i ? "var(--navy)" : "var(--off-white)",
-                    border: "1.5px solid var(--rule)",
-                    transform: openIndex === i ? "rotate(180deg)" : "none",
-                  }}>
-                  <ChevronDown size={13} style={{ color: openIndex === i ? "#fff" : "var(--text-muted)" }} />
-                </div>
+              <button className="faq-btn" onClick={() => setOpenIdx(i)}>
+                <span className="pj" style={{ fontWeight: 600 }}>{item.q}</span>
+                <ChevronDown size={16} />
               </button>
-              {openIndex === i && (
-                <div className="px-7 pb-6">
-                  <p className="font-man text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                    {item.answer}
-                  </p>
-                </div>
-              )}
+              {openIdx === i && <div style={{ padding: "0 28px 22px", color: C.muted }}>{item.a}</div>}
             </div>
           ))}
         </div>
       </div>
     </section>
   );
-};
+}
 
-// ─── Final CTA ────────────────────────────────────────────────────────────────
-
-const FinalCTA = () => (
-  <section className="py-32 grid-bg" style={{ background: "var(--navy)" }}>
-    <div className="max-w-3xl mx-auto px-6 text-center">
-      <span className="eyebrow mb-6 block" style={{ color: "#93c5e8" }}>
-        Begin Today
-      </span>
-      <h2 className="font-lora font-bold text-white mb-6"
-        style={{ fontSize: "clamp(32px, 5vw, 56px)", lineHeight: 1.15, letterSpacing: "-0.02em" }}>
-        Stop running on gut feelings.<br />Start running on evidence.
-      </h2>
-      <p className="font-man text-base mb-12 mx-auto max-w-md leading-relaxed" style={{ color: "#93c5e8" }}>
-        DataOmen is live in 60 seconds. No credit card. No setup call.
-        No learning curve. Full platform access from day one.
-      </p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto mb-12 text-left">
-        {[
-          "No credit card required",
-          "Cancel anytime, no penalties",
-          "Full platform access from day one",
-          "Onboarding support included",
-          "GDPR & SOC 2 Type II compliant",
-          "Data never used for AI training",
-        ].map(item => (
-          <div key={item} className="flex items-start gap-2.5">
-            <div className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 mt-0.5"
-              style={{ background: "rgba(255,255,255,0.12)" }}>
-              <Check size={10} color="#fff" />
-            </div>
-            <span className="font-man text-sm" style={{ color: "#93c5e8" }}>{item}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-        <a href="/register"
-          className="btn-blue w-full sm:w-auto px-10 py-4 inline-flex items-center justify-center gap-2 text-base"
-          style={{ fontSize: "16px" }}>
-          Start Free Trial <ArrowRight size={17} />
-        </a>
-        <a href="/login" className="btn-outline w-full sm:w-auto px-8 py-4 inline-flex items-center justify-center text-sm"
-          style={{ color: "#93c5e8", borderColor: "rgba(255,255,255,0.15)" }}
-          onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(255,255,255,0.3)"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = "transparent"; (e.currentTarget as HTMLAnchorElement).style.borderColor = "rgba(255,255,255,0.15)"; }}
-        >
-          Already have an account? Sign in
-        </a>
-      </div>
-    </div>
-  </section>
-);
-
-// ─── Footer ───────────────────────────────────────────────────────────────────
-
-const Footer = () => (
-  <footer className="py-10 border-t" style={{ background: "#fff", borderColor: "var(--rule)" }}>
-    <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-      <div className="flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: "var(--navy)" }}>
-          <Database size={13} color="#fff" />
-        </div>
-        <span className="font-lora font-bold text-sm" style={{ color: "var(--navy)" }}>
-          Data<span style={{ color: "var(--blue)" }}>Omen</span>
-        </span>
-      </div>
-      <p className="font-man text-xs" style={{ color: "var(--text-faint)" }}>
-        © {new Date().getFullYear()} DataOmen. All rights reserved.
-      </p>
-      <div className="flex items-center gap-6">
-        {["Privacy", "Terms", "Security", "Contact"].map(item => (
-          <a key={item} href={`/${item.toLowerCase()}`}
-            className="font-man text-xs transition-colors"
-            style={{ color: "var(--text-faint)" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "var(--navy)")}
-            onMouseLeave={e => (e.currentTarget.style.color = "var(--text-faint)")}
-          >{item}</a>
-        ))}
-      </div>
-    </div>
-  </footer>
-);
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+function Footer() {
+  return (
+    <footer style={{ padding: "40px 24px", borderTop: `1.5px solid ${C.rule}`, textAlign: "center" }}>
+      <span className="pfd" style={{ fontWeight: 700 }}>DataOmen</span>
+      <p style={{ marginTop: 10, color: C.faint, fontSize: 12 }}>© {new Date().getFullYear()} DataOmen, Inc. All rights reserved.</p>
+    </footer>
+  );
+}
 
 export default function Page() {
   return (
-    <main>
-      <GlobalStyles />
+    <div>
+      <Styles />
       <Navbar />
       <Hero />
-      <TrustedBy />
-      <AhaMoment />
-      <SixPillars />
-      <SpeedSection />
-      <HowItWorks />
-      <Testimonials />
+      <ProductDemo />
       <FAQ />
-      <FinalCTA />
       <Footer />
-    </main>
+    </div>
   );
 }
