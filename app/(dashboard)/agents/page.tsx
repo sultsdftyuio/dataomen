@@ -1,7 +1,7 @@
 // app/(dashboard)/agents/page.tsx
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { 
   Bot, 
   Search, 
@@ -12,7 +12,8 @@ import {
   Square,
   Database,
   Clock,
-  Trash2
+  Trash2,
+  Sparkles
 } from 'lucide-react'
 
 import { Button } from "@/components/ui/button"
@@ -21,6 +22,8 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,109 +42,100 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 
-// 1. Type Safety: Strict interfaces for our multi-tenant Agent structures
+// 1. Strict Type Definitions
 interface Agent {
   id: string;
   name: string;
   description: string;
   model: string;
   status: 'Active' | 'Paused' | 'Training' | 'Failed';
-  linkedDatasets: number;
+  dataSources: string[];
   lastActive: string;
   themeColor: string;
 }
 
-// 2. Initial State: Standardized entirely on GPT-5 Nano
-const INITIAL_AGENTS: Agent[] = [
-  {
-    id: 'agt_1',
-    name: 'Revenue Forecaster',
-    description: 'Analyzes Stripe API data to predict MRR churn, expansion, and seasonal trends.',
-    model: 'gpt-5-nano',
-    status: 'Active',
-    linkedDatasets: 2,
-    lastActive: 'Just now',
-    themeColor: 'bg-blue-500',
+// Agent Templates for Quick Deployment
+const AGENT_TEMPLATES = {
+  custom: { name: "", prompt: "" },
+  revenue: { 
+    name: "Revenue Analyst", 
+    prompt: "Monitor Stripe MRR and churn metrics. Generate weekly forecasts and flag sudden downgrades in enterprise tiers." 
   },
-  {
-    id: 'agt_2',
-    name: 'Anomaly Detector',
-    description: 'Continuously scans PostgreSQL telemetry events for sudden drops in user activity.',
-    model: 'gpt-5-nano',
-    status: 'Active',
-    linkedDatasets: 4,
-    lastActive: '5 mins ago',
-    themeColor: 'bg-purple-500',
+  telemetry: { 
+    name: "Telemetry Watchdog", 
+    prompt: "Continuously scan PostgreSQL event logs. Alert immediately if core session activity drops by >10% within a 1-hour window." 
   },
-  {
-    id: 'agt_3',
-    name: 'Marketing ROI Analyst',
-    description: 'Cross-references ad spend in DuckDB with user acquisition metrics.',
-    model: 'gpt-5-nano',
-    status: 'Paused',
-    linkedDatasets: 1,
-    lastActive: '2 days ago',
-    themeColor: 'bg-amber-500',
-  },
-  {
-    id: 'agt_4',
-    name: 'Support Sentiment Engine',
-    description: 'Categorizes incoming Zendesk tickets and flags high-risk enterprise churn.',
-    model: 'gpt-5-nano',
-    status: 'Training',
-    linkedDatasets: 3,
-    lastActive: 'Processing...',
-    themeColor: 'bg-emerald-500',
+  support: { 
+    name: "Sentiment Engine", 
+    prompt: "Analyze incoming customer support data. Classify tickets by sentiment and auto-route high-risk churn threats to human managers." 
   }
-]
+}
 
-// Pre-defined themes for dynamic assignment
 const THEME_COLORS = ['bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-cyan-500']
 
 export default function AgentsPage() {
-  const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS)
+  // Start with an empty fleet instead of the 4 mock agents
+  const [agents, setAgents] = useState<Agent[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isDeployOpen, setIsDeployOpen] = useState(false)
 
-  // New Agent Form State
+  // Deploy Form State
+  const [selectedTemplate, setSelectedTemplate] = useState<keyof typeof AGENT_TEMPLATES>('custom')
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
+  const [sources, setSources] = useState({ postgres: true, stripe: false, duckdb: false })
 
-  // 3. Compute Efficiency: Memoized client-side filtering (Vectorized masking approach)
+  // Auto-fill form when a template is selected
+  useEffect(() => {
+    if (selectedTemplate !== 'custom') {
+      setNewName(AGENT_TEMPLATES[selectedTemplate].name)
+      setNewDescription(AGENT_TEMPLATES[selectedTemplate].prompt)
+      
+      // Smart source toggling based on template
+      if (selectedTemplate === 'revenue') setSources({ postgres: false, stripe: true, duckdb: true })
+      if (selectedTemplate === 'telemetry') setSources({ postgres: true, stripe: false, duckdb: false })
+    }
+  }, [selectedTemplate])
+
   const filteredAgents = useMemo(() => {
     return agents.filter(agent => 
       agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.model.toLowerCase().includes(searchQuery.toLowerCase())
+      agent.description.toLowerCase().includes(searchQuery.toLowerCase())
     )
   }, [searchQuery, agents])
 
-  // Agent State Mutations
   const handleDeployAgent = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newName.trim() || !newDescription.trim()) return
 
     const randomColor = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)]
     
+    // Count active data sources
+    const activeSources = Object.entries(sources).filter(([_, isActive]) => isActive).map(([name]) => name)
+
     const newAgent: Agent = {
       id: `agt_${Date.now()}`,
       name: newName.trim(),
       description: newDescription.trim(),
-      model: 'gpt-5-nano', // Forced engine standardization
-      status: 'Training',  // New agents start in training
-      linkedDatasets: 0,
+      model: 'gpt-5-nano',
+      status: 'Training', 
+      dataSources: activeSources,
       lastActive: 'Initializing...',
       themeColor: randomColor,
     }
 
     setAgents(prev => [newAgent, ...prev])
+    
+    // Reset Form
+    setSelectedTemplate('custom')
     setNewName('')
     setNewDescription('')
+    setSources({ postgres: true, stripe: false, duckdb: false })
     setIsDeployOpen(false)
   }
 
   const toggleAgentStatus = (id: string, currentStatus: string) => {
-    if (currentStatus === 'Training' || currentStatus === 'Failed') return; // Cannot toggle these states
+    if (currentStatus === 'Training' || currentStatus === 'Failed') return; 
     const newStatus = currentStatus === 'Active' ? 'Paused' : 'Active';
     setAgents(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
   }
@@ -150,7 +144,6 @@ export default function AgentsPage() {
     setAgents(prev => prev.filter(a => a.id !== id))
   }
 
-  // Helper for status badge rendering
   const getStatusBadge = (status: Agent['status']) => {
     switch (status) {
       case 'Active':
@@ -184,40 +177,90 @@ export default function AgentsPage() {
               Quick Deploy
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[500px]">
             <form onSubmit={handleDeployAgent}>
               <DialogHeader>
-                <DialogTitle>Deploy Analytical Agent</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" /> Deploy Analytical Agent
+                </DialogTitle>
                 <DialogDescription>
-                  Configure a new GPT-5 Nano worker to monitor your connected schemas.
+                  Configure a new autonomous worker to monitor your connected data.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              
+              <div className="grid gap-5 py-5">
+                {/* 1. Template Selector */}
+                <div className="grid gap-2">
+                  <Label>Agent Template</Label>
+                  <Select value={selectedTemplate} onValueChange={(val: any) => setSelectedTemplate(val)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="custom">Blank Canvas (Custom)</SelectItem>
+                      <SelectItem value="revenue">Revenue Analyst</SelectItem>
+                      <SelectItem value="telemetry">Telemetry Watchdog</SelectItem>
+                      <SelectItem value="support">Support Sentiment Engine</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* 2. Basic Info */}
                 <div className="grid gap-2">
                   <Label htmlFor="name">Agent Name</Label>
                   <Input 
                     id="name" 
-                    placeholder="e.g., Support Ticket Classifier" 
+                    placeholder="e.g., Marketing ROI Tracker" 
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     required
                   />
                 </div>
+
+                {/* 3. The Core Instructions */}
                 <div className="grid gap-2">
-                  <Label htmlFor="description">Instructions / Core Task</Label>
+                  <Label htmlFor="description">System Prompt / Instructions</Label>
                   <Textarea 
                     id="description" 
-                    placeholder="Describe the specific analytical task this agent will perform..."
-                    className="resize-none h-20"
+                    placeholder="Describe exactly what data this agent should look at and what it should do..."
+                    className="resize-none h-24 text-sm"
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
                     required
                   />
                 </div>
+
+                {/* 4. Data Access Controls */}
+                <div className="space-y-3 pt-2">
+                  <Label>Granted Data Access</Label>
+                  <div className="grid gap-3 bg-muted/30 p-4 rounded-lg border border-border/50">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="ds-pg" className="font-normal cursor-pointer flex items-center gap-2">
+                        <Database className="w-4 h-4 text-muted-foreground" /> PostgreSQL (Production)
+                      </Label>
+                      <Switch id="ds-pg" checked={sources.postgres} onCheckedChange={(c) => setSources(s => ({...s, postgres: c}))} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="ds-st" className="font-normal cursor-pointer flex items-center gap-2">
+                        <Database className="w-4 h-4 text-muted-foreground" /> Stripe (Billing)
+                      </Label>
+                      <Switch id="ds-st" checked={sources.stripe} onCheckedChange={(c) => setSources(s => ({...s, stripe: c}))} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="ds-dd" className="font-normal cursor-pointer flex items-center gap-2">
+                        <Database className="w-4 h-4 text-muted-foreground" /> DuckDB (Local Warehouse)
+                      </Label>
+                      <Switch id="ds-dd" checked={sources.duckdb} onCheckedChange={(c) => setSources(s => ({...s, duckdb: c}))} />
+                    </div>
+                  </div>
+                </div>
+
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDeployOpen(false)}>Cancel</Button>
-                <Button type="submit">Initialize Agent</Button>
+                <Button type="submit" disabled={!newName.trim() || !newDescription.trim()}>
+                  Initialize Agent
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -225,14 +268,14 @@ export default function AgentsPage() {
       </div>
 
       <div className="flex flex-col gap-6">
-        {/* Toolbar Section */}
+        {/* Toolbar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full gap-4">
           <h2 className="text-xl font-semibold">Active Fleet</h2>
           <div className="relative w-full max-w-sm">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search agents by name, task, or model..."
+              placeholder="Search agents by name or task..."
               className="pl-9 bg-card shadow-sm"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -240,18 +283,18 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        {/* Agents Grid Section */}
+        {/* Agents Grid */}
         {filteredAgents.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center border rounded-xl border-dashed p-12 text-center bg-muted/10 animate-in fade-in duration-300">
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-4">
               <Bot className="h-6 w-6 text-muted-foreground/60" />
             </div>
-            <h3 className="text-lg font-medium text-foreground">No agents found</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-sm mb-4">
-              We couldn't find any agents matching your search query, or your fleet is empty.
+            <h3 className="text-lg font-medium text-foreground">No agents deployed yet</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-sm mb-6">
+              Your autonomous workforce is currently empty. Deploy your first agent to start analyzing your data streams.
             </p>
-            <Button variant="outline" onClick={() => setIsDeployOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" /> Deploy First Agent
+            <Button onClick={() => setIsDeployOpen(true)} className="shadow-sm">
+              <Plus className="h-4 w-4 mr-2" /> Quick Deploy
             </Button>
           </div>
         ) : (
@@ -267,7 +310,6 @@ export default function AgentsPage() {
                       <CardTitle className="text-base tracking-tight truncate max-w-[140px] sm:max-w-[180px]" title={agent.name}>
                         {agent.name}
                       </CardTitle>
-                      {/* Enforces GPT-5 Nano Display */}
                       <p className="text-xs font-mono text-muted-foreground mt-0.5">{agent.model}</p>
                     </div>
                   </div>
@@ -280,14 +322,17 @@ export default function AgentsPage() {
                   <CardDescription className="text-sm text-foreground/80 leading-relaxed line-clamp-3">
                     {agent.description}
                   </CardDescription>
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {agent.dataSources.map(ds => (
+                      <Badge key={ds} variant="secondary" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
+                        {ds === 'postgres' ? 'Postgres' : ds === 'stripe' ? 'Stripe' : 'DuckDB'}
+                      </Badge>
+                    ))}
+                  </div>
                 </CardContent>
 
                 <CardFooter className="pt-4 border-t border-border/40 bg-muted/20 flex items-center justify-between">
                   <div className="flex items-center gap-4 text-xs text-muted-foreground font-medium">
-                    <div className="flex items-center gap-1.5" title="Linked Datasets">
-                      <Database className="h-3.5 w-3.5" />
-                      {agent.linkedDatasets}
-                    </div>
                     <div className="flex items-center gap-1.5" title="Last Active">
                       <Activity className="h-3.5 w-3.5" />
                       {agent.lastActive}
@@ -320,7 +365,7 @@ export default function AgentsPage() {
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem className="cursor-pointer">
-                        <Settings className="mr-2 h-4 w-4" /> Configuration
+                        <Settings className="mr-2 h-4 w-4" /> Edit Configuration
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
