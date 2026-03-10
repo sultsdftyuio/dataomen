@@ -287,7 +287,8 @@ async def get_sync_status(
 # Routes: List & Query
 # ------------------------------------------------------------------------------
 
-@router.get("/", response_model=List[DatasetResponse])
+# FIX: Dropped the trailing slash to prevent FastAPI 307 redirects breaking the Next.js proxy
+@router.get("", response_model=List[DatasetResponse])
 def list_datasets(
     context: TenantContext = Depends(verify_tenant_auth),
     db: Session = Depends(get_db)
