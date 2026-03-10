@@ -1,7 +1,9 @@
 # api/auth.py
 import os
 import logging
+import jwt  # Requires: pip install PyJWT
 from typing import Dict, Any, Optional
+from dataclasses import dataclass
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import create_client, Client
@@ -9,8 +11,6 @@ from dotenv import load_dotenv
 
 # Configure logging for observability
 logger = logging.getLogger(__name__)
-
-# Load environment variables (mostly for local development)
 load_dotenv()
 
 # FastAPI security scheme
@@ -19,65 +19,70 @@ security = HTTPBearer()
 # Singleton placeholder for the Supabase client
 _supabase_client: Optional[Client] = None
 
+@dataclass
+class TenantContext:
+    """
+    Object-Oriented Security: Encapsulates the verified user and tenant data.
+    Ensures downstream services rely on strict properties, preventing dictionary-key typos 
+    and accidental data leakage across tenants.
+    """
+    user_id: str
+    tenant_id: str
+    email: Optional[str] = None
+    app_metadata: Optional[Dict[str, Any]] = None
+
 
 def get_supabase_client() -> Client:
-    """
-    Lazy initialization of the Supabase client.
-    Prevents Uvicorn startup crashes in CI/CD or PaaS environments (Render/Vercel)
-    by delaying instantiation until the client is actually needed.
-    """
+    """Lazy initialization of the Supabase client to prevent startup crashes."""
     global _supabase_client
     if _supabase_client is None:
         url = os.getenv("SUPABASE_URL")
-        # Support both service role (current setup) and anon key fallbacks
         key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         
         if not url or not key:
-            logger.error("Supabase environment variables are missing. Initialization failed.")
-            raise RuntimeError(
-                "Supabase configuration is missing. "
-                "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in your deployment environment."
-            )
+            raise RuntimeError("Supabase URL or Key is missing from environment.")
             
-        try:
-            _supabase_client = create_client(url, key)
-            logger.info("Supabase client initialized successfully.")
-        except Exception as e:
-            logger.error(f"Failed to create Supabase client: {e}")
-            raise RuntimeError(f"Could not initialize Supabase client: {e}")
-            
+        _supabase_client = create_client(url, key)
     return _supabase_client
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """
-    Verifies the JWT token using Supabase and returns the user object.
-    Throws a 401 if the token is invalid or expired.
+    SaaS Performance Upgrade: Attempts stateless JWT verification first.
+    Local decoding reduces auth latency to <1ms, preventing API rate limits.
     """
-    # 1. Safely retrieve the client
+    token = credentials.credentials
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+
+    # FAST PATH: Stateless Local Verification
+    if jwt_secret:
+        try:
+            # Supabase uses HS256 for signing standard JWTs
+            decoded_payload = jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False} # Supabase audience varies by project config
+            )
+            return decoded_payload
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Stateless JWT verification failed: {e}")
+            # Fallthrough to network check if local decoding fails
+            
+    # SLOW PATH: Network Verification (Fallback)
     try:
         client = get_supabase_client()
-    except RuntimeError as e:
-        logger.error(f"Auth configuration error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Authentication service is currently misconfigured on the server."
-        )
-
-    # 2. Verify the credentials
-    token = credentials.credentials
-    try:
-        # Verify the JWT using Supabase Auth (stateless & efficient)
         user_response = client.auth.get_user(token)
         
         if not user_response or not user_response.user:
             raise ValueError("Invalid user token")
             
-        # Return the user object as a dictionary for downstream processing
         return user_response.user.model_dump()
         
     except Exception as e:
-        logger.warning(f"Authentication failed: {str(e)}")
+        logger.warning(f"Network Authentication failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -85,24 +90,30 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         )
 
 
-def verify_tenant(user: Dict[str, Any] = Depends(get_current_user)) -> str:
+def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> TenantContext:
     """
-    Security by Design: Extracts and validates the tenant ID for multi-tenant isolation.
-    Assuming tenant_id is either mapped to the user ID directly (for single-user tenants)
-    or stored inside the user's app_metadata/user_metadata via Supabase.
+    Security by Design: Validates and locks the context to a specific tenant.
+    Inject this dependency into your routes to enforce strict multi-tenant boundaries.
     """
-    # Option A: The user IS the tenant (B2C/solo SaaS approach)
-    tenant_id = user.get("id")
+    # Handle both stateless (JWT payload 'sub') and network (Supabase dump 'id') formats
+    user_id = user_payload.get("sub") or user_payload.get("id")
+    email = user_payload.get("email")
+    app_metadata = user_payload.get("app_metadata", {})
     
-    # Option B: The tenant_id is inside app_metadata (B2B SaaS approach)
-    # metadata = user.get("app_metadata", {})
-    # tenant_id = metadata.get("tenant_id")
+    # Priority 1: B2B Organization/Tenant ID from metadata
+    # Priority 2: B2C Solo User ID
+    tenant_id = app_metadata.get("tenant_id") or user_id
     
-    if not tenant_id:
-        logger.error("Tenant ID missing for authenticated user.")
+    if not tenant_id or not user_id:
+        logger.error(f"Tenant isolation failed. Missing ID for payload.")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User does not belong to a valid tenant.",
+            detail="User does not belong to a valid tenant setup.",
         )
         
-    return str(tenant_id)
+    return TenantContext(
+        user_id=str(user_id),
+        tenant_id=str(tenant_id),
+        email=email,
+        app_metadata=app_metadata
+    )

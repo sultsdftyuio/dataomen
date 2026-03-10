@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 import duckdb
-import polars as pl  # Replaced pandas with strictly vectorized Polars
+import polars as pl  # Strictly vectorized Polars for high-performance transit
 
 from api.database import get_db
 # Ensure this matches your actual auth import
@@ -85,6 +85,42 @@ def async_audit_logger(db: Session, tenant_id: str, agent_id: str, query: str, s
     except Exception as e:
         logger.error(f"Failed to write async audit log: {str(e)}")
 
+# --- Dynamic Data Mounter (The Hybrid Performance Paradigm) ---
+def mount_dataset_to_duckdb(con: duckdb.DuckDBPyConnection, file_path: str, view_name: str) -> None:
+    """
+    Maps the optimal vectorized reading strategy based on file format ("Julius AI" capability).
+    Leverages DuckDB's native out-of-core scanners for big data formats,
+    and falls back to Polars for complex formats like Excel via Zero-Copy Arrow transfer.
+    """
+    # Clean the path just in case it's a signed S3 URL with query parameters
+    base_path = file_path.split('?')[0]
+    ext = base_path.lower().split('.')[-1] if '.' in base_path else 'parquet'
+    
+    try:
+        if ext in ['csv', 'tsv', 'txt']:
+            # sample_size=-1 forces DuckDB to scan the whole file to prevent type hallucinations on messy CSVs
+            con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_csv_auto('{file_path}', sample_size=-1)")
+        
+        elif ext in ['json', 'ndjson', 'jsonl']:
+            con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_json_auto('{file_path}')")
+            
+        elif ext in ['xlsx', 'xls', 'ods']:
+            # The Modular Strategy: Use Polars to ingest Excel (requires 'fastexcel' or 'calamine' in requirements.txt)
+            df = pl.read_excel(file_path)
+            
+            # Zero-copy transfer to DuckDB memory space using PyArrow underneath
+            arrow_table = df.to_arrow()
+            con.register(f"{view_name}_arrow_temp", arrow_table)
+            con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM {view_name}_arrow_temp")
+            
+        else:
+            # Default to Parquet (Analytics Gold Standard)
+            con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{file_path}')")
+            
+    except Exception as e:
+        logger.error(f"Failed to mount dataset format '{ext}' at '{file_path}': {str(e)}")
+        raise RuntimeError(f"Could not parse file format natively. Please ensure the file is not corrupted. Detail: {str(e)}")
+
 # --- Routes ---
 @router.post("/ephemeral")
 async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, Any]:
@@ -102,7 +138,9 @@ async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, A
         # Phase 1.3 Programmatic RLS: Bind path to a view. The LLM never sees the physical path.
         view_name = "ephemeral_data"
         con = duckdb.connect(':memory:')
-        con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{safe_path}')")
+        
+        # Seamlessly mount the dynamically detected file type
+        mount_dataset_to_duckdb(con, safe_path, view_name)
 
         # Call Semantic Router
         sql_query = await nl2sql_generator.generate_sql(
@@ -175,7 +213,9 @@ async def execute_persistent_query(
         # Phase 1.3 Programmatic RLS: 
         # Create an immutable view. LLM targets `dataset_view` and physically cannot read other paths.
         view_name = f"dataset_{dataset.id.replace('-', '_')}"
-        con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{query_path}')")
+        
+        # Seamlessly mount the dynamically detected file type
+        mount_dataset_to_duckdb(con, query_path, view_name)
 
         # 4. AI Orchestration: Contextual RAG
         sql_query = await nl2sql_generator.generate_sql(

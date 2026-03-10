@@ -30,9 +30,10 @@ class NL2SQLGenerator:
     Generates declarative chart specifications (Vega-Lite) when visualizations are requested.
     """
 
-    def __init__(self, llm_client: Any):
+    def __init__(self, llm_client: Any = None):
         """
         Dependency injection for the LLM client (swappable for OpenAI, Anthropic, etc.)
+        Defaults to None to allow late-binding during app initialization (Modular Strategy).
         """
         self.llm = llm_client
 
@@ -70,12 +71,16 @@ class NL2SQLGenerator:
         self, 
         prompt: str, 
         schemas: List[Dict[str, Any]], 
-        history: List[Dict[str, Any]]
+        history: List[Dict[str, Any]] = None
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Generates the SQL and optional chart config based on the user's prompt and active context.
         """
+        if self.llm is None:
+            raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
+            
         logger.info("Generating DuckDB SQL execution plan.")
+        history = history or []
         
         system_prompt = self._build_system_prompt(schemas)
         
@@ -105,6 +110,9 @@ class NL2SQLGenerator:
         If the Compute Engine fails to execute the query (e.g., syntax error, column not found),
         this method feeds the error back to the LLM for immediate self-correction.
         """
+        if self.llm is None:
+            raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
+            
         logger.warning("Initiating SQL Auto-Correction loop.")
         
         system_prompt = self._build_system_prompt(schemas)
@@ -136,3 +144,10 @@ class NL2SQLGenerator:
         except Exception as e:
             logger.error(f"Auto-correction failed: {str(e)}")
             raise RuntimeError("Could not self-correct the query based on the database error.")
+
+# ==========================================
+# Singleton Export (The Modular Strategy)
+# ==========================================
+# Export the configured instance to satisfy api/routes/query.py imports.
+# During startup (e.g., in main.py), inject your client: `nl2sql_generator.llm = my_structured_llm_client`
+nl2sql_generator = NL2SQLGenerator()
