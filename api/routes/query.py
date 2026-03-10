@@ -6,21 +6,19 @@ import time
 import uuid
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
 import duckdb
 import polars as pl  # Strictly vectorized Polars for high-performance transit
 
 from api.database import get_db
-# Ensure this matches your actual auth import
-try:
-    from api.auth import get_current_tenant
-except ImportError:
-    def get_current_tenant(): return "mock_tenant_id"
+
+# Core Security & SaaS Identity
+from api.auth import verify_tenant, TenantContext
+from models import Dataset, QueryHistory, Organization
 
 from api.services.storage_manager import storage_manager
 from api.services.nl2sql_generator import nl2sql_generator
-from models import Dataset, QueryHistory
 
 # Phase 2 Modules
 from api.services.metric_governance import metric_registry
@@ -73,7 +71,7 @@ def async_audit_logger(db: Session, tenant_id: str, agent_id: str, query: str, s
     try:
         log_entry = QueryHistory(
             tenant_id=tenant_id,
-            agent_id=agent_id,
+            agent_id=uuid.UUID(agent_id) if isinstance(agent_id, str) else agent_id,
             natural_query=query,
             generated_sql=sql,
             execution_time_ms=duration,
@@ -88,7 +86,7 @@ def async_audit_logger(db: Session, tenant_id: str, agent_id: str, query: str, s
 # --- Dynamic Data Mounter (The Hybrid Performance Paradigm) ---
 def mount_dataset_to_duckdb(con: duckdb.DuckDBPyConnection, file_path: str, view_name: str) -> None:
     """
-    Maps the optimal vectorized reading strategy based on file format ("Julius AI" capability).
+    Maps the optimal vectorized reading strategy based on file format.
     Leverages DuckDB's native out-of-core scanners for big data formats,
     and falls back to Polars for complex formats like Excel via Zero-Copy Arrow transfer.
     """
@@ -105,9 +103,8 @@ def mount_dataset_to_duckdb(con: duckdb.DuckDBPyConnection, file_path: str, view
             con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_json_auto('{file_path}')")
             
         elif ext in ['xlsx', 'xls', 'ods']:
-            # The Modular Strategy: Use Polars to ingest Excel (requires 'fastexcel' or 'calamine' in requirements.txt)
+            # The Modular Strategy: Use Polars to ingest Excel
             df = pl.read_excel(file_path)
-            
             # Zero-copy transfer to DuckDB memory space using PyArrow underneath
             arrow_table = df.to_arrow()
             con.register(f"{view_name}_arrow_temp", arrow_table)
@@ -123,7 +120,10 @@ def mount_dataset_to_duckdb(con: duckdb.DuckDBPyConnection, file_path: str, view
 
 # --- Routes ---
 @router.post("/ephemeral")
-async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, Any]:
+async def execute_ephemeral_query(
+    request: EphemeralQueryRequest,
+    tenant: TenantContext = Depends(verify_tenant) # Require auth even for ephemeral
+) -> Dict[str, Any]:
     """
     Tier 1 Execution: Purely in-memory, zero persistent footprint.
     Uses Ephemeral View mapping to execute against Vercel /tmp/.
@@ -131,7 +131,7 @@ async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, A
     try:
         safe_path = security_validate_ephemeral_path(request.ephemeral_path)
     except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
     start_time = time.time()
     try:
@@ -173,8 +173,8 @@ async def execute_ephemeral_query(request: EphemeralQueryRequest) -> Dict[str, A
         }
 
     except Exception as e:
-        logger.error(f"Ephemeral Query Execution failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Query computation failed: {str(e)}")
+        logger.error(f"[{tenant.tenant_id}] Ephemeral Query Execution failed: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Query computation failed: {str(e)}")
     finally:
         # Ensure memory is released gracefully
         if 'con' in locals(): con.close()
@@ -185,36 +185,43 @@ async def execute_persistent_query(
     request: PersistentQueryRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant)
+    tenant: TenantContext = Depends(verify_tenant) # SECURITY: Guaranteed Tenant ID
 ) -> Dict[str, Any]:
     """
     Tier 2/3 Execution: Connects securely to Supabase Storage, Cloudflare R2, or BYOS.
-    Executes heavily optimized Contextual RAG with Arrow/Polars vectorization and diagnostic offloading.
+    Enforces SaaS Billing Limits (Query Metering) before executing computation.
     """
     start_time = time.time()
     
-    # 1. STRICT Physical Jailing
+    # 1. SaaS Billing Guardrail: Query Metering
+    org = db.query(Organization).filter(Organization.id == tenant.tenant_id).first()
+    if not org:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
+        
+    if org.current_month_queries >= org.monthly_query_limit:
+        logger.warning(f"[{tenant.tenant_id}] Blocked query execution. Monthly limit reached.")
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED, 
+            detail=f"Monthly query limit exceeded ({org.monthly_query_limit} queries). Please upgrade your plan."
+        )
+
+    # 2. STRICT Physical Jailing
     dataset = db.query(Dataset).filter(
         Dataset.id == request.dataset_id,
-        Dataset.tenant_id == tenant_id
+        Dataset.tenant_id == tenant.tenant_id
     ).first()
     
     if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found or access denied.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or access denied.")
 
     sql_query = None
     try:
-        # 2. Storage Orchestration
+        # 3. Storage & Engine Orchestration
         query_path = storage_manager.get_duckdb_query_path(db, dataset)
-        
-        # 3. Engine Orchestration: Inject credentials
-        con = storage_manager.setup_duckdb_connection(db, tenant_id)
+        con = storage_manager.setup_duckdb_connection(db, tenant.tenant_id)
 
-        # Phase 1.3 Programmatic RLS: 
         # Create an immutable view. LLM targets `dataset_view` and physically cannot read other paths.
-        view_name = f"dataset_{dataset.id.replace('-', '_')}"
-        
-        # Seamlessly mount the dynamically detected file type
+        view_name = f"dataset_{str(dataset.id).replace('-', '_')}"
         mount_dataset_to_duckdb(con, query_path, view_name)
 
         # 4. AI Orchestration: Contextual RAG
@@ -233,8 +240,6 @@ async def execute_persistent_query(
         # Phase 2.2: Compute Router ("Noisy Neighbor" Defense)
         if ComputeRouter.requires_background_worker(sql_query):
             job_id = str(uuid.uuid4())
-            # In a full deployment, dispatch this to your Render workers via Celery/Redis here
-            # e.g., redis.rpush("tenant_jobs", json.dumps({"sql": sql_query}))
             return {
                 "status": "processing",
                 "execution_mode": "async",
@@ -249,10 +254,14 @@ async def execute_persistent_query(
         
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
-        # Phase 1.4: Immutable Audit Logging via Background Task (UI stays snappy)
+        # 6. Usage Metering & Auditing (Success)
+        org.current_month_queries += 1
+        db.commit()
+
+        # Phase 1.4: Immutable Audit Logging via Background Task
         if request.agent_id:
             background_tasks.add_task(
-                async_audit_logger, db, tenant_id, request.agent_id, 
+                async_audit_logger, db, tenant.tenant_id, request.agent_id, 
                 request.natural_query, sql_query, execution_time_ms, True
             )
 
@@ -280,15 +289,15 @@ async def execute_persistent_query(
 
     except Exception as e:
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
-        logger.error(f"Persistent Query Execution failed for tenant {tenant_id}: {str(e)}")
+        logger.error(f"[{tenant.tenant_id}] Persistent Query failed: {str(e)}")
         
         # Log failure for LLM fine-tuning via Background Task
         if request.agent_id and sql_query:
             background_tasks.add_task(
-                async_audit_logger, db, tenant_id, request.agent_id, 
+                async_audit_logger, db, tenant.tenant_id, request.agent_id, 
                 request.natural_query, sql_query, execution_time_ms, False, str(e)
             )
             
-        raise HTTPException(status_code=500, detail=f"Database engine error: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database engine error: {str(e)}")
     finally:
         if 'con' in locals(): con.close()
