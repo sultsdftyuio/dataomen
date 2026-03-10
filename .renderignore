@@ -1,0 +1,32 @@
+# .renderignore
+
+# 1. Ignore massive Node/Next.js frontend directories
+node_modules/
+.next/
+out/
+build/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# 2. Ignore local Python environments
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 3. Ignore local analytical data & DBs
+# (DuckDB files and raw datasets should NEVER be uploaded to the compute engine)
+*.duckdb
+*.duckdb.wal
+datasets/
+*.csv
+*.parquet
+*.json
+
+# 4. Ignore environment variables and Git history
+.env
+.git/
+.github/
