@@ -33,9 +33,10 @@ pydantic-settings>=2.2.0
 
 # --- Storage & Cloud Strategy (Modular Infrastructure) ---
 boto3>=1.34.0                 # S3/R2 interaction
-s3fs>=2023.12.2               # Filesystem interface for S3/R2
-# fsspec is intentionally omitted. s3fs tightly couples with specific fsspec versions.
-# Letting s3fs handle the fsspec dependency directly prevents pip resolution conflicts.
+# FIX: Pinned fsspec and s3fs exactly to identical stable versions
+# This prevents pip from requesting yanked upstream releases (like 2025.3.1)
+s3fs==2024.2.0                
+fsspec==2024.2.0              
 
 # --- Security & Utilities ---
 python-dotenv==1.0.1
