@@ -1,104 +1,76 @@
-import os
-import io
-import tempfile
-import logging
-from typing import BinaryIO
+# api/services/data_sanitizer.py
 
-import duckdb
-from fastapi import HTTPException
+import logging
+import hashlib
+import polars as pl
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-class EdgeDataSanitizer:
-    """
-    In-memory analytical gatekeeper. 
-    Guarantees type-safety, structural integrity, and multi-tenant security
-    by immediately converting raw uploads to strict Parquet format via DuckDB before storage.
-    """
-    
-    def __init__(self):
-        # Ephemeral, thread-local, in-memory DuckDB connection.
-        # Executes with blazing fast C++ vectorized operations.
-        self.conn = duckdb.connect(':memory:')
-        
-    def sanitize_and_convert(
-        self, 
-        file_stream: BinaryIO, 
-        tenant_id: str, 
-        file_extension: str = 'csv'
-    ) -> io.BytesIO:
-        """
-        Takes a raw byte stream, infers the schema, cleanses malformed rows, 
-        injects a tenant_id for zero-trust isolation, and returns a binary stream 
-        of a highly compressed Parquet file.
-        
-        :param file_stream: Raw file payload from the frontend.
-        :param tenant_id: The UUID of the uploading tenant (Security by Design).
-        :param file_extension: The source format (csv or json).
-        :return: io.BytesIO stream containing the ZSTD compressed Parquet.
-        """
-        file_extension = file_extension.lower()
-        if file_extension not in ['csv', 'json']:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Unsupported file format: {file_extension}. Only CSV and JSON are permitted."
-            )
+class DataSanitizer:
+    def __init__(self, tenant_id: str, integration_name: str):
+        self.tenant_id = tenant_id
+        self.integration_name = integration_name
+        self._tenant_salt = hashlib.sha256(tenant_id.encode()).hexdigest()[:16]
 
-        # We must use temporary files to hand off the byte stream to DuckDB's C++ I/O engine
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_input:
-            temp_input.write(file_stream.read())
-            input_path = temp_input.name
+    def sanitize_pii(self, df: pl.DataFrame, pii_columns: List[str]) -> pl.DataFrame:
+        existing_pii_cols = [col for col in pii_columns if col in df.columns]
+        if not existing_pii_cols:
+            return df
 
-        output_path = f"{input_path}_clean.parquet"
-
-        try:
-            # Build the C-compiled conversion query. 
-            # Security by Design: Hardcode the tenant_id directly into the Parquet file AST.
-            if file_extension == 'csv':
-                # read_csv_auto detects separators, headers, and dates automatically.
-                # sample_size=-1 forces a full pass to guarantee 100% type accuracy.
-                query = f"""
-                    COPY (
-                        SELECT *, '{tenant_id}' AS tenant_partition_id 
-                        FROM read_csv_auto('{input_path}', sample_size=-1, ignore_errors=true)
-                    ) TO '{output_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
-                """
-            else:
-                query = f"""
-                    COPY (
-                        SELECT *, '{tenant_id}' AS tenant_partition_id 
-                        FROM read_json_auto('{input_path}', format='array')
-                    ) TO '{output_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
-                """
-
-            # Execute the vectorized conversion
-            self.conn.execute(query)
-
-            # Read the optimized parquet back into an in-memory BytesIO stream
-            # This allows us to delete the temporary disk files immediately
-            with open(output_path, 'rb') as sanitized_file:
-                sanitized_stream = io.BytesIO(sanitized_file.read())
+        hash_exprs = []
+        for col in existing_pii_cols:
+            # Cast to string, trim, lower
+            hashed_col = pl.col(col).cast(pl.Utf8).str.to_lowercase().str.strip_chars()
             
-            # Reset stream pointer for the StorageManager to read from the beginning
-            sanitized_stream.seek(0)
-            return sanitized_stream
-
-        except duckdb.InvalidInputException as e:
-            logger.error(f"Data poisoning blocked at edge layer for tenant {tenant_id}: {e}")
-            raise HTTPException(
-                status_code=422, 
-                detail="Dataset rejected. File contains fundamentally malformed or unparseable rows."
-            )
-        except Exception as e:
-            logger.error(f"Sanitization pipeline failure for tenant {tenant_id}: {e}")
-            raise HTTPException(
-                status_code=500, 
-                detail="Internal analytical engine error during dataset validation."
-            )
+            # Use pl.when() to skip hashing if the string is empty or null
+            secure_hash_expr = pl.when(hashed_col.is_null() | (hashed_col == "")).then(pl.lit("")).otherwise(
+                pl.concat_str([hashed_col, pl.lit(self._tenant_salt)])
+                .hash()
+                .cast(pl.Utf8)
+            ).alias(col)
             
-        finally:
-            # Strict ephemeral cleanup to prevent OS disk bloat/memory leaks
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            if os.path.exists(output_path):
-                os.remove(output_path)
+            hash_exprs.append(secure_hash_expr)
+
+        return df.with_columns(hash_exprs)
+
+    def enforce_duckdb_schema(self, df: pl.DataFrame, expected_schema: Dict[str, Any]) -> pl.DataFrame:
+        cast_exprs = []
+        for col, expected_type in expected_schema.items():
+            if col not in df.columns:
+                cast_exprs.append(pl.lit(None).cast(self._map_to_polars_type(expected_type)).alias(col))
+                continue
+
+            current_type = df.schema[col]
+            target_type = self._map_to_polars_type(expected_type)
+            
+            if current_type != target_type:
+                if target_type in [pl.Float64, pl.Int64] and current_type == pl.Utf8:
+                    # FIX: Use regex to remove BOTH commas and currency symbols like $
+                    cast_exprs.append(
+                        pl.col(col).str.replace_all(r"[$,]", "").cast(target_type, strict=False).alias(col)
+                    )
+                else:
+                    cast_exprs.append(pl.col(col).cast(target_type, strict=False).alias(col))
+
+        if cast_exprs:
+            df = df.with_columns(cast_exprs)
+        return df
+
+    def _map_to_polars_type(self, semantic_type: str) -> pl.DataType:
+        type_mapping = {
+            "string": pl.Utf8, "varchar": pl.Utf8, "text": pl.Utf8,
+            "integer": pl.Int64, "int": pl.Int64,
+            "float": pl.Float64, "double": pl.Float64, "currency": pl.Float64,
+            "boolean": pl.Boolean, "bool": pl.Boolean,
+            "datetime": pl.Datetime("us", "UTC"), "timestamp": pl.Datetime("us", "UTC"),
+            "date": pl.Date,
+        }
+        return type_mapping.get(semantic_type.lower(), pl.Utf8)
+
+    def process_batch(self, df: pl.DataFrame, pii_columns: Optional[List[str]] = None, expected_schema: Optional[Dict[str, Any]] = None) -> pl.DataFrame:
+        if pii_columns:
+            df = self.sanitize_pii(df, pii_columns)
+        if expected_schema:
+            df = self.enforce_duckdb_schema(df, expected_schema)
+        return df

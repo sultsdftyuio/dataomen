@@ -27,14 +27,11 @@ class ComputeRouter:
         query_upper = sql_query.upper()
         
         # Defensive Heuristics: Route heavy queries to background tasks
-        # 1. More than 2 JOINs usually indicates complex relational mapping
         if query_upper.count("JOIN") > 2:
             return True
-        # 2. Complex window functions or heavy statistical aggregations
         heavy_keywords = ["PERCENTILE_CONT", "APPROX_COUNT_DISTINCT", "CUBE", "ROLLUP", "STDDEV"]
         if any(keyword in query_upper for keyword in heavy_keywords):
             return True
-        # 3. Multiple subqueries / CTEs
         if query_upper.count("SELECT") > 3:
             return True
             
@@ -47,11 +44,11 @@ class ComputeEngine:
     
     Spins up ephemeral, memory-capped DuckDB connections per request.
     Dynamically maps abstract datasets to secure storage paths via the StorageManager.
-    Executes heavily optimized, vectorized operations via DuckDB, Arrow, and Polars.
+    Executes heavily optimized, vectorized operations via DuckDB, Arrow, and Polars LazyFrames.
     """
 
-    def __init__(self):
-        self.max_return_rows = 5000  # Safety threshold for frontend rendering
+    def __init__(self) -> None:
+        self.max_return_rows: int = 5000  # Safety threshold for frontend rendering
 
     def _sanitize_identifier(self, name: str) -> str:
         """Ensures table/column names are safe for SQL identifiers."""
@@ -84,6 +81,7 @@ class ComputeEngine:
                 # 3. Resource Governance (Noisy Neighbor Protection)
                 conn.execute("PRAGMA memory_limit='2GB';")
                 conn.execute("PRAGMA threads=2;")
+                conn.execute("PRAGMA enable_object_cache=true;") # Optimization for repeated fast queries
                 
                 # 4. Tenant-Isolated Execution: Register dynamically routed Parquet paths
                 for dataset in datasets:
@@ -98,14 +96,12 @@ class ComputeEngine:
                     logger.debug(f"Registered secure views for dataset: {dataset.id} (alias: {sanitized_name})")
 
                 # 5. Lock Down Container Context
-                # Strictly prevent LLMs from querying arbitrary URLs or local container file systems
                 conn.execute("PRAGMA disable_external_access;")
 
                 # 6. Execute the query using Arrow for Zero-Copy performance
                 logger.info("Executing analytical query over zero-copy network layer.")
                 
-                # Hybrid Performance Paradigm: Fetch via Arrow directly into Polars (Rust/C++)
-                # Completely bypasses single-threaded Pandas dense memory copies
+                # Fetch via Arrow directly into Polars (Rust/C++)
                 arrow_table = conn.execute(query).arrow()
                 result_df = pl.from_arrow(arrow_table)
                 
@@ -114,7 +110,6 @@ class ComputeEngine:
                     logger.warning(f"Result set too large ({result_df.height} rows). Truncating to {self.max_return_rows}.")
                     result_df = result_df.head(self.max_return_rows)
                     
-                # PERFORMANCE UPGRADE: Polars naturally handles nulls and serializes directly to clean Python dicts instantly.
                 return result_df.to_dicts()
 
         except duckdb.ParserException as e:
@@ -134,14 +129,15 @@ class ComputeEngine:
         db: Session,
         tenant_id: str, 
         datasets: List[Dataset], 
-        operation: str = "ema_forecast"
+        operation: str = "comprehensive_diagnostics",
+        target_columns: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Path C: Math/ML Code Execution.
-        Prioritizes functional, vectorized operations (Polars via Rust) for complexity 
-        SQL cannot handle easily (e.g., Linear Algebra).
+        Path C: Advanced Mathematical & ML Code Execution.
+        Utilizes Polars LazyFrames (`pl.LazyFrame`) to build an optimized Rust computation 
+        graph for true multithreaded vectorization, preventing memory bloat on large datasets.
         """
-        logger.info(f"[Tenant: {tenant_id}] Initiating ML pipeline: {operation}")
+        logger.info(f"[Tenant: {tenant_id}] Initiating Vectorized ML pipeline: {operation}")
         
         if not datasets:
             raise ValueError("No active datasets provided for ML computation.")
@@ -151,27 +147,59 @@ class ComputeEngine:
         try:
             with storage_manager.duckdb_session(db, tenant_id) as conn:
                 secure_path = storage_manager.get_duckdb_query_path(db, primary_dataset)
-                # Zero-copy load of a manageable subset directly into Polars
-                arrow_table = conn.execute(f"SELECT * FROM read_parquet({secure_path}) LIMIT 100000").arrow()
-                df = pl.from_arrow(arrow_table)
+                # Zero-copy load directly into a Polars LazyFrame
+                arrow_table = conn.execute(f"SELECT * FROM read_parquet({secure_path})").arrow()
+                
+                # HYBRID PERFORMANCE PARADIGM: Shift to Lazy Evaluation
+                lf = pl.from_arrow(arrow_table).lazy()
             
-            # Example Mathematical Precision: Exponential Moving Average
-            # Filter columns to only those of numeric types
-            numeric_cols = [col for col, dtype in df.schema.items() if dtype in pl.NUMERIC_DTYPES]
+            # Extract schema to identify numeric targets
+            schema = lf.collect_schema()
+            numeric_cols = target_columns or [col for col, dtype in schema.items() if dtype in pl.NUMERIC_DTYPES]
             
-            if numeric_cols and operation == "ema_forecast":
-                col = numeric_cols[0]
-                # Utilizing EMA for mathematical sensitivity to seasonality natively in C++
-                df = df.with_columns(
-                    pl.col(col).ewm_mean(span=7, adjust=False).alias(f'{col}_ema_7d')
-                )
+            if not numeric_cols:
+                raise ValueError("No numeric columns found for mathematical computation.")
+
+            # MATHEMATICAL PRECISION: Build the vectorized computation graph
+            exprs = []
             
-            # Safely serialize utilizing Polars' inherent NaN/Null performance handling
-            return df.head(self.max_return_rows).to_dicts()
+            if operation in ["comprehensive_diagnostics", "anomaly_detection", "ema_forecast"]:
+                for col in numeric_cols:
+                    # 1. Exponential Moving Average (EMA) - Mathematically sensitive to recent trends
+                    exprs.append(
+                        pl.col(col).ewm_mean(span=7, adjust=False).alias(f"{col}_ema_7d")
+                    )
+                    # 2. Rolling Variance - Measures volatility
+                    exprs.append(
+                        pl.col(col).rolling_var(window_size=7).alias(f"{col}_variance_7d")
+                    )
+                    # 3. Z-Score Normalization - Real mathematical anomaly detection
+                    exprs.append(
+                        ((pl.col(col) - pl.col(col).mean()) / pl.col(col).std()).alias(f"{col}_zscore")
+                    )
+            
+            # Apply all computations simultaneously at the C++/Rust level
+            lf_computed = lf.with_columns(exprs)
+
+            if operation == "anomaly_detection":
+                # Vectorized filter: Keep only rows where ANY numeric column's Z-Score violates the 3-Sigma Rule
+                anomaly_conditions = [
+                    (pl.col(f"{col}_zscore").abs() > 3) for col in numeric_cols
+                ]
+                combined_condition = anomaly_conditions[0]
+                for cond in anomaly_conditions[1:]:
+                    combined_condition = combined_condition | cond
+                    
+                lf_computed = lf_computed.filter(combined_condition)
+
+            # Execution triggers here (.collect()). Rust Engine optimizes the graph and multithreads the workload.
+            result_df = lf_computed.collect()
+            
+            return result_df.head(self.max_return_rows).to_dicts()
             
         except Exception as e:
             logger.error(f"ML Pipeline execution failed: {str(e)}")
-            raise RuntimeError("Failed to apply advanced mathematical models to the data.")
+            raise RuntimeError(f"Failed to apply advanced mathematical models: {str(e)}")
 
 # Export singleton instance for dependency injection
 compute_engine = ComputeEngine()

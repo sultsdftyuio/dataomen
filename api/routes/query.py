@@ -1,4 +1,5 @@
 # api/routes/query.py
+
 import os
 import tempfile
 import logging
@@ -17,12 +18,13 @@ from api.database import get_db
 from api.auth import verify_tenant, TenantContext
 from models import Dataset, QueryHistory, Organization
 
+# Phase 3/4 Modular Services (The Orchestration Layer)
 from api.services.storage_manager import storage_manager
 from api.services.nl2sql_generator import nl2sql_generator
+from api.services.compute_engine import compute_engine, ComputeRouter
 
-# Phase 2 Modules
+# Phase 2 Legacy/Diagnostic Modules
 from api.services.metric_governance import metric_registry
-from api.services.compute_engine import ComputeRouter
 from api.services.ab_testing import ab_tester
 
 logger = logging.getLogger(__name__)
@@ -66,12 +68,12 @@ def security_validate_ephemeral_path(path: str) -> str:
 def async_audit_logger(db: Session, tenant_id: str, agent_id: str, query: str, sql: str, duration: float, success: bool, error: str = None):
     """
     Phase 1.4 Immutable Audit Logging:
-    Offloads Postgres commits to a background thread to keep the Vercel/Render HTTP response instantaneous.
+    Offloads Postgres commits to a background thread to keep the Vercel HTTP response instantaneous.
     """
     try:
         log_entry = QueryHistory(
             tenant_id=tenant_id,
-            agent_id=uuid.UUID(agent_id) if isinstance(agent_id, str) else agent_id,
+            agent_id=uuid.UUID(agent_id) if isinstance(agent_id, str) and agent_id else None,
             natural_query=query,
             generated_sql=sql,
             execution_time_ms=duration,
@@ -86,37 +88,28 @@ def async_audit_logger(db: Session, tenant_id: str, agent_id: str, query: str, s
 # --- Dynamic Data Mounter (The Hybrid Performance Paradigm) ---
 def mount_dataset_to_duckdb(con: duckdb.DuckDBPyConnection, file_path: str, view_name: str) -> None:
     """
-    Maps the optimal vectorized reading strategy based on file format.
-    Leverages DuckDB's native out-of-core scanners for big data formats,
-    and falls back to Polars for complex formats like Excel via Zero-Copy Arrow transfer.
+    Maps the optimal vectorized reading strategy based on file format for Ephemeral storage.
+    Persistent storage is handled entirely by the `compute_engine`.
     """
-    # Clean the path just in case it's a signed S3 URL with query parameters
     base_path = file_path.split('?')[0]
     ext = base_path.lower().split('.')[-1] if '.' in base_path else 'parquet'
     
     try:
         if ext in ['csv', 'tsv', 'txt']:
-            # sample_size=-1 forces DuckDB to scan the whole file to prevent type hallucinations on messy CSVs
             con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_csv_auto('{file_path}', sample_size=-1)")
-        
         elif ext in ['json', 'ndjson', 'jsonl']:
             con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_json_auto('{file_path}')")
-            
         elif ext in ['xlsx', 'xls', 'ods']:
-            # The Modular Strategy: Use Polars to ingest Excel
             df = pl.read_excel(file_path)
-            # Zero-copy transfer to DuckDB memory space using PyArrow underneath
             arrow_table = df.to_arrow()
             con.register(f"{view_name}_arrow_temp", arrow_table)
             con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM {view_name}_arrow_temp")
-            
         else:
-            # Default to Parquet (Analytics Gold Standard)
             con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM read_parquet('{file_path}')")
             
     except Exception as e:
         logger.error(f"Failed to mount dataset format '{ext}' at '{file_path}': {str(e)}")
-        raise RuntimeError(f"Could not parse file format natively. Please ensure the file is not corrupted. Detail: {str(e)}")
+        raise RuntimeError(f"Could not parse file format natively. Detail: {str(e)}")
 
 # --- Routes ---
 @router.post("/ephemeral")
@@ -135,18 +128,26 @@ async def execute_ephemeral_query(
 
     start_time = time.time()
     try:
-        # Phase 1.3 Programmatic RLS: Bind path to a view. The LLM never sees the physical path.
         view_name = "ephemeral_data"
         con = duckdb.connect(':memory:')
         
-        # Seamlessly mount the dynamically detected file type
+        # Mount the file
         mount_dataset_to_duckdb(con, safe_path, view_name)
 
-        # Call Semantic Router
-        sql_query = await nl2sql_generator.generate_sql(
-            natural_query=request.natural_query, 
-            table_name=view_name,
-            schema_metadata=None 
+        # Extract schema dynamically to support Contextual RAG
+        metadata = con.execute(f"DESCRIBE SELECT * FROM {view_name};").pl()
+        col_dict = {row["column_name"]: row["column_type"] for row in metadata.to_dicts()}
+        
+        schemas = [{
+            "id": view_name,
+            "name": "Ephemeral Upload",
+            "schema": col_dict
+        }]
+
+        # Phase 3: NL2SQL Generation
+        sql_query, chart_spec = await nl2sql_generator.generate_sql(
+            prompt=request.natural_query, 
+            schemas=schemas
         )
 
         # Phase 2.1: Semantic Math Resolution
@@ -155,18 +156,18 @@ async def execute_ephemeral_query(
             if macro_tag in sql_query:
                 sql_query = sql_query.replace(macro_tag, metric_registry.get_sql_expression(metric_name))
 
-        # Phase 2.3: Vectorized Execution via Apache Arrow -> Polars Transit Layer
+        # Vectorized Execution
         arrow_table = con.execute(sql_query).arrow()
         df = pl.from_arrow(arrow_table)
-        
-        # Polars native to_dicts correctly maps nulls to JSON nulls automatically (No Pandas NaN crashes)
         results = df.to_dicts()
+        
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
         return {
             "status": "success",
             "execution_mode": "sync",
             "sql_executed": sql_query,
+            "chart_spec": chart_spec,
             "columns": df.columns,
             "data": results,
             "execution_time_ms": execution_time_ms
@@ -176,7 +177,6 @@ async def execute_ephemeral_query(
         logger.error(f"[{tenant.tenant_id}] Ephemeral Query Execution failed: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Query computation failed: {str(e)}")
     finally:
-        # Ensure memory is released gracefully
         if 'con' in locals(): con.close()
 
 
@@ -188,8 +188,8 @@ async def execute_persistent_query(
     tenant: TenantContext = Depends(verify_tenant) # SECURITY: Guaranteed Tenant ID
 ) -> Dict[str, Any]:
     """
-    Tier 2/3 Execution: Connects securely to Supabase Storage, Cloudflare R2, or BYOS.
-    Enforces SaaS Billing Limits (Query Metering) before executing computation.
+    Tier 2/3 Execution: Connects securely to persistent storage via ComputeEngine.
+    Enforces Contextual RAG, Metric Governance, and the Phase 4 Auto-Correction Loop.
     """
     start_time = time.time()
     
@@ -216,22 +216,19 @@ async def execute_persistent_query(
 
     sql_query = None
     try:
-        # 3. Storage & Engine Orchestration
-        query_path = storage_manager.get_duckdb_query_path(db, dataset)
-        con = storage_manager.setup_duckdb_connection(db, tenant.tenant_id)
-
-        # Create an immutable view. LLM targets `dataset_view` and physically cannot read other paths.
-        view_name = f"dataset_{str(dataset.id).replace('-', '_')}"
-        mount_dataset_to_duckdb(con, query_path, view_name)
-
-        # 4. AI Orchestration: Contextual RAG
-        sql_query = await nl2sql_generator.generate_sql(
-            natural_query=request.natural_query,
-            table_name=view_name,
-            schema_metadata=dataset.schema_metadata
+        # 3. AI Orchestration: Contextual RAG
+        schemas = [{
+            "id": str(dataset.id),
+            "name": dataset.name,
+            "schema": dataset.schema_metadata or {}
+        }]
+        
+        sql_query, chart_spec = await nl2sql_generator.generate_sql(
+            prompt=request.natural_query,
+            schemas=schemas
         )
 
-        # Phase 2.1: Semantic Math Resolution
+        # Phase 2.1: Semantic Math Resolution (Metric Governance)
         for metric_name in metric_registry._metrics.keys():
             macro_tag = f"{{{metric_name}}}"
             if macro_tag in sql_query:
@@ -247,14 +244,36 @@ async def execute_persistent_query(
                 "message": "Query complexity exceeded sync thresholds. Routed to asynchronous diagnostic tier."
             }
 
-        # 5. Computation: Execute via PyArrow for Zero-Copy transfer into Polars
-        arrow_table = con.execute(sql_query).arrow()
-        df = pl.from_arrow(arrow_table)
-        results = df.to_dicts()
-        
+        # 4. Computation Layer: Vectorized Execution with Auto-Correction Loop
+        try:
+            results = await compute_engine.execute_read_only(
+                db=db,
+                tenant_id=tenant.tenant_id,
+                datasets=[dataset],
+                query=sql_query
+            )
+        except Exception as compute_error:
+            # Error Feedback Loop: If DuckDB rejects the SQL, let the LLM fix it
+            logger.warning(f"[{tenant.tenant_id}] Compute failed, attempting auto-correction: {str(compute_error)}")
+            
+            sql_query, chart_spec = await nl2sql_generator.correct_sql(
+                failed_query=sql_query,
+                error_msg=str(compute_error),
+                prompt=request.natural_query,
+                schemas=schemas
+            )
+            
+            # Retry Execution
+            results = await compute_engine.execute_read_only(
+                db=db,
+                tenant_id=tenant.tenant_id,
+                datasets=[dataset],
+                query=sql_query
+            )
+
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
-        # 6. Usage Metering & Auditing (Success)
+        # 5. Usage Metering & Auditing (Success)
         org.current_month_queries += 1
         db.commit()
 
@@ -269,13 +288,15 @@ async def execute_persistent_query(
             "status": "success",
             "execution_mode": "sync",
             "sql_executed": sql_query,
-            "columns": df.columns,
+            "chart_spec": chart_spec,
+            "columns": list(results[0].keys()) if results else [],
             "data": results,
             "execution_time_ms": execution_time_ms
         }
 
         # Phase 2.4: Automated Diagnostic Intelligence (A/B Testing)
-        if request.ab_test_config:
+        if request.ab_test_config and results:
+            df = pl.DataFrame(results) # Convert back to Polars briefly for math analysis
             diagnostic_insights = ab_tester.analyze_experiment(
                 df=df,
                 metric_col=request.ab_test_config.metric_col,
@@ -299,5 +320,3 @@ async def execute_persistent_query(
             )
             
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database engine error: {str(e)}")
-    finally:
-        if 'con' in locals(): con.close()

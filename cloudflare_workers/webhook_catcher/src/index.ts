@@ -1,33 +1,29 @@
 // cloudflare_workers/webhook_catcher/src/index.ts
 
-import type { Queue, MessageBatch, ExecutionContext } from '@cloudflare/workers-types';
+import type { Queue, MessageBatch, ExecutionContext, R2Bucket } from '@cloudflare/workers-types';
 
 export interface Env {
-  // Binding to Cloudflare Queues
+  // Bindings
   INGESTION_QUEUE: Queue<any>;
-  // Environment variable strictly for Edge auth
+  DLQ_BUCKET: R2Bucket; // Phase 8.2: Zero-Data-Loss Fallback Storage
+  
+  // Edge Auth Secrets
   STRIPE_WEBHOOK_SECRET: string;
-  // Phase 4: Backend routing variables
+  SHOPIFY_WEBHOOK_SECRET: string;
+  SALESFORCE_WEBHOOK_SECRET: string;
+  
+  // Backend Routing
   CORE_API_URL: string;
   CORE_API_KEY: string;
 }
 
-/**
- * Validates the Stripe webhook signature using native Web Crypto API for sub-ms execution.
- * @param payload - The raw text body of the request
- * @param signatureHeader - The 'Stripe-Signature' header
- * @param secret - The Stripe endpoint secret
- * @returns boolean indicating if the signature is valid and recent
- */
-async function verifyStripeSignature(
-  payload: string,
-  signatureHeader: string | null,
-  secret: string
-): Promise<boolean> {
-  if (!signatureHeader || !secret) return false;
+// -----------------------------------------------------------------------------
+// Cryptographic Edge Verification Methods (Sub-ms Web Crypto API)
+// -----------------------------------------------------------------------------
 
+async function verifyStripeSignature(payload: string, signatureHeader: string | null, secret: string): Promise<boolean> {
+  if (!signatureHeader || !secret) return false;
   try {
-    // Parse the Stripe signature header (format: t=timestamp,v1=signature)
     const sigParts = signatureHeader.split(',').reduce((acc, part) => {
       const [key, value] = part.split('=');
       acc[key] = value;
@@ -36,62 +32,67 @@ async function verifyStripeSignature(
 
     const timestamp = sigParts['t'];
     const v1Sig = sigParts['v1'];
-
     if (!timestamp || !v1Sig) return false;
 
-    // Prevent Replay Attacks: Reject payloads older than 5 minutes (300 seconds)
+    // Prevent Replay Attacks (5 min window)
     const currentTimestamp = Math.floor(Date.now() / 1000);
     if (currentTimestamp - parseInt(timestamp, 10) > 300) return false;
 
-    // Reconstruct the signed payload string
     const signedPayload = `${timestamp}.${payload}`;
-
-    // Import the secret key for HMAC SHA-256
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['verify']
+      'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
     );
-
-    // Convert the hex signature to a Uint8Array
-    const sigBytes = new Uint8Array(
-      v1Sig.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || []
-    );
-
-    // Verify the signature
-    const isValid = await crypto.subtle.verify(
-      'HMAC',
-      key,
-      sigBytes,
-      encoder.encode(signedPayload)
-    );
-
-    return isValid;
+    
+    const sigBytes = new Uint8Array(v1Sig.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || []);
+    return await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(signedPayload));
   } catch (error) {
-    console.error('Signature verification failed:', error);
     return false;
   }
 }
 
+async function verifyShopifySignature(payload: string, signatureHeader: string | null, secret: string): Promise<boolean> {
+  if (!signatureHeader || !secret) return false;
+  try {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+    );
+    // Shopify uses Base64 encoded HMAC
+    const signatureBytes = Uint8Array.from(atob(signatureHeader), c => c.charCodeAt(0));
+    return await crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(payload));
+  } catch (error) {
+    return false;
+  }
+}
+
+function verifySalesforceSignature(signatureHeader: string | null, secret: string): boolean {
+  if (!signatureHeader || !secret) return false;
+  // Constant time comparison for tokens to prevent timing attacks
+  if (signatureHeader.length !== secret.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < signatureHeader.length; ++i) {
+    mismatch |= (signatureHeader.charCodeAt(i) ^ secret.charCodeAt(i));
+  }
+  return mismatch === 0;
+}
+
+// -----------------------------------------------------------------------------
+// The Worker: Producer (fetch) & Consumer (queue)
+// -----------------------------------------------------------------------------
+
 export default {
   /**
-   * Main Edge Handler for incoming HTTP requests (Producer)
-   * Receives the webhook, verifies it instantly at the edge, and drops it into a queue.
+   * Phase 7.3: Main Edge Handler (The Producer)
+   * Receives webhooks, verifies them geographically close to the source, and queues them.
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Only accept POST requests
-    if (request.method !== 'POST') {
-      return new Response('Method Not Allowed', { status: 405 });
-    }
+    if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
 
     const url = new URL(request.url);
     const pathParts = url.pathname.split('/').filter(Boolean);
 
-    // Route structure: /webhooks/<provider>/<tenant_id>
-    // Example: /webhooks/stripe/tenant_abc123
+    // Route: /webhooks/<provider>/<tenant_id>
     if (pathParts.length !== 3 || pathParts[0] !== 'webhooks') {
       return new Response('Not Found', { status: 404 });
     }
@@ -100,81 +101,85 @@ export default {
     const tenantId = pathParts[2];
 
     try {
-      // 1. Read the raw body (required for exact signature matching)
       const rawBody = await request.text();
+      let isAuthentic = false;
 
-      // 2. Route based on provider & Authenticate
+      // 1. Dynamic Provider Authentication Matrix
       if (provider === 'stripe') {
-        const signatureHeader = request.headers.get('Stripe-Signature');
-        
-        const isAuthentic = await verifyStripeSignature(
-          rawBody, 
-          signatureHeader, 
-          env.STRIPE_WEBHOOK_SECRET
-        );
-
-        if (!isAuthentic) {
-          return new Response('Unauthorized: Invalid Signature', { status: 401 });
-        }
+        isAuthentic = await verifyStripeSignature(rawBody, request.headers.get('Stripe-Signature'), env.STRIPE_WEBHOOK_SECRET);
+      } else if (provider === 'shopify') {
+        isAuthentic = await verifyShopifySignature(rawBody, request.headers.get('X-Shopify-Hmac-Sha256'), env.SHOPIFY_WEBHOOK_SECRET);
+      } else if (provider === 'salesforce') {
+        isAuthentic = verifySalesforceSignature(request.headers.get('X-Salesforce-Token'), env.SALESFORCE_WEBHOOK_SECRET);
       } else {
         return new Response('Unsupported Provider', { status: 400 });
       }
 
-      // 3. Construct the normalized ingestion envelope
+      if (!isAuthentic) {
+        console.warn(`🚨 Unauthorized ${provider} webhook attempt for tenant: ${tenantId}`);
+        return new Response('Unauthorized: Invalid Signature', { status: 401 });
+      }
+
+      // 2. Queue Envelopment (Safe Parsing)
+      let parsedPayload;
+      try {
+        parsedPayload = JSON.parse(rawBody);
+      } catch (e) {
+        // XML or malformed JSON from old systems
+        parsedPayload = { raw_text: rawBody }; 
+      }
+
       const queueMessage = {
         tenant_id: tenantId,
         provider: provider,
         received_at: new Date().toISOString(),
-        payload: JSON.parse(rawBody)
+        payload: parsedPayload,
+        // Capture specific headers for downstream routing
+        topic: request.headers.get('X-Shopify-Topic') || request.headers.get('Stripe-Event-Type') || 'unknown'
       };
 
-      // 4. Drop into the Cloudflare Queue (Non-blocking async drop)
+      // 3. Drop into Cloudflare Queue
       await env.INGESTION_QUEUE.send(queueMessage);
 
-      // 5. Acknowledge the webhook instantly (Sub-10ms response to Stripe)
+      // 4. Sub-10ms Acknowledgment to the SaaS provider
       return new Response(JSON.stringify({ received: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
       });
 
     } catch (error) {
-      console.error(`Webhook processing error for tenant ${tenantId}:`, error);
-      // Return 500 so Stripe knows to retry the webhook later if we fail to queue it
+      console.error(`Edge routing error for tenant ${tenantId}:`, error);
       return new Response('Internal Server Error', { status: 500 });
     }
   },
 
   /**
-   * Phase 4: Event-Driven Triggers (Queue Consumer)
-   * Pulls the normalized payloads off the queue in batches and pushes them to the Python Backend.
-   * Crucially, it instructs the backend to ingest the data AND instantly trigger the analytical agents.
+   * Phase 8.2: Event-Driven Consumer & DLQ Routing
+   * Batches queue messages, pushes to Render backend, and uses R2 as a safety net if backend dies.
    */
-  async queue(batch: MessageBatch<any>, env: Env): Promise<void> {
-    // 1. Group messages by tenant to optimize backend bulk inserts (Vectorization philosophy)
-    const tenantPayloads: Record<string, any[]> = {};
+  async queue(batch: MessageBatch<any>, env: Env, ctx: ExecutionContext): Promise<void> {
+    // 1. Group messages by tenant AND provider to optimize vectorized backend inserts
+    const batches: Record<string, any[]> = {};
 
     for (const message of batch.messages) {
-      const { tenant_id, provider, payload, received_at } = message.body;
+      const { tenant_id, provider, payload, received_at, topic } = message.body;
+      const key = `${tenant_id}|${provider}`;
       
-      if (!tenantPayloads[tenant_id]) {
-        tenantPayloads[tenant_id] = [];
-      }
-      
-      tenantPayloads[tenant_id].push({ provider, payload, received_at });
-      
-      // Acknowledge message so it's removed from the queue
-      message.ack();
+      if (!batches[key]) batches[key] = [];
+      batches[key].push({ payload, received_at, topic });
     }
 
-    // 2. Push to Python backend to ingest and trigger agents
-    for (const [tenantId, events] of Object.entries(tenantPayloads)) {
+    // 2. Push to Python backend
+    for (const [routeKey, events] of Object.entries(batches)) {
+      const [tenantId, provider] = routeKey.split('|');
+      
       try {
-        const response = await fetch(`${env.CORE_API_URL}/api/ingest/webhook-batch`, {
+        const response = await fetch(`${env.CORE_API_URL}/api/ingest/${provider}/webhook-batch`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${env.CORE_API_KEY}`,
-            'X-Trigger-Agents': 'true' // The Event-Driven Trigger flag
+            'X-Trigger-Agents': 'true'
           },
           body: JSON.stringify({
             tenant_id: tenantId,
@@ -183,13 +188,37 @@ export default {
         });
 
         if (!response.ok) {
-          console.error(`Backend failed to process tenant ${tenantId}: ${response.status} ${response.statusText}`);
-          // In a production environment, you might route failed batches to a Dead Letter Queue (DLQ) here
-        } else {
-          console.log(`Successfully ingested and triggered agents for tenant ${tenantId} (${events.length} events)`);
+          throw new Error(`Backend rejected payload: ${response.status} ${response.statusText}`);
         }
+
+        console.log(`✅ Synced ${events.length} events for ${tenantId} via ${provider}`);
+        
+        // Acknowledge all messages in this batch slice
+        batch.messages.filter(m => m.body.tenant_id === tenantId && m.body.provider === provider).forEach(m => m.ack());
+
       } catch (error) {
-        console.error(`Failed to reach Core API for tenant ${tenantId}:`, error);
+        // -------------------------------------------------------------------------
+        // Phase 8.2: The Dead Letter Queue (DLQ) Fallback
+        // If the Render compute node is down, deploying, or rate-limited, we DO NOT 
+        // let the message loop infinitely or disappear. We save it to Cloudflare R2.
+        // -------------------------------------------------------------------------
+        const errorMsg = error instanceof Error ? error.message : 'Unknown network error';
+        console.error(`❌ Backend unreachable for ${tenantId}. Routing to DLQ. Error: ${errorMsg}`);
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const dlqKey = `dlq/${tenantId}/${provider}/${timestamp}_${crypto.randomUUID()}.json`;
+
+        // Write the failed batch to R2 for the Python Watchdog service to replay later
+        await env.DLQ_BUCKET.put(dlqKey, JSON.stringify({
+          error: errorMsg,
+          failed_at: new Date().toISOString(),
+          batch_size: events.length,
+          events: events
+        }));
+
+        // Because we successfully secured the data in our Data Lake (R2), we ACK the message
+        // so it leaves the active Queue. This prevents "poison pills" from clogging the pipeline.
+        batch.messages.filter(m => m.body.tenant_id === tenantId && m.body.provider === provider).forEach(m => m.ack());
       }
     }
   }

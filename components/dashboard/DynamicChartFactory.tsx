@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { Download, Table2, BarChart3, LineChart as LineChartIcon, Code2, AlertCircle, AreaChart as AreaChartIcon } from "lucide-react";
+import React, { useState, useMemo, useCallback } from "react";
+import { Download, Table2, BarChart3, LineChart as LineChartIcon, Code2, AlertCircle, AreaChart as AreaChartIcon, Activity } from "lucide-react";
 import { 
   BarChart, 
   Bar, 
@@ -14,18 +14,21 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  Legend
+  Legend,
+  ReferenceDot
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 // -----------------------------------------------------------------------------
-// Type Definitions
+// Type Definitions (Aligned with Backend ChatResponse & Vega-Lite Concepts)
 // -----------------------------------------------------------------------------
 export interface ChartConfig {
-  type: "bar" | "line" | "area";
-  xAxisKey: string;
-  yAxisKeys: string[];
+  type?: "bar" | "line" | "area" | "scatter";
+  xAxisKey?: string;
+  yAxisKeys?: string[];
+  mark?: string | { type: string }; // Vega-Lite compatibility
+  encoding?: Record<string, any>;   // Vega-Lite compatibility
 }
 
 export interface ExecutionPayload {
@@ -33,7 +36,7 @@ export interface ExecutionPayload {
   data?: Record<string, any>[];
   message?: string;
   sql_used?: string;
-  chart_config?: ChartConfig; // Output from the Semantic Router / NL2SQL
+  chart_spec?: ChartConfig; // Declarative output from NL2SQL Generator
 }
 
 interface DynamicChartFactoryProps {
@@ -43,13 +46,15 @@ interface DynamicChartFactoryProps {
 // -----------------------------------------------------------------------------
 // Premium SaaS Color Palette & Gradients
 // -----------------------------------------------------------------------------
-const CHART_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444"];
+const CHART_COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4"];
+const ANOMALY_COLOR = "#ef4444"; // Red for statistical anomalies
+const EMA_COLOR = "#f59e0b";     // Amber for Moving Averages
 
 const renderCustomGradients = () => (
   <defs>
     {CHART_COLORS.map((color, index) => (
       <linearGradient key={`colorUv-${index}`} id={`colorUv-${index}`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+        <stop offset="5%" stopColor={color} stopOpacity={0.4} />
         <stop offset="95%" stopColor={color} stopOpacity={0} />
       </linearGradient>
     ))}
@@ -61,11 +66,11 @@ const renderCustomGradients = () => (
 // -----------------------------------------------------------------------------
 export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payload }) => {
   const [activeTab, setActiveTab] = useState<"chart" | "table" | "sql">(
-    payload.type === "chart" || payload.chart_config ? "chart" : "table"
+    payload.type === "chart" || payload.chart_spec || payload.type === "ml_result" ? "chart" : "table"
   );
 
   // 1. Data Export: Optimized Vectorized CSV Generation
-  const downloadCSV = () => {
+  const downloadCSV = useCallback(() => {
     if (!payload.data || payload.data.length === 0) return;
 
     const headers = Object.keys(payload.data[0]);
@@ -89,51 +94,57 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [payload.data]);
 
-  // 2. Hybrid Axis Detection & Intelligent Routing
-  const resolvedChartConfig = useMemo((): ChartConfig | null => {
+  // 2. Hybrid Axis Detection & Intelligent Routing (Supports Vega-Lite Specs)
+  const resolvedChartConfig = useMemo((): { type: string; xAxisKey: string; yAxisKeys: string[]; hasAnomalies: boolean } | null => {
     if (!payload.data || payload.data.length === 0) return null;
     
-    // Prioritize explicit configuration from the LLM
-    if (payload.chart_config) {
-      // Safely map LLM's generic 'chart' response to a specific type if needed
+    const sampleRow = payload.data[0];
+    const keys = Object.keys(sampleRow);
+    
+    // Check if the backend executed an ML pipeline with Z-Scores
+    const hasAnomalies = keys.some(k => k.includes('_zscore'));
+
+    // If the LLM passed a Vega-Lite spec, map it to Recharts intelligently
+    if (payload.chart_spec && payload.chart_spec.encoding) {
+      const spec = payload.chart_spec;
+      const encoding = spec.encoding; // Safely extracted
+      const markType = typeof spec.mark === 'string' ? spec.mark : spec.mark?.type || 'bar';
+      
       return {
-        ...payload.chart_config,
-        type: payload.chart_config.type || "bar"
+        type: markType === 'line' ? 'line' : markType === 'area' ? 'area' : 'bar',
+        xAxisKey: encoding?.x?.field || keys[0],
+        yAxisKeys: encoding?.y?.field ? [encoding?.y?.field] : keys.filter(k => typeof sampleRow[k] === 'number'),
+        hasAnomalies
       };
     }
     
     // Fallback: Intelligent Auto-Detection Engine
-    const sampleRow = payload.data[0];
-    const keys = Object.keys(sampleRow);
-    
-    // Guess the X-Axis (Usually a Date, Time, ID, or Category name)
     const xAxisKey = keys.find(k => 
-      k.toLowerCase().includes('date') || 
-      k.toLowerCase().includes('time') || 
-      k.toLowerCase().includes('month') || 
-      typeof sampleRow[k] === 'string'
-    ) || keys[0];
+      k.toLowerCase().includes('date') || k.toLowerCase().includes('time') || k.toLowerCase().includes('month')
+    ) || keys.find(k => typeof sampleRow[k] === 'string') || keys[0];
     
-    const yAxisKeys = keys.filter(k => k !== xAxisKey && typeof sampleRow[k] === 'number');
+    // Filter out metadata columns like Z-Scores from the main Y-Axis rendering
+    const yAxisKeys = keys.filter(k => 
+      k !== xAxisKey && 
+      typeof sampleRow[k] === 'number' && 
+      !k.includes('_zscore') && 
+      !k.includes('_variance')
+    );
 
-    if (yAxisKeys.length === 0) return null; // Can't chart without numbers
+    if (yAxisKeys.length === 0) return null;
 
-    // Auto-select the most beautiful chart type based on data shape
-    let detectedType: "bar" | "line" | "area" = "bar";
+    // Auto-select chart type based on data shape and semantic meaning
+    let detectedType = "bar";
     if (xAxisKey.toLowerCase().includes('date') || xAxisKey.toLowerCase().includes('time')) {
       detectedType = "area"; // Time series look best as Area charts
-    } else if (payload.data.length > 15) {
-      detectedType = "line"; // Too many data points look cluttered as bars
+    } else if (payload.data.length > 20) {
+      detectedType = "line"; 
     }
 
-    return { 
-      type: detectedType, 
-      xAxisKey, 
-      yAxisKeys 
-    };
-  }, [payload.data, payload.chart_config]);
+    return { type: detectedType, xAxisKey, yAxisKeys, hasAnomalies };
+  }, [payload.data, payload.chart_spec]);
 
   // Helper function to format large numbers cleanly
   const formatNumber = (val: any) => {
@@ -141,21 +152,33 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     return new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(val);
   };
 
+  // 3. Mathematical Rendering: Custom Dot for Anomaly Detection (3-Sigma Rule)
+  const renderCustomDot = (props: any) => {
+    const { cx, cy, payload: rowData, dataKey } = props;
+    const zScoreKey = `${dataKey}_zscore`;
+    
+    // If backend flagged this specific point as an anomaly (Z-Score > 3 or < -3)
+    if (rowData[zScoreKey] && Math.abs(rowData[zScoreKey]) > 3) {
+      return (
+        <circle cx={cx} cy={cy} r={6} fill={ANOMALY_COLOR} stroke="#0f172a" strokeWidth={2} className="animate-pulse" />
+      );
+    }
+    return <circle cx={cx} cy={cy} r={0} />; // Hide normal dots for clean UI
+  };
+
   // ---------------------------------------------------------------------------
   // Renderers
   // ---------------------------------------------------------------------------
 
-  // Handle Error States
   if (payload.type === "error") {
     return (
       <div className="p-4 bg-red-950/40 border border-red-900/50 rounded-xl flex items-start space-x-3 text-red-400 mt-2">
         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <p className="text-sm font-medium">{payload.message || "An unknown execution error occurred."}</p>
+        <p className="text-sm font-medium">{payload.message || "Execution error occurred."}</p>
       </div>
     );
   }
 
-  // Handle Standard Text/Fallback
   if (payload.type === "text" || !payload.data || payload.data.length === 0) {
     return (
       <div className="text-sm text-slate-200 bg-slate-800/80 px-4 py-3 rounded-xl border border-slate-700 shadow-sm mt-2">
@@ -169,48 +192,35 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
   return (
     <div className="flex flex-col w-full max-w-full bg-[#0B1120] border border-slate-800 rounded-xl overflow-hidden mt-2 shadow-lg shadow-black/50">
       
-      {/* Top Toolbar: Context & Actions */}
+      {/* Top Toolbar */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-900/50 border-b border-slate-800">
         <div className="flex space-x-1">
           {resolvedChartConfig && resolvedChartConfig.yAxisKeys.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setActiveTab("chart")}
+            <Button variant="ghost" size="sm" onClick={() => setActiveTab("chart")}
               className={`h-8 px-2 text-xs ${activeTab === "chart" ? "bg-slate-800 text-emerald-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
             >
-              {resolvedChartConfig.type === "area" ? (
-                <AreaChartIcon className="w-3.5 h-3.5 mr-1.5" />
-              ) : resolvedChartConfig.type === "line" ? (
-                <LineChartIcon className="w-3.5 h-3.5 mr-1.5" />
-              ) : (
-                <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
-              )}
+              {resolvedChartConfig.type === "area" ? <AreaChartIcon className="w-3.5 h-3.5 mr-1.5" /> : 
+               resolvedChartConfig.type === "line" ? <LineChartIcon className="w-3.5 h-3.5 mr-1.5" /> : 
+               <BarChart3 className="w-3.5 h-3.5 mr-1.5" />}
               Visualization
+              {resolvedChartConfig.hasAnomalies && <div className="w-2 h-2 rounded-full bg-red-500 ml-2 animate-pulse" title="Anomalies Detected" />}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setActiveTab("table")}
+          <Button variant="ghost" size="sm" onClick={() => setActiveTab("table")}
             className={`h-8 px-2 text-xs ${activeTab === "table" ? "bg-slate-800 text-blue-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
           >
             <Table2 className="w-3.5 h-3.5 mr-1.5" /> Data ({payload.data.length})
           </Button>
           {payload.sql_used && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setActiveTab("sql")}
+            <Button variant="ghost" size="sm" onClick={() => setActiveTab("sql")}
               className={`h-8 px-2 text-xs ${activeTab === "sql" ? "bg-slate-800 text-amber-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
             >
-              <Code2 className="w-3.5 h-3.5 mr-1.5" /> SQL
+              <Code2 className="w-3.5 h-3.5 mr-1.5" /> SQL Plan
             </Button>
           )}
         </div>
-
         <Button variant="ghost" size="sm" onClick={downloadCSV} className="h-8 px-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-          <Download className="w-3.5 h-3.5 mr-1.5" /> Export
+          <Download className="w-3.5 h-3.5 mr-1.5" /> Export Parquet/CSV
         </Button>
       </div>
 
@@ -229,9 +239,23 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
                   <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} formatter={(value: any) => [formatNumber(value), undefined]} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                  {resolvedChartConfig.yAxisKeys.map((key, idx) => (
-                    <Area key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[idx % CHART_COLORS.length]} fillOpacity={1} fill={`url(#colorUv-${idx % CHART_COLORS.length})`} strokeWidth={2} activeDot={{ r: 6, strokeWidth: 0 }} />
-                  ))}
+                  {resolvedChartConfig.yAxisKeys.map((key, idx) => {
+                    const isEMA = key.includes('_ema_');
+                    return (
+                      <Area 
+                        key={key} 
+                        type="monotone" 
+                        dataKey={key} 
+                        stroke={isEMA ? EMA_COLOR : CHART_COLORS[idx % CHART_COLORS.length]} 
+                        fillOpacity={isEMA ? 0 : 1} // Don't fill EMA lines
+                        strokeDasharray={isEMA ? "5 5" : ""} // Dashed lines for math predictions
+                        fill={isEMA ? "none" : `url(#colorUv-${idx % CHART_COLORS.length})`} 
+                        strokeWidth={2} 
+                        dot={resolvedChartConfig.hasAnomalies ? renderCustomDot : false}
+                        activeDot={{ r: 6, strokeWidth: 0 }} 
+                      />
+                    );
+                  })}
                 </AreaChart>
               ) : resolvedChartConfig.type === "bar" ? (
                 <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -241,7 +265,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} formatter={(value: any) => [formatNumber(value), undefined]} cursor={{ fill: '#1e293b' }} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                   {resolvedChartConfig.yAxisKeys.map((key, idx) => (
-                    <Bar key={key} dataKey={key} fill={CHART_COLORS[idx % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+                    <Bar key={key} dataKey={key} fill={key.includes('_ema_') ? EMA_COLOR : CHART_COLORS[idx % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
                   ))}
                 </BarChart>
               ) : (
@@ -251,9 +275,21 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
                   <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} formatter={(value: any) => [formatNumber(value), undefined]} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                  {resolvedChartConfig.yAxisKeys.map((key, idx) => (
-                    <Line key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[idx % CHART_COLORS.length]} strokeWidth={3} dot={{ r: 3, fill: '#0f172a', strokeWidth: 2 }} activeDot={{ r: 6, strokeWidth: 0 }} />
-                  ))}
+                  {resolvedChartConfig.yAxisKeys.map((key, idx) => {
+                    const isEMA = key.includes('_ema_');
+                    return (
+                      <Line 
+                        key={key} 
+                        type="monotone" 
+                        dataKey={key} 
+                        stroke={isEMA ? EMA_COLOR : CHART_COLORS[idx % CHART_COLORS.length]} 
+                        strokeWidth={isEMA ? 2 : 3} 
+                        strokeDasharray={isEMA ? "5 5" : ""}
+                        dot={resolvedChartConfig.hasAnomalies ? renderCustomDot : false} 
+                        activeDot={{ r: 6, strokeWidth: 0 }} 
+                      />
+                    );
+                  })}
                 </LineChart>
               )}
             </ResponsiveContainer>
@@ -274,17 +310,28 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {payload.data.map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-800/40 transition-colors">
-                    {tableHeaders.map((header) => (
-                      <td key={`${i}-${header}`} className="px-4 py-2.5 text-slate-300 whitespace-nowrap font-mono text-xs">
-                        {typeof row[header] === 'number' 
-                          ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(row[header])
-                          : String(row[header] ?? '')}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {payload.data.map((row, i) => {
+                  // Determine if this entire row represents an anomaly across any metric
+                  const isAnomalyRow = tableHeaders.some(h => h.includes('_zscore') && Math.abs(row[h]) > 3);
+                  
+                  return (
+                    <tr key={i} className={`transition-colors ${isAnomalyRow ? 'bg-red-950/20 hover:bg-red-950/40' : 'hover:bg-slate-800/40'}`}>
+                      {tableHeaders.map((header) => {
+                        const isZScore = header.includes('_zscore');
+                        const val = row[header];
+                        const isCellAnomaly = isZScore && Math.abs(val) > 3;
+
+                        return (
+                          <td key={`${i}-${header}`} className={`px-4 py-2.5 whitespace-nowrap font-mono text-xs ${isCellAnomaly ? 'text-red-400 font-bold' : 'text-slate-300'}`}>
+                            {typeof val === 'number' 
+                              ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(val)
+                              : String(val ?? '')}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </ScrollArea>
@@ -300,11 +347,15 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         )}
       </div>
 
-      {/* Optional Metadata Message */}
+      {/* Optional Metadata / ML Diagnostics Message */}
       {payload.message && activeTab !== "sql" && (
         <div className="px-4 py-2.5 border-t border-slate-800 bg-slate-900/40 text-[13px] text-slate-400 flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          {payload.message}
+          {resolvedChartConfig?.hasAnomalies ? (
+            <Activity className="w-4 h-4 text-amber-500 animate-pulse" />
+          ) : (
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          )}
+          <span className="truncate">{payload.message}</span>
         </div>
       )}
     </div>
