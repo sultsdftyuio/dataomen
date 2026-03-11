@@ -1,4 +1,3 @@
-// app/(dashboard)/chat/page.tsx
 'use client'
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
@@ -17,12 +16,14 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "@/components/ui/use-toast"
 import { createClient } from '@/utils/supabase/client'
+
+// Import the crown jewel
+import { DynamicChartFactory, ExecutionPayload } from "@/components/dashboard/DynamicChartFactory"
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -36,6 +37,7 @@ export interface Message {
   timestamp: Date;
   contextUsed?: string[]; 
   isQueryExecution?: boolean;
+  payload?: ExecutionPayload; // NEW: Holds the structured data for the chart factory
 }
 
 const INITIAL_MESSAGE: Message = {
@@ -120,10 +122,11 @@ export default function ChatPage() {
         id: `msg_${Date.now() + 1}`,
         role: 'assistant',
         // Support both standard response and narrative results
-        content: data.response || data.reply || (data.type === 'error' ? data.message : "Analysis complete."),
+        content: data.response || data.reply || (data.type === 'error' ? data.message : (data.payload ? "" : "Analysis complete.")),
         timestamp: new Date(),
         contextUsed: data.schemas || data.contextUsed || [], 
-        isQueryExecution: data.route_taken === 'analytical' || !!data.payload
+        isQueryExecution: data.route_taken === 'analytical' || !!data.payload,
+        payload: data.payload // Pass the data payload to power the factory
       }
       
       setMessages(prev => [...prev, newAssistantMessage])
@@ -141,7 +144,8 @@ export default function ChatPage() {
           id: `msg_err_${Date.now()}`,
           role: 'assistant',
           content: "I encountered an error trying to process that request. Please verify your data connections or try a different query.",
-          timestamp: new Date()
+          timestamp: new Date(),
+          payload: { type: "error", message: error.message }
         }
       ])
     } finally {
@@ -201,16 +205,27 @@ export default function ChatPage() {
                 </div>
               )}
               
-              <div className={`flex flex-col gap-2 max-w-[85%] sm:max-w-[75%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
-                <div 
-                  className={`rounded-2xl px-5 py-3.5 text-sm shadow-md leading-relaxed ${
-                    message.role === 'user' 
-                      ? 'bg-emerald-600 text-white rounded-tr-sm' 
-                      : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-sm'
-                  }`}
-                >
-                  {message.content}
-                </div>
+              <div className={`flex flex-col gap-2 max-w-[85%] sm:max-w-[85%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+                
+                {/* Text Content */}
+                {message.content && (
+                  <div 
+                    className={`rounded-2xl px-5 py-3.5 text-sm shadow-md leading-relaxed ${
+                      message.role === 'user' 
+                        ? 'bg-emerald-600 text-white rounded-tr-sm' 
+                        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-sm'
+                    }`}
+                  >
+                    {message.content}
+                  </div>
+                )}
+
+                {/* Dynamic Chart Execution Output */}
+                {message.payload && (
+                  <div className="w-full mt-2 animate-in fade-in slide-in-from-bottom-2">
+                    <DynamicChartFactory payload={message.payload} />
+                  </div>
+                )}
 
                 {/* Contextual RAG Metadata */}
                 {message.contextUsed && message.contextUsed.length > 0 && (
@@ -242,7 +257,7 @@ export default function ChatPage() {
               </div>
               <Card className="rounded-2xl rounded-tl-sm px-5 py-4 border border-slate-800 shadow-xl flex items-center gap-3 bg-slate-900/50 backdrop-blur-sm">
                 <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                <span className="text-sm text-slate-400 font-medium italic">Synthesizing execution plan...</span>
+                <span className="text-sm text-slate-400 font-medium italic">Writing DuckDB queries & synthesizing execution plan...</span>
               </Card>
             </div>
           )}
@@ -259,7 +274,7 @@ export default function ChatPage() {
           <Textarea
             ref={textareaRef}
             placeholder="Compute MRR churn or query custom datasets..."
-            className="min-h-[44px] max-h-32 flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 px-2 py-3 text-sm shadow-none text-slate-200 placeholder:text-slate-600"
+            className="min-h-[44px] max-h-32 flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 px-2 py-3 text-sm shadow-none text-slate-200 placeholder:text-slate-600 focus:ring-0"
             rows={1}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
