@@ -4,7 +4,8 @@ import os
 import uuid
 import logging
 import contextlib
-from datetime import datetime
+import polars as pl
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional, Any, Dict, List, Union
 
@@ -15,14 +16,8 @@ from botocore.config import Config
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-# Import modern models (ensure these align with your schema)
+# Import modern models
 from models import Dataset, TenantSettings, StorageTier
-
-try:
-    import pandas as pd
-    import polars as pl
-except ImportError:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +54,7 @@ class AdaptiveStorageManager:
     def _resolve_tenant_config(self, db: Session, tenant_id: str) -> ResolvedStorage:
         """
         Interrogates the database to find the user's current billing/storage tier.
-        Applies strict mathematical tenant_id jailing to isolate data.
+        Applies strict physical tenant_id isolation.
         """
         if not tenant_id:
             raise ValueError("Security Violation: tenant_id strictly required for storage resolution.")
@@ -104,33 +99,17 @@ class AdaptiveStorageManager:
             config=boto_config
         )
 
-    def get_fsspec_fs(self, db: Session, tenant_id: str) -> fsspec.AbstractFileSystem:
-        """Unified filesystem interface for generic operations or memory fallbacks."""
-        config = self._resolve_tenant_config(db, tenant_id)
-        if config.tier == StorageTier.EPHEMERAL:
-            return fsspec.filesystem('memory')
-
-        storage_options = {
-            "key": config.access_key,
-            "secret": config.secret_key,
-            "client_kwargs": {"endpoint_url": config.endpoint}
-        }
-        return fsspec.filesystem('s3', **storage_options)
-
-    # --------------------------------------------------------------------------
-    # Phase 2: Ingestion & Parquet Pipeline Operations
-    # --------------------------------------------------------------------------
-
-    def write_dataframe(self, db: Session, df: Any, tenant_id: str, dataset_id: str, format: str = "parquet") -> str:
+    def write_dataframe(self, db: Session, df: pl.DataFrame, tenant_id: str, dataset_id: str) -> str:
         """
         The Upgraded Computation Layer: Rust-Native Streaming Sink.
         Bypasses Python memory buffers to stream Polars directly to R2/S3.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         
+        # Build deterministic Parquet key
         if not dataset_id.endswith(".parquet"):
             batch_id = uuid.uuid4().hex[:8]
-            timestamp = int(datetime.utcnow().timestamp())
+            timestamp = int(datetime.now(timezone.utc).timestamp())
             object_key = f"{dataset_id}/batch_{timestamp}_{batch_id}.parquet"
         else:
             object_key = dataset_id
@@ -138,25 +117,23 @@ class AdaptiveStorageManager:
         full_s3_uri = f"s3://{config.bucket}/{config.prefix}datasets/{object_key}"
         
         try:
-            if format == "parquet" and hasattr(df, "write_parquet"):
-                # Hybrid Performance: Use Polars' native object_store (Rust) when hitting cloud storage
-                if config.tier != StorageTier.EPHEMERAL:
-                    storage_options = {
-                        "aws_access_key_id": config.access_key,
-                        "aws_secret_access_key": config.secret_key,
-                        "aws_endpoint_url": config.endpoint,
-                        "aws_region": "auto"
-                    }
-                    df.write_parquet(full_s3_uri, compression="zstd", storage_options=storage_options)
-                else:
-                    # Fallback to fsspec memory filesystem for ephemeral layer
-                    fs = self.get_fsspec_fs(db, tenant_id)
-                    with fs.open(full_s3_uri, "wb") as f:
-                        df.write_parquet(f, compression="zstd")
+            # Hybrid Performance: Use Polars' native object_store (Rust)
+            if config.tier != StorageTier.EPHEMERAL:
+                storage_options = {
+                    "aws_access_key_id": config.access_key,
+                    "aws_secret_access_key": config.secret_key,
+                    "aws_endpoint_url": config.endpoint,
+                    "aws_region": "auto"
+                }
+                # use_pyarrow=False ensures we stay in Rust/C++ for the network IO
+                df.write_parquet(full_s3_uri, compression="zstd", storage_options=storage_options, use_pyarrow=False)
             else:
-                raise TypeError("Compute Error: Requires Polars/Pandas DataFrame and Parquet format.")
+                # Ephemeral memory write
+                fs = fsspec.filesystem('memory')
+                with fs.open(full_s3_uri, "wb") as f:
+                    df.write_parquet(f, compression="zstd")
             
-            logger.debug(f"[{tenant_id}] Wrote optimized dataset -> {full_s3_uri}")
+            logger.info(f"[{tenant_id}] Streamed optimized dataset -> {full_s3_uri}")
             return full_s3_uri
 
         except Exception as e:
@@ -164,37 +141,36 @@ class AdaptiveStorageManager:
             raise
 
     def get_duckdb_query_path(self, db: Session, dataset: Dataset) -> str:
-        """Calculates the optimal zero-copy path for DuckDB, gracefully handling absolute URIs."""
+        """Calculates the optimal zero-copy path for DuckDB, handles Hive-style partitioning."""
         if dataset.is_sample and dataset.sample_uri:
             return f"'{dataset.sample_uri}'"
 
-        # Fix: Prevent double-prefixing if the DB already stores the absolute S3 URI
         if dataset.file_path.startswith("s3://"):
             base_path = dataset.file_path
         else:
             config = self._resolve_tenant_config(db, dataset.tenant_id)
             base_path = f"s3://{config.bucket}/{config.prefix}{dataset.file_path.lstrip('/')}"
             
+        # Support directory-based datasets for massive scale
         path_suffix = "/**/*.parquet" if not base_path.endswith(".parquet") else ""
         return f"'{base_path}{path_suffix}'"
 
     @contextlib.contextmanager
     def duckdb_session(self, db: Session, tenant_id: str):
         """
-        SaaS Memory Management: Scoped connection with connection-level secrets.
-        Ensures tenant isolation without polluting a global DuckDB instance.
+        SaaS Memory Management: Scoped connection with connection-level secrets and metadata caching.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         con = duckdb.connect(database=':memory:')
         
         try:
             if config.tier != StorageTier.EPHEMERAL:
-                # Load HTTPFS (avoids slow network INSTALL if already cached/pre-installed in container)
                 con.execute("INSTALL httpfs; LOAD httpfs;")
+                # Analytical Efficiency: Cache parquet metadata to speed up frequent queries
+                con.execute("PRAGMA parquet_metadata_cache=true;")
                 
                 endpoint_clean = config.endpoint.replace('https://', '').replace('http://', '')
                 
-                # Security by Design: Anonymous S3 secret mapped solely to this connection lifecycle
                 con.execute(f"""
                     CREATE OR REPLACE SECRET (
                         TYPE S3,
@@ -212,27 +188,22 @@ class AdaptiveStorageManager:
     def convert_to_parquet_and_profile(self, db: Session, tenant_id: str, raw_object_key: str) -> Dict[str, Any]:
         """
         Event-Driven Profiling Worker.
-        Streams raw S3 to Parquet natively inside DuckDB, mapping Schema for Semantic Routing.
+        Streams raw S3 to Parquet natively inside DuckDB.
         """
         config = self._resolve_tenant_config(db, tenant_id)
         if config.tier == StorageTier.EPHEMERAL:
             raise ValueError("Ephemeral storage does not support persistent background workers.")
 
         parquet_key = raw_object_key.replace('/raw/', '/analytical/')
-        for ext in ['.csv', '.xlsx', '.xls', '.json']:
-            if parquet_key.lower().endswith(ext):
-                parquet_key = parquet_key[:parquet_key.rfind(ext)] + '.parquet'
-                break
-        else:
-            if not parquet_key.endswith('.parquet'):
-                parquet_key += '.parquet'
+        if not parquet_key.endswith('.parquet'):
+            parquet_key = os.path.splitext(parquet_key)[0] + '.parquet'
 
         raw_s3_path = f"s3://{config.bucket}/{raw_object_key}"
         parquet_s3_path = f"s3://{config.bucket}/{parquet_key}"
 
         with self.duckdb_session(db, tenant_id) as con:
             try:
-                # 1. Vectorized Conversion via DuckDB Compute Engine
+                # 1. Direct stream: Cloud -> Compute -> Cloud (no local disk overhead)
                 if raw_object_key.lower().endswith('.csv'):
                     read_query = f"read_csv_auto('{raw_s3_path}', normalize_names=True)"
                 elif raw_object_key.lower().endswith('.json'):
@@ -240,29 +211,23 @@ class AdaptiveStorageManager:
                 else:
                     read_query = f"read_csv_auto('{raw_s3_path}', normalize_names=True)"
 
-                # Direct stream: Cloud -> Compute -> Cloud (no local disk overhead)
-                con.execute(f"""
-                    COPY (SELECT * FROM {read_query}) 
-                    TO '{parquet_s3_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');
-                """)
+                con.execute(f"COPY (SELECT * FROM {read_query}) TO '{parquet_s3_path}' (FORMAT PARQUET, COMPRESSION 'ZSTD');")
 
-                # 2. Schema Extraction (Contextual RAG Prep)
-                metadata_rows = con.execute(f"DESCRIBE SELECT * FROM '{parquet_s3_path}';").fetchall()
-                columns_info = [{"name": row[0], "type": row[1]} for row in metadata_rows]
+                # 2. Vectorized Schema & Sample Extraction via Polars
+                metadata = con.execute(f"DESCRIBE SELECT * FROM '{parquet_s3_path}';").pl()
+                columns_info = [{"name": row["column_name"], "type": row["column_type"]} for row in metadata.to_dicts()]
                 
-                sample_query = con.execute(f"SELECT * FROM '{parquet_s3_path}' LIMIT 3;")
-                col_names = [col[0] for col in sample_query.description]
-                sample_rows = [dict(zip(col_names, row)) for row in sample_query.fetchall()]
+                sample_df = con.execute(f"SELECT * FROM '{parquet_s3_path}' LIMIT 3;").pl()
 
                 return {
                     "parquet_path": parquet_key,
                     "columns": columns_info,
-                    "sample": sample_rows
+                    "sample": sample_df.to_dicts()
                 }
 
             except Exception as e:
                 logger.error(f"Parquet pipeline failed for {raw_object_key}: {e}")
-                raise Exception(f"Failed to process dataset pipeline: {str(e)}")
+                raise
 
-# Export singleton instance for dependency injection
+# Export singleton instance
 storage_manager = AdaptiveStorageManager()

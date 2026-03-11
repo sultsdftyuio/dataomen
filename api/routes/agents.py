@@ -5,17 +5,17 @@ from uuid import UUID
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 # Core Database & Models
 from api.database import get_db
-from models import Agent, Dataset
+from models import Agent
 
-# Core Security & SaaS Identity (Standardized Dual-Auth Gateway)
-from api.routes.query import verify_tenant_auth
-from api.services.tenant_security_provider import TenantContext
+# Core Security & SaaS Identity
+# Standardized against api/auth.py for stateless/network dual-verification
+from api.auth import verify_tenant, TenantContext
 
 # Core Services
 from api.services.agent_service import agent_service
@@ -33,113 +33,128 @@ class AgentCreate(BaseModel):
     dataset_id: str = Field(..., description="The UUID of the dataset this agent will query.")
     role_description: Optional[str] = Field(None, description="Custom prompt instructions for the LLM.")
     
-    # NEW: Autonomous Monitoring Fields
-    cron_schedule: Optional[str] = Field(None, description="Standard cron string, e.g., '0 * * * *' (hourly)")
+    # Autonomous Monitoring Parameters
+    cron_schedule: Optional[str] = Field(None, description="Standard cron string, e.g., '0 * * * *'")
     metric_column: Optional[str] = Field(None, description="The specific numeric column to monitor")
     time_column: Optional[str] = Field(None, description="The datetime column in the dataset")
     sensitivity_threshold: float = Field(2.0, description="Z-score threshold for anomaly flagging")
 
-class AgentResponse(BaseModel):
-    id: str
-    name: str
-    dataset_id: str
+class AgentUpdate(BaseModel):
+    name: Optional[str] = None
     role_description: Optional[str] = None
     cron_schedule: Optional[str] = None
+    sensitivity_threshold: Optional[float] = None
+    is_active: Optional[bool] = None
+
+class AgentResponse(BaseModel):
+    id: UUID
+    name: str
+    dataset_id: UUID
+    role_description: Optional[str] = None
+    cron_schedule: Optional[str] = None
+    metric_column: Optional[str] = None
+    time_column: Optional[str] = None
+    sensitivity_threshold: float
     is_active: bool
     created_at: datetime
+    last_run_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 # ------------------------------------------------------------------------------
-# Routes: Agent Management
+# Routes: Agent Management (CRUD)
 # ------------------------------------------------------------------------------
 
 @router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
-def create_agent(
+async def create_agent(
     payload: AgentCreate, 
-    context: TenantContext = Depends(verify_tenant_auth), # Security Phase 1: Dual-Auth Check
+    context: TenantContext = Depends(verify_tenant),
     db: Session = Depends(get_db)
 ):
     """
     Creates a new AI Agent dedicated to a specific dataset.
-    Automatically provisions background monitoring if cron parameters are provided.
+    Security by Design: Validates dataset ownership before binding.
     """
-    logger.info(f"[{context.tenant_id}] Attempting to create agent '{payload.name}'")
-
+    logger.info(f"[{context.tenant_id}] Creating agent: {payload.name}")
     try:
-        # Delegate to the strictly isolated agent_service we built
-        new_agent = agent_service.create_agent(
-            db=db,
-            tenant_id=context.tenant_id,
-            rule=payload
-        )
-        return new_agent
-        
+        return agent_service.create_agent(db, context.tenant_id, payload)
     except ValueError as ve:
-        logger.warning(f"[{context.tenant_id}] Failed to bind agent: {ve}")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
-    except RuntimeError as re:
-        logger.error(f"[{context.tenant_id}] Runtime error during agent creation: {re}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(re))
-
+    except Exception as e:
+        logger.error(f"[{context.tenant_id}] Agent creation failed: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Agent creation failed.")
 
 @router.get("/", response_model=List[AgentResponse])
-def list_agents(
-    context: TenantContext = Depends(verify_tenant_auth),
+async def list_agents(
+    context: TenantContext = Depends(verify_tenant),
     db: Session = Depends(get_db)
 ):
-    """
-    Retrieves all AI Agents belonging to the authenticated Organization.
-    Security by Design: Filters purely by the injected tenant context.
-    """
-    try:
-        # Delegate to agent_service for tenant-isolated retrieval
-        agents = agent_service.list_agents(db, context.tenant_id)
-        return agents
-    except Exception as e:
-        logger.error(f"[{context.tenant_id}] Failed to list agents: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Failed to retrieve agents."
-        )
+    """Retrieves all AI Agents belonging to the authenticated Organization."""
+    return agent_service.list_agents(db, context.tenant_id)
 
+@router.get("/{agent_id}", response_model=AgentResponse)
+async def get_agent(
+    agent_id: UUID,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """Fetches a specific agent with strict tenant isolation."""
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    return agent
+
+@router.patch("/{agent_id}", response_model=AgentResponse)
+async def update_agent(
+    agent_id: UUID,
+    payload: AgentUpdate,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """Updates agent configuration or toggles active status."""
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(agent, key, value)
+    
+    db.commit()
+    db.refresh(agent)
+    return agent
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_agent(
-    agent_id: str, 
-    context: TenantContext = Depends(verify_tenant_auth),
+async def delete_agent(
+    agent_id: UUID, 
+    context: TenantContext = Depends(verify_tenant),
     db: Session = Depends(get_db)
 ):
+    """Deletes an agent and halts its autonomous monitoring loops."""
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found.")
+    
+    db.delete(agent)
+    db.commit()
+    return None
+
+# ------------------------------------------------------------------------------
+# Autonomous Heartbeat
+# ------------------------------------------------------------------------------
+
+@router.post("/heartbeat", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_agent_heartbeat(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+    # Note: In production, protect this with a internal secret header for Render Crons
+):
     """
-    Deletes an AI agent and halts its autonomous background monitoring loops.
-    Cascadingly wipes its Contextual RAG knowledge via DB constraints.
+    The Orchestration Trigger.
+    Scans for agents due for execution and dispatches them to background workers.
+    Designed for 100% functional reliability in serverless/container environments.
     """
-    try:
-        # Fetch with strict tenant isolation
-        agent = db.query(Agent).filter(
-            Agent.id == agent_id,
-            Agent.tenant_id == context.tenant_id
-        ).first()
-        
-        if not agent:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="Agent not found or unauthorized."
-            )
-            
-        db.delete(agent)
-        db.commit()
-        
-        logger.info(f"[{context.tenant_id}] Successfully deleted agent {agent_id}")
-        return None
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[{context.tenant_id}] Failed to delete agent {agent_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail="Failed to delete the agent."
-        )
+    logger.info("SYSTEM: Autonomous Heartbeat Triggered.")
+    result = await agent_service.check_and_dispatch_agents(db, background_tasks)
+    return result

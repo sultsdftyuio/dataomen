@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+import anyio
 from typing import Dict, Any
 
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ class IngestionPipeline:
     
     Acts as the Orchestrator. Delegates physical storage, tier resolution, 
     and DuckDB compute entirely to the AdaptiveStorageManager.
-    Uses SQLAlchemy for robust transaction management.
+    Uses anyio to offload blocking synchronous operations to worker threads.
     """
 
     def generate_presigned_upload(self, db: Session, tenant_id: str, file_name: str, content_type: str) -> Dict[str, Any]:
@@ -57,17 +58,21 @@ class IngestionPipeline:
     async def process_raw_to_parquet(self, db: Session, tenant_id: str, dataset_id: str, raw_object_key: str) -> Dict[str, Any]:
         """
         Event-Driven Profiling Worker logic.
-        Delegates heavy vectorized DuckDB compute to storage_manager, mapping the 
-        semantic profile to the database via SQLAlchemy.
+        Uses thread-offloading to prevent heavy DuckDB compute from blocking the event loop.
         """
         logger.info(f"[Worker] Processing dataset {dataset_id} for tenant {tenant_id}")
         
         try:
-            # 1. Delegate heavy lifting to the highly optimized Storage Manager
-            # This inherently applies tenant security, connection pooling, and zero-copy streaming
-            profile_result = storage_manager.convert_to_parquet_and_profile(db, tenant_id, raw_object_key)
+            # HYBRID PERFORMANCE: Offload the heavy synchronous DuckDB compute to a separate thread
+            # This prevents the FastAPI event loop from stalling during conversion.
+            profile_result = await anyio.to_thread.run_sync(
+                storage_manager.convert_to_parquet_and_profile, 
+                db, 
+                tenant_id, 
+                raw_object_key
+            )
             
-            # 2. Update Database via SQLAlchemy (Standardized ORM)
+            # Update Database via SQLAlchemy (Standardized ORM)
             dataset = db.query(Dataset).filter(
                 Dataset.id == dataset_id,
                 Dataset.tenant_id == tenant_id

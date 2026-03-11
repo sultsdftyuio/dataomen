@@ -2,9 +2,8 @@
 
 import logging
 import duckdb
-import pandas as pd
-import numpy as np
-from typing import List, Dict, Any
+import polars as pl
+from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 # Import modular orchestrators
@@ -48,7 +47,7 @@ class ComputeEngine:
     
     Spins up ephemeral, memory-capped DuckDB connections per request.
     Dynamically maps abstract datasets to secure storage paths via the StorageManager.
-    Executes heavily optimized, vectorized operations via DuckDB and Arrow.
+    Executes heavily optimized, vectorized operations via DuckDB, Arrow, and Polars.
     """
 
     def __init__(self):
@@ -63,7 +62,8 @@ class ComputeEngine:
         db: Session,
         tenant_id: str, 
         datasets: List[Dataset], 
-        query: str
+        query: str,
+        injected_views: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         Safely executes an LLM-generated DuckDB SQL query.
@@ -72,7 +72,6 @@ class ComputeEngine:
         logger.info(f"[Tenant: {tenant_id}] Spinning up DuckDB compute engine.")
 
         # 1. Destructive Query Prevention (Security by Design)
-        # Added keywords to prevent unauthorized DuckDB system manipulation
         forbidden_keywords = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE TABLE", "COPY", "INSTALL", "LOAD"]
         query_upper = query.upper()
         if any(keyword in query_upper for keyword in forbidden_keywords):
@@ -83,43 +82,40 @@ class ComputeEngine:
             with storage_manager.duckdb_session(db, tenant_id) as conn:
                 
                 # 3. Resource Governance (Noisy Neighbor Protection)
-                # Cap the execution environment so it doesn't crash the container
                 conn.execute("PRAGMA memory_limit='2GB';")
                 conn.execute("PRAGMA threads=2;")
                 
                 # 4. Tenant-Isolated Execution: Register dynamically routed Parquet paths
                 for dataset in datasets:
-                    # Get the zero-copy remote URL (R2, Supabase, or Local Memory)
                     secure_path = storage_manager.get_duckdb_query_path(db, dataset)
-                    
-                    # LLM OPTIMIZATION: We register two views. 
-                    # One for the UUID (system-safe) and one for a sanitized version of the human name.
-                    # This ensures LLM-generated SQL queries like 'SELECT * FROM sales_data' work.
                     sanitized_name = self._sanitize_identifier(dataset.name)
                     
+                    # Register both system UUID and friendly name for LLM mapping
                     for alias in [str(dataset.id), sanitized_name]:
-                        # Wrap alias in double quotes to handle reserved words or numbers
                         register_query = f'CREATE OR REPLACE VIEW "{alias}" AS SELECT * FROM read_parquet({secure_path});'
                         conn.execute(register_query)
                         
                     logger.debug(f"Registered secure views for dataset: {dataset.id} (alias: {sanitized_name})")
 
-                # 5. Execute the query using Arrow for Zero-Copy performance
+                # 5. Lock Down Container Context
+                # Strictly prevent LLMs from querying arbitrary URLs or local container file systems
+                conn.execute("PRAGMA disable_external_access;")
+
+                # 6. Execute the query using Arrow for Zero-Copy performance
                 logger.info("Executing analytical query over zero-copy network layer.")
                 
-                # SaaS Performance Upgrade: Fetch via Arrow instead of standard Pandas.
-                # Arrow zero-copy memory mapping is significantly faster and prevents RAM spikes.
+                # Hybrid Performance Paradigm: Fetch via Arrow directly into Polars (Rust/C++)
+                # Completely bypasses single-threaded Pandas dense memory copies
                 arrow_table = conn.execute(query).arrow()
-                result_df: pd.DataFrame = arrow_table.to_pandas()
+                result_df = pl.from_arrow(arrow_table)
                 
-                # 6. Result Serialization & Safety Limits
-                if len(result_df) > self.max_return_rows:
-                    logger.warning(f"Result set too large ({len(result_df)} rows). Truncating to {self.max_return_rows}.")
+                # 7. Result Serialization & Safety Limits
+                if result_df.height > self.max_return_rows:
+                    logger.warning(f"Result set too large ({result_df.height} rows). Truncating to {self.max_return_rows}.")
                     result_df = result_df.head(self.max_return_rows)
                     
-                # PERFORMANCE UPGRADE: Handle NaNs without forcing object-type conversion.
-                # We replace NaNs with None so they serialize to 'null' in JSON (cleaner for React).
-                return result_df.replace({np.nan: None}).to_dict(orient="records")
+                # PERFORMANCE UPGRADE: Polars naturally handles nulls and serializes directly to clean Python dicts instantly.
+                return result_df.to_dicts()
 
         except duckdb.ParserException as e:
             logger.error(f"SQL Parsing Error: {str(e)}")
@@ -142,7 +138,7 @@ class ComputeEngine:
     ) -> List[Dict[str, Any]]:
         """
         Path C: Math/ML Code Execution.
-        Prioritizes functional, vectorized operations (Pandas/NumPy) for complexity 
+        Prioritizes functional, vectorized operations (Polars via Rust) for complexity 
         SQL cannot handle easily (e.g., Linear Algebra).
         """
         logger.info(f"[Tenant: {tenant_id}] Initiating ML pipeline: {operation}")
@@ -155,18 +151,23 @@ class ComputeEngine:
         try:
             with storage_manager.duckdb_session(db, tenant_id) as conn:
                 secure_path = storage_manager.get_duckdb_query_path(db, primary_dataset)
-                # Zero-copy load of a manageable subset for in-memory math
-                df = conn.execute(f"SELECT * FROM read_parquet({secure_path}) LIMIT 100000").arrow().to_pandas()
+                # Zero-copy load of a manageable subset directly into Polars
+                arrow_table = conn.execute(f"SELECT * FROM read_parquet({secure_path}) LIMIT 100000").arrow()
+                df = pl.from_arrow(arrow_table)
             
             # Example Mathematical Precision: Exponential Moving Average
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            if not numeric_cols.empty and operation == "ema_forecast":
-                col = numeric_cols[0]
-                # Utilizing EMA for mathematical sensitivity to seasonality
-                df[f'{col}_ema_7d'] = df[col].ewm(span=7, adjust=False).mean()
+            # Filter columns to only those of numeric types
+            numeric_cols = [col for col, dtype in df.schema.items() if dtype in pl.NUMERIC_DTYPES]
             
-            # Safely serialize with performance-optimized NaN handling
-            return df.head(self.max_return_rows).replace({np.nan: None}).to_dict(orient="records")
+            if numeric_cols and operation == "ema_forecast":
+                col = numeric_cols[0]
+                # Utilizing EMA for mathematical sensitivity to seasonality natively in C++
+                df = df.with_columns(
+                    pl.col(col).ewm_mean(span=7, adjust=False).alias(f'{col}_ema_7d')
+                )
+            
+            # Safely serialize utilizing Polars' inherent NaN/Null performance handling
+            return df.head(self.max_return_rows).to_dicts()
             
         except Exception as e:
             logger.error(f"ML Pipeline execution failed: {str(e)}")

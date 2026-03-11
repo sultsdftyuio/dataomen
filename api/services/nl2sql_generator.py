@@ -1,3 +1,5 @@
+# api/services/nl2sql_generator.py
+
 import logging
 import json
 from typing import List, Dict, Any, Optional, Tuple
@@ -37,12 +39,47 @@ class NL2SQLGenerator:
         """
         self.llm = llm_client
 
-    def _build_system_prompt(self, schemas: List[Dict[str, Any]]) -> str:
+    def _minimize_schema_payload(self, schemas: List[Dict[str, Any]]) -> str:
+        """
+        Contextual RAG Optimization:
+        Reduces token bloat by stripping out deep statistical metadata from the schema payload,
+        ensuring the LLM only receives table definitions (names, columns, types) to stay focused.
+        """
+        minimized = []
+        for schema in schemas:
+            table_def = {
+                "table_name": f'"{schema.get("id")}"',
+                "friendly_name": schema.get("name", "Unknown Dataset"),
+                "columns": {}
+            }
+            
+            raw_meta = schema.get("schema", {})
+            if isinstance(raw_meta, dict):
+                # Safely extract column mappings whether they are strings or dicts
+                for col_name, col_info in raw_meta.items():
+                    if isinstance(col_info, dict):
+                        table_def["columns"][col_name] = col_info.get("type", "UNKNOWN")
+                    else:
+                        table_def["columns"][col_name] = str(col_info)
+            else:
+                table_def["columns"] = raw_meta
+                
+            minimized.append(table_def)
+            
+        return json.dumps(minimized, indent=2)
+
+    def _build_system_prompt(self, schemas: List[Dict[str, Any]], semantic_views: Optional[Dict[str, Any]] = None) -> str:
         """
         Constructs the highly constrained system prompt for the LLM.
         Enforces DuckDB dialect, read-only security, and Contextual RAG limitations.
+        Dynamically injects 'Gold Tier' semantic views if the router recommended them.
         """
-        schema_context = json.dumps(schemas, indent=2)
+        schema_context = self._minimize_schema_payload(schemas)
+        
+        views_context = ""
+        if semantic_views:
+            views_json = json.dumps(semantic_views, indent=2)
+            views_context = f"\nAVAILABLE PRE-BUILT VIEWS (GOLD TIER):\nYou MAY query these like normal tables to satisfy complex metric requests.\n{views_json}\n"
         
         return f"""
         You are an expert Data Engineer and DuckDB SQL optimizer for a high-performance analytical SaaS.
@@ -50,12 +87,13 @@ class NL2SQLGenerator:
 
         ACTIVE DATASET SCHEMAS:
         {schema_context}
+        {views_context}
 
         CRITICAL RULES:
-        1. NO HALLUCINATIONS: You may ONLY select columns that explicitly exist in the schemas above.
+        1. NO HALLUCINATIONS: You may ONLY select columns and tables that explicitly exist in the schemas or views above.
         2. TABLE REFERENCING: Treat the dataset `id` as the table name. Wrap it in double quotes. 
            Example: SELECT * FROM "dataset_a1b2c3"
-        3. DUCKDB DIALECT: Use DuckDB specific functions for date parsing, string manipulation, and aggregations.
+        3. DUCKDB DIALECT: Use DuckDB specific functions for date parsing (e.g., strptime, date_trunc), string manipulation, and aggregations.
         4. READ-ONLY STRICT: NEVER output INSERT, UPDATE, DELETE, DROP, or ALTER. SELECT statements only.
         5. VECTORIZED AGGREGATIONS: If the user asks for high-level metrics, use grouped aggregations (SUM, AVG, COUNT) 
            rather than returning raw rows to ensure frontend charting is fast.
@@ -64,6 +102,7 @@ class NL2SQLGenerator:
         If the user prompt implies or explicitly asks for a visualization (chart, graph, plot):
         - Output a valid `Vega-Lite` JSON configuration in the `chart_spec` field.
         - Ensure the fields in the Vega-Lite spec EXACTLY match the aliases in your SQL SELECT statement.
+        - Use descriptive aliases in your SQL (e.g., `revenue` instead of `sum(amount)`).
         - If no chart is requested, return null for `chart_spec`.
         """
 
@@ -71,6 +110,7 @@ class NL2SQLGenerator:
         self, 
         prompt: str, 
         schemas: List[Dict[str, Any]], 
+        semantic_views: Optional[Dict[str, Any]] = None,
         history: List[Dict[str, Any]] = None
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
@@ -79,10 +119,10 @@ class NL2SQLGenerator:
         if self.llm is None:
             raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
             
-        logger.info("Generating DuckDB SQL execution plan.")
+        logger.info("Generating DuckDB SQL execution plan via Contextual RAG.")
         history = history or []
         
-        system_prompt = self._build_system_prompt(schemas)
+        system_prompt = self._build_system_prompt(schemas, semantic_views)
         
         try:
             result: NL2SQLOutput = await self.llm.generate_structured(
@@ -103,19 +143,20 @@ class NL2SQLGenerator:
         self, 
         failed_query: str, 
         error_msg: str, 
-        schemas: List[Dict[str, Any]]
+        schemas: List[Dict[str, Any]],
+        semantic_views: Optional[Dict[str, Any]] = None
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Phase 4: Error Feedback Loop.
-        If the Compute Engine fails to execute the query (e.g., syntax error, column not found),
-        this method feeds the error back to the LLM for immediate self-correction.
+        If the Compute Engine fails to execute the query, feed the error back to the LLM for immediate self-correction.
+        Maintains the view context to ensure the fix doesn't lose sight of the target views.
         """
         if self.llm is None:
             raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
             
         logger.warning("Initiating SQL Auto-Correction loop.")
         
-        system_prompt = self._build_system_prompt(schemas)
+        system_prompt = self._build_system_prompt(schemas, semantic_views)
         
         correction_prompt = f"""
         The following DuckDB SQL query failed to execute.
@@ -126,7 +167,7 @@ class NL2SQLGenerator:
         ERROR MESSAGE RETURNED BY DUCKDB:
         {error_msg}
         
-        Please analyze the error message against the active schemas, fix the syntax or column names, 
+        Please analyze the error message against the active schemas/views, fix the syntax or column names, 
         and provide the corrected DuckDB SQL query. Keep the same chart specification if applicable.
         """
         

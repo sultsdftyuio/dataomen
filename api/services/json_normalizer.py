@@ -1,8 +1,9 @@
 # api/services/json_normalizer.py
 
 import logging
+import re
 import polars as pl
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -14,14 +15,28 @@ class PolarsNormalizer:
     strictly typed, columnar DataFrames optimized for Parquet/DuckDB.
     
     Upgrades: 
-    - Collision-proof struct unnesting (prefixes nested keys).
-    - Parquet schema safety (coerces Null/Object types to Utf8).
-    - Audit telemetry injection (_extracted_at).
+    - Parallelized Expression Graph (Groups operations for C++ multithreading).
+    - Regex-powered column sanitization for strict DuckDB compliance.
+    - Timezone-aware audit telemetry.
     """
     
     def __init__(self, tenant_id: str, integration_name: str):
         self.tenant_id = tenant_id
         self.integration_name = integration_name
+
+    def _sanitize_column_names(self, columns: List[str]) -> Dict[str, str]:
+        """
+        Ensures column names are strictly alphanumeric and lowercase, preventing 
+        DuckDB syntax errors without needing double-quotes around every field.
+        """
+        clean_mapping = {}
+        for col in columns:
+            # Lowercase, replace any non-alphanumeric character with an underscore, 
+            # and strip trailing/leading underscores.
+            clean_name = re.sub(r'[^a-z0-9]', '_', col.lower()).strip('_')
+            # Fallback for empty strings after regex
+            clean_mapping[col] = clean_name if clean_name else "unnamed_col"
+        return clean_mapping
 
     def normalize_batch(self, raw_data: List[Dict[str, Any]]) -> pl.DataFrame:
         """
@@ -34,7 +49,7 @@ class PolarsNormalizer:
                 schema={
                     "_tenant_id": pl.Utf8, 
                     "_integration_name": pl.Utf8, 
-                    "_extracted_at": pl.Datetime
+                    "_extracted_at": pl.Datetime("us", "UTC")
                 }
             )
 
@@ -50,24 +65,27 @@ class PolarsNormalizer:
         # 2. Collision-Proof Dynamic Unnesting
         # Standard unnesting causes crashes if {"customer": {"id": 1}} and {"id": 2} exist.
         # We manually unnest and prefix fields (e.g., -> "customer_id").
-        struct_cols = [col for col, dtype in zip(df.columns, df.dtypes) if isinstance(dtype, pl.Struct)]
+        
+        # Use schema.items() for newer Polars compatibility
+        struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
         
         while struct_cols:
+            exprs = []
             for col in struct_cols:
-                # Extract the sub-fields of the nested object
+                # Extract the sub-fields of the nested object using the schema
                 fields = df[col].struct.fields
                 
                 # Create aliased expressions to flatten them with a prefix
-                exprs = [
-                    pl.col(col).struct.field(f).alias(f"{col}_{f}") 
+                exprs.extend([
+                    pl.col(col).struct.field(f.name).alias(f"{col}_{f.name}") 
                     for f in fields
-                ]
+                ])
                 
-                # Apply the new flattened columns and drop the original nested struct
-                df = df.with_columns(exprs).drop(col)
-                
+            # Apply all unnesting expressions in parallel via the C++ engine, then drop the parent structs
+            df = df.with_columns(exprs).drop(struct_cols)
+            
             # Re-evaluate in case the unnested structs contained deeper structs
-            struct_cols = [col for col, dtype in zip(df.columns, df.dtypes) if isinstance(dtype, pl.Struct)]
+            struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
 
         # Note on Lists/Arrays (e.g., Shopify line_items):
         # We DO NOT explode them here. Exploding creates massive row-duplication. 
@@ -76,27 +94,20 @@ class PolarsNormalizer:
         # 3. Parquet Schema Safety (Type Coercion)
         # Cloudflare R2 / Parquet writers will immediately crash if they encounter a purely 
         # 'Null' column or a Python 'Object' column. We must sanitize them.
+        type_cast_exprs = []
         
-        # Coerce Null columns to String (Utf8)
-        null_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype == pl.Null]
-        if null_cols:
-            df = df.with_columns([
-                pl.lit(None).cast(pl.Utf8).alias(col) for col in null_cols
-            ])
-            
-        # Coerce unsupported Object columns (often weird, mixed-type JSON arrays) to JSON Strings
-        object_cols = [col for col, dtype in zip(df.columns, df.dtypes) if dtype == pl.Object]
-        if object_cols:
-            df = df.with_columns([
-                pl.col(col).cast(pl.Utf8).alias(col) for col in object_cols
-            ])
+        for col, dtype in df.schema.items():
+            if dtype == pl.Null:
+                type_cast_exprs.append(pl.lit(None).cast(pl.Utf8).alias(col))
+            elif dtype == pl.Object:
+                # Coerce unsupported Object columns to JSON Strings
+                type_cast_exprs.append(pl.col(col).cast(pl.Utf8).alias(col))
+                
+        if type_cast_exprs:
+            df = df.with_columns(type_cast_exprs)
 
         # 4. Standardize column names for DuckDB SQL querying
-        # Lowercase, replace spaces/dots with underscores
-        clean_columns = {
-            col: col.strip().lower().replace(" ", "_").replace(".", "_") 
-            for col in df.columns
-        }
+        clean_columns = self._sanitize_column_names(df.columns)
         df = df.rename(clean_columns)
 
         # 5. Security & Audit Metadata Injection
@@ -105,7 +116,7 @@ class PolarsNormalizer:
         df = df.with_columns([
             pl.lit(self.tenant_id).alias("_tenant_id"),
             pl.lit(self.integration_name).alias("_integration_name"),
-            pl.lit(datetime.utcnow()).alias("_extracted_at")
+            pl.lit(datetime.now(timezone.utc)).alias("_extracted_at")
         ])
 
         return df

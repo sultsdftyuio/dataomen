@@ -130,6 +130,14 @@ class SemanticRouter:
         If selecting ANALYTICAL_QUERY and a Gold Tier view matches the intent, include it in 'recommended_views'.
         """
 
+    def _validate_requested_datasets(self, requested_ids: List[str], context: Dict[str, Any]) -> List[str]:
+        """
+        Security Layer: Prevents LLM hallucinations from attempting to query datasets 
+        that either don't exist or belong to another tenant.
+        """
+        valid_ids = {schema["id"] for schema in context.get("raw_schemas", [])}
+        return [ds_id for ds_id in requested_ids if ds_id in valid_ids]
+
     async def process_interaction(
         self, 
         tenant_id: str, 
@@ -163,6 +171,9 @@ class SemanticRouter:
                 recommended_views=[]
             )
 
+        # Pre-filter requested datasets to eliminate LLM hallucinations
+        decision.required_datasets = self._validate_requested_datasets(decision.required_datasets, context)
+
         # 3. Orchestrate execution based on the chosen path
         if decision.route == "ANALYTICAL_QUERY":
             return await self._handle_analytical_query(tenant_id, decision, context, user_prompt, chat_history)
@@ -185,10 +196,12 @@ class SemanticRouter:
         Path B: Route to NL2SQL Generator and safely execute in DuckDB.
         Passes the semantic views directly to NL2SQL so they can be injected as DuckDB CTEs.
         """
+        active_views = {k: context["semantic_views"][k] for k in decision.recommended_views if k in context["semantic_views"]}
+        
         sql_query, chart_spec = await self.nl2sql.generate_sql(
             prompt=user_prompt, 
             schemas=context["raw_schemas"], 
-            semantic_views={k: context["semantic_views"][k] for k in decision.recommended_views if k in context["semantic_views"]},
+            semantic_views=active_views,
             history=chat_history
         )
         
@@ -211,7 +224,13 @@ class SemanticRouter:
         except Exception as e:
             # Error Feedback Loop: The LLM hallucinated or wrote bad SQL. Catch it and auto-correct.
             logger.warning(f"DuckDB execution failed. Entering auto-correction loop. Error: {str(e)}")
-            corrected_query, _ = await self.nl2sql.correct_sql(sql_query, str(e), context["raw_schemas"])
+            
+            corrected_query, _ = await self.nl2sql.correct_sql(
+                failed_query=sql_query, 
+                error_msg=str(e), 
+                schemas=context["raw_schemas"],
+                semantic_views=active_views # Essential: pass the views context to prevent self-correction failure
+            )
             
             try:
                 execution_result = await self.compute.execute_read_only(

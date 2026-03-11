@@ -3,7 +3,7 @@
 import os
 import uuid
 import logging
-import requests
+import httpx  # Upgraded to httpx for non-blocking async HTTP calls
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 
@@ -21,14 +21,19 @@ class BaseNotifier(ABC):
     """Abstract interface for swappable notification channels."""
     
     @abstractmethod
-    def send_alert(self, anomaly_data: Dict[str, Any], deep_link: str) -> bool:
-        """Sends the formatted alert to the target destination."""
+    async def send_alert(self, anomaly_data: Dict[str, Any], deep_link: str) -> bool:
+        """Sends the formatted alert to the target destination asynchronously."""
         pass
 
 class SlackNotifier(BaseNotifier):
+    """
+    Implementation of Slack alerts using the Block Kit for high-quality SaaS UI.
+    Uses async HTTP to prevent blocking the worker event loop.
+    """
     def __init__(self, db: Session, tenant_id: str):
         self.db = db
         self.tenant_id = tenant_id
+        # We still fetch the webhook synchronously during init as it is a local DB call
         self.webhook_url = self._fetch_tenant_slack_webhook()
 
     def _fetch_tenant_slack_webhook(self) -> Optional[str]:
@@ -37,8 +42,6 @@ class SlackNotifier(BaseNotifier):
         for this specific tenant_id using secure SQLAlchemy execution.
         """
         try:
-            # Using parameterized text queries to avoid needing a dedicated ORM model 
-            # for integrations just yet, keeping the system lightweight.
             query = text("""
                 SELECT slack_webhook_url 
                 FROM tenant_integrations 
@@ -54,13 +57,15 @@ class SlackNotifier(BaseNotifier):
             logger.error(f"Failed to fetch Slack config for tenant {self.tenant_id}: {e}")
             return None
 
-    def send_alert(self, anomaly_data: Dict[str, Any], deep_link: str) -> bool:
+    async def send_alert(self, anomaly_data: Dict[str, Any], deep_link: str) -> bool:
+        """
+        Sends a Slack message using non-blocking I/O.
+        """
         if not self.webhook_url:
             logger.warning(f"No Slack integration found for tenant {self.tenant_id}. Skipping.")
             return False
 
         metric = anomaly_data.get('metric', 'Unknown Metric')
-        # Map correctly to the output provided by our newly fixed anomaly_detector.py
         pct_change = anomaly_data.get('variance_pct', 0.0) 
         direction = "dropped" if pct_change < 0 else "spiked"
         emoji = "📉" if pct_change < 0 else "📈"
@@ -103,12 +108,15 @@ class SlackNotifier(BaseNotifier):
         }
 
         try:
-            res = requests.post(self.webhook_url, json=slack_payload, timeout=10)
-            res.raise_for_status()
+            # Using httpx for a non-blocking POST request
+            async with httpx.AsyncClient() as client:
+                res = await client.post(self.webhook_url, json=slack_payload, timeout=10.0)
+                res.raise_for_status()
+                
             logger.info(f"Slack alert sent successfully for tenant {self.tenant_id}")
             return True
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Slack alert: {e}")
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to send Slack alert via httpx: {e}")
             return False
 
 
@@ -126,13 +134,11 @@ class NotificationRouter:
 
     def _save_anomaly_state(self, db: Session, anomaly_data: Dict[str, Any]) -> str:
         """
-        Interaction (Frontend) methodology: 
         Saves the anomaly payload to generate a clean, short deep-link ID.
         """
         anomaly_id = str(uuid.uuid4())
         
         try:
-            # We store the state so the React frontend can fetch and hydrate context
             query = text("""
                 INSERT INTO anomaly_states 
                 (id, tenant_id, agent_id, metric, date, filters, diagnostic_summary, status)
@@ -143,7 +149,7 @@ class NotificationRouter:
             db.execute(query, {
                 "id": anomaly_id,
                 "tenant_id": anomaly_data.get('tenant_id'),
-                "agent_id": anomaly_data.get('dataset_id'), # Mapped from detector output
+                "agent_id": anomaly_data.get('dataset_id'), 
                 "metric": anomaly_data.get('metric'),
                 "date": anomaly_data.get('date'),
                 "filters": anomaly_data.get('top_variance_drivers', "{}"),
@@ -158,16 +164,16 @@ class NotificationRouter:
             logger.error(f"Failed to save anomaly state to database: {e}")
             raise RuntimeError("Database error during anomaly state persistence.")
 
-    def process_and_route(self, db: Session, anomaly_data: Dict[str, Any], channels: List[str] = ['slack']) -> None:
+    async def process_and_route(self, db: Session, anomaly_data: Dict[str, Any], channels: List[str] = ['slack']) -> None:
         """
-        The entry point for Phase 4. Called by watchdog_service after AI diagnostic completes.
+        Unified workspace entry point. Orchestrates state persistence and async routing.
         """
         tenant_id = anomaly_data.get('tenant_id')
         if not tenant_id:
             logger.error("Cannot route notification: Missing tenant_id.")
             return
 
-        # 1. State Management: Save to DB and generate short ID
+        # 1. State Management: Save to DB synchronously as it is a required transactional dependency
         try:
             anomaly_id = self._save_anomaly_state(db, anomaly_data)
         except Exception as e:
@@ -177,10 +183,10 @@ class NotificationRouter:
         # 2. Deep Linking: Construct the clean URL
         deep_link = f"{self.frontend_base_url}/dashboard/investigate?anomaly_id={anomaly_id}"
 
-        # 3. Dynamic Routing to requested channels
+        # 3. Dynamic Routing: Execute swappable notification modules asynchronously
         if 'slack' in channels:
             slack = SlackNotifier(db=db, tenant_id=tenant_id)
-            slack.send_alert(anomaly_data, deep_link)
+            await slack.send_alert(anomaly_data, deep_link)
 
 # Export singleton instance
 notification_router = NotificationRouter()

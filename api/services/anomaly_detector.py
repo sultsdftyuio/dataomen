@@ -1,10 +1,9 @@
 # api/services/anomaly_detector.py
 
-import pandas as pd
-import numpy as np
+import polars as pl
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -17,7 +16,8 @@ logger = logging.getLogger(__name__)
 class AnomalyDetector:
     """
     Phase 2: Mathematical Background Worker
-    Uses strictly vectorized operations (Pandas/NumPy) over DuckDB zero-copy streams.
+    Uses strictly vectorized operations (Polars/Rust) over DuckDB zero-copy streams.
+    Upgraded to bypass Python's GIL for heavy statistical aggregations.
     """
     
     def detect_anomaly(
@@ -45,7 +45,7 @@ class AnomalyDetector:
 
         # 2. Get the dynamically routed, secure R2/S3 path
         secure_path = storage_manager.get_duckdb_query_path(db, dataset)
-        thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).strftime('%Y-%m-%d')
+        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%d')
 
         try:
             # 3. Analytical Efficiency: DuckDB pushes filters down to the Parquet file.
@@ -53,7 +53,7 @@ class AnomalyDetector:
             query = f"""
                 SELECT 
                     CAST("{time_col}" AS DATE) as ds, 
-                    SUM("{metric_col}") as y
+                    CAST(SUM("{metric_col}") AS DOUBLE) as y
                 FROM read_parquet({secure_path})
                 WHERE "{time_col}" >= '{thirty_days_ago}'
                 GROUP BY ds
@@ -62,48 +62,71 @@ class AnomalyDetector:
             
             # Use scoped session for secure credentials and memory management
             with storage_manager.duckdb_session(db, tenant_id) as con:
-                df = con.execute(query).df()
+                # ZERO-COPY UPGRADE: Fetch Arrow and load instantly to Polars
+                arrow_table = con.execute(query).arrow()
+                df = pl.from_arrow(arrow_table)
 
-            if df.empty or len(df) < 7:
+            if df.is_empty() or df.height < 7:
                 logger.debug(f"Not enough data to detect anomalies for {dataset_id}")
                 return None
 
-            # 4. Data Sanitization & Math Setup
-            # Ensure chronological order and fill missing days with 0 (Vectorized)
-            df['ds'] = pd.to_datetime(df['ds'])
-            df = df.set_index('ds').asfreq('D', fill_value=0.0).reset_index()
-
-            # 5. Vectorized Math: Calculate a 7-day rolling mean and standard deviation
-            # We shift(1) so today's data doesn't skew its own baseline
-            rolling_window = df['y'].shift(1).rolling(window=7, min_periods=3)
+            # 4. Data Sanitization & Vectorized Math Setup
+            # Ensure chronological order and fill missing days with 0.0 using Polars upsert logic
+            date_range = pl.DataFrame({
+                "ds": pl.date_range(
+                    start=df["ds"].min(), 
+                    end=df["ds"].max(), 
+                    interval="1d", 
+                    eager=True
+                )
+            })
             
-            df['rolling_mean'] = rolling_window.mean()
-            df['rolling_std'] = rolling_window.std()
+            # Left join to fill missing dates, replacing nulls with 0.0
+            df = date_range.join(df, on="ds", how="left").with_columns(
+                pl.col("y").fill_null(0.0)
+            )
 
-            # Fill NaN std dev with a small number to avoid division by zero
-            df['rolling_std'] = df['rolling_std'].fillna(1e-9)
-            df['rolling_std'] = np.where(df['rolling_std'] == 0, 1e-9, df['rolling_std'])
+            # 5. Rust/C++ Vectorized Math: Calculate 7-day rolling mean and std dev
+            # Shift by 1 so today's data doesn't skew its own baseline evaluation
+            df = df.with_columns([
+                pl.col("y").shift(1).rolling_mean(window_size=7, min_periods=3).alias("rolling_mean"),
+                pl.col("y").shift(1).rolling_std(window_size=7, min_periods=3).alias("rolling_std")
+            ])
 
-            # 6. Z-Score Calculation (Vectorized)
+            # Fill NaN/Null std dev with a small number to avoid division by zero
+            df = df.with_columns(
+                pl.col("rolling_std").fill_nan(1e-9).fill_null(1e-9).replace(0.0, 1e-9)
+            )
+
+            # 6. Z-Score Calculation (Vectorized natively in C++)
             # Z = (Value - Mean) / StdDev
-            df['z_score'] = (df['y'] - df['rolling_mean']) / df['rolling_std']
+            df = df.with_columns(
+                ((pl.col("y") - pl.col("rolling_mean")) / pl.col("rolling_std")).alias("z_score")
+            )
 
             # 7. Evaluate the most recent day (Today/Yesterday)
-            latest_data = df.iloc[-1]
+            latest_data = df.tail(1).to_dicts()[0]
             
+            # We must verify we actually calculated a z-score (min_periods might have skipped it)
+            if latest_data.get('z_score') is None:
+                return None
+                
             is_anomalous = abs(latest_data['z_score']) > threshold
 
             if is_anomalous:
                 direction = "spike" if latest_data['z_score'] > 0 else "drop"
-                variance_pct = ((latest_data['y'] - latest_data['rolling_mean']) / latest_data['rolling_mean']) * 100
+                expected = latest_data['rolling_mean']
+                actual = latest_data['y']
+                
+                variance_pct = ((actual - expected) / expected) * 100 if expected != 0 else 100.0
 
                 return {
                     "tenant_id": tenant_id,
                     "dataset_id": dataset_id,
-                    "date": latest_data['ds'].strftime('%Y-%m-%d'),
+                    "date": latest_data['ds'].strftime('%Y-%m-%d') if hasattr(latest_data['ds'], 'strftime') else str(latest_data['ds']),
                     "metric": metric_col,
-                    "actual_value": float(latest_data['y']),
-                    "expected_value": float(latest_data['rolling_mean']),
+                    "actual_value": float(actual),
+                    "expected_value": float(expected),
                     "z_score": float(latest_data['z_score']),
                     "direction": direction,
                     "variance_pct": float(variance_pct)

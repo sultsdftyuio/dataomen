@@ -2,7 +2,6 @@
 
 import logging
 import duckdb
-import pandas as pd
 import polars as pl
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
@@ -48,10 +47,10 @@ class WatchdogService:
 
     def _get_categorical_columns(self, conn: duckdb.DuckDBPyConnection, secure_path: str) -> List[str]:
         """Identifies categorical (VARCHAR) dimensions dynamically from the Parquet schema."""
-        # secure_path is already correctly quoted by storage_manager
+        # Performance Upgrade: Vectorized discovery via Polars bypassing Pandas GIL
         schema_query = f"DESCRIBE SELECT * FROM read_parquet({secure_path})"
-        schema_df = conn.execute(schema_query).df()
-        return schema_df[schema_df['column_type'] == 'VARCHAR']['column_name'].tolist()
+        schema_df = conn.execute(schema_query).pl()
+        return schema_df.filter(pl.col("column_type") == "VARCHAR")["column_name"].to_list()
 
     def get_top_variance_drivers(
         self,
@@ -65,8 +64,8 @@ class WatchdogService:
     ) -> List[Dict[str, Any]]:
         """
         The Variance Driver Algorithm (Contextual RAG):
-        Calculates the delta between the anomaly day and comparison day across 
-        all categorical dimensions natively in DuckDB over the S3/R2 network stream.
+        Calculates the delta between the anomaly day and comparison day.
+        Optimized to minimize network overhead during multi-dimensional analysis.
         """
         dataset = self.db.query(Dataset).filter(
             Dataset.id == dataset_id,
@@ -84,7 +83,7 @@ class WatchdogService:
             categorical_cols = self._get_categorical_columns(conn, secure_path)
             
             # Exclude internal/system columns
-            excluded_cols = {'tenant_id', 'id', 'uuid'}
+            excluded_cols = {'tenant_id', 'id', 'uuid', '_extracted_at', '_tenant_id', '_integration_name'}
             dimensions = [col for col in categorical_cols if col.lower() not in excluded_cols]
             
             drivers = []
@@ -99,7 +98,7 @@ class WatchdogService:
                             SUM(CASE WHEN "{time_col}"::DATE = ? THEN "{metric_col}" ELSE 0 END) as comparison_day_val
                         FROM read_parquet({secure_path})
                         WHERE "{time_col}"::DATE IN (?, ?)
-                        GROUP BY "{category}"
+                        GROUP BY 1
                     )
                     SELECT 
                         '{category}' AS dimension,
@@ -112,19 +111,19 @@ class WatchdogService:
                             ELSE ((anomaly_day_val - comparison_day_val) / comparison_day_val) * 100 
                         END AS percentage_change
                     FROM daily_aggregates
-                    WHERE (anomaly_day_val - comparison_day_val) != 0
+                    WHERE absolute_delta != 0
                       AND category_val IS NOT NULL
                     ORDER BY ABS(absolute_delta) DESC
                     LIMIT {top_n};
                 """
                 
-                # Fetch small result set to pandas
-                results_df = conn.execute(
+                # Fetch results directly into Polars dicts to avoid memory spikes
+                results = conn.execute(
                     query, 
                     [anomaly_date, comparison_date, anomaly_date, comparison_date]
-                ).df()
+                ).pl().to_dicts()
                 
-                drivers.extend(results_df.to_dict('records'))
+                drivers.extend(results)
 
             # Sort globally across all dimensions to find the absolute biggest drivers
             drivers.sort(key=lambda x: abs(x['absolute_delta']), reverse=True)
@@ -146,7 +145,7 @@ class WatchdogService:
         logger.info(f"Evaluating Agent {agent_id} for tenant {tenant_id}")
         
         try:
-            # 1. Math-First Detection (Vectorized)
+            # 1. Math-First Detection (Vectorized/Polars)
             anomaly_result = self.anomaly_detector.detect_anomaly(
                 db=self.db,
                 tenant_id=tenant_id,
@@ -157,15 +156,14 @@ class WatchdogService:
             )
             
             if not anomaly_result:
-                logger.info(f"Agent {agent_id} check passed. No anomalies.")
                 return None
                 
             logger.info(f"Anomaly detected for Agent {agent_id}! Generating variance context...")
             
             # 2. Contextual RAG (Variance Driver Algorithm)
-            # Establish baseline date for comparison (e.g., 7 days prior to anomaly)
+            # Ensure deterministic date arithmetic with timezones
             anomaly_date = anomaly_result['date']
-            dt_obj = datetime.strptime(anomaly_date, '%Y-%m-%d')
+            dt_obj = datetime.strptime(anomaly_date, '%Y-%m-%d').replace(tzinfo=timezone.utc)
             comparison_date = (dt_obj - timedelta(days=7)).strftime('%Y-%m-%d')
             
             top_drivers = self.get_top_variance_drivers(
@@ -215,7 +213,6 @@ class WatchdogService:
         target_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         try:
-            # Replaced Supabase REST with schema-agnostic SQLAlchemy param injection
             query = text("""
                 SELECT timestamp, rows_synced, status 
                 FROM sync_logs 
@@ -255,7 +252,7 @@ class WatchdogService:
 
         last_row = df.row(-1, named=True)
         expected_ema = last_row["ema"]
-        current_std_dev = (last_row["std_dev"] or 1.0) if last_row["std_dev"] != 0 else 1.0
+        current_std_dev = last_row["std_dev"] if last_row["std_dev"] and last_row["std_dev"] > 0 else 1.0
 
         z_score = abs(latest_volume - expected_ema) / current_std_dev
         is_anomaly = z_score > self.z_score_threshold and latest_volume < expected_ema
@@ -265,7 +262,7 @@ class WatchdogService:
             "expected_volume_ema": round(expected_ema, 2),
             "actual_volume": latest_volume,
             "z_score": round(z_score, 2),
-            "reason": f"Volume drop detected (~{int(expected_ema)} expected, got {latest_volume})." if is_anomaly else "Normal"
+            "reason": f"Volume drop detected ({int(expected_ema)} expected, got {latest_volume})." if is_anomaly else "Normal"
         }
 
     async def inspect_pipeline(self, tenant_id: str, integration_id: str, latest_volume: int) -> bool:
@@ -284,9 +281,9 @@ class WatchdogService:
                     "dataset_id": "system_pipeline", 
                     "metric": f"{integration_id} Sync Volume",
                     "date": datetime.now(timezone.utc).strftime('%Y-%m-%d'),
-                    "top_variance_drivers": "{}",
+                    "top_variance_drivers": "[]",
                     "diagnostic_summary": f"CRITICAL: {analysis['reason']}",
-                    "variance_pct": -100.0 # Standardize for UI
+                    "variance_pct": -100.0 
                 }
                 self.notifications.process_and_route(self.db, alert_payload, channels=["slack"])
             return False
