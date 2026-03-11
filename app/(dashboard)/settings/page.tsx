@@ -144,6 +144,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 space-y-6 p-6 max-w-6xl mx-auto animate-in fade-in duration-500">
+      
       <div className="flex flex-col gap-1 border-b border-slate-800 pb-6">
         <h2 className="text-3xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
           <SettingsIcon className="h-7 w-7 text-emerald-400" />
@@ -168,6 +169,7 @@ export default function SettingsPage() {
         </TabsList>
 
         <form onSubmit={handleSubmit(onSaveSettings)}>
+          
           <TabsContent value="alerting" className="space-y-6 mt-0">
             <Card className="border-slate-800 bg-[#0B1120] shadow-xl">
               <CardHeader className="border-b border-slate-800/60 pb-5">
@@ -180,6 +182,7 @@ export default function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-8 pt-6">
+                
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-slate-200 font-semibold">
                     <Slack className="h-5 w-5 text-[#E01E5A]" /> Slack Integration
@@ -190,7 +193,7 @@ export default function SettingsPage() {
                       <Input 
                         {...register("slack_webhook_url")} 
                         type="password"
-                        placeholder="Paste your Slack Webhook URL here..." 
+                        placeholder="https://hooks.slack.com/services/..." 
                         className="bg-slate-900 border-slate-700 text-slate-200 focus-visible:ring-emerald-500/50 flex-1 font-mono text-sm"
                       />
                       <Button 
@@ -249,9 +252,10 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+
               </CardContent>
               <CardFooter className="border-t border-slate-800 bg-slate-900/40 px-6 py-4">
-                <Button type="submit" disabled={loading} className="ml-auto gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg">
+                <Button type="submit" disabled={loading} className="ml-auto gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20">
                   {loading ? "Syncing..." : "Save Routing Configuration"}
                   <Save className="h-4 w-4" />
                 </Button>
@@ -348,7 +352,7 @@ export default function SettingsPage() {
                       </div>
                       <p className="text-xs text-emerald-500/80 italic flex items-center gap-1.5 bg-emerald-500/10 p-2 rounded border border-emerald-500/20">
                         <CheckCircle2 className="h-3 w-3" />
-                        Credentials are used by DuckDB via HTTPFS for zero-copy remote reads.
+                        Credentials are utilized directly by DuckDB via HTTPFS for zero-copy remote reads.
                       </p>
                     </div>
                   )}
@@ -391,12 +395,13 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="grid gap-2 max-w-sm">
-                  <Label className="text-slate-400">Tenant ID</Label>
+                  <Label className="text-slate-400">Tenant ID (For API Access)</Label>
                   <Input value={orgData?.id || "..."} disabled className="bg-slate-900/50 border-slate-800 text-slate-500 font-mono text-xs" />
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
+
         </form>
       </Tabs>
     </div>
