@@ -1,287 +1,192 @@
-# api/routes/datasets.py
-
+import asyncio
 import logging
-import uuid
-from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
-from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+import signal
+import sys
+import gc
+from typing import Optional, Dict, Any
 
-# Core Database & Models
-from api.database import get_db
+# Core Database & Models (Multi-Tenant Infrastructure)
+from sqlalchemy.orm import Session
+from api.database import SessionLocal
 from models import Dataset, DatasetStatus, Organization
 
-# Core Security & SaaS Identity
-from api.services.tenant_security_provider import tenant_security, TenantContext
-from api.routes.query import verify_tenant_auth 
-
-# Core Infrastructure Orchestrators
-# We now import the high-performance Polars/Parquet ingestion service
-from api.services.ingestion_service import DataIngestionService
-from api.services.sync_engine import SyncEngine, get_sync_engine
+# Core Infrastructure Orchestrators (Modular Strategy)
+from api.services.storage_manager import storage_manager
+from api.services.sync_engine import get_sync_engine
 from api.services.integrations.base_integration import IntegrationConfig
+
+# Integration Registry (The Factory Pattern)
 from api.services.integrations.stripe_connector import StripeIntegration
+from api.services.integrations.shopify_connector import ShopifyIntegration
+from api.services.integrations.salesforce_connector import SalesforceIntegration
 
-# Dependency injection for the Supabase Client
-from utils.supabase.client import create_client 
-
-router = APIRouter(
-    prefix="/api/datasets",
-    tags=["Datasets"]
+# ------------------------------------------------------------------------------
+# Worker Configuration & Logging
+# ------------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
 )
+logger = logging.getLogger("RenderComputeWorker")
 
-logger = logging.getLogger(__name__)
-
-# ------------------------------------------------------------------------------
-# Dependency: Initialize High-Performance Ingestion Engine
-# ------------------------------------------------------------------------------
-def get_ingestion_service() -> DataIngestionService:
-    supabase = create_client()
-    return DataIngestionService(supabase_client=supabase)
-
-# ------------------------------------------------------------------------------
-# Pydantic Schemas
-# ------------------------------------------------------------------------------
-
-class DatasetResponse(BaseModel):
-    id: str
-    filename: str
-    size_bytes: Optional[int] = 0
-    row_count: Optional[int] = None
-    schema_definition: Optional[List[Dict[str, Any]]] = None 
-    status: str
-    message: str
-
-    class Config:
-        from_attributes = True
-
-class SyncTriggerRequest(BaseModel):
-    integration_name: str = Field(..., description="The SaaS source, e.g., 'stripe'")
-    stream_name: str = Field(..., description="The specific data stream, e.g., 'charges', 'subscriptions'")
-    start_timestamp: Optional[str] = Field(None, description="ISO 8601 timestamp for historical pulls")
-
-class SyncTriggerResponse(BaseModel):
-    status: str
-    message: str
-    dataset_id: str
-    job_id: str
-
-# ------------------------------------------------------------------------------
-# Routes: High-Performance Direct Upload (Polars -> Parquet Pipeline)
-# ------------------------------------------------------------------------------
-
-@router.post("/upload", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
-async def upload_and_process_file(
-    file: UploadFile = File(...),
-    dataset_name: str = Form(...),
-    context: TenantContext = Depends(verify_tenant_auth),
-    db: Session = Depends(get_db),
-    ingestion_engine: DataIngestionService = Depends(get_ingestion_service)
-):
+class DataOmenComputeWorker:
     """
-    Direct-to-Memory Ingestion Pipeline.
-    Streams CSV/JSON into Polars, infers the dictionary, compresses to Parquet, 
-    and saves to tenant-isolated storage in one vectorized pass.
+    The Muscle of the Engine.
+    An always-on asynchronous worker that executes memory-heavy Polars/DuckDB 
+    pipelines based on state-based triggers from the Web API.
     """
-    # 1. Billing & Usage Guardrail (Before reading heavy files)
-    org = db.query(Organization).filter(Organization.id == context.tenant_id).first()
-    if not org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
+    def __init__(self) -> None:
+        self.is_running: bool = True
+        self.poll_interval: int = 5  # seconds
+
+    def shutdown_handler(self, signum: int, frame: Any) -> None:
+        """Graceful shutdown prevents data corruption during Render redeploys."""
+        logger.warning(f"Received termination signal ({signum}). Gracefully shutting down...")
+        self.is_running = False
+
+    async def run(self) -> None:
+        logger.info("🚀 Data Omen Compute Worker initialized and listening for PENDING jobs...")
         
-    # Pre-register the dataset in Postgres (PROCESSING state)
-    dataset_id = uuid.uuid4()
-    new_dataset = Dataset(
-        id=dataset_id,
-        tenant_id=context.tenant_id,
-        name=dataset_name,
-        status=DatasetStatus.PROCESSING
-    )
-    db.add(new_dataset)
-    db.commit()
+        # Bind graceful shutdown signals
+        signal.signal(signal.SIGINT, self.shutdown_handler)
+        signal.signal(signal.SIGTERM, self.shutdown_handler)
 
-    try:
-        # 2. Execute Vectorized Rust/Polars Transformation & Upload
-        result = await ingestion_engine.process_and_upload(
-            file=file,
-            tenant_id=context.tenant_id,
-            dataset_name=dataset_name
-        )
+        while self.is_running:
+            try:
+                processed_a_job = await self._poll_and_execute()
+                
+                # If queue is empty, sleep to prevent hammering Supabase
+                if not processed_a_job and self.is_running:
+                    await asyncio.sleep(self.poll_interval)
+                    
+            except Exception as e:
+                logger.error(f"Critical Worker Loop Error: {e}", exc_info=True)
+                await asyncio.sleep(self.poll_interval)
         
-        # 3. Save AI-Inferred Schema and Stats to Database
-        # This populates the UI we built in Option 2 automatically
-        new_dataset.row_count = result.row_count
-        new_dataset.size_bytes = result.size_bytes
-        new_dataset.storage_path = result.storage_path
-        new_dataset.schema_metadata = [col.to_dict() for col in result.columns]
-        new_dataset.status = DatasetStatus.ACTIVE
+        logger.info("🛑 Worker shutdown complete.")
+
+    async def _poll_and_claim(self) -> Optional[Dict[str, Any]]:
+        """Phase 1: Securely lock and claim the next available PENDING job."""
+        with SessionLocal() as db:
+            pending_dataset = db.query(Dataset).filter(
+                Dataset.status == DatasetStatus.PENDING
+            ).with_for_update(skip_locked=True).first()
+
+            if not pending_dataset:
+                return None
+
+            # Capture all required job context while we have the lock
+            job_data = {
+                "dataset_id": str(pending_dataset.id),
+                "tenant_id": str(pending_dataset.tenant_id),
+                "metadata": pending_dataset.schema_metadata or {},
+                "file_path": pending_dataset.file_path
+            }
+
+            # Claim the job immediately to release the row lock
+            pending_dataset.status = DatasetStatus.PROCESSING
+            db.commit()
+            
+            logger.info(f"Acquired {job_data['metadata'].get('ingestion_type', 'sync')} job for Dataset {job_data['dataset_id']}")
+            return job_data
+
+    async def _execute_job(self, job_data: Dict[str, Any]) -> None:
+        """Phase 2: Orchestrate the specific compute pipeline based on metadata."""
+        dataset_id = job_data["dataset_id"]
+        tenant_id = job_data["tenant_id"]
+        metadata = job_data["metadata"]
+        ingestion_type = metadata.get("ingestion_type", "sync")
+
+        try:
+            if ingestion_type == "upload":
+                # Path A: Vectorized File Ingestion (Raw S3 -> Parquet -> DuckDB Profile)
+                await self._handle_file_upload(dataset_id, tenant_id, job_data["file_path"])
+            else:
+                # Path B: Zero-ETL Historical Sync (API Connector -> Polars -> S3)
+                await self._handle_historical_sync(dataset_id, tenant_id, metadata)
+
+            logger.info(f"✅ Successfully finalized Dataset {dataset_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Job Failed for Dataset {dataset_id}: {str(e)}", exc_info=True)
+            self._finalize_status(dataset_id, DatasetStatus.FAILED)
+            
+        finally:
+            # Analytical Efficiency: Force release of C++/Rust memory buffers
+            gc.collect()
+
+    async def _handle_file_upload(self, dataset_id: str, tenant_id: str, raw_path: str):
+        """Executes the heavy DuckDB conversion and profiling logic."""
+        logger.info(f"[{tenant_id}] Starting vectorized profiling for: {raw_path}")
         
-        # Update Organization storage
-        storage_mb_used = result.size_bytes / (1024 * 1024)
-        org.current_storage_mb += storage_mb_used
+        with SessionLocal() as db:
+            # 1. Execute heavy Cloud -> Compute -> Cloud transformation
+            profile = storage_manager.convert_to_parquet_and_profile(db, tenant_id, raw_path)
+            
+            # 2. Update metadata with inferred columns and new analytical file path
+            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+            if dataset:
+                dataset.file_path = profile["parquet_path"]
+                dataset.schema_metadata = {
+                    **dataset.schema_metadata,
+                    "columns": profile.get("columns", []),
+                    "status": "vectorized"
+                }
+                dataset.status = DatasetStatus.READY
+                db.commit()
+
+    async def _handle_historical_sync(self, dataset_id: str, tenant_id: str, metadata: Dict[str, Any]):
+        """Executes the API polling and normalization engine."""
+        integration_name = metadata.get("integration_name", "stripe")
+        stream_name = metadata.get("stream_name", "subscriptions")
+        start_ts = metadata.get("start_timestamp", "2020-01-01T00:00:00Z")
+
+        # 1. Integration Factory: Rehydrate the correct connector class
+        mock_credentials = {"access_token": "sk_test_123456789"} # Production: Fetch from secure Vault
+        config = IntegrationConfig(tenant_id=tenant_id, integration_name=integration_name, credentials=mock_credentials)
         
-        db.commit()
-        db.refresh(new_dataset)
-
-        return DatasetResponse(
-            id=str(new_dataset.id),
-            filename=new_dataset.name,
-            size_bytes=new_dataset.size_bytes,
-            row_count=new_dataset.row_count,
-            schema_definition=new_dataset.schema_metadata,
-            status=new_dataset.status.value,
-            message="Data successfully vectorized, compressed to Parquet, and indexed."
-        )
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Upload pipeline failed for tenant {context.tenant_id}: {e}")
-        new_dataset.status = DatasetStatus.FAILED
-        db.add(new_dataset)
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ingestion failed: {str(e)}"
-        )
-
-
-# ------------------------------------------------------------------------------
-# Routes: SaaS Integrations (Zero-ETL Pipeline)
-# ------------------------------------------------------------------------------
-
-@router.post("/{dataset_id}/sync", response_model=SyncTriggerResponse, status_code=status.HTTP_202_ACCEPTED)
-async def trigger_historical_sync(
-    dataset_id: str,
-    payload: SyncTriggerRequest,
-    background_tasks: BackgroundTasks,
-    context: TenantContext = Depends(verify_tenant_auth),
-    db: Session = Depends(get_db)
-):
-    """
-    The Orchestration Gateway (Zero-ETL).
-    Pushes heavy API sync pipelines (like Stripe) to background workers.
-    """
-    logger.info(f"[{context.tenant_id}] Received sync request for dataset {dataset_id}")
-
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id, 
-        Dataset.tenant_id == context.tenant_id
-    ).first()
-    
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or unauthorized.")
-
-    # 1. Credential Governance (Mocked: In production, fetch decrypted keys from Vault)
-    mock_credentials = {"access_token": "sk_test_123456789"} 
-
-    # 2. Integration Factory
-    integration_config = IntegrationConfig(
-        tenant_id=context.tenant_id,
-        integration_name=payload.integration_name,
-        credentials=mock_credentials
-    )
-
-    if payload.integration_name.lower() == "stripe":
-        integration_instance = StripeIntegration(config=integration_config)
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Integration '{payload.integration_name}' is not supported."
-        )
-
-    sync_engine = get_sync_engine(db)
-
-    # 3. Background Task Handoff
-    background_tasks.add_task(
-        sync_engine.run_historical_sync,
-        integration=integration_instance,
-        dataset_id=dataset_id,
-        stream_name=payload.stream_name,
-        start_timestamp=payload.start_timestamp or "2020-01-01T00:00:00Z"
-    )
-
-    return SyncTriggerResponse(
-        status="processing",
-        message="Sync job has been queued and is processing in the background.",
-        dataset_id=dataset_id,
-        job_id=f"job_{payload.integration_name}_{payload.stream_name}"
-    )
-
-
-@router.get("/{dataset_id}/schema", response_model=Dict[str, Any])
-async def get_dataset_schema(
-    dataset_id: str,
-    context: TenantContext = Depends(verify_tenant_auth),
-    db: Session = Depends(get_db)
-):
-    """
-    Returns the metadata schema required by the Dataset Dictionary UI manager.
-    """
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id, 
-        Dataset.tenant_id == context.tenant_id
-    ).first()
-    
-    if not dataset: 
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-        
-    return {
-        "dataset": {
-            "id": str(dataset.id),
-            "name": dataset.name,
-            "source_type": "File Upload" if not dataset.storage_path else "Zero-ETL Sync",
-            "row_count": dataset.row_count,
-            "size_bytes": dataset.size_bytes,
-            "last_synced": str(dataset.created_at),
-            "columns": dataset.schema_metadata if isinstance(dataset.schema_metadata, list) else []
+        integration_registry = {
+            "stripe": StripeIntegration,
+            "shopify": ShopifyIntegration,
+            "salesforce": SalesforceIntegration
         }
-    }
-
-
-@router.get("/{dataset_id}/status")
-async def get_sync_status(
-    dataset_id: str,
-    context: TenantContext = Depends(verify_tenant_auth),
-    db: Session = Depends(get_db)
-):
-    """
-    Polling Endpoint for the Frontend UI progress bars.
-    """
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id, 
-        Dataset.tenant_id == context.tenant_id
-    ).first()
-    
-    if not dataset: 
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
         
-    return {
-        "dataset_id": str(dataset.id),
-        "status": dataset.status.value, 
-        "message": f"Dataset is currently {dataset.status.value.lower()}."
-    }
+        integration_class = integration_registry.get(integration_name.lower())
+        if not integration_class:
+            raise ValueError(f"Integration '{integration_name}' is not supported by the worker.")
+            
+        integration_instance = integration_class(config=config)
+
+        # 2. Execute Sync Engine (SyncEngine internally handles DB finalization)
+        with SessionLocal() as db:
+            sync_engine = get_sync_engine(db)
+            await sync_engine.run_historical_sync(
+                integration=integration_instance,
+                dataset_id=dataset_id,
+                stream_name=stream_name,
+                start_timestamp=start_ts
+            )
+
+    def _finalize_status(self, dataset_id: str, status: DatasetStatus) -> None:
+        """Brief session to update job failure state if an error occurs."""
+        with SessionLocal() as db:
+            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+            if dataset:
+                dataset.status = status
+                db.commit()
+
+    async def _poll_and_execute(self) -> bool:
+        """Main lifecycle orchestrator."""
+        job_data = await self._poll_and_claim()
+        if not job_data:
+            return False 
+        
+        await self._execute_job(job_data)
+        return True
 
 # ------------------------------------------------------------------------------
-# Routes: List & Query
+# Entrypoint
 # ------------------------------------------------------------------------------
-
-@router.get("", response_model=List[DatasetResponse])
-def list_datasets(
-    context: TenantContext = Depends(verify_tenant_auth),
-    db: Session = Depends(get_db)
-):
-    """
-    Returns a strictly isolated, multi-tenant partitioned list of available datasets.
-    """
-    datasets = db.query(Dataset).filter(Dataset.tenant_id == context.tenant_id).all()
-    
-    return [
-        DatasetResponse(
-            id=str(d.id),
-            filename=d.name,
-            size_bytes=d.size_bytes, 
-            row_count=d.row_count,
-            schema_definition=d.schema_metadata if isinstance(d.schema_metadata, list) else [],
-            status=d.status.value,
-            message="OK"
-        ) for d in datasets
-    ]
+if __name__ == "__main__":
+    worker = DataOmenComputeWorker()
+    asyncio.run(worker.run())

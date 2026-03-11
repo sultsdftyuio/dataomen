@@ -1,34 +1,31 @@
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
-import { Download, Table2, BarChart3, LineChart as LineChartIcon, Code2, AlertCircle, AreaChart as AreaChartIcon, Activity } from "lucide-react";
 import { 
-  BarChart, 
-  Bar, 
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Legend,
-  ReferenceDot
+  Download, Table2, BarChart3, LineChart as LineChartIcon, 
+  Code2, AlertCircle, AreaChart as AreaChartIcon, Activity, Copy, Check 
+} from "lucide-react";
+import { 
+  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, 
+  CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 // -----------------------------------------------------------------------------
-// Type Definitions (Aligned with Backend ChatResponse & Vega-Lite Concepts)
+// Type Safety Layer
 // -----------------------------------------------------------------------------
 export interface ChartConfig {
   type?: "bar" | "line" | "area" | "scatter";
   xAxisKey?: string;
   yAxisKeys?: string[];
-  mark?: string | { type: string }; // Vega-Lite compatibility
-  encoding?: Record<string, any>;   // Vega-Lite compatibility
+  mark?: string | { type: string };
+  encoding?: {
+    x?: { field: string; type?: string };
+    y?: { field: string; type?: string };
+    color?: { field: string };
+  };
 }
 
 export interface ExecutionPayload {
@@ -36,7 +33,7 @@ export interface ExecutionPayload {
   data?: Record<string, any>[];
   message?: string;
   sql_used?: string;
-  chart_spec?: ChartConfig; // Declarative output from NL2SQL Generator
+  chart_spec?: ChartConfig; 
 }
 
 interface DynamicChartFactoryProps {
@@ -44,16 +41,17 @@ interface DynamicChartFactoryProps {
 }
 
 // -----------------------------------------------------------------------------
-// Premium SaaS Color Palette & Gradients
+// Constants & Styling
 // -----------------------------------------------------------------------------
 const CHART_COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4"];
-const ANOMALY_COLOR = "#ef4444"; // Red for statistical anomalies
-const EMA_COLOR = "#f59e0b";     // Amber for Moving Averages
+const ANOMALY_COLOR = "#ef4444"; 
+const EMA_COLOR = "#94a3b8"; 
+const SIGMA_THRESHOLD = 3.0; 
 
 const renderCustomGradients = () => (
   <defs>
     {CHART_COLORS.map((color, index) => (
-      <linearGradient key={`colorUv-${index}`} id={`colorUv-${index}`} x1="0" y1="0" x2="0" y2="1">
+      <linearGradient key={`grad-${index}`} id={`grad-${index}`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="5%" stopColor={color} stopOpacity={0.4} />
         <stop offset="95%" stopColor={color} stopOpacity={0} />
       </linearGradient>
@@ -62,270 +60,220 @@ const renderCustomGradients = () => (
 );
 
 // -----------------------------------------------------------------------------
-// Component
+// Main Component
 // -----------------------------------------------------------------------------
 export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payload }) => {
   const [activeTab, setActiveTab] = useState<"chart" | "table" | "sql">(
-    payload.type === "chart" || payload.chart_spec || payload.type === "ml_result" ? "chart" : "table"
+    payload.chart_spec || payload.type === "ml_result" ? "chart" : "table"
   );
+  const [copied, setCopied] = useState(false);
 
-  // 1. Data Export: Optimized Vectorized CSV Generation
+  // 1. Data Export Implementation
   const downloadCSV = useCallback(() => {
-    if (!payload.data || payload.data.length === 0) return;
-
+    if (!payload.data?.length) return;
     const headers = Object.keys(payload.data[0]);
     const csvContent = [
       headers.join(","),
-      ...payload.data.map((row) =>
-        headers
-          .map((fieldName) => {
-            const val = row[fieldName] === null || row[fieldName] === undefined ? "" : String(row[fieldName]);
-            return `"${val.replace(/"/g, '""')}"`;
-          })
-          .join(",")
-      ),
+      ...payload.data.map(row => headers.map(h => `"${String(row[h] ?? "").replace(/"/g, '""')}"`).join(","))
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `dataomen_export_${Date.now()}.csv`);
-    document.body.appendChild(link);
+    link.download = `dataomen_export_${Date.now()}.csv`;
     link.click();
-    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }, [payload.data]);
 
-  // 2. Hybrid Axis Detection & Intelligent Routing (Supports Vega-Lite Specs)
-  const resolvedChartConfig = useMemo((): { type: string; xAxisKey: string; yAxisKeys: string[]; hasAnomalies: boolean } | null => {
-    if (!payload.data || payload.data.length === 0) return null;
-    
-    const sampleRow = payload.data[0];
-    const keys = Object.keys(sampleRow);
-    
-    // Check if the backend executed an ML pipeline with Z-Scores
-    const hasAnomalies = keys.some(k => k.includes('_zscore'));
+  const copySQL = useCallback(() => {
+    if (!payload.sql_used) return;
+    navigator.clipboard.writeText(payload.sql_used);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [payload.sql_used]);
 
-    // If the LLM passed a Vega-Lite spec, map it to Recharts intelligently
-    if (payload.chart_spec && payload.chart_spec.encoding) {
-      const spec = payload.chart_spec;
-      const encoding = spec.encoding; // Safely extracted
-      const markType = typeof spec.mark === 'string' ? spec.mark : spec.mark?.type || 'bar';
-      
+  // 2. Intelligent Rendering Engine
+  const resolved = useMemo(() => {
+    if (!payload.data?.length) return null;
+    const sample = payload.data[0];
+    const keys = Object.keys(sample);
+    
+    const hasAnomalies = keys.some(k => /zscore|z_score/i.test(k));
+
+    if (payload.chart_spec?.encoding) {
+      const { encoding, mark } = payload.chart_spec;
+      const typeStr = typeof mark === 'string' ? mark : mark?.type || 'bar';
       return {
-        type: markType === 'line' ? 'line' : markType === 'area' ? 'area' : 'bar',
-        xAxisKey: encoding?.x?.field || keys[0],
-        yAxisKeys: encoding?.y?.field ? [encoding?.y?.field] : keys.filter(k => typeof sampleRow[k] === 'number'),
+        type: typeStr === 'area' ? 'area' : typeStr === 'line' ? 'line' : 'bar',
+        x: encoding.x?.field || keys[0],
+        y: encoding.y?.field ? [encoding.y?.field] : keys.filter(k => typeof sample[k] === 'number' && !/zscore|ema/i.test(k)),
         hasAnomalies
       };
     }
-    
-    // Fallback: Intelligent Auto-Detection Engine
-    const xAxisKey = keys.find(k => 
-      k.toLowerCase().includes('date') || k.toLowerCase().includes('time') || k.toLowerCase().includes('month')
-    ) || keys.find(k => typeof sampleRow[k] === 'string') || keys[0];
-    
-    // Filter out metadata columns like Z-Scores from the main Y-Axis rendering
-    const yAxisKeys = keys.filter(k => 
-      k !== xAxisKey && 
-      typeof sampleRow[k] === 'number' && 
-      !k.includes('_zscore') && 
-      !k.includes('_variance')
-    );
 
-    if (yAxisKeys.length === 0) return null;
+    const x = keys.find(k => /date|time|month|ds/i.test(k)) || keys.find(k => typeof sample[k] === 'string') || keys[0];
+    const y = keys.filter(k => k !== x && typeof sample[k] === 'number' && !/zscore|variance|ema/i.test(k));
+    const detectedType = (x.toLowerCase().includes('date') || x.toLowerCase().includes('time')) ? "area" : "bar";
 
-    // Auto-select chart type based on data shape and semantic meaning
-    let detectedType = "bar";
-    if (xAxisKey.toLowerCase().includes('date') || xAxisKey.toLowerCase().includes('time')) {
-      detectedType = "area"; // Time series look best as Area charts
-    } else if (payload.data.length > 20) {
-      detectedType = "line"; 
-    }
-
-    return { type: detectedType, xAxisKey, yAxisKeys, hasAnomalies };
+    return { type: detectedType, x, y, hasAnomalies };
   }, [payload.data, payload.chart_spec]);
 
-  // Helper function to format large numbers cleanly
-  const formatNumber = (val: any) => {
-    if (typeof val !== 'number') return val;
-    return new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(val);
-  };
+  const formatNum = (v: any) => typeof v === 'number' 
+    ? new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(v) 
+    : v;
 
-  // 3. Mathematical Rendering: Custom Dot for Anomaly Detection (3-Sigma Rule)
-  const renderCustomDot = (props: any) => {
-    const { cx, cy, payload: rowData, dataKey } = props;
-    const zScoreKey = `${dataKey}_zscore`;
-    
-    // If backend flagged this specific point as an anomaly (Z-Score > 3 or < -3)
-    if (rowData[zScoreKey] && Math.abs(rowData[zScoreKey]) > 3) {
+  /**
+   * FIX: Returning an invisible element instead of null to satisfy Recharts TypeScript overloads.
+   */
+  const renderAnomalyDot = (props: any) => {
+    const { cx, cy, payload: row, dataKey } = props;
+    const zKey = Object.keys(row).find(k => k.includes(`${dataKey}_zscore`) || k === 'z_score');
+    if (zKey && Math.abs(row[zKey]) > SIGMA_THRESHOLD) {
       return (
-        <circle cx={cx} cy={cy} r={6} fill={ANOMALY_COLOR} stroke="#0f172a" strokeWidth={2} className="animate-pulse" />
+        <circle cx={cx} cy={cy} r={6} fill={ANOMALY_COLOR} stroke="#0B1120" strokeWidth={2} className="animate-pulse" />
       );
     }
-    return <circle cx={cx} cy={cy} r={0} />; // Hide normal dots for clean UI
+    return <circle cx={cx} cy={cy} r={0} />; 
   };
+
+  const keys = payload.data?.length ? Object.keys(payload.data[0]) : [];
 
   // ---------------------------------------------------------------------------
   // Renderers
   // ---------------------------------------------------------------------------
-
   if (payload.type === "error") {
     return (
-      <div className="p-4 bg-red-950/40 border border-red-900/50 rounded-xl flex items-start space-x-3 text-red-400 mt-2">
-        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-        <p className="text-sm font-medium">{payload.message || "Execution error occurred."}</p>
+      <div className="flex items-start gap-3 p-4 mt-2 border border-red-500/20 bg-red-500/10 rounded-xl text-red-400">
+        <AlertCircle className="w-5 h-5 shrink-0" />
+        <p className="text-sm font-medium">{payload.message || "Numerical engine error detected."}</p>
       </div>
     );
   }
 
-  if (payload.type === "text" || !payload.data || payload.data.length === 0) {
+  if (!payload.data?.length && payload.type !== "text") {
     return (
-      <div className="text-sm text-slate-200 bg-slate-800/80 px-4 py-3 rounded-xl border border-slate-700 shadow-sm mt-2">
-        {payload.message || "No visual data to display."}
+      <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl text-slate-400 text-sm italic mt-2">
+        {payload.message || "No results found for current query context."}
       </div>
     );
   }
-
-  const tableHeaders = Object.keys(payload.data[0] || {});
 
   return (
-    <div className="flex flex-col w-full max-w-full bg-[#0B1120] border border-slate-800 rounded-xl overflow-hidden mt-2 shadow-lg shadow-black/50">
-      
-      {/* Top Toolbar */}
+    <div className="flex flex-col w-full bg-[#0B1120] border border-slate-800 rounded-xl overflow-hidden mt-2 shadow-xl">
+      {/* Interactive Toolbar */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-900/50 border-b border-slate-800">
-        <div className="flex space-x-1">
-          {resolvedChartConfig && resolvedChartConfig.yAxisKeys.length > 0 && (
+        <div className="flex gap-1">
+          {resolved && resolved.y.length > 0 && (
             <Button variant="ghost" size="sm" onClick={() => setActiveTab("chart")}
-              className={`h-8 px-2 text-xs ${activeTab === "chart" ? "bg-slate-800 text-emerald-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
+              className={cn("h-8 text-xs gap-2", activeTab === "chart" ? "bg-slate-800 text-emerald-400" : "text-slate-400")}
             >
-              {resolvedChartConfig.type === "area" ? <AreaChartIcon className="w-3.5 h-3.5 mr-1.5" /> : 
-               resolvedChartConfig.type === "line" ? <LineChartIcon className="w-3.5 h-3.5 mr-1.5" /> : 
-               <BarChart3 className="w-3.5 h-3.5 mr-1.5" />}
-              Visualization
-              {resolvedChartConfig.hasAnomalies && <div className="w-2 h-2 rounded-full bg-red-500 ml-2 animate-pulse" title="Anomalies Detected" />}
+              {resolved.type === "area" ? <AreaChartIcon size={14} /> : resolved.type === "line" ? <LineChartIcon size={14} /> : <BarChart3 size={14} />}
+              Visual
+              {resolved.hasAnomalies && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={() => setActiveTab("table")}
-            className={`h-8 px-2 text-xs ${activeTab === "table" ? "bg-slate-800 text-blue-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
+            className={cn("h-8 text-xs gap-2", activeTab === "table" ? "bg-slate-800 text-blue-400" : "text-slate-400")}
           >
-            <Table2 className="w-3.5 h-3.5 mr-1.5" /> Data ({payload.data.length})
+            <Table2 size={14} /> Dataset ({payload.data?.length})
           </Button>
           {payload.sql_used && (
             <Button variant="ghost" size="sm" onClick={() => setActiveTab("sql")}
-              className={`h-8 px-2 text-xs ${activeTab === "sql" ? "bg-slate-800 text-amber-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"}`}
+              className={cn("h-8 text-xs gap-2", activeTab === "sql" ? "bg-slate-800 text-amber-400" : "text-slate-400")}
             >
-              <Code2 className="w-3.5 h-3.5 mr-1.5" /> SQL Plan
+              <Code2 size={14} /> SQL Execution
             </Button>
           )}
         </div>
-        <Button variant="ghost" size="sm" onClick={downloadCSV} className="h-8 px-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-          <Download className="w-3.5 h-3.5 mr-1.5" /> Export Parquet/CSV
+        <Button variant="ghost" size="sm" onClick={downloadCSV} className="h-8 text-xs text-slate-500 hover:text-white">
+          <Download size={14} className="mr-2" /> Download
         </Button>
       </div>
 
-      {/* Dynamic Render Zone */}
-      <div className="p-4 w-full overflow-hidden">
-        
-        {/* CHART VIEW */}
-        {activeTab === "chart" && resolvedChartConfig && resolvedChartConfig.yAxisKeys.length > 0 && (
-          <div className="w-full h-[300px] sm:h-[400px]">
+      <div className="p-5">
+        {/* VIEW: ANALYTICAL CHARTS */}
+        {activeTab === "chart" && resolved && (
+          <div className="w-full h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              {resolvedChartConfig.type === "area" ? (
+              {resolved.type === "area" ? (
                 <AreaChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   {renderCustomGradients()}
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey={resolvedChartConfig.xAxisKey} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} formatter={(value: any) => [formatNumber(value), undefined]} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                  {resolvedChartConfig.yAxisKeys.map((key, idx) => {
-                    const isEMA = key.includes('_ema_');
-                    return (
-                      <Area 
-                        key={key} 
-                        type="monotone" 
-                        dataKey={key} 
-                        stroke={isEMA ? EMA_COLOR : CHART_COLORS[idx % CHART_COLORS.length]} 
-                        fillOpacity={isEMA ? 0 : 1} // Don't fill EMA lines
-                        strokeDasharray={isEMA ? "5 5" : ""} // Dashed lines for math predictions
-                        fill={isEMA ? "none" : `url(#colorUv-${idx % CHART_COLORS.length})`} 
-                        strokeWidth={2} 
-                        dot={resolvedChartConfig.hasAnomalies ? renderCustomDot : false}
-                        activeDot={{ r: 6, strokeWidth: 0 }} 
-                      />
-                    );
-                  })}
-                </AreaChart>
-              ) : resolvedChartConfig.type === "bar" ? (
-                <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey={resolvedChartConfig.xAxisKey} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} formatter={(value: any) => [formatNumber(value), undefined]} cursor={{ fill: '#1e293b' }} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                  {resolvedChartConfig.yAxisKeys.map((key, idx) => (
-                    <Bar key={key} dataKey={key} fill={key.includes('_ema_') ? EMA_COLOR : CHART_COLORS[idx % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+                  <XAxis dataKey={resolved.x} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+                  <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f8fafc' }}
+                    itemStyle={{ fontSize: '12px' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  {resolved.y.map((key, i) => (
+                    <Area 
+                      key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[i % CHART_COLORS.length]} 
+                      fill={`url(#grad-${i % CHART_COLORS.length})`} strokeWidth={2.5}
+                      dot={resolved.hasAnomalies ? renderAnomalyDot : false} 
+                      activeDot={{ r: 6, strokeWidth: 0 }}
+                    />
                   ))}
-                </BarChart>
-              ) : (
+                  {/* Vectorized EMA Overlay */}
+                  {keys.filter(k => k.includes('_ema')).map(k => (
+                    <Area key={k} type="monotone" dataKey={k} stroke={EMA_COLOR} fill="none" strokeDasharray="5 5" strokeWidth={1.5} name={`${k.split('_')[0]} (EMA)`} />
+                  ))}
+                </AreaChart>
+              ) : resolved.type === "line" ? (
                 <LineChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey={resolvedChartConfig.xAxisKey} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={formatNumber} />
-                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} formatter={(value: any) => [formatNumber(value), undefined]} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                  {resolvedChartConfig.yAxisKeys.map((key, idx) => {
-                    const isEMA = key.includes('_ema_');
-                    return (
-                      <Line 
-                        key={key} 
-                        type="monotone" 
-                        dataKey={key} 
-                        stroke={isEMA ? EMA_COLOR : CHART_COLORS[idx % CHART_COLORS.length]} 
-                        strokeWidth={isEMA ? 2 : 3} 
-                        strokeDasharray={isEMA ? "5 5" : ""}
-                        dot={resolvedChartConfig.hasAnomalies ? renderCustomDot : false} 
-                        activeDot={{ r: 6, strokeWidth: 0 }} 
-                      />
-                    );
-                  })}
+                  <XAxis dataKey={resolved.x} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+                  <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
+                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  {resolved.y.map((key, i) => (
+                    <Line key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={3} 
+                      dot={resolved.hasAnomalies ? renderAnomalyDot : false} 
+                      activeDot={{ r: 6, strokeWidth: 0 }}
+                    />
+                  ))}
                 </LineChart>
+              ) : (
+                <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis dataKey={resolved.x} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={10} />
+                  <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
+                  <Tooltip cursor={{ fill: '#1e293b' }} contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b' }} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  {resolved.y.map((key, i) => (
+                    <Bar key={key} dataKey={key} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+                  ))}
+                </BarChart>
               )}
             </ResponsiveContainer>
           </div>
         )}
 
-        {/* DATA GRID VIEW */}
-        {activeTab === "table" && (
-          <ScrollArea className="w-full max-h-[400px] rounded-md border border-slate-800 bg-slate-950/50">
-            <table className="w-full text-sm text-left">
-              <thead className="text-[11px] text-slate-400 uppercase bg-slate-900 sticky top-0 z-10 shadow-sm shadow-black/20">
+        {/* VIEW: DATA TABLE (With Row-Level Anomaly Detection) */}
+        {activeTab === "table" && payload.data && (
+          <ScrollArea className="w-full h-[400px] rounded-lg border border-slate-800 bg-slate-950/20 shadow-inner">
+            <table className="w-full text-left text-[12px] border-collapse">
+              <thead className="sticky top-0 bg-slate-900 z-10 shadow-sm">
                 <tr>
-                  {tableHeaders.map((header) => (
-                    <th key={header} className="px-4 py-3 font-semibold tracking-wider whitespace-nowrap border-b border-slate-800">
-                      {header.replace(/_/g, ' ')}
+                  {keys.map(k => (
+                    <th key={k} className="px-4 py-3 font-semibold text-slate-400 uppercase tracking-tight border-b border-slate-800">
+                      {k.replace(/_/g, ' ')}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody>
                 {payload.data.map((row, i) => {
-                  // Determine if this entire row represents an anomaly across any metric
-                  const isAnomalyRow = tableHeaders.some(h => h.includes('_zscore') && Math.abs(row[h]) > 3);
-                  
+                  const isAnomalyRow = keys.some(k => k.includes('zscore') && Math.abs(row[k]) > SIGMA_THRESHOLD);
                   return (
-                    <tr key={i} className={`transition-colors ${isAnomalyRow ? 'bg-red-950/20 hover:bg-red-950/40' : 'hover:bg-slate-800/40'}`}>
-                      {tableHeaders.map((header) => {
-                        const isZScore = header.includes('_zscore');
-                        const val = row[header];
-                        const isCellAnomaly = isZScore && Math.abs(val) > 3;
-
+                    <tr key={i} className={cn("hover:bg-slate-800/40 transition-colors", isAnomalyRow && "bg-red-950/10")}>
+                      {keys.map(k => {
+                        const isZ = k.includes('zscore');
+                        const isAnomCell = isZ && Math.abs(row[k]) > SIGMA_THRESHOLD;
                         return (
-                          <td key={`${i}-${header}`} className={`px-4 py-2.5 whitespace-nowrap font-mono text-xs ${isCellAnomaly ? 'text-red-400 font-bold' : 'text-slate-300'}`}>
-                            {typeof val === 'number' 
-                              ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(val)
-                              : String(val ?? '')}
+                          <td key={k} className={cn("px-4 py-2 font-mono border-b border-slate-800/50", isAnomCell ? "text-red-400 font-bold" : "text-slate-300")}>
+                            {formatNum(row[k])}
                           </td>
                         );
                       })}
@@ -337,25 +285,30 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
           </ScrollArea>
         )}
 
-        {/* SQL DEBUG VIEW */}
-        {activeTab === "sql" && payload.sql_used && (
-          <div className="w-full max-h-[400px] overflow-auto rounded-md bg-[#0d1117] border border-slate-800 p-4">
-            <pre className="text-[13px] leading-relaxed text-amber-400/90 font-mono whitespace-pre-wrap">
+        {/* VIEW: SQL DEBUGGER */}
+        {activeTab === "sql" && (
+          <div className="relative group">
+            <Button variant="ghost" size="icon" onClick={copySQL}
+              className="absolute right-4 top-4 text-slate-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+            </Button>
+            <pre className="p-4 rounded-lg bg-black/50 border border-slate-800 font-mono text-[13px] text-amber-400/80 overflow-auto max-h-[400px] leading-relaxed">
               {payload.sql_used}
             </pre>
           </div>
         )}
       </div>
 
-      {/* Optional Metadata / ML Diagnostics Message */}
-      {payload.message && activeTab !== "sql" && (
-        <div className="px-4 py-2.5 border-t border-slate-800 bg-slate-900/40 text-[13px] text-slate-400 flex items-center gap-2">
-          {resolvedChartConfig?.hasAnomalies ? (
-            <Activity className="w-4 h-4 text-amber-500 animate-pulse" />
+      {/* FOOTER: ML DIAGNOSTICS */}
+      {payload.message && (
+        <div className="px-4 py-3 border-t border-slate-800 bg-slate-900/30 flex items-center gap-2">
+          {resolved?.hasAnomalies ? (
+            <Activity size={14} className="text-red-500 animate-pulse" /> 
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           )}
-          <span className="truncate">{payload.message}</span>
+          <p className="text-[12px] text-slate-500 italic truncate">{payload.message}</p>
         </div>
       )}
     </div>

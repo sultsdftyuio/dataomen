@@ -1,21 +1,35 @@
 import io
 import uuid
 import logging
+import re
+import hashlib
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union
 
 import polars as pl
 from fastapi import UploadFile, HTTPException
-from supabase import Client
+from sqlalchemy.orm import Session
+
+# Import modular infrastructure components
+from api.services.storage_manager import storage_manager
+from models import Dataset
 
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
 # Type Definitions
 # -----------------------------------------------------------------------------
+
 class ColumnMetadata:
     """Strict typing for our automatically inferred AI data dictionary."""
-    def __init__(self, name: str, type: str, description: str = "", is_pii: bool = False, is_primary_key: bool = False):
+    def __init__(
+        self, 
+        name: str, 
+        type: str, 
+        description: str = "", 
+        is_pii: bool = False, 
+        is_primary_key: bool = False
+    ):
         self.name = name
         self.type = type
         self.description = description
@@ -41,127 +55,154 @@ class IngestionResult:
 # -----------------------------------------------------------------------------
 # Core Service Module
 # -----------------------------------------------------------------------------
+
 class DataIngestionService:
     """
-    Handles the high-performance transformation of raw data uploads (CSV/JSON)
-    into highly compressed, columnar Parquet files optimized for DuckDB query engines.
+    Phase 1: High-Performance Data Ingestion Engine.
+    
+    Translates raw uploads into tenant-isolated, PII-sanitized Parquet files.
+    Prioritizes vectorized Polars transformations to bypass the GIL.
     """
 
-    def __init__(self, supabase_client: Client, bucket_name: str = "tenant-datasets"):
-        self.supabase = supabase_client
-        self.bucket_name = bucket_name
+    def __init__(self, pii_salt: str = "dataomen_secure_v1"):
+        self.pii_salt = pii_salt
+        # Regex patterns for high-sensitivity column detection
+        self.pii_pattern = re.compile(
+            r"(email|ssn|phone|address|name|password|card|secret|tax|zip|birth)", 
+            re.IGNORECASE
+        )
 
-    def _map_polars_dtype_to_system(self, dtype: pl.DataType) -> str:
-        """Maps Rust/Polars native memory types to our simplified schema contract."""
-        dtype_str = str(dtype).lower()
-        if "int" in dtype_str:
-            return "integer"
-        if "float" in dtype_str or "double" in dtype_str:
-            return "float"
-        if "bool" in dtype_str:
-            return "boolean"
-        if "datetime" in dtype_str or "date" in dtype_str or "time" in dtype_str:
-            return "datetime"
+    def _map_dtype(self, dtype: pl.DataType) -> str:
+        """Maps Polars native memory types to system-level simplified types."""
+        if dtype.is_integer(): return "integer"
+        if dtype.is_float(): return "float"
+        if dtype.is_temporal(): return "datetime"
+        if dtype.is_boolean(): return "boolean"
         return "string"
 
-    def _infer_schema_and_metadata(self, df: pl.DataFrame) -> List[ColumnMetadata]:
+    def _apply_vectorized_sanitization(self, df: pl.DataFrame, pii_columns: List[str]) -> pl.DataFrame:
         """
-        Extracts structural metadata. Automatically flags obvious PII and Primary Keys 
-        to optimize the LLM Contextual RAG downstream.
+        SECURITY BY DESIGN: Salted Hash Masking.
+        In-place vectorized transformation of sensitive data.
+        Ensures PII is deterministic for joins but opaque for analytics.
+        """
+        if not pii_columns:
+            return df
+
+        expressions = []
+        for col in pii_columns:
+            # We cast to string, concat the salt, and hash. Bypasses Python loops.
+            expressions.append(
+                pl.col(col).cast(pl.Utf8)
+                .add(self.pii_salt)
+                .hash()
+                .cast(pl.Utf8)
+                .alias(col)
+            )
+
+        return df.with_columns(expressions)
+
+    def _infer_metadata(self, df: pl.DataFrame) -> Tuple[List[ColumnMetadata], List[str]]:
+        """
+        Extracts structural metadata and identifies PII/PK candidates.
         """
         columns_meta = []
-        schema = df.schema
-
-        for col_name, dtype in schema.items():
-            system_type = self._map_polars_dtype_to_system(dtype)
+        pii_candidate_names = []
+        
+        for col_name in df.columns:
+            dtype = df.schema[col_name]
+            system_type = self._map_dtype(dtype)
             
-            # Auto-flagging heuristics for PII and Keys
-            col_lower = col_name.lower()
-            is_pii = any(pii_term in col_lower for pii_term in ['email', 'ssn', 'phone', 'address', 'name', 'password'])
-            is_pk = col_lower in ['id', 'uuid', f"{df.columns[0].lower()}"] and df[col_name].n_unique() == df.height
+            # Heuristic: Name-based PII detection
+            is_pii = bool(self.pii_pattern.search(col_name))
+            if is_pii:
+                pii_candidate_names.append(col_name)
 
-            meta = ColumnMetadata(
+            # Heuristic: Primary Key detection (Unique identifier)
+            # Only check for PK if the type is string or int and column 0 or named 'id'
+            is_pk = False
+            if col_name.lower() in ['id', 'uuid', df.columns[0].lower()]:
+                if df[col_name].n_unique() == df.height:
+                    is_pk = True
+
+            columns_meta.append(ColumnMetadata(
                 name=col_name,
                 type=system_type,
-                description=f"Auto-inferred column: {col_name}",
+                description=f"Analytical field inferred from {col_name}",
                 is_pii=is_pii,
                 is_primary_key=is_pk
-            )
-            columns_meta.append(meta)
+            ))
 
-        return columns_meta
+        return columns_meta, pii_candidate_names
 
     async def process_and_upload(
         self, 
+        db: Session,
         file: UploadFile, 
         tenant_id: str, 
-        dataset_name: str
+        dataset_name: str,
+        mask_pii: bool = True
     ) -> IngestionResult:
         """
-        Reads a raw file, vectorizes the transformation to Parquet in-memory, 
-        and securely isolates it in tenant-partitioned storage.
+        The Ingestion Pipeline:
+        1. Parse (Polars)
+        2. Infer Schema
+        3. Sanitize (Vectorized Masking)
+        4. Sink (Storage Manager -> R2 Parquet)
         """
         try:
-            # 1. Read raw bytes into memory buffer
-            raw_bytes = await file.read()
-            file_buffer = io.BytesIO(raw_bytes)
-            file_size = len(raw_bytes)
-
-            if file_size == 0:
-                raise ValueError("Uploaded file is empty.")
-
-            # 2. High-Performance DataFrame loading using Polars (Vectorized C/Rust backend)
-            filename = file.filename.lower()
-            if filename.endswith('.csv'):
-                df = pl.read_csv(file_buffer, ignore_errors=True, infer_schema_length=10000)
-            elif filename.endswith('.json'):
-                df = pl.read_json(file_buffer)
+            # 1. High-Performance Load
+            contents = await file.read()
+            buffer = io.BytesIO(contents)
+            
+            ext = file.filename.split('.')[-1].lower()
+            if ext == 'csv':
+                df = pl.read_csv(buffer, ignore_errors=True, infer_schema_length=10000)
+            elif ext == 'json':
+                df = pl.read_json(buffer)
+            elif ext == 'parquet':
+                df = pl.read_parquet(buffer)
             else:
-                raise ValueError(f"Unsupported file format: {filename}. Please upload CSV or JSON.")
+                raise HTTPException(status_code=400, detail="Unsupported format. Use CSV, JSON, or Parquet.")
 
-            row_count = df.height
-            if row_count == 0:
-                raise ValueError("Data file contains no rows.")
+            if df.is_empty():
+                raise HTTPException(status_code=400, detail="Dataset is empty.")
 
-            # 3. Extract standard schema metadata for the AI Dictionary
-            columns = self._infer_schema_and_metadata(df)
+            # 2. Metadata Extraction
+            columns, pii_cols = self._infer_metadata(df)
 
-            # 4. Compress to Columnar Parquet format (in-memory)
-            # Parquet drastically reduces S3 storage costs and makes DuckDB range-queries lightning fast
-            parquet_buffer = io.BytesIO()
-            df.write_parquet(parquet_buffer, compression="snappy")
-            parquet_buffer.seek(0)
-            parquet_bytes = parquet_buffer.read()
+            # 3. Security: Automated Data Sanitization
+            if mask_pii:
+                df = self._apply_vectorized_sanitization(df, pii_cols)
 
-            # 5. Secure, Tenant-Isolated Storage
-            # Path format: tenant_id/dataset_uuid.parquet
-            dataset_uuid = str(uuid.uuid4())
-            storage_path = f"{tenant_id}/{dataset_uuid}.parquet"
-
-            # Upload to Supabase Storage (S3 equivalent)
-            upload_response = self.supabase.storage.from_(self.bucket_name).upload(
-                path=storage_path,
-                file=parquet_bytes,
-                file_options={"content-type": "application/vnd.apache.parquet"}
+            # 4. Storage Resolution & Columnar Sink
+            # Deterministic dataset ID for path partitioning
+            dataset_id = str(uuid.uuid4())
+            
+            # Use the Storage Manager to stream the Polars DataFrame directly to R2
+            # row_group_size=100000 ensures DuckDB can read it back in parallel chunks
+            storage_uri = storage_manager.write_dataframe(
+                db=db,
+                df=df,
+                tenant_id=tenant_id,
+                dataset_id=dataset_id
             )
 
-            # In Supabase python client, upload returns the response. If it fails it usually raises an Exception.
-            # But let's verify if the path is in the response.
-            if hasattr(upload_response, 'error') and upload_response.error:
-                raise Exception(f"Storage Upload Failed: {upload_response.error.message}")
-
-            logger.info(f"Successfully ingested dataset {dataset_name} for tenant {tenant_id}. Rows: {row_count}")
+            logger.info(f"✅ [{tenant_id}] Ingested {dataset_name}. Rows: {df.height}, PII Masked: {mask_pii}")
 
             return IngestionResult(
-                storage_path=storage_path,
-                row_count=row_count,
-                size_bytes=len(parquet_bytes), # Compressed size
+                storage_path=storage_uri,
+                row_count=df.height,
+                size_bytes=len(contents), # Approximate, actual parquet size is in storage_manager
                 columns=columns
             )
 
         except pl.PolarsError as e:
-            logger.error(f"Data parsing error: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Failed to parse data file. Ensure it is valid CSV/JSON. Error: {str(e)}")
+            logger.error(f"Vectorized parsing failure: {e}")
+            raise HTTPException(status_code=422, detail=f"Data parsing error: {str(e)}")
         except Exception as e:
-            logger.error(f"Ingestion pipeline error: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.error(f"Ingestion pipeline failure: {e}")
+            raise HTTPException(status_code=500, detail="Internal ingestion pipeline error.")
+
+# Export singleton
+ingestion_service = DataIngestionService()

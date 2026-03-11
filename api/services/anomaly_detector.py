@@ -1,5 +1,3 @@
-# api/services/anomaly_detector.py
-
 import polars as pl
 import logging
 from typing import Dict, Any, Optional
@@ -17,7 +15,7 @@ class AnomalyDetector:
     """
     Phase 2: Mathematical Background Worker
     Uses strictly vectorized operations (Polars/Rust) over DuckDB zero-copy streams.
-    Upgraded to bypass Python's GIL for heavy statistical aggregations.
+    Upgraded to use Exponential Moving Averages (EMA) to account for seasonality and volatility.
     """
     
     def detect_anomaly(
@@ -54,7 +52,7 @@ class AnomalyDetector:
                 SELECT 
                     CAST("{time_col}" AS DATE) as ds, 
                     CAST(SUM("{metric_col}") AS DOUBLE) as y
-                FROM read_parquet({secure_path})
+                FROM read_parquet('{secure_path}')
                 WHERE "{time_col}" >= '{thirty_days_ago}'
                 GROUP BY ds
                 ORDER BY ds ASC
@@ -66,16 +64,19 @@ class AnomalyDetector:
                 arrow_table = con.execute(query).arrow()
                 df = pl.from_arrow(arrow_table)
 
-            if df.is_empty() or df.height < 7:
-                logger.debug(f"Not enough data to detect anomalies for {dataset_id}")
+            if df is None or df.is_empty() or df.height < 7:
+                logger.debug(f"Not enough data to detect anomalies for dataset {dataset_id}")
                 return None
 
             # 4. Data Sanitization & Vectorized Math Setup
-            # Ensure chronological order and fill missing days with 0.0 using Polars upsert logic
+            # Create a continuous date range to fill missing days with 0.0
+            min_date = df["ds"].min()
+            max_date = df["ds"].max()
+            
             date_range = pl.DataFrame({
                 "ds": pl.date_range(
-                    start=df["ds"].min(), 
-                    end=df["ds"].max(), 
+                    start=min_date, 
+                    end=max_date, 
                     interval="1d", 
                     eager=True
                 )
@@ -86,22 +87,24 @@ class AnomalyDetector:
                 pl.col("y").fill_null(0.0)
             )
 
-            # 5. Rust/C++ Vectorized Math: Calculate 7-day rolling mean and std dev
-            # Shift by 1 so today's data doesn't skew its own baseline evaluation
+            # 5. Exponential Moving Average (EMA) & Std Dev for Seasonality
+            # Shift by 1 so today's data doesn't skew its own baseline evaluation.
+            # Using ewm_mean/ewm_std provides mathematical precision over simple rolling averages.
             df = df.with_columns([
-                pl.col("y").shift(1).rolling_mean(window_size=7, min_periods=3).alias("rolling_mean"),
-                pl.col("y").shift(1).rolling_std(window_size=7, min_periods=3).alias("rolling_std")
+                pl.col("y").shift(1).ewm_mean(span=7, min_periods=3, ignore_nulls=True).alias("ema_mean"),
+                pl.col("y").shift(1).ewm_std(span=7, min_periods=3, ignore_nulls=True).alias("ema_std")
             ])
 
-            # Fill NaN/Null std dev with a small number to avoid division by zero
+            # Fill NaN/Null std dev with a small epsilon to avoid division by zero
+            epsilon = 1e-9
             df = df.with_columns(
-                pl.col("rolling_std").fill_nan(1e-9).fill_null(1e-9).replace(0.0, 1e-9)
+                pl.col("ema_std").fill_nan(epsilon).fill_null(epsilon).replace(0.0, epsilon)
             )
 
-            # 6. Z-Score Calculation (Vectorized natively in C++)
+            # 6. Z-Score Calculation (Vectorized natively in Rust/C++)
             # Z = (Value - Mean) / StdDev
             df = df.with_columns(
-                ((pl.col("y") - pl.col("rolling_mean")) / pl.col("rolling_std")).alias("z_score")
+                ((pl.col("y") - pl.col("ema_mean")) / pl.col("ema_std")).alias("z_score")
             )
 
             # 7. Evaluate the most recent day (Today/Yesterday)
@@ -114,20 +117,26 @@ class AnomalyDetector:
             is_anomalous = abs(latest_data['z_score']) > threshold
 
             if is_anomalous:
-                direction = "spike" if latest_data['z_score'] > 0 else "drop"
-                expected = latest_data['rolling_mean']
+                z_score = latest_data['z_score']
+                direction = "spike" if z_score > 0 else "drop"
+                expected = latest_data['ema_mean']
                 actual = latest_data['y']
                 
-                variance_pct = ((actual - expected) / expected) * 100 if expected != 0 else 100.0
+                # Prevent division by zero on variance calculation
+                variance_pct = ((actual - expected) / expected) * 100 if abs(expected) > epsilon else 100.0
+
+                # Safely parse the date object
+                ds_val = latest_data['ds']
+                date_str = ds_val.strftime('%Y-%m-%d') if hasattr(ds_val, 'strftime') else str(ds_val)
 
                 return {
                     "tenant_id": tenant_id,
                     "dataset_id": dataset_id,
-                    "date": latest_data['ds'].strftime('%Y-%m-%d') if hasattr(latest_data['ds'], 'strftime') else str(latest_data['ds']),
+                    "date": date_str,
                     "metric": metric_col,
                     "actual_value": float(actual),
                     "expected_value": float(expected),
-                    "z_score": float(latest_data['z_score']),
+                    "z_score": float(z_score),
                     "direction": direction,
                     "variance_pct": float(variance_pct)
                 }
@@ -136,5 +145,5 @@ class AnomalyDetector:
             return None
 
         except Exception as e:
-            logger.error(f"Anomaly detection math pipeline failed for {dataset_id}: {str(e)}")
+            logger.error(f"Anomaly detection math pipeline failed for dataset {dataset_id}: {str(e)}")
             return None

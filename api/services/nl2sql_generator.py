@@ -1,7 +1,8 @@
-# api/services/nl2sql_generator.py
-
 import logging
 import json
+import re
+import numpy as np
+from numpy.linalg import norm
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 
@@ -35,7 +36,7 @@ class NL2SQLGenerator:
     Phase 3: Contextual RAG & NL2SQL Generation (Modular Strategy)
     
     Translates natural language into blazing fast DuckDB SQL queries. 
-    Applies an internal Contextual RAG filter to prevent hallucinated columns and token bloat.
+    Applies Vectorized Contextual RAG via embeddings to prevent hallucinated columns and token bloat.
     Forces the Hybrid Performance Paradigm by requiring DuckDB's vectorized analytical functions.
     """
 
@@ -47,17 +48,50 @@ class NL2SQLGenerator:
         self.llm = llm_client
         self.max_columns_per_context = 20  # Token Bloat & Hallucination Defense Threshold
 
+    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+        """Calculates strict vector similarity to match user intent with schema structure."""
+        if norm(vec1) == 0 or norm(vec2) == 0:
+            return 0.0
+        return float(np.dot(vec1, vec2) / (norm(vec1) * norm(vec2)))
+
     async def _filter_schema_context(self, prompt: str, table_name: str, all_columns: Dict[str, str]) -> Dict[str, str]:
         """
         CONTEXTUAL RAG IMPLEMENTATION:
         Dynamically filters massive schemas down to the statistical minimum required for the query.
-        This neutralizes LLM hallucinations and dramatically reduces token latency.
+        Uses Vector Embeddings for lightning-fast semantic routing, falling back to an LLM filter.
         """
         if len(all_columns) <= self.max_columns_per_context:
             return all_columns
 
-        logger.debug(f"Schema for {table_name} exceeds token threshold. Initiating Contextual RAG filter.")
-        
+        logger.debug(f"Schema for {table_name} exceeds threshold ({len(all_columns)} cols). Initiating Contextual RAG.")
+
+        # 1. Primary Strategy: Vectorized Semantic Routing (Hybrid Performance Paradigm)
+        if hasattr(self.llm, "embed") and hasattr(self.llm, "embed_batch"):
+            try:
+                prompt_emb = np.array(await self.llm.embed(prompt))
+                
+                col_names = list(all_columns.keys())
+                # Enhance context by including column types in the embedding
+                col_docs = [f"Column {name} containing data type {all_columns[name]}" for name in col_names]
+                
+                col_embs = await self.llm.embed_batch(col_docs)
+                
+                similarities = []
+                for i, emb in enumerate(col_embs):
+                    sim = self._cosine_similarity(prompt_emb, np.array(emb))
+                    similarities.append((sim, col_names[i]))
+                
+                # Sort by highest cosine similarity
+                similarities.sort(key=lambda x: x[0], reverse=True)
+                top_cols = [name for _, name in similarities[:self.max_columns_per_context]]
+                
+                logger.debug("Successfully filtered schema using vectorized cosine similarity.")
+                return {col: all_columns[col] for col in top_cols}
+                
+            except Exception as e:
+                logger.warning(f"Vectorized embedding RAG failed: {e}. Falling back to LLM Structured Routing.")
+
+        # 2. Fallback Strategy: LLM Structured Output Filter
         filter_prompt = f"""
         USER PROMPT: {prompt}
         AVAILABLE COLUMNS: {list(all_columns.keys())}
@@ -66,7 +100,6 @@ class NL2SQLGenerator:
         """
         
         try:
-            # A fast, lightweight LLM call specifically for semantic extraction
             filter_result: SchemaFilterOutput = await self.llm.generate_structured(
                 system_prompt="You are a schema routing agent. Select only relevant columns.",
                 prompt=filter_prompt,
@@ -74,22 +107,18 @@ class NL2SQLGenerator:
                 response_model=SchemaFilterOutput
             )
             
-            # Map back to structural types
             relevant = {col: all_columns[col] for col in filter_result.relevant_columns if col in all_columns}
             
-            # Fallback if the model returned nothing valid
             if not relevant:
                 raise ValueError("Contextual filter returned empty valid columns.")
             return relevant
             
         except Exception as e:
-            logger.warning(f"Contextual schema filter failed: {e}. Falling back to truncation heuristic.")
+            logger.warning(f"Contextual schema filter failed: {e}. Applying truncation heuristic.")
             return {k: all_columns[k] for k in list(all_columns.keys())[:self.max_columns_per_context]}
 
     async def _build_contextual_schema(self, prompt: str, schemas: List[Dict[str, Any]]) -> str:
-        """
-        Builds the heavily compressed schema context for the main SQL reasoning engine.
-        """
+        """Builds the heavily compressed schema context for the main SQL reasoning engine."""
         minimized = []
         
         for schema in schemas:
@@ -97,13 +126,12 @@ class NL2SQLGenerator:
             friendly_name = schema.get("name", "Unknown Dataset")
             raw_meta = schema.get("schema", {})
             
-            # Normalize column extraction
             all_columns = {}
             if isinstance(raw_meta, dict):
                 for col_name, col_info in raw_meta.items():
                     all_columns[col_name] = col_info.get("type", "UNKNOWN") if isinstance(col_info, dict) else str(col_info)
 
-            # Apply Contextual Filter
+            # Apply Contextual RAG Filter
             relevant_columns = await self._filter_schema_context(prompt, table_name, all_columns)
 
             minimized.append({
@@ -115,10 +143,7 @@ class NL2SQLGenerator:
         return json.dumps(minimized, indent=2)
 
     def _build_system_prompt(self, contextual_schema: str, semantic_views: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Constructs the highly constrained system prompt.
-        Enforces DuckDB vectorization, Mathematical Precision, and strict Read-Only security.
-        """
+        """Constructs the highly constrained system prompt, enforcing vectorization and security."""
         views_context = ""
         if semantic_views:
             views_json = json.dumps(semantic_views, indent=2)
@@ -142,22 +167,36 @@ CRITICAL ENGINEERING RULES:
 
 CHARTING RULES (Vega-Lite):
 - If the prompt implies a visual, provide a highly declarative Vega-Lite JSON spec in `chart_spec`.
-- The `field` names in Vega-Lite MUST exactly match the output aliases of your SQL query. Use descriptive aliases (e.g., AS revenue_variance).
+- The `field` names in Vega-Lite MUST exactly match the output aliases of your SQL query. Use descriptive aliases.
 - If no chart is needed, return null for `chart_spec`.
 """
 
     def _validate_security(self, sql_query: str) -> None:
-        """Security Layer: Fast AST evaluation to prevent mutation attempts."""
-        sql_upper = sql_query.upper().strip()
-        dangerous_keywords = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "GRANT", "EXECUTE"]
+        """
+        Security Layer: Intelligent AST heuristic evaluation to prevent mutation attempts.
+        Strips literals to prevent false positives and blocks multi-statement injection.
+        """
+        sql_stripped = sql_query.strip()
         
-        if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
+        # 1. Must initiate with a Read operation
+        if not re.match(r'^(?i)(SELECT|WITH)\b', sql_stripped):
             raise ValueError("Security Violation: Generated query must initiate with SELECT or WITH.")
             
-        for keyword in dangerous_keywords:
-            # Ensure boundaries to not flag columns named 'update_time'
-            if f" {keyword} " in f" {sql_upper} ":
-                raise ValueError(f"Security Violation: Destructive operation '{keyword}' detected in execution plan.")
+        # 2. Block multi-statement queries
+        if ';' in sql_stripped.rstrip(';'):
+            raise ValueError("Security Violation: Multi-statement query execution is prohibited.")
+            
+        # 3. Strip text inside single quotes to avoid false positives on literal strings
+        sql_no_literals = re.sub(r"'.*?'", "''", sql_stripped)
+        
+        # 4. Strictly evaluate isolated DML/DDL keywords
+        dangerous_pattern = re.compile(
+            r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|EXECUTE|TRUNCATE)\b', 
+            re.IGNORECASE
+        )
+        
+        if dangerous_pattern.search(sql_no_literals):
+            raise ValueError("Security Violation: Destructive DML/DDL operation detected in execution plan.")
 
     async def generate_sql(
         self, 
@@ -166,16 +205,13 @@ CHARTING RULES (Vega-Lite):
         semantic_views: Optional[Dict[str, Any]] = None,
         history: List[Dict[str, Any]] = None
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """
-        Generates the vectorized DuckDB SQL and chart config based on Contextual RAG schemas.
-        """
+        """Generates the vectorized DuckDB SQL and chart config based on Contextual RAG schemas."""
         if self.llm is None:
             raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
             
         logger.info(f"Generating DuckDB SQL execution plan via Contextual RAG for prompt: '{prompt[:50]}...'")
         history = history or []
         
-        # Build highly compressed, mathematically relevant context
         contextual_schema = await self._build_contextual_schema(prompt, schemas)
         system_prompt = self._build_system_prompt(contextual_schema, semantic_views)
         
@@ -187,7 +223,6 @@ CHARTING RULES (Vega-Lite):
                 response_model=NL2SQLOutput
             )
             
-            # Validate output is purely read-only analytics
             self._validate_security(result.sql_query)
 
             logger.debug(f"Generated Vectorized SQL (Length: {len(result.sql_query)})")

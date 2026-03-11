@@ -1,82 +1,119 @@
-// app/api/chat/orchestrate/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/utils/supabase/server";
 
-import { NextResponse } from "next/server";
-// Assuming you have a standard Supabase server client utility
-// import { createClient } from "@/utils/supabase/server";
+export const runtime = "edge"; // Maximize performance & minimize latency
+export const dynamic = "force-dynamic";
 
 const BACKEND_URL = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
 
-export async function POST(req: Request) {
+/**
+ * Protocol: Analytical Stream Event
+ * Ensures the frontend knows exactly what state the engine is in.
+ */
+interface StreamPacket {
+  type: "status" | "reasoning" | "data" | "error";
+  content: string | any;
+}
+
+export async function POST(req: NextRequest) {
   try {
-    // 1. Parse the incoming payload from ChatLayout.tsx
+    // 1. Authentication & Tenant Isolation
+    // We derive identity from the Supabase session to prevent tenant spoofing.
+    const supabase = createClient();
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    
+    if (authError || !session) {
+      return NextResponse.json(
+        { type: "error", message: "Unauthorized: Session expired or invalid." }, 
+        { status: 401 }
+      );
+    }
+
+    const tenant_id = session.user.id;
+    const access_token = session.access_token;
+
+    // 2. Parse Incoming Payload
     const body = await req.json();
     const { agent_id, prompt, active_dataset_ids, history } = body;
 
     if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+      return NextResponse.json({ error: "Analytical prompt is required." }, { status: 400 });
     }
 
-    // 2. Authentication & Tenant Isolation (Supabase)
-    // In production, you MUST verify the user's session before hitting your data engine.
-    /*
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-    const tenant_id = session.user.id;
-    const access_token = session.access_token;
-    */
-   
-    // MOCK TENANT FOR DEVELOPMENT (Remove in prod)
-    const tenant_id = "tenant_123";
-    const access_token = "mock_token";
-
-    // 3. Forward the request to the Python FastAPI Backend
-    console.log(`[Next.js] Proxying chat request to Python Engine for tenant: ${tenant_id}`);
-    
-    const response = await fetch(`${BACKEND_URL}/api/chat/orchestrate`, {
+    // 3. Initiate Stream from Python Backend (Render)
+    // We proxy the request to our high-performance Python engine.
+    const backendResponse = await fetch(`${BACKEND_URL}/api/chat/orchestrate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Pass the auth token so the FastAPI backend can verify it via dependency injection
         "Authorization": `Bearer ${access_token}`,
+        "X-Tenant-ID": tenant_id, // Secondary header for backend logging
       },
       body: JSON.stringify({
-        tenant_id: tenant_id, // Safely injected by the server, NEVER trust the client
+        tenant_id, 
         agent_id: agent_id || "default-router",
-        prompt: prompt,
+        prompt,
         active_dataset_ids: active_dataset_ids || [],
         history: history || [],
+        stream: true, // Tell the backend to emit SSE
       }),
     });
 
-    // 4. Handle Backend Errors Gracefully
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[Next.js] Python Backend Error:", errorText);
-      
-      // Return a formatted ExecutionPayload error so DynamicChartFactory renders it beautifully
+    if (!backendResponse.ok || !backendResponse.body) {
+      const errorData = await backendResponse.text();
+      console.error("[Orchestrator] Backend Connection Failed:", errorData);
       return NextResponse.json(
-        {
-          type: "error",
-          message: "The Analytical Engine encountered an error while processing your request.",
-        },
-        { status: response.status }
+        { type: "error", message: "The Analytical Engine is currently unavailable." },
+        { status: 502 }
       );
     }
 
-    // 5. Stream the ExecutionPayload back to the Frontend
-    const data = await response.json();
-    return NextResponse.json(data);
+    // 4. Transform Stream (Hybrid Performance Paradigm)
+    // We pipe the backend's Uint8Array stream directly through a transform to the client.
+    // This allows us to inject mid-stream metadata if needed in the future.
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = backendResponse.body!.getReader();
+        const decoder = new TextDecoder();
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            // Forward the raw chunk (assuming backend sends valid JSON chunks or SSE)
+            const chunk = decoder.decode(value, { stream: true });
+            controller.enqueue(new TextEncoder().encode(chunk));
+          }
+        } catch (err) {
+          console.error("[Orchestrator] Stream Interrupted:", err);
+          const errorPacket: StreamPacket = { 
+            type: "error", 
+            content: "The data stream was interrupted during computation." 
+          };
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(errorPacket)));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    // 5. Return the response with SSE headers
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no", // Prevent Cloudflare/Nginx from buffering the stream
+      },
+    });
 
   } catch (error: any) {
-    console.error("[Next.js] API Route Exception:", error);
+    console.error("[Orchestrator] Fatal Route Error:", error);
     return NextResponse.json(
       { 
         type: "error", 
-        message: "An internal server error occurred while connecting to the data engine." 
+        message: "A critical error occurred in the orchestration layer." 
       },
       { status: 500 }
     );
