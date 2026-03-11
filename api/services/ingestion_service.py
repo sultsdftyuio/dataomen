@@ -1,110 +1,167 @@
-# api/services/ingestion_service.py
-
-import logging
+import io
 import uuid
-import anyio
-from typing import Dict, Any
+import logging
+from datetime import datetime, timezone
+from typing import Dict, Any, List, Optional, Tuple
 
-from sqlalchemy.orm import Session
-from api.services.storage_manager import storage_manager
-from models import Dataset
+import polars as pl
+from fastapi import UploadFile, HTTPException
+from supabase import Client
 
 logger = logging.getLogger(__name__)
 
-class IngestionPipeline:
+# -----------------------------------------------------------------------------
+# Type Definitions
+# -----------------------------------------------------------------------------
+class ColumnMetadata:
+    """Strict typing for our automatically inferred AI data dictionary."""
+    def __init__(self, name: str, type: str, description: str = "", is_pii: bool = False, is_primary_key: bool = False):
+        self.name = name
+        self.type = type
+        self.description = description
+        self.is_pii = is_pii
+        self.is_primary_key = is_primary_key
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "type": self.type,
+            "description": self.description,
+            "is_pii": self.is_pii,
+            "is_primary_key": self.is_primary_key
+        }
+
+class IngestionResult:
+    def __init__(self, storage_path: str, row_count: int, size_bytes: int, columns: List[ColumnMetadata]):
+        self.storage_path = storage_path
+        self.row_count = row_count
+        self.size_bytes = size_bytes
+        self.columns = columns
+
+# -----------------------------------------------------------------------------
+# Core Service Module
+# -----------------------------------------------------------------------------
+class DataIngestionService:
     """
-    Phase 2: Ingestion & Parquet Pipeline (Refactored for Modularity)
-    
-    Acts as the Orchestrator. Delegates physical storage, tier resolution, 
-    and DuckDB compute entirely to the AdaptiveStorageManager.
-    Uses anyio to offload blocking synchronous operations to worker threads.
+    Handles the high-performance transformation of raw data uploads (CSV/JSON)
+    into highly compressed, columnar Parquet files optimized for DuckDB query engines.
     """
 
-    def generate_presigned_upload(self, db: Session, tenant_id: str, file_name: str, content_type: str) -> Dict[str, Any]:
+    def __init__(self, supabase_client: Client, bucket_name: str = "tenant-datasets"):
+        self.supabase = supabase_client
+        self.bucket_name = bucket_name
+
+    def _map_polars_dtype_to_system(self, dtype: pl.DataType) -> str:
+        """Maps Rust/Polars native memory types to our simplified schema contract."""
+        dtype_str = str(dtype).lower()
+        if "int" in dtype_str:
+            return "integer"
+        if "float" in dtype_str or "double" in dtype_str:
+            return "float"
+        if "bool" in dtype_str:
+            return "boolean"
+        if "datetime" in dtype_str or "date" in dtype_str or "time" in dtype_str:
+            return "datetime"
+        return "string"
+
+    def _infer_schema_and_metadata(self, df: pl.DataFrame) -> List[ColumnMetadata]:
         """
-        Generates a secure, temporary URL for direct-to-cloud upload.
-        Dynamically routes to Supabase/R2 based on the tenant's tier via the StorageManager.
+        Extracts structural metadata. Automatically flags obvious PII and Primary Keys 
+        to optimize the LLM Contextual RAG downstream.
         """
-        # Resolve the dynamic storage tier for the tenant
-        config = storage_manager._resolve_tenant_config(db, tenant_id)
-        s3_client = storage_manager.get_s3_client(db, tenant_id)
-        
-        # Enforce the strict physical partition defined by the storage manager
-        object_key = f"{config.prefix}raw/{uuid.uuid4().hex[:8]}_{file_name}"
-        
-        try:
-            # Generate POST URL with strict size/type conditions
-            presigned_post = s3_client.generate_presigned_post(
-                Bucket=config.bucket,
-                Key=object_key,
-                Fields={"Content-Type": content_type},
-                Conditions=[
-                    {"Content-Type": content_type},
-                    ["content-length-range", 0, 104857600] # Max 100MB limit for raw uploads
-                ],
-                ExpiresIn=3600
+        columns_meta = []
+        schema = df.schema
+
+        for col_name, dtype in schema.items():
+            system_type = self._map_polars_dtype_to_system(dtype)
+            
+            # Auto-flagging heuristics for PII and Keys
+            col_lower = col_name.lower()
+            is_pii = any(pii_term in col_lower for pii_term in ['email', 'ssn', 'phone', 'address', 'name', 'password'])
+            is_pk = col_lower in ['id', 'uuid', f"{df.columns[0].lower()}"] and df[col_name].n_unique() == df.height
+
+            meta = ColumnMetadata(
+                name=col_name,
+                type=system_type,
+                description=f"Auto-inferred column: {col_name}",
+                is_pii=is_pii,
+                is_primary_key=is_pk
             )
-            logger.info(f"Generated pre-signed URL for tenant {tenant_id} | File: {file_name}")
-            return {
-                "url": presigned_post["url"], 
-                "fields": presigned_post["fields"], 
-                "object_key": object_key
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to generate presigned URL: {str(e)}")
-            raise RuntimeError("Storage upload initialization failed.")
+            columns_meta.append(meta)
 
-    async def process_raw_to_parquet(self, db: Session, tenant_id: str, dataset_id: str, raw_object_key: str) -> Dict[str, Any]:
+        return columns_meta
+
+    async def process_and_upload(
+        self, 
+        file: UploadFile, 
+        tenant_id: str, 
+        dataset_name: str
+    ) -> IngestionResult:
         """
-        Event-Driven Profiling Worker logic.
-        Uses thread-offloading to prevent heavy DuckDB compute from blocking the event loop.
+        Reads a raw file, vectorizes the transformation to Parquet in-memory, 
+        and securely isolates it in tenant-partitioned storage.
         """
-        logger.info(f"[Worker] Processing dataset {dataset_id} for tenant {tenant_id}")
-        
         try:
-            # HYBRID PERFORMANCE: Offload the heavy synchronous DuckDB compute to a separate thread
-            # This prevents the FastAPI event loop from stalling during conversion.
-            profile_result = await anyio.to_thread.run_sync(
-                storage_manager.convert_to_parquet_and_profile, 
-                db, 
-                tenant_id, 
-                raw_object_key
+            # 1. Read raw bytes into memory buffer
+            raw_bytes = await file.read()
+            file_buffer = io.BytesIO(raw_bytes)
+            file_size = len(raw_bytes)
+
+            if file_size == 0:
+                raise ValueError("Uploaded file is empty.")
+
+            # 2. High-Performance DataFrame loading using Polars (Vectorized C/Rust backend)
+            filename = file.filename.lower()
+            if filename.endswith('.csv'):
+                df = pl.read_csv(file_buffer, ignore_errors=True, infer_schema_length=10000)
+            elif filename.endswith('.json'):
+                df = pl.read_json(file_buffer)
+            else:
+                raise ValueError(f"Unsupported file format: {filename}. Please upload CSV or JSON.")
+
+            row_count = df.height
+            if row_count == 0:
+                raise ValueError("Data file contains no rows.")
+
+            # 3. Extract standard schema metadata for the AI Dictionary
+            columns = self._infer_schema_and_metadata(df)
+
+            # 4. Compress to Columnar Parquet format (in-memory)
+            # Parquet drastically reduces S3 storage costs and makes DuckDB range-queries lightning fast
+            parquet_buffer = io.BytesIO()
+            df.write_parquet(parquet_buffer, compression="snappy")
+            parquet_buffer.seek(0)
+            parquet_bytes = parquet_buffer.read()
+
+            # 5. Secure, Tenant-Isolated Storage
+            # Path format: tenant_id/dataset_uuid.parquet
+            dataset_uuid = str(uuid.uuid4())
+            storage_path = f"{tenant_id}/{dataset_uuid}.parquet"
+
+            # Upload to Supabase Storage (S3 equivalent)
+            upload_response = self.supabase.storage.from_(self.bucket_name).upload(
+                path=storage_path,
+                file=parquet_bytes,
+                file_options={"content-type": "application/vnd.apache.parquet"}
             )
-            
-            # Update Database via SQLAlchemy (Standardized ORM)
-            dataset = db.query(Dataset).filter(
-                Dataset.id == dataset_id,
-                Dataset.tenant_id == tenant_id
-            ).first()
-            
-            if not dataset:
-                raise ValueError(f"Dataset {dataset_id} not found in database.")
-                
-            dataset.status = "READY"
-            
-            # Assign the exact path generated by storage manager so compute_engine can find it
-            dataset.file_path = profile_result["parquet_path"]
-            
-            # Contextual RAG prep: Assign the extracted semantic schema directly to the model
-            dataset.schema_metadata = profile_result["columns"]
-            
-            # Persist changes safely
-            db.commit()
-            logger.info(f"[Worker] Successfully transformed and profiled {dataset_id}.")
-            return {"status": "success", "schema": profile_result["columns"]}
 
+            # In Supabase python client, upload returns the response. If it fails it usually raises an Exception.
+            # But let's verify if the path is in the response.
+            if hasattr(upload_response, 'error') and upload_response.error:
+                raise Exception(f"Storage Upload Failed: {upload_response.error.message}")
+
+            logger.info(f"Successfully ingested dataset {dataset_name} for tenant {tenant_id}. Rows: {row_count}")
+
+            return IngestionResult(
+                storage_path=storage_path,
+                row_count=row_count,
+                size_bytes=len(parquet_bytes), # Compressed size
+                columns=columns
+            )
+
+        except pl.PolarsError as e:
+            logger.error(f"Data parsing error: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Failed to parse data file. Ensure it is valid CSV/JSON. Error: {str(e)}")
         except Exception as e:
-            logger.error(f"[Worker] Failed to process dataset {dataset_id}: {str(e)}")
-            db.rollback()
-            
-            # Safe Fail state via ORM
-            dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-            if dataset:
-                dataset.status = "FAILED"
-                db.commit()
-                
-            raise RuntimeError(f"Data processing worker failed: {str(e)}")
-
-# Export singleton instance for dependency injection across routers
-ingestion_service = IngestionPipeline()
+            logger.error(f"Ingestion pipeline error: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))

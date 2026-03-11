@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { 
   Activity, 
   Database, 
@@ -14,12 +14,13 @@ import {
   TrendingUp,
   Clock,
   ArrowRight,
-  BrainCircuit
+  BrainCircuit,
+  BarChart3
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -52,6 +53,12 @@ interface AnomalyAlert {
   variance_pct: number;
   created_at: string;
   status: 'unresolved' | 'investigating' | 'resolved';
+}
+
+interface TimeSeriesDataPoint {
+  date: string;
+  revenue: number;
+  queries: number;
 }
 
 // -----------------------------------------------------------------------------
@@ -116,6 +123,60 @@ const StatCard = ({
 };
 
 // -----------------------------------------------------------------------------
+// Lightweight SVG Trend Chart (No heavy external dependencies required)
+// -----------------------------------------------------------------------------
+const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], isLoading: boolean }) => {
+  const maxRevenue = useMemo(() => Math.max(...data.map(d => d.revenue), 1), [data]);
+  
+  if (isLoading) {
+    return <Skeleton className="w-full h-[250px] rounded-xl" />;
+  }
+
+  return (
+    <Card className="border-border shadow-sm bg-background/50 backdrop-blur-sm col-span-1 md:col-span-2 lg:col-span-4">
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            30-Day Executive Overview
+          </CardTitle>
+          <CardDescription>Cached DuckDB aggregation of primary business metrics.</CardDescription>
+        </div>
+        <Badge variant="secondary" className="font-mono text-xs text-muted-foreground">
+          <Clock className="h-3 w-3 mr-1 inline" /> Cached 2m ago
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[200px] w-full flex items-end gap-2 pt-4">
+          {data.map((point, i) => {
+            const heightPct = (point.revenue / maxRevenue) * 100;
+            return (
+              <div key={i} className="relative flex-1 group h-full flex items-end">
+                <div 
+                  className="w-full bg-primary/20 hover:bg-primary/50 transition-all rounded-t-sm"
+                  style={{ height: `${Math.max(heightPct, 5)}%` }}
+                />
+                {/* Tooltip on hover */}
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-foreground text-background text-xs rounded px-2 py-1 pointer-events-none whitespace-nowrap z-10">
+                  <div className="font-bold">{point.date}</div>
+                  <div>Rev: ${point.revenue.toLocaleString()}</div>
+                  <div>Queries: {point.queries}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-between mt-2 text-xs text-muted-foreground font-mono">
+          <span>{data[0]?.date}</span>
+          <span>{data[Math.floor(data.length / 2)]?.date}</span>
+          <span>{data[data.length - 1]?.date}</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// -----------------------------------------------------------------------------
 // Main Dashboard Component
 // -----------------------------------------------------------------------------
 export default function DashboardOverviewPage() {
@@ -127,6 +188,7 @@ export default function DashboardOverviewPage() {
     queriesRun: 0,
     healthScore: 100,
   });
+  const [chartData, setChartData] = useState<TimeSeriesDataPoint[]>([]);
   const [agents, setAgents] = useState<ActiveAgent[]>([]);
   const [alerts, setAlerts] = useState<AnomalyAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -146,7 +208,6 @@ export default function DashboardOverviewPage() {
           throw new Error("Authentication required to view workspace.");
         }
 
-        // Attempt to fetch from backend
         const response = await fetch('/api/workspace/metrics', {
           method: 'GET',
           headers: {
@@ -168,6 +229,7 @@ export default function DashboardOverviewPage() {
         setMetrics(data.metrics || metrics);
         setAgents(data.agents || []);
         setAlerts(data.alerts || []);
+        setChartData(data.chartData || []);
 
       } catch (err: any) {
         console.error("Dashboard orchestration error:", err);
@@ -190,8 +252,27 @@ export default function DashboardOverviewPage() {
         queriesRun: 12450,
         healthScore: 99.8,
       });
+
+      // Generate realistic looking timeseries data for the Master Chart
+      const generatedChartData: TimeSeriesDataPoint[] = [];
+      let baseRevenue = 15000;
+      const today = new Date();
+      for (let i = 30; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        
+        // Add some noise/variance to simulate reality
+        baseRevenue = baseRevenue + (Math.random() * 2000 - 800); 
+        generatedChartData.push({
+          date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          revenue: Math.floor(baseRevenue),
+          queries: Math.floor(Math.random() * 500 + 100)
+        });
+      }
+      setChartData(generatedChartData);
+
       setAgents([
-        { id: '1', name: 'Stripe Revenue Watchdog', role: 'Financial Analyst', description: 'Monitors MRR and Churn velocity across EU and NA regions.', status: 'online', lastRun: '2 mins ago' },
+        { id: '1', name: 'Stripe Revenue Watchdog', role: 'Financial Analyst', description: 'Monitors MRR and Churn velocity across EU and NA regions. Applies EMA for trend smoothing.', status: 'online', lastRun: '2 mins ago' },
         { id: '2', name: 'Conversion Monitor', role: 'Growth Agent', description: 'Tracks funnel drop-offs and API latencies on the checkout service.', status: 'analyzing', lastRun: 'Just now' }
       ]);
       setAlerts([
@@ -228,7 +309,7 @@ export default function DashboardOverviewPage() {
             )}
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Supervise your autonomous data agents and review recent AI diagnostics.
+            Supervise your autonomous data agents and review real-time cached analytics.
           </p>
         </div>
         <div className="flex gap-3">
@@ -247,7 +328,7 @@ export default function DashboardOverviewPage() {
         </div>
       </div>
 
-      {/* Top Level Metrics */}
+      {/* Top Level Metrics & Master Chart Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           title="Connected Sources" 
@@ -284,6 +365,9 @@ export default function DashboardOverviewPage() {
           isLoading={isLoading}
           accent="emerald"
         />
+        
+        {/* The Executive Master Chart */}
+        <MasterTrendChart data={chartData} isLoading={isLoading} />
       </div>
 
       {/* Main Content Grid */}
@@ -335,7 +419,7 @@ export default function DashboardOverviewPage() {
                           <Clock className="h-3 w-3" />
                           Last Run: {agent.lastRun}
                         </span>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs hover:text-primary">
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs hover:text-primary" onClick={() => router.push(`/agents/${agent.id}`)}>
                           Configure
                         </Button>
                       </div>
@@ -352,7 +436,7 @@ export default function DashboardOverviewPage() {
                     Your workforce is currently empty. Deploy a Supervisor Agent to start monitoring your data automatically.
                   </p>
                   <Button asChild>
-                    <Link href="/agents">Deploy your first Agent</Link>
+                    <Link href="/agents/create">Deploy your first Agent</Link>
                   </Button>
                 </div>
               )}
