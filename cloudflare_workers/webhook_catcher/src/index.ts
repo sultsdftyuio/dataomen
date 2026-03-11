@@ -1,12 +1,15 @@
 // cloudflare_workers/webhook_catcher/src/index.ts
 
-import type { Queue, ExecutionContext } from '@cloudflare/workers-types';
+import type { Queue, MessageBatch, ExecutionContext } from '@cloudflare/workers-types';
 
 export interface Env {
   // Binding to Cloudflare Queues
   INGESTION_QUEUE: Queue<any>;
   // Environment variable strictly for Edge auth
   STRIPE_WEBHOOK_SECRET: string;
+  // Phase 4: Backend routing variables
+  CORE_API_URL: string;
+  CORE_API_KEY: string;
 }
 
 /**
@@ -75,7 +78,8 @@ async function verifyStripeSignature(
 
 export default {
   /**
-   * Main Edge Handler for incoming HTTP requests
+   * Main Edge Handler for incoming HTTP requests (Producer)
+   * Receives the webhook, verifies it instantly at the edge, and drops it into a queue.
    */
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // Only accept POST requests
@@ -139,4 +143,54 @@ export default {
       return new Response('Internal Server Error', { status: 500 });
     }
   },
+
+  /**
+   * Phase 4: Event-Driven Triggers (Queue Consumer)
+   * Pulls the normalized payloads off the queue in batches and pushes them to the Python Backend.
+   * Crucially, it instructs the backend to ingest the data AND instantly trigger the analytical agents.
+   */
+  async queue(batch: MessageBatch<any>, env: Env): Promise<void> {
+    // 1. Group messages by tenant to optimize backend bulk inserts (Vectorization philosophy)
+    const tenantPayloads: Record<string, any[]> = {};
+
+    for (const message of batch.messages) {
+      const { tenant_id, provider, payload, received_at } = message.body;
+      
+      if (!tenantPayloads[tenant_id]) {
+        tenantPayloads[tenant_id] = [];
+      }
+      
+      tenantPayloads[tenant_id].push({ provider, payload, received_at });
+      
+      // Acknowledge message so it's removed from the queue
+      message.ack();
+    }
+
+    // 2. Push to Python backend to ingest and trigger agents
+    for (const [tenantId, events] of Object.entries(tenantPayloads)) {
+      try {
+        const response = await fetch(`${env.CORE_API_URL}/api/ingest/webhook-batch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${env.CORE_API_KEY}`,
+            'X-Trigger-Agents': 'true' // The Event-Driven Trigger flag
+          },
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            events: events
+          })
+        });
+
+        if (!response.ok) {
+          console.error(`Backend failed to process tenant ${tenantId}: ${response.status} ${response.statusText}`);
+          // In a production environment, you might route failed batches to a Dead Letter Queue (DLQ) here
+        } else {
+          console.log(`Successfully ingested and triggered agents for tenant ${tenantId} (${events.length} events)`);
+        }
+      } catch (error) {
+        console.error(`Failed to reach Core API for tenant ${tenantId}:`, error);
+      }
+    }
+  }
 };

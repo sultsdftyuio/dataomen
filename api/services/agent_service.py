@@ -1,7 +1,7 @@
 # api/services/agent_service.py
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import uuid4
 from datetime import datetime, timezone
 from croniter import croniter
@@ -13,18 +13,23 @@ from models import Agent, Dataset
 from api.database import SessionLocal  # Import factory for background threads
 from api.services.tenant_security_provider import tenant_security
 
-# Services
+# Downstream Modular Services (The Multi-Agent Team)
 from api.services.anomaly_detector import AnomalyDetector
-# Assuming you have Pydantic schemas for the API boundaries
+from api.services.diagnostic_service import diagnostic_service     # Phase 1: RAG Diagnostics (The Analyst)
+from api.services.notification_router import notification_router   # Phase 2: Action Space (The Voice)
+from api.services.agent_memory import agent_memory                 # Phase 3: Stateful Memory (The Context)
+from api.services.compute_engine import compute_engine             # Phase 5: ML Forecasting (The ML Expert)
+
+# Pydantic schemas for the API boundaries
 from api.models.agent import AgentRuleCreate
 
 logger = logging.getLogger(__name__)
 
 class AgentService:
-    def __init__(self):
+    def __init__(self) -> None:
         """
-        Dependency Injection removed for Supabase. 
-        We now use standard SQLAlchemy Sessions for all queries to ensure transaction safety.
+        Hybrid Performance Paradigm: 
+        Combining fast vectorized math with orchestrated agentic reasoning.
         """
         # Instantiate our highly optimized, vectorized mathematical detector
         self.anomaly_detector = AnomalyDetector()
@@ -44,7 +49,7 @@ class AgentService:
             new_agent = Agent(
                 tenant_id=tenant_id,
                 dataset_id=rule.dataset_id,
-                name=rule.name, # Assuming your pydantic model has this
+                name=rule.name, 
                 metric_column=rule.metric_column,
                 time_column=rule.time_column,
                 cron_schedule=rule.cron_schedule,
@@ -70,7 +75,7 @@ class AgentService:
             Agent.is_active == True
         ).all()
 
-    async def check_and_dispatch_agents(self, db: Session, background_tasks) -> Dict[str, Any]:
+    async def check_and_dispatch_agents(self, db: Session, background_tasks: Any) -> Dict[str, Any]:
         """
         The Orchestration Heartbeat.
         Finds active agents, evaluates crons, and dispatches due tasks.
@@ -81,25 +86,20 @@ class AgentService:
         dispatched_count = 0
 
         for agent in active_agents:
-            # Skip if no cron is defined
             if not agent.cron_schedule:
                 continue
                 
             try:
                 last_run = agent.last_run_at or agent.created_at
-                
                 cron = croniter(agent.cron_schedule, last_run)
                 next_run = cron.get_next(datetime)
 
-                # Ensure tz-awareness for comparison
                 if next_run.tzinfo is None:
                     next_run = next_run.replace(tzinfo=timezone.utc)
 
                 if now >= next_run:
                     logger.info(f"Agent {agent.id} is due. Dispatching.")
                     
-                    # Background tasks lose the current request DB session.
-                    # We pass the IDs and create a fresh session inside the worker wrapper.
                     background_tasks.add_task(
                         self._run_agent_task_wrapper, 
                         agent_id=str(agent.id), 
@@ -117,42 +117,44 @@ class AgentService:
                 logger.error(f"Error evaluating schedule for agent {agent.id}: {str(cron_err)}")
                 continue
 
-        # Commit all last_run_at updates
         if dispatched_count > 0:
             db.commit()
 
         return {"status": "success", "agents_dispatched": dispatched_count}
 
-    async def _run_agent_task_wrapper(self, agent_id: str, tenant_id: str, dataset_id: str, metric: str, time_col: str, threshold: float):
+    async def _run_agent_task_wrapper(self, agent_id: str, tenant_id: str, dataset_id: str, metric: str, time_col: str, threshold: float) -> None:
         """
         Creates a fresh database session for the background thread and enforces 
         tenant execution contexts (metering & limits).
         """
         db = SessionLocal()
         try:
-            # Wrap the raw execution in our security provider to deduct usage credits
+            # FIX: We pass the conflicting parameters (like tenant_id) via *args positionally 
+            # to avoid Python throwing a duplicate keyword argument Syntax/TypeError.
             await tenant_security.execute_in_context(
-                db=db,
-                tenant_id=tenant_id,
-                operation_name="autonomous_agent_run",
-                func=self._execute_anomaly_math,
-                # kwargs downward
-                tenant_id=tenant_id,
-                dataset_id=dataset_id,
-                metric=metric,
-                time_col=time_col,
-                threshold=threshold
+                db,                                   # Context: db
+                tenant_id,                            # Context: tenant_id
+                "autonomous_agent_run",               # Context: operation_name
+                self._execute_autonomous_pipeline,    # Context: target function
+                db,                                   # *args[0] -> db_session
+                agent_id,                             # *args[1] -> agent_id
+                tenant_id,                            # *args[2] -> tenant_id
+                dataset_id,                           # *args[3] -> dataset_id
+                metric,                               # *args[4] -> metric
+                time_col,                             # *args[5] -> time_col
+                threshold                             # *args[6] -> threshold
             )
         finally:
             db.close()
 
-    async def _execute_anomaly_math(self, tenant_id: str, dataset_id: str, metric: str, time_col: str, threshold: float):
+    async def _execute_autonomous_pipeline(self, db_session: Session, agent_id: str, tenant_id: str, dataset_id: str, metric: str, time_col: str, threshold: float) -> None:
         """
-        The Core Background Worker task. Executes math instantly. If it flags, we trigger AI.
+        Phase 5: Supervisor Orchestration.
+        Orchestrates a multi-agent workflow to provide high-signal intelligence.
         """
-        logger.info(f"--- STARTING BACKGROUND MATH TASK FOR TENANT {tenant_id} ---")
+        logger.info(f"--- [SUPERVISOR] INITIATING MULTI-AGENT TASK FOR TENANT {tenant_id} ---")
         
-        # 1. Phase 2: Math-First Anomaly Detection (Fast & Cheap Vectorized execution)
+        # 1. PERCEPTION: Math Detector (Fast & Cheap)
         anomaly_result = self.anomaly_detector.detect_anomaly(
             tenant_id=tenant_id,
             dataset_id=dataset_id,
@@ -161,16 +163,86 @@ class AgentService:
             threshold=threshold 
         )
 
-        if anomaly_result:
-            logger.warning(f"🚨 ANOMALY DETECTED: {anomaly_result['direction']} in {metric}")
+        if not anomaly_result:
+            logger.info(f"✅ Metric {metric} is stable. Closing task.")
+            return
+
+        try:
+            # Fetch full agent context
+            agent = db_session.query(Agent).filter(Agent.id == agent_id).first()
+            if not agent:
+                raise ValueError(f"Agent {agent_id} not found during pipeline execution.")
+
+            # 2. CONTEXT: Memory Agent (Temporal Analysis)
+            # Evaluates the baseline and identifies recurring patterns
+            trend_analysis = await agent_memory.evaluate_trend(
+                db=db_session,
+                tenant_id=tenant_id,
+                agent_name=agent.name,
+                metric=metric,
+                current_anomaly=anomaly_result
+            )
+
+            # 3. REASONING: Diagnostic Analyst Agent (Root Cause)
+            # Writes exploratory SQL to find the 'Why' behind the anomaly
+            diagnostic_summary = await diagnostic_service.analyze(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                metric=metric,
+                anomaly_context=anomaly_result
+            )
+
+            # 4. PREDICTION: Forecasting Agent (Future Projection)
+            # Uses ComputeEngine for vectorized ML projection (e.g., EMA/Linear Regression)
+            prediction_insight = await self._get_ml_forecast(tenant_id, dataset_id, metric, time_col)
+
+            # 5. SYNTHESIS: The Strategist
+            # Merges all agent outputs into one high-signal notification
+            final_report = self._synthesize_agent_reports(
+                trend=getattr(trend_analysis, 'memory_context', 'No memory context available.'),
+                diagnostic=diagnostic_summary,
+                forecast=prediction_insight
+            )
+
+            # 6. ACTION: Notification Router
+            await notification_router.dispatch_alert(
+                tenant_id=tenant_id,
+                agent_name=agent.name,
+                insight_summary=final_report
+            )
+
+            # Update stateful tracking
+            agent.last_anomaly_detected_at = datetime.now(timezone.utc)
+            db_session.commit()
             
-            # TODO: Phase 3: Diagnostic RAG Pipeline (Context Gathering & LLM)
-            # insight_summary = await diagnostic_service.analyze(anomaly_result)
-            
-            # TODO: Phase 4: Notification Routing
-            # await notification_service.send_slack_alert(agent, insight_summary)
-        else:
-            logger.info(f"✅ Data looks normal. Exiting autonomous task cheaply.")
+            logger.info(f"🚀 Pipeline complete. Alert dispatched for {agent.name}.")
+
+        except Exception as e:
+            db_session.rollback()
+            logger.error(f"Critical failure in agent supervisor pipeline {agent_id}: {str(e)}")
+
+    async def _get_ml_forecast(self, tenant_id: str, dataset_id: str, metric: str, time_col: str) -> str:
+        """Invokes the Compute Engine Agent to project the metric's path."""
+        try:
+            # Delegate to the ML pipeline via semantic prompt
+            forecast = await compute_engine.execute_ml_pipeline(
+                tenant_id=tenant_id,
+                dataset_ids=[dataset_id],
+                prompt=f"Based on the last 30 days of {metric}, forecast the next 7 days. Is the current anomaly likely to persist?",
+                schemas=[]  # Compute engine handles internal injection securely
+            )
+            return f"Projected Trend: {forecast.get('summary', 'Insufficient data for a confident forecast.')}"
+        except Exception as e:
+            logger.warning(f"Forecasting skipped/failed for tenant {tenant_id}: {e}")
+            return "Forecasting currently unavailable."
+
+    def _synthesize_agent_reports(self, trend: str, diagnostic: str, forecast: str) -> str:
+        """Combines modular agent outputs into a unified, scannable report structure."""
+        return (
+            f"*Temporal Context:*\n{trend}\n\n"
+            f"*Root Cause Analysis:*\n{diagnostic}\n\n"
+            f"*Future Outlook:*\n{forecast}"
+        )
 
 # Export singleton instance
 agent_service = AgentService()
