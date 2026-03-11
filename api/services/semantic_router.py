@@ -99,25 +99,46 @@ class SemanticRouter:
             logger.error(f"Failed to fetch schemas for tenant {tenant_id}: {str(e)}")
             return {"raw_schemas": [], "semantic_views": {}}
 
+    def _summarize_schemas_for_routing(self, raw_schemas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        TOKEN BLOAT DEFENSE: 
+        The router only needs to know what tables exist and their general structure to make a routing decision. 
+        We strip out deeply nested types to save tokens and prevent LLM confusion.
+        """
+        summary = []
+        for schema in raw_schemas:
+            schema_dict = schema.get("schema", {})
+            # Extract just the top-level column names, capping at 30 to prevent massive prompt injections
+            sample_cols = list(schema_dict.keys())[:30] if isinstance(schema_dict, dict) else []
+            summary.append({
+                "id": schema["id"],
+                "name": schema["name"],
+                "columns_sample": sample_cols
+            })
+        return summary
+
     def _build_routing_prompt(self, user_prompt: str, context: Dict[str, Any]) -> str:
         """
         Constructs the Context-Constrained Prompt for the router.
         Heavily biases the LLM toward using 'Gold Tier' semantic views for analytical tasks.
         """
-        raw_schemas_json = json.dumps(context["raw_schemas"], indent=2) if context["raw_schemas"] else "No active raw datasets."
-        semantic_views_json = json.dumps(context["semantic_views"], indent=2) if context["semantic_views"] else "No pre-built views available."
+        # Inject the summarized schema, NOT the raw schema, to save tokens
+        summarized_schemas = self._summarize_schemas_for_routing(context.get("raw_schemas", []))
+        
+        raw_schemas_json = json.dumps(summarized_schemas, indent=2) if summarized_schemas else "No active raw datasets."
+        semantic_views_json = json.dumps(list(context.get("semantic_views", {}).keys()), indent=2) if context.get("semantic_views") else "No pre-built views available."
         
         return f"""
         You are the intelligent router for a high-performance analytical SaaS.
         Evaluate the user's prompt against the active dataset schemas and decide the execution route.
         
-        ACTIVE RAW DATASET SCHEMAS:
+        ACTIVE DATASETS (Summarized):
         {raw_schemas_json}
         
         GOLD TIER SEMANTIC VIEWS (HIGHLY PREFERRED):
         These are pre-calculated, verified DuckDB views representing complex metrics (e.g., MRR, Revenue).
-        If the user asks for a metric represented here, you MUST recommend the relevant view.
-        {semantic_views_json}
+        If the user asks for a metric conceptually represented here, you MUST recommend the relevant view.
+        Available Views: {semantic_views_json}
         
         USER PROMPT:
         "{user_prompt}"
@@ -194,7 +215,7 @@ class SemanticRouter:
     ) -> Dict[str, Any]:
         """
         Path B: Route to NL2SQL Generator and safely execute in DuckDB.
-        Passes the semantic views directly to NL2SQL so they can be injected as DuckDB CTEs.
+        Passes the full, uncompressed raw_schemas to the execution generator.
         """
         active_views = {k: context["semantic_views"][k] for k in decision.recommended_views if k in context["semantic_views"]}
         
@@ -228,6 +249,7 @@ class SemanticRouter:
             corrected_query, _ = await self.nl2sql.correct_sql(
                 failed_query=sql_query, 
                 error_msg=str(e), 
+                prompt=user_prompt,
                 schemas=context["raw_schemas"],
                 semantic_views=active_views # Essential: pass the views context to prevent self-correction failure
             )
@@ -269,7 +291,7 @@ class SemanticRouter:
             tenant_id=tenant_id,
             dataset_ids=decision.required_datasets,
             prompt=user_prompt,
-            schemas=context["raw_schemas"]
+            schemas=context["raw_schemas"] # The compute engine needs full schema definition
         )
         return {
             "type": "ml_result",
