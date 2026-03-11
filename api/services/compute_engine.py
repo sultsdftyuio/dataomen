@@ -14,6 +14,34 @@ from models import Dataset
 # Setup structured logger
 logger = logging.getLogger(__name__)
 
+class ComputeRouter:
+    """
+    Phase 2.2: Compute Routing Logic ("Noisy Neighbor" Defense).
+    Determines whether a generated SQL query is lightweight enough for immediate 
+    synchronous execution, or if it requires handoff to background workers.
+    """
+    @staticmethod
+    def requires_background_worker(sql_query: str) -> bool:
+        if not sql_query:
+            return False
+            
+        query_upper = sql_query.upper()
+        
+        # Defensive Heuristics: Route heavy queries to background tasks
+        # 1. More than 2 JOINs usually indicates complex relational mapping
+        if query_upper.count("JOIN") > 2:
+            return True
+        # 2. Complex window functions or heavy statistical aggregations
+        heavy_keywords = ["PERCENTILE_CONT", "APPROX_COUNT_DISTINCT", "CUBE", "ROLLUP", "STDDEV"]
+        if any(keyword in query_upper for keyword in heavy_keywords):
+            return True
+        # 3. Multiple subqueries / CTEs
+        if query_upper.count("SELECT") > 3:
+            return True
+            
+        return False
+
+
 class ComputeEngine:
     """
     Phase 4: The Execution Engine (In-Process Analytics)
