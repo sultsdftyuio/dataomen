@@ -97,7 +97,6 @@ const THEME_COLORS = ['bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-emeral
 // Component
 // -----------------------------------------------------------------------------
 export default function AgentsPage() {
-  // Start with an empty fleet, but ready for scaling
   const [agents, setAgents] = useState<Agent[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isDeployOpen, setIsDeployOpen] = useState(false)
@@ -183,13 +182,13 @@ export default function AgentsPage() {
   const getStatusBadge = (status: Agent['status']) => {
     switch (status) {
       case 'Active':
-        return <Badge variant="default" className="bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border-emerald-500/20 shadow-none"><Activity className="w-3 h-3 mr-1.5 animate-pulse" /> Active</Badge>
+        return <Badge variant="default" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-none"><Activity className="w-3 h-3 mr-1.5 animate-pulse" /> Active</Badge>
       case 'Paused':
-        return <Badge variant="secondary" className="bg-slate-800 text-slate-400 border-slate-700 shadow-none"><Square className="w-3 h-3 mr-1.5" /> Paused</Badge>
+        return <Badge variant="secondary" className="bg-muted text-muted-foreground border-border shadow-none"><Square className="w-3 h-3 mr-1.5" /> Paused</Badge>
       case 'Training':
-        return <Badge variant="outline" className="text-amber-400 border-amber-500/20 bg-amber-500/10 shadow-none"><Clock className="w-3 h-3 mr-1.5 animate-spin" /> Training</Badge>
+        return <Badge variant="outline" className="text-amber-600 border-amber-500/20 bg-amber-500/10 shadow-none"><Clock className="w-3 h-3 mr-1.5 animate-spin" /> Training</Badge>
       case 'Failed':
-        return <Badge variant="destructive" className="bg-red-500/15 text-red-400 border-red-500/20 shadow-none"><AlertTriangle className="w-3 h-3 mr-1.5" /> Failed</Badge>
+        return <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 shadow-none"><AlertTriangle className="w-3 h-3 mr-1.5" /> Failed</Badge>
     }
   }
 
@@ -197,13 +196,13 @@ export default function AgentsPage() {
     <div className="flex flex-col gap-8 h-full container mx-auto p-6 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
       
       {/* Header Section */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            <Bot className="w-8 h-8 text-emerald-400" />
+          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Bot className="w-8 h-8 text-primary" />
             Agent Fleet
           </h1>
-          <p className="text-slate-400 mt-2 text-sm max-w-2xl">
+          <p className="text-muted-foreground mt-2 text-sm max-w-2xl">
             Deploy and manage scheduled analytical workers strictly partitioned to your tenant workspace. 
             Agents run vector-optimized SQL queries behind the scenes.
           </p>
@@ -212,18 +211,18 @@ export default function AgentsPage() {
         {/* Deploy Agent Modal */}
         <Dialog open={isDeployOpen} onOpenChange={setIsDeployOpen}>
           <DialogTrigger asChild>
-            <Button className="shrink-0 group bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg">
+            <Button className="shrink-0 group shadow-sm">
               <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
               Deploy Agent
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[550px] bg-[#0f172a] border-slate-800 text-slate-200">
+          <DialogContent className="sm:max-w-[550px] bg-background border-border text-foreground">
             <form onSubmit={handleDeployAgent}>
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-slate-100">
-                  <Sparkles className="w-5 h-5 text-emerald-400" /> Deploy Analytical Agent
+                <DialogTitle className="flex items-center gap-2 text-foreground">
+                  <Sparkles className="w-5 h-5 text-primary" /> Deploy Analytical Agent
                 </DialogTitle>
-                <DialogDescription className="text-slate-400">
+                <DialogDescription className="text-muted-foreground">
                   Configure a new autonomous worker with specific cron schedules and anomaly thresholds.
                 </DialogDescription>
               </DialogHeader>
@@ -231,12 +230,12 @@ export default function AgentsPage() {
               <div className="grid gap-5 py-5">
                 {/* Template Selector */}
                 <div className="grid gap-2">
-                  <Label className="text-slate-300">Agent Template</Label>
+                  <Label className="text-foreground">Agent Template</Label>
                   <Select value={selectedTemplate} onValueChange={(val: any) => setSelectedTemplate(val)}>
-                    <SelectTrigger className="bg-slate-900 border-slate-700">
+                    <SelectTrigger className="bg-background border-input">
                       <SelectValue placeholder="Select a template..." />
                     </SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-800">
+                    <SelectContent className="bg-popover border-border">
                       <SelectItem value="custom">Blank Canvas (Custom)</SelectItem>
                       <SelectItem value="revenue">Revenue Analyst</SelectItem>
                       <SelectItem value="telemetry">Telemetry Watchdog</SelectItem>
@@ -247,27 +246,27 @@ export default function AgentsPage() {
 
                 {/* Basic Info */}
                 <div className="grid gap-2">
-                  <Label htmlFor="name" className="text-slate-300">Agent Name</Label>
+                  <Label htmlFor="name" className="text-foreground">Agent Name</Label>
                   <Input 
                     id="name" 
                     placeholder="e.g., Marketing ROI Tracker" 
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     required
-                    className="bg-slate-900 border-slate-700 focus-visible:ring-emerald-500/50"
+                    className="bg-background border-input focus-visible:ring-primary/50"
                   />
                 </div>
 
-                {/* Schedule & Sensitivity (The High-End Upgrade) */}
+                {/* Schedule & Sensitivity */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label className="text-slate-300">Execution Schedule</Label>
+                    <Label className="text-foreground">Execution Schedule</Label>
                     <Select value={newSchedule} onValueChange={setNewSchedule}>
-                      <SelectTrigger className="bg-slate-900 border-slate-700">
-                        <Timer className="w-4 h-4 mr-2 text-slate-500" />
+                      <SelectTrigger className="bg-background border-input">
+                        <Timer className="w-4 h-4 mr-2 text-muted-foreground" />
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-slate-900 border-slate-800">
+                      <SelectContent className="bg-popover border-border">
                         <SelectItem value="Every 5 Minutes">Every 5 Minutes (Real-time)</SelectItem>
                         <SelectItem value="Hourly">Hourly</SelectItem>
                         <SelectItem value="Daily (9:00 AM)">Daily (9:00 AM)</SelectItem>
@@ -277,8 +276,8 @@ export default function AgentsPage() {
                   </div>
                   <div className="grid gap-2">
                     <div className="flex justify-between items-center">
-                      <Label className="text-slate-300">Anomaly Sensitivity</Label>
-                      <span className="text-xs text-emerald-400 font-mono">{newSensitivity[0]}%</span>
+                      <Label className="text-foreground">Anomaly Sensitivity</Label>
+                      <span className="text-xs text-primary font-mono">{newSensitivity[0]}%</span>
                     </div>
                     <div className="pt-2">
                       <Slider 
@@ -287,7 +286,7 @@ export default function AgentsPage() {
                         step={1} 
                         value={newSensitivity}
                         onValueChange={setNewSensitivity}
-                        className="[&_[role=slider]]:bg-emerald-500 [&_[role=slider]]:border-emerald-400"
+                        className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary"
                       />
                     </div>
                   </div>
@@ -295,11 +294,11 @@ export default function AgentsPage() {
 
                 {/* Core Instructions */}
                 <div className="grid gap-2">
-                  <Label htmlFor="description" className="text-slate-300">Analytical Prompt</Label>
+                  <Label htmlFor="description" className="text-foreground">Analytical Prompt</Label>
                   <Textarea 
                     id="description" 
                     placeholder="Describe exactly what data this agent should query via DuckDB..."
-                    className="resize-none h-20 text-sm bg-slate-900 border-slate-700 focus-visible:ring-emerald-500/50"
+                    className="resize-none h-20 text-sm bg-background border-input focus-visible:ring-primary/50"
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
                     required
@@ -308,33 +307,33 @@ export default function AgentsPage() {
 
                 {/* Data Access Controls */}
                 <div className="space-y-3 pt-2">
-                  <Label className="text-slate-300">Granted Data Access</Label>
-                  <div className="grid gap-3 bg-slate-900 p-4 rounded-xl border border-slate-800">
+                  <Label className="text-foreground">Granted Data Access</Label>
+                  <div className="grid gap-3 bg-muted/30 p-4 rounded-xl border border-border">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="ds-pg" className="font-normal cursor-pointer flex items-center gap-2 text-slate-300">
-                        <Database className="w-4 h-4 text-slate-500" /> PostgreSQL (Production)
+                      <Label htmlFor="ds-pg" className="font-normal cursor-pointer flex items-center gap-2 text-foreground">
+                        <Database className="w-4 h-4 text-muted-foreground" /> PostgreSQL (Production)
                       </Label>
-                      <Switch id="ds-pg" checked={sources.postgres} onCheckedChange={(c) => setSources(s => ({...s, postgres: c}))} className="data-[state=checked]:bg-emerald-500" />
+                      <Switch id="ds-pg" checked={sources.postgres} onCheckedChange={(c) => setSources(s => ({...s, postgres: c}))} className="data-[state=checked]:bg-primary" />
                     </div>
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="ds-st" className="font-normal cursor-pointer flex items-center gap-2 text-slate-300">
-                        <Database className="w-4 h-4 text-slate-500" /> Stripe (Billing)
+                      <Label htmlFor="ds-st" className="font-normal cursor-pointer flex items-center gap-2 text-foreground">
+                        <Database className="w-4 h-4 text-muted-foreground" /> Stripe (Billing)
                       </Label>
-                      <Switch id="ds-st" checked={sources.stripe} onCheckedChange={(c) => setSources(s => ({...s, stripe: c}))} className="data-[state=checked]:bg-emerald-500" />
+                      <Switch id="ds-st" checked={sources.stripe} onCheckedChange={(c) => setSources(s => ({...s, stripe: c}))} className="data-[state=checked]:bg-primary" />
                     </div>
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="ds-dd" className="font-normal cursor-pointer flex items-center gap-2 text-slate-300">
-                        <Database className="w-4 h-4 text-slate-500" /> DuckDB (Local Warehouse)
+                      <Label htmlFor="ds-dd" className="font-normal cursor-pointer flex items-center gap-2 text-foreground">
+                        <Database className="w-4 h-4 text-muted-foreground" /> DuckDB (Local Warehouse)
                       </Label>
-                      <Switch id="ds-dd" checked={sources.duckdb} onCheckedChange={(c) => setSources(s => ({...s, duckdb: c}))} className="data-[state=checked]:bg-emerald-500" />
+                      <Switch id="ds-dd" checked={sources.duckdb} onCheckedChange={(c) => setSources(s => ({...s, duckdb: c}))} className="data-[state=checked]:bg-primary" />
                     </div>
                   </div>
                 </div>
 
               </div>
-              <DialogFooter className="border-t border-slate-800 pt-4">
-                <Button type="button" variant="ghost" onClick={() => setIsDeployOpen(false)} className="text-slate-400 hover:text-slate-200">Cancel</Button>
-                <Button type="submit" disabled={!newName.trim() || !newDescription.trim()} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+              <DialogFooter className="border-t border-border pt-4">
+                <Button type="button" variant="ghost" onClick={() => setIsDeployOpen(false)} className="text-muted-foreground hover:text-foreground">Cancel</Button>
+                <Button type="submit" disabled={!newName.trim() || !newDescription.trim()}>
                   Initialize Agent
                 </Button>
               </DialogFooter>
@@ -347,15 +346,15 @@ export default function AgentsPage() {
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full gap-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-200">Active Workers</h2>
-            <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">{filteredAgents.length}</Badge>
+            <h2 className="text-lg font-semibold text-foreground">Active Workers</h2>
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-border">{filteredAgents.length}</Badge>
           </div>
           <div className="relative w-full max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               type="search"
               placeholder="Search by name, task, or database..."
-              className="pl-9 bg-slate-900/50 border-slate-800 text-slate-200 focus-visible:ring-emerald-500/50"
+              className="pl-9 bg-background border-input text-foreground focus-visible:ring-primary/50"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -364,41 +363,41 @@ export default function AgentsPage() {
 
         {/* High-End Data Table View */}
         {filteredAgents.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center border rounded-2xl border-dashed border-slate-800 p-16 text-center bg-slate-900/20">
-            <div className="h-16 w-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-6 shadow-inner">
-              <Bot className="h-8 w-8 text-slate-500" />
+          <div className="flex-1 flex flex-col items-center justify-center border rounded-2xl border-dashed border-border p-16 text-center bg-muted/20">
+            <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-6 shadow-sm border">
+              <Bot className="h-8 w-8 text-muted-foreground" />
             </div>
-            <h3 className="text-xl font-semibold text-slate-200">No agents deployed</h3>
-            <p className="text-sm text-slate-400 mt-2 max-w-md mb-8 leading-relaxed">
+            <h3 className="text-xl font-semibold text-foreground">No agents deployed</h3>
+            <p className="text-sm text-muted-foreground mt-2 max-w-md mb-8 leading-relaxed">
               Your autonomous workforce is currently empty. Deploy your first vector-optimized agent to begin orchestrating scheduled analytics.
             </p>
-            <Button onClick={() => setIsDeployOpen(true)} className="bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700">
-              <Plus className="h-4 w-4 mr-2 text-emerald-400" /> Deploy First Agent
+            <Button onClick={() => setIsDeployOpen(true)} variant="outline" className="bg-background">
+              <Plus className="h-4 w-4 mr-2 text-primary" /> Deploy First Agent
             </Button>
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-800 bg-[#0B1120] overflow-hidden shadow-xl">
+          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
             <Table>
-              <TableHeader className="bg-slate-900/80 hover:bg-slate-900/80 border-b border-slate-800">
+              <TableHeader className="bg-muted/50 border-b border-border">
                 <TableRow className="border-none">
-                  <TableHead className="w-[300px] text-slate-400 font-medium">Agent / Task</TableHead>
-                  <TableHead className="text-slate-400 font-medium">Status</TableHead>
-                  <TableHead className="text-slate-400 font-medium">Schedule (Cron)</TableHead>
-                  <TableHead className="text-slate-400 font-medium">Sensitivity</TableHead>
-                  <TableHead className="text-slate-400 font-medium">Connections</TableHead>
-                  <TableHead className="text-slate-400 font-medium text-right">Actions</TableHead>
+                  <TableHead className="w-[300px] text-muted-foreground font-medium">Agent / Task</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Status</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Schedule (Cron)</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Sensitivity</TableHead>
+                  <TableHead className="text-muted-foreground font-medium">Connections</TableHead>
+                  <TableHead className="text-muted-foreground font-medium text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody className="divide-y divide-slate-800/60">
+              <TableBody className="divide-y divide-border/60">
                 {filteredAgents.map((agent) => (
-                  <TableRow key={agent.id} className="hover:bg-slate-800/40 transition-colors border-slate-800/60 group">
+                  <TableRow key={agent.id} className="hover:bg-muted/50 transition-colors border-border/60 group">
                     {/* Name & Prompt */}
                     <TableCell className="py-4">
                       <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 w-2 h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)] ${agent.themeColor}`} />
+                        <div className={`mt-0.5 w-2 h-2 rounded-full shadow-sm ${agent.themeColor}`} />
                         <div className="flex flex-col">
-                          <span className="font-semibold text-slate-200">{agent.name}</span>
-                          <span className="text-xs text-slate-500 truncate max-w-[250px] mt-1" title={agent.description}>
+                          <span className="font-semibold text-foreground">{agent.name}</span>
+                          <span className="text-xs text-muted-foreground truncate max-w-[250px] mt-1" title={agent.description}>
                             {agent.description}
                           </span>
                         </div>
@@ -412,7 +411,7 @@ export default function AgentsPage() {
                           checked={agent.status === 'Active'} 
                           disabled={agent.status === 'Training' || agent.status === 'Failed'}
                           onCheckedChange={() => toggleAgentStatus(agent.id, agent.status)}
-                          className="data-[state=checked]:bg-emerald-500 scale-90"
+                          className="data-[state=checked]:bg-primary scale-90"
                         />
                         {getStatusBadge(agent.status)}
                       </div>
@@ -420,8 +419,8 @@ export default function AgentsPage() {
 
                     {/* Schedule */}
                     <TableCell>
-                      <div className="flex items-center text-xs text-slate-400 font-mono bg-slate-900/50 px-2 py-1 rounded w-fit border border-slate-800">
-                        <Timer className="w-3 h-3 mr-1.5 text-slate-500" />
+                      <div className="flex items-center text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded w-fit border border-border">
+                        <Timer className="w-3 h-3 mr-1.5 text-muted-foreground" />
                         {agent.schedule}
                       </div>
                     </TableCell>
@@ -429,13 +428,13 @@ export default function AgentsPage() {
                     {/* Sensitivity */}
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
                           <div 
-                            className="h-full bg-emerald-500 rounded-full" 
+                            className="h-full bg-primary rounded-full" 
                             style={{ width: `${agent.sensitivity}%` }}
                           />
                         </div>
-                        <span className="text-xs font-mono text-slate-400">{agent.sensitivity}%</span>
+                        <span className="text-xs font-mono text-muted-foreground">{agent.sensitivity}%</span>
                       </div>
                     </TableCell>
 
@@ -443,7 +442,7 @@ export default function AgentsPage() {
                     <TableCell>
                       <div className="flex flex-wrap gap-1.5">
                         {agent.dataSources.map(ds => (
-                          <Badge key={ds} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-slate-800 text-slate-400 border-slate-700">
+                          <Badge key={ds} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-muted text-muted-foreground border-border">
                             {ds === 'postgres' ? 'PG' : ds === 'stripe' ? 'Stripe' : 'DuckDB'}
                           </Badge>
                         ))}
@@ -454,29 +453,29 @@ export default function AgentsPage() {
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-slate-200 hover:bg-slate-800">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-[160px] bg-[#0f172a] border-slate-800 text-slate-300">
-                          <DropdownMenuLabel className="text-xs font-medium text-slate-500">Agent Controls</DropdownMenuLabel>
-                          <DropdownMenuSeparator className="bg-slate-800" />
+                        <DropdownMenuContent align="end" className="w-[160px] bg-popover border-border text-popover-foreground">
+                          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Agent Controls</DropdownMenuLabel>
+                          <DropdownMenuSeparator className="bg-border" />
                           
                           {agent.status === 'Paused' ? (
-                            <DropdownMenuItem className="cursor-pointer focus:bg-slate-800 text-emerald-400" onClick={() => toggleAgentStatus(agent.id, agent.status)}>
+                            <DropdownMenuItem className="cursor-pointer focus:bg-muted text-primary" onClick={() => toggleAgentStatus(agent.id, agent.status)}>
                               <Play className="mr-2 h-4 w-4" /> Resume Task
                             </DropdownMenuItem>
                           ) : (
-                            <DropdownMenuItem className="cursor-pointer focus:bg-slate-800 text-amber-400" onClick={() => toggleAgentStatus(agent.id, agent.status)} disabled={agent.status === 'Training'}>
+                            <DropdownMenuItem className="cursor-pointer focus:bg-muted text-amber-600" onClick={() => toggleAgentStatus(agent.id, agent.status)} disabled={agent.status === 'Training'}>
                               <Square className="mr-2 h-4 w-4" /> Pause Task
                             </DropdownMenuItem>
                           )}
                           
-                          <DropdownMenuItem className="cursor-pointer focus:bg-slate-800">
-                            <Settings className="mr-2 h-4 w-4 text-slate-400" /> Reconfigure
+                          <DropdownMenuItem className="cursor-pointer focus:bg-muted">
+                            <Settings className="mr-2 h-4 w-4 text-muted-foreground" /> Reconfigure
                           </DropdownMenuItem>
-                          <DropdownMenuSeparator className="bg-slate-800" />
-                          <DropdownMenuItem className="cursor-pointer focus:bg-red-950 text-red-400" onClick={() => deleteAgent(agent.id)}>
+                          <DropdownMenuSeparator className="bg-border" />
+                          <DropdownMenuItem className="cursor-pointer focus:bg-destructive/10 text-destructive" onClick={() => deleteAgent(agent.id)}>
                             <Trash2 className="mr-2 h-4 w-4" /> Decommission
                           </DropdownMenuItem>
                         </DropdownMenuContent>

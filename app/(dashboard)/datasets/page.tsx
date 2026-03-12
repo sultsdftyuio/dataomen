@@ -63,7 +63,7 @@ const getSourceIcon = (type: string) => {
   if (t.includes('s3') || t.includes('parquet')) return <HardDrive className="h-4 w-4 text-amber-500" />
   if (t.includes('stripe') || t.includes('api')) return <RefreshCw className="h-4 w-4 text-indigo-500" />
   if (t.includes('duckdb')) return <FileSpreadsheet className="h-4 w-4 text-yellow-500" />
-  return <Database className="h-4 w-4 text-slate-500" /> 
+  return <Database className="h-4 w-4 text-muted-foreground" /> 
 };
 
 // -----------------------------------------------------------------------------
@@ -98,8 +98,8 @@ const useDatasets = () => {
 
       if (!response.ok) {
          if (response.status === 404) {
-           console.warn("Datasets API not implemented yet. Falling back to simulated presentation state.");
-           simulateBackendData();
+           // API route doesn't exist yet - default to true empty state
+           setDatasets([]);
            return; 
          }
          throw new Error("Failed to load connected data sources from the engine.");
@@ -110,23 +110,12 @@ const useDatasets = () => {
     } catch (err: any) {
       if (err.name === 'AbortError') return; // Ignore canceled requests
       console.error("Dataset retrieval error:", err);
-      // Fallback to simulation if backend isn't ready
-      simulateBackendData();
+      setError(err.message || "An error occurred while fetching datasets.");
+      setDatasets([]);
     } finally {
       setIsLoading(false);
     }
   }, []);
-
-  const simulateBackendData = () => {
-    setTimeout(() => {
-      setDatasets([
-        { id: 'ds_1', name: 'Stripe Transactions (Prod)', sourceType: 'Stripe API', rowCount: 2450120, size: '4.2 GB', lastSynced: '5 mins ago', status: 'Ready' },
-        { id: 'ds_2', name: 'Postgres User DB', sourceType: 'PostgreSQL', rowCount: 890450, size: '1.1 GB', lastSynced: 'Just now', status: 'Syncing' },
-        { id: 'ds_3', name: 'App Analytics Events', sourceType: 'Snowflake', rowCount: 15400900, size: '18.4 GB', lastSynced: '1 hour ago', status: 'Ready' },
-      ]);
-      setIsLoading(false);
-    }, 800);
-  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -235,7 +224,7 @@ export default function DatasetsPage() {
                 </TableRow>
               ) : filteredDatasets.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-64 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="h-[400px] text-center text-muted-foreground">
                     {searchQuery ? (
                       <div className="flex flex-col items-center justify-center">
                         <Search className="h-8 w-8 mb-3 opacity-20" />
@@ -243,14 +232,14 @@ export default function DatasetsPage() {
                       </div>
                     ) : (
                       <div className="flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-2 duration-500">
-                        <div className="h-16 w-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
-                          <Database className="h-8 w-8 opacity-40 text-foreground" />
+                        <div className="h-16 w-16 bg-muted/50 rounded-full flex items-center justify-center mb-4 border shadow-sm">
+                          <Database className="h-8 w-8 text-muted-foreground opacity-60" />
                         </div>
                         <p className="text-lg font-medium text-foreground">No datasets connected</p>
                         <p className="text-sm mt-1 mb-6 max-w-sm text-center">
                           Connect your first data source to enable the semantic routing engine and deploy AI agents.
                         </p>
-                        <Button onClick={() => setIsConnectModalOpen(true)}>
+                        <Button onClick={() => setIsConnectModalOpen(true)} variant="outline">
                           <Plus className="h-4 w-4 mr-2" /> Connect Source
                         </Button>
                       </div>
@@ -285,9 +274,9 @@ export default function DatasetsPage() {
                         variant="outline"
                         className={
                           dataset.status === 'Ready' 
-                            ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-medium' 
+                            ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 font-medium' 
                             : dataset.status === 'Syncing'
-                            ? 'bg-blue-500/10 text-blue-500 border-blue-500/20 font-medium animate-pulse'
+                            ? 'bg-blue-500/10 text-blue-600 border-blue-500/20 font-medium animate-pulse'
                             : 'bg-destructive/10 text-destructive border-destructive/20 font-medium'
                         }
                       >

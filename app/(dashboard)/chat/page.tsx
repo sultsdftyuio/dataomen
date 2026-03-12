@@ -43,7 +43,7 @@ export interface Message {
 const INITIAL_MESSAGE: Message = {
   id: 'msg_init',
   role: 'assistant',
-  content: "Hello. I am your Autonomous Data Department. I have active connections to your PostgreSQL production database and your Stripe billing data. What would you like to analyze today?",
+  content: "Hello. I am your Autonomous Data Department. I am ready to analyze your data. Please connect a database or upload a file to get started.",
   timestamp: new Date(),
 }
 
@@ -166,13 +166,13 @@ export default function ChatPage() {
     <div className="flex flex-col h-[calc(100vh-8rem)] max-w-5xl mx-auto w-full animate-in fade-in duration-500">
       
       {/* Header Area */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
+      <div className="flex items-center justify-between pb-4 border-b border-border shrink-0">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-emerald-400" />
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
             Data Assistant
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Hybrid Analytical Engine: SQL Generation & Contextual RAG.
           </p>
         </div>
@@ -181,12 +181,12 @@ export default function ChatPage() {
             variant="ghost" 
             size="sm" 
             onClick={clearChat}
-            className="text-slate-400 hover:text-slate-100 hidden sm:flex"
+            className="text-muted-foreground hover:text-foreground hidden sm:flex"
           >
             <RefreshCcw className="h-3.5 w-3.5 mr-2" /> Reset
           </Button>
-          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-            <Database className="mr-1.5 h-3 w-3" /> Postgres + Stripe Active
+          <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
+            <Database className="mr-1.5 h-3 w-3" /> System Online
           </Badge>
         </div>
       </div>
@@ -200,8 +200,8 @@ export default function ChatPage() {
               className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {message.role === 'assistant' && (
-                <div className="h-8 w-8 rounded-full border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-center shrink-0">
-                  <Bot className="h-4 w-4 text-emerald-400" />
+                <div className="h-8 w-8 rounded-full border border-primary/20 bg-primary/10 flex items-center justify-center shrink-0">
+                  <Bot className="h-4 w-4 text-primary" />
                 </div>
               )}
               
@@ -210,10 +210,10 @@ export default function ChatPage() {
                 {/* Text Content */}
                 {message.content && (
                   <div 
-                    className={`rounded-2xl px-5 py-3.5 text-sm shadow-md leading-relaxed ${
+                    className={`rounded-2xl px-5 py-3.5 text-sm shadow-sm leading-relaxed ${
                       message.role === 'user' 
-                        ? 'bg-emerald-600 text-white rounded-tr-sm' 
-                        : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-sm'
+                        ? 'bg-primary text-primary-foreground rounded-tr-sm' 
+                        : 'bg-card border border-border text-card-foreground rounded-tl-sm'
                     }`}
                   >
                     {message.content}
@@ -230,11 +230,11 @@ export default function ChatPage() {
                 {/* Contextual RAG Metadata */}
                 {message.contextUsed && message.contextUsed.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2 mt-1 animate-in slide-in-from-top-2">
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center">
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center">
                       <TerminalSquare className="h-3 w-3 mr-1" /> Engines Involved:
                     </span>
                     {message.contextUsed.map(ctx => (
-                      <Badge key={ctx} variant="secondary" className="text-[10px] px-2 py-0 h-4 bg-slate-800 text-slate-400 border-slate-700">
+                      <Badge key={ctx} variant="secondary" className="text-[10px] px-2 py-0 h-4 bg-secondary text-secondary-foreground border-border">
                         {ctx}
                       </Badge>
                     ))}
@@ -243,8 +243,8 @@ export default function ChatPage() {
               </div>
 
               {message.role === 'user' && (
-                <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                  <User className="h-4 w-4 text-slate-400" />
+                <div className="h-8 w-8 rounded-full bg-secondary border border-border flex items-center justify-center shrink-0">
+                  <User className="h-4 w-4 text-secondary-foreground" />
                 </div>
               )}
             </div>
@@ -252,12 +252,12 @@ export default function ChatPage() {
           
           {isLoading && (
             <div className="flex gap-4 justify-start animate-in fade-in slide-in-from-bottom-2">
-              <div className="h-8 w-8 rounded-full border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-center shrink-0">
-                <Bot className="h-4 w-4 text-emerald-400" />
+              <div className="h-8 w-8 rounded-full border border-primary/20 bg-primary/10 flex items-center justify-center shrink-0">
+                <Bot className="h-4 w-4 text-primary" />
               </div>
-              <Card className="rounded-2xl rounded-tl-sm px-5 py-4 border border-slate-800 shadow-xl flex items-center gap-3 bg-slate-900/50 backdrop-blur-sm">
-                <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                <span className="text-sm text-slate-400 font-medium italic">Writing DuckDB queries & synthesizing execution plan...</span>
+              <Card className="rounded-2xl rounded-tl-sm px-5 py-4 border border-border shadow-sm flex items-center gap-3 bg-card/50 backdrop-blur-sm">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground font-medium italic">Writing DuckDB queries & synthesizing execution plan...</span>
               </Card>
             </div>
           )}
@@ -266,15 +266,15 @@ export default function ChatPage() {
 
       {/* Omni-Input Area */}
       <div className="pt-4 shrink-0">
-        <div className="relative flex items-end gap-2 bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-2xl focus-within:border-emerald-500/50 transition-all">
-          <Button variant="ghost" size="icon" className="shrink-0 rounded-xl text-slate-500 hover:text-slate-100 hover:bg-slate-800">
+        <div className="relative flex items-end gap-2 bg-card border border-border rounded-2xl p-2 shadow-sm focus-within:border-primary/50 transition-all">
+          <Button variant="ghost" size="icon" className="shrink-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted">
             <Paperclip className="h-5 w-5" />
           </Button>
           
           <Textarea
             ref={textareaRef}
             placeholder="Compute MRR churn or query custom datasets..."
-            className="min-h-[44px] max-h-32 flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 px-2 py-3 text-sm shadow-none text-slate-200 placeholder:text-slate-600 focus:ring-0"
+            className="min-h-[44px] max-h-32 flex-1 resize-none bg-transparent border-0 focus-visible:ring-0 px-2 py-3 text-sm shadow-none text-foreground placeholder:text-muted-foreground focus:ring-0"
             rows={1}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
@@ -284,14 +284,14 @@ export default function ChatPage() {
           
           <Button 
             size="icon" 
-            className="shrink-0 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all h-10 w-10 shadow-lg disabled:opacity-30"
+            className="shrink-0 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground transition-all h-10 w-10 shadow-sm disabled:opacity-30"
             disabled={!inputValue.trim() || isLoading}
             onClick={handleSendMessage}
           >
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-center text-[10px] text-slate-600 mt-4 font-medium uppercase tracking-widest">
+        <p className="text-center text-[10px] text-muted-foreground mt-4 font-medium uppercase tracking-widest">
           Secure Tenant Isolation • Vectorized Analytical Execution
         </p>
       </div>
