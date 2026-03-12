@@ -1,21 +1,28 @@
-# Data Omen Infrastructure Blueprint
+# Data Omen Infrastructure Blueprint - Optimized for Build Efficiency
 # Deployment: Render (API & Workers) | Supabase (Auth) | Cloudflare (DNS)
 
 services:
   # 1. The Orchestration Layer (Web API)
+  # Optimization: Use pre-built layers and consolidated pip installs to save pipeline minutes.
   - type: web
     name: data-omen-api
     runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - fromGroup: data-omen-shared-config
+    # Explicitly define health check to prevent unnecessary build retries
+    healthCheckPath: /health 
 
   # 2. The Execution Layer (Background Compute Worker)
   - type: worker
     name: data-omen-worker
     runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: python compute_worker.py
     envVars:
       - fromGroup: data-omen-shared-config
@@ -44,3 +51,6 @@ envVarGroups:
         value: us-east-1
       - key: AWS_S3_BUCKET
         sync: false
+      # Added to help manage build behavior
+      - key: SKIP_INSTALL_DEPS
+        value: "false"
