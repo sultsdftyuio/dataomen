@@ -9,6 +9,21 @@ services:
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
+      - fromGroup: data-omen-shared-config
+
+  # 2. The Execution Layer (Background Compute Worker)
+  - type: worker
+    name: data-omen-worker
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python compute_worker.py
+    envVars:
+      - fromGroup: data-omen-shared-config
+
+# Modular Configuration Strategy: Centralizing shared infrastructure secrets
+envVarGroups:
+  - name: data-omen-shared-config
+    envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
       - key: ENVIRONMENT
@@ -29,46 +44,3 @@ services:
         value: us-east-1
       - key: AWS_S3_BUCKET
         sync: false
-
-  # 2. The Execution Layer (Background Compute Worker)
-  - type: worker
-    name: data-omen-worker
-    runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: python compute_worker.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.0
-      - key: ENVIRONMENT
-        value: production
-      # Corrected references to the 'data-omen-api' service
-      - key: DATABASE_URL
-        fromService:
-          type: web
-          name: data-omen-api
-          envVar: DATABASE_URL
-      - key: OPENAI_API_KEY
-        fromService:
-          type: web
-          name: data-omen-api
-          envVar: OPENAI_API_KEY
-      - key: STRIPE_API_KEY
-        fromService:
-          type: web
-          name: data-omen-api
-          envVar: STRIPE_API_KEY
-      - key: AWS_ACCESS_KEY_ID
-        fromService:
-          type: web
-          name: data-omen-api
-          envVar: AWS_ACCESS_KEY_ID
-      - key: AWS_SECRET_ACCESS_KEY
-        fromService:
-          type: web
-          name: data-omen-api
-          envVar: AWS_SECRET_ACCESS_KEY
-      - key: AWS_S3_BUCKET
-        fromService:
-          type: web
-          name: data-omen-api
-          envVar: AWS_S3_BUCKET

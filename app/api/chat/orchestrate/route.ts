@@ -19,7 +19,8 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Authentication & Tenant Isolation
     // We derive identity from the Supabase session to prevent tenant spoofing.
-    const supabase = createClient();
+    // FIX: createClient() is now async, so we must await it.
+    const supabase = await createClient();
     const { data: { session }, error: authError } = await supabase.auth.getSession();
     
     if (authError || !session) {
