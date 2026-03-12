@@ -1003,3 +1003,4 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
     </Dialog>
 
   )
+}
