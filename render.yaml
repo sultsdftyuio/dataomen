@@ -1,3 +1,6 @@
+# Data Omen Infrastructure Blueprint
+# Deployment: Render (API & Workers) | Supabase (Auth) | Cloudflare (DNS)
+
 services:
   # 1. The Orchestration Layer (Web API)
   - type: web
@@ -11,7 +14,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: DATABASE_URL
-        sync: false # Connect your Supabase connection string here
+        sync: false # Connect your Supabase connection string
       - key: ALLOWED_ORIGINS
         sync: false # Your Vercel frontend URL
       - key: OPENAI_API_KEY
@@ -38,28 +41,34 @@ services:
         value: 3.12.0
       - key: ENVIRONMENT
         value: production
-      # Workers inherit the same database and cloud storage access
-      - fromService:
+      # Corrected references to the 'data-omen-api' service
+      - key: DATABASE_URL
+        fromService:
           type: web
           name: data-omen-api
           envVar: DATABASE_URL
-      - fromService:
+      - key: OPENAI_API_KEY
+        fromService:
           type: web
           name: data-omen-api
           envVar: OPENAI_API_KEY
-      - fromService:
+      - key: STRIPE_API_KEY
+        fromService:
           type: web
           name: data-omen-api
           envVar: STRIPE_API_KEY
-      - fromService:
+      - key: AWS_ACCESS_KEY_ID
+        fromService:
           type: web
           name: data-omen-api
           envVar: AWS_ACCESS_KEY_ID
-      - fromService:
+      - key: AWS_SECRET_ACCESS_KEY
+        fromService:
           type: web
           name: data-omen-api
           envVar: AWS_SECRET_ACCESS_KEY
-      - fromService:
+      - key: AWS_S3_BUCKET
+        fromService:
           type: web
           name: data-omen-api
           envVar: AWS_S3_BUCKET

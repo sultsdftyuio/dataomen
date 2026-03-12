@@ -1,3 +1,5 @@
+# api/services/nl2sql_generator.py
+
 import logging
 import json
 import re
@@ -6,21 +8,17 @@ from numpy.linalg import norm
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 
-# Setup structured logger
+# Setup structured logger for high-performance monitoring
 logger = logging.getLogger(__name__)
 
-class SchemaFilterOutput(BaseModel):
-    """Structured output for Contextual RAG to prevent token bloat."""
-    relevant_columns: List[str] = Field(
-        default_factory=list,
-        description="A strict list of exact column names that are mathematically or semantically relevant to answering the user's prompt."
-    )
-
 class NL2SQLOutput(BaseModel):
-    """Structured output schema for the LLM to guarantee parsable execution plans."""
+    """
+    Structured output schema for the LLM to guarantee parsable execution plans.
+    Enforces the 'Reasoning' step before generation to improve mathematical accuracy.
+    """
     reasoning: str = Field(
         ..., 
-        description="Brief step-by-step logic explaining how the SQL uses mathematical/vectorized functions to answer the prompt."
+        description="Step-by-step logic explaining the SQL strategy, join path, and DuckDB functions used."
     )
     sql_query: str = Field(
         ..., 
@@ -28,175 +26,201 @@ class NL2SQLOutput(BaseModel):
     )
     chart_spec: Optional[Dict[str, Any]] = Field(
         None, 
-        description="A valid Vega-Lite JSON specification if a visual is requested. Null if only a table is needed. Must map exactly to SQL aliases."
+        description="A valid, declarative Vega-Lite JSON specification if a visual is requested. Must map to SQL aliases."
     )
 
 class NL2SQLGenerator:
     """
-    Phase 3: Contextual RAG & NL2SQL Generation (Modular Strategy)
+    Phase 3: Hybrid Contextual RAG & NL2SQL Engine
     
-    Translates natural language into blazing fast DuckDB SQL queries. 
-    Applies Vectorized Contextual RAG via embeddings to prevent hallucinated columns and token bloat.
-    Forces the Hybrid Performance Paradigm by requiring DuckDB's vectorized analytical functions.
+    This engine translates natural language into blazing-fast DuckDB SQL queries.
+    It employs a 'Semantic Fragment Injection' strategy:
+    1. Retrieval: Uses Vector Embeddings + Keyword Overlap to prune massive schemas.
+    2. Grounding: Injects real categorical samples into the prompt to prevent filter hallucinations.
+    3. Orchestration: Supports Gold-Tier Semantic Views (pre-built metrics).
     """
 
     def __init__(self, llm_client: Any = None):
         """
-        Dependency injection for the LLM client (swappable for OpenAI, Anthropic, etc.).
-        Allows late-binding during app initialization to ensure strict modularity.
+        Dependency injection for the LLM client (Modular Strategy).
+        :param llm_client: Must implement 'embed', 'embed_batch', and 'generate_structured'.
         """
         self.llm = llm_client
-        self.max_columns_per_context = 20  # Token Bloat & Hallucination Defense Threshold
+        self.max_columns_per_context = 20  # Threshold to prevent token bloat and hallucination
 
-    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+    # --------------------------------------------------
+    # Mathematical Foundations
+    # --------------------------------------------------
+
+    def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
         """Calculates strict vector similarity to match user intent with schema structure."""
-        if norm(vec1) == 0 or norm(vec2) == 0:
+        if norm(v1) == 0 or norm(v2) == 0:
             return 0.0
-        return float(np.dot(vec1, vec2) / (norm(vec1) * norm(vec2)))
+        return float(np.dot(v1, v2) / (norm(v1) * norm(v2)))
 
-    async def _filter_schema_context(self, prompt: str, table_name: str, all_columns: Dict[str, str]) -> Dict[str, str]:
+    # --------------------------------------------------
+    # Fragment Retrieval Logic
+    # --------------------------------------------------
+
+    async def _select_relevant_columns(
+        self,
+        prompt: str,
+        columns: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        CONTEXTUAL RAG IMPLEMENTATION:
-        Dynamically filters massive schemas down to the statistical minimum required for the query.
-        Uses Vector Embeddings for lightning-fast semantic routing, falling back to an LLM filter.
+        DETERMINISTIC + SEMANTIC PRUNING:
+        Selects columns based on a weighted hybrid of vector similarity and keyword overlap.
+        Includes categorical samples to ground the LLM in real data values.
         """
-        if len(all_columns) <= self.max_columns_per_context:
-            return all_columns
+        if len(columns) <= self.max_columns_per_context:
+            return columns
 
-        logger.debug(f"Schema for {table_name} exceeds threshold ({len(all_columns)} cols). Initiating Contextual RAG.")
+        keywords = set(re.findall(r'\w+', prompt.lower()))
+        embedding_scores = {}
 
-        # 1. Primary Strategy: Vectorized Semantic Routing (Hybrid Performance Paradigm)
+        # Strategy A: Vector Semantic Ranking (Hybrid Performance)
         if hasattr(self.llm, "embed") and hasattr(self.llm, "embed_batch"):
             try:
                 prompt_emb = np.array(await self.llm.embed(prompt))
-                
-                col_names = list(all_columns.keys())
-                # Enhance context by including column types in the embedding
-                col_docs = [f"Column {name} containing data type {all_columns[name]}" for name in col_names]
-                
-                col_embs = await self.llm.embed_batch(col_docs)
-                
-                similarities = []
+                docs = []
+                col_names = []
+
+                for name, info in columns.items():
+                    # Create a semantic document for each column
+                    doc = f"column {name} type {info.get('type')} description {info.get('description','')}"
+                    docs.append(doc)
+                    col_names.append(name)
+
+                col_embs = await self.llm.embed_batch(docs)
                 for i, emb in enumerate(col_embs):
                     sim = self._cosine_similarity(prompt_emb, np.array(emb))
-                    similarities.append((sim, col_names[i]))
-                
-                # Sort by highest cosine similarity
-                similarities.sort(key=lambda x: x[0], reverse=True)
-                top_cols = [name for _, name in similarities[:self.max_columns_per_context]]
-                
-                logger.debug("Successfully filtered schema using vectorized cosine similarity.")
-                return {col: all_columns[col] for col in top_cols}
-                
+                    embedding_scores[col_names[i]] = sim
             except Exception as e:
-                logger.warning(f"Vectorized embedding RAG failed: {e}. Falling back to LLM Structured Routing.")
+                logger.warning(f"Vector retrieval failed: {e}. Falling back to deterministic heuristics.")
 
-        # 2. Fallback Strategy: LLM Structured Output Filter
-        filter_prompt = f"""
-        USER PROMPT: {prompt}
-        AVAILABLE COLUMNS: {list(all_columns.keys())}
-        
-        TASK: Select up to {self.max_columns_per_context} columns strictly necessary to resolve the prompt mathematically.
-        """
-        
-        try:
-            filter_result: SchemaFilterOutput = await self.llm.generate_structured(
-                system_prompt="You are a schema routing agent. Select only relevant columns.",
-                prompt=filter_prompt,
-                history=[],
-                response_model=SchemaFilterOutput
-            )
+        # Strategy B: Deterministic Scoring
+        scored = []
+        for col_name, info in columns.items():
+            score = 0
             
-            relevant = {col: all_columns[col] for col in filter_result.relevant_columns if col in all_columns}
+            # Identity match (High Weight)
+            if col_name.lower() in keywords:
+                score += 10
             
-            if not relevant:
-                raise ValueError("Contextual filter returned empty valid columns.")
-            return relevant
+            # Semantic meta match
+            description = info.get("description", "").lower()
+            if any(k in description for k in keywords):
+                score += 5
             
-        except Exception as e:
-            logger.warning(f"Contextual schema filter failed: {e}. Applying truncation heuristic.")
-            return {k: all_columns[k] for k in list(all_columns.keys())[:self.max_columns_per_context]}
+            # Time-series intent heuristic
+            col_type = str(info.get("type", "")).upper()
+            if any(k in ["date", "time", "year", "month", "day", "trend"] for k in keywords) and "DATE" in col_type:
+                score += 6
+            
+            # Aggregate Vector Score
+            score += embedding_scores.get(col_name, 0) * 15
+            
+            scored.append((score, col_name, info))
+
+        # Sort by relevance and take the top N fragments
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_fragments = scored[:self.max_columns_per_context]
+
+        return {
+            name: {
+                "type": info.get("type", "UNKNOWN"),
+                "samples": info.get("samples", []), # Essential for categorical grounding
+                "description": info.get("description", "")
+            }
+            for _, name, info in top_fragments
+        }
 
     async def _build_contextual_schema(self, prompt: str, schemas: List[Dict[str, Any]]) -> str:
-        """Builds the heavily compressed schema context for the main SQL reasoning engine."""
+        """
+        Builds the heavily compressed, sample-enriched JSON context block for the LLM.
+        """
         minimized = []
-        
         for schema in schemas:
-            table_name = schema.get("id", "unknown_dataset")
+            table_id = schema.get("id", "unknown_dataset")
             friendly_name = schema.get("name", "Unknown Dataset")
-            raw_meta = schema.get("schema", {})
             
-            all_columns = {}
-            if isinstance(raw_meta, dict):
-                for col_name, col_info in raw_meta.items():
-                    all_columns[col_name] = col_info.get("type", "UNKNOWN") if isinstance(col_info, dict) else str(col_info)
+            # Support both legacy structure and new enriched metadata
+            raw_meta = schema.get("schema_metadata", schema.get("schema", {}))
+            if isinstance(raw_meta, dict) and "columns" in raw_meta:
+                col_data = raw_meta["columns"]
+            else:
+                col_data = raw_meta # Fallback to flat dict
 
-            # Apply Contextual RAG Filter
-            relevant_columns = await self._filter_schema_context(prompt, table_name, all_columns)
+            relevant_columns = await self._select_relevant_columns(prompt, col_data)
 
             minimized.append({
-                "table_name": f'"{table_name}"',
+                "table_name": f'"{table_id}"',
                 "friendly_name": friendly_name,
-                "columns": relevant_columns
+                "relevant_columns": relevant_columns
             })
             
         return json.dumps(minimized, indent=2)
 
     def _build_system_prompt(self, contextual_schema: str, semantic_views: Optional[Dict[str, Any]] = None) -> str:
-        """Constructs the highly constrained system prompt, enforcing vectorization and security."""
+        """
+        Constructs the high-constraint system prompt.
+        Enforces Vectorization, Security by Design, and Mathematical Precision.
+        """
         views_context = ""
         if semantic_views:
             views_json = json.dumps(semantic_views, indent=2)
-            views_context = f"\nAVAILABLE PRE-BUILT VIEWS (GOLD TIER):\nYou MAY query these like normal tables to satisfy complex metric requests.\n{views_json}\n"
-        
-        return f"""You are a world-class Data Engineer and DuckDB SQL optimizer for a high-performance Analytical SaaS.
-Your objective is to translate user prompts into execution-ready, read-only DuckDB SQL using ONLY the schemas provided.
+            views_context = f"\nVERIFIED METRIC VIEWS (GOLD TIER - PREFER THESE):\nUse these pre-calculated CTEs for complex metrics:\n{views_json}\n"
 
-ACTIVE CONTEXTUAL SCHEMAS (Filtered for relevance):
+        return f"""You are a Lead Data Engineer and DuckDB SQL optimizer for a high-performance Analytical SaaS.
+Your objective is to translate natural language into execution-ready, read-only DuckDB SQL.
+
+SCHEMA CONTEXT (Sample-enriched fragments):
 {contextual_schema}
 {views_context}
 
 CRITICAL ENGINEERING RULES:
-1. SECURITY BY DESIGN (READ-ONLY): You must NEVER output INSERT, UPDATE, DELETE, DROP, or ALTER. `SELECT` or `WITH` (CTE) statements only.
-2. NO HALLUCINATIONS: You may ONLY select columns and tables that explicitly exist in the ACTIVE CONTEXTUAL SCHEMAS above.
-3. TABLE REFERENCING: Treat the `table_name` exactly as formatted in the schema (wrapped in double quotes).
+1. SECURITY BY DESIGN (READ-ONLY): You must NEVER output INSERT, UPDATE, DELETE, DROP, or ALTER. `SELECT` or `WITH` statements only.
+2. NO HALLUCINATIONS: You may ONLY select columns/tables present in the fragments above.
+3. DATA GROUNDING: Use the 'samples' provided in the schema to write correct filter values (e.g. if samples are ['ACTIVE', 'INACTIVE'], don't use 'active').
 4. MATHEMATICAL PRECISION & VECTORIZATION:
-   - For trends, do not just use basic `AVG()`. Utilize DuckDB analytical functions (e.g., `var_pop()`, `stddev_pop()`, `corr()`, `covar_pop()`, `regr_slope()`).
-   - Group and aggregate data heavily on the backend so the frontend receives lightweight payloads.
-5. DUCKDB DIALECT: Use DuckDB's native functions natively (e.g., `strptime`, `date_trunc`, `list_aggregate`).
+   - For trends/stats, do not use simple loops. Utilize DuckDB vectorized functions: `corr()`, `regr_slope()`, `stddev_pop()`, `approx_count_distinct()`.
+   - Use `date_trunc`, `strptime`, and `list_aggregate` natively.
+5. TABLE REFERENCING: Table names are UUIDs; ALWAYS wrap them in double quotes: "dataset_uuid".
 
 CHARTING RULES (Vega-Lite):
-- If the prompt implies a visual, provide a highly declarative Vega-Lite JSON spec in `chart_spec`.
-- The `field` names in Vega-Lite MUST exactly match the output aliases of your SQL query. Use descriptive aliases.
-- If no chart is needed, return null for `chart_spec`.
+- If the prompt implies a visual, provide a declarative Vega-Lite JSON spec in `chart_spec`.
+- Field names in Vega-Lite MUST match your SQL output aliases exactly.
 """
 
-    def _validate_security(self, sql_query: str) -> None:
+    def _validate_security(self, sql: str) -> None:
         """
-        Security Layer: Intelligent AST heuristic evaluation to prevent mutation attempts.
+        Security Layer: Advanced AST-adjacent validation.
         Strips literals to prevent false positives and blocks multi-statement injection.
         """
-        sql_stripped = sql_query.strip()
+        stripped = sql.strip()
         
-        # 1. Must initiate with a Read operation
-        if not re.match(r'^(?i)(SELECT|WITH)\b', sql_stripped):
-            raise ValueError("Security Violation: Generated query must initiate with SELECT or WITH.")
+        # 1. Read-only start
+        if not re.match(r'^(?i)(SELECT|WITH)\b', stripped):
+            raise ValueError("Security Violation: Query must initiate with SELECT or WITH.")
             
-        # 2. Block multi-statement queries
-        if ';' in sql_stripped.rstrip(';'):
-            raise ValueError("Security Violation: Multi-statement query execution is prohibited.")
+        # 2. Prevent semicolon injection
+        if ';' in stripped.rstrip(';'):
+            raise ValueError("Security Violation: Multi-statement execution is prohibited.")
             
-        # 3. Strip text inside single quotes to avoid false positives on literal strings
-        sql_no_literals = re.sub(r"'.*?'", "''", sql_stripped)
+        # 3. Strip literals to evaluate code structure only
+        no_literals = re.sub(r"'.*?'", "''", stripped)
         
-        # 4. Strictly evaluate isolated DML/DDL keywords
-        dangerous_pattern = re.compile(
-            r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|EXECUTE|TRUNCATE)\b', 
+        # 4. Strict mutation block
+        dangerous = re.compile(
+            r'\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|EXECUTE|TRUNCATE|COPY)\b', 
             re.IGNORECASE
         )
-        
-        if dangerous_pattern.search(sql_no_literals):
-            raise ValueError("Security Violation: Destructive DML/DDL operation detected in execution plan.")
+        if dangerous.search(no_literals):
+            raise ValueError("Security Violation: Destructive DML/DDL operation detected.")
+
+    # --------------------------------------------------
+    # Public Interface
+    # --------------------------------------------------
 
     async def generate_sql(
         self, 
@@ -205,13 +229,15 @@ CHARTING RULES (Vega-Lite):
         semantic_views: Optional[Dict[str, Any]] = None,
         history: List[Dict[str, Any]] = None
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """Generates the vectorized DuckDB SQL and chart config based on Contextual RAG schemas."""
-        if self.llm is None:
-            raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
-            
-        logger.info(f"Generating DuckDB SQL execution plan via Contextual RAG for prompt: '{prompt[:50]}...'")
-        history = history or []
+        """
+        Generates optimized DuckDB SQL based on Hybrid RAG context.
+        """
+        if not self.llm:
+            raise RuntimeError("LLM client dependency not injected.")
+
+        logger.info(f"Generating optimized SQL execution plan for prompt: '{prompt[:50]}...'")
         
+        # Build deterministic context
         contextual_schema = await self._build_contextual_schema(prompt, schemas)
         system_prompt = self._build_system_prompt(contextual_schema, semantic_views)
         
@@ -219,18 +245,18 @@ CHARTING RULES (Vega-Lite):
             result: NL2SQLOutput = await self.llm.generate_structured(
                 system_prompt=system_prompt,
                 prompt=prompt,
-                history=history,
+                history=history or [],
                 response_model=NL2SQLOutput
             )
             
+            # Final security gate
             self._validate_security(result.sql_query)
-
-            logger.debug(f"Generated Vectorized SQL (Length: {len(result.sql_query)})")
+            
             return result.sql_query, result.chart_spec
             
         except Exception as e:
-            logger.error(f"Failed to generate optimized SQL: {str(e)}")
-            raise RuntimeError(f"NL2SQL Generation failed: {str(e)}")
+            logger.error(f"NL2SQL Generation failed: {str(e)}")
+            raise RuntimeError(f"Could not generate analytical execution plan: {str(e)}")
 
     async def correct_sql(
         self, 
@@ -242,47 +268,42 @@ CHARTING RULES (Vega-Lite):
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
         Phase 4: Error Feedback Loop.
-        If DuckDB Engine fails execution, feed the deterministic error back to the LLM for self-correction.
+        Automatically fixes syntax or hallucination errors based on compiler feedback.
         """
-        if self.llm is None:
-            raise RuntimeError("LLM client not initialized. Inject the client into nl2sql_generator on startup.")
-            
-        logger.warning("Initiating SQL Auto-Correction loop.")
+        logger.warning(f"Initiating SQL auto-correction for engine error: {error_msg}")
         
         contextual_schema = await self._build_contextual_schema(prompt, schemas)
         system_prompt = self._build_system_prompt(contextual_schema, semantic_views)
         
-        correction_prompt = f"""The following DuckDB SQL query failed to execute during compilation.
-
-FAILED QUERY:
-{failed_query}
-
-ENGINE ERROR MESSAGE:
-{error_msg}
-
-INSTRUCTIONS:
-Analyze the error message against the active schemas. You likely hallucinated a column name, mismatched a type, or used invalid DuckDB syntax.
-Fix the SQL query to be 100% compliant. Preserve the chart spec if applicable.
-"""
+        correction_prompt = f"""
+        The following DuckDB SQL query failed:
+        {failed_query}
+        
+        ERROR MESSAGE:
+        {error_msg}
+        
+        ORIGINAL INTENT:
+        "{prompt}"
+        
+        TASK:
+        Fix the SQL query. Ensure all column names match the schema fragments.
+        Output corrected SQL and a valid chart spec.
+        """
         
         try:
             result: NL2SQLOutput = await self.llm.generate_structured(
                 system_prompt=system_prompt,
                 prompt=correction_prompt,
-                history=[], # Flush chat history to force strict focus on the compiler error
+                history=[],
                 response_model=NL2SQLOutput
             )
             
             self._validate_security(result.sql_query)
-            
-            logger.info("Successfully auto-corrected SQL via feedback loop.")
             return result.sql_query, result.chart_spec
             
         except Exception as e:
-            logger.error(f"Auto-correction cascade failed: {str(e)}")
-            raise RuntimeError("Could not self-correct the query based on the database engine error.")
+            logger.critical(f"Cascade failure in SQL auto-correction: {str(e)}")
+            raise RuntimeError("Unable to self-correct the query based on database feedback.")
 
-# ==========================================
-# Singleton Export (The Modular Strategy)
-# ==========================================
+# Global Singleton Export
 nl2sql_generator = NL2SQLGenerator()
