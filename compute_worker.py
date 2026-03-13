@@ -24,7 +24,7 @@ from api.services.integrations.base_integration import BaseIntegration, Integrat
 # Integration Registry (The Factory Pattern)
 from api.services.integrations.stripe_connector import StripeIntegration
 from api.services.integrations.shopify_connector import ShopifyConnector  
-from api.services.integrations.salesforce_connector import SalesforceIntegration
+from api.services.integrations.salesforce_connector import SalesforceConnector
 from api.services.integrations.snowflake_connector import SnowflakeConnector
 
 # ------------------------------------------------------------------------------
@@ -45,17 +45,19 @@ class DataOmenComputeWorker:
     pipelines based on state-based triggers from the Web API.
     """
     
-    # Modular Registry of supported integration connectors (Class Level for Efficiency)
+    # Modular Registry of supported integration connectors
+    # Fixed the SalesforceConnector import reference
     _INTEGRATION_REGISTRY: Dict[str, Type[BaseIntegration]] = {
         "stripe": StripeIntegration,
         "shopify": ShopifyConnector,
-        "salesforce": SalesforceIntegration,
+        "salesforce": SalesforceConnector,
         "snowflake": SnowflakeConnector
     }
 
     def __init__(self) -> None:
         self.is_running: bool = True
-        self.poll_interval: int = int(os.environ.get("WORKER_POLL_INTERVAL", 5))
+        self.base_poll_interval: int = int(os.environ.get("WORKER_POLL_INTERVAL", 5))
+        self.current_poll_interval: int = self.base_poll_interval
 
     def shutdown_handler(self, signum: int, frame: Any) -> None:
         """Graceful shutdown prevents data corruption during Render redeploys."""
@@ -78,19 +80,22 @@ class DataOmenComputeWorker:
             try:
                 processed_a_job = await self._poll_and_execute()
                 
-                # Dynamic Backoff: If queue is empty, sleep to prevent DB hammering
+                # Dynamic Backoff to prevent DB exhaustion on idle instances
                 if not processed_a_job and self.is_running:
-                    await asyncio.sleep(self.poll_interval)
+                    self.current_poll_interval = min(self.current_poll_interval * 1.5, 15)
+                    await asyncio.sleep(self.current_poll_interval)
+                else:
+                    self.current_poll_interval = self.base_poll_interval
                     
             except Exception as e:
                 logger.error(f"Critical Worker Loop Error: {e}", exc_info=True)
-                await asyncio.sleep(self.poll_interval)
+                await asyncio.sleep(self.base_poll_interval)
         
         logger.info("🛑 Worker shutdown complete. Resources released.")
 
     async def _recover_zombie_jobs(self) -> None:
         """Finds jobs that were stuck in PROCESSING due to a hard server crash and resets them."""
-        def _sweep_db():
+        def _sweep_db() -> None:
             with SessionLocal() as db:
                 try:
                     zombies = db.query(Dataset).filter(Dataset.status == DatasetStatus.PROCESSING).all()
@@ -98,7 +103,7 @@ class DataOmenComputeWorker:
                         zombie.status = DatasetStatus.FAILED
                         zombie.schema_metadata = {
                             **(zombie.schema_metadata or {}),
-                            "error": "Job interrupted by server restart."
+                            "error": "Job interrupted by server restart. Safely aborted."
                         }
                     if zombies:
                         db.commit()
@@ -114,7 +119,7 @@ class DataOmenComputeWorker:
         """Synchronous DB operation to lock and claim a job. Wrapped by asyncio.to_thread."""
         with SessionLocal() as db:
             try:
-                # Using skip_locked to allow multiple worker instances to scale horizontally
+                # Using skip_locked to allow multiple worker instances to scale horizontally without deadlocks
                 pending_dataset = db.query(Dataset).filter(
                     Dataset.status == DatasetStatus.PENDING
                 ).with_for_update(skip_locked=True).first()
@@ -167,16 +172,17 @@ class DataOmenComputeWorker:
             await asyncio.to_thread(self._finalize_status, dataset_id, DatasetStatus.FAILED, str(e))
             
         finally:
-            # Analytical Efficiency: Force release of C++/Rust memory buffers from Polars/DuckDB execution
-            # This is critical on Render instances with strict RAM limits
+            # Analytical Efficiency: Erase the job payload then force memory collection.
+            # Flushes Rust/C++ underlying buffers attached to Python objects.
+            del job_data
             gc.collect()
 
     async def _handle_file_upload(self, dataset_id: str, tenant_id: str, raw_path: str) -> None:
         """Executes heavy DuckDB conversion and profiling logic without blocking event loop."""
-        def _process_and_update():
+        def _process_and_update() -> None:
             with SessionLocal() as db:
                 try:
-                    # storage_manager handles the actual columnar transformation
+                    # storage_manager handles the actual columnar transformation via DuckDB
                     profile = storage_manager.convert_to_parquet_and_profile(db, tenant_id, raw_path)
                     
                     dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
@@ -199,12 +205,12 @@ class DataOmenComputeWorker:
         await asyncio.to_thread(_process_and_update)
 
     async def _handle_historical_sync(self, dataset_id: str, tenant_id: str, metadata: Dict[str, Any]) -> None:
-        """Executes the API polling and normalization engine."""
+        """Executes the API polling and normalization engine natively using the event loop."""
         integration_name = metadata.get("integration_name", "").lower()
         stream_name = metadata.get("stream_name", "default_stream")
         start_ts = metadata.get("start_timestamp", "2020-01-01T00:00:00Z")
 
-        # 1. Integration Factory: Rehydrate the specific connector
+        # 1. Integration Factory: Rehydrate the specific connector statelessly
         creds = metadata.get("credentials", {}) 
         
         config = IntegrationConfig(
@@ -219,28 +225,28 @@ class DataOmenComputeWorker:
             
         integration_instance = integration_class(config=config)
 
-        def _run_sync():
-            # 2. Execute Sync Engine statelessly (Dependency Injection)
-            with SessionLocal() as db:
-                try:
-                    sync_engine = get_sync_engine(db)
-                    # If sync_engine.run_historical_sync is async, you wouldn't need to_thread here,
-                    # but typically heavy ETL sync blocks. Assuming it needs thread offloading.
-                    # Note: If run_historical_sync requires an async context, this needs to be awaited directly.
-                    asyncio.run(sync_engine.run_historical_sync(
-                        integration=integration_instance,
-                        dataset_id=dataset_id,
-                        stream_name=stream_name,
-                        start_timestamp=start_ts
-                    ))
-                except Exception:
-                    db.rollback()
-                    raise
+        # 2. Native Async Await 
+        # By keeping the DB session outside of a new thread, we allow the async generator 
+        # (e.g. Bulk API streaming) to utilize httpx non-blocking behavior properly.
+        db = SessionLocal()
+        try:
+            sync_engine = get_sync_engine(db)
+            await sync_engine.run_historical_sync(
+                integration=integration_instance,
+                dataset_id=dataset_id,
+                stream_name=stream_name,
+                start_timestamp=start_ts
+            )
+            # Offloading purely the synchronous commit 
+            await asyncio.to_thread(db.commit)
+        except Exception:
+            await asyncio.to_thread(db.rollback)
+            raise
+        finally:
+            db.close()
 
-        await asyncio.to_thread(_run_sync)
-
-    def _finalize_status(self, dataset_id: str, status: DatasetStatus, error_msg: str = None) -> None:
-        """Update job state in case of terminal failure, wrapped safely."""
+    def _finalize_status(self, dataset_id: str, status: DatasetStatus, error_msg: Optional[str] = None) -> None:
+        """Update job state in case of terminal failure, safely wrapping the Sync DB context."""
         with SessionLocal() as db:
             try:
                 dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
