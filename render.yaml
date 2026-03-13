@@ -1,23 +1,17 @@
-# Data Omen Infrastructure Blueprint - Optimized for Build Efficiency & Stability
-# Deployment: Render (API & Workers) | Supabase (Auth) | Cloudflare (DNS)
-
 services:
-  # 1. The Orchestration Layer (Web API)
-  # Optimization: Use pre-built layers and consolidated pip installs to save pipeline minutes.
   - type: web
     name: data-omen-api
     runtime: python
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    # CRITICAL FIX: Reduced workers from 4 to 2 to prevent RAM exhaustion and Status 1 crashes
-    startCommand: gunicorn main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+    # CRITICAL FIX: Pure Uvicorn is a single async process. 
+    # This prevents the OS from OOM-killing the app on low-RAM instances.
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - fromGroup: data-omen-shared-config
-    # Explicitly define health check to prevent unnecessary build retries
     healthCheckPath: /health 
 
-  # 2. The Execution Layer (Background Compute Worker)
   - type: worker
     name: data-omen-worker
     runtime: python
@@ -28,7 +22,6 @@ services:
     envVars:
       - fromGroup: data-omen-shared-config
 
-# Modular Configuration Strategy: Centralizing shared infrastructure secrets
 envVarGroups:
   - name: data-omen-shared-config
     envVars:
@@ -36,22 +29,5 @@ envVarGroups:
         value: 3.12.0
       - key: ENVIRONMENT
         value: production
-      - key: DATABASE_URL
-        sync: false # Connect your Supabase connection string
-      - key: ALLOWED_ORIGINS
-        sync: false # Your Vercel frontend URL
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: STRIPE_API_KEY
-        sync: false
-      - key: AWS_ACCESS_KEY_ID
-        sync: false
-      - key: AWS_SECRET_ACCESS_KEY
-        sync: false
-      - key: AWS_REGION
-        value: us-east-1
-      - key: AWS_S3_BUCKET
-        sync: false
-      # Added to help manage build behavior
       - key: SKIP_INSTALL_DEPS
         value: "false"
