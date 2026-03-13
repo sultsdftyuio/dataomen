@@ -1,6 +1,7 @@
 # api/services/agent_service.py
 
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -161,13 +162,18 @@ class AgentService:
         logger.info(f"--- [SUPERVISOR] INITIATING MULTI-AGENT TASK FOR TENANT {tenant_id} ---")
         
         # 1. PERCEPTION: Math Detector (Fast & Cheap)
-        anomaly_result = self.anomaly_detector.detect_anomaly(
-            tenant_id=tenant_id,
-            dataset_id=dataset_id,
-            metric_col=metric,
-            time_col=time_col,
-            threshold=threshold 
-        )
+        # THREAD OFFLOAD: Prevent the heavy synchronous Pandas/DuckDB execution 
+        # from freezing the async FastAPI event loop.
+        def _run_sync_math_detector():
+            return self.anomaly_detector.detect_anomaly(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                metric_col=metric,
+                time_col=time_col,
+                threshold=threshold 
+            )
+            
+        anomaly_result = await asyncio.to_thread(_run_sync_math_detector)
 
         if not anomaly_result:
             logger.info(f"✅ Metric {metric} is stable. Closing task.")

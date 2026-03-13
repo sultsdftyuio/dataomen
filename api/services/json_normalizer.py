@@ -30,16 +30,28 @@ class PolarsNormalizer:
     def _sanitize_column_names(self, columns: List[str]) -> Dict[str, str]:
         """
         Ensures column names are strictly alphanumeric and lowercase, preventing 
-        DuckDB syntax errors without needing double-quotes around every field.
+        DuckDB syntax errors. Includes deterministic deduplication to prevent 
+        Polars Schema crashes if two dirty columns map to the same clean name.
         """
         clean_mapping = {}
+        seen_names = set()
+        
         for col in columns:
-            # Lowercase, replace any non-alphanumeric character with an underscore, 
-            # and strip trailing/leading underscores.
+            # Lowercase, replace any non-alphanumeric character with an underscore
             clean_name = re.sub(r'[^a-z0-9]', '_', col.lower()).strip('_')
             
-            # Defensive fallback to prevent empty column headers from crashing the engine
-            clean_mapping[col] = clean_name if clean_name else "unnamed_col"
+            # Defensive fallback to prevent empty column headers
+            clean_name = clean_name if clean_name else "unnamed_col"
+            
+            # Deduplication: If "User-ID" and "User ID" both become "user_id"
+            base_name = clean_name
+            counter = 1
+            while clean_name in seen_names:
+                clean_name = f"{base_name}_{counter}"
+                counter += 1
+                
+            seen_names.add(clean_name)
+            clean_mapping[col] = clean_name
             
         return clean_mapping
 
@@ -53,8 +65,8 @@ class PolarsNormalizer:
             # Return an empty dataframe with strict audit schema to prevent pipeline crashes
             return pl.DataFrame(
                 schema={
-                    "_tenant_id": pl.Utf8, 
-                    "_integration_name": pl.Utf8, 
+                    "_tenant_id": pl.String, 
+                    "_integration_name": pl.String, 
                     "_extracted_at": pl.Datetime("us", "UTC")
                 }
             )
@@ -107,10 +119,10 @@ class PolarsNormalizer:
         type_cast_exprs = []
         for col, dtype in df.schema.items():
             if dtype == pl.Null:
-                type_cast_exprs.append(pl.lit(None).cast(pl.Utf8).alias(col))
-            elif dtype == pl.Object:
-                # Coerce unsupported Object columns to JSON Strings
-                type_cast_exprs.append(pl.col(col).cast(pl.Utf8).alias(col))
+                type_cast_exprs.append(pl.lit(None).cast(pl.String).alias(col))
+            elif dtype in [pl.Object, pl.Unknown]:
+                # Coerce unsupported Object columns to JSON Strings safely
+                type_cast_exprs.append(pl.col(col).cast(pl.String, strict=False).alias(col))
                 
         if type_cast_exprs:
             lf = lf.with_columns(type_cast_exprs)
@@ -124,8 +136,8 @@ class PolarsNormalizer:
         # We use pl.lit() to broadcast the scalar value across millions of rows instantly via C++.
         # Prefixed with '_' to guarantee they never collide with the SaaS tool's native data columns.
         lf = lf.with_columns([
-            pl.lit(self.tenant_id).cast(pl.Utf8).alias("_tenant_id"),
-            pl.lit(self.integration_name).cast(pl.Utf8).alias("_integration_name"),
+            pl.lit(self.tenant_id).cast(pl.String).alias("_tenant_id"),
+            pl.lit(self.integration_name).cast(pl.String).alias("_integration_name"),
             pl.lit(datetime.now(timezone.utc)).cast(pl.Datetime("us", "UTC")).alias("_extracted_at")
         ])
 

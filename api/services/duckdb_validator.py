@@ -7,6 +7,10 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
+class SecurityError(Exception):
+    """Custom exception raised strictly when tenant isolation constraints are violated."""
+    pass
+
 class DuckDBValidator:
     """
     Phase 6.2 & 6.3: The Quality Assurance & Security Gatekeeper.
@@ -22,6 +26,13 @@ class DuckDBValidator:
         
         # Initialize a lightweight, in-memory DuckDB connection for validation
         self.conn = duckdb.connect(database=':memory:')
+
+    def __del__(self):
+        """Ensure the connection is cleanly closed when the object is garbage collected."""
+        try:
+            self.conn.close()
+        except:
+            pass
 
     def validate_batch(self, df: pl.DataFrame, expected_schema: Dict[str, str]) -> bool:
         """
@@ -39,7 +50,7 @@ class DuckDBValidator:
             self._audit_tenant_isolation()
             
             # 2. Enforce Strict DuckDB Cast Constraints (Phase 6.2)
-            self._audit_schema_compliance(expected_schema)
+            self._audit_schema_compliance(expected_schema, df.columns)
             
             return True
             
@@ -60,12 +71,14 @@ class DuckDBValidator:
         Runs a hyper-fast vectorized check to ensure EVERY row belongs to the current tenant.
         If even one row lacks the tenant_id or belongs to another, the pipeline panics.
         """
-        query = f"""
+        # We use prepared statements (?) to prevent SQL injection via self.tenant_id
+        query = """
             SELECT count(*) as violation_count 
             FROM temp_batch 
-            WHERE _tenant_id != '{self.tenant_id}' OR _tenant_id IS NULL
+            WHERE _tenant_id != ? OR _tenant_id IS NULL
         """
-        result = self.conn.execute(query).fetchone()
+        
+        result = self.conn.execute(query, [self.tenant_id]).fetchone()
         
         if result and result[0] > 0:
             logger.critical(f"🚨 TENANT ISOLATION BREACH DETECTED: {result[0]} rogue rows found!")
@@ -73,25 +86,25 @@ class DuckDBValidator:
             
         logger.debug(f"[{self.tenant_id}] Tenant isolation audit passed for {self.integration_name}.")
 
-    def _audit_schema_compliance(self, expected_schema: Dict[str, str]) -> None:
+    def _audit_schema_compliance(self, expected_schema: Dict[str, str], current_columns: List[str]) -> None:
         """
         Phase 6.2: Schema Integrity & Crash Prevention.
-        Instead of trusting Polars' lazy types, we force DuckDB to execute a `CAST` on 
-        the exact semantic types we expect (e.g., 'DOUBLE' for currency). 
-        If Salesforce sneaks in a string like "$1,000", this query will fail instantly,
-        preventing it from corrupting the analytical views.
+        Forces DuckDB to execute a `CAST` on the exact semantic types we expect. 
+        If Salesforce sneaks in a string like "$1,000" into an integer column, 
+        this query will fail instantly, preventing it from corrupting the Parquet file.
         """
-        # We only validate columns we actually care about analytically
         cast_clauses = []
+        
         for col_name, sql_type in expected_schema.items():
-            # Standardize names to prevent SQL injection in column identifiers
-            clean_col = "".join(c for c in col_name if c.isalnum() or c == '_')
-            
+            # Graceful degraded QA: Only validate columns that actually exist in the DataFrame
+            if col_name not in current_columns:
+                continue
+                
             # Map standard types to DuckDB strict types
             duckdb_type = self._map_to_duckdb_type(sql_type)
             
-            # We attempt to cast the column. If it fails, DuckDB throws a Conversion Exception
-            cast_clauses.append(f"CAST({clean_col} AS {duckdb_type})")
+            # Securely quote the column name to handle spaces or reserved SQL keywords
+            cast_clauses.append(f'CAST("{col_name}" AS {duckdb_type})')
             
         if not cast_clauses:
             return
@@ -103,10 +116,12 @@ class DuckDBValidator:
         """
         
         try:
-            # If the cast succeeds, the schema is safe for Parquet serialization
+            # If the cast succeeds, the schema is mathematically safe for serialization
             self.conn.execute(validation_query).fetchall()
         except duckdb.ConversionException as e:
             raise TypeError(f"Strict typing violation detected: {str(e)}")
+        except duckdb.BinderException as e:
+            raise ValueError(f"Schema mismatch detected during QA: {str(e)}")
 
     def _map_to_duckdb_type(self, semantic_type: str) -> str:
         """
@@ -115,18 +130,16 @@ class DuckDBValidator:
         type_mapping = {
             "string": "VARCHAR",
             "varchar": "VARCHAR",
+            "text": "VARCHAR",
             "integer": "BIGINT",
             "int": "BIGINT",
             "float": "DOUBLE",
             "currency": "DOUBLE",
             "double": "DOUBLE",
             "boolean": "BOOLEAN",
+            "bool": "BOOLEAN",
             "datetime": "TIMESTAMP",
             "timestamp": "TIMESTAMP",
             "date": "DATE"
         }
         return type_mapping.get(semantic_type.lower(), "VARCHAR")
-
-class SecurityError(Exception):
-    """Custom exception raised strictly when tenant isolation constraints are violated."""
-    pass

@@ -1,4 +1,4 @@
-# Data Omen Infrastructure Blueprint - Optimized for Build Efficiency
+# Data Omen Infrastructure Blueprint - Optimized for Build Efficiency & Stability
 # Deployment: Render (API & Workers) | Supabase (Auth) | Cloudflare (DNS)
 
 services:
@@ -10,7 +10,8 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: gunicorn main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
+    # CRITICAL FIX: Reduced workers from 4 to 2 to prevent RAM exhaustion and Status 1 crashes
+    startCommand: gunicorn main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - fromGroup: data-omen-shared-config
     # Explicitly define health check to prevent unnecessary build retries

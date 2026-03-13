@@ -1,20 +1,24 @@
+# api/services/storage_manager.py
+
 import os
 import uuid
 import logging
 import contextlib
+import asyncio
 import polars as pl
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional, Any, Dict, Union, Generator
 
 import boto3
-import duckdb
 from botocore.config import Config
+import duckdb
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 # Import modern models
 from models import Dataset, TenantSettings, StorageTier
+from api.database import SessionLocal # Imported to allow background DB sessions
 
 # Setup structured logger
 logger = logging.getLogger(__name__)
@@ -108,6 +112,56 @@ class AdaptiveStorageManager:
             region_name="auto", 
             config=boto_config
         )
+
+    async def upload_raw_file_async(self, tenant_id: str, file: Any) -> str:
+        """
+        CRITICAL FASTAPI HOOK: Handles the raw upload from the /datasets/upload endpoint.
+        Offloads the synchronous Boto3 network I/O to a background thread to prevent blocking.
+        """
+        def _sync_upload():
+            with SessionLocal() as db:
+                config = self._resolve_tenant_config(db, tenant_id)
+                s3_client = self.get_s3_client(db, tenant_id)
+                
+                # Sanitize filename and create deterministic path
+                timestamp = int(datetime.now(timezone.utc).timestamp())
+                safe_filename = "".join(c for c in file.filename if c.isalnum() or c in "._-")
+                object_key = f"{config.prefix}raw/{timestamp}_{safe_filename}"
+                
+                # Execute upload stream
+                s3_client.upload_fileobj(file.file, config.bucket, object_key)
+                
+                logger.info(f"✅ Raw file uploaded successfully -> s3://{config.bucket}/{object_key}")
+                return f"s3://{config.bucket}/{object_key}"
+
+        return await asyncio.to_thread(_sync_upload)
+
+    def delete_file(self, file_path: str) -> None:
+        """
+        Garbage Collection Hook: Resolves the bucket based on the URI and deletes the file.
+        Designed to be dispatched via FastAPI BackgroundTasks.
+        """
+        if not file_path or not file_path.startswith("s3://"):
+            return
+            
+        try:
+            # Parse s3 URI (s3://bucket-name/path/to/object)
+            path_without_scheme = file_path[5:]
+            bucket_name, object_key = path_without_scheme.split("/", 1)
+            
+            # Resolve appropriate credentials based on the target bucket
+            endpoint = self.r2_endpoint if bucket_name == self.r2_bucket else self.supa_endpoint
+            access = self.r2_access if bucket_name == self.r2_bucket else self.supa_access
+            secret = self.r2_secret if bucket_name == self.r2_bucket else self.supa_secret
+            
+            boto_config = Config(signature_version='s3v4')
+            s3 = boto3.client('s3', endpoint_url=endpoint, aws_access_key_id=access, aws_secret_access_key=secret, region_name="auto", config=boto_config)
+            
+            s3.delete_object(Bucket=bucket_name, Key=object_key)
+            logger.info(f"🗑️ Deleted dataset file: {file_path}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to delete file {file_path}: {e}")
 
     def write_dataframe(self, db: Session, df: Union[pl.DataFrame, pl.LazyFrame], tenant_id: str, dataset_id: str) -> str:
         """
@@ -215,17 +269,18 @@ class AdaptiveStorageManager:
         if config.tier == StorageTier.EPHEMERAL:
             raise StorageError("Ephemeral storage does not support persistent background workers.")
 
-        parquet_key = raw_object_key.replace('/raw/', '/analytical/')
-        if not parquet_key.endswith('.parquet'):
-            parquet_key = os.path.splitext(parquet_key)[0] + '.parquet'
-
-        raw_s3_path = f"s3://{config.bucket}/{raw_object_key}"
-        parquet_s3_path = f"s3://{config.bucket}/{parquet_key}"
+        # Clean URI generation
+        raw_s3_path = raw_object_key if raw_object_key.startswith("s3://") else f"s3://{config.bucket}/{raw_object_key}"
+        
+        # Ensure we write out a parquet file suffix
+        parquet_s3_path = raw_s3_path.replace('/raw/', '/analytical/')
+        if not parquet_s3_path.endswith('.parquet'):
+            parquet_s3_path = os.path.splitext(parquet_s3_path)[0] + '.parquet'
 
         with self.duckdb_session(db, tenant_id) as con:
             try:
                 # 1. Zero-Copy conversion: Cloud -> Compute -> Cloud
-                if raw_object_key.lower().endswith('.json'):
+                if raw_s3_path.lower().endswith('.json'):
                     read_query = f"read_json_auto('{raw_s3_path}', format='auto')"
                 else:
                     read_query = f"read_csv_auto('{raw_s3_path}', normalize_names=True)"
@@ -235,16 +290,21 @@ class AdaptiveStorageManager:
                 # 2. Advanced Profiling: Use DuckDB's SUMMARIZE for deep statistical metadata
                 profile_df = con.execute(f"SUMMARIZE SELECT * FROM '{parquet_s3_path}'").pl()
                 
-                # Extract a sample for the Contextual RAG
-                sample_df = con.execute(f"SELECT * FROM '{parquet_s3_path}' LIMIT 5").pl()
-
-                logger.info(f"✅ [{tenant_id}] Converted and profiled: {parquet_key}")
+                # 3. Extract required Worker Interface Keys
+                # compute_worker.py explicitly expects "row_count" and "columns"
+                total_rows = int(con.execute(f"SELECT COUNT(*) FROM '{parquet_s3_path}'").fetchone()[0])
+                
+                # Safely extract column names from DuckDB's SUMMARIZE output
+                extracted_columns = profile_df["column_name"].to_list() if "column_name" in profile_df.columns else []
+                
+                logger.info(f"✅ [{tenant_id}] Converted and profiled: {parquet_s3_path}")
 
                 return {
-                    "parquet_path": parquet_key,
-                    "profile": profile_df.to_dicts(),
-                    "sample": sample_df.to_dicts(),
-                    "total_rows": int(con.execute(f"SELECT COUNT(*) FROM '{parquet_s3_path}'").fetchone()[0])
+                    "parquet_path": parquet_s3_path,
+                    "columns": extracted_columns,         # FIXED: Matched to compute_worker interface
+                    "row_count": total_rows,              # FIXED: Matched to compute_worker interface
+                    "profile_summary": profile_df.to_dicts(),
+                    "sample": []                          # Optional: Offloaded to query-time RAG
                 }
 
             except Exception as e:

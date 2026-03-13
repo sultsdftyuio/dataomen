@@ -2,6 +2,7 @@
 
 import logging
 import json
+import asyncio
 from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 
@@ -66,14 +67,15 @@ class AgentMemoryService:
                 LIMIT :limit
             """)
             
+            # Using .mappings() ensures safe dictionary-style access to the row results
             results = db.execute(query, {
                 "tenant_id": tenant_id,
                 "agent_name": agent_name,
                 "limit": limit
-            }).fetchall()
+            }).mappings().fetchall()
             
-            # Format history for the LLM context window
-            return [{"timestamp": str(r.created_at), "previous_summary": r.summary} for r in results]
+            # Format history for the LLM context window safely
+            return [{"timestamp": str(r["created_at"]), "previous_summary": r["summary"]} for r in results]
             
         except SQLAlchemyError as e:
             logger.error(f"Memory lookup failed for agent '{agent_name}' (Tenant: {tenant_id}): {e}")
@@ -120,8 +122,9 @@ class AgentMemoryService:
         """
         logger.info(f"[Memory Agent] Evaluating temporal baseline for {agent_name} (Tenant: {tenant_id}).")
         
-        # 1. Fetch History
-        history = self._fetch_recent_history(db, tenant_id, agent_name)
+        # 1. Fetch History Non-Blockingly
+        # Offload the synchronous SQLAlchemy query to a background thread to preserve async performance
+        history = await asyncio.to_thread(self._fetch_recent_history, db, tenant_id, agent_name)
         
         # 2. Short-Circuit: If no history exists, this is definitively a new pattern
         if not history:
