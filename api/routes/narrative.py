@@ -7,9 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.database import get_db
+
 # Core Security & SaaS Identity (Standardized Dual-Auth Gateway)
-from api.routes.query import verify_tenant_auth
-from api.services.tenant_security_provider import tenant_security, TenantContext
+from api.auth import verify_tenant, TenantContext  # CRITICAL FIX: Corrected import locations
+from api.services.tenant_security_provider import tenant_security
 from api.services.narrative_service import NarrativeService
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ class NarrativeResponse(BaseModel):
 @router.post("/generate", response_model=NarrativeResponse)
 async def generate_narrative(
     request: NarrativeRequest,
-    context: TenantContext = Depends(verify_tenant_auth), # Security Phase 1: Dual-Auth Check
+    tenant_context: TenantContext = Depends(verify_tenant), # Security Phase 1: Dual-Auth Check
     db: Session = Depends(get_db)
 ):
     """
@@ -47,7 +48,7 @@ async def generate_narrative(
         # Security Phase 2: Wrap the expensive LLM call in the metering context
         async def execute_narrative():
             return await service.generate(
-                tenant_id=context.tenant_id,
+                tenant_id=tenant_context.tenant_id,
                 dataset_id=request.dataset_id,
                 query=request.query,
                 context=request.context or {}
@@ -55,7 +56,7 @@ async def generate_narrative(
             
         result = await tenant_security.execute_in_context(
             db=db,
-            tenant_id=context.tenant_id,
+            tenant_id=tenant_context.tenant_id,
             operation_name="generate_narrative",
             func=execute_narrative
         )
@@ -68,12 +69,15 @@ async def generate_narrative(
 
     except PermissionError as pe:
         # 402 Payment Required: Blocks execution before OpenAI is hit
+        logger.warning(f"[{tenant_context.tenant_id}] Blocked narrative execution. Payment required: {str(pe)}")
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(pe))
+    
     except ValueError as ve:
-        logger.warning(f"Validation error in narrative generation: {str(ve)}")
+        logger.warning(f"[{tenant_context.tenant_id}] Validation error in narrative generation: {str(ve)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    
     except Exception as e:
-        logger.error(f"Unexpected error in narrative generation: {str(e)}", exc_info=True)
+        logger.error(f"[{tenant_context.tenant_id}] Unexpected error in narrative generation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while generating the narrative."
