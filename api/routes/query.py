@@ -5,6 +5,7 @@ import tempfile
 import logging
 import time
 import uuid
+import asyncio
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
@@ -24,7 +25,7 @@ from api.services.nl2sql_generator import nl2sql_generator
 from api.services.compute_engine import compute_engine, ComputeRouter
 
 # Phase 2 Legacy/Diagnostic Modules
-from api.services.metric_governance import metric_registry
+from api.services.metric_governance import MetricGovernanceService  # CRITICAL FIX
 from api.services.ab_testing import ab_tester
 
 logger = logging.getLogger(__name__)
@@ -127,14 +128,15 @@ async def execute_ephemeral_query(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
     start_time = time.time()
+    
     try:
         view_name = "ephemeral_data"
         con = duckdb.connect(':memory:')
         
-        # Mount the file
+        # 1. Mount the file
         mount_dataset_to_duckdb(con, safe_path, view_name)
 
-        # Extract schema dynamically to support Contextual RAG
+        # 2. Extract schema dynamically to support Contextual RAG
         metadata = con.execute(f"DESCRIBE SELECT * FROM {view_name};").pl()
         col_dict = {row["column_name"]: row["column_type"] for row in metadata.to_dicts()}
         
@@ -144,22 +146,23 @@ async def execute_ephemeral_query(
             "schema": col_dict
         }]
 
-        # Phase 3: NL2SQL Generation
+        # 3. Phase 3: NL2SQL Generation
         sql_query, chart_spec = await nl2sql_generator.generate_sql(
             prompt=request.natural_query, 
             schemas=schemas
         )
 
-        # Phase 2.1: Semantic Math Resolution
-        for metric_name in metric_registry._metrics.keys():
-            macro_tag = f"{{{metric_name}}}"
-            if macro_tag in sql_query:
-                sql_query = sql_query.replace(macro_tag, metric_registry.get_sql_expression(metric_name))
+        # 4. Phase 2.1: Semantic Math Resolution (Tenant-specific Metric Injection)
+        governance_service = MetricGovernanceService(tenant_id=tenant.tenant_id)
+        sql_query = governance_service.inject_governed_metrics(sql_query)
 
-        # Vectorized Execution
-        arrow_table = con.execute(sql_query).arrow()
-        df = pl.from_arrow(arrow_table)
-        results = df.to_dicts()
+        # 5. Vectorized Execution (Offloaded to thread to prevent blocking the async event loop)
+        def _execute_duckdb(connection, query_string):
+            arrow_table = connection.execute(query_string).arrow()
+            df = pl.from_arrow(arrow_table)
+            return df.columns, df.to_dicts()
+
+        columns, results = await asyncio.to_thread(_execute_duckdb, con, sql_query)
         
         execution_time_ms = round((time.time() - start_time) * 1000, 2)
 
@@ -168,7 +171,7 @@ async def execute_ephemeral_query(
             "execution_mode": "sync",
             "sql_executed": sql_query,
             "chart_spec": chart_spec,
-            "columns": df.columns,
+            "columns": columns,
             "data": results,
             "execution_time_ms": execution_time_ms
         }
@@ -228,11 +231,9 @@ async def execute_persistent_query(
             schemas=schemas
         )
 
-        # Phase 2.1: Semantic Math Resolution (Metric Governance)
-        for metric_name in metric_registry._metrics.keys():
-            macro_tag = f"{{{metric_name}}}"
-            if macro_tag in sql_query:
-                sql_query = sql_query.replace(macro_tag, metric_registry.get_sql_expression(metric_name))
+        # Phase 2.1: Semantic Math Resolution (Tenant-specific Metric Injection)
+        governance_service = MetricGovernanceService(tenant_id=tenant.tenant_id, db_session=db)
+        sql_query = governance_service.inject_governed_metrics(sql_query)
 
         # Phase 2.2: Compute Router ("Noisy Neighbor" Defense)
         if ComputeRouter.requires_background_worker(sql_query):
@@ -263,6 +264,9 @@ async def execute_persistent_query(
                 schemas=schemas
             )
             
+            # Phase 2.1 Retry: MUST inject metrics again in case the LLM used macro tags in the fix!
+            sql_query = governance_service.inject_governed_metrics(sql_query)
+
             # Retry Execution
             results = await compute_engine.execute_read_only(
                 db=db,
@@ -296,14 +300,17 @@ async def execute_persistent_query(
 
         # Phase 2.4: Automated Diagnostic Intelligence (A/B Testing)
         if request.ab_test_config and results:
-            df = pl.DataFrame(results) # Convert back to Polars briefly for math analysis
-            diagnostic_insights = ab_tester.analyze_experiment(
-                df=df,
-                metric_col=request.ab_test_config.metric_col,
-                group_col=request.ab_test_config.group_col,
-                control_val=request.ab_test_config.control,
-                treatment_val=request.ab_test_config.treatment
-            )
+            def _run_ab_test(data, config):
+                df = pl.DataFrame(data) 
+                return ab_tester.analyze_experiment(
+                    df=df,
+                    metric_col=config.metric_col,
+                    group_col=config.group_col,
+                    control_val=config.control,
+                    treatment_val=config.treatment
+                )
+            # Offload heavy math analysis to prevent blocking the event loop
+            diagnostic_insights = await asyncio.to_thread(_run_ab_test, results, request.ab_test_config)
             response_data["diagnostic_insights"] = diagnostic_insights
 
         return response_data
