@@ -6,14 +6,14 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-from pydantic import BaseModel  # FIX: Explicitly import BaseModel for local schemas
+from sqlalchemy.exc import SQLAlchemyError
+from pydantic import BaseModel
 
 # Core Database & Models
 from api.database import get_db
-from models import Agent
+from models import Agent, Dataset
 
 # Standardized API Contracts (Phase 4: Modular Schema Integration)
-# This consumes the standardized schemas we fixed in api/models/agent.py
 from api.models.agent import AgentCreate, AgentRuleCreate, AgentResponse
 
 # Core Security & SaaS Identity
@@ -56,10 +56,34 @@ async def create_chat_agent(
     Security by Design: Automatically binds the agent to the authenticated tenant_id.
     """
     logger.info(f"[{context.tenant_id}] Creating Chat Agent: {payload.name}")
+    
+    # 1. Verify Dataset Ownership (Physical Jailing)
+    dataset = db.query(Dataset).filter(
+        Dataset.id == payload.dataset_id,
+        Dataset.tenant_id == context.tenant_id
+    ).first()
+    
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or access denied.")
+
     try:
-        return agent_service.create_agent(db, context.tenant_id, payload)
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+        # 2. Instantiate Base Agent (No cron or metrics needed for a standard Chat Agent)
+        new_agent = Agent(
+            tenant_id=context.tenant_id,
+            dataset_id=payload.dataset_id,
+            name=payload.name,
+            is_active=True
+        )
+        db.add(new_agent)
+        db.commit()
+        db.refresh(new_agent)
+        
+        return new_agent
+        
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"[{context.tenant_id}] DB Error creating chat agent: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create agent.")
 
 @router.post("/monitor", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_monitoring_agent(
@@ -74,9 +98,11 @@ async def create_monitoring_agent(
     logger.info(f"[{context.tenant_id}] Deploying Monitoring Agent: {payload.name}")
     try:
         return agent_service.create_agent(db, context.tenant_id, payload)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except Exception as e:
         logger.error(f"[{context.tenant_id}] Monitoring Deployment Failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to deploy autonomous monitor.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to deploy autonomous monitor.")
 
 @router.get("/", response_model=List[AgentResponse])
 async def list_agents(
@@ -95,7 +121,7 @@ async def get_agent(
     """Fetches a specific agent with strict tenant isolation."""
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
     return agent
 
 @router.patch("/{agent_id}", response_model=AgentResponse)
@@ -108,15 +134,20 @@ async def update_agent(
     """Updates agent configuration or toggles active status with partial JSON payloads."""
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
     
-    update_data = payload.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(agent, key, value)
-    
-    db.commit()
-    db.refresh(agent)
-    return agent
+    try:
+        update_data = payload.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(agent, key, value)
+        
+        db.commit()
+        db.refresh(agent)
+        return agent
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"[{context.tenant_id}] Error updating agent {agent_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update agent.")
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_agent(
@@ -127,11 +158,16 @@ async def delete_agent(
     """Deletes an agent and halts its autonomous monitoring loops."""
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
     if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
     
-    db.delete(agent)
-    db.commit()
-    return None
+    try:
+        db.delete(agent)
+        db.commit()
+        return None
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"[{context.tenant_id}] Error deleting agent {agent_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete agent.")
 
 # ------------------------------------------------------------------------------
 # Autonomous Heartbeat
@@ -141,6 +177,9 @@ async def delete_agent(
 async def trigger_agent_heartbeat(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
+    # Note: No `verify_tenant` dependency here because this is a system-level
+    # cron trigger (e.g., hit by Cloudflare Workers or Vercel Cron). 
+    # In a production setting, you should protect this with an internal API Key.
 ):
     """
     The Orchestration Trigger.

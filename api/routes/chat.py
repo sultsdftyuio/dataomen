@@ -7,8 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 # Core Security & Database
-from api.routes.query import verify_tenant_auth
-from api.services.tenant_security_provider import tenant_security, TenantContext
+from api.auth import verify_tenant, TenantContext  # CRITICAL FIX: Corrected import locations
+from api.services.tenant_security_provider import tenant_security
 from api.database import get_db
 from models import Agent, Dataset
 
@@ -41,7 +41,7 @@ class ChatResponse(BaseModel):
 @router.post("/", response_model=ChatResponse)
 async def process_chat(
     request: ChatRequest,
-    context: TenantContext = Depends(verify_tenant_auth), # Security Phase 1: Dual-Auth Check
+    context: TenantContext = Depends(verify_tenant), # Security Phase 1: Dual-Auth Check
     db: Session = Depends(get_db)
 ):
     """

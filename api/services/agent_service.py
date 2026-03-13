@@ -91,9 +91,15 @@ class AgentService:
                 
             try:
                 last_run = agent.last_run_at or agent.created_at
+                
+                # CRITICAL FIX: Ensure last_run is timezone-aware before passing to croniter
+                if last_run.tzinfo is None:
+                    last_run = last_run.replace(tzinfo=timezone.utc)
+                
                 cron = croniter(agent.cron_schedule, last_run)
                 next_run = cron.get_next(datetime)
 
+                # CRITICAL FIX: Ensure next_run is timezone-aware before comparing to `now`
                 if next_run.tzinfo is None:
                     next_run = next_run.replace(tzinfo=timezone.utc)
 
