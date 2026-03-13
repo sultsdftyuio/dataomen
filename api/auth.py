@@ -1,4 +1,5 @@
 # api/auth.py
+
 import os
 import logging
 import jwt  # Requires: pip install PyJWT
@@ -79,7 +80,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         if not user_response or not user_response.user:
             raise ValueError("Invalid user token")
             
-        return user_response.user.model_dump()
+        # Safely convert Supabase user object to dict
+        return user_response.user.model_dump() if hasattr(user_response.user, 'model_dump') else dict(user_response.user)
         
     except Exception as e:
         logger.warning(f"Network Authentication failed: {str(e)}")
@@ -117,3 +119,9 @@ def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> T
         email=email,
         app_metadata=app_metadata
     )
+
+def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)) -> str:
+    """
+    Convenience Dependency: Instantly extracts the tenant_id for rapid API route filtering.
+    """
+    return tenant_context.tenant_id

@@ -1,3 +1,5 @@
+# api/database.py
+
 import os
 import logging
 from sqlalchemy import create_engine, text
@@ -29,7 +31,7 @@ engine = create_engine(
         # SaaS Protection: 
         # - statement_timeout=30000 (30 seconds): Prevents 'noisy neighbors' from locking up the DB.
         # - application_name: Helps trace queries in Supabase/PgBouncer dashboards.
-        "options": "-c statement_timeout=30000 -c application_name=dataomen_api_worker"
+        "options": "-c statement_timeout=30000 -c application_name=dataomen_api"
     }
 )
 
