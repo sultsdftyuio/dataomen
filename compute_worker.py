@@ -21,7 +21,7 @@ from api.services.integrations.base_integration import BaseIntegration, Integrat
 
 # Integration Registry (The Factory Pattern)
 from api.services.integrations.stripe_connector import StripeIntegration
-from api.services.integrations.shopify_connector import ShopifyIntegration
+from api.services.integrations.shopify_connector import ShopifyConnector  # Fixed import
 from api.services.integrations.salesforce_connector import SalesforceIntegration
 from api.services.integrations.snowflake_connector import SnowflakeConnector
 
@@ -46,7 +46,7 @@ class DataOmenComputeWorker:
     # Modular Registry of supported integration connectors
     _INTEGRATION_REGISTRY: Dict[str, Type[BaseIntegration]] = {
         "stripe": StripeIntegration,
-        "shopify": ShopifyIntegration,
+        "shopify": ShopifyConnector,  # Fixed class reference
         "salesforce": SalesforceIntegration,
         "snowflake": SnowflakeConnector
     }
