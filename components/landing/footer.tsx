@@ -1,3 +1,8 @@
+// components/landing/footer.tsx
+
+import React from "react"
+import Link from "next/link"
+
 export function Footer() {
   return (
     <footer className="border-t border-border px-6 py-8">
@@ -14,17 +19,33 @@ export function Footer() {
             DataOmen &copy; {new Date().getFullYear()}
           </span>
         </div>
-        <div className="flex gap-6">
-          <a href="#" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+        
+        <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2">
+          <Link 
+            href="/privacy" 
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             Privacy
-          </a>
-          <a href="#" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          </Link>
+          <Link 
+            href="/terms" 
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             Terms
-          </a>
-          <a href="#" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          </Link>
+          <Link 
+            href="/cookies" 
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Cookies
+          </Link>
+          <a 
+            href="mailto:legal@dataomen.com" 
+            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
             Contact
           </a>
-        </div>
+        </nav>
       </div>
     </footer>
   )

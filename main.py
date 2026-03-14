@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 # 1. Observability Configuration (Render Optimized)
 # ------------------------------------------------------------------------------
 # We force stream=sys.stdout to ensure logs flush instantly to the Render dashboard.
-# Without this, Python buffers the logs and a crash might happen silently.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
@@ -36,9 +35,7 @@ async def lifespan(app: FastAPI):
         init_db()
         logger.info("✅ Database infrastructure synchronized.")
     except Exception as e:
-        # We catch the error and log it, but DO NOT raise it.
-        # This keeps the web server alive so Render's health check passes
-        # and you can actually read this error in the dashboard logs.
+        # Catch and log to keep the web server alive for Render health checks
         logger.error(f"⚠️ Database Sync Failed on Boot: {str(e)}")
         logger.error("⚠️ Check that DATABASE_URL is set in your Render Environment Variables.")
         
@@ -49,7 +46,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Data Omen Engine",
     description="High-performance multi-tenant analytical API engine.",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan
 )
 
@@ -64,14 +61,14 @@ async def health_check():
     """
     return {
         "status": "optimal",
-        "environment": os.environ.get("ENVIRONMENT", "production"),
+        "environment": os.getenv("ENVIRONMENT", "production"),
         "timestamp": time.time()
     }
 
 # ------------------------------------------------------------------------------
 # 4. Security by Design: Dynamic CORS Policy
 # ------------------------------------------------------------------------------
-raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
+raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
 # Clean up any trailing spaces from environment variables
 origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
@@ -88,12 +85,13 @@ app.add_middleware(
 # ------------------------------------------------------------------------------
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
+    # UPGRADE: time.perf_counter() is strictly better than time.time() for benchmarking compute speed
+    start_time = time.perf_counter()
     response = await call_next(request)
-    process_time = time.time() - start_time
+    process_time = time.perf_counter() - start_time
     
     # Inject execution time into headers for frontend monitoring
-    response.headers["X-Process-Time"] = str(process_time)
+    response.headers["X-Process-Time"] = f"{process_time:.5f}"
     return response
 
 # ------------------------------------------------------------------------------
@@ -111,9 +109,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ------------------------------------------------------------------------------
 # 7. Defensive Route Orchestration
 # ------------------------------------------------------------------------------
-def register_routes(app: FastAPI):
+def register_routes(app: FastAPI) -> None:
     # Lazy-loading routes prevents circular dependencies and isolates import crashes
-    from api.routes import agents, datasets, query, narrative, chat
+    from api.routes import agents, datasets, query, narrative, chat, webhooks
     
     app.include_router(agents.router)
     app.include_router(datasets.router)
@@ -121,7 +119,10 @@ def register_routes(app: FastAPI):
     app.include_router(narrative.router)
     app.include_router(chat.router)
     
-    logger.info("🗺️ Modular routes registered.")
+    # NEW: Injects the Lemon Squeezy integration router we just built
+    app.include_router(webhooks.router)
+    
+    logger.info("🗺️ Modular routes registered successfully.")
 
 try:
     register_routes(app)
@@ -134,6 +135,8 @@ except Exception as e:
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    # Local development entrypoint
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    # UPGRADE: Cleaned up environment variable fetching and enabled dynamic reload for local dev
+    port = int(os.getenv("PORT", "8000"))
+    is_dev = os.getenv("ENVIRONMENT") == "development"
+    
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=is_dev)

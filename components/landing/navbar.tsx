@@ -6,6 +6,10 @@ import { Moon, Sun, Menu, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
+/**
+ * Updated Navbar with "The Prism" Logo
+ * Path: components/landing/navbar.tsx
+ */
 export function Navbar() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -28,16 +32,32 @@ export function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-primary-foreground">
-              <path d="M7 1L13 4V10L7 13L1 10V4L7 1Z" fill="currentColor" fillOpacity="0.3" />
-              <path d="M7 1L13 4L7 7L1 4L7 1Z" fill="currentColor" />
-              <path d="M7 7V13L1 10V4L7 7Z" fill="currentColor" fillOpacity="0.7" />
+        
+        {/* Logo - Style 2: The Prism (Navy Infrastructure Series) */}
+        <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-90">
+          <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-full w-full text-blue-600 drop-shadow-[0_0_8px_rgba(37,99,235,0.3)]"
+            >
+              {/* Hexagonal Frame representing Data Containers */}
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              
+              {/* Internal Facets representing Columnar Partitioning */}
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" className="opacity-80" />
+              <line x1="12" y1="22.08" x2="12" y2="12" className="opacity-80" />
             </svg>
           </div>
-          <span className="text-lg font-semibold tracking-tight text-foreground">DataOmen</span>
+          
+          {/* Typography: Bold, Uppercase, Navy Accent */}
+          <span className="text-xl font-black uppercase tracking-tight text-foreground">
+            Data<span className="text-blue-600">Omen</span>
+          </span>
         </Link>
 
         {/* Desktop Nav */}
