@@ -12,7 +12,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { seoPages, type SEOPageData } from '@/lib/seo-data';
+
+// Updated import path to match your modular architecture
+import { seoPages, type SEOPageData } from '@/lib/seo/index';
 
 interface PageProps { params: { slug: string; }; }
 
@@ -173,7 +175,7 @@ export default function SEOPage({ params }: PageProps) {
                 </div>
               </div>
 
-              {/* COMPARISON (Only renders if type is comparison or comparison data exists) */}
+              {/* COMPARISON */}
               {pageData.comparison && (
                 <div id="comparison" className="scroll-mt-24">
                   <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/10 pb-4">DataOmen vs. {pageData.comparison.competitor}</h2>
