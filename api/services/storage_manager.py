@@ -1,4 +1,6 @@
+# api/services/storage_manager.py
 import os
+import io
 import uuid
 import logging
 import contextlib
@@ -10,6 +12,7 @@ from typing import Optional, Any, Dict, Union, Generator
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 import duckdb
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -26,9 +29,10 @@ class StorageError(Exception):
 
 class R2StorageManager:
     """
-    Phase 1++: Pure Cloudflare R2 Infrastructure Router.
+    Phase 1++: Pure Cloudflare R2 Infrastructure Router (Crash-Proof Edition).
     
     Upgraded Engineering:
+    - Lazy Initialization: Prevents compute engine boot crashes if env vars are missing.
     - Pure R2 Edge: Stripped legacy S3/Supabase fallbacks for maximum performance.
     - Scoped Memory Secrets: DuckDB uses TEMPORARY secrets to guarantee tenant isolation.
     - Thread-Safe Boto3 Sessions: Caches the session object to bypass disk I/O overhead.
@@ -36,14 +40,24 @@ class R2StorageManager:
     """
     
     def __init__(self) -> None:
-        # Cloudflare R2 - Zero Egress Analytical Storage
-        self.r2_endpoint = os.environ["R2_ENDPOINT_URL"]
+        # Cloudflare R2 - Safe Extraction (os.getenv prevents KeyError on Render boot)
+        self.r2_endpoint = os.getenv("R2_ENDPOINT_URL")
         self.r2_bucket = os.getenv("R2_BUCKET_NAME", "dataomen-pro-data")
-        self.r2_access = os.environ["R2_ACCESS_KEY_ID"]
-        self.r2_secret = os.environ["R2_SECRET_ACCESS_KEY"]
+        self.r2_access = os.getenv("R2_ACCESS_KEY_ID")
+        self.r2_secret = os.getenv("R2_SECRET_ACCESS_KEY")
 
-        # Enterprise Performance: Cache the Boto3 session to prevent disk I/O on every request
-        self._boto_session = boto3.Session()
+        # Lazy Evaluation Caches
+        self._boto_session = None
+        self._r2_client = None
+
+    def _validate_credentials(self) -> None:
+        """Fails gracefully at execution time rather than crashing the server at boot."""
+        if not all([self.r2_access, self.r2_secret, self.r2_endpoint]):
+            logger.error("[Storage] CRITICAL: R2 Storage credentials are missing.")
+            raise StorageError(
+                "R2 credentials not configured. Please set R2_ACCESS_KEY_ID, "
+                "R2_SECRET_ACCESS_KEY, and R2_ENDPOINT_URL in your environment."
+            )
 
     def _get_tenant_prefix(self, tenant_id: str) -> str:
         """
@@ -55,23 +69,29 @@ class R2StorageManager:
         return f"tenants/tenant_id={tenant_id}/"
 
     def get_r2_client(self) -> Any:
-        """Returns a high-concurrency Boto3 client natively tuned for Cloudflare R2."""
-        # High-concurrency tuning for serverless orchestration
-        boto_config = Config(
-            s3={'addressing_style': 'path'}, 
-            signature_version='s3v4',
-            max_pool_connections=100,
-            retries={'max_attempts': 3, 'mode': 'adaptive'}
-        )
+        """Returns a lazily-initialized, high-concurrency Boto3 client natively tuned for R2."""
+        self._validate_credentials()
+        
+        if self._boto_session is None:
+            self._boto_session = boto3.Session()
 
-        return self._boto_session.client(
-            's3', # Boto3 requires 's3' as the service name, even for R2
-            endpoint_url=self.r2_endpoint,
-            aws_access_key_id=self.r2_access,
-            aws_secret_access_key=self.r2_secret,
-            region_name="auto", 
-            config=boto_config
-        )
+        if self._r2_client is None:
+            # High-concurrency tuning for serverless orchestration
+            boto_config = Config(
+                s3={'addressing_style': 'path'}, 
+                signature_version='s3v4',
+                max_pool_connections=100,
+                retries={'max_attempts': 3, 'mode': 'adaptive'}
+            )
+            self._r2_client = self._boto_session.client(
+                's3',
+                endpoint_url=self.r2_endpoint,
+                aws_access_key_id=self.r2_access,
+                aws_secret_access_key=self.r2_secret,
+                region_name="auto", 
+                config=boto_config
+            )
+        return self._r2_client
 
     async def upload_raw_file_async(self, tenant_id: str, file: Any) -> str:
         """
@@ -121,6 +141,7 @@ class R2StorageManager:
         Upgraded Computation: Rust-Native Streaming Sink.
         Bypasses Python memory buffers to stream Polars directly to Cloudflare R2 natively releasing the GIL.
         """
+        self._validate_credentials()
         prefix = self._get_tenant_prefix(tenant_id)
         
         if isinstance(df, pl.LazyFrame):
@@ -185,6 +206,7 @@ class R2StorageManager:
         SaaS Memory Management: Scoped connection with TEMPORARY secrets.
         Ensures credentials physically cannot leak out of the in-memory session.
         """
+        self._validate_credentials()
         con = duckdb.connect(database=':memory:')
         
         try:
