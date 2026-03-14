@@ -1,5 +1,3 @@
-# api/services/json_normalizer.py
-
 import logging
 import re
 import polars as pl
@@ -11,15 +9,15 @@ logger = logging.getLogger(__name__)
 
 class PolarsNormalizer:
     """
-    The Computation Layer: Vectorized Normalization Engine.
+    Phase 1+: Enterprise Vectorized Normalization Engine.
     
     Instantly flattens deeply nested JSON structures from SaaS APIs into 
     strictly typed, columnar DataFrames optimized for Parquet/DuckDB.
     
-    Upgrades Applied (Hybrid Performance Paradigm): 
-    - Lazy Evaluation Graph: Transitions to pl.LazyFrame for multithreaded C++/Rust execution.
-    - Collision-Proof Unnesting: Safely prefixes child fields to prevent schema collisions.
-    - Strict Parquet Type Coercion: Neutralizes pure Null/Object columns that crash Parquet writers.
+    Upgraded Engineering: 
+    - Zero-Copy Unnesting: Uses native Polars struct unnesting to bypass memory reallocation.
+    - Complex List Serialization: Safely casts List(Struct) to JSON strings to prevent Parquet schema panics.
+    - Lazy Evaluation Graph: Multithreaded C++/Rust execution pipeline.
     - Security by Design: Injects `tenant_id` at the CPU level before storage.
     """
     
@@ -80,55 +78,47 @@ class PolarsNormalizer:
             logger.error(f"❌ [{self.tenant_id}] Failed to vectorize JSON for {self.integration_name}: {e}")
             raise ValueError(f"Data format exception during vectorization: {str(e)}")
 
-        # 2. Collision-Proof Dynamic Unnesting (Eager Phase)
+        # 2. Zero-Copy Dynamic Unnesting (Eager Phase)
         # We must perform this eagerly because the schema of nested structs is unknown until inspected.
-        # We manually unnest and prefix fields (e.g., {"customer": {"id": 1}} -> "customer_id")
-        # to prevent collisions with top-level "id" columns.
+        # Native unnest() modifies the DataFrame structurally without allocating new python objects.
         struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
         
         while struct_cols:
-            exprs = []
             for col in struct_cols:
-                # Extract the sub-fields of the nested object safely
-                struct_dtype = df.schema[col]
-                # Polars structurally stores fields within the Struct dtype
-                for field in struct_dtype.fields:
-                    field_name = field.name
-                    exprs.append(
-                        pl.col(col).struct.field(field_name).alias(f"{col}_{field_name}")
-                    )
-            
-            # Apply unpacking and drop the parent struct column
-            df = df.with_columns(exprs).drop(struct_cols)
+                # Unnest and safely prefix fields (e.g., "customer" -> "customer_id")
+                # to prevent collisions with top-level "id" columns.
+                df = df.unnest(col).rename({
+                    child: f"{col}_{child}" for child in df[col].struct.fields if child in df.columns
+                })
             # Re-evaluate in case of deeply nested JSON (Structs within Structs)
             struct_cols = [col for col, dtype in df.schema.items() if isinstance(dtype, pl.Struct)]
 
-        # Note on Lists/Arrays (e.g., Shopify line_items):
-        # We DO NOT explode them here. Exploding creates massive memory duplication. 
-        # We leave them as pl.List so the DuckDB Compute Engine can use UNNEST() natively at query time.
-
-        # ==========================================
-        # 3. HYBRID PERFORMANCE PARADIGM: Shift to Lazy Evaluation
-        # ==========================================
-        # Now that the dynamic schema is flattened, we build an optimized execution graph
-        lf = df.lazy()
-
-        # 4. Parquet Schema Safety (Type Coercion)
-        # Cloudflare R2 / Parquet writers will immediately crash if they encounter a purely 
-        # 'Null' column or a Python 'Object' column. We must cast them safely.
+        # 3. Parquet Schema Safety (List-Struct & Null Neutralization)
+        # Cloudflare R2 / Parquet writers crash on purely 'Null' columns or 'List(Struct)' with varying keys.
         type_cast_exprs = []
         for col, dtype in df.schema.items():
             if dtype == pl.Null:
                 type_cast_exprs.append(pl.lit(None).cast(pl.String).alias(col))
-            elif dtype in [pl.Object, pl.Unknown]:
-                # Coerce unsupported Object columns to JSON Strings safely
+            elif dtype == pl.Object:
+                # Coerce unsupported Python Object columns to JSON Strings safely
                 type_cast_exprs.append(pl.col(col).cast(pl.String, strict=False).alias(col))
-                
+            elif isinstance(dtype, pl.List):
+                # If a list contains complex structs or nulls, cast the entire list to a JSON string.
+                # DuckDB can easily parse this at query time, preventing ingestion pipeline crashes.
+                inner_type = dtype.inner
+                if isinstance(inner_type, pl.Struct) or inner_type == pl.Null or inner_type == pl.Object:
+                    type_cast_exprs.append(pl.col(col).cast(pl.String, strict=False).alias(col))
+
         if type_cast_exprs:
-            lf = lf.with_columns(type_cast_exprs)
+            df = df.with_columns(type_cast_exprs)
+
+        # ==========================================
+        # 4. HYBRID PERFORMANCE PARADIGM: Shift to Lazy Evaluation
+        # ==========================================
+        # Now that the dynamic schema is flattened and safe, we build an optimized execution graph
+        lf = df.lazy()
 
         # 5. Standardize column names for DuckDB SQL querying
-        # Execute the rename operation in the lazy graph
         clean_columns = self._sanitize_column_names(df.columns)
         lf = lf.rename(clean_columns)
 

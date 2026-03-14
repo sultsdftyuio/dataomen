@@ -14,7 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ has been removed to allow Next.js/TypeScript utilities to be tracked. 
+# If you need to ignore a Python venv lib, rely on the venv/, .venv/, or env/ exclusions above.
 lib64/
 parts/
 sdist/

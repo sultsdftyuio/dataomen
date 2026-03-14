@@ -1,8 +1,7 @@
-# api/services/semantic_router.py
-
 import logging
 import json
-from typing import List, Dict, Any, Literal, Optional, Union
+import time
+from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 # Setup structured logger for workspace orchestration
@@ -10,13 +9,22 @@ logger = logging.getLogger(__name__)
 
 class RouteDecision(BaseModel):
     """Structured output schema for the agentic routing decision."""
-    reasoning: str = Field(..., description="Step-by-step logic for the chosen path.")
+    reasoning: str = Field(
+        ..., 
+        description="Step-by-step logic for the chosen path."
+    )
     route: Literal["GENERAL_CHAT", "ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"] = Field(
-        ..., description="The target execution engine based on intent."
+        ..., 
+        description="The target execution engine based on intent."
+    )
+    confidence_score: float = Field(
+        ..., 
+        ge=0.0, le=1.0, 
+        description="Confidence level in this routing decision (0.0 to 1.0)."
     )
     required_datasets: List[str] = Field(
         default_factory=list, 
-        description="Dataset IDs (UUIDs) strictly required for this specific interaction."
+        description="Dataset IDs (UUIDs) strictly required for this interaction."
     )
     recommended_views: List[str] = Field(
         default_factory=list, 
@@ -25,15 +33,15 @@ class RouteDecision(BaseModel):
 
 class SemanticRouter:
     """
-    Phase 3: Agentic Orchestration & Semantic Routing (Modular Strategy)
+    Phase 3+: Enterprise Agentic Orchestration & Semantic Routing
     
     The 'Central Nervous System' of DataOmen. Evaluates prompts against 
     tenant-specific metadata and routes to the optimal compute layer.
     
-    Methodologies:
-    - Orchestration: OO patterns for service management.
-    - Security: Strict tenant_id partitioning at the retrieval layer.
-    - Efficiency: Token-safe schema summaries for routing decisions.
+    Upgraded Engineering:
+    - Confidence Thresholding: Prevents expensive execution of hallucinated routes.
+    - Observability: High-precision latency tracking.
+    - Smart Summarization: Token-safe entity routing (delegates deep schema mapping to NL2SQL).
     """
 
     def __init__(
@@ -52,6 +60,9 @@ class SemanticRouter:
         self.nl2sql = nl2sql_service
         self.compute = compute_engine
         self.integration_registry = integration_registry or {}
+        
+        # Enterprise threshold: require high confidence to trigger heavy SQL/ML compute
+        self.confidence_threshold = 0.75 
 
     # ---------------------------------------------------
     # CONTEXT FETCH (Security by Design)
@@ -66,10 +77,12 @@ class SemanticRouter:
             return {"raw_schemas": [], "semantic_views": {}}
 
         try:
+            start_time = time.perf_counter()
+            
             # Enforce tenant isolation at the query level
             response = (
                 self.db.table("datasets")
-                .select("id, name, schema_metadata, provider")
+                .select("id, name, description, schema_metadata, provider")
                 .eq("tenant_id", tenant_id)
                 .in_("id", dataset_ids)
                 .execute()
@@ -83,15 +96,18 @@ class SemanticRouter:
                 raw_schemas.append({
                     "id": ds["id"],
                     "name": ds["name"],
+                    "description": ds.get("description", ""),
                     "schema_metadata": ds["schema_metadata"]
                 })
 
-                # Modular Integration Injection
+                # Modular Integration Injection (e.g., Stripe, Shopify predefined metrics)
                 provider = ds.get("provider")
                 if provider and provider in self.integration_registry:
                     connector = self.integration_registry[provider]
-                    # Fetch 'Gold Tier' views from the specific connector
                     semantic_views.update(connector.get_semantic_views())
+
+            elapsed = (time.perf_counter() - start_time) * 1000
+            logger.debug(f"[Context] Fetched {len(datasets)} datasets for {tenant_id} in {elapsed:.2f}ms")
 
             return {
                 "raw_schemas": raw_schemas,
@@ -108,20 +124,25 @@ class SemanticRouter:
 
     def _summarize_for_router(self, schemas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Creates a minimal dataset fingerprint to minimize LLM token bloat 
-        during the routing decision phase.
+        Entity-Level Summarization:
+        The router doesn't need every column to pick a dataset; it needs intent matching.
+        This prevents massive token bloat when users have 100+ column tables.
         """
         summary = []
         for ds in schemas:
             meta = ds.get("schema_metadata", {})
-            # If meta is a dict with 'columns', use that; otherwise fallback
             columns_dict = meta.get("columns", meta) if isinstance(meta, dict) else {}
-            cols = list(columns_dict.keys())[:20]
+            
+            # Extract high-level types to give the router context without exact mapping
+            col_summary = [f"{k} ({v.get('type', 'Unknown')})" if isinstance(v, dict) else k for k, v in list(columns_dict.items())[:15]]
+            if len(columns_dict) > 15:
+                col_summary.append(f"... and {len(columns_dict) - 15} more columns")
 
             summary.append({
-                "id": ds["id"],
-                "name": ds["name"],
-                "column_fingerprint": cols
+                "dataset_id": ds["id"],
+                "friendly_name": ds["name"],
+                "description": ds.get("description", "No description provided."),
+                "core_columns_preview": col_summary
             })
         return summary
 
@@ -132,14 +153,14 @@ class SemanticRouter:
     def _build_routing_prompt(self, user_prompt: str, context: Dict[str, Any]) -> str:
         """
         Constructs the agentic routing prompt. 
-        Biases the model toward verified 'Gold Tier' views for consistency.
+        Forces rigorous confidence scoring.
         """
         summarized = self._summarize_for_router(context["raw_schemas"])
         views = list(context["semantic_views"].keys())
 
         return f"""
-You are the intelligence router for DataOmen, a high-performance analytical SaaS.
-Analyze the prompt and available context to select the optimal execution route.
+You are the primary intelligence router for DataOmen, an enterprise analytical SaaS.
+Your task is to analyze the user's prompt and route it to the optimal execution engine.
 
 ACTIVE WORKSPACE DATASETS:
 {json.dumps(summarized, indent=2)}
@@ -150,19 +171,19 @@ GOLD TIER SEMANTIC VIEWS (HIGHLY PREFERRED):
 USER PROMPT:
 "{user_prompt}"
 
-ROUTING LOGIC:
-1. ANALYTICAL_QUERY: Filtering, aggregations, trends, or visuals. 
-   - REQUIREMENT: Use Gold Tier views if they conceptually match the requested metric.
-2. COMPLEX_COMPUTATION: ML forecasting, anomaly detection, or advanced linear algebra using Pandas/Polars.
-3. GENERAL_CHAT: Conversational help or methodology questions.
+ROUTING LOGIC & CONSTRAINTS:
+1. ANALYTICAL_QUERY: Select this if the user asks for filtering, aggregations, trends, counts, or charts.
+   - REQUIREMENT: You MUST include the exact dataset_id in `required_datasets`.
+   - PREFERENCE: Use Gold Tier views if they conceptually match.
+2. COMPLEX_COMPUTATION: Select this ONLY for machine learning, anomaly detection, or forecasting.
+3. GENERAL_CHAT: Select this for conversational interactions, greetings, or if the prompt is entirely unrelated to the active datasets.
 
-Deliver a structured decision based on the 'Best Path' for engineering efficiency.
+Assign a `confidence_score` (0.0 to 1.0). If the user asks a data question but the required dataset is missing from the workspace, score it < 0.5 and route to GENERAL_CHAT.
 """
 
     def _validate_datasets(self, requested: List[str], context: Dict[str, Any]) -> List[str]:
         """
-        Security Layer: Prevents LLM hallucinations from requesting non-existent 
-        or cross-tenant dataset IDs.
+        Security Layer: Mathematically prevent the LLM from accessing unauthorized dataset IDs.
         """
         valid_ids = {s["id"] for s in context["raw_schemas"]}
         return [ds_id for ds_id in requested if ds_id in valid_ids]
@@ -179,9 +200,10 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
         user_prompt: str
     ) -> Dict[str, Any]:
         """
-        Main entry point for interactions. Orchestrates context, routing, and delegation.
+        Main entry point. Orchestrates context, dynamic routing, and path delegation.
         """
-        logger.info(f"[Orchestration] Processing interaction for Tenant: {tenant_id}")
+        logger.info(f"[Orchestrator] Initiating cycle for Tenant: {tenant_id}")
+        start_time = time.perf_counter()
         
         context = await self._fetch_context(tenant_id, active_dataset_ids)
         routing_prompt = self._build_routing_prompt(user_prompt, context)
@@ -192,25 +214,52 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
                 history=chat_history,
                 response_model=RouteDecision
             )
-            logger.info(f"[Router] Decision: {decision.route} | Reasoning: {decision.reasoning}")
+            logger.info(f"[Router] {decision.route} chosen with {decision.confidence_score*100:.1f}% confidence. Reasoning: {decision.reasoning}")
         except Exception as e:
-            logger.error(f"[Router] Decision failure: {e}. Defaulting to Chat.")
+            logger.error(f"[Router] Structural parse failure: {e}. Executing safety fallback.")
             decision = RouteDecision(
-                reasoning="Safety fallback due to routing exception.",
-                route="GENERAL_CHAT"
+                reasoning="Safety fallback due to LLM parsing exception.",
+                route="GENERAL_CHAT",
+                confidence_score=0.0
             )
 
-        # Sanitize datasets before delegation
+        # 1. Guardrail: Low Confidence Interception
+        if decision.route in ["ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"] and decision.confidence_score < self.confidence_threshold:
+            logger.warning(f"[Guardrail] Execution blocked. Confidence {decision.confidence_score} below threshold {self.confidence_threshold}.")
+            return {
+                "type": "text",
+                "message": "I'm not entirely sure which dataset contains the answer to that. Could you clarify your question or make sure the correct data source is active?"
+            }
+
+        # 2. Guardrail: Dataset Validation
         decision.required_datasets = self._validate_datasets(decision.required_datasets, context)
+        if decision.route in ["ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"] and not decision.required_datasets:
+            logger.warning("[Guardrail] Analytical route selected but no valid datasets provided.")
+            return {
+                "type": "text",
+                "message": "I understand what you're asking, but I don't see the required dataset in your current workspace to calculate it."
+            }
 
-        # Path Delegation
-        if decision.route == "ANALYTICAL_QUERY":
-            return await self._handle_analytical(tenant_id, decision, context, user_prompt, chat_history)
+        # 3. Path Delegation
+        try:
+            if decision.route == "ANALYTICAL_QUERY":
+                result = await self._handle_analytical(tenant_id, decision, context, user_prompt, chat_history)
+            elif decision.route == "COMPLEX_COMPUTATION":
+                result = await self._handle_compute(tenant_id, decision, context, user_prompt)
+            else:
+                result = await self._handle_chat(user_prompt, chat_history)
+                
+        except Exception as e:
+            logger.critical(f"[Orchestrator] Fatal execution error in {decision.route}: {str(e)}")
+            result = {
+                "type": "text",
+                "message": "I encountered a system error while trying to process your request. Our engineering team has been notified."
+            }
 
-        if decision.route == "COMPLEX_COMPUTATION":
-            return await self._handle_compute(tenant_id, decision, context, user_prompt)
-
-        return await self._handle_chat(user_prompt, chat_history)
+        total_elapsed = (time.perf_counter() - start_time) * 1000
+        logger.info(f"[Orchestrator] Interaction completed in {total_elapsed:.2f}ms")
+        
+        return result
 
     # ---------------------------------------------------
     # DELEGATED HANDLERS (Hybrid Performance)
@@ -226,7 +275,6 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
     ) -> Dict[str, Any]:
         """
         Path: SQL Generation -> Vectorized Execution.
-        Includes a deterministic self-correction turn for compiler errors.
         """
         active_views = {
             k: context["semantic_views"][k]
@@ -234,7 +282,7 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
             if k in context["semantic_views"]
         }
 
-        # Generate SQL (Contextual RAG)
+        # Generate SQL via Contextual RAG
         sql, chart = await self.nl2sql.generate_sql(
             prompt=prompt,
             schemas=context["raw_schemas"],
@@ -243,6 +291,7 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
         )
 
         try:
+            # Attempt Zero-Copy Execution
             result = await self.compute.execute_read_only(
                 tenant_id=tenant_id,
                 dataset_ids=decision.required_datasets,
@@ -250,7 +299,7 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
                 injected_views=decision.recommended_views
             )
         except Exception as e:
-            logger.warning(f"[Engine] Execution error: {e}. Triggering auto-correction.")
+            logger.warning(f"[Engine] DuckDB Compiler error: {e}. Initiating Phase 4 Auto-Correction.")
             
             # Phase 4: Error Feedback Loop
             sql, _ = await self.nl2sql.correct_sql(
@@ -261,6 +310,7 @@ Deliver a structured decision based on the 'Best Path' for engineering efficienc
                 semantic_views=active_views
             )
 
+            # Second attempt
             result = await self.compute.execute_read_only(
                 tenant_id=tenant_id,
                 dataset_ids=decision.required_datasets,
