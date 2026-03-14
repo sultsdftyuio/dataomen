@@ -5,10 +5,10 @@ import {
   MessageSquare, ChevronRight, PlayCircle
 } from 'lucide-react';
 import { SeoLinkSilo } from '@/components/landing/seo-link-silo';
-// Assuming you have a standard Navbar and Footer component. 
-// If not, you can replace these with your actual navigation components.
-import Navbar from '@/components/landing/navbar';
-import Footer from '@/components/landing/footer';
+
+// FIXED: Using named imports to match your existing component definitions
+import { Navbar } from '@/components/landing/navbar';
+import { Footer } from '@/components/landing/footer';
 
 export default function LandingPage() {
   return (
@@ -66,7 +66,6 @@ export default function LandingPage() {
               Trusted by Data Teams & Built On Modern Tech
             </p>
             <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 opacity-50 grayscale">
-              {/* Replace with actual logos or keep as text for now */}
               <div className="text-xl font-bold font-mono">PostgreSQL</div>
               <div className="text-xl font-bold font-mono">Snowflake</div>
               <div className="text-xl font-bold font-mono">DuckDB</div>
@@ -89,9 +88,7 @@ export default function LandingPage() {
               <p className="text-lg text-neutral-400">Watch AI turn a simple question into a production-ready dashboard.</p>
             </div>
 
-            {/* Simulated UI Window */}
             <div className="rounded-2xl border border-white/10 bg-neutral-900 overflow-hidden shadow-2xl">
-              {/* Mac-style Window header */}
               <div className="h-12 border-b border-white/10 bg-black/50 flex items-center px-4">
                 <div className="flex gap-2">
                   <div className="w-3 h-3 rounded-full bg-red-500/80" />
@@ -102,7 +99,6 @@ export default function LandingPage() {
               </div>
               
               <div className="p-6 md:p-10 grid md:grid-cols-2 gap-8 items-start">
-                {/* Left: Chat interface */}
                 <div className="space-y-6">
                   <div className="flex items-start gap-4">
                     <div className="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center shrink-0">
@@ -137,11 +133,9 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                {/* Right: Output Chart */}
                 <div className="bg-white/5 border border-white/10 rounded-xl p-6 h-full flex flex-col justify-end min-h-[300px]">
                   <h4 className="text-sm font-semibold text-white mb-6">Revenue by Region (Last 30 Days)</h4>
                   <div className="flex items-end justify-between gap-2 h-48 mt-auto">
-                    {/* Fake Chart Bars */}
                     {[80, 45, 100, 60, 30].map((height, i) => (
                       <div key={i} className="w-full flex flex-col items-center gap-2 group">
                         <div 
@@ -164,7 +158,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 4. HOW IT WORKS: 3 Simple Steps */}
+        {/* 4. HOW IT WORKS */}
         <section className="py-24 bg-black">
           <div className="container px-4 max-w-6xl mx-auto">
             <div className="text-center mb-16">
@@ -193,7 +187,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 5. PRICING: The 2 Tiers */}
+        {/* 5. PRICING */}
         <section className="py-24 border-y border-white/5">
           <div className="container px-4 max-w-5xl mx-auto">
             <div className="text-center mb-16">
@@ -202,8 +196,6 @@ export default function LandingPage() {
             </div>
 
             <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-              
-              {/* Free Tier */}
               <div className="p-8 rounded-3xl border border-white/10 bg-neutral-900/50 flex flex-col">
                 <h3 className="text-2xl font-bold text-white mb-2">Free</h3>
                 <p className="text-neutral-400 mb-6 text-sm">Perfect for individuals and small files.</p>
@@ -215,14 +207,12 @@ export default function LandingPage() {
                   <li className="flex items-center text-neutral-300"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-500/50" /> Up to 10,000 rows per query</li>
                   <li className="flex items-center text-neutral-300"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-500/50" /> CSV & JSON File Uploads</li>
                   <li className="flex items-center text-neutral-300"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-500/50" /> Basic Text-to-SQL Engine</li>
-                  <li className="flex items-center text-neutral-300"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-500/50" /> Community Support</li>
                 </ul>
                 <Link href="/register" className="w-full py-4 rounded-xl border border-white/20 text-center font-bold text-white hover:bg-white/5 transition-colors">
                   Start for Free
                 </Link>
               </div>
 
-              {/* Pro Tier (Highlight) */}
               <div className="p-8 rounded-3xl border border-blue-500 shadow-[0_0_40px_rgba(59,130,246,0.15)] bg-gradient-to-b from-blue-900/20 to-neutral-900 relative flex flex-col">
                 <div className="absolute top-0 right-8 -translate-y-1/2 px-3 py-1 bg-blue-500 text-white text-xs font-bold rounded-full uppercase tracking-wider">
                   Most Popular
@@ -237,28 +227,22 @@ export default function LandingPage() {
                   <li className="flex items-center text-white"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-400" /> Unlimited query processing</li>
                   <li className="flex items-center text-white"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-400" /> Live PostgreSQL & Snowflake Sync</li>
                   <li className="flex items-center text-white"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-400" /> Contextual RAG Schema Routing</li>
-                  <li className="flex items-center text-white"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-400" /> Export to CSV & Python</li>
-                  <li className="flex items-center text-white"><CheckCircle2 className="w-5 h-5 mr-3 text-blue-400" /> Priority Email Support</li>
                 </ul>
                 <Link href="/register?plan=pro" className="w-full py-4 rounded-xl bg-blue-600 text-center font-bold text-white hover:bg-blue-500 transition-colors shadow-lg">
                   Upgrade to Pro
                 </Link>
               </div>
-
             </div>
           </div>
         </section>
 
-        {/* 6. FINAL CTA: Convert them now */}
+        {/* 6. FINAL CTA */}
         <section className="py-32 relative overflow-hidden">
           <div className="absolute inset-0 bg-blue-600/10" />
           <div className="container relative z-10 px-4 max-w-4xl mx-auto text-center">
             <h2 className="text-4xl md:text-6xl font-black text-white mb-6 tracking-tight">
               Stop waiting for the data team.
             </h2>
-            <p className="text-xl text-blue-200 mb-10 max-w-2xl mx-auto">
-              Join the future of analytics. Generate SQL, visualize trends, and find answers to your business questions in milliseconds.
-            </p>
             <Link 
               href="/register" 
               className="inline-flex h-14 items-center justify-center rounded-lg bg-white px-10 text-lg font-bold text-black transition-all hover:bg-neutral-200 hover:scale-105"
@@ -269,9 +253,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 7. PROGRAMMATIC SEO SILO (Automated Internal Linking) */}
         <SeoLinkSilo />
-
       </main>
 
       <Footer />
