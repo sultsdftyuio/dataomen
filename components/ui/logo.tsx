@@ -7,39 +7,63 @@ interface LogoProps extends React.SVGProps<SVGSVGElement> {
 }
 
 /**
- * Data Omen "Prism" Logo
- * Represents: Structural integrity, Columnar storage, and Multi-tenant isolation.
- * Style: The Geometric Prism (Navy Infrastructure Series)
+ * ARCLIS Brand Component
+ * Rebrand: High-performance 6-letter technical identity.
+ * Concept: The "Arc & Axis" - representing structural integrity, 
+ * multi-tenant isolation, and high-velocity compute.
  */
 export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
   return (
     <div className={cn("flex items-center gap-3 select-none", className)}>
-      {/* Icon: The Prism */}
+      {/* Icon: The Arc & Axis */}
       <div className="relative flex-shrink-0">
         <svg
           viewBox="0 0 24 24"
           fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="w-8 h-8 text-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.3)]"
+          xmlns="http://www.w3.org/2000/svg"
+          className="w-9 h-9 text-blue-500 drop-shadow-[0_0_15px_rgba(59,130,246,0.35)]"
           {...props}
         >
-          {/* Hexagonal Outer Frame */}
-          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+          {/* Background Structural Axis */}
+          <path 
+            d="M12 3V21M3 12H21" 
+            stroke="currentColor" 
+            strokeWidth="0.5" 
+            className="opacity-20"
+          />
           
-          {/* Internal Geometric Facets */}
-          <polyline points="3.27 6.96 12 12.01 20.73 6.96" className="opacity-80" />
-          <line x1="12" y1="22.08" x2="12" y2="12" className="opacity-80" />
+          {/* The Arclis Primary Arc (Represents the "Oracle" view) */}
+          <path 
+            d="M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12" 
+            stroke="currentColor" 
+            strokeWidth="2.5" 
+            strokeLinecap="round" 
+          />
+          
+          {/* The Computing Core (The Prism Facet) */}
+          <path 
+            d="M12 12L17 17M12 12L7 17M12 12V20" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round"
+          />
+
+          {/* Precision Node */}
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
         </svg>
       </div>
 
-      {/* Wordmark: DATA OMEN */}
+      {/* Wordmark: ARCLIS */}
       {!iconOnly && (
-        <span className="text-xl font-black tracking-tight uppercase text-slate-100">
-          Data<span className="text-blue-500">Omen</span>
-        </span>
+        <div className="flex flex-col leading-none">
+          <span className="text-2xl font-extrabold tracking-[-0.03em] text-slate-100 uppercase">
+            Arclis<span className="text-blue-500">.</span>
+          </span>
+          <span className="text-[10px] font-black tracking-[0.35em] text-slate-500 uppercase mt-1">
+            Technologies
+          </span>
+        </div>
       )}
     </div>
   );

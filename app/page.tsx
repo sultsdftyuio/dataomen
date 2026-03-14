@@ -34,7 +34,7 @@ const C = {
 /* ─── Global Styles & Animations ─────────────────────────────────────────── */
 const Styles = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
@@ -105,7 +105,9 @@ function Navbar() {
           <div style={{ width: 36, height: 36, borderRadius: 10, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Database size={18} color="#fff" />
           </div>
-          <span className="pfd" style={{ fontSize: 24, fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>Data<span style={{ color: C.blue }}>Omen</span></span>
+          <span style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 24, fontWeight: 800, color: C.navy, letterSpacing: "-0.03em", textTransform: "uppercase" }}>
+            Arclis<span style={{ color: C.blue }}>.</span>
+          </span>
         </div>
         <div className="hide-mobile" style={{ display: "flex", gap: 36 }}>
           {["Platform", "Agents", "Integrations", "Security"].map(n => (
@@ -251,7 +253,7 @@ function DeepDiveFeatures() {
               Stop waiting on data tickets. <br/>Ask it yourself.
             </h2>
             <p style={{ color: C.muted, fontSize: 18, lineHeight: 1.6, marginBottom: 32 }}>
-              DataOmen's semantic routing engine understands your business context. It translates plain English into perfectly optimized analytical queries in milliseconds, rendering presentation-ready charts instantly.
+              Arclis's semantic routing engine understands your business context. It translates plain English into perfectly optimized analytical queries in milliseconds, rendering presentation-ready charts instantly.
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 16 }}>
               {["No SQL or Python required", "Understands your unique schema", "Exports directly to PDF/CSV"].map((item, i) => (
@@ -289,7 +291,7 @@ function DeepDiveFeatures() {
               Know before your customers do.
             </h2>
             <p style={{ color: C.muted, fontSize: 18, lineHeight: 1.6, marginBottom: 32 }}>
-              Don't just stare at dashboards. Our statistical engine continuously watches your connected streams. If conversion rates drop or API errors spike, DataOmen alerts you immediately with the root cause.
+              Don't just stare at dashboards. Our statistical engine continuously watches your connected streams. If conversion rates drop or API errors spike, Arclis alerts you immediately with the root cause.
             </p>
             <a href="#agents" className="btn-ghost" style={{ padding: "14px 28px" }}>Explore Monitoring Agents</a>
           </div>
@@ -387,7 +389,7 @@ function AIAgents() {
             Don't just query your data.<br/>Hire an AI team to watch it.
           </h2>
           <p style={{ color: C.faint, fontSize: 18, maxWidth: 650, margin: "0 auto", lineHeight: 1.6 }}>
-            Unlike standard dashboards that require you to actively look for problems, DataOmen utilizes a multi-agent orchestration pattern to proactively detect, diagnose, and predict business outcomes.
+            Unlike standard dashboards that require you to actively look for problems, Arclis utilizes a multi-agent orchestration pattern to proactively detect, diagnose, and predict business outcomes.
           </p>
         </div>
 
@@ -467,7 +469,7 @@ function IntegrationsAndSecurity() {
              <Shield size={48} color={C.blueLight} style={{ marginBottom: 24 }} />
              <h3 className="pfd" style={{ fontSize: 32, marginBottom: 16 }}>Bank-Grade Security</h3>
              <p style={{ color: C.faint, fontSize: 16, lineHeight: 1.6, maxWidth: 400 }}>
-               Your data is isolated and encrypted. DataOmen connects via read-only credentials, and our AI models only process metadata—never your raw sensitive customer data.
+               Your data is isolated and encrypted. Arclis connects via read-only credentials, and our AI models only process metadata—never your raw sensitive customer data.
              </p>
              <div style={{ position: "absolute", right: -20, bottom: -20, opacity: 0.1 }}>
                <Shield size={200} />
@@ -492,10 +494,10 @@ function IntegrationsAndSecurity() {
 function FAQ() {
   const [open, setOpen] = useState<number | null>(0);
   const items = [
-    { q: "What if my database schema is messy or undocumented?", a: "DataOmen's semantic layer is designed for the real world. During setup, it scans your schema and allows you to add plain-English descriptions to tables or columns. It learns your business logic quickly." },
+    { q: "What if my database schema is messy or undocumented?", a: "Arclis's semantic layer is designed for the real world. During setup, it scans your schema and allows you to add plain-English descriptions to tables or columns. It learns your business logic quickly." },
     { q: "Do you train your AI on my proprietary data?", a: "Absolutely not. We use enterprise-grade LLM endpoints with zero-data-retention policies. Furthermore, only structural metadata (like column names) is sent to the LLM to generate the SQL query. Your actual row data stays in your infrastructure." },
-    { q: "How long does setup really take?", a: "Usually less than 5 minutes. You securely authenticate your data sources (like Stripe or a read-only Postgres replica), DataOmen maps the relationships, and you can start asking questions immediately." },
-    { q: "How does the pricing scale?", a: "Pricing is based on compute (queries run) rather than per-seat licenses. This means you can invite your entire organization to use DataOmen without paying arbitrary license fees per user." }
+    { q: "How long does setup really take?", a: "Usually less than 5 minutes. You securely authenticate your data sources (like Stripe or a read-only Postgres replica), Arclis maps the relationships, and you can start asking questions immediately." },
+    { q: "How does the pricing scale?", a: "Pricing is based on compute (queries run) rather than per-seat licenses. This means you can invite your entire organization to use Arclis without paying arbitrary license fees per user." }
   ];
 
   return (
@@ -570,14 +572,16 @@ export default function Page() {
           <div style={{ width: 24, height: 24, borderRadius: 6, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Database size={12} color="#fff" />
           </div>
-          <span className="pfd" style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Data<span style={{ color: C.blue }}>Omen</span></span>
+          <span style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 18, fontWeight: 800, color: C.navy, letterSpacing: "-0.03em", textTransform: "uppercase" }}>
+            Arclis<span style={{ color: C.blue }}>.</span>
+          </span>
         </div>
         <div style={{ marginBottom: 40, display: "flex", justifyContent: "center", gap: 32, flexWrap: "wrap" }}>
           {["Pricing", "Documentation", "Security", "Terms of Service", "Privacy Policy"].map(l => (
             <a key={l} href="#" style={{ color: C.muted, textDecoration: "none", fontSize: 14, fontWeight: 600 }}>{l}</a>
           ))}
         </div>
-        <p style={{ fontSize: 13, color: C.faint }}>© 2026 DataOmen Inc. | SOC2 Type II Certified</p>
+        <p style={{ fontSize: 13, color: C.faint }}>© 2026 Arclis Technologies Inc. | SOC2 Type II Certified</p>
       </footer>
     </main>
   );
