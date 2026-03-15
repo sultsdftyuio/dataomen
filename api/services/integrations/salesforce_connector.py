@@ -4,7 +4,9 @@ import os
 import csv
 import logging
 import asyncio
+import contextlib
 import httpx
+from datetime import datetime, timezone
 from io import StringIO
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
@@ -14,63 +16,107 @@ logger = logging.getLogger(__name__)
 
 class SalesforceConnector(BaseIntegration):
     """
-    Phase 4: Salesforce Integration (Custom CRM Schemas)
-    Handles OAuth 2.0 with refresh tokens, dynamic schema introspection for custom objects (__c), 
-    and extreme-scale ingestion via Salesforce Bulk API 2.0.
+    Phase 4: Salesforce Zero-ETL Connector.
+    Handles OAuth 2.0, dynamic schema introspection for custom objects (__c), 
+    and extreme-scale ingestion via Salesforce Bulk API 2.0 streamed CSVs.
     """
 
-    def __init__(self, config: IntegrationConfig):
+    # Instructs the downstream DataSanitizer to cryptographically hash these fields
+    PII_COLUMNS = ["Email", "Phone", "MobilePhone", "Name", "FirstName", "LastName"]
+
+    def __init__(self, tenant_id: str, credentials: Dict[str, str] = None):
+        config = IntegrationConfig(
+            tenant_id=tenant_id, 
+            integration_name="salesforce", 
+            credentials=credentials or {}
+        )
         super().__init__(config)
+        
         self.client_id = os.environ.get("SALESFORCE_CLIENT_ID")
         self.client_secret = os.environ.get("SALESFORCE_CLIENT_SECRET")
         self.api_version = "v60.0" # Pinning API version for stable Bulk 2.0 behavior
         
+        self.instance_url = self.config.credentials.get("instance_url", "https://login.salesforce.com")
+        self.access_token = self.config.credentials.get("access_token", "")
+        
         if not self.client_id or not self.client_secret:
             logger.warning("Salesforce Connected App credentials missing from environment.")
 
-    def _initialize_client(self) -> httpx.AsyncClient:
+    @contextlib.asynccontextmanager
+    async def _get_client(self) -> AsyncGenerator[httpx.AsyncClient, None]:
         """
-        Initializes an async HTTP client configured for the tenant's specific Salesforce instance.
+        Context manager for yielding a properly configured Salesforce API client.
         """
-        instance_url = self.config.credentials.get("instance_url", "https://login.salesforce.com")
-        access_token = self.config.credentials.get("access_token")
-        
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
         
-        if access_token:
-            headers["Authorization"] = f"Bearer {access_token}"
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
             
-        return httpx.AsyncClient(
-            base_url=f"{instance_url}/services/data/{self.api_version}",
+        async with httpx.AsyncClient(
+            base_url=f"{self.instance_url}/services/data/{self.api_version}",
             headers=headers,
-            timeout=httpx.Timeout(45.0) 
-        )
+            timeout=httpx.Timeout(60.0) 
+        ) as client:
+            yield client
 
-    async def test_connection(self) -> bool:
+    async def fetch_schema(self) -> Dict[str, Any]:
         """
-        Phase 1.1 / 4.1: Fast validation to ensure tokens haven't been revoked.
+        Phase 4.2: Dynamic Schema Mapping for Contextual RAG.
+        Introspects core objects and custom objects, translating Salesforce types 
+        to strict DuckDB types to guide Parquet casting.
         """
-        if not self.config.credentials.get("access_token"):
-            return False
-            
-        try:
-            # Ping the limits endpoint—it's fast, lightweight, and confirms token validity
-            response = await self.client.get("/limits")
-            response.raise_for_status()
-            return True
-        except httpx.HTTPError as e:
-            logger.error(f"Salesforce connection test failed for {self.tenant_id}: {str(e)}")
-            return False
+        # Default objects to pull. In a full implementation, this could dynamically
+        # query all objects ending in __c as well.
+        objects_to_describe = ["Account", "Contact", "Opportunity", "Lead"]
+        
+        # Salesforce type to DuckDB type mapping
+        type_mapping = {
+            "string": "VARCHAR",
+            "email": "VARCHAR",
+            "phone": "VARCHAR",
+            "textarea": "VARCHAR",
+            "picklist": "VARCHAR",
+            "id": "VARCHAR",
+            "reference": "VARCHAR",
+            "double": "DOUBLE",
+            "currency": "DOUBLE",
+            "percent": "DOUBLE",
+            "int": "BIGINT",
+            "boolean": "BOOLEAN",
+            "datetime": "VARCHAR", # Handled as ISO strings before DuckDB casting
+            "date": "VARCHAR"
+        }
+        
+        schema_graph = {}
+        
+        async with self._get_client() as client:
+            for obj in objects_to_describe:
+                response = await client.get(f"/sobjects/{obj}/describe")
+                if response.status_code == 200:
+                    fields = response.json().get("fields", [])
+                    
+                    obj_schema = {}
+                    for f in fields:
+                        sf_type = f["type"].lower()
+                        # Ignore binary or complex embedded types
+                        if sf_type not in ["base64", "complexvalue", "address"]:
+                            duckdb_type = type_mapping.get(sf_type, "VARCHAR")
+                            obj_schema[f["name"]] = duckdb_type
+                            
+                    schema_graph[obj.lower()] = obj_schema
+                else:
+                    logger.warning(f"[{self.config.tenant_id}] Failed to introspect Salesforce object: {obj}")
+                    
+        return schema_graph
 
     def get_oauth_url(self, redirect_uri: str) -> Optional[str]:
         """
-        Phase 4.1: Generate OAuth consent URL for a Salesforce Connected App.
+        Generate OAuth consent URL for a Salesforce Connected App.
         Requests offline access to ensure we get a refresh_token for background syncs.
         """
-        # Can be overriden to test.salesforce.com for sandbox environments
         login_domain = self.config.credentials.get("login_domain", "https://login.salesforce.com")
         
         return (
@@ -81,8 +127,7 @@ class SalesforceConnector(BaseIntegration):
 
     async def exchange_oauth_token(self, code: str) -> Dict[str, Any]:
         """
-        Phase 4.1: Exchange auth code. Yields access_token, refresh_token, and the instance_url 
-        (which dictates where all future API calls must be routed).
+        Exchange auth code. Yields access_token, refresh_token, and the instance_url.
         """
         login_domain = self.config.credentials.get("login_domain", "https://login.salesforce.com")
         token_url = f"{login_domain}/services/oauth2/token"
@@ -96,7 +141,6 @@ class SalesforceConnector(BaseIntegration):
         }
         
         async with httpx.AsyncClient() as client:
-            # Salesforce requires data to be sent as form-urlencoded, not JSON
             response = await client.post(token_url, data=payload)
             response.raise_for_status()
             data = response.json()
@@ -108,152 +152,128 @@ class SalesforceConnector(BaseIntegration):
                 "id_url": data.get("id")
             }
 
-    async def fetch_schema(self) -> Dict[str, Any]:
-        """
-        Phase 4.2: Dynamic Schema Mapping for Contextual RAG.
-        Salesforce schemas are highly fluid. We dynamically introspect core objects 
-        and any custom `__c` objects, pulling field types to guide strict Parquet casting.
-        """
-        objects_to_describe = ["Account", "Contact", "Opportunity", "Lead"]
-        
-        # We could also do a global describe to find all custom objects ending in __c
-        # For performance in this template, we stick to the core + requested streams.
-        
-        schema_graph = {}
-        for obj in objects_to_describe:
-            response = await self.client.get(f"/sobjects/{obj}/describe")
-            if response.status_code == 200:
-                fields = response.json().get("fields", [])
-                
-                # Filter down to essential analytical metadata to prevent LLM token bloat
-                schema_graph[obj.lower()] = [
-                    {"name": f["name"].lower(), "type": f["type"], "custom": f["custom"]}
-                    for f in fields if f["type"] not in ["base64", "complexvalue"]
-                ]
-                
-        return schema_graph
-
     async def sync_historical(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Phase 4.3: Bulk API 2.0 Ingestion.
-        Salesforce standard REST APIs fail on large datasets. We use Bulk API v2 to execute 
-        a SOQL query asynchronously, which Salesforce compiles into a highly compressed CSV.
+        Executes a SOQL query asynchronously, which Salesforce compiles into a highly 
+        compressed CSV, then streams and yields it in vectorized-friendly JSON batches.
         """
         # Ensure safe object naming (protecting against SOQL injection)
         safe_obj = "".join(c for c in stream_name if c.isalnum() or c == '_')
         
+        # Format start_timestamp to strict SOQL DateTime format
+        soql_time = "2000-01-01T00:00:00Z"
+        if start_timestamp:
+            try:
+                dt = datetime.fromisoformat(start_timestamp.replace('Z', '+00:00'))
+                soql_time = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                pass
+        
         # 1. Create a Bulk Query Job
-        soql_query = f"SELECT FIELDS(ALL) FROM {safe_obj} WHERE SystemModstamp >= {start_timestamp} LIMIT 200"
+        soql_query = f"SELECT FIELDS(ALL) FROM {safe_obj} WHERE SystemModstamp >= {soql_time} LIMIT 200"
         job_payload = {
             "operation": "queryAll",
             "query": soql_query
         }
         
-        job_resp = await self.client.post("/jobs/query", json=job_payload)
-        job_resp.raise_for_status()
-        job_id = job_resp.json().get("id")
-        
-        logger.info(f"[{self.tenant_id}] Initiated Salesforce Bulk Query Job: {job_id}")
-
-        # 2. Poll for Job Completion
-        while True:
-            status_resp = await self.client.get(f"/jobs/query/{job_id}")
-            status_resp.raise_for_status()
-            state = status_resp.json().get("state")
+        async with self._get_client() as client:
+            job_resp = await client.post("/jobs/query", json=job_payload)
+            job_resp.raise_for_status()
+            job_id = job_resp.json().get("id")
             
-            if state == "JobComplete":
-                break
-            elif state in ["Failed", "Aborted"]:
-                error = status_resp.json().get("errorMessage", "Unknown Bulk API error")
-                raise RuntimeError(f"Salesforce Bulk Job {job_id} failed: {error}")
-                
-            await asyncio.sleep(5)
+            logger.info(f"[{self.config.tenant_id}] Initiated Salesforce Bulk Query Job: {job_id} for {safe_obj}")
 
-        # 3. Stream and Yield CSV Results directly into memory chunks
-        # Salesforce Bulk API 2.0 returns raw CSV data. We stream it, parse it via csv.DictReader, 
-        # and yield it in vectorized-friendly batches for our pipeline.
-        chunk_size = 10000
-        batch = []
-        
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as stream_client:
-            stream_url = f"{self.client.base_url}/jobs/query/{job_id}/results"
-            
-            async with stream_client.stream("GET", stream_url, headers=self.client.headers) as response:
-                response.raise_for_status()
+            # 2. Poll for Job Completion
+            while True:
+                status_resp = await client.get(f"/jobs/query/{job_id}")
+                status_resp.raise_for_status()
+                state = status_resp.json().get("state")
                 
-                # Read chunks of lines manually to prevent pulling gigabytes into RAM at once
-                buffer = ""
-                async for chunk in response.aiter_text():
-                    buffer += chunk
-                    if '\n' in buffer:
-                        lines = buffer.split('\n')
-                        # Keep the incomplete last line in the buffer
-                        buffer = lines.pop()
-                        
-                        # Initialize DictReader on the first line (headers)
-                        if not hasattr(self, '_csv_headers'):
-                            self._csv_headers = lines.pop(0)
-                            
-                        # Parse the lines
-                        if lines:
-                            csv_data = self._csv_headers + '\n' + '\n'.join(lines)
-                            reader = csv.DictReader(StringIO(csv_data))
-                            batch.extend([row for row in reader])
-                            
-                    if len(batch) >= chunk_size:
-                        yield batch
-                        batch = []
-                        
-                # Catch the trailing buffer
-                if buffer:
-                    csv_data = self._csv_headers + '\n' + buffer
-                    reader = csv.DictReader(StringIO(csv_data))
-                    batch.extend([row for row in reader])
+                if state == "JobComplete":
+                    break
+                elif state in ["Failed", "Aborted"]:
+                    error = status_resp.json().get("errorMessage", "Unknown Bulk API error")
+                    raise RuntimeError(f"Salesforce Bulk Job {job_id} failed: {error}")
                     
-                if batch:
-                    yield batch
+                await asyncio.sleep(5)
+
+            # 3. Stream and Yield CSV Results directly into memory chunks
+            chunk_size = 10000
+            batch = []
+            
+            stream_url = f"/jobs/query/{job_id}/results"
+            logger.info(f"[{self.config.tenant_id}] Streaming Salesforce CSV results...")
+
+            # Use a longer timeout for streaming massive payloads
+            async with httpx.AsyncClient(
+                base_url=client.base_url, 
+                headers=client.headers, 
+                timeout=httpx.Timeout(120.0)
+            ) as stream_client:
+                
+                async with stream_client.stream("GET", stream_url) as response:
+                    response.raise_for_status()
                     
-        # Cleanup instance variable
-        if hasattr(self, '_csv_headers'):
-            del self._csv_headers
+                    headers = []
+                    
+                    # Read the response line-by-line safely
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                            
+                        # If headers haven't been captured, parse the first line
+                        if not headers:
+                            # Use csv.reader to handle quoted commas correctly
+                            headers = next(csv.reader(StringIO(line)))
+                            continue
+                            
+                        # Parse data row and map to headers
+                        row_data = next(csv.reader(StringIO(line)))
+                        
+                        # Zip into a dictionary to match JSON normalizer expectations
+                        row_dict = dict(zip(headers, row_data))
+                        batch.append(row_dict)
+                        
+                        if len(batch) >= chunk_size:
+                            yield batch
+                            batch = []
+                            
+            if batch:
+                yield batch
+                
+            logger.info(f"[{self.config.tenant_id}] Salesforce Bulk Job {job_id} completely streamed and yielded.")
 
     async def verify_webhook_signature(self, payload: str, signature: str) -> bool:
         """
         Salesforce pushes data via Outbound Messages (SOAP) or Change Data Capture (CDC) events.
-        CDC via Pub/Sub API is preferred but requires a gRPC streaming connection, not standard webhooks.
         If using standard Apex callouts as Webhooks, implement custom HMAC logic here.
         """
-        # Implement logic depending on how the tenant's Salesforce triggers are built
         return True
-
-    async def handle_webhook(self, event_type: str, payload: Dict[str, Any]) -> None:
-        """Process streaming changes (e.g. Opportunity Stage changes for real-time win-rates)."""
-        pass
 
     def get_semantic_views(self) -> Dict[str, str]:
         """
-        Phase 1.1 / Analytical Efficiency:
-        Baseline SQL views to instantly deliver value to GTM teams on top of the Parquet layers.
+        Pre-computes optimized DuckDB SQL for standard Salesforce pipeline metrics.
         """
         return {
             "vw_salesforce_pipeline_velocity": """
                 SELECT 
-                    ownerid,
-                    count(id) as open_opportunities,
-                    sum(amount) as pipeline_value,
-                    avg(probability) as avg_win_probability,
+                    OwnerId,
+                    count(Id) as open_opportunities,
+                    sum(CAST(Amount AS DOUBLE)) as pipeline_value,
+                    avg(CAST(Probability AS DOUBLE)) as avg_win_probability,
                     -- Standardized linear algebra metric for expected value
-                    sum(amount * (probability / 100.0)) as expected_revenue
+                    sum(CAST(Amount AS DOUBLE) * (CAST(Probability AS DOUBLE) / 100.0)) as expected_revenue
                 FROM salesforce_opportunity 
-                WHERE isclosed = 'false'
-                GROUP BY ownerid
+                WHERE IsClosed = 'false'
+                GROUP BY OwnerId
             """,
             "vw_salesforce_win_rate": """
                 SELECT 
-                    date_trunc('month', closedate) as close_month,
-                    count(CASE WHEN iswon = 'true' THEN 1 END) * 100.0 / nullif(count(*), 0) as win_rate_percentage
+                    date_trunc('month', CAST(CloseDate AS TIMESTAMP)) as close_month,
+                    count(CASE WHEN IsWon = 'true' THEN 1 END) * 100.0 / nullif(count(*), 0) as win_rate_percentage
                 FROM salesforce_opportunity 
-                WHERE isclosed = 'true'
+                WHERE IsClosed = 'true'
                 GROUP BY close_month
                 ORDER BY close_month DESC
             """

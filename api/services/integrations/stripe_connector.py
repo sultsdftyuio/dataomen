@@ -5,6 +5,7 @@ import time
 import hmac
 import hashlib
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Any, List, AsyncGenerator
 import aiohttp
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
@@ -16,14 +17,23 @@ logger = logging.getLogger(__name__)
 class StripeRateLimitError(Exception):
     pass
 
-class StripeIntegration(BaseIntegration):
+class StripeConnector(BaseIntegration):
     """
-    Stripe Zero-ETL Connector.
+    Stripe Zero-ETL Connector (Phase 3).
     Handles strict OAuth consent, async pagination for historical data, 
-    webhook signature verification, and pre-built semantic analytical views.
+    webhook signature verification, and dynamic schema enforcement.
     """
+    
+    # Instructs the downstream DataSanitizer to cryptographically hash these fields
+    PII_COLUMNS = ["email", "phone", "name", "customer_email", "receipt_email"]
 
-    def __init__(self, config: IntegrationConfig):
+    def __init__(self, tenant_id: str, credentials: Dict[str, str] = None):
+        # Build a temporary config object to satisfy BaseIntegration
+        config = IntegrationConfig(
+            tenant_id=tenant_id, 
+            integration_name="stripe", 
+            credentials=credentials or {}
+        )
         super().__init__(config)
         self.api_base = "https://api.stripe.com/v1"
         self.client_token = self._initialize_client()
@@ -37,6 +47,60 @@ class StripeIntegration(BaseIntegration):
         if not token:
             logger.warning(f"[{self.config.tenant_id}] Stripe integration initialized without a valid token.")
         return token
+
+    async def fetch_schema(self) -> Dict[str, Any]:
+        """
+        The Schema Contract for the SyncEngine.
+        Defines the expected nested JSON structure for core Stripe objects so the DuckDB 
+        Validator can enforce strict Parquet typing.
+        """
+        return {
+            "charges": {
+                "id": "VARCHAR",
+                "object": "VARCHAR",
+                "amount": "BIGINT",
+                "amount_captured": "BIGINT",
+                "amount_refunded": "BIGINT",
+                "balance_transaction": "VARCHAR",
+                "calculated_statement_descriptor": "VARCHAR",
+                "captured": "BOOLEAN",
+                "created": "BIGINT",
+                "currency": "VARCHAR",
+                "customer": "VARCHAR",
+                "description": "VARCHAR",
+                "invoice": "VARCHAR",
+                "paid": "BOOLEAN",
+                "payment_method": "VARCHAR",
+                "receipt_email": "VARCHAR",
+                "status": "VARCHAR"
+            },
+            "subscriptions": {
+                "id": "VARCHAR",
+                "object": "VARCHAR",
+                "cancel_at_period_end": "BOOLEAN",
+                "canceled_at": "BIGINT",
+                "collection_method": "VARCHAR",
+                "created": "BIGINT",
+                "current_period_end": "BIGINT",
+                "current_period_start": "BIGINT",
+                "customer": "VARCHAR",
+                "status": "VARCHAR",
+                "plan_amount": "BIGINT", # Assumes nested 'plan.amount' was flattened by normalizer
+                "plan_interval": "VARCHAR"
+            },
+            "customers": {
+                "id": "VARCHAR",
+                "object": "VARCHAR",
+                "balance": "BIGINT",
+                "created": "BIGINT",
+                "currency": "VARCHAR",
+                "default_source": "VARCHAR",
+                "delinquent": "BOOLEAN",
+                "email": "VARCHAR",
+                "name": "VARCHAR",
+                "phone": "VARCHAR"
+            }
+        }
 
     def get_oauth_url(self, redirect_uri: str) -> str:
         """
@@ -76,14 +140,14 @@ class StripeIntegration(BaseIntegration):
             resp.raise_for_status()
             return await resp.json()
 
-    async def pull_historical_data(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
+    async def sync_historical(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         The Pull Pipeline (Polling).
         Yields raw JSON batches to the Polars Normalizer using async Stripe pagination.
         Handles rate limiting gracefully via Tenacity exponential backoff.
         
         :param stream_name: The Stripe API endpoint (e.g., 'charges', 'invoices', 'subscriptions')
-        :param start_timestamp: ISO 8601 string to restrict historical pulls
+        :param start_timestamp: ISO 8601 string translated to Stripe's UNIX created[gte] filter
         """
         has_more = True
         starting_after = None
@@ -95,12 +159,24 @@ class StripeIntegration(BaseIntegration):
             "Stripe-Version": "2023-10-16"
         }
 
-        # Query parameters can include created[gte]=UNIX_TIMESTAMP to limit historical scope
+        # Convert ISO start_timestamp to UNIX for Stripe API filtering
+        unix_start = 0
+        if start_timestamp:
+            try:
+                dt = datetime.fromisoformat(start_timestamp.replace('Z', '+00:00'))
+                unix_start = int(dt.timestamp())
+            except ValueError:
+                logger.warning(f"[{self.config.tenant_id}] Invalid start_timestamp format. Defaulting to pull all.")
+
+        base_query = f"?limit={limit}"
+        if unix_start > 0:
+            base_query += f"&created[gte]={unix_start}"
+
         logger.info(f"[{self.config.tenant_id}] Starting Stripe ingestion for stream: {stream_name}")
 
         async with aiohttp.ClientSession(headers=headers) as session:
             while has_more:
-                url = f"{self.api_base}/{stream_name}?limit={limit}"
+                url = f"{self.api_base}/{stream_name}{base_query}"
                 if starting_after:
                     url += f"&starting_after={starting_after}"
                 
@@ -117,7 +193,7 @@ class StripeIntegration(BaseIntegration):
                 total_fetched += len(items)
                 logger.debug(f"[{self.config.tenant_id}] Fetched {len(items)} records (Total: {total_fetched}) from {stream_name}")
 
-                # Yield the batch to be vectorized and saved as Parquet immediately
+                # Yield the batch to the SyncEngine to be vectorized and saved as Parquet immediately
                 yield items
                 
                 has_more = data.get("has_more", False)

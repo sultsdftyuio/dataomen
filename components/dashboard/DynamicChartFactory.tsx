@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { 
   Download, Table2, BarChart3, LineChart as LineChartIcon, 
-  Code2, AlertCircle, AreaChart as AreaChartIcon, Activity, Copy, Check 
+  Code2, AlertCircle, AreaChart as AreaChartIcon, Activity, Copy, Check, BrainCircuit 
 } from "lucide-react";
 import { 
   BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, 
@@ -43,9 +43,10 @@ interface DynamicChartFactoryProps {
 // -----------------------------------------------------------------------------
 // Constants & Styling
 // -----------------------------------------------------------------------------
-const CHART_COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4"];
+const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#06b6d4"];
 const ANOMALY_COLOR = "#ef4444"; 
 const EMA_COLOR = "#94a3b8"; 
+const FORECAST_COLOR = "#a855f7"; // Phase 7: Predictive Purple
 const SIGMA_THRESHOLD = 3.0; 
 
 const renderCustomGradients = () => (
@@ -56,6 +57,10 @@ const renderCustomGradients = () => (
         <stop offset="95%" stopColor={color} stopOpacity={0} />
       </linearGradient>
     ))}
+    <linearGradient id="grad-forecast" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="5%" stopColor={FORECAST_COLOR} stopOpacity={0.4} />
+      <stop offset="95%" stopColor={FORECAST_COLOR} stopOpacity={0} />
+    </linearGradient>
   </defs>
 );
 
@@ -93,7 +98,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     setTimeout(() => setCopied(false), 2000);
   }, [payload.sql_used]);
 
-  // 2. Intelligent Rendering Engine
+  // 2. Intelligent Rendering Engine (Upgraded for Phase 7 ML)
   const resolved = useMemo(() => {
     if (!payload.data?.length) return null;
     const sample = payload.data[0];
@@ -101,22 +106,44 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     
     const hasAnomalies = keys.some(k => /zscore|z_score/i.test(k));
 
-    if (payload.chart_spec?.encoding) {
-      const { encoding, mark } = payload.chart_spec;
-      const typeStr = typeof mark === 'string' ? mark : mark?.type || 'bar';
-      return {
-        type: typeStr === 'area' ? 'area' : typeStr === 'line' ? 'line' : 'bar',
-        x: encoding.x?.field || keys[0],
-        y: encoding.y?.field ? [encoding.y?.field] : keys.filter(k => typeof sample[k] === 'number' && !/zscore|ema/i.test(k)),
-        hasAnomalies
-      };
+    // Determine Axis
+    let x = keys.find(k => /date|time|month|ds/i.test(k)) || keys.find(k => typeof sample[k] === 'string') || keys[0];
+    
+    if (payload.chart_spec?.encoding?.x?.field) {
+        x = payload.chart_spec.encoding.x.field;
     }
 
-    const x = keys.find(k => /date|time|month|ds/i.test(k)) || keys.find(k => typeof sample[k] === 'string') || keys[0];
-    const y = keys.filter(k => k !== x && typeof sample[k] === 'number' && !/zscore|variance|ema/i.test(k));
-    const detectedType = (x.toLowerCase().includes('date') || x.toLowerCase().includes('time')) ? "area" : "bar";
+    // Phase 7: Categorize Y-Axis series for advanced layering
+    const forecastKeys = keys.filter(k => /forecast|predict|trend/i.test(k) && k !== x);
+    const emaKeys = keys.filter(k => /_ema/i.test(k) && k !== x);
+    const yKeys = keys.filter(k => 
+        k !== x && 
+        typeof sample[k] === 'number' && 
+        !/zscore|variance/i.test(k) && 
+        !forecastKeys.includes(k) && 
+        !emaKeys.includes(k)
+    );
 
-    return { type: detectedType, x, y, hasAnomalies };
+    // Override from LLM Chart Spec if provided
+    if (payload.chart_spec?.encoding?.y?.field && !yKeys.includes(payload.chart_spec.encoding.y.field)) {
+        yKeys.push(payload.chart_spec.encoding.y.field);
+    }
+
+    // Determine default chart type based on time-series presence
+    let detectedType = (x.toLowerCase().includes('date') || x.toLowerCase().includes('time')) ? "area" : "bar";
+    if (payload.chart_spec?.mark) {
+      const typeStr = typeof payload.chart_spec.mark === 'string' ? payload.chart_spec.mark : payload.chart_spec.mark.type;
+      detectedType = typeStr === 'area' ? 'area' : typeStr === 'line' ? 'line' : 'bar';
+    }
+
+    return { 
+        type: detectedType, 
+        x, 
+        y: yKeys, 
+        forecast: forecastKeys, 
+        ema: emaKeys, 
+        hasAnomalies 
+    };
   }, [payload.data, payload.chart_spec]);
 
   const formatNum = (v: any) => typeof v === 'number' 
@@ -124,17 +151,20 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     : v;
 
   /**
-   * FIX: Returning an invisible element instead of null to satisfy Recharts TypeScript overloads.
+   * Safe Custom Anomaly Dot Renderer
    */
   const renderAnomalyDot = (props: any) => {
     const { cx, cy, payload: row, dataKey } = props;
     const zKey = Object.keys(row).find(k => k.includes(`${dataKey}_zscore`) || k === 'z_score');
+    
     if (zKey && Math.abs(row[zKey]) > SIGMA_THRESHOLD) {
       return (
-        <circle cx={cx} cy={cy} r={6} fill={ANOMALY_COLOR} stroke="#0B1120" strokeWidth={2} className="animate-pulse" />
+        <g key={`anomaly-${cx}-${cy}`}>
+          <circle cx={cx} cy={cy} r={6} fill={ANOMALY_COLOR} stroke="#0B1120" strokeWidth={2} className="animate-pulse" />
+        </g>
       );
     }
-    return <circle cx={cx} cy={cy} r={0} />; 
+    return <g key={`normal-${cx}-${cy}`} />; 
   };
 
   const keys = payload.data?.length ? Object.keys(payload.data[0]) : [];
@@ -164,13 +194,14 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
       {/* Interactive Toolbar */}
       <div className="flex items-center justify-between px-3 py-2 bg-slate-900/50 border-b border-slate-800">
         <div className="flex gap-1">
-          {resolved && resolved.y.length > 0 && (
+          {resolved && (resolved.y.length > 0 || resolved.forecast.length > 0) && (
             <Button variant="ghost" size="sm" onClick={() => setActiveTab("chart")}
               className={cn("h-8 text-xs gap-2", activeTab === "chart" ? "bg-slate-800 text-emerald-400" : "text-slate-400")}
             >
               {resolved.type === "area" ? <AreaChartIcon size={14} /> : resolved.type === "line" ? <LineChartIcon size={14} /> : <BarChart3 size={14} />}
               Visual
               {resolved.hasAnomalies && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
+              {resolved.forecast.length > 0 && <BrainCircuit size={12} className="text-purple-400 ml-1" />}
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={() => setActiveTab("table")}
@@ -207,6 +238,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                     itemStyle={{ fontSize: '12px' }}
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  
+                  {/* Base Historical Data */}
                   {resolved.y.map((key, i) => (
                     <Area 
                       key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[i % CHART_COLORS.length]} 
@@ -215,9 +248,19 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                       activeDot={{ r: 6, strokeWidth: 0 }}
                     />
                   ))}
+
+                  {/* Phase 7: Predictive Forecast Overlay */}
+                  {resolved.forecast.map((key) => (
+                    <Area 
+                      key={key} type="monotone" dataKey={key} stroke={FORECAST_COLOR} 
+                      fill="url(#grad-forecast)" strokeWidth={2.5} strokeDasharray="5 5"
+                      name={`${key.replace(/_/g, ' ')} (AI Forecast)`}
+                    />
+                  ))}
+
                   {/* Vectorized EMA Overlay */}
-                  {keys.filter(k => k.includes('_ema')).map(k => (
-                    <Area key={k} type="monotone" dataKey={k} stroke={EMA_COLOR} fill="none" strokeDasharray="5 5" strokeWidth={1.5} name={`${k.split('_')[0]} (EMA)`} />
+                  {resolved.ema.map((key) => (
+                    <Area key={key} type="monotone" dataKey={key} stroke={EMA_COLOR} fill="none" strokeDasharray="3 3" strokeWidth={1.5} name={`${key.split('_')[0]} (EMA)`} />
                   ))}
                 </AreaChart>
               ) : resolved.type === "line" ? (
@@ -227,11 +270,15 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
                   <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px' }} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  
                   {resolved.y.map((key, i) => (
                     <Line key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={3} 
-                      dot={resolved.hasAnomalies ? renderAnomalyDot : false} 
-                      activeDot={{ r: 6, strokeWidth: 0 }}
+                      dot={resolved.hasAnomalies ? renderAnomalyDot : false} activeDot={{ r: 6, strokeWidth: 0 }}
                     />
+                  ))}
+
+                  {resolved.forecast.map((key) => (
+                    <Line key={key} type="monotone" dataKey={key} stroke={FORECAST_COLOR} strokeWidth={3} strokeDasharray="5 5" name={`${key} (Forecast)`} />
                   ))}
                 </LineChart>
               ) : (
@@ -241,8 +288,14 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
                   <Tooltip cursor={{ fill: '#1e293b' }} contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b' }} />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  
                   {resolved.y.map((key, i) => (
                     <Bar key={key} dataKey={key} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+                  ))}
+                  
+                  {/* Forecasts typically shouldn't be bars, but if forced, render with lower opacity */}
+                  {resolved.forecast.map((key) => (
+                    <Bar key={key} dataKey={key} fill={FORECAST_COLOR} fillOpacity={0.6} radius={[4, 4, 0, 0]} name={`${key} (Forecast)`} />
                   ))}
                 </BarChart>
               )}
@@ -266,13 +319,25 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
               <tbody>
                 {payload.data.map((row, i) => {
                   const isAnomalyRow = keys.some(k => k.includes('zscore') && Math.abs(row[k]) > SIGMA_THRESHOLD);
+                  const isForecastRow = keys.some(k => /forecast|predict/i.test(k) && row[k] !== null && row[k] !== undefined);
+                  
                   return (
-                    <tr key={i} className={cn("hover:bg-slate-800/40 transition-colors", isAnomalyRow && "bg-red-950/10")}>
+                    <tr key={i} className={cn(
+                      "hover:bg-slate-800/40 transition-colors", 
+                      isAnomalyRow && "bg-red-950/10",
+                      isForecastRow && !isAnomalyRow && "bg-purple-950/10" // Tint forecast rows
+                    )}>
                       {keys.map(k => {
                         const isZ = k.includes('zscore');
                         const isAnomCell = isZ && Math.abs(row[k]) > SIGMA_THRESHOLD;
+                        const isForecastCell = /forecast|predict/i.test(k);
+                        
                         return (
-                          <td key={k} className={cn("px-4 py-2 font-mono border-b border-slate-800/50", isAnomCell ? "text-red-400 font-bold" : "text-slate-300")}>
+                          <td key={k} className={cn(
+                            "px-4 py-2 font-mono border-b border-slate-800/50", 
+                            isAnomCell ? "text-red-400 font-bold" : 
+                            isForecastCell ? "text-purple-300" : "text-slate-300"
+                          )}>
                             {formatNum(row[k])}
                           </td>
                         );
@@ -305,6 +370,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         <div className="px-4 py-3 border-t border-slate-800 bg-slate-900/30 flex items-center gap-2">
           {resolved?.hasAnomalies ? (
             <Activity size={14} className="text-red-500 animate-pulse" /> 
+          ) : resolved?.forecast.length ? (
+            <BrainCircuit size={14} className="text-purple-500 animate-pulse" />
           ) : (
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           )}

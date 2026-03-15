@@ -9,18 +9,17 @@ const BACKEND_URL = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
 
 /**
  * Protocol: Analytical Stream Event
- * Ensures the frontend knows exactly what state the engine is in.
+ * Upgraded for Phase 6 (Async Jobs) and Phase 7 (Predictive Insights).
  */
 interface StreamPacket {
-  type: "status" | "reasoning" | "data" | "error";
-  content: string | any;
+  type: "status" | "reasoning" | "data" | "error" | "job_queued" | "predictive_insights";
+  content?: string | any;
+  job_id?: string; // Phase 6: Async Job tracking ID
 }
 
 export async function POST(req: NextRequest) {
   try {
     // 1. Authentication & Tenant Isolation (Secure Method)
-    // Resolves Supabase Auth Warning by validating the user object directly against the auth server
-    // rather than trusting the client-side cookie session implicitly.
     const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     const { data: { session } } = await supabase.auth.getSession();
@@ -46,7 +45,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { agent_id, prompt, active_dataset_ids, history } = body;
+    // Extracted Phase 6 & Phase 7 Configurations
+    const { 
+      agent_id, 
+      prompt, 
+      active_dataset_ids, 
+      history,
+      predictive_config, // Phase 7: ML Forecasting request
+      ab_test_config     // Phase 2.4: A/B Testing request
+    } = body;
 
     if (!prompt) {
       return NextResponse.json({ error: "Analytical prompt is required." }, { status: 400 });
@@ -68,7 +75,6 @@ export async function POST(req: NextRequest) {
         };
 
         // YIELD IMMEDIATELY: Prevents Vercel Edge Runtime from dropping the connection
-        // while we wait for the Render backend to wake up.
         sendPacket({ type: "status", content: "Establishing secure connection to Analytical Engine..." });
 
         let backendResponse: Response | null = null;
@@ -92,6 +98,8 @@ export async function POST(req: NextRequest) {
                 prompt,
                 active_dataset_ids: active_dataset_ids || [],
                 history: history || [],
+                predictive_config, // Pass to Python Phase 7 Pipeline
+                ab_test_config,    // Pass to Python Phase 2 Pipeline
                 stream: true, 
               }),
             });
@@ -152,6 +160,7 @@ export async function POST(req: NextRequest) {
             if (done) break;
 
             // Stream chunks directly to the UI
+            // Python backend emits exact `data: {"type": "...", "content": "..."}\n\n` formats
             const chunk = decoder.decode(value, { stream: true });
             controller.enqueue(encoder.encode(chunk));
           }

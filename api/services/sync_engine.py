@@ -4,33 +4,53 @@ import asyncio
 import time
 import gc
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Type
 
 import polars as pl
-from fastapi import APIRouter, HTTPException, Request, Header, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, Header, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
 
 # Core dependencies (Modular Infrastructure)
-from api.database import SessionLocal
+from api.database import get_db, SessionLocal
 from models import Dataset, Organization, DatasetStatus
+from api.auth import verify_tenant, TenantContext
+
 from api.services.storage_manager import storage_manager
 from api.services.json_normalizer import PolarsNormalizer
 from api.services.data_sanitizer import DataSanitizer
 from api.services.duckdb_validator import DuckDBValidator
-from api.services.integrations.base_integration import BaseIntegration
 from api.services.watchdog_service import WatchdogService
+from api.services.credential_manager import CredentialManager
+
+# Phase 3: SaaS Integration Connectors
+from api.services.integrations.base_integration import BaseIntegration
+from api.services.integrations.stripe_connector import StripeConnector
+from api.services.integrations.salesforce_connector import SalesforceConnector
+from api.services.integrations.shopify_connector import ShopifyConnector
 
 logger = logging.getLogger(__name__)
 
-# FastAPI Router for the Core Compute Webhook Receiver
-sync_router = APIRouter(prefix="/api/ingest", tags=["Ingestion"])
+# FastAPI Router for the Core Compute Webhook & Sync Receiver
+sync_router = APIRouter(prefix="/api/ingest", tags=["Ingestion", "Sync"])
+
+# -----------------------------------------------------------------------------
+# Integration Registry (Modular Strategy)
+# -----------------------------------------------------------------------------
+INTEGRATION_REGISTRY: Dict[str, Type[BaseIntegration]] = {
+    "stripe": StripeConnector,
+    "salesforce": SalesforceConnector,
+    "shopify": ShopifyConnector,
+}
 
 class SyncEngine:
     """
     The Unified Orchestration Worker (Zero-ETL Engine).
-    Refactored for Dual-Server Render Deployment (Web API + Background Worker).
-    Ensures high-throughput processing without database connection pool exhaustion.
-    Now implemented as a stateless orchestrator to support strict Dependency Injection.
+    
+    Upgraded Engineering:
+    - Integration Registry: Dynamically instantiates API connectors.
+    - Secure Credential Injection: Vaults API keys via CredentialManager.
+    - Schema Evolution Guard: Strictly casts Polars DataFrames to prevent Parquet chunk mismatches.
+    - Async Chunking: Prevents RAM OOM on massive historical SaaS syncs.
     """
     
     def __init__(self, db_session: Optional[Session] = None):
@@ -47,9 +67,7 @@ class SyncEngine:
         """
         The Execution Layer: Strictly in-memory computation.
         Uses Polars for C++ speed and DuckDB for schema enforcement.
-        Stateless design dynamically injects tenant configuration for multi-tenant safety.
         """
-        # Modular Strategy: Instantiate swappable components functionally per execution
         normalizer = PolarsNormalizer(tenant_id, integration_name)
         sanitizer = DataSanitizer(tenant_id, integration_name)
         validator = DuckDBValidator(tenant_id, integration_name)
@@ -70,37 +88,47 @@ class SyncEngine:
 
     async def run_historical_sync(
         self, 
-        integration: BaseIntegration, 
+        tenant_id: str,
+        integration_name: str, 
         dataset_id: str, 
         stream_name: str, 
         start_timestamp: str
-    ) -> Dict[str, Any]:
+    ) -> None:
         """
         The Pull Pipeline (Background Worker Server).
-        Uses short-lived DB sessions to prevent "Max Connections" errors on Supabase.
+        Uses short-lived DB sessions to prevent Supabase connection pool exhaustion.
         """
         start_time = time.perf_counter()
-        
-        # Extract context dynamically from the polymorphic integration object
-        tenant_id = integration.config.tenant_id
-        integration_name = integration.config.integration_name
-        
-        logger.info(f"🚀 [{tenant_id}] Starting historical sync | Source: {integration_name}")
+        logger.info(f"🚀 [{tenant_id}] Starting historical sync | Source: {integration_name} | Stream: {stream_name}")
 
         try:
-            # 1. Set Initial State
+            # 1. Dynamically Load Connector & Secure Credentials
+            if integration_name not in INTEGRATION_REGISTRY:
+                raise ValueError(f"Unsupported integration requested: {integration_name}")
+            
+            with SessionLocal() as db:
+                cred_manager = CredentialManager(db)
+                api_keys = cred_manager.get_integration_credentials(tenant_id, integration_name)
+                
+            if not api_keys:
+                raise PermissionError(f"Missing or expired credentials for {integration_name}")
+
+            integration_class = INTEGRATION_REGISTRY[integration_name]
+            integration = integration_class(tenant_id=tenant_id, credentials=api_keys) 
+
+            # 2. Set Initial State
             await self._update_dataset_status(dataset_id, DatasetStatus.PROCESSING)
 
-            # 2. Contextual RAG schemas & PII config
+            # 3. Contextual RAG schemas & PII config
             expected_schema = await integration.fetch_schema()
             stream_schema = expected_schema.get(stream_name.lower(), {})
             flat_schema = {f["name"]: f["type"] for f in stream_schema} if isinstance(stream_schema, list) else stream_schema
-            pii_columns = ["email", "phone", "customer_email"]
+            pii_columns = getattr(integration, "PII_COLUMNS", ["email", "phone", "customer_email"])
 
             total_rows_processed = 0
             saved_paths: List[str] = []
 
-            # 3. Memory-Safe Async Polling
+            # 4. Memory-Safe Async Polling (Yields chunked arrays from the SaaS API)
             async for raw_batch in integration.sync_historical(stream_name, start_timestamp):
                 if not raw_batch:
                     continue
@@ -117,7 +145,7 @@ class SyncEngine:
                 if df.height == 0:
                     continue
 
-                # 4. Storage Layer: Hive-Partitioned Sink
+                # 5. Storage Layer: Hive-Partitioned Sink
                 now = datetime.now(timezone.utc)
                 partition_suffix = f"year={now.year}/month={now.month:02d}"
                 table_id = f"sync/{integration_name}/{stream_name}/{partition_suffix}"
@@ -132,17 +160,17 @@ class SyncEngine:
                 total_rows_processed += df.height
                 saved_paths.append(file_path)
                 
-                # Analytical Efficiency: Immediate RAM cleanup
+                # Analytical Efficiency: Immediate RAM cleanup for large syncs
                 del df
                 gc.collect()
 
-            # 5. Finalize State & Telemetry
+            # 6. Finalize State & Telemetry
             duration = round(time.perf_counter() - start_time, 2)
             await self._finalize_sync_metadata(
                 tenant_id, integration_name, dataset_id, total_rows_processed, duration, saved_paths
             )
             
-            # 6. Watchdog Telemetry
+            # 7. Watchdog Telemetry (Anomaly detection on row volumes)
             with SessionLocal() as db:
                 watchdog = WatchdogService(db_client=db)
                 asyncio.create_task(
@@ -153,15 +181,16 @@ class SyncEngine:
                     )
                 )
 
-            return {"status": "success", "rows_processed": total_rows_processed}
+            logger.info(f"✅ [{tenant_id}] Sync Complete | {total_rows_processed} rows in {duration}s")
 
         except Exception as e:
-            logger.error(f"❌ Sync Failed for {dataset_id}: {str(e)}")
+            logger.error(f"❌ [{tenant_id}] Sync Failed for {dataset_id}: {str(e)}")
             await self._update_dataset_status(dataset_id, DatasetStatus.FAILED)
-            raise e
+
+
+    # --- Metadata Helpers ---
 
     async def _update_dataset_status(self, dataset_id: str, status: DatasetStatus):
-        """Short-lived transaction for state updates."""
         with SessionLocal() as db:
             dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
             if dataset:
@@ -171,7 +200,6 @@ class SyncEngine:
     async def _finalize_sync_metadata(
         self, tenant_id: str, integration_name: str, dataset_id: str, total_rows: int, duration: float, paths: List[str]
     ):
-        """Consolidated metadata and billing update in a single DB transaction."""
         with SessionLocal() as db:
             dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
             if dataset:
@@ -180,11 +208,10 @@ class SyncEngine:
                 dataset.updated_at = datetime.now(timezone.utc)
                 
                 if total_rows > 0 and paths:
-                    # Profile the last batch to update the schema in the UI
                     profile = storage_manager.convert_to_parquet_and_profile(db, tenant_id, paths[-1])
                     dataset.schema_metadata = {"columns": profile.get("columns", [])}
             
-            # Organization Billing: 1.5MB per 10k rows (ZSTD compressed Parquet estimate)
+            # Storage Metering Update
             org = db.query(Organization).filter(Organization.id == tenant_id).first()
             if org and total_rows > 0:
                 estimated_mb = (total_rows / 10000.0) * 1.5
@@ -198,37 +225,65 @@ class SyncEngine:
 # -----------------------------------------------------------------------------
 
 def get_sync_engine(db: Optional[Session] = None) -> SyncEngine:
-    """
-    Factory function to inject the SyncEngine.
-    Supports both persistent router dependencies and stateless background workers.
-    """
     return SyncEngine(db_session=db)
 
-def _get_db_session():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 # -----------------------------------------------------------------------------
-# API Endpoints (The Push Pipeline - Cloudflare Webhook Receiver)
+# API Endpoints
 # -----------------------------------------------------------------------------
+
+@sync_router.post("/trigger/{dataset_id}")
+async def trigger_historical_sync(
+    dataset_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(verify_tenant)
+):
+    """
+    The Frontend Trigger.
+    Initiates an asynchronous historical data pull from a 3rd party SaaS.
+    """
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id, 
+        Dataset.tenant_id == tenant.tenant_id
+    ).first()
+
+    if not dataset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found.")
+        
+    if not dataset.integration_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset is not linked to a SaaS integration.")
+
+    engine = get_sync_engine(db)
+    
+    # 1. Update UI to show "Syncing..."
+    dataset.status = DatasetStatus.PROCESSING
+    db.commit()
+
+    # 2. Hand off the heavy I/O polling to a background worker thread
+    background_tasks.add_task(
+        engine.run_historical_sync,
+        tenant_id=tenant.tenant_id,
+        integration_name=dataset.integration_name,
+        dataset_id=dataset_id,
+        stream_name=dataset.stream_name or "default",
+        start_timestamp="2024-01-01T00:00:00Z" # In production, pull from last_sync_time
+    )
+
+    return {"status": "sync_queued", "message": f"Historical pull for {dataset.integration_name} initiated in background."}
+
 
 @sync_router.post("/{integration_name}/webhook-batch")
 async def ingest_webhook_batch(
     integration_name: str,
     request: Request,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(_get_db_session),
+    db: Session = Depends(get_db),
     x_internal_secret: str = Header(None)
 ):
     """
-    Receives grouped batches from the Cloudflare Edge Worker.
-    Runs on the Web API Server.
+    The Push Pipeline.
+    Receives grouped real-time batches from the Cloudflare Edge Worker.
+    Dynamically maps incoming webhooks to the correct Polars schemas.
     """
-    # Security by Design: Verify secret is correctly injected via Cloudflare -> Render
     if x_internal_secret != os.environ.get("INTERNAL_ROUTING_SECRET"):
         logger.critical(f"Security Alert: Unauthorized webhook attempt on {integration_name}")
         raise HTTPException(status_code=403, detail="Edge verification failed.")
@@ -236,13 +291,24 @@ async def ingest_webhook_batch(
     payload = await request.json()
     tenant_id = payload.get("tenant_id")
     events = payload.get("events", [])
+    stream_name = payload.get("stream_name", "default")
     
-    # Use Factory Pattern
+    if not tenant_id or not events:
+        return {"status": "skipped", "message": "Empty payload."}
+        
+    if integration_name not in INTEGRATION_REGISTRY:
+        raise HTTPException(status_code=400, detail="Invalid integration target.")
+    
     engine = get_sync_engine(db)
     
-    # Contextual RAG: Mocked schemas for push pipeline
-    expected_schema = {"id": "string", "amount": "double", "email": "string"}
-    pii_columns = ["email"]
+    # Dynamic Contextual RAG Schema Loading
+    integration_class = INTEGRATION_REGISTRY[integration_name]
+    integration_instance = integration_class(tenant_id=tenant_id, credentials={})
+    expected_schemas_map = await integration_instance.fetch_schema()
+    
+    stream_schema = expected_schemas_map.get(stream_name, {})
+    flat_schema = {f["name"]: f["type"] for f in stream_schema} if isinstance(stream_schema, list) else stream_schema
+    pii_columns = getattr(integration_instance, "PII_COLUMNS", ["email", "phone", "customer_email"])
     
     try:
         raw_events = [event.get("payload", {}) for event in events]
@@ -250,12 +316,11 @@ async def ingest_webhook_batch(
             tenant_id=tenant_id, 
             integration_name=integration_name,
             raw_batch=raw_events, 
-            expected_schema=expected_schema, 
+            expected_schema=flat_schema, 
             pii_columns=pii_columns
         )
         
         if df.height > 0:
-            # Vectorized live append
             partition = f"year={datetime.now(timezone.utc).year}/month={datetime.now(timezone.utc).month:02d}"
             table_id = f"sync/{integration_name}/live_webhooks/{partition}"
             
@@ -266,5 +331,5 @@ async def ingest_webhook_batch(
         return {"status": "success", "rows": df.height}
         
     except Exception as e:
-        logger.error(f"Webhook ingestion failure: {str(e)}")
+        logger.error(f"Webhook ingestion failure for {integration_name}: {str(e)}")
         raise HTTPException(status_code=500, detail="Compute engine ingestion anomaly.")

@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { OmniMessageInput } from "@/components/chat/OmniMessageInput";
 import { DynamicChartFactory, ExecutionPayload } from "@/components/dashboard/DynamicChartFactory";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Bot, FileText } from "lucide-react";
+import { User, Bot, FileText, BrainCircuit, Activity, Loader2, Sparkles } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { cn } from "@/lib/utils"; // FIX: Imported the missing utility
+import { cn } from "@/lib/utils";
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -16,6 +18,15 @@ interface DashboardOrchestratorProps {
   tenantId: string;
 }
 
+interface PredictiveData {
+  status: string;
+  metric: string;
+  trend_slope: number;
+  forecast_next_3_periods: number[];
+  r_squared: number;
+  confidence: "high" | "medium" | "low";
+}
+
 interface RichMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -23,6 +34,9 @@ interface RichMessage {
   reasoning?: string;
   files?: File[];
   payload?: ExecutionPayload; 
+  predictiveData?: PredictiveData; // Phase 7 Integration
+  jobId?: string; // Phase 6 Integration
+  narrative?: string; // Phase 8 Integration
   timestamp: Date;
 }
 
@@ -43,6 +57,41 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, progressStatus]);
+
+  // Phase 6: Async Job Polling Effect
+  // Automatically polls the backend for results if a "noisy neighbor" query was routed to a background worker.
+  useEffect(() => {
+    const activeJobs = messages.filter(m => m.role === "assistant" && m.jobId && !m.payload && !m.predictiveData);
+    
+    if (activeJobs.length === 0) return;
+
+    const pollInterval = setInterval(async () => {
+      for (const jobMsg of activeJobs) {
+        try {
+          const res = await fetch(`/api/query/job/${jobMsg.jobId}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.status === 200) {
+            const data = await res.json();
+            if (data.status === "success") {
+              setMessages(prev => prev.map(m => 
+                m.id === jobMsg.id ? { 
+                  ...m, 
+                  payload: data as ExecutionPayload, 
+                  narrative: data.narrative, // Phase 8: Capture narrative from completed job
+                  jobId: undefined 
+                } : m
+              ));
+            }
+          }
+        } catch (e) {
+          console.error(`Polling failed for job ${jobMsg.jobId}`, e);
+        }
+      }
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
+  }, [messages, token]);
 
   // Performance Optimization: Memoize history to prevent token bloat in re-renders
   const historyContext = useMemo(() => 
@@ -88,7 +137,7 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
   };
 
   // ---------------------------------------------------------------------------
-  // Phase 3 & 4: Streaming Orchestration
+  // Phase 3, 4, 6, 7 & 8: Streaming Orchestration
   // ---------------------------------------------------------------------------
   const handleSendMessage = async (text: string, files: File[]) => {
     const userMsgId = Date.now().toString();
@@ -116,6 +165,9 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
       // 2. Initiate Edge Stream
       const currentActiveIds = [...new Set([...activeDatasetIds, ...newlyUploadedIds])];
 
+      // Automatically determine if the prompt is asking for a prediction to trigger Phase 7 config
+      const isPredictive = text.toLowerCase().includes("predict") || text.toLowerCase().includes("forecast");
+
       const response = await fetch("/api/chat/orchestrate", {
         method: "POST",
         headers: { 
@@ -126,6 +178,10 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
           prompt: text,
           active_dataset_ids: currentActiveIds,
           history: historyContext,
+          // If the user is explicitly asking for a forecast, we inject the Phase 7 config
+          ...(isPredictive && {
+            predictive_config: { metric_col: "auto_detect", time_col: "auto_detect" } 
+          })
         }),
       });
 
@@ -171,6 +227,18 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
               }
               if (packet.type === "data") {
                 return { ...m, payload: packet.content as ExecutionPayload };
+              }
+              // Phase 6: Async Job Routing Triggered
+              if (packet.type === "job_queued") {
+                return { ...m, jobId: packet.job_id, reasoning: (m.reasoning || "") + "\n\n🚀 Query too complex for sync execution. Offloading to background compute worker..." };
+              }
+              // Phase 7: Predictive Insights Data Received
+              if (packet.type === "predictive_insights") {
+                return { ...m, predictiveData: packet.content as PredictiveData };
+              }
+              // Phase 8: Executive Narrative Received
+              if (packet.type === "narrative") {
+                return { ...m, narrative: packet.content };
               }
               return m;
             }));
@@ -241,6 +309,7 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
                 "flex flex-col max-w-[90%]",
                 msg.role === "user" ? "items-end" : "items-start"
               )}>
+                {/* Text Content */}
                 {msg.content && (
                   <div className={cn(
                     "px-5 py-3 rounded-2xl text-sm leading-relaxed shadow-sm",
@@ -252,12 +321,14 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
                   </div>
                 )}
 
+                {/* Agent Reasoning Stream */}
                 {msg.reasoning && (
                   <div className="mt-2 text-[13px] text-slate-500 italic bg-slate-900/30 px-4 py-2 rounded-xl border border-dashed border-slate-800">
-                    {msg.reasoning}
+                    <ReactMarkdown>{msg.reasoning}</ReactMarkdown>
                   </div>
                 )}
 
+                {/* Uploaded File Indicators */}
                 {msg.files && msg.files.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {msg.files.map((f, i) => (
@@ -269,11 +340,69 @@ export const DashboardOrchestrator: React.FC<DashboardOrchestratorProps> = ({ to
                   </div>
                 )}
 
+                {/* Phase 6: Async Background Job Indicator */}
+                {msg.jobId && !msg.payload && (
+                  <div className="mt-3 flex items-center gap-3 p-4 bg-slate-900/80 rounded-2xl border border-slate-700 text-sm shadow-inner w-full md:w-auto animate-in fade-in">
+                    <Loader2 className="w-5 h-5 text-emerald-500 animate-spin" />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-slate-200">Processing Complex Data...</span>
+                      <span className="text-[11px] text-slate-400 font-mono tracking-wider">JOB_ID: {msg.jobId.split('-')[0]}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Phase 7: Predictive ML Forecast Indicator */}
+                {msg.predictiveData && (
+                  <div className="mt-3 w-full bg-slate-900 rounded-2xl border border-purple-500/30 overflow-hidden shadow-lg animate-in slide-in-from-bottom-2">
+                    <div className="bg-purple-500/10 px-4 py-2 border-b border-purple-500/20 flex items-center gap-2">
+                      <BrainCircuit className="w-4 h-4 text-purple-400" />
+                      <span className="text-xs font-bold text-purple-300 uppercase tracking-widest">Polars Predictive Insight</span>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-slate-500 uppercase">Metric</span>
+                        <span className="text-sm font-semibold text-slate-200">{msg.predictiveData.metric}</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-slate-500 uppercase">Trend (Slope)</span>
+                        <span className="text-sm font-mono text-emerald-400 flex items-center gap-1">
+                          {msg.predictiveData.trend_slope > 0 ? '↗' : '↘'} {msg.predictiveData.trend_slope.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-slate-500 uppercase">R² Confidence</span>
+                        <span className="text-sm font-mono text-slate-200">{msg.predictiveData.r_squared.toFixed(2)} ({msg.predictiveData.confidence})</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-slate-500 uppercase">+3 Period Forecast</span>
+                        <span className="text-sm font-mono text-slate-200">{msg.predictiveData.forecast_next_3_periods[0].toFixed(1)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Standard Execution Payload / Dynamic Chart */}
                 {msg.payload && (
                   <div className="w-full mt-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
                     <DynamicChartFactory payload={msg.payload} />
                   </div>
                 )}
+
+                {/* Phase 8: Executive Narrative Section */}
+                {msg.narrative && (
+                  <div className="w-full mt-4 bg-emerald-500/5 rounded-xl border border-emerald-500/20 p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-700">
+                    <h4 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      Executive Summary
+                    </h4>
+                    <div className="prose prose-sm dark:prose-invert text-slate-300 max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.narrative}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
           ))}

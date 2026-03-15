@@ -2,8 +2,10 @@
 
 import logging
 import anyio
+import contextlib
 import pandas as pd
-from typing import Dict, Any, List, AsyncGenerator, Optional, Union
+from datetime import datetime
+from typing import Dict, Any, List, AsyncGenerator, Optional
 
 # --- Defensive Import Strategy ---
 # We gracefully handle the import so the rest of the application doesn't crash 
@@ -22,13 +24,23 @@ logger = logging.getLogger(__name__)
 
 class SnowflakeConnector(BaseIntegration):
     """
-    Phase 3: Snowflake Integration (Enterprise Data Warehouse)
-    A direct database connector emphasizing Compute Pushdown and Zero-Copy data movement.
-    Leverages Pandas and Apache Arrow for high-throughput vectorized data extraction.
+    Phase 3: Snowflake Zero-ETL Connector (Enterprise Data Warehouse).
+    A direct database connector emphasizing Compute Pushdown and Async Threading.
+    Leverages Pandas and Apache Arrow for high-throughput vectorized data extraction 
+    without blocking the FastAPI event loop.
     """
 
-    def __init__(self, config: IntegrationConfig):
+    # DWs can contain anything, but we set a baseline for the DataSanitizer to hunt for
+    PII_COLUMNS = ["EMAIL", "PHONE", "SSN", "FIRST_NAME", "LAST_NAME", "ADDRESS"]
+
+    def __init__(self, tenant_id: str, credentials: Dict[str, str] = None):
+        config = IntegrationConfig(
+            tenant_id=tenant_id, 
+            integration_name="snowflake", 
+            credentials=credentials or {}
+        )
         super().__init__(config)
+        
         if not SNOWFLAKE_AVAILABLE:
             logger.error("Attempted to initialize SnowflakeConnector, but 'snowflake-connector-python' is missing.")
             raise ImportError(
@@ -36,14 +48,17 @@ class SnowflakeConnector(BaseIntegration):
                 "Please run: pip install 'snowflake-connector-python[pandas]>=3.8.0'"
             )
 
-    def _initialize_client(self) -> 'snowflake.connector.SnowflakeConnection':
+    @contextlib.asynccontextmanager
+    async def _get_client(self) -> AsyncGenerator['snowflake.connector.SnowflakeConnection', None]:
         """
-        Initializes the synchronous Snowflake connection.
-        Because Snowflake's driver is inherently synchronous, we offload execution
-        to worker threads via `anyio` to prevent blocking our async event loop.
+        Context manager for safely yielding a Snowflake connection.
+        Because Snowflake's driver is inherently synchronous, we offload the network
+        I/O of connecting and disconnecting to worker threads via `anyio` to prevent 
+        blocking the async event loop.
         """
         creds = self.config.credentials
-        try:
+        
+        def _connect():
             return snowflake.connector.connect(
                 user=creds.get("user"),
                 password=creds.get("password"),
@@ -58,43 +73,56 @@ class SnowflakeConnector(BaseIntegration):
                     'JDBC_USE_NATIVE_DATETIME': True
                 }
             )
-        except Exception as e:
-            logger.error(f"Failed to initialize Snowflake client for {self.tenant_id}: {str(e)}")
-            raise ValueError("Invalid Snowflake credentials or network policy blocked access.")
+
+        conn = await anyio.to_thread.run_sync(_connect)
+        try:
+            yield conn
+        finally:
+            await anyio.to_thread.run_sync(conn.close)
 
     async def test_connection(self) -> bool:
         """
-        Phase 1.1 / 3.1: Fail-fast connection validation via a lightweight compute query.
+        Fail-fast connection validation via a lightweight compute query.
         """
-        def _ping() -> bool:
+        def _ping(conn) -> bool:
             try:
-                with self.client.cursor() as cur:
+                with conn.cursor() as cur:
                     cur.execute("SELECT 1")
                     result = cur.fetchone()
                     return result[0] == 1
             except DatabaseError as e:
-                logger.error(f"Snowflake ping failed for {self.tenant_id}: {str(e)}")
+                logger.error(f"[{self.tenant_id}] Snowflake ping failed: {str(e)}")
                 return False
 
-        # Offload synchronous DB ping to thread pool
-        return await anyio.to_thread.run_sync(_ping)
-
-    def get_oauth_url(self, redirect_uri: str) -> Optional[str]:
-        """Direct DB connections via service accounts do not use standard OAuth redirects."""
-        return None
-
-    async def exchange_oauth_token(self, code: str) -> Dict[str, Any]:
-        """Not applicable for standard Key-Pair / Password-based DB connections."""
-        raise NotImplementedError("Snowflake integration uses direct connection strings, not OAuth exchanges.")
+        try:
+            async with self._get_client() as client:
+                return await anyio.to_thread.run_sync(_ping, client)
+        except Exception:
+            return False
 
     async def fetch_schema(self) -> Dict[str, Any]:
         """
         Phase 3.2: Schema Introspection & Contextual RAG.
         Builds a localized metadata graph of the tenant's exact Snowflake tables.
-        This graph guarantees our LLM generates syntactically flawless DuckDB SQL
-        preventing token bloat and Hallucinations.
+        Translates Snowflake types to strict DuckDB types to guarantee pipeline compatibility.
         """
-        def _introspect() -> Dict[str, Any]:
+        # Type mapping from Snowflake to DuckDB
+        type_mapping = {
+            "NUMBER": "DOUBLE",
+            "FLOAT": "DOUBLE",
+            "VARCHAR": "VARCHAR",
+            "TEXT": "VARCHAR",
+            "BOOLEAN": "BOOLEAN",
+            "TIMESTAMP_LTZ": "TIMESTAMP",
+            "TIMESTAMP_NTZ": "TIMESTAMP",
+            "TIMESTAMP_TZ": "TIMESTAMP",
+            "DATE": "DATE",
+            "VARIANT": "VARCHAR", # JSON stringified
+            "OBJECT": "VARCHAR",
+            "ARRAY": "VARCHAR"
+        }
+
+        def _introspect(conn) -> Dict[str, Any]:
             schema_graph = {}
             query = """
                 SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE 
@@ -102,77 +130,95 @@ class SnowflakeConnector(BaseIntegration):
                 WHERE TABLE_SCHEMA = CURRENT_SCHEMA()
                 ORDER BY TABLE_NAME, ORDINAL_POSITION;
             """
-            with self.client.cursor() as cur:
+            with conn.cursor() as cur:
                 cur.execute(query)
                 for row in cur.fetchall():
-                    table, col, dtype = row[0], row[1], row[2]
+                    table_name, col_name, dtype = row[0], row[1], row[2]
                     
-                    table_clean = table.lower()
+                    table_clean = table_name.lower()
                     
                     if table_clean not in schema_graph:
-                        schema_graph[table_clean] = []
+                        schema_graph[table_clean] = {}
+                        
+                    # Clean type (e.g., 'NUMBER(38,0)' -> 'NUMBER')
+                    base_type = dtype.split("(")[0].upper()
+                    duckdb_type = type_mapping.get(base_type, "VARCHAR")
                     
-                    schema_graph[table_clean].append({"name": col.lower(), "type": dtype})
+                    schema_graph[table_clean][col_name.lower()] = duckdb_type
                     
             return schema_graph
 
-        return await anyio.to_thread.run_sync(_introspect)
+        async with self._get_client() as client:
+            return await anyio.to_thread.run_sync(_introspect, client)
 
-    async def sync_historical(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[Union[pd.DataFrame, List[Dict[str, Any]]], None]:
+    async def sync_historical(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Phase 3.3: High-Throughput Extraction Pipeline.
-        Utilizes `fetch_pandas_batches()` to stream data natively in vectorized DataFrames.
-        This prevents JSON serialization entirely and avoids blocking the async event loop.
+        Utilizes `fetch_pandas_batches()` to stream data natively in vectorized DataFrames,
+        converts them to dictionaries, and yields them to the SyncEngine.
         """
         safe_table = "".join(c for c in stream_name if c.isalnum() or c == '_').upper()
         
+        # Handle timestamp parsing safely
+        ts_filter = "2000-01-01 00:00:00"
+        if start_timestamp:
+            try:
+                dt = datetime.fromisoformat(start_timestamp.replace('Z', '+00:00'))
+                ts_filter = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+        
+        # Assuming an UPDATED_AT column exists for delta syncing. 
+        # In a generic DW connector, this might need to be configurable.
         query = f"""
             SELECT * FROM {safe_table} 
-            WHERE UPDATED_AT >= '{start_timestamp}'::TIMESTAMP_NTZ
+            WHERE UPDATED_AT >= '{ts_filter}'::TIMESTAMP_NTZ
         """
 
-        def _execute_query():
-            cursor = self.client.cursor()
+        def _execute_query(conn):
+            cursor = conn.cursor()
             cursor.execute(query)
             # Utilizing the modern C++ backed pandas batch fetcher
             return cursor, cursor.fetch_pandas_batches()
 
-        def _get_next_batch(iterator) -> Optional[pd.DataFrame]:
-            """Helper to safely fetch the next batch synchronously without crashing."""
+        def _get_next_batch(iterator) -> Optional[List[Dict[str, Any]]]:
+            """Helper to safely fetch and convert the next batch synchronously."""
             try:
-                return next(iterator)
+                df_batch = next(iterator)
+                if df_batch is None or df_batch.empty:
+                    return None
+                
+                # Convert timestamps to strings or ints to ensure JSON/Polars serialization succeeds
+                for col in df_batch.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns:
+                    df_batch[col] = df_batch[col].astype(str)
+                    
+                # Convert to the List[Dict] format expected by SyncEngine
+                return df_batch.to_dict(orient="records")
             except StopIteration:
                 return None
 
-        cursor, batch_iterator = await anyio.to_thread.run_sync(_execute_query)
+        logger.info(f"[{self.config.tenant_id}] Executing Snowflake async extraction for {safe_table}...")
 
-        try:
-            while True:
-                # Offload the network I/O of fetching the next chunk to a separate thread
-                df_batch = await anyio.to_thread.run_sync(_get_next_batch, batch_iterator)
-                
-                if df_batch is None:
-                    break
+        async with self._get_client() as client:
+            cursor, batch_iterator = await anyio.to_thread.run_sync(_execute_query, client)
+
+            try:
+                while True:
+                    # Offload the network I/O and Pandas conversion to a separate thread
+                    dict_batch = await anyio.to_thread.run_sync(_get_next_batch, batch_iterator)
                     
-                if not df_batch.empty:
-                    # Yield a pure Pandas DataFrame. Downstream systems (DuckDB/Polars) 
-                    # can ingest this natively via zero-copy memory mapping.
-                    yield df_batch
-                
-                # Explicitly yield control back to the FastAPI event loop
-                await anyio.sleep(0)
-                
-        finally:
-            # Ensure database resources are cleanly released
-            await anyio.to_thread.run_sync(cursor.close)
-
-    async def verify_webhook_signature(self, payload: str, signature: str) -> bool:
-        """Snowflake is a pull-based DW; it does not push webhooks."""
-        return False
-
-    async def handle_webhook(self, event_type: str, payload: Dict[str, Any]) -> None:
-        """Not applicable for Data Warehouses."""
-        pass
+                    if dict_batch is None:
+                        break
+                        
+                    if dict_batch:
+                        yield dict_batch
+                    
+                    # Explicitly yield control back to the FastAPI event loop to keep the server highly responsive
+                    await anyio.sleep(0)
+                    
+            finally:
+                # Ensure the cursor is cleanly released
+                await anyio.to_thread.run_sync(cursor.close)
 
     def get_semantic_views(self) -> Dict[str, str]:
         """
