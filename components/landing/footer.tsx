@@ -1,52 +1,70 @@
-// components/landing/footer.tsx
+"use client";
 
-import React from "react"
-import Link from "next/link"
+import { Database } from "lucide-react";
+import { C } from "@/lib/tokens";
+
+const links = {
+  Product:  ["Platform", "AI Agents", "Integrations", "Changelog"],
+  Company:  ["About", "Blog", "Careers", "Press"],
+  Legal:    ["Privacy Policy", "Terms of Service", "Security", "GDPR"],
+  Support:  ["Documentation", "Status", "Contact", "Community"],
+};
 
 export function Footer() {
   return (
-    <footer className="border-t border-border px-6 py-8">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-primary">
-            <svg width="10" height="10" viewBox="0 0 14 14" fill="none" className="text-primary-foreground">
-              <path d="M7 1L13 4V10L7 13L1 10V4L7 1Z" fill="currentColor" fillOpacity="0.3" />
-              <path d="M7 1L13 4L7 7L1 4L7 1Z" fill="currentColor" />
-              <path d="M7 7V13L1 10V4L7 7Z" fill="currentColor" fillOpacity="0.7" />
-            </svg>
+    <footer style={{ background: "#fff", borderTop: `1px solid ${C.rule}`, padding: "80px 24px 40px" }}>
+      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
+
+        {/* Top row */}
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 40, marginBottom: 64 }}>
+
+          {/* Brand */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: C.navy, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Database size={14} color="#fff" />
+              </div>
+              <span style={{ fontSize: 20, fontWeight: 800, color: C.navy, letterSpacing: "-0.03em", textTransform: "uppercase" }}>
+                Arclis<span style={{ color: C.blue }}>.</span>
+              </span>
+            </div>
+            <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.65, maxWidth: 280 }}>
+              The AI data analyst for modern teams. Ask questions. Get charts. Deploy agents. No SQL required.
+            </p>
           </div>
-          <span className="text-sm text-muted-foreground">
-            DataOmen &copy; {new Date().getFullYear()}
-          </span>
+
+          {/* Link columns */}
+          {Object.entries(links).map(([heading, items]) => (
+            <div key={heading}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: C.navy, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 16 }}>
+                {heading}
+              </p>
+              <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                {items.map(item => (
+                  <li key={item}>
+                    <a href="#" style={{ textDecoration: "none", color: C.muted, fontSize: 14, fontWeight: 500, transition: "color 0.15s" }}
+                      onMouseOver={e => (e.currentTarget.style.color = C.navy)}
+                      onMouseOut={e  => (e.currentTarget.style.color = C.muted)}
+                    >
+                      {item}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
-        
-        <nav className="flex flex-wrap justify-center gap-x-6 gap-y-2">
-          <Link 
-            href="/privacy" 
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Privacy
-          </Link>
-          <Link 
-            href="/terms" 
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Terms
-          </Link>
-          <Link 
-            href="/cookies" 
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Cookies
-          </Link>
-          <a 
-            href="mailto:legal@dataomen.com" 
-            className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Contact
-          </a>
-        </nav>
+
+        {/* Bottom bar */}
+        <div style={{ borderTop: `1px solid ${C.rule}`, paddingTop: 28, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <p style={{ fontSize: 13, color: C.faint }}>
+            © 2026 Arclis Technologies Inc. · SOC2 Type II Certified
+          </p>
+          <p style={{ fontSize: 13, color: C.faint }}>
+            Made with care for data teams worldwide.
+          </p>
+        </div>
       </div>
     </footer>
-  )
+  );
 }

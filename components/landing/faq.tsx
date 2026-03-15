@@ -1,67 +1,77 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useState } from "react";
+import { C } from "@/lib/tokens";
 
-interface FAQItem {
-  question: string;
-  answer: string;
-}
-
-const faqs: FAQItem[] = [
+const items = [
   {
-    question: "Is my data secure?",
-    answer: "Absolutely. We utilize Supabase Row Level Security (RLS) for strict multi-tenant isolation. Your datasets are stored securely and only accessible via read-only analytical connections specific to your tenant ID."
+    q: "What if my database schema is messy or undocumented?",
+    a: "Arclis's semantic layer is designed for the real world. During setup, it scans your schema and allows you to add plain-English descriptions to tables or columns. It learns your business logic quickly.",
   },
   {
-    question: "How do the AI Agents work?",
-    answer: "Agents are background Python watchdogs. You deploy them against a specific dataset, and they use vectorized Pandas/NumPy operations to calculate Exponential Moving Averages (EMA) and variance, alerting you automatically if anomalies occur."
+    q: "Do you train your AI on my proprietary data?",
+    a: "Absolutely not. We use enterprise-grade LLM endpoints with zero-data-retention policies. Furthermore, only structural metadata (like column names) is sent to the LLM to generate the SQL query. Your actual row data stays in your infrastructure.",
   },
   {
-    question: "How does the AI understand my data?",
-    answer: "We use a contextual RAG (Retrieval-Augmented Generation) pipeline. When you ask a question, we only send the relevant schema fragments to the LLM. This prevents hallucinations and ensures the generated SQL is perfectly tailored to your dataset."
+    q: "How long does setup really take?",
+    a: "Usually less than 5 minutes. You securely authenticate your data sources (like Stripe or a read-only Postgres replica), Arclis maps the relationships, and you can start asking questions immediately.",
   },
   {
-    question: "Can it handle millions of rows?",
-    answer: "Yes. By utilizing an in-process DuckDB engine querying optimized Parquet formats, we move the compute directly to the data layer, allowing you to analyze massive datasets in milliseconds."
-  }
+    q: "How does pricing scale?",
+    a: "Pricing is based on compute (queries run) rather than per-seat licenses. This means you can invite your entire organization to use Arclis without paying arbitrary license fees per user.",
+  },
+  {
+    q: "Can I use Arclis with multiple data sources simultaneously?",
+    a: "Yes. Arclis can join and query across multiple connected sources in a single question. Ask \"Compare our Stripe revenue to our Salesforce pipeline\" and Arclis will query both, join them semantically, and give you a unified answer.",
+  },
 ];
 
 export function FAQ() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [open, setOpen] = useState<number | null>(0);
 
   return (
-    <section className="py-24 bg-white border-t border-slate-200">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-3xl">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">Frequently Asked Questions</h2>
-        </div>
+    <section style={{ padding: "100px 24px", background: C.offWhite, borderTop: `1px solid ${C.rule}` }}>
+      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+        <h2 className="pfd" style={{ fontSize: 38, textAlign: "center", marginBottom: 64, color: C.navy }}>
+          Frequently Asked Questions
+        </h2>
 
-        <div className="space-y-4">
-          {faqs.map((faq, i) => {
-            const isOpen = openIndex === i;
-            return (
-              <div 
-                key={i} 
-                className="border border-slate-200 bg-slate-50 rounded-2xl overflow-hidden transition-all duration-300"
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {items.map((item, i) => (
+            <div
+              key={i}
+              style={{
+                border: `1px solid ${open === i ? C.blueLight : C.ruleDark}`,
+                borderRadius: 16, overflow: "hidden",
+                transition: "all 0.2s", background: "#fff",
+                boxShadow: open === i ? "0 8px 24px rgba(27,110,191,0.07)" : "none",
+              }}
+            >
+              <button
+                onClick={() => setOpen(open === i ? null : i)}
+                style={{
+                  width: "100%", padding: "26px 28px",
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  background: open === i ? C.bluePale : "transparent",
+                  border: "none", cursor: "pointer", textAlign: "left",
+                  transition: "background 0.2s",
+                }}
               >
-                <button
-                  onClick={() => setOpenIndex(isOpen ? null : i)}
-                  className="w-full flex items-center justify-between p-6 text-left focus:outline-none hover:bg-slate-100 transition-colors"
-                >
-                  <span className="text-lg font-bold text-slate-900">{faq.question}</span>
-                  <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-                </button>
-                <div 
-                  className={`px-6 overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? 'max-h-40 pb-6 opacity-100' : 'max-h-0 opacity-0'}`}
-                >
-                  <p className="text-slate-600 leading-relaxed">
-                    {faq.answer}
-                  </p>
+                <span style={{ fontWeight: 700, color: C.navy, fontSize: 16, paddingRight: 24 }}>
+                  {item.q}
+                </span>
+                <span style={{ color: open === i ? C.blue : C.muted, fontSize: 22, fontWeight: 300, flexShrink: 0 }}>
+                  {open === i ? "−" : "+"}
+                </span>
+              </button>
+
+              {open === i && (
+                <div style={{ padding: "0 28px 28px", color: C.muted, lineHeight: 1.75, fontSize: 15 }}>
+                  {item.a}
                 </div>
-              </div>
-            );
-          })}
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </section>

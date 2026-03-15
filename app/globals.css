@@ -1,15 +1,13 @@
-/* app/globals.css */
+/* ── Fonts & Frameworks ──────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-/* Removed the @custom-variant dark to completely disable Tailwind dark mode.
-  This guarantees no system-level dark theme media queries can turn components black.
-*/
-
+/* ── Design System Variables (Strict Light Mode) ─────── */
 :root {
   /* Core layout - strictly white/light */
-  --background: oklch(0.99 0 0); /* Pure white background */
-  --foreground: oklch(0.13 0.02 260); /* Dark text for readability */
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.13 0.02 260);
   
   /* Cards and Popovers */
   --card: oklch(1 0 0);
@@ -17,11 +15,9 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.13 0.02 260);
   
-  /* Primary components (Buttons, etc.) 
-    Change this if you want buttons to be a lighter brand color instead of dark blue/black.
-  */
-  --primary: oklch(0.55 0.18 260); /* Lightened to a clear blue rather than near-black */
-  --primary-foreground: oklch(0.98 0 0); /* White text on primary buttons */
+  /* Primary Action Colors */
+  --primary: oklch(0.55 0.18 260); 
+  --primary-foreground: oklch(0.98 0 0);
   
   --secondary: oklch(0.96 0.01 260);
   --secondary-foreground: oklch(0.25 0.02 260);
@@ -37,7 +33,7 @@
   --input: oklch(0.91 0.01 260);
   --ring: oklch(0.55 0.18 260);
   
-  /* Charts */
+  /* Data Visualization Palette */
   --chart-1: oklch(0.45 0.18 260);
   --chart-2: oklch(0.55 0.15 290);
   --chart-3: oklch(0.5 0.12 230);
@@ -45,7 +41,7 @@
   --chart-5: oklch(0.4 0.15 250);
   --radius: 0.625rem;
   
-  /* Sidebar */
+  /* Dashboard Sidebar */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.55 0.18 260);
@@ -57,8 +53,10 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: 'Plus Jakarta Sans', 'Geist', 'sans-serif';
+  --font-mono: 'JetBrains Mono', 'Geist Mono', 'monospace';
+  --font-serif: 'Playfair Display', 'serif';
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -78,15 +76,12 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
+  
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -97,32 +92,173 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* ── Base Layer ──────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
   }
+  
+  html { 
+    scroll-behavior: smooth; 
+  }
+
   body {
     @apply bg-background text-foreground;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
 }
 
+/* ── Typography & UI Helpers ─────────────────────────── */
+.pfd { font-family: 'Playfair Display', serif; }
+.jbm { font-family: 'JetBrains Mono', monospace; }
+
+.nav-scrolled {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #DDE8F2 !important;
+}
+
+/* ── Buttons ─────────────────────────────────────────── */
+.btn-navy {
+  background: #0A1628;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-navy:hover {
+  background: #142038;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(10, 22, 40, 0.1);
+}
+
+.btn-blue {
+  background: #1B6EBF;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-blue:hover {
+  background: #2580D4;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(27, 110, 191, 0.25);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #0A1628;
+  font-weight: 600;
+  font-size: 15px;
+  border: 1.5px solid #C8D9E8;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-ghost:hover {
+  border-color: #1B6EBF;
+  background: #EBF4FD;
+  color: #1B6EBF;
+}
+
+/* ── Background Textures ─────────────────────────────── */
+.dot-grid {
+  background-image: radial-gradient(#C8D9E8 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.blueprint-grid {
+  background-image:
+    linear-gradient(#DDE8F2 1px, transparent 1px),
+    linear-gradient(90deg, #DDE8F2 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.dark-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── Layout & Responsiveness ─────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.bento-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+
+@media (max-width: 992px) {
+  .grid-2, .bento-grid { grid-template-columns: 1fr; gap: 40px; }
+  .grid-3 { grid-template-columns: 1fr; }
+  .hide-mobile { display: none !important; }
+  .hero-text { font-size: clamp(40px, 8vw, 56px) !important; }
+}
+
+/* ── Animations ──────────────────────────────────────── */
+@keyframes float1 {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+@keyframes float2 {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(12px); }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(27, 110, 191, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(27, 110, 191, 0); }
+}
+@keyframes typing-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
 @keyframes grid-fade {
   0% { opacity: 0.03; }
   50% { opacity: 0.06; }
   100% { opacity: 0.03; }
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-6px); }
+.anim-float-1 { animation: float1 6s ease-in-out infinite; }
+.anim-float-2 { animation: float2 7s ease-in-out infinite reverse; }
+
+.pulse-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1B6EBF;
+  animation: pulse-glow 2s infinite;
 }
 
-@keyframes pulse-subtle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+.fu {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-@keyframes typing-cursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+.fu.vis {
+  opacity: 1;
+  transform: translateY(0);
 }

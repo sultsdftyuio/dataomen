@@ -1,149 +1,77 @@
-'use client'
+"use client";
 
-import { Button } from '@/components/ui/button'
-import { useTheme } from 'next-themes'
-import { Moon, Sun, Menu, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
+import { useState, useEffect } from "react";
+import { Database, Calendar } from "lucide-react";
+import { C } from "@/lib/tokens";
 
-/**
- * Updated Navbar with "The Prism" Logo
- * Path: components/landing/navbar.tsx
- */
 export function Navbar() {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    setMounted(true)
-    const handleScroll = () => setScrolled(window.scrollY > 20)
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+    const h = () => setScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", h);
+    return () => window.removeEventListener("scroll", h);
+  }, []);
+
+  const navLinks = ["Platform", "Agents", "Pricing", "Docs", "Security"];
 
   return (
     <nav
-      className={`sticky top-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? 'border-b border-border bg-background/80 backdrop-blur-xl'
-          : 'bg-transparent'
-      }`}
+      className={scrolled ? "nav-scrolled" : ""}
+      style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, transition: "all 0.3s" }}
     >
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        
-        {/* Logo - Style 2: The Prism (Navy Infrastructure Series) */}
-        <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-90">
-          <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-full w-full text-blue-600 drop-shadow-[0_0_8px_rgba(37,99,235,0.3)]"
-            >
-              {/* Hexagonal Frame representing Data Containers */}
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-              
-              {/* Internal Facets representing Columnar Partitioning */}
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96" className="opacity-80" />
-              <line x1="12" y1="22.08" x2="12" y2="12" className="opacity-80" />
-            </svg>
+      <div style={{
+        maxWidth: 1240, margin: "0 auto", padding: "0 24px",
+        height: 80, display: "flex", alignItems: "center", justifyContent: "space-between"
+      }}>
+        {/* Logo */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10, background: C.navy,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <Database size={18} color="#fff" />
           </div>
-          
-          {/* Typography: Bold, Uppercase, Navy Accent */}
-          <span className="text-xl font-black uppercase tracking-tight text-foreground">
-            Data<span className="text-blue-600">Omen</span>
+          <span style={{
+            fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 24,
+            fontWeight: 800, color: C.navy, letterSpacing: "-0.03em", textTransform: "uppercase"
+          }}>
+            Arclis<span style={{ color: C.blue }}>.</span>
           </span>
-        </Link>
+        </div>
 
-        {/* Desktop Nav */}
-        <div className="hidden items-center gap-1 md:flex">
-          {['Features', 'How it Works', 'Pricing'].map((item) => (
+        {/* Nav Links */}
+        <div className="hide-mobile" style={{ display: "flex", gap: 32 }}>
+          {navLinks.map(n => (
             <a
-              key={item}
-              href={`#${item.toLowerCase().replace(/ /g, '-')}`}
-              className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              key={n}
+              href={n === "Pricing" ? "#pricing" : `#${n.toLowerCase()}`}
+              style={{ textDecoration: "none", color: C.muted, fontWeight: 600, fontSize: 15, transition: "color 0.2s" }}
+              onMouseOver={e => (e.currentTarget.style.color = C.navy)}
+              onMouseOut={e  => (e.currentTarget.style.color = C.muted)}
             >
-              {item}
+              {n}
             </a>
           ))}
         </div>
 
-        {/* Right Side */}
-        <div className="flex items-center gap-2">
-          {mounted && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle theme"
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-          )}
-          
-          {/* Desktop Auth Buttons */}
-          <div className="hidden items-center gap-2 md:flex">
-            <Link href="/login">
-              <Button variant="ghost" size="sm">
-                Log In
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button size="sm">
-                Sign Up
-              </Button>
-            </Link>
-          </div>
-
-          {/* Mobile Menu Toggle Button */}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="md:hidden"
-            onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="Toggle menu"
+        {/* CTA Buttons */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <a
+            href="/demo"
+            className="btn-ghost hide-mobile"
+            style={{ padding: "10px 20px", display: "inline-flex", alignItems: "center", gap: 8 }}
           >
-            {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-          </Button>
+            <Calendar size={15} /> Book Demo
+          </a>
+          <a href="/login" className="btn-ghost hide-mobile" style={{ padding: "10px 20px" }}>
+            Log In
+          </a>
+          <a href="/register" className="btn-navy" style={{ padding: "10px 24px" }}>
+            Start Free Trial
+          </a>
         </div>
       </div>
-
-      {/* Mobile Menu */}
-      {mobileOpen && (
-        <div className="border-b border-border bg-background px-6 pb-4 md:hidden">
-          <div className="flex flex-col gap-1">
-            {['Features', 'How it Works', 'Pricing'].map((item) => (
-              <a
-                key={item}
-                href={`#${item.toLowerCase().replace(/ /g, '-')}`}
-                className="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setMobileOpen(false)}
-              >
-                {item}
-              </a>
-            ))}
-            
-            {/* Mobile Auth Buttons */}
-            <div className="mt-4 flex flex-col gap-2">
-              <Link href="/login" onClick={() => setMobileOpen(false)}>
-                <Button variant="outline" className="w-full justify-center">
-                  Log In
-                </Button>
-              </Link>
-              <Link href="/login" onClick={() => setMobileOpen(false)}>
-                <Button className="w-full justify-center">
-                  Sign Up
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
     </nav>
-  )
+  );
 }
