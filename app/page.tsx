@@ -14,7 +14,7 @@ import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsec
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
 import { SeoLinkSilo } from "@/components/landing/seo-link-silo";
-import { Footer } from "@/components/landing/footer";
+import  Footer  from "@/components/landing/footer";
 
 /**
  * Arcli Landing Page

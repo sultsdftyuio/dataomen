@@ -1,5 +1,6 @@
+// lib/seo/text-to-sql.tsx
 import React from 'react';
-import { Database, Zap } from 'lucide-react';
+import { Database, Zap, Server, Cloud } from 'lucide-react';
 
 /**
  * SEOPageData Interface
@@ -26,6 +27,7 @@ export type SEOPageData = {
 };
 
 export const textToSqlFeatures: Record<string, SEOPageData> = {
+  // Broad / Mid-Tail Niche
   'natural-language-to-sql': {
     type: 'feature',
     title: 'Natural Language to SQL Generator | Arcli',
@@ -43,30 +45,60 @@ export const textToSqlFeatures: Record<string, SEOPageData> = {
       { title: 'Self-Serve Analytics', description: 'Empower non-technical leads to query live data without bottlenecking the data engineering team.' }
     ],
     faqs: [
-      { q: 'Will the AI accidentally delete my data?', a: 'No. Arcli strictly enforces read-only analytical connections. Our security-by-design architecture prevents any DROP or DELETE operations.' }
+      { q: 'Will the AI accidentally delete my data?', a: 'No. Arcli strictly enforces read-only analytical connections. Our security-by-design architecture prevents any DROP or DELETE operations.' },
+      { q: 'Can it handle complex JOINs?', a: 'Yes. By utilizing semantic RAG on your schema, the AI understands primary and foreign key relationships to generate flawless multi-table JOINs.' }
     ],
-    relatedSlugs: ['text-to-sql', 'postgresql-ai-analytics']
+    relatedSlugs: ['postgresql-text-to-sql', 'snowflake-ai-analytics', 'chat-with-database']
   },
 
-  'text-to-sql': {
-    type: 'guide',
-    title: 'Text to SQL AI Platform | Arcli',
-    description: 'Transform text to SQL automatically. Connect your warehouse to Arcli and generate complex JOINs and window functions via vectorized AI.',
-    h1: 'The Most Accurate Text-to-SQL AI',
-    subtitle: 'Stop wrestling with complex SQL syntax. Generate enterprise-grade queries just by describing your analytical needs.',
-    icon: <Zap className="w-12 h-12 text-yellow-500 mb-6" />,
-    features: ['Self-Correcting Query Engine', 'Step-by-Step Logic Explanation', 'Vectorized Performance Optimization'],
+  // Hyper-Niche: Postgres Focus (High technical search intent)
+  'postgresql-text-to-sql': {
+    type: 'integration',
+    title: 'PostgreSQL Text to SQL AI Generator | Arcli',
+    description: 'Connect your Postgres database to Arcli. Convert natural language to optimized PostgreSQL queries instantly using AI and RAG schema awareness.',
+    h1: 'AI-Powered Text to SQL for PostgreSQL',
+    subtitle: 'Generate complex PostgreSQL queries, CTEs, and window functions instantly just by typing your analytical questions in plain English.',
+    icon: <Server className="w-12 h-12 text-blue-600 mb-6" />,
+    features: ['Postgres-Specific Syntax', 'JSONB Field Support', 'Automated Index Awareness'],
     steps: [
-      { name: 'Describe Logic', text: 'e.g., "Calculate a 7-day moving average of revenue by region." Arcli handles the window functions.' },
-      { name: 'Review Logic', text: 'The engine explains the generated SQL in plain English so you can verify the mathematical precision.' },
-      { name: 'Visualize Results', text: 'Instantly transform the output into DuckDB-powered interactive charts or export to Parquet.' }
+      { name: 'Connect Postgres URL', text: 'Provide a read-only Postgres connection string. We map the schema instantly.' },
+      { name: 'Ask Complex Questions', text: 'e.g., "Show me top users by JSONB event metrics over the last 30 days."' },
+      { name: 'Export to DuckDB', text: 'Queries are executed and results are loaded into an in-browser DuckDB instance for zero-latency charting.' }
     ],
+    comparison: {
+      competitor: 'Generic LLMs (ChatGPT/Claude)',
+      competitorFlaws: ['Hallucinates Postgres table names', 'Struggles with JSONB extraction syntax', 'Requires manual copy-pasting'],
+      arcliWins: ['100% Schema accurate via RAG', 'Native JSONB and CTE support', 'Executes and charts results in one UI']
+    },
     useCases: [
-      { title: 'Rapid Hypotheses Testing', description: 'Instantly generate complex analytical JOINs to test data hypotheses on the fly without writing code.' }
+      { title: 'SaaS App Analytics', description: 'Query your production Postgres replica directly to understand user behavior without writing custom dashboards.' }
     ],
     faqs: [
-      { q: 'How is this different from generic LLMs?', a: 'Generic LLMs often hallucinate table names. Arcli uses Semantic Governance and RAG to ensure 100% schema accuracy.' }
+      { q: 'Does Arcli support PostgreSQL JSONB queries?', a: 'Yes, our Text-to-SQL engine is trained to unpack and query Postgres JSONB arrays and objects efficiently.' }
     ],
-    relatedSlugs: ['natural-language-to-sql', 'chat-with-database']
+    relatedSlugs: ['natural-language-to-sql', 'ai-dashboard-builder']
+  },
+
+  // Hyper-Niche: Snowflake Focus (Enterprise search intent)
+  'snowflake-ai-analytics': {
+    type: 'integration',
+    title: 'Snowflake Text to SQL & AI Analytics | Arcli',
+    description: 'Transform your Snowflake data warehouse with AI. Generate Snowflake SQL from English and build automated analytical dashboards.',
+    h1: 'Natural Language AI for Snowflake',
+    subtitle: 'Stop wasting warehouse compute on poorly optimized queries. Arcli generates cost-efficient, performant Snowflake SQL automatically.',
+    icon: <Cloud className="w-12 h-12 text-sky-400 mb-6" />,
+    features: ['Warehouse Compute Optimization', 'Columnar RAG Indexing', 'Snowflake Role-Based Access'],
+    steps: [
+      { name: 'Connect Warehouse', text: 'Securely link Arcli using a read-only Snowflake role.' },
+      { name: 'Semantic RAG Search', text: 'We index your massive schemas without moving your underlying columnar data.' },
+      { name: 'Generate & Chart', text: 'Ask questions. We generate the Snowflake-compliant SQL and visualize the returned Parquet files instantly.' }
+    ],
+    useCases: [
+      { title: 'Executive Data Democratization', description: 'Allow C-suite to query Snowflake data lakes securely via chat, bypassing the BI queue.' }
+    ],
+    faqs: [
+      { q: 'How do you handle massive Snowflake schemas?', a: 'We utilize semantic routing. We only pass the metadata of relevant tables to the LLM context window, preventing token limits and hallucinations.' }
+    ],
+    relatedSlugs: ['natural-language-to-sql', 'ai-business-intelligence']
   }
 };
