@@ -14,7 +14,7 @@ export type SEOPageData = {
   faqs: { q: string; a: string }[];
   comparison?: { 
     competitor: string; 
-    dataOmenWins: string[]; 
+    arcliWins: string[]; 
     competitorFlaws: string[]; 
   };
   relatedSlugs: string[];
@@ -23,7 +23,7 @@ export type SEOPageData = {
 export const coreFeatures: Record<string, SEOPageData> = {
   'ai-data-analysis': {
     type: 'feature',
-    title: 'AI Data Analysis Platform | DataOmen',
+    title: 'AI Data Analysis Platform | Arcli',
     description: 'Transform raw data into actionable business intelligence instantly. Upload CSVs or connect databases for zero-code AI data analysis.',
     h1: 'AI Data Analysis Built for Speed',
     subtitle: 'Upload your data and let our AI engine uncover patterns, anomalies, and insights in seconds.',
@@ -47,7 +47,7 @@ export const coreFeatures: Record<string, SEOPageData> = {
 
   'ai-business-intelligence': {
     type: 'feature',
-    title: 'AI Business Intelligence Tools | DataOmen',
+    title: 'AI Business Intelligence Tools | Arcli',
     description: 'Empower your entire organization with AI-native Business Intelligence. From predictive metrics to conversational analytics.',
     h1: 'Next-Generation AI Business Intelligence',
     subtitle: 'Give your operators the power of a dedicated data science team. Ask questions, get answers, drive revenue.',
@@ -69,7 +69,7 @@ export const coreFeatures: Record<string, SEOPageData> = {
 
   'ai-dashboard-builder': {
     type: 'feature',
-    title: 'Automated AI Dashboard Builder | DataOmen',
+    title: 'Automated AI Dashboard Builder | Arcli',
     description: 'Build beautiful, interactive business dashboards automatically using AI. Connect your data and get a full reporting suite.',
     h1: 'The Zero-Click AI Dashboard Builder',
     subtitle: 'Why drag and drop when AI can build it for you? Generate tailored, highly-interactive dashboards based on your metrics.',
@@ -91,7 +91,7 @@ export const coreFeatures: Record<string, SEOPageData> = {
 
   'ai-data-visualization-tool': {
     type: 'feature',
-    title: 'AI Data Visualization Tool | DataOmen',
+    title: 'AI Data Visualization Tool | Arcli',
     description: 'Turn complex datasets into beautiful, interactive charts instantly. Use our AI data visualization tool to generate graphs without dragging and dropping.',
     h1: 'AI-Powered Data Visualization',
     subtitle: 'Stop wasting time configuring chart axes. Tell our AI what you want to see, and it generates the perfect visualization instantly.',
@@ -113,7 +113,7 @@ export const coreFeatures: Record<string, SEOPageData> = {
 
   'ai-excel-analysis': {
     type: 'feature',
-    title: 'AI Excel Analysis Tool | DataOmen',
+    title: 'AI Excel Analysis Tool | Arcli',
     description: 'Upgrade your Excel workflows. Use AI to analyze large financial models, sales data, and raw exports effortlessly.',
     h1: 'AI-Powered Excel Analysis',
     subtitle: 'Excel is great for viewing data, but terrible for analyzing millions of rows. Let our AI do the heavy lifting.',
@@ -128,7 +128,7 @@ export const coreFeatures: Record<string, SEOPageData> = {
       { title: 'Consolidating Reports', description: 'Merge multiple regional Excel reports into a single, cohesive AI dashboard.' }
     ],
     faqs: [
-      { q: 'Does this replace Excel?', a: 'No, it augments it. You can still use Excel for input, but DataOmen becomes your presentation layer.' }
+      { q: 'Does this replace Excel?', a: 'No, it augments it. You can still use Excel for input, but Arcli becomes your presentation layer.' }
     ],
     relatedSlugs: ['analyze-csv-with-ai', 'how-to-analyze-sales-data']
   }

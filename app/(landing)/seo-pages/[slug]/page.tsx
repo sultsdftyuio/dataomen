@@ -13,23 +13,28 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
-// Updated import path to match your modular architecture
+// Centralized SEO data registry
 import { seoPages, type SEOPageData } from '@/lib/seo/index';
 
 interface PageProps { params: { slug: string; }; }
 
-// 2. BUILD-TIME STATIC GENERATION (0ms Latency)
+/**
+ * 1. STATIC PARAMETER GENERATION
+ * Pre-renders all SEO silo pages at build time for 0ms latency on arcli.tech.
+ */
 export function generateStaticParams() {
   return Object.keys(seoPages).map((slug) => ({ slug }));
 }
 
-// 3. DYNAMIC METADATA & AUTOMATIC OG IMAGES
+/**
+ * 2. DYNAMIC METADATA & AUTOMATIC OG IMAGES
+ * Domain updated to arcli.tech for search engine indexing.
+ */
 export function generateMetadata({ params }: PageProps): Metadata {
   const pageData = seoPages[params.slug];
   if (!pageData) return { title: 'Not Found' };
 
-  // Points to an automatic OpenGraph generator (e.g., /api/og)
-  const ogImageUrl = new URL('https://dataomen.com/api/og');
+  const ogImageUrl = new URL('https://arcli.tech/api/og');
   ogImageUrl.searchParams.set('title', pageData.h1);
   ogImageUrl.searchParams.set('type', pageData.type);
 
@@ -40,10 +45,10 @@ export function generateMetadata({ params }: PageProps): Metadata {
       title: pageData.title,
       description: pageData.description,
       type: 'article',
-      url: `https://dataomen.com/${params.slug}`,
+      url: `https://arcli.tech/${params.slug}`,
       images: [{ url: ogImageUrl.toString(), width: 1200, height: 630 }]
     },
-    alternates: { canonical: `https://dataomen.com/${params.slug}` },
+    alternates: { canonical: `https://arcli.tech/${params.slug}` },
   };
 }
 
@@ -51,36 +56,39 @@ export default function SEOPage({ params }: PageProps) {
   const pageData = seoPages[params.slug];
   if (!pageData) notFound();
 
-  // 4. THE ULTIMATE JSON-LD GRAPH (Software + Article + FAQ + HowTo + Breadcrumbs)
+  /**
+   * 3. THE ARCLI JSON-LD GRAPH
+   * Rich schema for arcli.tech including SoftwareApplication and FAQ datasets.
+   */
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
       {
         '@type': 'SoftwareApplication',
-        name: 'DataOmen',
+        name: 'Arcli',
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         description: pageData.description,
-        url: `https://dataomen.com/${params.slug}`,
+        url: `https://arcli.tech/${params.slug}`,
       },
       {
         '@type': 'Article',
         headline: pageData.h1,
         description: pageData.description,
-        author: { '@type': 'Organization', name: 'DataOmen', url: 'https://dataomen.com' },
+        author: { '@type': 'Organization', name: 'Arcli', url: 'https://arcli.tech' },
         publisher: { 
           '@type': 'Organization', 
-          name: 'DataOmen', 
-          logo: { '@type': 'ImageObject', url: 'https://dataomen.com/icon.png' } 
+          name: 'Arcli', 
+          logo: { '@type': 'ImageObject', url: 'https://arcli.tech/icon.png' } 
         },
-        mainEntityOfPage: { '@type': 'WebPage', '@id:': `https://dataomen.com/${params.slug}` }
+        mainEntityOfPage: { '@type': 'WebPage', '@id:': `https://arcli.tech/${params.slug}` }
       },
       {
         '@type': 'BreadcrumbList',
         itemListElement: [
-          { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://dataomen.com' },
-          { '@type': 'ListItem', position: 2, name: pageData.type.charAt(0).toUpperCase() + pageData.type.slice(1) + 's', item: `https://dataomen.com/${pageData.type}s` },
-          { '@type': 'ListItem', position: 3, name: pageData.h1, item: `https://dataomen.com/${params.slug}` }
+          { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://arcli.tech' },
+          { '@type': 'ListItem', position: 2, name: pageData.type.charAt(0).toUpperCase() + pageData.type.slice(1) + 's', item: `https://arcli.tech/${pageData.type}s` },
+          { '@type': 'ListItem', position: 3, name: pageData.h1, item: `https://arcli.tech/${params.slug}` }
         ]
       },
       {
@@ -143,7 +151,7 @@ export default function SEOPage({ params }: PageProps) {
             {/* MAIN CONTENT (Left) */}
             <div className="lg:col-span-8 space-y-24">
               
-              {/* TABLE OF CONTENTS (Automated based on available data) */}
+              {/* TABLE OF CONTENTS */}
               <nav className="p-6 rounded-2xl border border-white/10 bg-white/[0.02] mb-12">
                 <div className="flex items-center gap-2 mb-4 text-white font-semibold">
                   <ListTodo className="w-5 h-5 text-blue-500" />
@@ -175,10 +183,10 @@ export default function SEOPage({ params }: PageProps) {
                 </div>
               </div>
 
-              {/* COMPARISON */}
+              {/* COMPARISON - Arcli Performance Layer */}
               {pageData.comparison && (
                 <div id="comparison" className="scroll-mt-24">
-                  <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/10 pb-4">DataOmen vs. {pageData.comparison.competitor}</h2>
+                  <h2 className="text-3xl font-bold text-white mb-8 border-b border-white/10 pb-4">Arcli vs. {pageData.comparison.competitor}</h2>
                   <div className="grid sm:grid-cols-2 gap-6">
                     <div className="p-8 rounded-2xl border border-white/5 bg-neutral-900/50">
                       <div className="text-xl font-bold text-neutral-400 mb-6">{pageData.comparison.competitor}</div>
@@ -193,9 +201,9 @@ export default function SEOPage({ params }: PageProps) {
                     </div>
                     <div className="p-8 rounded-2xl border border-blue-500/30 bg-blue-500/5 relative overflow-hidden">
                       <div className="absolute top-0 right-0 px-3 py-1 bg-blue-500 text-xs font-bold text-white rounded-bl-lg">Modern Choice</div>
-                      <div className="text-xl font-bold text-white mb-6">DataOmen</div>
+                      <div className="text-xl font-bold text-white mb-6">Arcli</div>
                       <ul className="space-y-4">
-                        {pageData.comparison.dataOmenWins.map((win, idx) => (
+                        {pageData.comparison.arcliWins.map((win, idx) => (
                           <li key={idx} className="flex items-start text-neutral-200">
                             <Check className="w-5 h-5 mr-3 text-blue-400 shrink-0 mt-0.5" />
                             {win}

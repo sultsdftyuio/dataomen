@@ -1,18 +1,40 @@
 "use client";
 
+import React from "react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
-const stats = [
+/**
+ * Arcli Social Proof Component
+ * Architecture: High-performance trust layering.
+ * Rebrand: Transitioned from DataOmen to Arcli.
+ * Precision: Added explicit TypeScript interfaces for data structures.
+ */
+
+interface Stat {
+  value: string;
+  label: string;
+}
+
+interface Testimonial {
+  quote: string;
+  name: string;
+  role: string;
+  company: string;
+  initials: string;
+  color: string;
+}
+
+const stats: Stat[] = [
   { value: "1,200+", label: "Data teams" },
   { value: "4.2B",   label: "Rows analyzed" },
   { value: "< 5 min", label: "Avg. setup time" },
   { value: "99.9%",  label: "Uptime SLA" },
 ];
 
-const testimonials = [
+const testimonials: Testimonial[] = [
   {
-    quote: "Replaced 80% of our BI dashboard work. Our analysts now spend time on strategy, not queries.",
+    quote: "Arcli replaced 80% of our BI dashboard work. Our analysts now spend time on strategy, not queries.",
     name: "Sarah Chen",
     role: "Head of Data",
     company: "Nexus Technologies",
@@ -20,7 +42,7 @@ const testimonials = [
     color: C.blue,
   },
   {
-    quote: "We caught a payment processor issue before a single customer noticed. That alone paid for a year.",
+    quote: "We caught a payment processor issue before a single customer noticed via Arcli's anomaly detection. That alone paid for a year.",
     name: "Marcus Webb",
     role: "VP Engineering",
     company: "Quantum Commerce",
@@ -28,7 +50,7 @@ const testimonials = [
     color: C.green,
   },
   {
-    quote: "Our CFO now pulls her own revenue breakdowns. That sentence wouldn't have made sense 6 months ago.",
+    quote: "Our CFO now pulls her own revenue breakdowns using Arcli. That sentence wouldn't have made sense 6 months ago.",
     name: "Priya Nair",
     role: "CTO",
     company: "Vertex SaaS",
@@ -47,7 +69,16 @@ export function SocialProof() {
         {/* ── Stats Row ── */}
         <div
           className={`fu ${vis ? "vis" : ""}`}
-          style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: C.rule, border: `1px solid ${C.rule}`, borderRadius: 20, overflow: "hidden", marginBottom: 80 }}
+          style={{ 
+            display: "grid", 
+            gridTemplateColumns: "repeat(4,1fr)", 
+            gap: 1, 
+            background: C.rule, 
+            border: `1px solid ${C.rule}`, 
+            borderRadius: 20, 
+            overflow: "hidden", 
+            marginBottom: 80 
+          }}
         >
           {stats.map((s, i) => (
             <div key={i} style={{ background: "#fff", padding: "40px 32px", textAlign: "center" }}>
@@ -63,16 +94,29 @@ export function SocialProof() {
 
         {/* ── Testimonials ── */}
         <div className={`fu ${vis ? "vis" : ""}`} style={{ transitionDelay: "120ms" }}>
-          <p style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 40 }}>
-            What customers are saying
+          <p style={{ 
+            textAlign: "center", 
+            fontSize: 13, 
+            fontWeight: 700, 
+            color: C.muted, 
+            textTransform: "uppercase", 
+            letterSpacing: "0.1em", 
+            marginBottom: 40 
+          }}>
+            What high-performance teams are saying about Arcli
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 24 }}>
             {testimonials.map((t, i) => (
               <div
                 key={i}
                 style={{
-                  background: C.offWhite, border: `1px solid ${C.rule}`, borderRadius: 20,
-                  padding: 36, display: "flex", flexDirection: "column", gap: 24,
+                  background: C.offWhite, 
+                  border: `1px solid ${C.rule}`, 
+                  borderRadius: 20,
+                  padding: 36, 
+                  display: "flex", 
+                  flexDirection: "column", 
+                  gap: 24,
                   transition: "box-shadow 0.2s",
                 }}
                 onMouseOver={e => (e.currentTarget.style.boxShadow = "0 16px 40px rgba(10,22,40,0.06)")}
@@ -91,10 +135,17 @@ export function SocialProof() {
 
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                   <div style={{
-                    width: 44, height: 44, borderRadius: "50%",
+                    width: 44, 
+                    height: 44, 
+                    borderRadius: "50%",
                     background: t.color,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "#fff", fontWeight: 800, fontSize: 14, flexShrink: 0
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    color: "#fff", 
+                    fontWeight: 800, 
+                    fontSize: 14, 
+                    flexShrink: 0
                   }}>
                     {t.initials}
                   </div>

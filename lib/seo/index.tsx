@@ -8,6 +8,11 @@ import { competitorComparisons } from './competitorComparisons';
 import { howToGuides } from './guides';
 import { dashboardTemplates } from './templates';
 
+/**
+ * Arcli SEO System Configuration
+ * This central index aggregates all performance-tuned SEO data into a 
+ * single, type-safe registry for the landing page router.
+ */
 export type SEOPageData = {
   type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
   title: string;
@@ -21,7 +26,7 @@ export type SEOPageData = {
   faqs: { q: string; a: string }[];
   comparison?: { 
     competitor: string; 
-    dataOmenWins: string[]; 
+    arcliWins: string[]; // Synchronized with rebranding
     competitorFlaws: string[]; 
   };
   relatedSlugs: string[];
@@ -29,7 +34,7 @@ export type SEOPageData = {
 
 /**
  * Combined SEO Pages - Main Export
- * All pages are organized by category in separate files
+ * Merges all modularized category records into a single lookup object.
  */
 export const seoPages: Record<string, SEOPageData> = {
   ...coreFeatures,
@@ -43,7 +48,7 @@ export const seoPages: Record<string, SEOPageData> = {
 };
 
 /**
- * Export by category for easier navigation
+ * Export by category for easier navigation and silo-based internal linking.
  */
 export const seoPagesByCategory = {
   coreFeatures,
@@ -58,22 +63,23 @@ export const seoPagesByCategory = {
 
 /**
  * Utility Functions
+ * High-performance accessors for the SEO metadata layer.
  */
 
-// Get all pages of a specific type
+// Get all pages of a specific type (e.g., all 'comparison' pages)
 export const getPagesByType = (type: SEOPageData['type']): Record<string, SEOPageData> => {
   return Object.entries(seoPages)
     .filter(([_, page]) => page.type === type)
     .reduce((acc, [slug, page]) => ({ ...acc, [slug]: page }), {});
 };
 
-// Get all page slugs
+// Get all unique page slugs for static path generation
 export const getAllSlugs = (): string[] => Object.keys(seoPages);
 
-// Get a specific page
+// Retrieve metadata for a specific slug with fallback
 export const getPage = (slug: string): SEOPageData | undefined => seoPages[slug];
 
-// Get pages by category name
+// Access pages grouped by their specific category
 export const getPagesByCategory = (category: keyof typeof seoPagesByCategory): Record<string, SEOPageData> => {
   return seoPagesByCategory[category];
 };

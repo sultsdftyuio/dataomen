@@ -7,8 +7,8 @@ interface LogoProps extends React.SVGProps<SVGSVGElement> {
 }
 
 /**
- * ARCLIS Brand Component
- * Rebrand: High-performance 6-letter technical identity.
+ * ARCLI Brand Component
+ * Rebrand: High-performance 5-letter technical identity.
  * Concept: The "Arc & Axis" - representing structural integrity, 
  * multi-tenant isolation, and high-velocity compute.
  */
@@ -32,7 +32,7 @@ export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
             className="opacity-20"
           />
           
-          {/* The Arclis Primary Arc (Represents the "Oracle" view) */}
+          {/* The Arcli Primary Arc (Represents the "Oracle" view) */}
           <path 
             d="M4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12" 
             stroke="currentColor" 
@@ -54,11 +54,11 @@ export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
         </svg>
       </div>
 
-      {/* Wordmark: ARCLIS */}
+      {/* Wordmark: ARCLI */}
       {!iconOnly && (
         <div className="flex flex-col leading-none">
           <span className="text-2xl font-extrabold tracking-[-0.03em] text-slate-100 uppercase">
-            Arclis<span className="text-blue-500">.</span>
+            Arcli<span className="text-blue-500">.</span>
           </span>
           <span className="text-[10px] font-black tracking-[0.35em] text-slate-500 uppercase mt-1">
             Technologies

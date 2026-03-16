@@ -36,7 +36,7 @@ export function Navbar() {
             fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 24,
             fontWeight: 800, color: C.navy, letterSpacing: "-0.03em", textTransform: "uppercase"
           }}>
-            Arclis<span style={{ color: C.blue }}>.</span>
+            Arcli<span style={{ color: C.blue }}>.</span>
           </span>
         </div>
 

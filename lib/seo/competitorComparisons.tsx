@@ -19,7 +19,7 @@ export type SEOPageData = {
   faqs: { q: string; a: string }[];
   comparison?: { 
     competitor: string; 
-    dataOmenWins: string[]; 
+    arcliWins: string[]; 
     competitorFlaws: string[]; 
   };
   relatedSlugs: string[];
@@ -28,7 +28,7 @@ export type SEOPageData = {
 export const competitorComparisons: Record<string, SEOPageData> = {
   'tableau-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Tableau vs AI Analytics: The Modern Stack | DataOmen',
+    title: 'Tableau vs AI Analytics: The Modern Stack | Arcli',
     description: 'See why modern data teams are switching from traditional BI tools like Tableau to AI-native analytics platforms.',
     h1: 'Move Beyond Legacy BI. Switch to AI Analytics.',
     subtitle: 'Stop wrestling with complex workflows. Discover how AI-native analytics reduces time-to-insight from weeks to seconds.',
@@ -41,7 +41,7 @@ export const competitorComparisons: Record<string, SEOPageData> = {
     ],
     comparison: {
       competitor: 'Tableau',
-      dataOmenWins: ['Conversational AI Interface (NL2SQL)', 'Zero learning curve for business users', 'No expensive desktop licenses required'],
+      arcliWins: ['Conversational AI Interface (NL2SQL)', 'Zero learning curve for business users', 'No expensive desktop licenses required'],
       competitorFlaws: ['Requires knowing VizQL and calculated fields', 'Extremely expensive for full-org deployment', 'Slow desktop-to-cloud workflows']
     },
     useCases: [
@@ -55,10 +55,10 @@ export const competitorComparisons: Record<string, SEOPageData> = {
 
   'powerbi-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Power BI vs AI Analytics | DataOmen',
+    title: 'Power BI vs AI Analytics | Arcli',
     description: 'Compare Microsoft Power BI with modern AI analytics. Learn why startups and modern enterprises are ditching DAX for AI.',
     h1: 'Ditch DAX. Embrace AI.',
-    subtitle: 'PowerBI is powerful, but requires learning complex DAX formulas. DataOmen replaces formulas with plain English.',
+    subtitle: 'PowerBI is powerful, but requires learning complex DAX formulas. Arcli replaces formulas with plain English.',
     icon: <Activity className="w-12 h-12 text-yellow-600 mb-6" />,
     features: ['Cloud Native', 'Mac & PC Compatible', 'Natural Language Interface'],
     steps: [
@@ -68,24 +68,24 @@ export const competitorComparisons: Record<string, SEOPageData> = {
     ],
     comparison: {
       competitor: 'Power BI',
-      dataOmenWins: ['No DAX formulas to learn', 'Browser-first, Mac-friendly', 'Automated AI chart selection'],
+      arcliWins: ['No DAX formulas to learn', 'Browser-first, Mac-friendly', 'Automated AI chart selection'],
       competitorFlaws: ['DAX has a massive learning curve', 'Desktop app is Windows only', 'Clunky cloud publishing experience']
     },
     useCases: [
       { title: 'Agile Reporting', description: 'Pivot reporting metrics instantly during executive meetings using chat.' }
     ],
     faqs: [
-      { q: 'Is DataOmen Mac compatible?', a: 'Yes. DataOmen is 100% cloud-native and works perfectly on Mac, Windows, and Linux browsers.' }
+      { q: 'Is Arcli Mac compatible?', a: 'Yes. Arcli is 100% cloud-native and works perfectly on Mac, Windows, and Linux browsers.' }
     ],
     relatedSlugs: ['tableau-vs-ai-analytics', 'metabase-vs-ai-analytics']
   },
 
   'metabase-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Metabase vs AI Analytics | DataOmen',
+    title: 'Metabase vs AI Analytics | Arcli',
     description: 'Compare Metabase with modern AI analytics platforms. See why fast-growing startups are switching to conversational BI.',
     h1: 'Metabase vs. Modern AI Analytics',
-    subtitle: 'Metabase is a great V1 BI tool, but it scales poorly. See how DataOmen replaces manual query building with AI.',
+    subtitle: 'Metabase is a great V1 BI tool, but it scales poorly. See how Arcli replaces manual query building with AI.',
     icon: <Database className="w-12 h-12 text-blue-500 mb-6" />,
     features: ['Instant Schema Understanding', 'No Complex UI Builders', 'Automated Visualizations'],
     steps: [
@@ -95,51 +95,51 @@ export const competitorComparisons: Record<string, SEOPageData> = {
     ],
     comparison: {
       competitor: 'Metabase',
-      dataOmenWins: ['Conversational AI Interface', 'No visual query builder needed', 'Generates complex SQL JOINs automatically'],
+      arcliWins: ['Conversational AI Interface', 'No visual query builder needed', 'Generates complex SQL JOINs automatically'],
       competitorFlaws: ['Visual builder breaks on complex queries', 'Requires SQL knowledge for advanced reporting', 'Slow performance on large datasets']
     },
     useCases: [
       { title: 'Scaling Data Access', description: 'Move from a centralized data request queue to true self-serve analytics.' }
     ],
     faqs: [
-      { q: 'Is DataOmen harder to set up than Metabase?', a: 'No. Both require a simple database connection string. DataOmen is ready in 60 seconds.' }
+      { q: 'Is Arcli harder to set up than Metabase?', a: 'No. Both require a simple database connection string. Arcli is ready in 60 seconds.' }
     ],
     relatedSlugs: ['looker-vs-ai-analytics', 'powerbi-vs-ai-analytics']
   },
 
   'looker-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Looker vs AI Analytics | DataOmen',
-    description: 'Compare Google Looker with DataOmen. See why agile data teams are moving away from LookML to semantic AI platforms.',
+    title: 'Looker vs AI Analytics | Arcli',
+    description: 'Compare Google Looker with Arcli. See why agile data teams are moving away from LookML to semantic AI platforms.',
     h1: 'The Modern Alternative to Looker',
     subtitle: 'Looker is incredibly powerful, but maintaining LookML requires a dedicated team of engineers. Discover the zero-code AI alternative.',
     icon: <Target className="w-12 h-12 text-purple-600 mb-6" />,
     features: ['Zero LookML Required', 'Instant Deployment', 'Conversational Interface'],
     steps: [
-      { name: 'Skip the Modeling', text: 'DataOmen infers semantic relationships automatically via AI.' },
+      { name: 'Skip the Modeling', text: 'Arcli infers semantic relationships automatically via AI.' },
       { name: 'Ask Questions', text: 'Use natural language instead of Looker Explores.' },
       { name: 'Deploy Faster', text: 'Get your team operational in minutes, not months.' }
     ],
     comparison: {
       competitor: 'Looker',
-      dataOmenWins: ['No proprietary language (LookML) to learn', 'Radically faster implementation time', 'Conversational interface for operators'],
+      arcliWins: ['No proprietary language (LookML) to learn', 'Radically faster implementation time', 'Conversational interface for operators'],
       competitorFlaws: ['Requires a dedicated data engineering team', 'LookML has a steep learning curve', 'Extremely high enterprise pricing']
     },
     useCases: [
       { title: 'Agile Startups', description: 'Get enterprise-grade BI without hiring a 3-person data team.' }
     ],
     faqs: [
-      { q: 'Can DataOmen handle complex metric definitions?', a: 'Yes. Our Semantic Governance layer allows you to define core metrics once so the AI never miscalculates them.' }
+      { q: 'Can Arcli handle complex metric definitions?', a: 'Yes. Our Semantic Governance layer allows you to define core metrics once so the AI never miscalculates them.' }
     ],
     relatedSlugs: ['tableau-vs-ai-analytics', 'hex-vs-ai-analytics']
   },
 
   'hex-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Hex vs AI Analytics | DataOmen',
-    description: 'Compare Hex Technologies with DataOmen. Find the right platform for your data science and business intelligence needs.',
+    title: 'Hex vs AI Analytics | Arcli',
+    description: 'Compare Hex Technologies with Arcli. Find the right platform for your data science and business intelligence needs.',
     h1: 'The Alternative to Hex for Business Teams',
-    subtitle: 'Hex is built for Python-heavy data scientists. DataOmen is built for operators who want instant answers.',
+    subtitle: 'Hex is built for Python-heavy data scientists. Arcli is built for operators who want instant answers.',
     icon: <Hexagon className="w-12 h-12 text-purple-500 mb-6" />,
     features: ['Zero-Code Required', 'Instant NLP Queries', 'Business-Friendly Dashboards'],
     steps: [
@@ -149,7 +149,7 @@ export const competitorComparisons: Record<string, SEOPageData> = {
     ],
     comparison: {
       competitor: 'Hex Technologies',
-      dataOmenWins: ['Built for non-technical users', 'No Python/SQL required', 'Instant conversational interface'],
+      arcliWins: ['Built for non-technical users', 'No Python/SQL required', 'Instant conversational interface'],
       competitorFlaws: ['Steep learning curve for business users', 'Notebook interface is intimidating for operators', 'Expensive for view-only users']
     },
     useCases: [

@@ -13,7 +13,7 @@ export interface SEOPageData {
   comparison?: {
     competitor: string;
     competitorFlaws: string[];
-    dataOmenWins: string[];
+    arcliWins: string[];
   };
   useCases: Array<{ title: string; description: string }>;
   features: string[];
@@ -23,8 +23,8 @@ export interface SEOPageData {
 export const seoPages: Record<string, SEOPageData> = {
   'ai-data-analysis': {
     h1: 'AI Data Analysis Platform',
-    title: 'Best AI Data Analysis Platform | DataOmen',
-    description: 'Automate your data analysis with DataOmen. Transform raw data into actionable insights using AI-driven vectorized computation and natural language to SQL generation.',
+    title: 'Best AI Data Analysis Platform | Arcli',
+    description: 'Automate your data analysis with Arcli. Transform raw data into actionable insights using AI-driven vectorized computation and natural language to SQL generation.',
     type: 'solution',
     subtitle: 'Turn complex datasets into instant insights without writing a single line of SQL or Python.',
     icon: <Sparkles className="w-12 h-12 text-blue-500" />,
@@ -35,7 +35,7 @@ export const seoPages: Record<string, SEOPageData> = {
       },
       { 
         q: 'Is my data secure?', 
-        a: 'Yes. DataOmen ensures multi-tenant security with strict row-level policies and zero-retention ephemeral processing for sensitive analytical workloads.' 
+        a: 'Yes. Arcli ensures multi-tenant security with strict row-level policies and zero-retention ephemeral processing for sensitive analytical workloads.' 
       }
     ],
     steps: [
@@ -57,7 +57,7 @@ export const seoPages: Record<string, SEOPageData> = {
   },
   'sql-generator': {
     h1: 'AI SQL Generator',
-    title: 'Text to SQL Generator | DataOmen',
+    title: 'Text to SQL Generator | Arcli',
     description: 'Generate complex, optimized SQL queries from plain English. Support for DuckDB, PostgreSQL, Snowflake, and more.',
     type: 'feature',
     subtitle: 'Stop wrestling with complex JOINs. Let AI write highly-optimized SQL in milliseconds.',
@@ -69,7 +69,7 @@ export const seoPages: Record<string, SEOPageData> = {
       }
     ],
     steps: [
-      { name: 'Provide Schema', text: 'DataOmen automatically vectorizes and maps your database schema.' },
+      { name: 'Provide Schema', text: 'Arcli automatically vectorizes and maps your database schema.' },
       { name: 'Prompt', text: 'Ask complex analytical questions like "Show me a 7-day EMA of revenue".' },
       { name: 'Execute', text: 'Review and execute the generated, highly-performant SQL directly.' }
     ],
@@ -80,7 +80,7 @@ export const seoPages: Record<string, SEOPageData> = {
         'Prone to syntax and logic errors', 
         'Hard to maintain complex queries across dialects'
       ],
-      dataOmenWins: [
+      arcliWins: [
         'Instant, sub-second generation', 
         'Deeply context-aware via schema RAG routing', 
         'Optimized for columnar performance natively'
