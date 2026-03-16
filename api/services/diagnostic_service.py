@@ -1,12 +1,16 @@
+# api/services/diagnostic_service.py
+
 import logging
+import json
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 import polars as pl
 
-# Import our core analytical ecosystem
+# Core Modular Ecosystem
+from api.services.llm_client import llm_client
 from api.services.query_planner import QueryPlan, QueryStep
 from api.services.nl2sql_generator import NL2SQLGenerator
-from api.services.compute_engine import ComputeEngine, DatasetMetadata
+from api.services.compute_engine import compute_engine, ComputeEngine, DatasetMetadata
 from api.services.insight_orchestrator import AnomalyInsight
 
 logger = logging.getLogger(__name__)
@@ -16,14 +20,22 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 
 class DriverInsight(BaseModel):
-    dimension: str = Field(..., description="The category column used to slice the data (e.g., 'region', 'product_tier').")
-    category: str = Field(..., description="The specific value inside the dimension (e.g., 'North America', 'Enterprise').")
+    dimension: str = Field(..., description="The category column used to slice the data (e.g., 'region').")
+    category: str = Field(..., description="The specific value inside the dimension (e.g., 'North America').")
     absolute_change: float = Field(..., description="The raw numerical difference driving the anomaly.")
     contribution_percentage: float = Field(..., description="How much of the total anomaly this specific category is responsible for.")
 
+class AIDiagnosis(BaseModel):
+    """Structured AI interpretation of mathematical drivers."""
+    primary_culprit: str = Field(..., description="The specific segment or dimension primarily responsible for the shift.")
+    root_cause_narrative: str = Field(..., description="A 2-sentence executive explanation of the driver impact.")
+    impact_assessment: str = Field(..., description="Evaluation of whether this shift is isolated or systematic.")
+
 class DiagnosticPayload(BaseModel):
+    """The complete diagnostic brief returned to the Orchestrator or Agent."""
     anomaly_analyzed: AnomalyInsight
     top_drivers: List[DriverInsight] = []
+    ai_diagnosis: Optional[AIDiagnosis] = None
     diagnostic_sql: str
 
 # -----------------------------------------------------------------------------
@@ -32,18 +44,17 @@ class DiagnosticPayload(BaseModel):
 
 class DiagnosticService:
     """
-    Phase 5: The Autonomous Root Cause Analyst.
+    Phase 5+: The Autonomous Root Cause Analyst.
     
     Adheres to the Hybrid Performance Paradigm:
-    When an anomaly is detected, this service automatically isolates categorical 
-    dimensions in the schema, writes a sub-query to group the metric by those dimensions,
-    and uses vectorized Polars math to find the deterministic root causes (Top Drivers).
+    1. DETERMINISTIC: Uses Polars to group and sort dimensional drivers (Zero-Hallucination).
+    2. SYNTHETIC: Uses llm_client to interpret mathematical findings into business logic.
     """
     
-    def __init__(self, generator: NL2SQLGenerator, compute: ComputeEngine):
-        # Dependency Injection of our core analytical tools
-        self.generator = generator
-        self.compute = compute
+    def __init__(self, generator: Optional[NL2SQLGenerator] = None, compute: Optional[ComputeEngine] = None):
+        # Fallback to singletons if not injected
+        self.generator = generator or NL2SQLGenerator()
+        self.compute = compute or compute_engine
 
     async def investigate_anomaly(
         self, 
@@ -53,38 +64,36 @@ class DiagnosticService:
         tenant_id: str
     ) -> Optional[DiagnosticPayload]:
         """
-        The core diagnostic loop. Slices the anomalous metric by dimensions to find 'WHY' it shifted.
+        The core diagnostic loop. Slices the anomalous metric by dimensions,
+        identifies mathematical drivers, and synthesizes the 'Why' via AI.
         """
-        logger.info(f"[{tenant_id}] Autonomous diagnostic deep-dive triggered for {anomaly.column} anomaly on {anomaly.row_identifier}.")
+        logger.info(f"[{tenant_id}] Deep-dive analysis triggered for {anomaly.column} on {anomaly.row_identifier}.")
 
-        # 1. Isolate Slicing Dimensions
-        # We look for VARCHAR/Categorical columns in the schema to slice the data by.
-        # We explicitly ignore ID columns to prevent meaningless groupings.
+        # 1. Isolate Slicing Dimensions (Schema Pruning)
         dimensions = []
-        for table, cols in full_schema.items():
+        for _, cols in full_schema.items():
             for col, dtype in cols.items():
                 col_lower = col.lower()
-                if dtype.upper() in ["VARCHAR", "STRING", "TEXT"] and not col_lower.endswith("id") and col_lower != "id":
+                # Target categorical strings, ignore technical IDs
+                if str(dtype).upper() in ["VARCHAR", "STRING", "TEXT"] and not col_lower.endswith("id") and col_lower != "id":
                     dimensions.append(col)
 
         if not dimensions:
-            logger.warning(f"[{tenant_id}] No categorical dimensions found to diagnose the {anomaly.column} anomaly.")
+            logger.warning(f"[{tenant_id}] No dimensions found to diagnose {anomaly.column}.")
             return None
 
-        # Take top 3-5 dimensions to prevent massive query explosion
+        # Focus context on top 4 dimensions to maximize signal-to-noise
         target_dimensions = dimensions[:4]
-        dim_list_str = ", ".join(target_dimensions)
         
-        # 2. Create a Programmatic Execution Plan
-        # We bypass the LLM QueryPlanner here because we know EXACTLY what we need: a dimensional breakdown.
+        # 2. Programmatic Execution Plan (Bypasses Planner for speed)
         diagnostic_plan = QueryPlan(
-            intent=f"Root Cause Dimensional Breakdown for {anomaly.column} shift on {anomaly.row_identifier}",
+            intent=f"Root Cause Analysis for {anomaly.column} shift",
             is_achievable=True,
             steps=[
                 QueryStep(
                     step_number=1, 
                     operation="AGGREGATE", 
-                    description=f"Group by dimensions ({dim_list_str}) and calculate the absolute variance/change of {anomaly.column} comparing {anomaly.row_identifier} to the previous period.", 
+                    description=f"Group by {target_dimensions} and calculate absolute change for {anomaly.column}.", 
                     columns_involved=[anomaly.column] + target_dimensions
                 )
             ],
@@ -92,7 +101,7 @@ class DiagnosticService:
         )
 
         try:
-            # 3. Compile Diagnostic SQL (Dialect Pushdown)
+            # 3. Dialect-Specific SQL Generation
             sql_query, _ = await self.generator.generate_sql(
                 plan=diagnostic_plan,
                 full_schema=full_schema,
@@ -100,74 +109,125 @@ class DiagnosticService:
                 tenant_id=tenant_id
             )
 
-            # 4. Execute Compute
-            result = await self.compute.execute_query(sql_query, dataset)
-            if not result.data or result.row_count == 0:
+            # 4. Vectorized Execution
+            result = await self.compute.execute_read_only(
+                db=None, 
+                tenant_id=tenant_id, 
+                datasets=[], # URIs resolved by engine
+                query=sql_query
+            )
+            
+            if not result:
                 return None
 
-            # 5. Extract Top Drivers via Vectorized Math (Zero LLM Hallucination)
-            df = pl.DataFrame(result.data)
+            # 5. Extract Mathematical Drivers (Polars)
+            df = pl.DataFrame(result)
             drivers = self._extract_top_drivers(df, target_dimensions, anomaly)
+
+            # 6. AI Synthesis (The 'Why')
+            # We only invoke the LLM if we have meaningful mathematical drivers to explain
+            ai_diagnosis = None
+            if drivers:
+                ai_diagnosis = await self._synthesize_diagnosis(tenant_id, anomaly, drivers)
 
             return DiagnosticPayload(
                 anomaly_analyzed=anomaly,
                 top_drivers=drivers,
+                ai_diagnosis=ai_diagnosis,
                 diagnostic_sql=sql_query
             )
 
         except Exception as e:
-            logger.error(f"[{tenant_id}] Diagnostic deep-dive failed: {str(e)}")
+            logger.error(f"[{tenant_id}] Diagnostic deep-dive crash: {str(e)}")
             return None
 
     # -------------------------------------------------------------------------
-    # Internal Math Helpers
+    # Internal Intelligence Modules
     # -------------------------------------------------------------------------
 
+    async def _synthesize_diagnosis(
+        self, 
+        tenant_id: str, 
+        anomaly: AnomalyInsight, 
+        drivers: List[DriverInsight]
+    ) -> Optional[AIDiagnosis]:
+        """
+        Contextual RAG: Bridges the gap between raw math and business meaning.
+        Uses the centralized llm_client for structured interpretation.
+        """
+        system_prompt = (
+            "You are a Staff Principal Analyst. Your job is to interpret mathematical "
+            "drivers behind a data anomaly and explain the 'Why' to stakeholders."
+        )
+
+        # Convert drivers to a lean JSON block for the prompt
+        driver_context = [d.model_dump() for d in drivers]
+        
+        user_prompt = f"""
+        ANOMALY DETECTED:
+        - Metric: {anomaly.column}
+        - Observed Shift: {anomaly.value} (Z-Score: {anomaly.z_score})
+        - Direction: {'Spike' if anomaly.is_positive else 'Drop'}
+        
+        MATHEMATICAL DRIVERS (Calculated via Polars):
+        {json.dumps(driver_context, indent=2)}
+        
+        TASK:
+        Identify the primary culprit and provide a concise root-cause narrative.
+        """
+
+        try:
+            return await llm_client.generate_structured(
+                system_prompt=system_prompt,
+                prompt=user_prompt,
+                response_model=AIDiagnosis,
+                temperature=0.1 # High precision reasoning
+            )
+        except Exception as e:
+            logger.warning(f"[{tenant_id}] AI Diagnosis synthesis failed: {e}")
+            return None
+
     def _extract_top_drivers(self, df: pl.DataFrame, dimensions: List[str], anomaly: AnomalyInsight) -> List[DriverInsight]:
-        """
-        Uses Polars to sort the dimensional groupings and find the mathematical drivers.
-        """
+        """Deterministic grouping logic using Polars."""
         drivers = []
         
-        # Find the column the LLM used for the variance/change calculation
-        # E.g., 'absolute_change', 'variance', 'difference'
-        change_col = next((c for c in df.columns if any(keyword in c.lower() for keyword in ['change', 'diff', 'var'])), None)
-        
-        # If the LLM didn't name it well, fallback to the first numeric column that isn't the metric itself
+        # Heuristically find the variance/delta column generated by the SQL
+        change_col = next((c for c in df.columns if any(k in c.lower() for k in ['change', 'diff', 'var', 'delta'])), None)
         if not change_col:
+            # Fallback to first numeric column that isn't the primary metric
             numeric_cols = [c for c in df.columns if df[c].dtype in pl.NUMERIC_DTYPES and c != anomaly.column]
-            if numeric_cols:
-                change_col = numeric_cols[0]
+            change_col = numeric_cols[0] if numeric_cols else None
 
         if not change_col:
             return drivers
 
-        # Calculate total absolute variance to determine contribution percentages
-        total_variance = df[change_col].abs().sum()
+        total_abs_variance = df[change_col].abs().sum()
+        if total_abs_variance == 0:
+            return drivers
 
-        # Sort to find the biggest movers
-        top_rows = df.sort(change_col, descending=anomaly.is_positive).head(4).to_dicts()
+        # Sort by impact (descending for spikes, ascending for drops)
+        top_rows = df.sort(change_col, descending=anomaly.is_positive).head(3).to_dicts()
 
         for row in top_rows:
             change_val = float(row.get(change_col, 0))
             
-            # Find which specific dimension caused this row's movement
-            dim_used = "Unknown"
-            cat_used = "Unknown"
-            
+            # Find the active dimension for this row
+            dim_name, cat_val = "unknown", "unknown"
             for d in dimensions:
                 if d in row and row[d] is not None:
-                    dim_used = d
-                    cat_used = str(row[d])
-                    break # We found the primary dimension for this grouping
+                    dim_name, cat_val = d, str(row[d])
+                    break
 
-            contribution = (abs(change_val) / total_variance * 100) if total_variance > 0 else 0.0
-
+            contribution = (abs(change_val) / total_abs_variance * 100)
+            
             drivers.append(DriverInsight(
-                dimension=dim_used,
-                category=cat_used,
+                dimension=dim_name,
+                category=cat_val,
                 absolute_change=round(change_val, 2),
                 contribution_percentage=round(contribution, 2)
             ))
 
         return drivers
+
+# Global Singleton
+diagnostic_service = DiagnosticService()

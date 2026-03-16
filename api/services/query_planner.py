@@ -1,11 +1,12 @@
+# api/services/query_planner.py
+
 import json
 import logging
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field, ValidationError
 
-# Use the modern standard async client
-import openai
-from openai import AsyncOpenAI 
+# Import our centralized LLM wrapper
+from api.services.llm_client import llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +38,12 @@ class QueryPlanner:
     Adheres to the Contextual RAG Methodology:
     Takes a natural language prompt and a strict schema subset, and outputs 
     a deterministic, multi-step logical plan for the NL2SQL generator to follow.
+    
+    Now utilizes the centralized LLM Client for automatic retries and modularity.
     """
 
-    def __init__(self, api_key: str, model: str = "gpt-4o"):
-        self.llm_client = AsyncOpenAI(api_key=api_key)
-        self.model = model 
+    # Note: We no longer need an __init__ to manage API keys or models.
+    # The llm_client Singleton handles all of that securely from the environment.
 
     async def generate_plan(self, user_prompt: str, schema_context: Dict[str, Dict[str, str]], tenant_id: str) -> QueryPlan:
         """
@@ -72,21 +74,15 @@ class QueryPlanner:
         """
 
         try:
-            # We enforce Strict Structured Outputs via the beta parse method.
+            # We enforce Strict Structured Outputs via our centralized LLM wrapper.
             # This mathematically guarantees the LLM returns our exact Pydantic model.
-            response = await self.llm_client.beta.chat.completions.parse(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                response_format=QueryPlan, 
+            plan = await llm_client.generate_structured(
+                system_prompt=system_prompt,
+                prompt=user_prompt,
+                response_model=QueryPlan, 
                 temperature=0.0 # Zero temperature for maximum deterministic logical planning
             )
 
-            # Extract the automatically validated Pydantic object
-            plan = response.choices[0].message.parsed
-            
             # Edge case handling if parsing is refused due to content filters
             if plan is None:
                 raise ValueError("Model refused to generate a valid plan.")
@@ -97,13 +93,14 @@ class QueryPlanner:
             return plan
 
         except ValidationError as ve:
-            # This should be exceedingly rare with beta.parse, but guarantees safety
+            # This should be exceedingly rare with structured parsing, but guarantees safety
             logger.error(f"[{tenant_id}] Query Planner Output Validation failed: {str(ve)}")
             raise ValueError("The AI generated a malformed execution plan.") from ve
             
-        except openai.OpenAIError as oe:
-            logger.error(f"[{tenant_id}] OpenAI API Error during planning: {str(oe)}")
-            raise ValueError("Failed to communicate with the planning engine.") from oe
+        except Exception as e:
+            # Catches network timeouts, API rate limits, or bad credentials handled by llm_client
+            logger.error(f"[{tenant_id}] LLM API Error during planning: {str(e)}")
+            raise ValueError("Failed to communicate with the planning engine.") from e
 
     def explain_plan_to_user(self, plan: QueryPlan) -> str:
         """
@@ -118,3 +115,6 @@ class QueryPlanner:
         joined_steps = "\n".join(steps_desc)
         
         return f"I'm running a {plan.intent}. Here is my execution plan:\n{joined_steps}"
+
+# Optional: Export a singleton if you prefer not to instantiate it per request
+query_planner = QueryPlanner()

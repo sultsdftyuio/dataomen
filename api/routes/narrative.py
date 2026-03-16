@@ -8,77 +8,108 @@ from sqlalchemy.orm import Session
 
 from api.database import get_db
 
-# Core Security & SaaS Identity (Standardized Dual-Auth Gateway)
-from api.auth import verify_tenant, TenantContext  # CRITICAL FIX: Corrected import locations
+# Core Security & SaaS Identity
+from api.auth import verify_tenant, TenantContext
 from api.services.tenant_security_provider import tenant_security
-from api.services.narrative_service import NarrativeService
+
+# Refactored Service (Now uses centralized llm_client & parameterless singleton)
+from api.services.narrative_service import narrative_service
+from api.services.query_planner import QueryPlan
+from api.services.insight_orchestrator import InsightPayload
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/narrative",
+    prefix="/api/narrative",
     tags=["Narrative"],
     responses={404: {"description": "Not found"}},
 )
 
-# Type-Safe request model
+# ------------------------------------------------------------------
+# REQUEST / RESPONSE CONTRACTS
+# ------------------------------------------------------------------
+
 class NarrativeRequest(BaseModel):
     query: str
     dataset_id: str
-    context: Optional[Dict[str, Any]] = None
+    data_results: List[Dict[str, Any]] = [] # The raw data to be narrated
+    intent: Optional[str] = None
 
-class NarrativeResponse(BaseModel):
+class NarrativeRouteResponse(BaseModel):
     status: str
-    narrative: str
-    insights: List[Dict[str, Any]]
+    headline: str
+    executive_summary: str
+    key_insights: List[str]
+    recommended_action: Optional[str]
 
-@router.post("/generate", response_model=NarrativeResponse)
+# ------------------------------------------------------------------
+# NARRATIVE GENERATION ENDPOINT
+# ------------------------------------------------------------------
+
+@router.post("/generate", response_model=NarrativeRouteResponse)
 async def generate_narrative(
     request: NarrativeRequest,
-    tenant_context: TenantContext = Depends(verify_tenant), # Security Phase 1: Dual-Auth Check
+    tenant_context: TenantContext = Depends(verify_tenant), # Security: Dual-Auth Check
     db: Session = Depends(get_db)
 ):
     """
     Generates a contextual, analytical narrative based on user query and data.
-    Securely metered via the SubscriptionManager to prevent LLM credit abuse.
+    
+    Refactored to use the Master Intelligence pipeline:
+    1. Wraps raw results in an InsightPayload.
+    2. Uses the global narrative_service singleton.
+    3. Enforces multi-tenant security and metering.
     """
     try:
-        service = NarrativeService()
-        
-        # Security Phase 2: Wrap the expensive LLM call in the metering context
-        async def execute_narrative():
-            return await service.generate(
-                tenant_id=tenant_context.tenant_id,
-                dataset_id=request.dataset_id,
-                query=request.query,
-                context=request.context or {}
+        # Security Phase: Wrap the expensive LLM call in the metering context
+        async def execute_narrative_task():
+            # 1. Prepare analytical context (Mocking a plan/payload for consistency)
+            dummy_plan = QueryPlan(
+                intent=request.intent or request.query,
+                is_achievable=True,
+                steps=[],
+                suggested_visualizations=[]
             )
             
-        result = await tenant_security.execute_in_context(
+            # 2. Ground the analysis in raw data row count
+            payload = InsightPayload(
+                row_count=len(request.data_results),
+                intent_analyzed=dummy_plan.intent
+            )
+            
+            # 3. Invoke the refactored Executive Storyteller (uses llm_client singleton)
+            result = await narrative_service.generate_executive_summary(
+                payload=payload,
+                plan=dummy_plan,
+                chart_spec=None,
+                tenant_id=tenant_context.tenant_id
+            )
+            return result
+
+        # Execute within the tenant-isolated security context
+        narrative_obj = await tenant_security.execute_in_context(
             db=db,
             tenant_id=tenant_context.tenant_id,
             operation_name="generate_narrative",
-            func=execute_narrative
+            func=execute_narrative_task
         )
         
-        return NarrativeResponse(
+        return NarrativeRouteResponse(
             status="success",
-            narrative=result.get("narrative", ""),
-            insights=result.get("insights", [])
+            headline=f"Analysis: {request.query}",
+            executive_summary=narrative_obj.executive_summary,
+            key_insights=narrative_obj.key_insights,
+            recommended_action=narrative_obj.recommended_action
         )
 
     except PermissionError as pe:
-        # 402 Payment Required: Blocks execution before OpenAI is hit
-        logger.warning(f"[{tenant_context.tenant_id}] Blocked narrative execution. Payment required: {str(pe)}")
+        # Blocks execution if billing limits are hit
+        logger.warning(f"[{tenant_context.tenant_id}] Blocked narrative: {str(pe)}")
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(pe))
     
-    except ValueError as ve:
-        logger.warning(f"[{tenant_context.tenant_id}] Validation error in narrative generation: {str(ve)}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
-    
     except Exception as e:
-        logger.error(f"[{tenant_context.tenant_id}] Unexpected error in narrative generation: {str(e)}", exc_info=True)
+        logger.error(f"[{tenant_context.tenant_id}] Narrative generation failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while generating the narrative."
+            detail="An error occurred while synthesizing the data narrative."
         )

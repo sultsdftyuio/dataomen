@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+# Import our centralized LLM client
+from api.services.llm_client import llm_client
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------
@@ -28,7 +31,7 @@ class TrendAnalysis(BaseModel):
     )
     memory_context: str = Field(
         ..., 
-        description="A 1-2 sentence synthesis comparing the current anomaly to the recent historical baseline. e.g., 'This is the 3rd consecutive drop in 48 hours, indicating an ongoing issue rather than an isolated spike.'"
+        description="A 1-2 sentence synthesis comparing the current anomaly to the recent historical baseline."
     )
 
 # ---------------------------------------------------------
@@ -40,16 +43,14 @@ class AgentMemoryService:
     Phase 3: Stateful Memory & Baseline Awareness
     
     Provides temporal awareness to analytical agents. Queries the anomaly log 
-    to retrieve recent incidents for a specific agent and uses an LLM to evaluate 
-    baseline drift, preventing alert fatigue from redundant notifications.
+    to retrieve recent incidents for a specific agent and uses the centralized 
+    llm_client to evaluate baseline drift, preventing alert fatigue.
     """
     
-    def __init__(self, llm_client: Any = None):
-        """
-        Dependency Injection for the structured LLM client.
-        Allows late-binding to avoid circular imports during app startup.
-        """
-        self.llm = llm_client
+    def __init__(self):
+        # We no longer need to inject an llm_client here.
+        # The service uses the global llm_client singleton.
+        pass
 
     def _fetch_recent_history(self, db: Session, tenant_id: str, agent_name: str, limit: int = 5) -> List[Dict[str, Any]]:
         """
@@ -57,7 +58,7 @@ class AgentMemoryService:
         Enforces tenant isolation directly in the SQL layer.
         """
         try:
-            # Assumes 'anomaly_logs' table created during Phase 2
+            # Assumes 'anomaly_logs' table exists from the analytics pipeline
             query = text("""
                 SELECT created_at, summary
                 FROM anomaly_logs
@@ -67,46 +68,46 @@ class AgentMemoryService:
                 LIMIT :limit
             """)
             
-            # Using .mappings() ensures safe dictionary-style access to the row results
             results = db.execute(query, {
                 "tenant_id": tenant_id,
                 "agent_name": agent_name,
                 "limit": limit
             }).mappings().fetchall()
             
-            # Format history for the LLM context window safely
             return [{"timestamp": str(r["created_at"]), "previous_summary": r["summary"]} for r in results]
             
         except SQLAlchemyError as e:
             logger.error(f"Memory lookup failed for agent '{agent_name}' (Tenant: {tenant_id}): {e}")
             return []
 
-    def _build_evaluation_prompt(self, metric: str, current_anomaly: Dict[str, Any], historical_context: List[Dict[str, Any]]) -> str:
+    def _build_evaluation_prompts(self, metric: str, current_anomaly: Dict[str, Any], historical_context: List[Dict[str, Any]]) -> tuple[str, str]:
         """
-        Constructs the Contextual RAG prompt for temporal trend evaluation.
-        Limits token bloat by only passing the summarized history.
+        Constructs the split prompts for the centralized LLM client.
         """
         direction = current_anomaly.get("direction", "shift")
         variance = current_anomaly.get("variance_pct", "unknown")
-        
         history_json = json.dumps(historical_context, indent=2) if historical_context else "No prior anomalies detected recently."
         
-        return f"""
-        You are the stateful memory module for an autonomous data agent analyzing '{metric}'.
-        A new mathematical anomaly was just detected: a {variance}% {direction}.
+        system_prompt = (
+            "You are the stateful memory module for an autonomous data analyst. "
+            "Your task is to analyze mathematical anomalies against historical context "
+            "to identify if patterns are novel or part of an ongoing issue."
+        )
+
+        user_prompt = f"""
+        ANALYTICS CONTEXT:
+        Metric: '{metric}'
+        New Anomaly Detected: a {variance}% {direction}.
         
-        RECENT ANOMALY HISTORY FOR THIS AGENT:
+        RECENT ANOMALY HISTORY:
         {history_json}
         
-        CURRENT ANOMALY CONTEXT:
-        Direction: {direction}
-        Variance: {variance}%
-        
         TASK:
-        Analyze the current anomaly against the historical context. 
-        Determine if this is a completely new issue, a continuation of a deteriorating trend (Ongoing Issue), 
-        or a sign that the metric is returning to normal (Recovery). 
+        Compare the current anomaly against the history. Determine if this is a 
+        'NEW_PATTERN', an 'ONGOING_ISSUE', or a 'RECOVERY_DETECTED'.
         """
+        
+        return system_prompt, user_prompt
 
     async def evaluate_trend(
         self, 
@@ -118,15 +119,14 @@ class AgentMemoryService:
     ) -> TrendAnalysis:
         """
         Main orchestration method for the memory layer. 
-        Compares the current mathematical anomaly against recent DB history.
+        Compares the current mathematical anomaly against recent DB history using the centralized LLM.
         """
         logger.info(f"[Memory Agent] Evaluating temporal baseline for {agent_name} (Tenant: {tenant_id}).")
         
-        # 1. Fetch History Non-Blockingly
-        # Offload the synchronous SQLAlchemy query to a background thread to preserve async performance
+        # 1. Fetch History in background thread to preserve event loop performance
         history = await asyncio.to_thread(self._fetch_recent_history, db, tenant_id, agent_name)
         
-        # 2. Short-Circuit: If no history exists, this is definitively a new pattern
+        # 2. Short-Circuit: If no history exists, this is a new pattern
         if not history:
             logger.info(f"[Memory Agent] No history found. Flagging as NEW_PATTERN.")
             return TrendAnalysis(
@@ -135,23 +135,16 @@ class AgentMemoryService:
                 memory_context="This is the first time this specific anomaly has been detected recently."
             )
 
-        # Safety Check: Ensure LLM is injected
-        if not self.llm:
-            logger.warning("[Memory Agent] LLM client missing. Defaulting to basic memory context.")
-            return TrendAnalysis(
-                is_novel=False,
-                trend_status="VOLATILITY",
-                memory_context="Multiple anomalies detected recently, but deep trend analysis is currently unavailable."
-            )
-
-        # 3. Formulate Prompt & Generate Structured Output
-        prompt = self._build_evaluation_prompt(metric, current_anomaly, history)
+        # 3. Formulate Prompt & Generate Structured Output via Centralized Client
+        system_prompt, user_prompt = self._build_evaluation_prompts(metric, current_anomaly, history)
         
         try:
-            trend_analysis: TrendAnalysis = await self.llm.generate_structured(
-                prompt=prompt,
-                history=[],
-                response_model=TrendAnalysis
+            # Native structured output via the centralized llm_client singleton
+            trend_analysis: TrendAnalysis = await llm_client.generate_structured(
+                system_prompt=system_prompt,
+                prompt=user_prompt,
+                response_model=TrendAnalysis,
+                temperature=0.0 # Deterministic trend categorization
             )
             
             logger.info(f"[Memory Agent] Trend identified: {trend_analysis.trend_status}. Novel: {trend_analysis.is_novel}")
@@ -162,12 +155,10 @@ class AgentMemoryService:
             return TrendAnalysis(
                 is_novel=True,
                 trend_status="NEW_PATTERN",
-                memory_context="An error occurred while analyzing historical trends. Treat this as a standard alert."
+                memory_context="An error occurred while analyzing historical trends. Defaulting to NEW_PATTERN alert."
             )
 
 # ==========================================
 # Singleton Export
 # ==========================================
-# Export the instance. Inject the active LLM client during app startup:
-# agent_memory.llm = my_structured_llm_client
 agent_memory = AgentMemoryService()

@@ -1,16 +1,15 @@
-import os
-import json
+# api/services/narrative_service.py
+
 import logging
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-# SDK Imports
-from openai import AsyncOpenAI, OpenAIError
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
-
 # Import our cross-service data contracts
 from api.services.query_planner import QueryPlan
 from api.services.insight_orchestrator import InsightPayload
+
+# Import our Centralized LLM Client
+from api.services.llm_client import llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -50,23 +49,11 @@ class NarrativeService:
     Engineering Excellence:
     - Zero Math Policy: The LLM does no calculations. It only translates pre-computed math.
     - Contextual Grounding: Uses the QueryPlan intent to frame the story.
-    - Resilience: Implements exponential backoff for API reliability.
+    - Resilience: Implements exponential backoff for API reliability automatically via the llm_client.
     """
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
-        # Initialized with environment variables for multi-tenant security
-        key = api_key or os.getenv("OPENAI_API_KEY")
-        if not key:
-            raise ValueError("OPENAI_API_KEY is required for the Narrative Service.")
-            
-        self.client = AsyncOpenAI(api_key=key) 
-        self.model = os.getenv("PRIMARY_LLM_MODEL", model)
+    # We no longer need __init__ to manage API keys or OpenAI clients directly.
 
-    @retry(
-        retry=retry_if_exception_type(OpenAIError),
-        wait=wait_exponential(multiplier=1, min=2, max=10), 
-        stop=stop_after_attempt(3)
-    )
     async def generate_executive_summary(
         self, 
         payload: InsightPayload, 
@@ -110,22 +97,14 @@ CRITICAL RULES:
         """
 
         try:
-            # Native Structured Outputs guarantee the Pydantic shape
-            response = await self.client.beta.chat.completions.parse(
-                model=self.model,
-                temperature=0.2, # Low temperature for analytical consistency, slight variance for natural tone
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                response_format=NarrativeResponse
+            # Native Structured Outputs guarantee the Pydantic shape via centralized client
+            result = await llm_client.generate_structured(
+                system_prompt=system_prompt,
+                prompt=user_prompt,
+                response_model=NarrativeResponse,
+                temperature=0.2 # Low temperature for analytical consistency, slight variance for natural tone
             )
             
-            result = response.choices[0].message.parsed
-            
-            if result is None:
-                raise ValueError("Model refused to generate narrative.")
-                
             return result
             
         except Exception as e:
@@ -171,3 +150,6 @@ CRITICAL RULES:
             lines.append("\nNo significant mathematical anomalies, steep trends, or strong correlations were detected in this dataset.")
 
         return "\n".join(lines)
+
+# Global Singleton
+narrative_service = NarrativeService()

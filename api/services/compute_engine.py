@@ -15,6 +15,7 @@ import sqlglot
 from sqlglot import exp
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from cachetools import LRUCache
 
 # Import our infrastructure modules
 from api.services.storage_manager import storage_manager
@@ -39,20 +40,48 @@ class ComputeLocation(str, Enum):
 
 
 # -------------------------------------------------------------------------
-# Phase 1: Semantic Query Caching Layer
+# Phase 1: Semantic Query Caching Layer (HARDENED)
 # -------------------------------------------------------------------------
 
 class QueryCacheManager:
     """
     High-Performance Caching Layer.
     Uses Semantic AST Hashing so formatting (spaces, caps) doesn't bust the cache.
-    Ready for Redis injection in production.
+    
+    Hardened for Enterprise SaaS:
+    - Uses LRUCache to prevent OOM memory leaks.
+    - Implements Circuit Breaker to prevent API hanging during Redis latency spikes.
     """
 
     def __init__(self, redis_client=None, ttl_seconds: int = 3600):
-        self.redis        = redis_client
-        self._local_cache: Dict[str, Any] = {}
-        self.ttl          = ttl_seconds
+        self.redis = redis_client
+        self.ttl = ttl_seconds
+        
+        # Max 500 cached dataframes in memory at once. Oldest are evicted automatically.
+        self._local_cache = LRUCache(maxsize=500)
+        
+        # Circuit Breaker state
+        self._circuit_open = False
+        self._circuit_recovery_time = 0
+        self._CIRCUIT_COOLDOWN = 60  # Wait 60 seconds before retrying Redis
+
+    def _is_redis_healthy(self) -> bool:
+        """Circuit Breaker logic to protect the computation thread."""
+        if not self.redis:
+            return False
+            
+        if self._circuit_open:
+            if time.time() > self._circuit_recovery_time:
+                logger.info("Semantic Cache Circuit Breaker: Half-open, attempting Redis reconnection.")
+                self._circuit_open = False
+            else:
+                return False
+        return True
+
+    def _trip_circuit(self, error: Exception):
+        logger.error(f"Semantic Cache Redis TRIPPED: {str(error)}")
+        self._circuit_open = True
+        self._circuit_recovery_time = time.time() + self._CIRCUIT_COOLDOWN
 
     def _generate_semantic_hash(
         self,
@@ -82,20 +111,27 @@ class QueryCacheManager:
     ) -> Optional[List[Dict[str, Any]]]:
         cache_key = self._generate_semantic_hash(tenant_id, dataset_ids, sql_query)
 
-        if self.redis:
+        # 1. Try Distributed Redis Cache
+        if self._is_redis_healthy():
             try:
-                cached = self.redis.get(cache_key)
+                # Assuming redis-py async client
+                cached = await self.redis.get(cache_key) if hasattr(self.redis, 'get') and asyncio.iscoroutinefunction(self.redis.get) else self.redis.get(cache_key)
                 if cached:
-                    logger.info(f"[{tenant_id}] CACHE HIT: {cache_key[:8]}")
+                    logger.info(f"[{tenant_id}] SEMANTIC CACHE HIT (Redis): {cache_key[:8]}")
                     return json.loads(cached)
             except Exception as e:
-                logger.warning(f"Redis cache read failed: {e}")
-        else:
-            if cache_key in self._local_cache:
-                entry = self._local_cache[cache_key]
-                if time.time() - entry["timestamp"] < self.ttl:
-                    logger.info(f"[{tenant_id}] CACHE HIT (Local): {cache_key[:8]}")
-                    return entry["data"]
+                self._trip_circuit(e)
+
+        # 2. Try Local LRU Fallback
+        cached_local = self._local_cache.get(cache_key)
+        if cached_local:
+            if time.time() < cached_local["expires_at"]:
+                logger.info(f"[{tenant_id}] SEMANTIC CACHE HIT (Local LRU): {cache_key[:8]}")
+                return cached_local["data"]
+            else:
+                # Time-to-live expired, evict manually
+                del self._local_cache[cache_key]
+
         return None
 
     async def set(
@@ -107,16 +143,22 @@ class QueryCacheManager:
     ) -> None:
         cache_key = self._generate_semantic_hash(tenant_id, dataset_ids, sql_query)
 
-        if self.redis:
+        # 1. Always write to Local LRU Cache (Shadowing)
+        self._local_cache[cache_key] = {
+            "expires_at": time.time() + self.ttl,
+            "data": data,
+        }
+
+        # 2. Write to Distributed Redis (If healthy)
+        if self._is_redis_healthy():
             try:
-                self.redis.setex(cache_key, self.ttl, json.dumps(data, default=str))
+                payload = json.dumps(data, default=str)
+                if hasattr(self.redis, 'setex') and asyncio.iscoroutinefunction(self.redis.setex):
+                    await self.redis.setex(cache_key, self.ttl, payload)
+                else:
+                    self.redis.setex(cache_key, self.ttl, payload)
             except Exception as e:
-                logger.warning(f"Redis cache write failed: {e}")
-        else:
-            self._local_cache[cache_key] = {
-                "timestamp": time.time(),
-                "data":      data,
-            }
+                self._trip_circuit(e)
 
 
 # -------------------------------------------------------------------------
@@ -278,13 +320,9 @@ class ComputeEngine:
         """
         Executes an analytical SQL query directly against R2 / S3 Parquet files
         via DuckDB. Returns JSON-serialisable records.
-
-        DuckDB reads only the columns referenced in the query (predicate pushdown),
-        so even multi-GB files stay fast for narrow projections.
         """
         dataset_ids = [str(d.id) for d in datasets]
 
-        # Warn early if a single dataset is unusually large
         for d in datasets:
             size = getattr(d, "size_bytes", 0) or 0
             if size > self.LOCAL_EXECUTION_THRESHOLD_BYTES:
@@ -341,11 +379,7 @@ class ComputeEngine:
         query:             str,
     ) -> List[Dict[str, Any]]:
         """
-        Compiles and executes the analytical SQL directly inside the remote
-        warehouse, then streams only the result set back.
-
-        This avoids the disastrous cost of pulling raw terabytes over the network
-        just to aggregate them locally.
+        Compiles and executes the analytical SQL directly inside the remote warehouse.
         """
         location = ComputeLocation(getattr(dataset, "location", ComputeLocation.LOCAL_DATA_LAKE))
 
@@ -381,11 +415,9 @@ class ComputeEngine:
 
                 df = pl.DataFrame(await asyncio.to_thread(_run_redshift))
 
-            # Snowflake (and others) follow the same pattern
             else:
                 raise NotImplementedError(
-                    f"Pushdown not yet implemented for {location}. "
-                    "Contribute a connector in api/services/integrations/."
+                    f"Pushdown not yet implemented for {location}."
                 )
 
             elapsed = (time.perf_counter() - t0) * 1000
@@ -403,7 +435,7 @@ class ComputeEngine:
             raise RuntimeError(f"Warehouse pushdown failure on {location}: {e}")
 
     # ------------------------------------------------------------------
-    # Phase 5: Main execution entrypoint — routes between Local & Pushdown
+    # Main execution entrypoint — routes between Local & Pushdown
     # ------------------------------------------------------------------
 
     async def execute_read_only(
@@ -417,15 +449,6 @@ class ComputeEngine:
     ) -> List[Dict[str, Any]]:
         """
         Phase 5: Smart analytical query execution.
-
-        Decision flow
-        ─────────────
-        1. Check the semantic cache.
-        2. Inspect the ``location`` field on each dataset:
-           • LOCAL_DATA_LAKE → DuckDB predicate-pushdown over R2 / S3 Parquet.
-           • BIGQUERY / REDSHIFT / SNOWFLAKE → execute inside the remote warehouse;
-             only the aggregated result travels over the network.
-        3. Cache the successful result for future identical requests.
         """
         dataset_ids = [str(d.id) for d in datasets]
 
@@ -436,8 +459,6 @@ class ComputeEngine:
                 return cached
 
         # 2. Determine the execution route
-        #    If datasets span multiple locations we default to LOCAL (caller should
-        #    pre-split cross-location queries before reaching this method).
         locations = {
             ComputeLocation(getattr(d, "location", ComputeLocation.LOCAL_DATA_LAKE))
             for d in datasets
@@ -447,14 +468,11 @@ class ComputeEngine:
 
         async def _dispatch() -> List[Dict[str, Any]]:
             if not is_remote:
-                # ── Route A: Local DuckDB over R2 / S3 Parquet ──────────────
                 logger.info(f"[{tenant_id}] Engine route: LOCAL_DATA_LAKE (DuckDB)")
                 return await self._execute_local(
                     db, tenant_id, datasets, query, injected_views or []
                 )
             else:
-                # ── Route B: Pushdown to remote warehouse ────────────────────
-                # For multi-dataset pushdown, datasets must all share a location.
                 if len(locations) > 1:
                     raise ValueError(
                         "Cross-location queries are not supported. "
@@ -462,9 +480,6 @@ class ComputeEngine:
                     )
                 remote_location = next(iter(is_remote))
                 logger.info(f"[{tenant_id}] Engine route: PUSHDOWN → {remote_location}")
-
-                # Pushdown operates on a single logical dataset/connection
-                # (join logic lives inside the warehoused SQL itself).
                 primary_dataset = datasets[0]
                 return await self._execute_pushdown(tenant_id, primary_dataset, query)
 
@@ -484,7 +499,7 @@ class ComputeEngine:
             )
 
         # 4. Populate cache on success
-        if not bypass_cache and results:
+        if not bypass_cache and results is not None:
             await self.cache.set(tenant_id, dataset_ids, query, results)
 
         return results
@@ -512,7 +527,6 @@ class ComputeEngine:
         def _sync_predict() -> Dict[str, Any]:
             secure_path = storage_manager.get_duckdb_query_path(db, dataset)
 
-            # Step 1: Pushdown aggregation to DuckDB for I/O efficiency
             agg_query = f"""
                 SELECT
                     CAST("{time_col}"  AS DATE)   AS ds,
@@ -526,9 +540,7 @@ class ComputeEngine:
                 try:
                     df = pl.from_arrow(con.execute(agg_query).arrow()).drop_nulls()
                 except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to extract time-series for forecasting: {e}"
-                    )
+                    raise RuntimeError(f"Failed to extract time-series for forecasting: {e}")
 
             if df.height < 5:
                 return {
@@ -536,7 +548,7 @@ class ComputeEngine:
                              "(minimum 5 periods required)."
                 }
 
-            # Step 2: Vectorised OLS  y = m·x + b
+            # Vectorised OLS y = m·x + b
             df = df.with_columns(x=pl.arange(0, df.height))
 
             x = df["x"].to_numpy()
@@ -550,11 +562,9 @@ class ComputeEngine:
             m = (n * (x * y).sum() - x.sum() * y.sum()) / denominator
             b = (y.sum() - m * x.sum()) / n
 
-            # Forecast the next 3 periods
             future_x = [n, n + 1, n + 2]
             forecast  = [float(m * fx + b) for fx in future_x]
 
-            # R² confidence score
             y_mean = y.mean()
             ss_tot = ((y - y_mean) ** 2).sum()
             ss_res = ((y - (m * x + b)) ** 2).sum()
@@ -599,7 +609,7 @@ class ComputeEngine:
             clean_row: Dict[str, Any] = {}
             for k, v in row.items():
                 if isinstance(v, float):
-                    if v != v or v in (float("inf"), float("-inf")):  # NaN / ±Inf
+                    if v != v or v in (float("inf"), float("-inf")):  
                         clean_row[k] = None
                     else:
                         clean_row[k] = v
@@ -608,7 +618,6 @@ class ComputeEngine:
             clean_records.append(clean_row)
 
         return clean_records
-
 
 # Export singleton
 compute_engine = ComputeEngine()

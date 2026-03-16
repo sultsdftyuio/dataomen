@@ -1,169 +1,313 @@
 # api/services/metric_governance.py
 
-import re
 import logging
-from typing import Dict, List, Optional
-from pydantic import BaseModel
+import json
+import asyncio
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 
-# Import our SaaS connectors to dynamically pull their Gold Tier views
-from api.services.integrations.stripe_connector import StripeConnector
-from api.services.integrations.shopify_connector import ShopifyConnector
-from api.services.integrations.salesforce_connector import SalesforceConnector
+import sqlglot
+from sqlglot import exp
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+
+# Import our infrastructure modules
+from api.database import SessionLocal
+from models import Dataset, SemanticMetric # Assuming SemanticMetric is our SQLAlchemy model
+from api.services.storage_manager import storage_manager
+
+# Assuming an internal LLM wrapper is available for the compiler
+from api.services.llm_client import llm_client 
 
 logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Type Definitions
-# -----------------------------------------------------------------------------
-class GovernedMetric(BaseModel):
-    name: str
-    friendly_name: str
-    description: str
-    sql_snippet: str
-    required_columns: List[str] = []
+# -------------------------------------------------------------------------
+# Data Contracts (Pydantic)
+# -------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# Core Governance Service
-# -----------------------------------------------------------------------------
+class NLMetricRequest(BaseModel):
+    metric_name: str = Field(..., description="The business name of the metric, e.g., 'Monthly Active Users'")
+    description: str = Field(..., description="The plain English definition, e.g., 'Unique users with a session in the last 30 days'")
+    dataset_id: str
+
+class CompiledMetricResult(BaseModel):
+    metric_name: str
+    compiled_sql: str
+    is_valid: bool
+    error_message: Optional[str] = None
+    ast_cost: int = 0
+
+class MetricCatalogSummary(BaseModel):
+    tenant_id: str
+    dataset_id: str
+    total_governed_metrics: int
+    semantic_dictionary: Dict[str, str] # Maps Metric Name -> SQL snippet
+
+# -------------------------------------------------------------------------
+# Phase 9: The AI Semantic Layer & Metric Governance
+# -------------------------------------------------------------------------
+
 class MetricGovernanceService:
     """
-    The Single Source of Truth for Enterprise Metrics.
+    The Dynamic Semantic Layer.
     
-    Upgraded Engineering:
-    - Inline Macro Injection: Safely expands `{metric}` tags in LLM-generated SQL into exact mathematical formulas.
-    - Semantic View Aggregation: Dynamically pulls "Gold Tier" CTEs from SaaS connectors (Stripe, Shopify) 
-      to provide the LLM with verified sub-queries for highly complex metrics like Win Rates or MRR.
+    Allows business users to define complex metrics via Natural Language.
+    Compiles NL to deterministic DuckDB SQL snippets, validates them via AST parsing,
+    and injects them securely into downstream analytical queries.
     """
 
-    # Registry of supported integrations for dynamic view loading
-    CONNECTOR_REGISTRY = {
-        "stripe": StripeConnector,
-        "shopify": ShopifyConnector,
-        "salesforce": SalesforceConnector
-    }
+    def __init__(self):
+        # SQL operations strictly forbidden in metric definitions
+        self.FORBIDDEN_OPERATIONS = (
+            exp.Drop, exp.Delete, exp.Insert, exp.Update, 
+            exp.AlterTable, exp.Command, exp.Commit
+        )
 
-    def __init__(self, tenant_id: str, db_session=None):
-        self.tenant_id = tenant_id
-        self.db = db_session
-        self._inline_registry: Dict[str, GovernedMetric] = self._load_tenant_metrics()
+    # ==========================================
+    # STAGE 1: COMPILATION (NL -> SQL)
+    # ==========================================
 
-    def _load_tenant_metrics(self) -> Dict[str, GovernedMetric]:
+    async def compile_metric_from_nl(
+        self, 
+        db: Session, 
+        tenant_id: str, 
+        request: NLMetricRequest
+    ) -> CompiledMetricResult:
         """
-        Loads the approved inline metric definitions for the workspace.
-        In production, this queries the `public.governed_metrics` table using self.tenant_id
-        so business users can define their own formulas in the UI.
+        Takes a plain English definition and compiles it into a reusable SQL expression.
+        Uses schema-awareness to ensure the generated SQL maps to physical columns.
         """
-        return {
-            "mrr": GovernedMetric(
-                name="mrr",
-                friendly_name="Monthly Recurring Revenue",
-                description="Standardized MRR calculation. Excludes taxes, one-off setups, and refunded amounts.",
-                sql_snippet="COALESCE(SUM(amount) FILTER (WHERE status = 'active' AND type = 'subscription'), 0)",
-                required_columns=["amount", "status", "type"]
-            ),
-            "churn_rate": GovernedMetric(
-                name="churn_rate",
-                friendly_name="Customer Churn Rate",
-                description="Percentage of canceled subscriptions relative to total active cohort.",
-                sql_snippet="(COUNT(CASE WHEN status = 'canceled' THEN 1 END) * 100.0) / NULLIF(COUNT(*), 0)",
-                required_columns=["status"]
-            ),
-            "arpu": GovernedMetric(
-                name="arpu",
-                friendly_name="Average Revenue Per User",
-                description="Total recurring revenue divided by the number of unique active customers.",
-                sql_snippet="SUM(amount) / NULLIF(COUNT(DISTINCT customer_id), 0)",
-                required_columns=["amount", "customer_id"]
-            ),
-            "gross_margin": GovernedMetric(
-                name="gross_margin",
-                friendly_name="Gross Margin Percentage",
-                description="Standard gross margin percentage based on revenue and COGS.",
-                sql_snippet="((SUM(revenue) - SUM(cogs)) * 100.0) / NULLIF(SUM(revenue), 0)",
-                required_columns=["revenue", "cogs"]
+        logger.info(f"[{tenant_id}] Compiling semantic metric: '{request.metric_name}'")
+
+        dataset = db.query(Dataset).filter(
+            Dataset.id == request.dataset_id,
+            Dataset.tenant_id == tenant_id
+        ).first()
+
+        if not dataset:
+            raise ValueError(f"Dataset {request.dataset_id} not found or access denied.")
+
+        # 1. Fetch physical schema for the LLM context
+        secure_path = storage_manager.get_duckdb_query_path(db, dataset)
+        try:
+            with storage_manager.duckdb_session(db, tenant_id) as conn:
+                schema_df = conn.execute(f"DESCRIBE SELECT * FROM read_parquet('{secure_path}') LIMIT 1").pl()
+                schema_dict = {row["column_name"]: row["column_type"] for row in schema_df.to_dicts()}
+        except Exception as e:
+            logger.error(f"[{tenant_id}] Schema extraction failed: {e}")
+            raise RuntimeError("Could not read dataset schema for compilation.")
+
+        # 2. LLM Compilation (Zero-Shot SQL Generation)
+        system_prompt = f"""
+        You are a Staff Data Engineer building a Semantic Layer for DuckDB.
+        Your job is to translate a business user's natural language metric definition into a valid, highly-optimized DuckDB SQL SELECT statement.
+        
+        DATASET SCHEMA:
+        {json.dumps(schema_dict, indent=2)}
+        
+        RULES:
+        1. Return ONLY valid DuckDB SQL. No markdown formatting, no explanation.
+        2. The query must represent a single metric aggregation (e.g., COUNT, SUM, AVG).
+        3. Do NOT include a GROUP BY clause. This SQL will be used as a standalone metric definition or injected into a CTE.
+        4. Use CURRENT_DATE for relative time filtering if mentioned (e.g., "last 30 days").
+        """
+
+        user_prompt = f"""
+        Metric Name: {request.metric_name}
+        Definition: {request.description}
+        
+        Write the SQL SELECT statement that calculates this metric from a generic table named 'base_table'.
+        """
+
+        try:
+            raw_sql = await llm_client.generate(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.0 # Deterministic compilation
             )
-        }
+            raw_sql = raw_sql.replace("```sql", "").replace("```", "").strip()
+        except Exception as e:
+            return CompiledMetricResult(
+                metric_name=request.metric_name, compiled_sql="", is_valid=False,
+                error_message=f"LLM Compilation Failed: {str(e)}"
+            )
 
-    def get_semantic_views(self, integration_names: List[str]) -> Dict[str, str]:
-        """
-        Dynamically loads the "Gold Tier" SQL CTEs (Common Table Expressions) 
-        from the active SaaS integrations. 
-        
-        This prevents the LLM from hallucinating complex multi-join logic for 
-        things like Salesforce Pipeline Velocity or Stripe LTV.
-        """
-        aggregated_views = {}
-        
-        for integration in integration_names:
-            integration_lower = integration.lower()
-            if integration_lower in self.CONNECTOR_REGISTRY:
-                try:
-                    # Instantiate connector securely (mocking credentials just to get static views)
-                    connector_class = self.CONNECTOR_REGISTRY[integration_lower]
-                    connector_instance = connector_class(tenant_id=self.tenant_id, credentials={})
-                    
-                    # Merge views
-                    views = connector_instance.get_semantic_views()
-                    aggregated_views.update(views)
-                except Exception as e:
-                    logger.warning(f"[{self.tenant_id}] Failed to load semantic views for {integration}: {e}")
-                    
-        return aggregated_views
+        # 3. AST Validation & Security Check
+        return self._validate_and_sanitize_ast(request.metric_name, raw_sql)
 
-    def get_llm_prompt_context(self) -> str:
+    def _validate_and_sanitize_ast(self, metric_name: str, raw_sql: str) -> CompiledMetricResult:
         """
-        Generates a strict system prompt string to instruct the LLM on which 
-        inline governed metrics are available for its Contextual RAG window.
+        Uses sqlglot to parse the generated SQL into an Abstract Syntax Tree.
+        Ensures no destructive operations exist and reformats the SQL for consistency.
         """
-        if not self._inline_registry:
-            return ""
-
-        lines = ["\n### [STRICT INLINE METRIC GOVERNANCE] ###"]
-        lines.append("You MUST use the following exact tags in your SELECT statements instead of writing manual calculations. DO NOT attempt to calculate these metrics yourself.")
-        
-        for name, metric in self._inline_registry.items():
-            lines.append(f"- {{{name}}}: {metric.friendly_name}. {metric.description} (Requires columns: {', '.join(metric.required_columns)})")
-        
-        lines.append("\nExample Output Format:")
-        lines.append("SELECT date_trunc('month', created_at) AS month, {mrr} AS total_mrr FROM stripe_subs GROUP BY 1;")
-        lines.append("#########################################\n")
-        
-        return "\n".join(lines)
-
-    def inject_governed_metrics(self, raw_sql: str) -> str:
-        """
-        Intercepts the LLM's raw SQL output and safely expands the macro tags 
-        (e.g., `{mrr}`) into their highly optimized, mathematically precise DuckDB SQL equivalents.
-        """
-        if not raw_sql:
-            return raw_sql
+        try:
+            # Parse using DuckDB dialect
+            ast = sqlglot.parse_one(raw_sql, read="duckdb")
             
-        expanded_sql = raw_sql
+            # Security: Check for forbidden DDL/DML operations
+            for node in ast.walk():
+                if isinstance(node, self.FORBIDDEN_OPERATIONS):
+                    return CompiledMetricResult(
+                        metric_name=metric_name, compiled_sql=raw_sql, is_valid=False,
+                        error_message="SECURITY ALERT: Destructive SQL operation detected in compiled metric."
+                    )
+                    
+            # Complexity Check (AST Cost)
+            ast_cost = len(list(ast.walk()))
+            if ast_cost > 100:
+                logger.warning(f"Metric '{metric_name}' compiled to a highly complex AST (Cost: {ast_cost}).")
 
-        # 1. Identify all tags in the format {metric_name} (Case insensitive)
-        tags = set(re.findall(r'\{([a-zA-Z0-9_]+)\}', expanded_sql))
+            # Standardize and format the SQL
+            standardized_sql = ast.sql(dialect="duckdb", pretty=True)
+            
+            return CompiledMetricResult(
+                metric_name=metric_name,
+                compiled_sql=standardized_sql,
+                is_valid=True,
+                ast_cost=ast_cost
+            )
+
+        except sqlglot.errors.ParseError as e:
+            return CompiledMetricResult(
+                metric_name=metric_name, compiled_sql=raw_sql, is_valid=False,
+                error_message=f"Syntax Error in compiled SQL: {str(e)}"
+            )
+
+    # ==========================================
+    # STAGE 2: STORAGE & CATALOG MANAGEMENT
+    # ==========================================
+
+    async def save_governed_metric(
+        self, 
+        db: Session, 
+        tenant_id: str, 
+        dataset_id: str, 
+        compilation: CompiledMetricResult,
+        description: str
+    ) -> Dict[str, Any]:
+        """Saves the perfectly validated semantic metric to the database."""
+        if not compilation.is_valid:
+            raise ValueError(f"Cannot save invalid metric: {compilation.error_message}")
+            
+        try:
+            new_metric = SemanticMetric(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                metric_name=compilation.metric_name,
+                description=description,
+                compiled_sql=compilation.compiled_sql,
+                created_at=datetime.utcnow()
+            )
+            db.add(new_metric)
+            db.commit()
+            db.refresh(new_metric)
+            
+            logger.info(f"[{tenant_id}] Successfully saved governed metric: {compilation.metric_name}")
+            return {"status": "success", "metric_id": str(new_metric.id)}
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[{tenant_id}] Failed to save metric to DB: {e}")
+            raise RuntimeError("Database error while saving semantic metric.")
+
+    async def get_semantic_catalog(self, db: Session, tenant_id: str, dataset_id: str) -> MetricCatalogSummary:
+        """
+        Retrieves the semantic dictionary. This is passed to the QueryPlanner 
+        (NL2SQLGenerator) so the AI knows EXACTLY how to calculate business logic.
+        """
+        metrics = db.query(SemanticMetric).filter(
+            SemanticMetric.dataset_id == dataset_id,
+            SemanticMetric.tenant_id == tenant_id
+        ).all()
         
-        # 2. Safely swap them
-        for tag in tags:
-            tag_lower = tag.lower()
-            if tag_lower in self._inline_registry:
-                metric = self._inline_registry[tag_lower]
+        dictionary = {m.metric_name: m.compiled_sql for m in metrics}
+        
+        return MetricCatalogSummary(
+            tenant_id=tenant_id,
+            dataset_id=dataset_id,
+            total_governed_metrics=len(metrics),
+            semantic_dictionary=dictionary
+        )
+
+    # ==========================================
+    # STAGE 3: EXECUTION (Zero-Latency Injection)
+    # ==========================================
+
+    def inject_governed_metrics(
+        self, 
+        db: Session, 
+        tenant_id: str, 
+        dataset_id: str, 
+        raw_execution_sql: str
+    ) -> str:
+        """
+        The Masterpiece of the Semantic Layer.
+        
+        When a user asks "Show MAU by Country", the Query Planner generates a query referencing "MAU".
+        Instead of relying on the LLM to get the math right, we use sqlglot to physically 
+        inject the pre-approved, governed metric definition as a CTE into the execution path.
+        """
+        metrics = db.query(SemanticMetric).filter(
+            SemanticMetric.dataset_id == dataset_id,
+            SemanticMetric.tenant_id == tenant_id
+        ).all()
+        
+        if not metrics:
+            return raw_execution_sql
+
+        try:
+            # Parse the incoming query
+            ast = sqlglot.parse_one(raw_execution_sql, read="duckdb")
+            
+            # Find all column references in the query
+            referenced_columns = set()
+            for column in ast.find_all(exp.Column):
+                referenced_columns.add(column.name.lower())
                 
-                # Wrapping in parentheses ensures the order of operations 
-                # is strictly preserved during injection
-                safe_snippet = f"({metric.sql_snippet})"
+            # Identify which governed metrics were actually requested
+            injected_ctes = {}
+            for metric in metrics:
+                # If the metric name (e.g. 'mau') is used anywhere in the query
+                if metric.metric_name.lower() in referenced_columns:
+                    # Format the definition as a CTE block
+                    safe_cte_name = f"governed_{metric.metric_name.replace(' ', '_').lower()}"
+                    
+                    # Transform the compiled metric (which queries 'base_table') to query our CTE chain
+                    metric_ast = sqlglot.parse_one(metric.compiled_sql, read="duckdb")
+                    for table in metric_ast.find_all(exp.Table):
+                        if table.name == "base_table":
+                            table.set("this", exp.to_identifier("raw_dataset_source"))
+                            
+                    injected_ctes[safe_cte_name] = metric_ast.sql(dialect="duckdb")
+
+            # If no governed metrics were used, return the original
+            if not injected_ctes:
+                return raw_execution_sql
+
+            # Re-write the AST to include the Governed CTEs
+            # This ensures zero-latency performance because we are just formatting strings in Python, 
+            # not making network calls to LLMs during execution.
+            cte_sql_blocks = []
+            for name, sql in injected_ctes.items():
+                cte_sql_blocks.append(f"{name} AS ({sql})")
                 
-                # Use regex sub to replace case-insensitively
-                pattern = re.compile(rf'\{{{tag}\}}', re.IGNORECASE)
-                expanded_sql = pattern.sub(safe_snippet, expanded_sql)
+            cte_prefix = "WITH " + ",\n".join(cte_sql_blocks)
+            
+            # If the original query already had a WITH clause, we append to it. 
+            # Otherwise, we prepend our new WITH clause.
+            if "WITH" in raw_execution_sql.upper():
+                final_sql = raw_execution_sql.replace("WITH ", cte_prefix + ",\n", 1)
             else:
-                logger.warning(f"[{self.tenant_id}] Governance Alert: LLM hallucinated an unregistered metric tag: {{{tag}}}")
-                # We intentionally leave invalid tags in the string so the execution engine (DuckDB) 
-                # hard-fails it with a syntax error. The Phase 4 Auto-Correction Loop will then catch
-                # this error and force the LLM to fix it.
+                final_sql = f"{cte_prefix}\n{raw_execution_sql}"
+                
+            logger.info(f"[{tenant_id}] Injected {len(injected_ctes)} governed metrics into query execution.")
+            return final_sql
 
-        if raw_sql != expanded_sql:
-            logger.info(f"[{self.tenant_id}] Successfully applied mathematical governance to LLM payload.")
-            logger.debug(f"Governed SQL: {expanded_sql}")
-            
-        return expanded_sql
+        except Exception as e:
+            logger.error(f"[{tenant_id}] Failed to inject governed metrics: {e}")
+            # Graceful degradation: If AST manipulation fails, fall back to the raw LLM query
+            return raw_execution_sql
+
+# Global Singleton
+metric_governance_service = MetricGovernanceService()

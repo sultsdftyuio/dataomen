@@ -1,9 +1,10 @@
+# compute_worker.py
+
 import os
 import asyncio
 import logging
 import gc
 import time
-import traceback
 import psutil
 from typing import Optional, Dict, Any
 from celery import Celery
@@ -17,15 +18,15 @@ from models import Dataset, DatasetStatus
 
 # Core Infrastructure Orchestrators
 from api.services.storage_manager import storage_manager
-from api.services.sync_engine import get_sync_engine, INTEGRATION_REGISTRY
+from api.services.sync_engine import get_sync_engine
 from api.services.credential_manager import CredentialManager
 
-# Phase 6: Analytical Services
+# Refactored Analytical Services (Now parameterless & Centralized)
 from api.services.query_planner import QueryPlanner
 from api.services.nl2sql_generator import NL2SQLGenerator
-from api.services.compute_engine import ComputeEngine, DatasetMetadata
+from api.services.compute_engine import compute_engine, DatasetMetadata
 from api.services.insight_orchestrator import InsightOrchestrator
-from api.services.narrative_service import NarrativeService
+from api.services.narrative_service import narrative_service
 from api.services.cache_manager import cache_manager
 
 # ------------------------------------------------------------------------------
@@ -33,10 +34,10 @@ from api.services.cache_manager import cache_manager
 # ------------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [DataOmenCelery] %(message)s",
+    format="%(asctime)s [%(levelname)s] [DataOmenWorker] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-logger = logging.getLogger("DataOmenCelery")
+logger = logging.getLogger("DataOmenWorker")
 
 # Configure Celery to use Vercel KV / Upstash Redis
 redis_url = os.getenv("KV_URL") or os.getenv("UPSTASH_REDIS_REST_URL") or "redis://localhost:6379/0"
@@ -51,21 +52,20 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    task_time_limit=600, # 10 minute hard limit for massive ingestions
+    task_time_limit=600,         # 10 minute hard limit for massive ingestions
     task_soft_time_limit=570,
     worker_prefetch_multiplier=1, # Fair distribution among worker nodes
-    task_acks_late=True # Only acknowledge task completion AFTER it finishes
+    task_acks_late=True           # Only acknowledge task completion AFTER it finishes
 )
 
 # ------------------------------------------------------------------------------
-# Global Singletons for Analytics
+# Global Singletons (Refactored: No API Keys passed here!)
 # ------------------------------------------------------------------------------
-api_key = os.getenv("OPENAI_API_KEY")
-planner = QueryPlanner(api_key=api_key)
-generator = NL2SQLGenerator(api_key=api_key)
-compute = ComputeEngine()
-insight = InsightOrchestrator()
-narrative = NarrativeService(api_key=api_key)
+# These now internally reference the global llm_client singleton.
+planner = QueryPlanner()
+generator = NL2SQLGenerator()
+insight_engine = InsightOrchestrator()
+# narrative_service and compute_engine are imported as ready-to-use singletons.
 
 # ------------------------------------------------------------------------------
 # Utility Helpers
@@ -83,11 +83,10 @@ def _check_memory(task_instance, threshold: float = 85.0):
     mem = psutil.virtual_memory()
     if mem.percent > threshold:
         logger.warning(f"⚠️ High Memory Pressure ({mem.percent}%). Retrying task to prevent OOM.")
-        # Exponential backoff retry
         raise task_instance.retry(countdown=30)
 
 # ------------------------------------------------------------------------------
-# Task 1: Zero-ETL Ingestion & Sync (Upgraded from your polling script)
+# Task 1: Zero-ETL Ingestion & Sync
 # ------------------------------------------------------------------------------
 
 @celery_app.task(bind=True, name="process_ingestion_dataset", max_retries=3)
@@ -163,11 +162,9 @@ def process_ingestion_dataset(self, dataset_id: str, tenant_id: str):
             dataset.status = DatasetStatus.FAILED
             dataset.schema_metadata = {**(dataset.schema_metadata or {}), "error": str(e)}
             db.commit()
-            # Let Celery handle the retry logic if appropriate
             raise self.retry(exc=e, countdown=60)
             
         finally:
-            # Memory Management: Force cleanup of Polars/C++ buffers
             gc.collect()
 
 # ------------------------------------------------------------------------------
@@ -193,43 +190,60 @@ def execute_heavy_analytical_pipeline(
     try:
         dataset = DatasetMetadata(**dataset_dict)
         
-        # 1. Lead Engineer Planning
-        self.update_state(state='PROGRESS', meta={'status': 'AI Lead Engineer planning query...'})
+        # 1. AI Planning (Async service call)
+        self.update_state(state='PROGRESS', meta={'status': 'AI Lead Engineer architecting query plan...'})
         plan = _run_async(planner.generate_plan(prompt, full_schema, tenant_id))
         
         if not plan.is_achievable:
             return {"status": "error", "message": plan.missing_data_reason}
 
-        # 2. SQL Generation
-        self.update_state(state='PROGRESS', meta={'status': 'Compiling warehouse-specific SQL...'})
-        sql_query, chart_spec = _run_async(generator.generate_sql(plan, full_schema, dataset.location.value, tenant_id))
+        # 2. SQL Compilation (Dialect-Specific)
+        self.update_state(state='PROGRESS', meta={'status': 'Compiling optimized SQL...'})
+        sql_query, chart_spec = _run_async(generator.generate_sql(
+            plan=plan, 
+            full_schema=full_schema, 
+            target_engine=dataset.location.value, 
+            tenant_id=tenant_id,
+            prompt=prompt
+        ))
 
-        # 3. Vectorized Compute Pushdown
-        self.update_state(state='PROGRESS', meta={'status': 'Pushing compute down to warehouse...'})
-        query_result = _run_async(compute.execute_query(sql_query, dataset))
+        # 3. Vectorized Compute Execution
+        self.update_state(state='PROGRESS', meta={'status': 'Executing warehouse scan...'})
+        # Note: In worker context, we pass db=None as compute_engine manages connections internally
+        query_result = _run_async(compute_engine.execute_read_only(
+            db=None, 
+            tenant_id=tenant_id, 
+            datasets=[], # Handled via metadata URI resolution
+            query=sql_query
+        ))
 
-        # 4. Mathematical Insight Gauntlet
-        self.update_state(state='PROGRESS', meta={'status': 'Running statistical gauntlet...'})
+        # 4. Statistical Insight Extraction
+        self.update_state(state='PROGRESS', meta={'status': 'Running mathematical insight gauntlet...'})
         import polars as pl
-        df = pl.DataFrame(query_result.data)
-        insights = insight.analyze_dataframe(df, plan, tenant_id)
+        df = pl.DataFrame(query_result)
+        insights = insight_engine.analyze_dataframe(df, plan, tenant_id)
 
-        # 5. Executive Narrative
+        # 5. Executive Storytelling (Narrative synthesis)
         self.update_state(state='PROGRESS', meta={'status': 'Synthesizing executive summary...'})
-        narrative_obj = _run_async(narrative.generate_executive_summary(insights, plan, chart_spec, tenant_id))
+        narrative_obj = _run_async(narrative_service.generate_executive_summary(
+            payload=insights, 
+            plan=plan, 
+            chart_spec=chart_spec, 
+            tenant_id=tenant_id
+        ))
 
         final_payload = {
             "status": "success",
             "type": "chart" if chart_spec else "table",
-            "data": query_result.data,
+            "data": query_result,
             "sql_used": sql_query,
             "chart_spec": chart_spec,
-            "row_count": query_result.row_count,
+            "row_count": len(query_result),
             "insights": insights.model_dump(),
             "narrative": narrative_obj.model_dump()
         }
 
-        # Commit directly to Redis Cache so the frontend polling instantly renders the dashboard
+        # Commit to Redis Cache to unblock the frontend UI polling
         _run_async(cache_manager.set_cached_insight(
             tenant_id=tenant_id,
             dataset_id=dataset.dataset_id,
@@ -243,7 +257,7 @@ def execute_heavy_analytical_pipeline(
         return final_payload
 
     except Exception as e:
-        logger.error(f"[{tenant_id}] Heavy job {job_id} failed: {str(e)}")
+        logger.error(f"[{tenant_id}] Heavy compute failure: {str(e)}")
         return {"status": "error", "message": str(e)}
         
     finally:

@@ -1,364 +1,378 @@
+# api/services/semantic_router.py
+
 import logging
 import json
 import time
-from typing import List, Dict, Any, Literal, Optional
-from pydantic import BaseModel, Field
+import asyncio
+import re
+from typing import List, Dict, Any, Literal, Optional, Tuple, Union
+from datetime import datetime
 
-# Setup structured logger for workspace orchestration
+import polars as pl
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+# Core Modular Orchestrators & Services
+from api.services.llm_client import llm_client
+from api.services.query_planner import QueryPlanner, QueryPlan
+from api.services.nl2sql_generator import NL2SQLGenerator
+from api.services.compute_engine import compute_engine
+from api.services.metric_governance import metric_governance_service
+from api.services.insight_orchestrator import InsightOrchestrator, InsightPayload
+from api.services.narrative_service import narrative_service
+from api.services.cache_manager import cache_manager
+from api.services.storage_manager import storage_manager
+
+# Models & Database
+from models import Dataset, QueryHistory, Organization
+from api.database import SessionLocal
+
 logger = logging.getLogger(__name__)
 
+# -------------------------------------------------------------------------
+# Data Contracts (The Brain's Communication Protocols)
+# -------------------------------------------------------------------------
+
 class RouteDecision(BaseModel):
-    """Structured output schema for the agentic routing decision."""
+    """
+    Structured output schema for the Master Router's intent recognition.
+    Forces the AI to think through the execution path before committing.
+    """
     reasoning: str = Field(
         ..., 
-        description="Step-by-step logic for the chosen path."
+        description="Step-by-step logic explaining the chosen route and dataset selection."
     )
-    route: Literal["GENERAL_CHAT", "ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"] = Field(
+    route: Literal["GENERAL_CHAT", "ANALYTICAL_QUERY", "COMPLEX_COMPUTATION", "METRIC_DEFINITION"] = Field(
         ..., 
-        description="The target execution engine based on intent."
+        description="The target engine. METRIC_DEFINITION is used for NL Data Modeling."
+    )
+    intent_summary: str = Field(
+        ..., 
+        description="A concise summary of what the user wants to achieve."
     )
     confidence_score: float = Field(
         ..., 
         ge=0.0, le=1.0, 
-        description="Confidence level in this routing decision (0.0 to 1.0)."
+        description="Confidence in this routing decision."
     )
-    required_datasets: List[str] = Field(
+    required_dataset_ids: List[str] = Field(
         default_factory=list, 
-        description="Dataset IDs (UUIDs) strictly required for this interaction."
+        description="Dataset IDs (UUIDs) strictly required. Supports multiple for auto-joins."
     )
-    recommended_views: List[str] = Field(
-        default_factory=list, 
-        description="Names of pre-built Gold Tier views (e.g., 'vw_monthly_churn') to use."
+    cross_dataset_join_required: bool = Field(
+        default=False, 
+        description="True if the query requires combining data from multiple sources."
     )
+
+class RouterExecutionPayload(BaseModel):
+    """The unified response format for the frontend UI."""
+    type: Literal["text", "chart", "table", "insight", "metric_confirmed"]
+    message: str
+    data: Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None
+    chart_spec: Optional[Dict[str, Any]] = None
+    sql_used: Optional[str] = None
+    execution_time_ms: float = 0.0
+    metadata: Dict[str, Any] = {}
+
+# -------------------------------------------------------------------------
+# Phase 10: The Master Intelligence Hub (Semantic Router V2)
+# -------------------------------------------------------------------------
 
 class SemanticRouter:
     """
-    Phase 3+: Enterprise Agentic Orchestration & Semantic Routing
+    The Orchestration Brain of DataOmen.
     
-    The 'Central Nervous System' of DataOmen. Evaluates prompts against 
-    tenant-specific metadata and routes to the optimal compute layer.
-    
-    Upgraded Engineering:
-    - Confidence Thresholding: Prevents expensive execution of hallucinated routes.
-    - Observability: High-precision latency tracking.
-    - Smart Summarization: Token-safe entity routing (delegates deep schema mapping to NL2SQL).
+    Features:
+    - AI Data Copilot: Maintains conversational context and intent.
+    - Natural Language Data Modeling: Routes to Metric Governance for definition.
+    - Cross-Dataset Intelligence: Automatically detects and handles joins.
+    - Governed Injection: Uses AST manipulation to inject verified metrics into SQL.
+    - Performance Layer: Integrated caching and vectorized execution.
     """
 
-    def __init__(
-        self,
-        llm_client: Any,
-        db_client: Any,
-        nl2sql_service: Any,
-        compute_engine: Any,
-        integration_registry: Optional[Dict[str, Any]] = None
-    ):
-        """
-        Dependency injection for modular orchestration.
-        """
-        self.llm = llm_client
-        self.db = db_client
-        self.nl2sql = nl2sql_service
-        self.compute = compute_engine
-        self.integration_registry = integration_registry or {}
+    def __init__(self):
+        # Instantiate sub-agents
+        self.planner = QueryPlanner()
+        self.generator = NL2SQLGenerator()
+        self.insight_engine = InsightOrchestrator()
         
-        # Enterprise threshold: require high confidence to trigger heavy SQL/ML compute
-        self.confidence_threshold = 0.75 
+        # Configuration
+        self.CONFIDENCE_THRESHOLD = 0.70
+        self.MAX_CONTEXT_TURNS = 5
 
-    # ---------------------------------------------------
-    # CONTEXT FETCH (Security by Design)
-    # ---------------------------------------------------
+    # ==========================================
+    # INTERNAL CONTEXT & SCHEMA UTILITIES
+    # ==========================================
 
-    async def _fetch_context(self, tenant_id: str, dataset_ids: List[str]) -> Dict[str, Any]:
+    async def _get_authorized_schemas(self, db: Session, tenant_id: str, dataset_ids: List[str]) -> Dict[str, Any]:
         """
-        Fetches dataset metadata with strict tenant isolation.
-        Injects integration-specific semantic views.
+        Fetches full metadata and schemas with strict tenant isolation.
         """
-        if not dataset_ids:
-            return {"raw_schemas": [], "semantic_views": {}}
+        datasets = db.query(Dataset).filter(
+            Dataset.id.in_(dataset_ids),
+            Dataset.tenant_id == tenant_id
+        ).all()
 
-        try:
-            start_time = time.perf_counter()
+        schema_context = {}
+        for ds in datasets:
+            # We use the dataset ID or Name as the logical table name
+            table_key = f"dataset_{str(ds.id).replace('-', '_')}"
+            schema_context[table_key] = ds.schema_metadata or {}
             
-            # Enforce tenant isolation at the query level
-            response = (
-                self.db.table("datasets")
-                .select("id, name, description, schema_metadata, provider")
-                .eq("tenant_id", tenant_id)
-                .in_("id", dataset_ids)
-                .execute()
-            )
+        return {
+            "datasets": datasets,
+            "schema_context": schema_context
+        }
 
-            datasets = response.data or []
-            raw_schemas = []
-            semantic_views = {}
-
-            for ds in datasets:
-                raw_schemas.append({
-                    "id": ds["id"],
-                    "name": ds["name"],
-                    "description": ds.get("description", ""),
-                    "schema_metadata": ds["schema_metadata"]
-                })
-
-                # Modular Integration Injection (e.g., Stripe, Shopify predefined metrics)
-                provider = ds.get("provider")
-                if provider and provider in self.integration_registry:
-                    connector = self.integration_registry[provider]
-                    semantic_views.update(connector.get_semantic_views())
-
-            elapsed = (time.perf_counter() - start_time) * 1000
-            logger.debug(f"[Context] Fetched {len(datasets)} datasets for {tenant_id} in {elapsed:.2f}ms")
-
-            return {
-                "raw_schemas": raw_schemas,
-                "semantic_views": semantic_views
-            }
-
-        except Exception as e:
-            logger.error(f"Context retrieval failure for Tenant {tenant_id}: {e}")
-            return {"raw_schemas": [], "semantic_views": {}}
-
-    # ---------------------------------------------------
-    # TOKEN SAFE SUMMARY (Analytical Efficiency)
-    # ---------------------------------------------------
-
-    def _summarize_for_router(self, schemas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _summarize_catalog_for_routing(self, datasets: List[Dataset]) -> str:
         """
-        Entity-Level Summarization:
-        The router doesn't need every column to pick a dataset; it needs intent matching.
-        This prevents massive token bloat when users have 100+ column tables.
+        Entity-Level Summarization: Prevents token bloat by giving the router 
+        only high-level intent context. Deep schema is left for the NL2SQL stage.
         """
-        summary = []
-        for ds in schemas:
-            meta = ds.get("schema_metadata", {})
-            columns_dict = meta.get("columns", meta) if isinstance(meta, dict) else {}
-            
-            # Extract high-level types to give the router context without exact mapping
-            col_summary = [f"{k} ({v.get('type', 'Unknown')})" if isinstance(v, dict) else k for k, v in list(columns_dict.items())[:15]]
-            if len(columns_dict) > 15:
-                col_summary.append(f"... and {len(columns_dict) - 15} more columns")
-
-            summary.append({
-                "dataset_id": ds["id"],
-                "friendly_name": ds["name"],
-                "description": ds.get("description", "No description provided."),
-                "core_columns_preview": col_summary
+        catalog = []
+        for ds in datasets:
+            catalog.append({
+                "id": str(ds.id),
+                "name": ds.name,
+                "description": ds.description or "No description.",
+                "sample_columns": list((ds.schema_metadata or {}).keys())[:10]
             })
-        return summary
+        return json.dumps(catalog, indent=2)
 
-    # ---------------------------------------------------
-    # ROUTER PROMPT (Persona Alignment)
-    # ---------------------------------------------------
+    # ==========================================
+    # MAIN ORCHESTRATION CYCLE (The Copilot)
+    # ==========================================
 
-    def _build_routing_prompt(self, user_prompt: str, context: Dict[str, Any]) -> str:
-        """
-        Constructs the agentic routing prompt. 
-        Forces rigorous confidence scoring.
-        """
-        summarized = self._summarize_for_router(context["raw_schemas"])
-        views = list(context["semantic_views"].keys())
-
-        return f"""
-You are the primary intelligence router for DataOmen, an enterprise analytical SaaS.
-Your task is to analyze the user's prompt and route it to the optimal execution engine.
-
-ACTIVE WORKSPACE DATASETS:
-{json.dumps(summarized, indent=2)}
-
-GOLD TIER SEMANTIC VIEWS (HIGHLY PREFERRED):
-{json.dumps(views, indent=2)}
-
-USER PROMPT:
-"{user_prompt}"
-
-ROUTING LOGIC & CONSTRAINTS:
-1. ANALYTICAL_QUERY: Select this if the user asks for filtering, aggregations, trends, counts, or charts.
-   - REQUIREMENT: You MUST include the exact dataset_id in `required_datasets`.
-   - PREFERENCE: Use Gold Tier views if they conceptually match.
-2. COMPLEX_COMPUTATION: Select this ONLY for machine learning, anomaly detection, or forecasting.
-3. GENERAL_CHAT: Select this for conversational interactions, greetings, or if the prompt is entirely unrelated to the active datasets.
-
-Assign a `confidence_score` (0.0 to 1.0). If the user asks a data question but the required dataset is missing from the workspace, score it < 0.5 and route to GENERAL_CHAT.
-"""
-
-    def _validate_datasets(self, requested: List[str], context: Dict[str, Any]) -> List[str]:
-        """
-        Security Layer: Mathematically prevent the LLM from accessing unauthorized dataset IDs.
-        """
-        valid_ids = {s["id"] for s in context["raw_schemas"]}
-        return [ds_id for ds_id in requested if ds_id in valid_ids]
-
-    # ---------------------------------------------------
-    # MAIN ORCHESTRATION
-    # ---------------------------------------------------
-
-    async def process_interaction(
+    async def process_copilot_request(
         self,
+        db: Session,
         tenant_id: str,
-        active_dataset_ids: List[str],
-        chat_history: List[Dict[str, Any]],
-        user_prompt: str
-    ) -> Dict[str, Any]:
+        user_prompt: str,
+        chat_history: List[Dict[str, str]],
+        active_dataset_ids: List[str]
+    ) -> RouterExecutionPayload:
         """
-        Main entry point. Orchestrates context, dynamic routing, and path delegation.
+        Main entry point for the Conversational AI Copilot.
+        Orchestrates Decision -> Planning -> Injection -> Execution -> Narrative.
         """
-        logger.info(f"[Orchestrator] Initiating cycle for Tenant: {tenant_id}")
-        start_time = time.perf_counter()
+        t0 = time.perf_counter()
+        logger.info(f"[{tenant_id}] Copilot processing request: '{user_prompt[:50]}...'")
+
+        # 1. FETCH CATALOG CONTEXT
+        # We fetch all active datasets to let the router choose the best source
+        all_active_ds = db.query(Dataset).filter(
+            Dataset.id.in_(active_dataset_ids),
+            Dataset.tenant_id == tenant_id
+        ).all()
+
+        # 2. INTENT RECOGNITION (The Routing Decision)
+        catalog_summary = self._summarize_catalog_for_routing(all_active_ds)
         
-        context = await self._fetch_context(tenant_id, active_dataset_ids)
-        routing_prompt = self._build_routing_prompt(user_prompt, context)
+        system_routing_prompt = f"""
+        You are the Master Intelligence Router for DataOmen. Analyze the conversation and user prompt.
+        
+        ACTIVE CATALOG:
+        {catalog_summary}
+        
+        ROUTES:
+        - ANALYTICAL_QUERY: Questions requiring data extraction, charts, or summaries.
+        - COMPLEX_COMPUTATION: Forecasting, anomaly deep-dives, or advanced math.
+        - METRIC_DEFINITION: When the user wants to define a new business term (e.g. "Define MAU as...").
+        - GENERAL_CHAT: Greetings, platform help, or unrelated topics.
+        
+        If multiple datasets are needed to answer a single question (e.g. Sales + Marketing), 
+        include both IDs and set cross_dataset_join_required to true.
+        """
 
         try:
-            decision: RouteDecision = await self.llm.generate_structured(
-                prompt=routing_prompt,
-                history=chat_history,
+            decision: RouteDecision = await llm_client.generate_structured(
+                system_prompt=system_routing_prompt,
+                prompt=user_prompt,
+                history=chat_history[-self.MAX_CONTEXT_TURNS:],
                 response_model=RouteDecision
             )
-            logger.info(f"[Router] {decision.route} chosen with {decision.confidence_score*100:.1f}% confidence. Reasoning: {decision.reasoning}")
+            logger.info(f"[{tenant_id}] Router Decision: {decision.route} ({decision.confidence_score*100:.0f}%)")
         except Exception as e:
-            logger.error(f"[Router] Structural parse failure: {e}. Executing safety fallback.")
-            decision = RouteDecision(
-                reasoning="Safety fallback due to LLM parsing exception.",
-                route="GENERAL_CHAT",
-                confidence_score=0.0
-            )
+            logger.error(f"Routing logic failed: {e}")
+            return RouterExecutionPayload(type="text", message="I'm sorry, I had trouble understanding that request. Could you rephrase?")
 
-        # 1. Guardrail: Low Confidence Interception
-        if decision.route in ["ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"] and decision.confidence_score < self.confidence_threshold:
-            logger.warning(f"[Guardrail] Execution blocked. Confidence {decision.confidence_score} below threshold {self.confidence_threshold}.")
-            return {
-                "type": "text",
-                "message": "I'm not entirely sure which dataset contains the answer to that. Could you clarify your question or make sure the correct data source is active?"
-            }
+        # 3. GUARDRAILS & ROUTING DELEGATION
+        if decision.confidence_score < self.CONFIDENCE_THRESHOLD:
+            return RouterExecutionPayload(type="text", message="I understand you're asking about data, but I'm not sure which source to use. Could you clarify?")
 
-        # 2. Guardrail: Dataset Validation
-        decision.required_datasets = self._validate_datasets(decision.required_datasets, context)
-        if decision.route in ["ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"] and not decision.required_datasets:
-            logger.warning("[Guardrail] Analytical route selected but no valid datasets provided.")
-            return {
-                "type": "text",
-                "message": "I understand what you're asking, but I don't see the required dataset in your current workspace to calculate it."
-            }
-
-        # 3. Path Delegation
-        try:
-            if decision.route == "ANALYTICAL_QUERY":
-                result = await self._handle_analytical(tenant_id, decision, context, user_prompt, chat_history)
-            elif decision.route == "COMPLEX_COMPUTATION":
-                result = await self._handle_compute(tenant_id, decision, context, user_prompt)
-            else:
-                result = await self._handle_chat(user_prompt, chat_history)
-                
-        except Exception as e:
-            logger.critical(f"[Orchestrator] Fatal execution error in {decision.route}: {str(e)}")
-            result = {
-                "type": "text",
-                "message": "I encountered a system error while trying to process your request. Our engineering team has been notified."
-            }
-
-        total_elapsed = (time.perf_counter() - start_time) * 1000
-        logger.info(f"[Orchestrator] Interaction completed in {total_elapsed:.2f}ms")
+        if decision.route == "METRIC_DEFINITION":
+            return await self._handle_metric_modeling(db, tenant_id, user_prompt, decision)
         
-        return result
+        elif decision.route == "GENERAL_CHAT":
+            return await self._handle_conversational_chat(user_prompt, chat_history)
 
-    # ---------------------------------------------------
-    # DELEGATED HANDLERS (Hybrid Performance)
-    # ---------------------------------------------------
+        elif decision.route in ["ANALYTICAL_QUERY", "COMPLEX_COMPUTATION"]:
+            return await self._handle_full_analytical_pipeline(
+                db, tenant_id, user_prompt, chat_history, decision, t0
+            )
 
-    async def _handle_analytical(
-        self,
-        tenant_id: str,
+        return RouterExecutionPayload(type="text", message="Route not yet implemented.")
+
+    # ==========================================
+    # DELEGATED HANDLERS
+    # ==========================================
+
+    async def _handle_full_analytical_pipeline(
+        self, 
+        db: Session, 
+        tenant_id: str, 
+        prompt: str, 
+        history: List[Dict[str, str]], 
         decision: RouteDecision,
-        context: Dict[str, Any],
-        prompt: str,
-        history: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+        start_time: float
+    ) -> RouterExecutionPayload:
         """
-        Path: SQL Generation -> Vectorized Execution.
+        The Heavy-Duty Analytical Path.
+        Planner -> NL2SQL -> Metric Injection -> Compute -> Insights -> Narrative.
         """
-        active_views = {
-            k: context["semantic_views"][k]
-            for k in decision.recommended_views
-            if k in context["semantic_views"]
-        }
+        # 1. SECURITY & CONTEXT FETCH
+        auth_context = await self._get_authorized_schemas(db, tenant_id, decision.required_dataset_ids)
+        schema_context = auth_context["schema_context"]
+        datasets = auth_context["datasets"]
 
-        # Generate SQL via Contextual RAG
-        sql, chart = await self.nl2sql.generate_sql(
+        if not datasets:
+            return RouterExecutionPayload(type="text", message="I don't have access to the datasets required for that analysis.")
+
+        # 2. CHECK GLOBAL CACHE (Prompt Hash)
+        cached = await cache_manager.get_cached_insight(tenant_id, decision.required_dataset_ids[0], prompt)
+        if cached:
+            return RouterExecutionPayload(
+                type="chart" if cached.get("chart_spec") else "table",
+                message="Retrieved from cache.",
+                **cached,
+                execution_time_ms=round((time.perf_counter() - start_time) * 1000, 2)
+            )
+
+        # 3. GENERATE EXECUTION PLAN (The Lead Engineer)
+        plan: QueryPlan = await self.planner.generate_plan(prompt, schema_context, tenant_id)
+        if not plan.is_achievable:
+            return RouterExecutionPayload(type="text", message=f"I can't calculate that yet. {plan.missing_data_reason}")
+
+        # 4. NL2SQL GENERATION (Dialect-Specific)
+        # Fetch verified metric catalog to provide "Verified Metric Views" context to the generator
+        # (This is the 'Contextual RAG' filter mentioned in methodologies)
+        metric_catalog = await metric_governance_service.get_semantic_catalog(db, tenant_id, decision.required_dataset_ids[0])
+        
+        sql_query, chart_spec = await self.generator.generate_sql(
+            plan=plan,
+            full_schema=schema_context,
+            target_engine="duckdb",
+            tenant_id=tenant_id,
             prompt=prompt,
-            schemas=context["raw_schemas"],
-            semantic_views=active_views,
+            semantic_views=metric_catalog.semantic_dictionary,
             history=history
+        )
+
+        # 5. GOVERNED METRIC INJECTION (The Masterpiece)
+        # We rewrite the SQL to inject the actual validated CTE definitions for any business terms used.
+        governed_sql = metric_governance_service.inject_governed_metrics(
+            db, tenant_id, decision.required_dataset_ids[0], sql_query
         )
 
         try:
-            # Attempt Zero-Copy Execution
-            result = await self.compute.execute_read_only(
-                tenant_id=tenant_id,
-                dataset_ids=decision.required_datasets,
-                query=sql,
-                injected_views=decision.recommended_views
+            # 6. VECTORIZED EXECUTION (Compute Engine)
+            # We use wait_for to enforce the SaaS API timeout limits
+            results = await asyncio.wait_for(
+                compute_engine.execute_read_only(
+                    db=db,
+                    tenant_id=tenant_id,
+                    datasets=datasets,
+                    query=governed_sql
+                ),
+                timeout=30.0
             )
-        except Exception as e:
-            logger.warning(f"[Engine] DuckDB Compiler error: {e}. Initiating Phase 4 Auto-Correction.")
-            
-            # Phase 4: Error Feedback Loop
-            sql, _ = await self.nl2sql.correct_sql(
-                failed_query=sql,
-                error_msg=str(e),
+
+            # 7. MATHEMATICAL INSIGHT GAUNTLET (Polars/Vectorized)
+            df = pl.DataFrame(results)
+            insight_payload: InsightPayload = self.insight_engine.analyze_dataframe(df, plan, tenant_id)
+
+            # 8. EXECUTIVE NARRATIVE (The CDO Persona)
+            narrative = await narrative_service.generate_executive_summary(
+                payload=insight_payload,
+                plan=plan,
+                chart_spec=chart_spec,
+                tenant_id=tenant_id
+            )
+
+            execution_time = round((time.perf_counter() - start_time) * 1000, 2)
+
+            # 9. COMMIT TO CACHE
+            await cache_manager.set_cached_insight(
+                tenant_id=tenant_id,
+                dataset_id=decision.required_dataset_ids[0],
                 prompt=prompt,
-                schemas=context["raw_schemas"],
-                semantic_views=active_views
+                sql_query=governed_sql,
+                chart_spec=chart_spec,
+                insight_payload=insight_payload,
+                narrative=narrative.model_dump()
             )
 
-            # Second attempt
-            result = await self.compute.execute_read_only(
-                tenant_id=tenant_id,
-                dataset_ids=decision.required_datasets,
-                query=sql,
-                injected_views=decision.recommended_views
+            return RouterExecutionPayload(
+                type="chart" if chart_spec else "table",
+                message=narrative.executive_summary,
+                data=results,
+                chart_spec=chart_spec,
+                sql_used=governed_sql,
+                execution_time_ms=execution_time,
+                metadata={"insights": insight_payload.model_dump()}
             )
 
-        return {
-            "type": "chart" if chart else "table",
-            "data": result,
-            "chart_config": chart,
-            "sql_used": sql,
-            "message": "Data-driven insight generated successfully."
-        }
+        except asyncio.TimeoutError:
+            return RouterExecutionPayload(type="text", message="The query was too complex and timed out. Try asking for a smaller time range.")
+        except Exception as e:
+            logger.error(f"Analytical pipeline crash: {e}")
+            return RouterExecutionPayload(type="text", message="I encountered an error while processing the data. My engineers have been notified.")
 
-    async def _handle_compute(
-        self,
-        tenant_id: str,
-        decision: RouteDecision,
-        context: Dict[str, Any],
-        prompt: str
-    ) -> Dict[str, Any]:
+    async def _handle_metric_modeling(self, db: Session, tenant_id: str, prompt: str, decision: RouteDecision) -> RouterExecutionPayload:
         """
-        Path: Vectorized ML/Math Pipeline execution.
+        Path 2: Natural Language Data Modeling.
+        Extracts the metric name and definition, compiles it via MetricGovernance.
         """
-        result = await self.compute.execute_ml_pipeline(
-            tenant_id=tenant_id,
-            dataset_ids=decision.required_datasets,
-            prompt=prompt,
-            schemas=context["raw_schemas"]
+        # Simple extraction logic (Could be improved with a structured LLM call)
+        # Assuming prompt format: "Define [Metric Name] as [Definition]"
+        match = re.search(r"define\s+[\"']?(.+?)[\"']?\s+as\s+(.+)", prompt, re.IGNORECASE)
+        if not match:
+            return RouterExecutionPayload(type="text", message="To define a metric, please use the format: 'Define [Name] as [Logic/Definition]'.")
+
+        metric_name, definition = match.groups()
+        dataset_id = decision.required_dataset_ids[0] if decision.required_dataset_ids else None
+        
+        if not dataset_id:
+            return RouterExecutionPayload(type="text", message="I need to know which dataset this metric belongs to. Please specify.")
+
+        from api.services.metric_governance import NLMetricRequest
+        
+        compilation = await metric_governance_service.compile_metric_from_nl(
+            db, tenant_id, NLMetricRequest(metric_name=metric_name, description=definition, dataset_id=dataset_id)
         )
 
-        return {
-            "type": "ml_result",
-            "data": result,
-            "message": "Complex analytical modeling applied."
-        }
+        if not compilation.is_valid:
+            return RouterExecutionPayload(type="text", message=f"I couldn't compile that metric definition: {compilation.error_message}")
 
-    async def _handle_chat(self, prompt: str, history: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Path: General conversational layer.
-        """
-        reply = await self.llm.generate_text(
-            prompt=prompt,
-            history=history
+        # Save to the governed catalog
+        await metric_governance_service.save_governed_metric(db, tenant_id, dataset_id, compilation, definition)
+
+        return RouterExecutionPayload(
+            type="metric_confirmed",
+            message=f"✅ Metric '{metric_name}' is now governed and ready for use in any query.",
+            data={"compiled_sql": compilation.compiled_sql}
         )
 
-        return {
-            "type": "text",
-            "message": reply
-        }
+    async def _handle_conversational_chat(self, prompt: str, history: List[Dict[str, str]]) -> RouterExecutionPayload:
+        """
+        Path 3: General Chat / Contextual Guidance.
+        """
+        reply = await llm_client.generate(
+            system_prompt="You are DataOmen Copilot, a helpful AI expert in analytics. Be concise and professional.",
+            user_prompt=prompt,
+            temperature=0.7 # Allow more personality in general chat
+        )
+        return RouterExecutionPayload(type="text", message=reply)
+
+# Global Singleton
+semantic_router = SemanticRouter()

@@ -5,6 +5,8 @@ import numpy as np
 from numpy.linalg import norm
 from typing import Any, Dict, List, Optional, Tuple
 
+from api.services.llm_client import llm_client
+
 import sqlglot
 from sqlglot import exp
 from pydantic import BaseModel, Field
@@ -87,21 +89,13 @@ class NL2SQLGenerator:
       destructive operations, including nested injection attempts.
     * **Intelligent self-correction** – Database engine errors are classified
       and annotated with targeted hints before the LLM retries.
-    * **Dependency-injected LLM** – Accepts any client that implements
-      ``embed``, ``embed_batch``, and ``generate_structured``, making the
-      engine straightforward to unit-test and swap.
+    * **Centralised LLM singleton** – All model interactions are routed through
+      the platform-wide ``llm_client`` singleton, inheriting automatic retries,
+      exponential backoff, and shared embedding logic.
     """
 
-    def __init__(self, llm_client: Any = None) -> None:
-        """
-        Parameters
-        ----------
-        llm_client:
-            Must implement ``embed(text) -> List[float]``,
-            ``embed_batch(texts) -> List[List[float]]``, and
-            ``generate_structured(system_prompt, prompt, history, response_model)``.
-        """
-        self.llm = llm_client
+    def __init__(self) -> None:
+        pass  # LLM interactions are routed through the platform-wide llm_client singleton.
 
     # -----------------------------------------------------------------------
     # Schema Pruning  (Plan-driven → Hybrid RAG)
@@ -171,29 +165,28 @@ class NL2SQLGenerator:
         vector_scores: Dict[str, float] = {}
 
         # --- Vector scoring (best-effort; falls back gracefully) -----------
-        if self.llm and hasattr(self.llm, "embed") and hasattr(self.llm, "embed_batch"):
-            try:
-                prompt_emb = np.array(await self.llm.embed(prompt))
-                col_names = list(columns.keys())
-                docs = [
-                    (
-                        f"Column: {name}. "
-                        f"Type: {columns[name].get('type', '')}. "
-                        f"Description: {columns[name].get('description', '')}. "
-                        f"Examples: {', '.join(str(s) for s in columns[name].get('samples', [])[:3])}"
-                    )
-                    for name in col_names
-                ]
-                col_embs = await self.llm.embed_batch(docs)
-                for name, emb in zip(col_names, col_embs):
-                    vector_scores[name] = self._cosine_similarity(
-                        prompt_emb, np.array(emb)
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "Vector retrieval failed (%s). Falling back to deterministic heuristics.",
-                    exc,
+        try:
+            prompt_emb = np.array(await llm_client.embed(prompt))
+            col_names = list(columns.keys())
+            docs = [
+                (
+                    f"Column: {name}. "
+                    f"Type: {columns[name].get('type', '')}. "
+                    f"Description: {columns[name].get('description', '')}. "
+                    f"Examples: {', '.join(str(s) for s in columns[name].get('samples', [])[:3])}"
                 )
+                for name in col_names
+            ]
+            col_embs = await llm_client.embed_batch(docs)
+            for name, emb in zip(col_names, col_embs):
+                vector_scores[name] = self._cosine_similarity(
+                    prompt_emb, np.array(emb)
+                )
+        except Exception as exc:
+            logger.warning(
+                "Vector retrieval failed (%s). Falling back to deterministic heuristics.",
+                exc,
+            )
 
         # --- Deterministic scoring ----------------------------------------
         time_keywords = {"date", "time", "year", "month", "day", "trend", "predict", "forecast"}
@@ -444,9 +437,6 @@ CHARTING RULES (Vega-Lite):
         -------
         (sql_query, chart_spec)  where ``chart_spec`` may be ``None``.
         """
-        if not self.llm:
-            raise RuntimeError("LLM client dependency not injected into NL2SQLGenerator.")
-
         logger.info("[%s] Compiling QueryPlan → %s SQL", tenant_id, target_engine.upper())
 
         contextual_schema = await self._build_contextual_schema(plan, full_schema, prompt)
@@ -456,7 +446,7 @@ CHARTING RULES (Vega-Lite):
         user_message = f"Compile the execution plan into {target_engine.upper()} SQL now."
 
         try:
-            result: NL2SQLOutput = await self.llm.generate_structured(
+            result: NL2SQLOutput = await llm_client.generate_structured(
                 system_prompt=system_prompt,
                 prompt=user_message,
                 history=history or [],
@@ -532,7 +522,7 @@ TASK:
 """
 
         try:
-            result: NL2SQLOutput = await self.llm.generate_structured(
+            result: NL2SQLOutput = await llm_client.generate_structured(
                 system_prompt=system_prompt,
                 prompt=correction_prompt,
                 history=[],
