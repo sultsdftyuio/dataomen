@@ -1,17 +1,11 @@
-# api/services/compute_engine.py
-
 import logging
 import re
 import asyncio
 import time
-import hashlib
-import json
 from typing import Dict, Any, List, Optional
 
 import polars as pl
 import duckdb
-import sqlglot
-from sqlglot import exp
 from sqlalchemy.orm import Session
 
 # Import our infrastructure modules
@@ -21,139 +15,38 @@ from api.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-# -------------------------------------------------------------------------
-# Phase 1: Semantic Query Caching Layer
-# -------------------------------------------------------------------------
-class QueryCacheManager:
-    """
-    High-Performance Caching Layer.
-    Uses Semantic AST Hashing so formatting (spaces, caps) doesn't bust the cache.
-    Ready for Redis injection in production.
-    """
-    def __init__(self, redis_client=None, ttl_seconds: int = 3600):
-        self.redis = redis_client 
-        self._local_cache = {} 
-        self.ttl = ttl_seconds
-
-    def _generate_semantic_hash(self, tenant_id: str, dataset_ids: List[str], sql_query: str) -> str:
-        """
-        Generates a deterministic hash based on the AST, tenant ID, and dataset IDs
-        to prevent cross-tenant data leaks and maximize hit rate.
-        """
-        try:
-            # Standardize SQL formatting via AST to maximize cache hit rates
-            ast = sqlglot.parse_one(sql_query, read="duckdb")
-            standardized_sql = ast.sql(dialect="duckdb")
-        except Exception:
-            standardized_sql = sql_query.strip().lower()
-
-        dataset_signatures = "_".join(sorted(dataset_ids))
-        payload = f"{tenant_id}::{dataset_signatures}::{standardized_sql}"
-        
-        return hashlib.sha256(payload.encode('utf-8')).hexdigest()
-
-    async def get(self, tenant_id: str, dataset_ids: List[str], sql_query: str) -> Optional[List[Dict[str, Any]]]:
-        cache_key = self._generate_semantic_hash(tenant_id, dataset_ids, sql_query)
-        
-        if self.redis:
-            try:
-                cached_data = self.redis.get(cache_key)
-                if cached_data:
-                    logger.info(f"[{tenant_id}] CACHE HIT: {cache_key[:8]}")
-                    return json.loads(cached_data)
-            except Exception as e:
-                logger.warning(f"Redis cache read failed: {str(e)}")
-        else:
-            if cache_key in self._local_cache:
-                entry = self._local_cache[cache_key]
-                if time.time() - entry['timestamp'] < self.ttl:
-                    logger.info(f"[{tenant_id}] CACHE HIT (Local): {cache_key[:8]}")
-                    return entry['data']
-        return None
-
-    async def set(self, tenant_id: str, dataset_ids: List[str], sql_query: str, data: List[Dict[str, Any]]):
-        cache_key = self._generate_semantic_hash(tenant_id, dataset_ids, sql_query)
-        
-        if self.redis:
-            try:
-                self.redis.setex(cache_key, self.ttl, json.dumps(data, default=str))
-            except Exception as e:
-                logger.warning(f"Redis cache write failed: {str(e)}")
-        else:
-            self._local_cache[cache_key] = {
-                'timestamp': time.time(),
-                'data': data
-            }
-
-# -------------------------------------------------------------------------
-# Phase 3 & 4: Query Planner & Compute Router
-# -------------------------------------------------------------------------
 class ComputeRouter:
     """
-    Intelligent routing based on AST Complexity Analysis.
-    Prevents "Noisy Neighbors" by offloading heavy analytical workloads to distributed queues.
+    Phase 6: Noisy Neighbor Defense & Diagnostic Router.
+    Heuristically analyzes execution complexity to protect the FastAPI event loop.
     """
-    MAX_SYNC_COST = 50 
-
-    @classmethod
-    def analyze_query_cost(cls, sql_query: str) -> int:
+    @staticmethod
+    def requires_background_worker(sql_query: str) -> bool:
         """
-        Calculates a heuristic 'cost' based on SQL operations using AST mapping.
-        Joins, Window functions, and nested aggregations are heavily penalized.
+        Determines if a query is too complex for the synchronous tier.
+        Protects against Cartesian explosions and deep windowing.
         """
-        cost = 0
-        try:
-            ast = sqlglot.parse_one(sql_query, read="duckdb")
-            
-            # Base cost for scanning
-            cost += 5 
-            
-            # Joins are expensive (Cartesian explosion risk)
-            for _ in ast.find_all(exp.Join):
-                cost += 20
-                
-            # Window functions require sorting
-            for _ in ast.find_all(exp.Window):
-                cost += 25
-                
-            # Aggregations / Group By
-            if ast.args.get("group"):
-                cost += 15
-                
-            # CTEs indicate complex multi-step logic
-            if ast.args.get("with"):
-                cost += sum(15 for _ in ast.args["with"].expressions)
-                
-        except Exception as e:
-            logger.warning(f"Cost analysis failed, assuming high cost. Error: {str(e)}")
-            cost = 100 # Default to async worker on parse failure to protect Vercel Edge
-
-        return cost
-
-    @classmethod
-    def requires_background_worker(cls, sql_query: str) -> bool:
-        """Determines if a query is too complex for the synchronous tier."""
         if not sql_query:
             return False
-        
-        cost = cls.analyze_query_cost(sql_query)
-        is_heavy = cost >= cls.MAX_SYNC_COST
-        
-        if is_heavy:
-            logger.info(f"Query routed to ASYNC. Calculated AST Cost: {cost}")
             
-        return is_heavy
+        sql_lower = sql_query.lower()
+        
+        # Heuristics for "Heavy" analytical workloads
+        if sql_lower.count("join") >= 3:
+            return True
+        if any(keyword in sql_lower for keyword in ["over (", "window ", "partition by"]):
+            return True
+        if "cross join" in sql_lower or "lateral" in sql_lower:
+            return True
+            
+        return False
 
 
-# -------------------------------------------------------------------------
-# Phase 5 & 7: The Vectorized Compute Engine
-# -------------------------------------------------------------------------
 class ComputeEngine:
     """
-    The High-Performance Predictive Execution Core.
+    Phase 5 & 7: The High-Performance Predictive Execution Core.
     
     Upgraded Engineering:
-    - Phase 1 Semantic Caching: Bypasses execution entirely for identical dashboard views.
     - Phase 7 ML Pipeline: Native Vectorized Linear Regression for trend forecasting.
     - R2 Network Optimization: Leverages DuckDB Httpfs Predicate Pushdown.
     - AST/Regex Path Resolution: Dynamically rewrites LLM SQL to point to physical R2 Parquet files.
@@ -164,7 +57,6 @@ class ComputeEngine:
     def __init__(self, query_timeout_ms: int = 15000):
         # Enterprise Guardrail: Never let an analytical query hang the server
         self.query_timeout_ms = query_timeout_ms
-        self.cache = QueryCacheManager()
 
     def _resolve_physical_paths(self, db: Session, tenant_id: str, dataset_ids: List[str], sql_query: str) -> str:
         """
@@ -193,7 +85,7 @@ class ComputeEngine:
             # Replace the logical table with the read_parquet function
             physical_query = re.sub(
                 re.escape(logical_table), 
-                f"read_parquet('{r2_path}')", 
+                f"read_parquet({r2_path})", 
                 physical_query, 
                 flags=re.IGNORECASE
             )
@@ -207,17 +99,17 @@ class ComputeEngine:
         if not injected_views:
             return physical_query
             
-        # If views are provided, prepend them as CTEs logic here
+        # If views are provided, prepend them as CTEs
+        # Example: f"WITH {view_name} AS ({view_sql}) {physical_query}"
         return physical_query
 
     async def execute_read_only(
         self, 
-        db: Session,  
+        db: Session,  # Passed from the router for DB context
         tenant_id: str, 
         datasets: List[Dataset], 
         query: str, 
-        injected_views: Optional[List[str]] = None,
-        bypass_cache: bool = False
+        injected_views: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         Phase 5: Executes an analytical query against R2 storage natively.
@@ -225,27 +117,22 @@ class ComputeEngine:
         """
         dataset_ids = [str(d.id) for d in datasets]
 
-        # 1. Check Cache Layer First
-        if not bypass_cache:
-            cached_result = await self.cache.get(tenant_id, dataset_ids, query)
-            if cached_result is not None:
-                return cached_result
-
         def _sync_execute() -> List[Dict[str, Any]]:
-            # 2. Rewrite SQL to point to R2
+            # 1. Rewrite SQL to point to R2
             executable_sql = self._resolve_physical_paths(db, tenant_id, dataset_ids, query)
             executable_sql = self._inject_semantic_views(executable_sql, injected_views or [])
             
             logger.debug(f"[{tenant_id}] Executing Physical Query:\n{executable_sql}")
             start_time = time.perf_counter()
 
-            # 3. Acquire a secure, tenant-isolated execution context with R2 credentials loaded
+            # 2. Acquire a secure, tenant-isolated execution context with R2 credentials loaded
             with storage_manager.duckdb_session(db, tenant_id) as con:
                 try:
                     # Resource constraints to protect the host container
                     con.execute(f"PRAGMA memory_limit='2GB'")
+                    con.interrupt() # Reset interrupt state just in case
                     
-                    # 4. Vectorized execution via R2 -> Arrow -> Polars
+                    # 3. Vectorized execution via R2 -> Arrow -> Polars
                     arrow_table = con.execute(executable_sql).arrow()
                     df = pl.from_arrow(arrow_table)
                     
@@ -255,7 +142,7 @@ class ComputeEngine:
                     if df is None or df.is_empty():
                         return []
                         
-                    # 5. Handle serialization anomalies (e.g., dates/NaNs for JSON transport)
+                    # 4. Handle serialization anomalies (e.g., dates/NaNs for JSON transport)
                     return self._sanitize_for_json(df)
 
                 except duckdb.ParserException as e:
@@ -270,17 +157,10 @@ class ComputeEngine:
 
         # Enforce strict query timeout at the Python event-loop level
         try:
-            results = await asyncio.wait_for(
+            return await asyncio.wait_for(
                 asyncio.to_thread(_sync_execute), 
                 timeout=self.query_timeout_ms / 1000.0
             )
-            
-            # Cache the successful result
-            if not bypass_cache and results:
-                await self.cache.set(tenant_id, dataset_ids, query, results)
-                
-            return results
-            
         except asyncio.TimeoutError:
             logger.critical(f"🚨 [{tenant_id}] Query execution timed out after {self.query_timeout_ms}ms!")
             raise TimeoutError("The analytical query was too complex and timed out. Try asking a more specific question.")
@@ -308,7 +188,7 @@ class ComputeEngine:
                 SELECT 
                     CAST("{time_col}" AS DATE) as ds, 
                     CAST(SUM("{metric_col}") AS DOUBLE) as y
-                FROM read_parquet('{secure_path}')
+                FROM read_parquet({secure_path})
                 GROUP BY ds
                 ORDER BY ds ASC
             """
