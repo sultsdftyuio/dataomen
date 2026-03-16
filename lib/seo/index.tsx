@@ -1,4 +1,7 @@
+// lib/seo/index.tsx
 import React from 'react';
+
+// Modular Silo Imports
 import { coreFeatures } from './core-features';
 import { textToSqlFeatures } from './text-to-sql';
 import { fileAnalysis } from './file-analysis';
@@ -8,33 +11,46 @@ import { competitorComparisons } from './competitorComparisons';
 import { howToGuides } from './guides';
 import { dashboardTemplates } from './templates';
 
+// --- 1. Type Safety & Interfaces ---
+
 /**
- * Arcli SEO System Configuration
- * This central index aggregates all performance-tuned SEO data into a 
- * single, type-safe registry for the landing page router.
+ * Arclis SEO System Configuration Interface.
+ * Marked entirely as `readonly` to enforce strict functional immutability 
+ * during Next.js static generation and client hydration.
  */
-export type SEOPageData = {
-  type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
-  title: string;
-  description: string;
-  h1: string;
-  subtitle: string;
-  icon: React.ReactElement;
-  features: string[];
-  steps: { name: string; text: string }[];
-  useCases: { title: string; description: string }[];
-  faqs: { q: string; a: string }[];
-  comparison?: { 
-    competitor: string; 
-    arcliWins: string[]; // Synchronized with rebranding
-    competitorFlaws: string[]; 
+export interface SEOPageData {
+  readonly type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
+  readonly title: string;
+  readonly description: string;
+  readonly h1: string;
+  readonly subtitle: string;
+  readonly icon: React.ReactElement;
+  readonly features: readonly string[];
+  readonly steps: readonly { 
+    readonly name: string; 
+    readonly text: string; 
+  }[];
+  readonly useCases: readonly { 
+    readonly title: string; 
+    readonly description: string; 
+  }[];
+  readonly faqs: readonly { 
+    readonly q: string; 
+    readonly a: string; 
+  }[];
+  readonly comparison?: { 
+    readonly competitor: string; 
+    readonly arcliWins: readonly string[]; // Synchronized with rebranding
+    readonly competitorFlaws: readonly string[]; 
   };
-  relatedSlugs: string[];
-};
+  readonly relatedSlugs: readonly string[];
+}
+
+// --- 2. Data Aggregation (The Registry) ---
 
 /**
  * Combined SEO Pages - Main Export
- * Merges all modularized category records into a single lookup object.
+ * Merges all modularized category records into a single O(1) lookup object.
  */
 export const seoPages: Record<string, SEOPageData> = {
   ...coreFeatures,
@@ -48,7 +64,8 @@ export const seoPages: Record<string, SEOPageData> = {
 };
 
 /**
- * Export by category for easier navigation and silo-based internal linking.
+ * Categorized Export
+ * For silo-based internal linking and categorized sitemap generation.
  */
 export const seoPagesByCategory = {
   coreFeatures,
@@ -59,27 +76,44 @@ export const seoPagesByCategory = {
   competitorComparisons,
   howToGuides,
   dashboardTemplates
+} as const;
+
+export type SEOCategory = keyof typeof seoPagesByCategory;
+
+// --- 3. High-Performance Selectors & Utilities ---
+
+/**
+ * Retrieve metadata for a specific slug with fallback.
+ * O(1) time complexity.
+ */
+export const getPage = (slug: string): SEOPageData | undefined => {
+  return seoPages[slug];
 };
 
 /**
- * Utility Functions
- * High-performance accessors for the SEO metadata layer.
+ * Get all unique page slugs for Next.js static path generation.
+ * Used inside `generateStaticParams()`.
  */
-
-// Get all pages of a specific type (e.g., all 'comparison' pages)
-export const getPagesByType = (type: SEOPageData['type']): Record<string, SEOPageData> => {
-  return Object.entries(seoPages)
-    .filter(([_, page]) => page.type === type)
-    .reduce((acc, [slug, page]) => ({ ...acc, [slug]: page }), {});
+export const getAllSlugs = (): string[] => {
+  return Object.keys(seoPages);
 };
 
-// Get all unique page slugs for static path generation
-export const getAllSlugs = (): string[] => Object.keys(seoPages);
+/**
+ * Get all pages of a specific type (e.g., all 'comparison' pages).
+ * Useful for building dynamic index pages or sidebar navigation.
+ */
+export const getPagesByType = (type: SEOPageData['type']): Record<string, SEOPageData> => {
+  return Object.entries(seoPages).reduce((acc, [slug, page]) => {
+    if (page.type === type) {
+      acc[slug] = page;
+    }
+    return acc;
+  }, {} as Record<string, SEOPageData>);
+};
 
-// Retrieve metadata for a specific slug with fallback
-export const getPage = (slug: string): SEOPageData | undefined => seoPages[slug];
-
-// Access pages grouped by their specific category
-export const getPagesByCategory = (category: keyof typeof seoPagesByCategory): Record<string, SEOPageData> => {
+/**
+ * Access pages grouped by their specific programmatic category.
+ */
+export const getPagesByCategory = (category: SEOCategory): Record<string, SEOPageData> => {
   return seoPagesByCategory[category];
 };
