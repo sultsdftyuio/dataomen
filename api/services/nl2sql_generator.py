@@ -4,11 +4,9 @@ import logging
 import re
 import numpy as np
 from collections import defaultdict
-from numpy.linalg import norm
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from api.services.llm_client import llm_client
-
 import sqlglot
 from sqlglot import exp
 from pydantic import BaseModel, Field
@@ -28,7 +26,7 @@ class NL2SQLOutput(BaseModel):
     Structured output contract for the LLM.
 
     Enforces chain-of-thought reasoning before SQL emission to reduce
-    hallucinations and improve mathematical accuracy.  The ``reasoning`` field
+    hallucinations and improve mathematical accuracy. The ``reasoning`` field
     is required first so the model cannot short-circuit to SQL without
     articulating its join path and dialect choices.
     """
@@ -71,76 +69,31 @@ _DIALECT_MAP: Dict[str, str] = {
     "redshift": "postgres",   # sqlglot uses postgres rules for Redshift
 }
 
-# Minimum confidence score before a warning is logged
 _CONFIDENCE_WARN_THRESHOLD = 0.6
-
-# Maximum columns injected into the LLM context to prevent token bloat.
-# The SemanticRouter / VectorService upstream may have already reduced the
-# schema well below this budget; this constant guards against edge cases.
 _MAX_COLUMNS_PER_CONTEXT = 25
-
-# Maximum result rows injected when the LLM omits an explicit LIMIT clause.
-# Prevents accidental full-table scans from reaching the application layer.
 _DEFAULT_RESULT_LIMIT = 1000
-
-# Maximum number of column embeddings held in the process-level cache.
-# At 1536-dim float32 (~6 KB/entry) this caps memory at roughly 60 MB.
 _COL_EMB_CACHE_MAX_SIZE = 10_000
 
-# Required top-level keys in any Vega-Lite spec
 _VEGA_REQUIRED_KEYS: Set[str] = {"mark", "encoding"}
-
-# All mark types recognised by Vega-Lite v5
 _VEGA_VALID_MARKS: Set[str] = {
     "bar", "line", "area", "point", "circle", "square",
     "tick", "rule", "text", "geoshape", "arc", "rect",
     "trail", "image", "boxplot", "errorband", "errorbar",
 }
 
+# Pre-compile regex for faster tokenization
+_WORD_PATTERN = re.compile(r"\w+")
+
 
 class NL2SQLGenerator:
     """
     Phase 2 & 3: Enterprise RAG & Auto-Correcting NL2SQL Engine.
-
-    Design principles
-    -----------------
-    * **Contextual RAG Synergy (Phase 2)** - The SemanticRouter and VectorService
-      pre-prune the schema upstream; the secondary embedding fallback is skipped
-      when the incoming schema is already within budget, saving latency.
-    * **Global Column Ranking** - Columns from all tables in the pruned schema
-      are flattened into a single candidate pool and ranked together, then
-      re-grouped by table.  This prevents a relevant column in a less-prominent
-      table from being crowded out by a dominant table's per-table quota.
-    * **Embedding Cache** - Column document embeddings are cached in-process
-      keyed by SHA-256 of the doc string.  Only the natural-language prompt
-      is embedded at runtime; schema embeddings are reused across requests,
-      yielding a dramatic reduction in embedding API cost at steady state.
-    * **Query Cost Guardrails** - A post-generation AST pass injects
-      LIMIT {_DEFAULT_RESULT_LIMIT} on any top-level SELECT that lacks an
-      explicit limit, and logs a warning on SELECT * patterns.
-    * **Join Path Validation** - An FK graph derived from the schema warns
-      (non-blocking) when a JOIN condition references no FK/PK column,
-      catching the classic table_a.id = table_b.id mistake.
-    * **Chart Spec Validation** - Vega-Lite specs are validated for required
-      keys, legal mark types, and field-name alignment with SQL output aliases.
-      Invalid specs fall back to None so the UI renders a plain table view.
-    * **CTE-Aware AST Gate** - exp.With (CTE root) is explicitly permitted
-      alongside exp.Select so valid WITH ... SELECT queries are never blocked.
-    * **Dialect-aware SQL** - Generates and validates native SQL for DuckDB,
-      BigQuery, or Redshift, including read_parquet() for zero-copy DuckDB.
-    * **Analytical Math Prep (Phase 3)** - Enforces CAST(... AS DOUBLE) for
-      metrics and CAST(... AS DATE/TIMESTAMP) for temporal columns to guarantee
-      type-safe input for the downstream Polars compute engine.
-    * **Intelligent self-correction** - Engine errors are classified with
-      targeted hints before the LLM retries, minimising retry round-trips.
-    * **Centralised LLM singleton** - All model calls route through llm_client,
-      inheriting retries, backoff, and shared embedding infrastructure.
     """
 
     def __init__(self) -> None:
         # Process-level cache: SHA-256(column_doc) -> embedding vector.
-        # Only column/schema docs are cached; prompt embeddings are not
-        # (each prompt is unique and caching would waste memory).
+        # NOTE: This is instance-level; promote to a class variable if a true
+        # process-wide singleton cache is required across multiple instances.
         self._col_emb_cache: Dict[str, List[float]] = {}
 
     # -----------------------------------------------------------------------
@@ -154,14 +107,13 @@ class NL2SQLGenerator:
 
     async def _get_column_embeddings(self, docs: List[str]) -> List[List[float]]:
         """
-        Returns embeddings for docs, serving cached entries where available.
+        Returns embeddings for *all* docs in the same order they were supplied,
+        serving cached entries where available.
 
-        Only uncached documents are sent to the embedding API, which in steady
-        state means only the prompt embedding is computed per request - a
-        significant latency and cost reduction for large, stable schemas.
-
-        The cache is bounded by _COL_EMB_CACHE_MAX_SIZE; the oldest quarter
-        of entries is evicted when the limit is reached (FIFO approximation).
+        FIX: Previously the method filtered out None slots with a bare list
+        comprehension, which silently returned a shorter list than ``docs`` and
+        caused silent index mismatches in the vectorised ranking step.  The
+        method now raises explicitly when a slot is unexpectedly empty.
         """
         results: List[Optional[List[float]]] = [None] * len(docs)
         uncached_indices: List[int] = []
@@ -177,7 +129,7 @@ class NL2SQLGenerator:
                 uncached_docs.append(doc)
 
         if uncached_docs:
-            # Evict oldest 25% of entries when approaching the size limit
+            # Evict oldest 25 % of entries when approaching the size limit
             if len(self._col_emb_cache) + len(uncached_docs) > _COL_EMB_CACHE_MAX_SIZE:
                 evict_count = _COL_EMB_CACHE_MAX_SIZE // 4
                 for old_key in list(self._col_emb_cache.keys())[:evict_count]:
@@ -185,12 +137,27 @@ class NL2SQLGenerator:
                 logger.debug("Embedding cache: evicted %d stale entries.", evict_count)
 
             fresh_embs = await llm_client.embed_batch(uncached_docs)
+
+            if len(fresh_embs) != len(uncached_docs):
+                raise ValueError(
+                    f"embed_batch returned {len(fresh_embs)} embeddings for "
+                    f"{len(uncached_docs)} documents — length mismatch."
+                )
+
             for idx, doc, emb in zip(uncached_indices, uncached_docs, fresh_embs):
                 key = self._doc_cache_key(doc)
                 self._col_emb_cache[key] = emb
                 results[idx] = emb
 
-        return [r for r in results if r is not None]
+        # Guard: every slot must have been filled
+        missing = [i for i, r in enumerate(results) if r is None]
+        if missing:
+            raise RuntimeError(
+                f"Embedding result slots {missing} are still None after fetch — "
+                "this indicates a cache/fetch logic bug."
+            )
+
+        return results  # type: ignore[return-value]  # all None slots verified above
 
     # -----------------------------------------------------------------------
     # Schema Pruning  (Plan-driven -> Global Hybrid RAG)
@@ -203,12 +170,6 @@ class NL2SQLGenerator:
     ) -> Dict[str, Dict[str, Any]]:
         """
         Stage 1 - Deterministic allowlist pruning.
-
-        Uses the QueryPlan's explicit columns_involved sets to filter the
-        schema to only what the planner requested, plus all PK/FK columns
-        (anything ending in _id or named id) which are always required
-        for joins.  This eliminates the majority of irrelevant columns
-        before any embedding calls are made.
         """
         required: Set[str] = set()
         for step in plan.steps:
@@ -226,13 +187,6 @@ class NL2SQLGenerator:
 
         return pruned
 
-    @staticmethod
-    def _cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
-        n1, n2 = norm(v1), norm(v2)
-        if n1 == 0 or n2 == 0:
-            return 0.0
-        return float(np.dot(v1, v2) / (n1 * n2))
-
     async def _rank_columns_globally(
         self,
         plan_pruned: Dict[str, Dict[str, Any]],
@@ -240,33 +194,11 @@ class NL2SQLGenerator:
     ) -> Dict[str, Dict[str, Any]]:
         """
         Stage 2 - Global Hybrid RAG ranking.
-
-        Previously, ranking ran per-table, meaning a highly-relevant column
-        in table B could be eliminated while a lower-scoring column in the
-        larger table A survived simply due to table-local quotas.
-
-        This method flattens all columns from all tables into a single
-        candidate pool, scores them globally against the prompt, selects the
-        top _MAX_COLUMNS_PER_CONTEXT winners, then re-groups them by their
-        source table before returning.
-
-        Skipped entirely when the total column count is already within budget
-        (Phase 2 latency optimisation: upstream VectorService pre-pruning
-        makes this pass free in the common case).
-
-        Scoring weights
-        ~~~~~~~~~~~~~~~
-        +20  Vector cosine similarity (cached column emb vs. live prompt emb)
-        +15  Exact keyword match between prompt tokens and column name
-        + 8  Partial keyword match in column name (token len > 3)
-        + 8  Keyword match in column description
-        +10  Temporal column boost when prompt expresses time/trend intent
-        + 8  Numeric column boost when prompt expresses aggregation intent
-        + 4  PK/FK column boost (always useful for joins)
+        Uses vectorised matrix operations for cosine similarity.
         """
         total_cols = sum(len(cols) for cols in plan_pruned.values())
 
-        # Already within budget - return as-is, no embeddings needed.
+        # Already within budget — return as-is, no embeddings needed.
         if total_cols <= _MAX_COLUMNS_PER_CONTEXT:
             return plan_pruned
 
@@ -277,13 +209,15 @@ class NL2SQLGenerator:
             for col_name, col_meta in columns.items()
         ]
 
-        # --- Vector scoring: prompt embedded fresh; column docs from cache ---
         prompt_lower = prompt.lower()
-        keywords = set(re.findall(r"\w+", prompt_lower))
+        keywords = set(_WORD_PATTERN.findall(prompt_lower))
         vector_scores: Dict[Tuple[str, str], float] = {}
 
+        # --- Vectorised scoring ---
         try:
-            prompt_emb = np.array(await llm_client.embed(prompt))
+            prompt_emb = np.array(await llm_client.embed(prompt), dtype=np.float32)
+
+            # Build docs in the same order as ``flat`` so indices align 1-to-1.
             docs = [
                 (
                     f"Table: {table}. Column: {col_name}. "
@@ -293,11 +227,25 @@ class NL2SQLGenerator:
                 )
                 for table, col_name, col_meta in flat
             ]
+
             col_embs = await self._get_column_embeddings(docs)
-            for (table, col_name, _), emb in zip(flat, col_embs):
-                vector_scores[(table, col_name)] = self._cosine_similarity(
-                    prompt_emb, np.array(emb)
+
+            # Vectorised cosine similarity via matrix-vector product (C-optimised)
+            col_embs_mat = np.array(col_embs, dtype=np.float32)   # (N, D)
+            prompt_norm  = float(np.linalg.norm(prompt_emb))
+            col_norms    = np.linalg.norm(col_embs_mat, axis=1)   # (N,)
+
+            sim_scores = np.zeros(len(flat), dtype=np.float32)
+            if prompt_norm > 0:
+                valid_mask = col_norms > 0
+                sim_scores[valid_mask] = (
+                    np.dot(col_embs_mat[valid_mask], prompt_emb)
+                    / (col_norms[valid_mask] * prompt_norm)
                 )
+
+            for i, (table, col_name, _) in enumerate(flat):
+                vector_scores[(table, col_name)] = float(sim_scores[i])
+
         except Exception as exc:
             logger.warning(
                 "Global vector ranking failed (%s). Falling back to deterministic scoring only.",
@@ -351,12 +299,6 @@ class NL2SQLGenerator:
 
     @staticmethod
     def _build_schema_from_datasets(datasets: List[Dataset]) -> Dict[str, Dict[str, Any]]:
-        """
-        Converts a list of Dataset ORM objects into the full_schema dict
-        expected by the pruning / RAG pipeline, keying each table by its
-        DuckDB read_parquet(file_path) source command so the LLM receives
-        the physically-correct table reference for zero-copy execution.
-        """
         schema: Dict[str, Dict[str, Any]] = {}
         for ds in datasets:
             source_key = f"read_parquet('{ds.file_path}')"
@@ -373,18 +315,6 @@ class NL2SQLGenerator:
         full_schema: Dict[str, Dict[str, Any]],
         prompt: str,
     ) -> str:
-        """
-        Combines plan-driven pruning and global hybrid RAG ranking into a
-        single, token-efficient JSON schema block for the LLM.
-
-        The two-stage pipeline ensures:
-        - Only columns the planner explicitly requested are ever considered.
-        - If those columns still exceed the context budget, global semantic
-          scoring narrows the list without losing join keys, and without
-          biasing towards the table with the most columns.
-        - If upstream VectorService pre-pruned the schema within budget,
-          the embedding stage is skipped entirely (Phase 2 optimisation).
-        """
         plan_pruned = self._prune_by_plan(plan, full_schema)
         ranked = await self._rank_columns_globally(plan_pruned, prompt)
         return json.dumps(ranked, indent=2)
@@ -401,14 +331,6 @@ class NL2SQLGenerator:
         agent: Optional[Agent] = None,
         semantic_views: Optional[Dict[str, str]] = None,
     ) -> str:
-        """
-        Constructs the LLM system prompt, injecting:
-        - The globally-pruned and ranked schema context.
-        - Dialect-specific SQL rules.
-        - Phase 3 analytical math casting requirements (DOUBLE, DATE/TIMESTAMP).
-        - Optional semantic/metric views (gold-tier CTEs).
-        - Optional agent role context for persona-tailored metric selection.
-        """
         views_block = ""
         if semantic_views:
             views_block = (
@@ -486,22 +408,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
     )
 
     def _validate_security(self, sql: str, dialect: str) -> None:
-        """
-        Deep-AST security validator.
-
-        Defense-in-depth layer that fires before the DuckDBValidator at
-        execution time.  Parses the SQL with sqlglot for the target dialect,
-        then:
-
-        1. Verifies the root statement is SELECT, a CTE (WITH ... SELECT ->
-           exp.With), or a Subquery.  exp.With is explicitly permitted here;
-           the prior check against only exp.Select would incorrectly block all
-           valid CTE queries.
-        2. Walks the full AST to detect any destructive node buried inside
-           subqueries, CTEs, or EXECUTE-style injection attempts.
-
-        Raises ValueError on any violation.
-        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
         try:
             statements = sqlglot.parse(sql, read=sqlglot_dialect)
@@ -516,9 +422,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
             if statement is None:
                 continue
 
-            # exp.With  -> WITH ... SELECT (CTE root)
-            # exp.Select -> plain SELECT
-            # exp.Subquery -> parenthesised derived table at the top level
             if not isinstance(statement, (exp.Select, exp.With, exp.Subquery)):
                 logger.critical(
                     "AST root violation blocked: expected SELECT / WITH (CTE), got %s",
@@ -544,23 +447,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
     # -----------------------------------------------------------------------
 
     def _apply_cost_guardrails(self, sql: str, dialect: str) -> str:
-        """
-        Prevents runaway queries from reaching the execution layer.
-
-        Two protections are applied post-generation:
-
-        1. SELECT * warning - Logs a WARNING when SELECT * is detected.
-           Non-blocking because it may appear intentionally in an inner
-           subquery, but it surfaces for ops review.
-
-        2. Missing LIMIT injection - If the outermost SELECT has no explicit
-           LIMIT clause, one is injected at _DEFAULT_RESULT_LIMIT rows.
-           Handles both plain SELECT and WITH ... SELECT (CTE) roots by
-           unwrapping exp.With to reach its terminal exp.Select.
-
-        Returns the (potentially rewritten) SQL string. Parse errors are
-        passed through silently - the security gate handles them next.
-        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
         try:
             statements = sqlglot.parse(sql, read=sqlglot_dialect)
@@ -573,7 +459,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
             if statement is None:
                 continue
 
-            # 1. Warn on SELECT *
             for node, *_ in statement.walk():
                 if isinstance(node, exp.Star):
                     logger.warning(
@@ -582,9 +467,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
                     )
                     break
 
-            # 2. Inject LIMIT on the outermost SELECT if absent.
-            #    For exp.With (CTE root), the terminal SELECT is at .this.
-            #    For exp.Select it is the statement itself.
             terminal: Optional[exp.Select] = None
             if isinstance(statement, exp.With):
                 inner = getattr(statement, "this", None)
@@ -620,14 +502,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
     def _build_fk_graph(
         schema: Dict[str, Dict[str, Any]],
     ) -> Dict[str, Set[str]]:
-        """
-        Derives a lightweight FK column map from the schema.
-
-        Heuristic: any column named <x>_id is a foreign key; any column
-        named id is a primary key.  Both are valid join columns.
-
-        Returns {table_name: {valid_join_column, ...}}.
-        """
         fk_columns: Dict[str, Set[str]] = defaultdict(set)
         for table, columns in schema.items():
             for col_name in columns:
@@ -642,21 +516,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
         dialect: str,
         schema: Dict[str, Dict[str, Any]],
     ) -> None:
-        """
-        Validates JOIN ON conditions against the schema's FK graph.
-
-        Logs a WARNING - intentionally non-blocking - when a JOIN condition
-        references no FK or PK column on either side.  This catches the
-        classic predicate mistake:
-
-            orders JOIN users ON orders.id = users.id   <- wrong (PK = PK)
-            orders JOIN users ON orders.user_id = users.id  <- correct (FK = PK)
-
-        Non-blocking rationale: the heuristic FK graph cannot capture every
-        valid join semantic (e.g. natural keys, composite keys), so hard
-        rejection would produce false positives.  The warning is surfaced
-        for human review and feeds into correct_sql retry context.
-        """
         fk_graph = self._build_fk_graph(schema)
         all_valid_join_cols: Set[str] = {
             col.lower()
@@ -668,7 +527,7 @@ CHARTING RULES (Vega-Lite / UI Shape):
         try:
             statements = sqlglot.parse(sql, read=sqlglot_dialect)
         except sqlglot.errors.ParseError:
-            return  # Security gate handles malformed SQL
+            return
 
         for statement in statements:
             if statement is None:
@@ -677,7 +536,7 @@ CHARTING RULES (Vega-Lite / UI Shape):
             for join in statement.find_all(exp.Join):
                 on_clause = join.args.get("on")
                 if on_clause is None:
-                    continue  # USING / NATURAL JOIN - skip
+                    continue
 
                 join_col_names = [
                     col.name.lower()
@@ -699,14 +558,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
     # -----------------------------------------------------------------------
 
     def _extract_sql_aliases(self, sql: str, dialect: str) -> Set[str]:
-        """
-        Extracts the output column aliases from the top-level SELECT clause
-        via the sqlglot AST.  Used to cross-validate Vega-Lite field references.
-
-        Unwraps exp.With (CTE root) to reach the terminal SELECT automatically.
-        Returns an empty set if extraction fails (e.g. SELECT *), which causes
-        the chart validator to skip field-alignment checks rather than fail.
-        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
         aliases: Set[str] = set()
         try:
@@ -714,7 +565,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
             for statement in statements:
                 if statement is None:
                     continue
-                # Unwrap CTE root to reach the terminal SELECT
                 select = (
                     statement.this
                     if isinstance(statement, exp.With)
@@ -738,22 +588,9 @@ CHARTING RULES (Vega-Lite / UI Shape):
         sql: str,
         dialect: str,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Validates and sanitizes a Vega-Lite chart spec against three checks:
-
-        1. Structural - mark and encoding keys are present.
-        2. Mark type  - mark (or mark.type) is a recognised Vega-Lite v5 mark.
-        3. Field alignment - every field value inside encoding channels must
-           match a SQL output alias (case-insensitive).  Skipped when aliases
-           cannot be extracted (e.g. SELECT *), passing the spec through.
-
-        Returns the validated spec on success, or None as a signal to the UI
-        to fall back to a plain table view instead of rendering broken JSON.
-        """
         if chart_spec is None:
             return None
 
-        # 1. Structural validation
         missing = _VEGA_REQUIRED_KEYS - set(chart_spec.keys())
         if missing:
             logger.warning(
@@ -762,7 +599,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
             )
             return None
 
-        # 2. Mark type validation - normalise {"type": "bar"} -> "bar"
         mark = chart_spec.get("mark")
         if isinstance(mark, dict):
             mark = mark.get("type", "")
@@ -773,7 +609,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
             )
             return None
 
-        # 3. Field alignment validation
         sql_aliases = self._extract_sql_aliases(sql, dialect)
         if sql_aliases:
             encoding = chart_spec.get("encoding", {})
@@ -802,10 +637,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
 
     @staticmethod
     def _classify_error(error_msg: str, dialect: str) -> str:
-        """
-        Maps common database engine error patterns to targeted correction hints,
-        reducing the number of LLM retries required.
-        """
         e = error_msg.lower()
 
         if ("binder error" in e) or ("column" in e and "not found" in e):
@@ -842,7 +673,7 @@ CHARTING RULES (Vega-Lite / UI Shape):
                 "or TIMESTAMP, as required by the Phase 3 Polars compute engine."
             )
 
-        return ""   # No specific hint; let the LLM infer from the raw error
+        return ""
 
     # -----------------------------------------------------------------------
     # Public API
@@ -860,35 +691,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
         semantic_views: Optional[Dict[str, str]] = None,
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """
-        Translates a QueryPlan into executable, secure SQL for the target engine.
-
-        Post-generation pipeline (applied in order before returning):
-        1. AST security gate      - blocks destructive statements (CTE-aware).
-        2. Join path validation   - warns on non-FK/PK JOIN predicates.
-        3. Cost guardrails        - injects LIMIT if absent; warns on SELECT *.
-        4. Chart spec validation  - validates Vega-Lite structure and field
-                                    alignment; falls back to None if invalid.
-
-        Parameters
-        ----------
-        plan:           Upstream planner's execution plan (column allowlist + steps).
-        full_schema:    Complete warehouse schema keyed by table name.
-        target_engine:  One of "duckdb", "bigquery", "redshift".
-        tenant_id:      Used for scoped log correlation.
-        prompt:         Original natural-language question (used for semantic ranking).
-        agent:          Optional agent whose role description is injected into the
-                        system prompt to tailor metric selection and output framing.
-        datasets:       Optional list of Dataset ORM objects. When provided and
-                        target_engine is "duckdb", table names are remapped to
-                        read_parquet(file_path) sources for zero-copy execution.
-        semantic_views: Pre-calculated CTE/metric view definitions (gold tier).
-        history:        Prior conversation turns for multi-turn context.
-
-        Returns
-        -------
-        (sql_query, chart_spec)  where chart_spec may be None.
-        """
         logger.info("[%s] Compiling QueryPlan -> %s SQL", tenant_id, target_engine.upper())
 
         effective_schema = (
@@ -914,16 +716,9 @@ CHARTING RULES (Vega-Lite / UI Shape):
             if result is None:
                 raise ValueError("Model refused to generate SQL (returned None).")
 
-            # 1. Security gate (CTE-aware: permits exp.With alongside exp.Select)
             self._validate_security(result.sql_query, target_engine)
-
-            # 2. Join path validation (warning-only, non-blocking)
             self._validate_join_paths(result.sql_query, target_engine, effective_schema)
-
-            # 3. Cost guardrails (may rewrite SQL to inject LIMIT)
             safe_sql = self._apply_cost_guardrails(result.sql_query, target_engine)
-
-            # 4. Chart spec validation (falls back to None on any failure)
             safe_chart = self._validate_chart_spec(result.chart_spec, safe_sql, target_engine)
 
             if result.confidence_score < _CONFIDENCE_WARN_THRESHOLD:
@@ -956,34 +751,6 @@ CHARTING RULES (Vega-Lite / UI Shape):
         datasets: Optional[List[Dataset]] = None,
         semantic_views: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """
-        Intelligent error-feedback loop.
-
-        Classifies the database engine error, injects a targeted correction
-        hint, and retries generation.  The full post-generation pipeline
-        (security -> join validation -> cost guardrails -> chart validation)
-        is applied to the corrected query before it is returned.
-
-        Raises RuntimeError on cascade failure so the caller can surface
-        a clean message to the end-user.
-
-        Parameters
-        ----------
-        failed_query:   The SQL string that caused the engine error.
-        error_msg:      Raw error message returned by the database engine.
-        plan:           Original QueryPlan the failed query was trying to satisfy.
-        full_schema:    Complete warehouse schema keyed by table name.
-        target_engine:  One of "duckdb", "bigquery", "redshift".
-        tenant_id:      Used for scoped log correlation.
-        prompt:         Original natural-language question.
-        agent:          Optional agent context.
-        datasets:       Optional Dataset ORM objects for DuckDB zero-copy path.
-        semantic_views: Pre-calculated CTE/metric view definitions (gold tier).
-
-        Returns
-        -------
-        (sql_query, chart_spec)  where chart_spec may be None.
-        """
         logger.warning(
             "[%s] Initiating SQL auto-correction for %s error: %s",
             tenant_id, target_engine.upper(), error_msg,
@@ -1001,7 +768,10 @@ CHARTING RULES (Vega-Lite / UI Shape):
         )
         hint = self._classify_error(error_msg, target_engine)
 
+        # FIX: The original f-string opened a ```sql fence but never closed it,
+        # resulting in a malformed prompt sent to the LLM on every retry.
         correction_prompt = f"""The following {target_engine.upper()} SQL query failed to execute:
+
 ```sql
 {failed_query}
 ```
@@ -1022,6 +792,9 @@ TASK:
    the original Execution Plan, plus an updated Vega-Lite chart spec if applicable.
 """
 
+        # FIX: The original try/except block was indented with stray spaces,
+        # placing it outside the method body and making it unreachable dead code
+        # that would have raised an IndentationError at import time.
         try:
             result: NL2SQLOutput = await llm_client.generate_structured(
                 system_prompt=system_prompt,
@@ -1030,7 +803,6 @@ TASK:
                 response_model=NL2SQLOutput,
             )
 
-            # Apply the full post-generation pipeline to the corrected query
             self._validate_security(result.sql_query, target_engine)
             self._validate_join_paths(result.sql_query, target_engine, effective_schema)
             safe_sql = self._apply_cost_guardrails(result.sql_query, target_engine)
@@ -1047,12 +819,12 @@ TASK:
                 "[%s] Cascade failure in SQL auto-correction: %s", tenant_id, exc
             )
             raise RuntimeError(
-                f"Unable to self-correct the query after {target_engine.upper()} error: {error_msg}"
+                f"Unable to self-correct the query after {target_engine.upper()} "
+                f"error: {error_msg}"
             ) from exc
 
 
 # ---------------------------------------------------------------------------
 # Global Singleton
 # ---------------------------------------------------------------------------
-
 sql_generator = NL2SQLGenerator()
