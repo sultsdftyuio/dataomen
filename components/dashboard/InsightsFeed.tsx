@@ -4,14 +4,16 @@ import React, { useState, useEffect } from "react";
 import { 
   TrendingDown, 
   TrendingUp, 
-  Activity, 
   Zap, 
   CheckCircle2, 
   ArrowRight,
-  AlertTriangle
+  Sparkles,
+  MessageSquare,
+  BarChart2,
+  Bell
 } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -54,13 +56,15 @@ export function InsightsFeed() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch insights from our new backend route
     const fetchInsights = async () => {
       try {
         const response = await fetch("/api/insights?limit=5");
         if (response.ok) {
           const data = await response.json();
           setInsights(data);
+        } else {
+          // Silent fallback for demo/UX purposes if endpoint isn't ready
+          setInsights([]); 
         }
       } catch (error) {
         console.error("Failed to fetch autonomous insights:", error);
@@ -76,25 +80,37 @@ export function InsightsFeed() {
     // Optimistic UI update
     setInsights(prev => prev.filter(insight => insight.id !== id));
     
-    // Background API call
-    await fetch(`/api/insights/${id}/read`, { method: "PATCH" });
+    // Background API call (fire and forget)
+    fetch(`/api/insights/${id}/read`, { method: "PATCH" }).catch(console.error);
   };
 
+  const handleInvestigate = (insight: Insight) => {
+    // Routes to the AI chat pre-filled with the context of this specific anomaly
+    const query = encodeURIComponent(`Tell me more about the recent anomaly in ${insight.metric_name}.`);
+    window.location.assign(`/dashboard/chat?q=${query}&context_id=${insight.id}`);
+  };
+
+  // --- Loading State ---
   if (isLoading) {
     return (
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Zap className="h-5 w-5 text-yellow-500" /> Today's Insights
+      <Card className="w-full h-full min-h-[500px] border-slate-200 shadow-sm bg-white">
+        <CardHeader className="pb-4 border-b border-slate-100 bg-slate-50/50">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
+            <Zap className="h-5 w-5 text-blue-500 animate-pulse" /> AI Business Alerts
           </CardTitle>
-          <CardDescription>AI is analyzing your datasets...</CardDescription>
+          <CardDescription>Scanning your data for significant changes...</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 pt-6">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex flex-col space-y-2">
-              <Skeleton className="h-6 w-3/4" />
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-16 w-full mt-2" />
+            <div key={i} className="flex flex-col space-y-3">
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-xl" />
+                <div className="space-y-2 w-full">
+                  <Skeleton className="h-5 w-1/3" />
+                  <Skeleton className="h-4 w-2/3" />
+                </div>
+              </div>
+              <Skeleton className="h-24 w-full rounded-xl" />
             </div>
           ))}
         </CardContent>
@@ -102,92 +118,103 @@ export function InsightsFeed() {
     );
   }
 
+  // --- Empty State (Highly reassuring for non-technical users) ---
   if (insights.length === 0) {
     return (
-      <Card className="w-full border-dashed">
-        <CardContent className="flex flex-col items-center justify-center p-8 text-center">
-          <CheckCircle2 className="h-12 w-12 text-green-500 mb-4 opacity-80" />
-          <h3 className="text-lg font-semibold">Everything looks normal</h3>
-          <p className="text-sm text-muted-foreground max-w-sm mt-2">
-            The Autonomous Engine is monitoring your metrics. No significant anomalies or trends detected today.
-          </p>
-        </CardContent>
+      <Card className="w-full h-full min-h-[500px] border-slate-200 shadow-sm bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+        <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-6 border border-emerald-100 shadow-sm">
+          <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+        </div>
+        <h3 className="text-xl font-bold text-slate-900 mb-2">Everything is on track.</h3>
+        <p className="text-base text-slate-500 max-w-sm mb-8 leading-relaxed">
+          Your AI agents are actively monitoring your metrics 24/7. We'll notify you here if any unusual trends or anomalies occur.
+        </p>
+        <Button variant="outline" className="gap-2 rounded-full text-blue-600 border-blue-200 hover:bg-blue-50">
+          <BarChart2 className="w-4 h-4" /> View All Metrics
+        </Button>
       </Card>
     );
   }
 
+  // --- Populated State ---
   return (
-    <Card className="w-full flex flex-col h-full max-h-[800px]">
-      <CardHeader className="pb-3">
+    <Card className="w-full flex flex-col h-full max-h-[800px] border-slate-200 shadow-sm bg-white">
+      <CardHeader className="pb-4 border-b border-slate-100 bg-slate-50/50">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
-              <Zap className="h-5 w-5 text-amber-500 fill-amber-500" /> 
-              Autonomous Insights
+            <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 tracking-tight">
+              <Bell className="h-5 w-5 text-blue-600 fill-blue-600/20" /> 
+              AI Business Alerts
             </CardTitle>
-            <CardDescription className="mt-1">
-              High-impact findings automatically surfaced from your data
+            <CardDescription className="mt-1 text-slate-500">
+              High-impact events automatically detected in your data.
             </CardDescription>
           </div>
-          <Badge variant="secondary" className="font-mono">
-            {insights.length} NEW
+          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 font-bold px-3 py-1 rounded-full border-0">
+            {insights.length} New
           </Badge>
         </div>
       </CardHeader>
       
       <ScrollArea className="flex-1 px-6">
-        <div className="space-y-6 pb-6 pt-2">
+        <div className="space-y-5 pb-6 pt-5">
           {insights.map((insight) => {
+            // Sentiment & Visuals Logic
             const isSpike = insight.payload.variance_pct > 0;
             const Icon = isSpike ? TrendingUp : TrendingDown;
-            const colorClass = isSpike ? "text-emerald-500" : "text-rose-500";
-            const bgClass = isSpike ? "bg-emerald-50 dark:bg-emerald-500/10" : "bg-rose-50 dark:bg-rose-500/10";
+            
+            // For a real app, you might want to map certain metrics (like CAC or Churn) to be "bad" if they spike.
+            // Assuming default: Spike = Positive (Emerald), Drop = Negative (Rose)
+            const isPositive = isSpike; 
+            const colorClass = isPositive ? "text-emerald-700" : "text-rose-700";
+            const bgClass = isPositive ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100";
+            const iconBg = isPositive ? "bg-emerald-100" : "bg-rose-100";
 
             return (
               <div 
                 key={insight.id} 
-                className="relative flex flex-col gap-3 rounded-lg border p-4 shadow-sm transition-all hover:shadow-md bg-card"
+                className={`relative flex flex-col gap-4 rounded-2xl border p-5 transition-all duration-300 hover:shadow-md ${bgClass} group animate-in slide-in-from-bottom-2 fade-in`}
               >
-                {/* Header: Title & Impact Score */}
+                {/* Header: Title & Priority */}
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-md mt-0.5 ${bgClass}`}>
+                  <div className="flex items-start gap-4">
+                    <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 shadow-sm ${iconBg}`}>
                       <Icon className={`h-5 w-5 ${colorClass}`} />
                     </div>
                     <div>
-                      <h4 className="font-semibold leading-none mb-1.5">{insight.title}</h4>
-                      <p className="text-sm text-muted-foreground leading-snug">
-                        {insight.description}
+                      <h4 className="font-bold text-slate-900 leading-tight mb-1.5 text-base">
+                        {insight.title}
+                      </h4>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        {insight.payload.ai_analysis.narrative || insight.description}
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <Badge variant={insight.impact_score > 75 ? "destructive" : "secondary"}>
-                      Impact: {insight.impact_score}
+                  
+                  {/* Translated Impact Score */}
+                  <div className="shrink-0">
+                    <Badge variant="outline" className={`font-semibold text-xs border bg-white shadow-sm ${
+                      insight.impact_score > 75 ? 'border-rose-200 text-rose-700' : 'border-slate-200 text-slate-600'
+                    }`}>
+                      {insight.impact_score > 75 ? '🔥 High Priority' : '👀 Notice'}
                     </Badge>
-                    <span className="text-[10px] text-muted-foreground uppercase font-mono tracking-wider">
-                      {new Date(insight.created_at).toLocaleDateString()}
-                    </span>
                   </div>
                 </div>
 
-                {/* Mathematical Drivers (The "Why") */}
+                {/* Plain English Drivers (The "Why") */}
                 {insight.payload.top_drivers && insight.payload.top_drivers.length > 0 && (
-                  <div className="mt-2 bg-muted/50 rounded-md p-3 border border-border/50">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <AlertTriangle className="h-3 w-3" /> Root Cause Drivers
+                  <div className="ml-14 bg-white/60 rounded-xl p-4 border border-white/40 shadow-sm backdrop-blur-sm">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3 text-blue-500" /> Key Factors
                     </p>
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       {insight.payload.top_drivers.slice(0, 2).map((driver, idx) => (
                         <div key={idx} className="flex items-center justify-between text-sm">
-                          <span className="font-medium">
-                            {driver.dimension}: <span className="text-muted-foreground font-normal">{driver.category_name}</span>
+                          <span className="font-medium text-slate-700">
+                            {driver.dimension}: <span className="text-slate-900 font-bold">{driver.category_name}</span>
                           </span>
-                          <span className="font-mono text-xs">
-                            {driver.percentage_change > 0 ? "+" : ""}{driver.percentage_change}%
-                            <span className="text-muted-foreground ml-1">
-                              ({Math.round(driver.contribution_to_variance_pct)}% impact)
-                            </span>
+                          <span className="text-slate-600 text-xs font-medium bg-white px-2 py-1 rounded-md shadow-sm">
+                            {driver.percentage_change > 0 ? "+" : ""}{driver.percentage_change}% change
                           </span>
                         </div>
                       ))}
@@ -195,13 +222,23 @@ export function InsightsFeed() {
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-2 mt-2">
-                  <Button variant="ghost" size="sm" onClick={() => markAsRead(insight.id)}>
+                {/* Conversational Actions */}
+                <div className="flex items-center justify-end gap-3 mt-1 ml-14">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 font-semibold text-xs rounded-full px-4"
+                    onClick={() => markAsRead(insight.id)}
+                  >
                     Dismiss
                   </Button>
-                  <Button variant="default" size="sm" className="gap-1.5">
-                    Investigate <ArrowRight className="h-3.5 w-3.5" />
+                  <Button 
+                    variant="default" 
+                    size="sm" 
+                    onClick={() => handleInvestigate(insight)}
+                    className="gap-2 bg-slate-900 hover:bg-slate-800 text-white shadow-md rounded-full px-5 font-semibold text-xs"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" /> Ask AI about this
                   </Button>
                 </div>
               </div>

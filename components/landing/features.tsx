@@ -1,35 +1,38 @@
+// components/landing/features.tsx
 'use client';
 
-import { BarChart3, Brain, Zap, Bot } from 'lucide-react';
+import React from 'react';
+import { MessageSquareText, BellRing, Presentation, PlugZap } from 'lucide-react';
 
-const features = [
+// Extracted static data to prevent re-allocations
+const FEATURES = [
   {
-    title: "Ask anything, instantly.",
-    description: "Our semantic NL2SQL router translates plain English into highly optimized queries. No SQL required.",
-    icon: <Brain className="w-6 h-6 text-purple-600" />,
-    bgColor: "bg-purple-50",
-    borderColor: "border-purple-100"
-  },
-  {
-    title: "Autonomous AI Agents.",
-    description: "Deploy background watchdogs. Vectorized anomaly detectors use Linear Algebra (EMA, variance) to flag statistical outliers automatically.",
-    icon: <Bot className="w-6 h-6 text-emerald-600" />,
-    bgColor: "bg-emerald-50",
-    borderColor: "border-emerald-100"
-  },
-  {
-    title: "Beautiful, dynamic charts.",
-    description: "Automatically generate interactive visualizations based on your prompts using our fully functional UI rendering engine.",
-    icon: <BarChart3 className="w-6 h-6 text-blue-600" />,
+    title: "Chat with your data.",
+    description: "No SQL, no complex pivot tables. Just type your question in plain English, like 'What was our MRR growth last month?' and get an instant answer.",
+    icon: <MessageSquareText className="w-6 h-6 text-blue-600" />,
     bgColor: "bg-blue-50",
     borderColor: "border-blue-100"
   },
   {
-    title: "Lightning-fast execution.",
-    description: "We use an in-process DuckDB engine to query Parquet files directly. Analyze millions of rows without loading screens.",
-    icon: <Zap className="w-6 h-6 text-orange-600" />,
-    bgColor: "bg-orange-50",
-    borderColor: "border-orange-100"
+    title: "Smart business alerts.",
+    description: "Our AI agents watch your metrics 24/7. Get a Slack or email notification the moment customer churn spikes or a marketing campaign goes viral.",
+    icon: <BellRing className="w-6 h-6 text-rose-600" />,
+    bgColor: "bg-rose-50",
+    borderColor: "border-rose-100"
+  },
+  {
+    title: "Presentation-ready charts.",
+    description: "Instantly generate beautiful, interactive graphs that are ready to drop directly into your next board deck or team presentation.",
+    icon: <Presentation className="w-6 h-6 text-violet-600" />,
+    bgColor: "bg-violet-50",
+    borderColor: "border-violet-100"
+  },
+  {
+    title: "One-click integrations.",
+    description: "Connect your favorite tools like Stripe, Shopify, and Salesforce in seconds. Zero coding or database configuration required.",
+    icon: <PlugZap className="w-6 h-6 text-emerald-600" />,
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-100"
   }
 ];
 
@@ -37,25 +40,45 @@ export function Features() {
   return (
     <section className="py-24 bg-white relative overflow-hidden border-t border-slate-200">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">An entire data team in your browser.</h2>
-          <p className="text-slate-600 text-lg max-w-2xl mx-auto">
-            From semantic natural language routing to swappable logic modules, we handle the complex math so you can focus on the insights.
+        
+        {/* Header Section */}
+        <div className="text-center mb-16 md:mb-20">
+          <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
+            Stop waiting for the data team.
+          </h2>
+          <p className="text-slate-600 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
+            We built a platform that empowers anyone on your team to find insights, track metrics, and make decisions without writing a single line of code.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {features.map((feat, i) => (
-            <div key={i} className="p-8 rounded-3xl bg-white border border-slate-200 hover:shadow-xl hover:border-indigo-200 transition-all duration-300 group">
-              <div className={`w-14 h-14 rounded-2xl ${feat.bgColor} ${feat.borderColor} border flex items-center justify-center mb-6 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300`}>
+        {/* Features Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+          {FEATURES.map((feat, i) => (
+            <div 
+              key={i} 
+              className="p-8 md:p-10 rounded-3xl bg-white border border-slate-200 hover:shadow-xl hover:shadow-slate-200/50 hover:border-slate-300 transition-all duration-300 group flex flex-col h-full"
+            >
+              <div 
+                className={`w-14 h-14 rounded-2xl ${feat.bgColor} ${feat.borderColor} border flex items-center justify-center mb-6 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300 shadow-sm`}
+                aria-hidden="true"
+              >
                 {feat.icon}
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-3">{feat.title}</h3>
-              <p className="text-slate-600 leading-relaxed">
+              <h3 className="text-2xl font-bold text-slate-900 mb-4 tracking-tight">
+                {feat.title}
+              </h3>
+              <p className="text-slate-600 leading-relaxed text-base flex-1">
                 {feat.description}
               </p>
             </div>
           ))}
+        </div>
+
+        {/* Trust/No-Code Nudge */}
+        <div className="mt-16 text-center">
+          <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest">
+            Designed for Founders, Marketers, and Operators
+          </p>
         </div>
       </div>
     </section>
