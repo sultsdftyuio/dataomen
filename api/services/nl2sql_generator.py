@@ -1,370 +1,556 @@
-import logging
 import json
+import logging
 import re
 import numpy as np
 from numpy.linalg import norm
-from typing import List, Dict, Any, Optional, Tuple
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Tuple
 
-# Enterprise Security Upgrade: AST Parsing
 import sqlglot
 from sqlglot import exp
+from pydantic import BaseModel, Field
 
-# Setup structured logger for high-performance monitoring
+from api.services.query_planner import QueryPlan
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data Contracts
+# ---------------------------------------------------------------------------
 
 class NL2SQLOutput(BaseModel):
     """
-    Structured output schema for the LLM to guarantee parsable execution plans.
-    Enforces the 'Reasoning' step before generation to improve mathematical accuracy.
+    Structured output contract for the LLM.
+    Enforces chain-of-thought reasoning before SQL emission to reduce hallucinations
+    and improve mathematical accuracy.
     """
     reasoning: str = Field(
-        ..., 
-        description="Step-by-step logic explaining the SQL strategy, join path, and DuckDB functions used."
+        ...,
+        description=(
+            "Step-by-step logic explaining the SQL strategy, join path, "
+            "and dialect-specific functions chosen."
+        ),
     )
     sql_query: str = Field(
-        ..., 
-        description="The highly optimized, read-only DuckDB SQL query."
+        ...,
+        description="Highly optimised, read-only SQL query for the target dialect.",
     )
     chart_spec: Optional[Dict[str, Any]] = Field(
-        None, 
-        description="A valid, declarative Vega-Lite JSON specification if a visual is requested. Must map to SQL aliases."
+        None,
+        description=(
+            "Declarative Vega-Lite JSON spec when a visual is requested. "
+            "Field names MUST match SQL output aliases exactly."
+        ),
     )
     confidence_score: float = Field(
         ...,
-        description="A score between 0.0 and 1.0 indicating how confident the model is that the query accurately answers the prompt without hallucinated columns."
+        description=(
+            "0.0–1.0 confidence that the query accurately implements the plan "
+            "without hallucinated columns or functions."
+        ),
     )
+
+
+# ---------------------------------------------------------------------------
+# NL2SQL Compiler Agent
+# ---------------------------------------------------------------------------
+
+# Internal dialect map: our engine names → sqlglot read dialect
+_DIALECT_MAP: Dict[str, str] = {
+    "duckdb": "duckdb",
+    "bigquery": "bigquery",
+    "redshift": "postgres",   # sqlglot uses postgres rules for Redshift
+}
+
+# Minimum confidence before we log a warning
+_CONFIDENCE_WARN_THRESHOLD = 0.6
+
+# Maximum columns injected into the LLM context to prevent token bloat
+_MAX_COLUMNS_PER_CONTEXT = 25
+
 
 class NL2SQLGenerator:
     """
-    Phase 3 & 4: Enterprise Contextual RAG & Auto-Correcting NL2SQL Engine
-    
-    Upgraded Engineering:
-    - Deep AST Security Parsing: Traverses the full tree to guarantee 100% read-only operations.
-    - Semantic Fragment Injection: Prunes massive SaaS schemas using Vector + Keyword + Categorical overlap.
-    - SaaS-Aware Generation: Built-in context for handling complex JSON/Struct types from Stripe and Shopify.
-    - Compiler-Aware Correction: Analyzes DuckDB errors to provide precise hints to the LLM during retries.
+    Enterprise RAG & Auto-Correcting NL2SQL Engine.
+
+    Design principles
+    -----------------
+    * **Plan-driven pruning** – The ``QueryPlan`` from the upstream planner
+      provides an explicit column allowlist that deterministically narrows the
+      schema before semantic scoring begins.
+    * **Hybrid RAG** – Within the allowlisted columns, a weighted combination
+      of cosine-vector similarity, keyword overlap, and analytical-type
+      heuristics ranks remaining columns when the schema is still too wide.
+    * **Dialect-aware** – Generates and validates native SQL for DuckDB,
+      BigQuery, or Redshift.
+    * **Deep-AST security gate** – sqlglot tree traversal blocks all
+      destructive operations, including nested injection attempts.
+    * **Intelligent self-correction** – Database engine errors are classified
+      and annotated with targeted hints before the LLM retries.
+    * **Dependency-injected LLM** – Accepts any client that implements
+      ``embed``, ``embed_batch``, and ``generate_structured``, making the
+      engine straightforward to unit-test and swap.
     """
 
-    def __init__(self, llm_client: Any = None):
+    def __init__(self, llm_client: Any = None) -> None:
         """
-        Dependency injection for the LLM client (Modular Strategy).
-        :param llm_client: Must implement 'embed', 'embed_batch', and 'generate_structured'.
+        Parameters
+        ----------
+        llm_client:
+            Must implement ``embed(text) -> List[float]``,
+            ``embed_batch(texts) -> List[List[float]]``, and
+            ``generate_structured(system_prompt, prompt, history, response_model)``.
         """
         self.llm = llm_client
-        self.max_columns_per_context = 25  # Threshold to prevent token bloat and hallucination on massive SaaS schemas
 
-    # --------------------------------------------------
-    # Mathematical Foundations
-    # --------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Schema Pruning  (Plan-driven → Hybrid RAG)
+    # -----------------------------------------------------------------------
 
-    def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
-        """Calculates strict vector similarity to match user intent with schema structure."""
-        if norm(v1) == 0 or norm(v2) == 0:
-            return 0.0
-        return float(np.dot(v1, v2) / (norm(v1) * norm(v2)))
-
-    # --------------------------------------------------
-    # Fragment Retrieval Logic (Contextual RAG)
-    # --------------------------------------------------
-
-    async def _select_relevant_columns(
+    def _prune_by_plan(
         self,
-        prompt: str,
-        columns: Dict[str, Dict[str, Any]]
+        plan: QueryPlan,
+        full_schema: Dict[str, Dict[str, Any]],
     ) -> Dict[str, Dict[str, Any]]:
         """
-        DETERMINISTIC + SEMANTIC PRUNING:
-        Selects columns based on a weighted hybrid of vector similarity, keyword overlap, and analytical utility.
+        **Stage 1 – Deterministic allowlist pruning.**
+
+        Uses the QueryPlan's explicit ``columns_involved`` sets to filter the
+        schema to only what the planner requested, plus all PK/FK columns
+        (anything ending in ``_id`` or named ``id``) which are always required
+        for joins.  This alone eliminates the majority of irrelevant columns
+        before any embedding calls are made.
         """
-        if len(columns) <= self.max_columns_per_context:
+        required: set[str] = set()
+        for step in plan.steps:
+            required.update(step.columns_involved)
+
+        pruned: Dict[str, Dict[str, Any]] = {}
+        for table, columns in full_schema.items():
+            pruned[table] = {
+                col_name: col_meta
+                for col_name, col_meta in columns.items()
+                if col_name in required
+                or col_name.endswith("_id")
+                or col_name == "id"
+            }
+
+        return pruned
+
+    @staticmethod
+    def _cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
+        n1, n2 = norm(v1), norm(v2)
+        if n1 == 0 or n2 == 0:
+            return 0.0
+        return float(np.dot(v1, v2) / (n1 * n2))
+
+    async def _rank_columns_by_relevance(
+        self,
+        prompt: str,
+        columns: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        **Stage 2 – Hybrid RAG ranking** (runs only when column count still
+        exceeds ``_MAX_COLUMNS_PER_CONTEXT`` after plan pruning).
+
+        Scoring weights
+        ~~~~~~~~~~~~~~~
+        +20  Vector cosine similarity (semantic intent vs. column document)
+        +15  Exact keyword match between prompt tokens and column name
+        + 8  Partial keyword match in column name (token len > 3)
+        + 8  Keyword match in column description
+        +10  Temporal column boost when prompt expresses time/trend intent
+        + 8  Numeric column boost when prompt expresses aggregation intent
+        + 4  PK/FK column boost (always useful for joins)
+        """
+        if len(columns) <= _MAX_COLUMNS_PER_CONTEXT:
             return columns
 
         prompt_lower = prompt.lower()
-        keywords = set(re.findall(r'\w+', prompt_lower))
-        embedding_scores = {}
+        keywords = set(re.findall(r"\w+", prompt_lower))
+        vector_scores: Dict[str, float] = {}
 
-        # Strategy A: Vector Semantic Ranking (Hybrid Performance)
+        # --- Vector scoring (best-effort; falls back gracefully) -----------
         if self.llm and hasattr(self.llm, "embed") and hasattr(self.llm, "embed_batch"):
             try:
                 prompt_emb = np.array(await self.llm.embed(prompt))
-                docs = []
-                col_names = []
-
-                for name, info in columns.items():
-                    # Create a rich semantic document for each column including samples
-                    samples_str = ", ".join([str(s) for s in info.get('samples', [])[:3]])
-                    doc = f"Column: {name}. Type: {info.get('type')}. Description: {info.get('description','')}. Examples: {samples_str}"
-                    docs.append(doc)
-                    col_names.append(name)
-
+                col_names = list(columns.keys())
+                docs = [
+                    (
+                        f"Column: {name}. "
+                        f"Type: {columns[name].get('type', '')}. "
+                        f"Description: {columns[name].get('description', '')}. "
+                        f"Examples: {', '.join(str(s) for s in columns[name].get('samples', [])[:3])}"
+                    )
+                    for name in col_names
+                ]
                 col_embs = await self.llm.embed_batch(docs)
-                for i, emb in enumerate(col_embs):
-                    sim = self._cosine_similarity(prompt_emb, np.array(emb))
-                    embedding_scores[col_names[i]] = sim
-            except Exception as e:
-                logger.warning(f"Vector retrieval failed: {e}. Falling back to deterministic heuristics.")
+                for name, emb in zip(col_names, col_embs):
+                    vector_scores[name] = self._cosine_similarity(
+                        prompt_emb, np.array(emb)
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Vector retrieval failed (%s). Falling back to deterministic heuristics.",
+                    exc,
+                )
 
-        # Strategy B: Advanced Deterministic Scoring
-        scored = []
-        for col_name, info in columns.items():
-            score = 0
+        # --- Deterministic scoring ----------------------------------------
+        time_keywords = {"date", "time", "year", "month", "day", "trend", "predict", "forecast"}
+        agg_keywords  = {"total", "sum", "average", "revenue", "count", "metrics", "stats"}
+        time_intent   = bool(time_keywords & keywords)
+        agg_intent    = bool(agg_keywords  & keywords)
+
+        scored: List[Tuple[float, str, Any]] = []
+        for col_name, col_meta in columns.items():
             col_lower = col_name.lower()
-            col_type = str(info.get("type", "")).upper()
-            
-            # 1. Exact Identity match (High Weight)
+            col_type  = str(col_meta.get("type", "")).upper()
+            score: float = 0.0
+
             if col_lower in keywords:
                 score += 15
-            
-            # 2. Partial string match
             if any(k in col_lower for k in keywords if len(k) > 3):
-                score += 5
-            
-            # 3. Semantic meta match (Description)
-            description = info.get("description", "").lower()
-            if any(k in description for k in keywords if len(k) > 3):
                 score += 8
-            
-            # 4. Time-series / Forecasting intent heuristic
-            if any(k in ["date", "time", "year", "month", "day", "trend", "predict", "forecast"] for k in keywords):
-                if any(t in col_type for t in ["DATE", "TIMESTAMP", "TIME"]):
-                    score += 10 # Heavily boost temporal columns if time is mentioned
-            
-            # 5. Continuous Metric heuristic (if user asks for sums, averages, stats)
-            if any(k in ["total", "sum", "average", "revenue", "count", "metrics", "stats"] for k in keywords):
-                if any(t in col_type for t in ["INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC"]):
-                    score += 8
-                    
-            # 6. ID/Foreign Key boost (Essential for SaaS joins like Stripe Customer -> Invoice)
+            if any(k in col_meta.get("description", "").lower() for k in keywords if len(k) > 3):
+                score += 8
+            if time_intent and any(t in col_type for t in ("DATE", "TIMESTAMP", "TIME")):
+                score += 10
+            if agg_intent and any(t in col_type for t in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC")):
+                score += 8
             if col_lower.endswith("_id") or col_lower == "id":
                 score += 4
 
-            # 7. Aggregate Vector Score
-            score += embedding_scores.get(col_name, 0) * 20
-            
-            scored.append((score, col_name, info))
+            score += vector_scores.get(col_name, 0.0) * 20
+            scored.append((score, col_name, col_meta))
 
-        # Sort by relevance and take the top N fragments
         scored.sort(key=lambda x: x[0], reverse=True)
-        top_fragments = scored[:self.max_columns_per_context]
-
         return {
             name: {
-                "type": info.get("type", "UNKNOWN"),
-                "samples": info.get("samples", [])[:5], # Max 5 samples for grounding
-                "description": info.get("description", "")
+                "type":        meta.get("type", "UNKNOWN"),
+                "samples":     meta.get("samples", [])[:5],
+                "description": meta.get("description", ""),
             }
-            for _, name, info in top_fragments
+            for _, name, meta in scored[:_MAX_COLUMNS_PER_CONTEXT]
         }
 
-    async def _build_contextual_schema(self, prompt: str, schemas: List[Dict[str, Any]]) -> str:
+    async def _build_contextual_schema(
+        self,
+        plan: QueryPlan,
+        full_schema: Dict[str, Dict[str, Any]],
+        prompt: str,
+    ) -> str:
         """
-        Builds the heavily compressed, sample-enriched JSON context block for the LLM.
+        Combines plan-driven pruning and hybrid RAG ranking into a single,
+        token-efficient JSON schema block for the LLM.
+
+        The two-stage pipeline ensures:
+        - Only columns the planner explicitly requested are ever considered.
+        - If those columns still exceed the context budget, semantic scoring
+          further narrows the list without losing join keys.
         """
-        minimized = []
-        for schema in schemas:
-            table_id = schema.get("id", "unknown_dataset")
-            friendly_name = schema.get("name", "Unknown Dataset")
-            
-            # Handle standardized SaaS schema structure
-            raw_meta = schema.get("schema_metadata", schema.get("schema", {}))
-            if isinstance(raw_meta, dict) and "columns" in raw_meta:
-                col_data = {col["name"]: {"type": col.get("type"), "samples": col.get("samples", [])} for col in raw_meta["columns"]}
-            else:
-                col_data = raw_meta # Fallback to flat dict
+        # Stage 1: deterministic plan pruning
+        plan_pruned = self._prune_by_plan(plan, full_schema)
 
-            if not col_data:
-                continue
+        # Stage 2: hybrid RAG ranking per table (if still over budget)
+        result: Dict[str, Any] = {}
+        for table, columns in plan_pruned.items():
+            result[table] = await self._rank_columns_by_relevance(prompt, columns)
 
-            relevant_columns = await self._select_relevant_columns(prompt, col_data)
+        return json.dumps(result, indent=2)
 
-            minimized.append({
-                "table_identifier": f'"{table_id}"',
-                "table_alias": friendly_name.replace(" ", "_").lower(),
-                "friendly_name": friendly_name,
-                "relevant_columns": relevant_columns
-            })
-            
-        return json.dumps(minimized, indent=2)
+    # -----------------------------------------------------------------------
+    # Prompt Construction
+    # -----------------------------------------------------------------------
 
-    def _build_system_prompt(self, contextual_schema: str, semantic_views: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Constructs the high-constraint system prompt.
-        Enforces Vectorization, Security by Design, and Mathematical Precision.
-        """
-        views_context = ""
+    def _build_system_prompt(
+        self,
+        contextual_schema: str,
+        plan: QueryPlan,
+        dialect: str,
+        semantic_views: Optional[Dict[str, str]] = None,
+    ) -> str:
+        views_block = ""
         if semantic_views:
-            views_json = json.dumps(semantic_views, indent=2)
-            views_context = f"\nVERIFIED METRIC VIEWS (GOLD TIER):\nUse these pre-calculated CTEs for complex metrics:\n{views_json}\n"
+            views_block = (
+                "\nVERIFIED METRIC VIEWS (GOLD TIER):\n"
+                "Use these pre-calculated CTE definitions for complex metrics:\n"
+                f"{json.dumps(semantic_views, indent=2)}\n"
+            )
 
-        return f"""You are an elite Data Engineer and DuckDB SQL optimizer for a high-performance Analytical SaaS.
-Your objective is to translate natural language into execution-ready, highly optimized, read-only DuckDB SQL.
+        return f"""You are an elite Data Engineer and SQL optimiser for an Enterprise Analytical SaaS.
+Your objective is to execute the provided Execution Plan by translating it into highly optimised, \
+read-only {dialect.upper()} SQL.
 
-SCHEMA CONTEXT (Sample-enriched semantic fragments):
+TARGET DIALECT: {dialect.upper()}
+Always use functions and syntax native to {dialect.upper()}.
+
+SCHEMA CONTEXT (Pruned + semantically ranked subset):
+<schema_context>
 {contextual_schema}
-{views_context}
+</schema_context>
+{views_block}
+LEAD ENGINEER'S EXECUTION PLAN:
+Execute every step in order. Do not skip or reorder steps.
+<execution_plan>
+{plan.model_dump_json(indent=2)}
+</execution_plan>
 
 CRITICAL ENGINEERING RULES:
-1. SECURITY BY DESIGN (READ-ONLY): You must NEVER output INSERT, UPDATE, DELETE, DROP, ALTER, or GRANT. `SELECT` or `WITH` statements only.
-2. NO HALLUCINATIONS: You may ONLY select columns/tables present in the fragments above. If the data does not exist, use COALESCE or simple math, but do not invent column names.
-3. DATA GROUNDING: Use the 'samples' provided in the schema to write correct filter values. Case sensitivity matters (e.g. if samples are ['ACTIVE', 'INACTIVE'], don't filter by 'active').
-4. SAAS JSON/STRUCT HANDLING: Stripe and Shopify data often contains nested STRUCTs or LISTs. 
-   - Use DuckDB's native UNNEST() for arrays.
-   - Use dot notation (e.g., column_name.nested_field) for Structs.
-5. MATHEMATICAL PRECISION & VECTORIZATION:
-   - For trends/stats, do not use simple loops. Utilize DuckDB vectorized functions: `corr()`, `regr_slope()`, `stddev_pop()`, `approx_count_distinct()`.
-   - Use `date_trunc('month', date_col)`, `strptime`, and `list_aggregate` natively.
-6. TABLE REFERENCING: Table names are UUIDs; ALWAYS wrap them in double quotes exactly as shown in 'table_identifier' (e.g., FROM "123e4567-e89b...").
-7. DIALECT: Output strict DuckDB SQL.
+1. SECURITY BY DESIGN: Output ONLY `SELECT` or `WITH` (CTE) statements. NEVER emit INSERT, UPDATE,
+   DELETE, DROP, ALTER, GRANT, or any DDL/DML.
+2. NO HALLUCINATIONS: Use ONLY columns and tables present in the Schema Context above. If a value
+   cannot be computed from available columns, use COALESCE or arithmetic on real columns.
+3. DATA GROUNDING: Honour the 'samples' in the schema for filter literals. Case matters
+   (e.g. if samples show 'ACTIVE', do not filter by 'active').
+4. DIALECT-SPECIFIC HANDLING:
+   - BigQuery  : UNNEST() for arrays, struct dot notation, TIMESTAMP_TRUNC / DATE_TRUNC.
+   - DuckDB    : UNNEST(), list comprehensions, date_trunc(), strptime(), approx_count_distinct().
+   - Redshift  : JSON_EXTRACT_PATH_TEXT(), SUPER type navigation, DATEADD / DATEDIFF.
+5. TABLE REFERENCING: Wrap table names in double-quotes to prevent reserved-keyword conflicts.
+6. MATHEMATICAL PRECISION: Prefer vectorised aggregate functions native to {dialect.upper()}
+   (e.g. corr(), regr_slope(), stddev_pop(), percentile_cont()).
 
 CHARTING RULES (Vega-Lite):
-- If the prompt implies a visual, provide a declarative Vega-Lite JSON spec in `chart_spec`.
-- Field names in Vega-Lite MUST match your SQL output aliases exactly.
-- Use 'area' or 'line' marks for time-series, and 'bar' for categorical aggregations.
+- If `suggested_visualizations` is non-empty in the plan, output a declarative Vega-Lite JSON spec.
+- Field names in the spec MUST match SQL output aliases exactly.
+- Use 'line'/'area' marks for time-series; 'bar' for categorical aggregations.
 """
 
-    def _validate_security(self, sql: str) -> None:
-        """
-        Enterprise Deep-AST Security Validator.
-        Uses sqlglot to traverse the full query tree and mathematically guarantee 
-        it contains zero destructive operations.
-        """
-        try:
-            # Parse the SQL specifically using DuckDB dialect rules
-            parsed_statements = sqlglot.parse(sql, read="duckdb")
-            
-            for statement in parsed_statements:
-                if statement is None:
-                    continue
-                    
-                # 1. Root Level Check
-                if not isinstance(statement, (exp.Select, exp.Subquery)):
-                    logger.critical(f"AST Security Violation Blocked: Expected SELECT root, got {type(statement).__name__}")
-                    raise ValueError("Security Violation: Only SELECT/WITH statements are permitted.")
-                
-                # 2. Deep Traversal Blocklist (Hunts for nested injection attacks)
-                for node in statement.walk():
-                    node_type = type(node[0])
-                    if node_type in (
-                        exp.Drop, exp.Delete, exp.Update, exp.Insert, 
-                        exp.AlterTable, exp.Command, exp.Commit, exp.Rollback,
-                        exp.Create, exp.Grant, exp.Pragma
-                    ):
-                        logger.critical(f"Deep AST Security Violation: Destructive node {node_type.__name__} found inside query.")
-                        raise ValueError(f"Security Violation: Destructive operations ({node_type.__name__}) are strictly forbidden.")
-                    
-        except sqlglot.errors.ParseError as e:
-            logger.error(f"SQL Syntax/AST Parse Error: {str(e)}")
-            raise ValueError(f"Security Violation: Query is malformed or attempts obfuscation. Details: {str(e)}")
+    # -----------------------------------------------------------------------
+    # AST Security Gate
+    # -----------------------------------------------------------------------
 
-    # --------------------------------------------------
-    # Public Interface
-    # --------------------------------------------------
+    _DESTRUCTIVE_NODES = (
+        exp.Drop, exp.Delete, exp.Update, exp.Insert,
+        exp.AlterTable, exp.Command, exp.Commit, exp.Rollback,
+        exp.Create, exp.Grant, exp.Pragma,
+    )
+
+    def _validate_security(self, sql: str, dialect: str) -> None:
+        """
+        Deep-AST security validator.
+
+        Parses the SQL with sqlglot for the target dialect, then:
+        1. Verifies the root statement is SELECT or a CTE (WITH … SELECT).
+        2. Walks the full AST to detect any destructive node buried inside
+           subqueries, CTEs, or EXECUTE-style injection attempts.
+
+        Raises ``ValueError`` on any violation.
+        """
+        sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
+        try:
+            statements = sqlglot.parse(sql, read=sqlglot_dialect)
+        except sqlglot.errors.ParseError as exc:
+            logger.error("SQL parse error (%s dialect): %s", dialect, exc)
+            raise ValueError(
+                f"Query is malformed or attempts syntax obfuscation "
+                f"({dialect} dialect). Details: {exc}"
+            ) from exc
+
+        for statement in statements:
+            if statement is None:
+                continue
+
+            if not isinstance(statement, (exp.Select, exp.Subquery)):
+                logger.critical(
+                    "AST root violation blocked: expected SELECT, got %s",
+                    type(statement).__name__,
+                )
+                raise ValueError(
+                    "Security Violation: Only SELECT / WITH (CTE) statements are permitted."
+                )
+
+            for node, *_ in statement.walk():
+                if isinstance(node, self._DESTRUCTIVE_NODES):
+                    logger.critical(
+                        "Deep AST violation: destructive node %s inside query.",
+                        type(node).__name__,
+                    )
+                    raise ValueError(
+                        f"Security Violation: Destructive operation "
+                        f"({type(node).__name__}) is strictly forbidden."
+                    )
+
+    # -----------------------------------------------------------------------
+    # Error Classification
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_error(error_msg: str, dialect: str) -> str:
+        """
+        Maps common database engine error patterns to targeted correction hints,
+        reducing the number of LLM retries required.
+        """
+        e = error_msg.lower()
+
+        if ("binder error" in e) or ("column" in e and "not found" in e):
+            return (
+                "HINT: You likely hallucinated a column name, or attempted to access a "
+                "nested JSON/Struct field without unnesting it first. "
+                "Cross-check every column reference against the Schema Context strictly."
+            )
+        if "parser error" in e or "syntax error" in e:
+            return (
+                f"HINT: Syntax error detected. Ensure you are using strict "
+                f"{dialect.upper()} SQL syntax, not a different dialect."
+            )
+        if "function" in e and ("not found" in e or "does not exist" in e):
+            dialect_fns = {
+                "duckdb":   "date_trunc, approx_count_distinct, list_aggregate, regr_slope",
+                "bigquery": "DATE_TRUNC, TIMESTAMP_TRUNC, APPROX_COUNT_DISTINCT, ARRAY_AGG",
+                "redshift": "DATEADD, DATEDIFF, LISTAGG, APPROXIMATE COUNT(DISTINCT …)",
+            }
+            fns = dialect_fns.get(dialect.lower(), "dialect-native aggregate functions")
+            return (
+                f"HINT: You used a function that doesn't exist in {dialect.upper()}. "
+                f"Use native functions such as: {fns}."
+            )
+        if "not unique" in e or "ambiguous" in e:
+            return (
+                "HINT: An ambiguous column reference exists. "
+                "Qualify every column with its table alias (e.g., t.column_name)."
+            )
+
+        return ""   # No specific hint; let the LLM infer from the raw error
+
+    # -----------------------------------------------------------------------
+    # Public API
+    # -----------------------------------------------------------------------
 
     async def generate_sql(
-        self, 
-        prompt: str, 
-        schemas: List[Dict[str, Any]], 
-        semantic_views: Optional[Dict[str, Any]] = None,
-        history: List[Dict[str, Any]] = None
+        self,
+        plan: QueryPlan,
+        full_schema: Dict[str, Dict[str, Any]],
+        target_engine: str,
+        tenant_id: str,
+        prompt: str = "",
+        semantic_views: Optional[Dict[str, str]] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
-        Phase 3: Generates optimized DuckDB SQL based on Hybrid RAG context.
+        Translates a ``QueryPlan`` into executable, secure SQL for the target engine.
+
+        Parameters
+        ----------
+        plan:           Upstream planner's execution plan (column allowlist + steps).
+        full_schema:    Complete warehouse schema keyed by table name.
+        target_engine:  One of ``"duckdb"``, ``"bigquery"``, ``"redshift"``.
+        tenant_id:      Used for scoped log correlation.
+        prompt:         Original natural-language question (used for semantic ranking).
+        semantic_views: Pre-calculated CTE/metric view definitions (gold tier).
+        history:        Prior conversation turns for multi-turn context.
+
+        Returns
+        -------
+        (sql_query, chart_spec)  where ``chart_spec`` may be ``None``.
         """
         if not self.llm:
-            logger.error("LLM Client not injected. Cannot generate SQL.")
-            raise RuntimeError("LLM client dependency not injected into NL2SQL engine.")
+            raise RuntimeError("LLM client dependency not injected into NL2SQLGenerator.")
 
-        logger.info(f"Generating optimized SQL execution plan for prompt: '{prompt[:50]}...'")
-        
-        contextual_schema = await self._build_contextual_schema(prompt, schemas)
-        system_prompt = self._build_system_prompt(contextual_schema, semantic_views)
-        
+        logger.info("[%s] Compiling QueryPlan → %s SQL", tenant_id, target_engine.upper())
+
+        contextual_schema = await self._build_contextual_schema(plan, full_schema, prompt)
+        system_prompt = self._build_system_prompt(
+            contextual_schema, plan, target_engine, semantic_views
+        )
+        user_message = f"Compile the execution plan into {target_engine.upper()} SQL now."
+
         try:
             result: NL2SQLOutput = await self.llm.generate_structured(
                 system_prompt=system_prompt,
-                prompt=prompt,
+                prompt=user_message,
                 history=history or [],
-                response_model=NL2SQLOutput
+                response_model=NL2SQLOutput,
             )
-            
-            # Enterprise AST security gate
-            self._validate_security(result.sql_query)
-            
-            if result.confidence_score < 0.4:
-                logger.warning(f"Low confidence SQL generation ({result.confidence_score}). Potential hallucination risk.")
-            
+
+            if result is None:
+                raise ValueError("Model refused to generate SQL (returned None).")
+
+            self._validate_security(result.sql_query, target_engine)
+
+            if result.confidence_score < _CONFIDENCE_WARN_THRESHOLD:
+                logger.warning(
+                    "[%s] Low-confidence SQL generation (score=%.2f). "
+                    "Review for potential hallucinations.",
+                    tenant_id, result.confidence_score,
+                )
+
+            logger.info(
+                "[%s] SQL compiled successfully (confidence=%.2f).",
+                tenant_id, result.confidence_score,
+            )
             return result.sql_query, result.chart_spec
-            
-        except Exception as e:
-            logger.error(f"NL2SQL Generation failed: {str(e)}")
-            raise RuntimeError(f"Could not generate analytical execution plan: {str(e)}")
+
+        except Exception as exc:
+            logger.error("[%s] NL2SQL compilation failed: %s", tenant_id, exc)
+            raise
 
     async def correct_sql(
-        self, 
-        failed_query: str, 
-        error_msg: str, 
-        prompt: str,
-        schemas: List[Dict[str, Any]],
-        semantic_views: Optional[Dict[str, Any]] = None
+        self,
+        failed_query: str,
+        error_msg: str,
+        plan: QueryPlan,
+        full_schema: Dict[str, Dict[str, Any]],
+        target_engine: str,
+        tenant_id: str,
+        prompt: str = "",
+        semantic_views: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
-        Phase 4: Intelligent Error Feedback Loop.
-        Automatically fixes syntax or hallucination errors based on DuckDB compiler feedback.
+        Intelligent error-feedback loop.
+
+        Classifies the database engine error, injects a targeted correction
+        hint, and retries generation.  Raises ``RuntimeError`` on cascade
+        failure so the caller can surface a clean message to the end-user.
         """
-        logger.warning(f"Initiating SQL auto-correction for engine error: {error_msg}")
-        
-        contextual_schema = await self._build_contextual_schema(prompt, schemas)
-        system_prompt = self._build_system_prompt(contextual_schema, semantic_views)
-        
-        # Determine hint based on common DuckDB compiler errors
-        hint = ""
-        error_lower = error_msg.lower()
-        if "binder error" in error_lower or "column" in error_lower and "not found" in error_lower:
-            hint = "HINT: You likely hallucinated a column name, or tried to access a nested JSON/Struct field without unnesting it. Check the exact schema provided."
-        elif "parser error" in error_lower or "syntax error" in error_lower:
-            hint = "HINT: You have a syntax error. Ensure you are using strict DuckDB SQL syntax, not Postgres or MySQL."
-        elif "function" in error_lower and "does not exist" in error_lower:
-            hint = "HINT: You used a function that doesn't exist in DuckDB. Use DuckDB natives like `date_trunc`, `approx_count_distinct`, or `list_aggregate`."
-        
-        correction_prompt = f"""
-        The following DuckDB SQL query failed to execute:
-        ```sql
-        {failed_query}
-        ```
-        
-        DUCKDB ENGINE ERROR:
-        {error_msg}
-        
-        {hint}
-        
-        ORIGINAL USER INTENT:
-        "{prompt}"
-        
-        TASK:
-        1. Read the error message carefully.
-        2. Look at the provided SCHEMA CONTEXT to find the correct column names and types.
-        3. Fix the SQL query. 
-        4. Output the corrected, highly-optimized SQL and a valid chart spec.
-        """
-        
+        logger.warning(
+            "[%s] Initiating SQL auto-correction for %s error: %s",
+            tenant_id, target_engine.upper(), error_msg,
+        )
+
+        contextual_schema = await self._build_contextual_schema(plan, full_schema, prompt)
+        system_prompt = self._build_system_prompt(
+            contextual_schema, plan, target_engine, semantic_views
+        )
+        hint = self._classify_error(error_msg, target_engine)
+
+        correction_prompt = f"""The following {target_engine.upper()} SQL query failed to execute:
+```sql
+{failed_query}
+```
+
+DATABASE ENGINE ERROR:
+{error_msg}
+
+{hint}
+
+TASK:
+1. Read the error message carefully.
+2. Cross-check every column and function reference against the SCHEMA CONTEXT.
+3. Output a corrected, highly-optimised {target_engine.upper()} SQL query that satisfies
+   the original Execution Plan, plus an updated Vega-Lite chart spec if applicable.
+"""
+
         try:
             result: NL2SQLOutput = await self.llm.generate_structured(
                 system_prompt=system_prompt,
                 prompt=correction_prompt,
                 history=[],
-                response_model=NL2SQLOutput
+                response_model=NL2SQLOutput,
             )
-            
-            # Enterprise AST security gate
-            self._validate_security(result.sql_query)
-            return result.sql_query, result.chart_spec
-            
-        except Exception as e:
-            logger.critical(f"Cascade failure in SQL auto-correction: {str(e)}")
-            raise RuntimeError(f"Unable to self-correct the query. Terminal Database Error: {error_msg}")
 
-# Note: The global singleton should be initialized with your actual LLM client instance
-# in your application factory or dependency injection container.
-# Example: nl2sql_generator = NL2SQLGenerator(llm_client=OpenAIClient())
-nl2sql_generator = NL2SQLGenerator()
+            self._validate_security(result.sql_query, target_engine)
+
+            logger.info(
+                "[%s] SQL auto-correction succeeded (confidence=%.2f).",
+                tenant_id, result.confidence_score,
+            )
+            return result.sql_query, result.chart_spec
+
+        except Exception as exc:
+            logger.critical(
+                "[%s] Cascade failure in SQL auto-correction: %s", tenant_id, exc
+            )
+            raise RuntimeError(
+                f"Unable to self-correct the query after {target_engine.upper()} error: {error_msg}"
+            ) from exc

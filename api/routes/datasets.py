@@ -1,242 +1,264 @@
-# api/routes/datasets.py
-
 import logging
-from typing import List, Any, Dict, Optional
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, status, Query
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from pydantic import BaseModel, Field
 
-# Core Database & Models
+# Core Security & Database
+from api.auth import verify_tenant, TenantContext
 from api.database import get_db
 from models import Dataset, DatasetStatus
 
-# Multi-Tenant Auth 
-from api.auth import get_current_tenant_id 
-
-# Cloud Storage Manager 
+# Infrastructure Services
 from api.services.storage_manager import storage_manager
+from api.services.cache_manager import cache_manager
+from api.services.sync_engine import INTEGRATION_REGISTRY
+
+# Phase 6: The Background Worker
+from compute_worker import process_ingestion_dataset
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(
-    prefix="/datasets",
-    tags=["Datasets"]
-)
+router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
-# ------------------------------------------------------------------------------
-# Pydantic Schemas (Request / Response Validation)
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Pydantic Schemas for Strict Type Safety
+# -----------------------------------------------------------------------------
+
+class DatasetCreate(BaseModel):
+    name: str = Field(..., description="A friendly name for the dataset.")
+    integration_name: Optional[str] = Field(None, description="The SaaS provider (e.g., 'stripe', 'shopify'). Null if file upload.")
+    stream_name: Optional[str] = Field(None, description="The specific table/stream to sync (e.g., 'invoices').")
+    file_path: Optional[str] = Field(None, description="The R2/S3 object key if this is a direct file upload.")
+
 class DatasetResponse(BaseModel):
     id: str
     name: str
     status: str
-    created_at: datetime
-    row_count: int = 0
-    file_path: Optional[str] = None
-    schema_metadata: Optional[Dict[str, Any]] = None
+    integration_name: Optional[str]
+    stream_name: Optional[str]
+    row_count: int
+    schema_metadata: Optional[Dict[str, Any]]
+    created_at: str
 
     class Config:
         from_attributes = True
 
-class SyncRequestPayload(BaseModel):
-    integration_name: str = Field(..., example="shopify")
-    stream_name: str = Field(default="default", example="orders")
-    start_timestamp: str = Field(default="2020-01-01T00:00:00Z", example="2023-01-01T00:00:00Z")
+class SyncTriggerResponse(BaseModel):
+    status: str
+    message: str
+    job_id: str
 
-# ------------------------------------------------------------------------------
-# Route 1: List Datasets (Paginated & Tenant-Isolated)
-# ------------------------------------------------------------------------------
-@router.get("/", response_model=List[DatasetResponse])
-async def list_datasets(
-    limit: int = Query(50, ge=1, le=100, description="Max records to return"),
-    offset: int = Query(0, ge=0, description="Pagination offset"),
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant_id)
-):
+# -----------------------------------------------------------------------------
+# Background Cleanup Helpers
+# -----------------------------------------------------------------------------
+
+async def _cleanup_dataset_resources(tenant_id: str, dataset_id: str, file_path: Optional[str]):
     """
-    Security by Design: Always filter strictly by tenant_id.
-    Performance: Utilizes limit/offset pagination to protect memory.
+    Background task to aggressively clean up orphaned resources when a dataset is deleted,
+    preventing cloud storage and memory bloat.
     """
-    datasets = (
-        db.query(Dataset)
-        .filter(Dataset.tenant_id == tenant_id)
-        .order_by(Dataset.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    
-    # Map the ORM model to the strict Pydantic response
-    return [
-        DatasetResponse(
-            id=str(d.id),
-            name=d.name,
-            status=d.status.value,
-            created_at=d.created_at,
-            row_count=(d.schema_metadata or {}).get("row_count", 0),
-            file_path=d.file_path,
-            schema_metadata=d.schema_metadata
-        )
-        for d in datasets
-    ]
-
-# ------------------------------------------------------------------------------
-# Route 2: Get Dataset Status / Details
-# ------------------------------------------------------------------------------
-@router.get("/{dataset_id}", response_model=DatasetResponse)
-async def get_dataset(
-    dataset_id: str,
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant_id)
-):
-    dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id, 
-        Dataset.tenant_id == tenant_id
-    ).first()
-
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or unauthorized.")
-
-    return DatasetResponse(
-        id=str(dataset.id),
-        name=dataset.name,
-        status=dataset.status.value,
-        created_at=dataset.created_at,
-        row_count=(dataset.schema_metadata or {}).get("row_count", 0),
-        file_path=dataset.file_path,
-        schema_metadata=dataset.schema_metadata
-    )
-
-# ------------------------------------------------------------------------------
-# Route 3: Upload Raw File (Triggers Path A in Worker)
-# ------------------------------------------------------------------------------
-@router.post("/upload", status_code=status.HTTP_201_CREATED)
-async def upload_dataset(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant_id)
-):
-    """
-    Accepts raw CSV/JSON uploads, stashes them in secure cloud storage, 
-    and cues the Compute Worker for vectorized Parquet conversion.
-    """
-    if not file.filename.endswith(('.csv', '.json', '.parquet')):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
-            detail="Only CSV, JSON, and Parquet files are supported."
-        )
-
     try:
-        # 1. Fast, stateless upload to raw storage (e.g., S3/R2) via modular storage manager.
-        # This keeps the FastAPI event loop unblocked for other web traffic.
-        raw_file_path = await storage_manager.upload_raw_file_async(tenant_id, file)
-
-        # 2. Register the dataset as PENDING. 
-        # The Compute Worker will lock this row via `skip_locked` asynchronously.
-        new_dataset = Dataset(
-            tenant_id=tenant_id,
-            name=file.filename,
-            file_path=raw_file_path,
-            status=DatasetStatus.PENDING,
-            schema_metadata={
-                "ingestion_type": "upload",
-                "original_filename": file.filename,
-                "content_type": file.content_type
-            }
-        )
-        db.add(new_dataset)
-        db.commit()
-        db.refresh(new_dataset)
-
-        return {
-            "message": "Upload successful. Compute worker is processing the data.", 
-            "dataset_id": str(new_dataset.id)
-        }
-
-    except SQLAlchemyError as db_err:
-        db.rollback()
-        logger.error(f"DB Error during upload for tenant {tenant_id}: {db_err}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database transaction failed.")
+        # 1. Purge the semantic cache for this dataset
+        await cache_manager.invalidate_dataset_cache(tenant_id, dataset_id)
+        
+        # 2. Delete the physical Parquet file from R2/S3
+        if file_path:
+            storage_manager.delete_file(file_path)
+            
+        logger.info(f"[{tenant_id}] Successfully cleaned up resources for deleted dataset {dataset_id}.")
     except Exception as e:
-        db.rollback()
-        logger.error(f"File upload failed for tenant {tenant_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"File upload failed: {str(e)}")
+        logger.error(f"[{tenant_id}] Resource cleanup failed for {dataset_id}: {str(e)}")
 
-# ------------------------------------------------------------------------------
-# Route 4: Trigger Historical API Sync (Triggers Path B in Worker)
-# ------------------------------------------------------------------------------
-@router.post("/sync", status_code=status.HTTP_201_CREATED)
-async def trigger_integration_sync(
-    payload: SyncRequestPayload,
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant_id)
+# -----------------------------------------------------------------------------
+# API Routes
+# -----------------------------------------------------------------------------
+
+@router.post("/", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
+async def create_dataset(
+    request: DatasetCreate,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
 ):
     """
-    Triggers a Zero-ETL Sync from an external SaaS integration.
+    Registers a new dataset (SaaS or File) and INSTANTLY dispatches the background worker.
     """
+    tenant_id = context.tenant_id
+    logger.info(f"[{tenant_id}] Creating new dataset: {request.name}")
+
+    # Validation: Ensure they provided either an integration or a file, not neither
+    if not request.integration_name and not request.file_path:
+        raise HTTPException(status_code=400, detail="Must provide either integration_name or file_path.")
+
+    # Validation: Ensure the SaaS integration actually exists in our registry
+    if request.integration_name and request.integration_name not in INTEGRATION_REGISTRY:
+        raise HTTPException(status_code=400, detail=f"Integration '{request.integration_name}' is not supported.")
+
     try:
+        # 1. Create the Database Record (Starts in PENDING state)
         new_dataset = Dataset(
             tenant_id=tenant_id,
-            name=f"{payload.integration_name.capitalize()} Sync - {payload.stream_name}",
-            file_path=None,  # Will be generated by the worker as Parquet
+            name=request.name,
             status=DatasetStatus.PENDING,
-            schema_metadata={
-                "ingestion_type": "sync",
-                "integration_name": payload.integration_name,
-                "stream_name": payload.stream_name,
-                "start_timestamp": payload.start_timestamp
-            }
+            integration_name=request.integration_name,
+            stream_name=request.stream_name,
+            file_path=request.file_path,
+            schema_metadata={"start_timestamp": "2024-01-01T00:00:00Z"} # Default historical sync window
         )
+        
         db.add(new_dataset)
         db.commit()
         db.refresh(new_dataset)
 
-        return {
-            "message": f"Sync queued for {payload.integration_name}.", 
-            "dataset_id": str(new_dataset.id)
-        }
+        # 2. PHASE 6 INTEGRATION: Dispatch the Celery Background Task
+        # We pass the ID as a string. Celery will pick this up instantly.
+        dataset_id_str = str(new_dataset.id)
+        
+        # .delay() is the Celery mechanism to push to the Redis broker asynchronously
+        process_ingestion_dataset.delay(dataset_id_str, tenant_id)
+
+        logger.info(f"[{tenant_id}] Dispatched Celery Ingestion Task for Dataset {dataset_id_str}")
+
+        return new_dataset
 
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"DB Error during sync queue for tenant {tenant_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error while queuing sync.")
+        logger.error(f"[{tenant_id}] Database error creating dataset: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to register dataset.")
 
-# ------------------------------------------------------------------------------
-# Route 5: Delete Dataset (Non-Blocking)
-# ------------------------------------------------------------------------------
+
+@router.get("/", response_model=List[DatasetResponse])
+async def list_datasets(
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves all datasets for the authenticated tenant.
+    Used by the UI sidebar to populate available contexts.
+    """
+    datasets = db.query(Dataset).filter(Dataset.tenant_id == context.tenant_id).all()
+    
+    # Enrich the response with safe defaults for the UI
+    response_list = []
+    for ds in datasets:
+        row_count = ds.schema_metadata.get("row_count", 0) if ds.schema_metadata else 0
+        response_list.append({
+            "id": str(ds.id),
+            "name": ds.name,
+            "status": ds.status.value if hasattr(ds.status, 'value') else ds.status,
+            "integration_name": ds.integration_name,
+            "stream_name": ds.stream_name,
+            "row_count": row_count,
+            "schema_metadata": ds.schema_metadata,
+            "created_at": ds.created_at.isoformat() if ds.created_at else ""
+        })
+        
+    return response_list
+
+
+@router.get("/{dataset_id}", response_model=DatasetResponse)
+async def get_dataset(
+    dataset_id: str,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves a specific dataset. 
+    Crucial for the UI to poll the 'status' (PENDING -> PROCESSING -> READY).
+    """
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.tenant_id == context.tenant_id
+    ).first()
+
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found or unauthorized.")
+
+    row_count = dataset.schema_metadata.get("row_count", 0) if dataset.schema_metadata else 0
+
+    return {
+        "id": str(dataset.id),
+        "name": dataset.name,
+        "status": dataset.status.value if hasattr(dataset.status, 'value') else dataset.status,
+        "integration_name": dataset.integration_name,
+        "stream_name": dataset.stream_name,
+        "row_count": row_count,
+        "schema_metadata": dataset.schema_metadata,
+        "created_at": dataset.created_at.isoformat() if dataset.created_at else ""
+    }
+
+
+@router.post("/{dataset_id}/sync", response_model=SyncTriggerResponse)
+async def trigger_manual_sync(
+    dataset_id: str,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Allows a user to manually click "Sync Now" on the dashboard to pull the latest SaaS data.
+    """
+    dataset = db.query(Dataset).filter(
+        Dataset.id == dataset_id,
+        Dataset.tenant_id == context.tenant_id
+    ).first()
+
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    if dataset.status == DatasetStatus.PROCESSING:
+        raise HTTPException(status_code=409, detail="Dataset is already currently syncing.")
+
+    # Reset status to pending so UI shows loading state
+    dataset.status = DatasetStatus.PENDING
+    db.commit()
+
+    # Dispatch Celery Task
+    task = process_ingestion_dataset.delay(str(dataset.id), context.tenant_id)
+
+    return SyncTriggerResponse(
+        status="accepted",
+        message="Manual sync triggered successfully. Data will be available shortly.",
+        job_id=task.id
+    )
+
+
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dataset(
     dataset_id: str,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_current_tenant_id)
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
 ):
     """
-    Deletes the dataset metadata from the DB instantly, while securely 
-    wiping the raw files from Cloud Storage in a background thread.
+    Deletes the dataset record and asynchronously purges all related Cache and R2 Storage.
     """
+    tenant_id = context.tenant_id
+    
     dataset = db.query(Dataset).filter(
-        Dataset.id == dataset_id, 
+        Dataset.id == dataset_id,
         Dataset.tenant_id == tenant_id
     ).first()
 
     if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or unauthorized.")
+        raise HTTPException(status_code=404, detail="Dataset not found.")
+
+    file_path = dataset.file_path
 
     try:
-        # 1. Dispatch cloud deletion to background task to keep API response instant
-        if dataset.file_path:
-            # Assumes storage_manager.delete_file can accept synchronous dispatch 
-            # or you can wrap it in an async background task compatible wrapper
-            background_tasks.add_task(storage_manager.delete_file, dataset.file_path)
-
-        # 2. Purge from relational DB
+        # Delete from Postgres
         db.delete(dataset)
         db.commit()
-        
+
+        # Fire and forget resource cleanup to return 204 instantly
+        background_tasks.add_task(
+            _cleanup_dataset_resources,
+            tenant_id=tenant_id,
+            dataset_id=dataset_id,
+            file_path=file_path
+        )
+
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"Failed to delete dataset {dataset_id}: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete dataset records.")
+        logger.error(f"[{tenant_id}] Database error deleting dataset {dataset_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete dataset.")

@@ -1,203 +1,173 @@
-### api/services/narrative_service.py
-
 import os
 import json
 import logging
-import polars as pl
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 
 # SDK Imports
 from openai import AsyncOpenAI, OpenAIError
-from pydantic import BaseModel
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
+# Import our cross-service data contracts
+from api.services.query_planner import QueryPlan
+from api.services.insight_orchestrator import InsightPayload
 
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
-# Type Definitions & Schemas
+# Strict Data Contracts (The Output Format)
 # -----------------------------------------------------------------------------
 
 class NarrativeResponse(BaseModel):
-    """Ensures consistent, structured output for the frontend orchestrator."""
-    summary: str
-    insights: List[str]
-    status: str = "success"
+    """
+    Strict output schema for the frontend UI.
+    Guarantees the dashboard always receives perfectly formatted text blocks.
+    """
+    executive_summary: str = Field(
+        ..., 
+        description="A punchy, one-sentence TL;DR summarizing the primary finding or answer to the user's intent."
+    )
+    key_insights: List[str] = Field(
+        ..., 
+        description="2-3 bullet points explaining the 'Why' using the statistical trends, correlations, or anomalies provided."
+    )
+    recommended_action: Optional[str] = Field(
+        default=None, 
+        description="A single, logical business recommendation based ONLY on the data provided."
+    )
 
 # -----------------------------------------------------------------------------
-# Modular LLM Provider Interfaces
-# -----------------------------------------------------------------------------
-
-class BaseLLMProvider(ABC):
-    """The Modular Strategy: Abstract LLM interface ensuring zero vendor lock-in."""
-    @abstractmethod
-    async def generate_text(self, system_prompt: str, user_prompt: str, temperature: float = 0.0) -> str:
-        pass
-
-class OpenAIProvider(BaseLLMProvider):
-    def __init__(self, model: str = "gpt-4o-mini"):
-        # Initialized with environment variables for multi-tenant security
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY")) 
-        self.model = os.getenv("PRIMARY_LLM_MODEL", model)
-
-    async def generate_text(self, system_prompt: str, user_prompt: str, temperature: float = 0.0) -> str:
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            temperature=temperature,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        return response.choices[0].message.content.strip()
-
-# -----------------------------------------------------------------------------
-# Phase 8: Executive Narrative Service
+# Phase 3.2: The Executive Storyteller
 # -----------------------------------------------------------------------------
 
 class NarrativeService:
     """
-    Phase 8: The Executive Storyteller.
+    Phase 3.2: The Unified Insight Pipeline (Final Stage).
     
-    Transforms raw analytical result sets, AB test intel, and anomalies 
+    Transforms pure mathematical payloads (from the InsightOrchestrator) 
     into concise, strategic business narratives.
     
     Engineering Excellence:
-    - Vectorized Pre-processing: Summarizes millions of rows into key statistical 
-      shards via Polars before LLM injection.
-    - Resilience: Implements exponential backoff and failover to ensure narrative 
-      delivery even during LLM provider instability.
+    - Zero Math Policy: The LLM does no calculations. It only translates pre-computed math.
+    - Contextual Grounding: Uses the QueryPlan intent to frame the story.
+    - Resilience: Implements exponential backoff for API reliability.
     """
     
-    def __init__(self, primary_provider: BaseLLMProvider = None):
-        self.primary_provider = primary_provider or OpenAIProvider()
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
+        # Initialized with environment variables for multi-tenant security
+        key = api_key or os.getenv("OPENAI_API_KEY")
+        if not key:
+            raise ValueError("OPENAI_API_KEY is required for the Narrative Service.")
+            
+        self.client = AsyncOpenAI(api_key=key) 
+        self.model = os.getenv("PRIMARY_LLM_MODEL", model)
 
     @retry(
         retry=retry_if_exception_type(OpenAIError),
         wait=wait_exponential(multiplier=1, min=2, max=10), 
         stop=stop_after_attempt(3)
     )
-    async def _execute_generation(self, sys_prompt: str, user_prompt: str) -> str:
-        """Centralized execution point with retry logic for network resilience."""
-        return await self.primary_provider.generate_text(sys_prompt, user_prompt)
-
-    def _generate_vectorized_summary(self, data: List[Dict[str, Any]]) -> str:
+    async def generate_executive_summary(
+        self, 
+        payload: InsightPayload, 
+        plan: QueryPlan, 
+        chart_spec: Optional[Dict[str, Any]], 
+        tenant_id: str
+    ) -> NarrativeResponse:
         """
-        Computation (Execution): Statistical Pre-processor.
-        Uses Polars (Vectorized) to calculate the mathematical 'shape' of the data.
-        Compresses high-cardinality result sets into dense JSON stats for LLM context.
+        The final step in the pipeline. Generates the 'AI Analyst' text block.
         """
-        if not data:
-            return "The result set is empty."
+        logger.info(f"[{tenant_id}] Generating executive narrative for {payload.row_count} processed records.")
 
-        try:
-            df = pl.DataFrame(data)
-            
-            # Vectorized detection of numeric columns
-            numeric_cols = [col for col, dtype in df.schema.items() 
-                           if dtype in [pl.Float64, pl.Int64, pl.Float32, pl.Int32]]
-            
-            summary_stats = {}
-            for col in numeric_cols:
-                # Handle nulls gracefully during math operations to prevent NaN leakage
-                valid_df = df.select(pl.col(col).drop_nulls())
-                if not valid_df.is_empty():
-                    summary_stats[col] = {
-                        "total": float(valid_df[col].sum()),
-                        "avg": float(valid_df[col].mean()),
-                        "max": float(valid_df[col].max()),
-                        "min": float(valid_df[col].min()),
-                        "std_dev": float(valid_df[col].std()) if len(valid_df) > 1 else 0
-                    }
-
-            # Sample rows to give the LLM structural context without bloating tokens
-            sample_rows = df.head(5).to_dicts()
-            
-            summary_json = json.dumps({
-                "record_count": len(df),
-                "columns": df.columns,
-                "vectorized_metrics": summary_stats,
-                "structural_sample": sample_rows
-            }, indent=2)
-            
-            # Hard truncate at 3k characters to protect the LLM window
-            return summary_json[:3000] 
-
-        except Exception as e:
-            logger.error(f"Vectorized summarization failed: {e}")
-            return "Raw data summary unavailable; processing error encountered."
-
-    # -------------------------------------------------------------------------
-    # Public Narrative Methods
-    # -------------------------------------------------------------------------
-
-    async def generate_query_insight(self, query: str, data: List[Dict[str, Any]]) -> NarrativeResponse:
-        """
-        Generates a 'TL;DR' executive narrative for standard data queries.
-        """
-        data_context = self._generate_vectorized_summary(data)
+        # 1. Format the mathematical findings into absolute facts for the LLM
+        facts = self._format_payload_into_facts(payload)
         
-        sys_prompt = (
-            "You are a Lead Data Scientist at DataOmen. Your role is to transform "
-            "SQL result statistics into high-level executive insights. Avoid technical jargon."
-        )
-        
+        # 2. Add visual context if a chart is being rendered
+        visual_context = ""
+        if chart_spec:
+            chart_type = chart_spec.get("mark", "chart")
+            visual_context = f"Note: The user is currently looking at a {chart_type} visualizing this data."
+
+        # 3. Construct the prompt
+        system_prompt = f"""You are an elite, highly analytical Chief Data Officer.
+Your job is to translate raw statistical facts into a concise executive summary for a business user.
+
+CRITICAL RULES:
+1. NO CALCULATIONS: Do not attempt to calculate anything. Use ONLY the provided mathematical facts.
+2. NO HALLUCINATIONS: Do not invent external market factors (e.g., do not blame "seasonality" or "economic downturns" unless explicitly proven by the data).
+3. BE CONCISE: Executives are busy. Use punchy, professional language.
+4. TIE TO INTENT: Ensure your narrative directly answers the original user intent.
+
+{visual_context}
+"""
+
         user_prompt = f"""
-        USER QUESTION: "{query}"
-        DATA STATS:
-        {data_context}
+        ORIGINAL ANALYTICAL INTENT:
+        "{plan.intent}"
 
-        INSTRUCTIONS:
-        1. Interpret the data's MEANING for the user's business.
-        2. Identify the most significant trend or outlier.
-        3. Format as a JSON with keys: "summary" (one punchy sentence) and "insights" (list of 2-3 specific points).
+        MATHEMATICAL FACTS (Pre-computed by the engine):
+        {facts}
         """
 
         try:
-            raw_response = await self._execute_generation(sys_prompt, user_prompt)
-            # Attempt to parse JSON if LLM follows format, else wrap as text
-            try:
-                parsed = json.loads(raw_response)
-                return NarrativeResponse(**parsed)
-            except:
-                return NarrativeResponse(
-                    summary=raw_response.split('\n')[0],
-                    insights=[line for line in raw_response.split('\n')[1:] if line.strip()]
-                )
+            # Native Structured Outputs guarantee the Pydantic shape
+            response = await self.client.beta.chat.completions.parse(
+                model=self.model,
+                temperature=0.2, # Low temperature for analytical consistency, slight variance for natural tone
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=NarrativeResponse
+            )
+            
+            result = response.choices[0].message.parsed
+            
+            if result is None:
+                raise ValueError("Model refused to generate narrative.")
+                
+            return result
+            
         except Exception as e:
-            logger.error(f"Narrative generation failed: {e}")
+            logger.error(f"[{tenant_id}] Narrative generation failed: {str(e)}")
+            # Graceful degradation: If the LLM fails, return a safe fallback using the raw intent
             return NarrativeResponse(
-                summary="Data analysis complete.",
-                insights=["AI Narrative engine is currently cooling down. Please check raw results below."],
-                status="error"
+                executive_summary=f"Analysis completed for: {plan.intent}.",
+                key_insights=["Mathematical processing finished successfully.", "Please refer to the raw data and visual charts for details."],
+                recommended_action=None
             )
 
-    async def generate_anomaly_narrative(self, metric: str, variance: float, drivers: List[Dict[str, Any]]) -> NarrativeResponse:
-        """
-        Explains 'WHY' a metric deviated using mathematical variance drivers.
-        """
-        driver_str = "\n".join([f"- {d.get('dimension')}: {d.get('category')} ({d.get('percentage_change'):+.2f}%)" for d in drivers])
-        
-        sys_prompt = "You are a precise Root Cause Analysis agent. Analyze metric variances objectively."
-        
-        user_prompt = f"""
-        ANOMALY: Metric '{metric}' shifted by {variance:+.2f}%.
-        TOP DRIVERS:
-        {driver_str}
+    # -------------------------------------------------------------------------
+    # Internal Helpers
+    # -------------------------------------------------------------------------
 
-        INSTRUCTIONS:
-        - Explain the root cause based ONLY on the drivers provided. 
-        - DO NOT hallucinate external market factors.
-        - Provide a 1-sentence executive summary and 2 supporting bullet points.
+    def _format_payload_into_facts(self, payload: InsightPayload) -> str:
         """
+        Translates the strict Pydantic payload into readable facts so the LLM 
+        doesn't have to guess how to parse JSON arrays.
+        """
+        if payload.row_count == 0:
+            return "The database query returned zero records. There is no data to analyze."
 
-        raw_text = await self._execute_generation(sys_prompt, user_prompt)
-        # Split text into summary and bullets for structured UI display
-        lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
-        return NarrativeResponse(
-            summary=lines[0] if lines else "Anomaly detected.",
-            insights=lines[1:4] if len(lines) > 1 else ["No specific drivers identified."]
-        )
+        lines = [f"Dataset Size: {payload.row_count} records analyzed."]
 
-# Global Singleton for cross-service orchestration
-narrative_service = NarrativeService()
+        if payload.anomalies:
+            lines.append("\nDETECTED ANOMALIES (Z-Score > 2.0):")
+            for a in payload.anomalies:
+                direction = "SPIKE" if a.is_positive else "DROP"
+                lines.append(f"- {direction} in '{a.column}': Value was {a.value} on {a.row_identifier} (Severity: {a.z_score} standard deviations from mean).")
+
+        if payload.trends:
+            lines.append("\nDIRECTIONAL TRENDS:")
+            for t in payload.trends:
+                lines.append(f"- '{t.column}' is {t.direction} (Total Change: {t.percentage_change:+.2f}%, Mathematical Slope: {t.slope}).")
+
+        if payload.correlations:
+            lines.append("\nSTATISTICAL CORRELATIONS:")
+            for c in payload.correlations:
+                lines.append(f"- '{c.metric_a}' and '{c.metric_b}' have a Pearson correlation of {c.pearson_coefficient} (Strong relationship).")
+
+        if not payload.anomalies and not payload.trends and not payload.correlations:
+            lines.append("\nNo significant mathematical anomalies, steep trends, or strong correlations were detected in this dataset.")
+
+        return "\n".join(lines)

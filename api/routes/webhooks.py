@@ -7,6 +7,8 @@ from typing import Dict, Any
 
 from database import get_db
 from services.lemon_squeezy_service import LemonSqueezyService
+# --- ADD THIS AROUND LINE 9 ---
+from services.cache_manager import cache_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
@@ -49,3 +51,31 @@ async def handle_lemonsqueezy_webhook(
         logger.error(f"Critical failure handling Lemon Squeezy webhook: {str(e)}")
         # Returning a 500 ensures Lemon Squeezy's retry logic kicks in if the server is genuinely failing
         raise HTTPException(status_code=500, detail="Internal webhook processing error")
+    # --- ADD THIS AT THE BOTTOM OF THE FILE (Around Line 43) ---
+
+class DataSyncPayload(BaseModel):
+    tenant_id: str
+    dataset_id: str
+    sync_status: str
+
+@router.post("/data-sync-complete")
+async def handle_data_sync_webhook(
+    payload: DataSyncPayload,
+    background_tasks: BackgroundTasks
+):
+    """
+    Receives events when a dataset finishes updating from its remote source.
+    Triggers an immediate cache bust so users see the freshest data.
+    """
+    if payload.sync_status != "success":
+        return {"status": "ignored", "message": "Sync not successful"}
+
+    # Offload cache busting to background task to respond to webhook instantly
+    background_tasks.add_task(
+        cache_manager.invalidate_dataset_cache, 
+        payload.tenant_id, 
+        payload.dataset_id
+    )
+    
+    logger.info(f"[{payload.tenant_id}] Queued cache invalidation for dataset {payload.dataset_id}")
+    return {"status": "accepted", "message": "Cache invalidation queued."}

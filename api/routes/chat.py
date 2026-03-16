@@ -1,164 +1,259 @@
-# api/routes/chat.py
-
+import os
 import logging
-from typing import Optional, Any, List, Dict, Tuple
+from typing import Optional, Any, List, Dict
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy.orm import Session, joinedload
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 # Core Security & Database
-from api.auth import verify_tenant, TenantContext  # CRITICAL FIX: Corrected import locations
-from api.services.tenant_security_provider import tenant_security
+from api.auth import verify_tenant, TenantContext
 from api.database import get_db
-from models import Agent, Dataset
+from models import Dataset
 
-# Modular Services (Using singleton instances for memory efficiency)
-from api.services.semantic_router import SemanticRouter
-from api.services.nl2sql_generator import nl2sql_generator
-from api.services.compute_engine import compute_engine
+# Services
+from api.services.query_planner import QueryPlanner
+from api.services.nl2sql_generator import NL2SQLGenerator
+from api.services.compute_engine import ComputeEngine, DatasetMetadata, ComputeLocation
+from api.services.insight_orchestrator import InsightOrchestrator
 from api.services.narrative_service import NarrativeService
+from api.services.orchestrator import AnalyticalOrchestrator
+from api.services.diagnostic_service import DiagnosticService
+from api.services.subscription_manager import subscription_manager
 
-# Setup structured logger
+# ------------------------------------------------------------------
+# Logger
+# ------------------------------------------------------------------
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
-# --- Pydantic Models for Type Safety ---
+# ------------------------------------------------------------------
+# Service Initialization (Singleton Pattern)
+# ------------------------------------------------------------------
 
-class ChatRequest(BaseModel):
-    agent_id: str
-    query: str
-    session_files: Optional[List[str]] = []
-    
-class ChatResponse(BaseModel):
-    response: str
-    data: Optional[Any] = None
-    chart_spec: Optional[Dict[str, Any]] = None  # Declarative UI support (Vega-Lite)
-    route_taken: str
+api_key = os.getenv("OPENAI_API_KEY")
 
-# --- Route Handler ---
+if not api_key:
+    logger.warning("OPENAI_API_KEY is missing. Analytical Orchestrator will fail.")
 
-@router.post("/", response_model=ChatResponse)
-async def process_chat(
-    request: ChatRequest,
-    context: TenantContext = Depends(verify_tenant), # Security Phase 1: Dual-Auth Check
+# Base services
+planner = QueryPlanner(api_key=api_key)
+generator = NL2SQLGenerator(api_key=api_key)
+compute = ComputeEngine()
+insight = InsightOrchestrator()
+narrative = NarrativeService(api_key=api_key)
+
+# Diagnostic layer
+diagnostic_service = DiagnosticService(
+    generator=generator,
+    compute=compute
+)
+
+# Grand orchestrator
+orchestrator = AnalyticalOrchestrator(
+    planner=planner,
+    generator=generator,
+    compute_engine=compute,
+    insight_engine=insight,
+    diagnostic_service=diagnostic_service,
+    narrative_service=narrative
+)
+
+# ------------------------------------------------------------------
+# Request Contracts
+# ------------------------------------------------------------------
+
+class HistoryMessage(BaseModel):
+    role: str
+    content: str
+
+
+class OrchestrateRequest(BaseModel):
+    prompt: str = Field(..., description="User's natural language analytics query.")
+    active_dataset_ids: List[str] = Field(..., description="Dataset UUIDs to include.")
+    history: Optional[List[HistoryMessage]] = Field(default_factory=list)
+    predictive_config: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Optional ML pipeline configuration."
+    )
+
+
+# ------------------------------------------------------------------
+# Main Streaming Endpoint
+# ------------------------------------------------------------------
+
+@router.post("/orchestrate")
+async def orchestrate_chat(
+    request: OrchestrateRequest,
+    context: TenantContext = Depends(verify_tenant),
     db: Session = Depends(get_db)
 ):
     """
-    Unified chat endpoint dynamically routed to vector/RAG or DuckDB execution.
-    Orchestrates Contextual RAG, Vectorized Compute, and Strict SaaS Billing Guardrails.
-    """
-    try:
-        # 1. Context Retrieval: Fetch Agent with associated Dataset via eager load
-        # This ensures strict physical tenant isolation at the ORM layer.
-        agent = db.query(Agent).options(joinedload(Agent.dataset)).filter(
-            Agent.id == request.agent_id, 
-            Agent.tenant_id == context.tenant_id
-        ).first()
-        
-        if not agent or not agent.dataset:
-            logger.warning(f"Unauthorized/Invalid access attempt: Agent {request.agent_id} for tenant {context.tenant_id}")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent context or dataset not found.")
-        
-        # 2. Modular Semantic Routing: Determine if query is analytical or textual
-        semantic_router = SemanticRouter()
-        route = semantic_router.determine_route(request.query)
-        
-        if route == "analytical":
-            
-            # 3. Define the Billable Compute Pipeline
-            # We wrap the costly LLM and DuckDB steps into a single transaction closure for metering.
-            async def execute_analytical_pipeline() -> Tuple[List[Dict[str, Any]], str, Optional[Dict[str, Any]]]:
-                dataset: Dataset = agent.dataset
-                
-                # Format schemas for Contextual RAG
-                schemas = [{
-                    "id": str(dataset.id),
-                    "name": dataset.name,
-                    "schema": dataset.schema_metadata or {}
-                }]
-                
-                # Phase 3: NL2SQL Generation (Consumes LLM Tokens)
-                # Determines the optimal vectorized path and outputs Vega-Lite specs if needed
-                sql_query, chart_spec = await nl2sql_generator.generate_sql(
-                    prompt=request.query, 
-                    schemas=schemas
-                )
-                
-                if not sql_query:
-                    return [], "I couldn't translate that request into a data query. Could you try rephrasing what you'd like to calculate?", None
-                
-                # Phase 4: Secure Vectorized Execution (Consumes Compute RAM/CPU)
-                try:
-                    execution_result = await compute_engine.execute_read_only(
-                        db=db,
-                        tenant_id=context.tenant_id,
-                        datasets=[dataset],
-                        query=sql_query
-                    )
-                except Exception as compute_error:
-                    # Phase 4.1: The Auto-Correction Feedback Loop
-                    # If DuckDB rejects the syntax, feed the error back to the LLM for self-healing
-                    logger.warning(f"[{context.tenant_id}] Compute failed, attempting auto-correction: {str(compute_error)}")
-                    
-                    sql_query, chart_spec = await nl2sql_generator.correct_sql(
-                        failed_query=sql_query,
-                        error_msg=str(compute_error),
-                        prompt=request.query,
-                        schemas=schemas
-                    )
-                    
-                    # Retry execution with corrected SQL
-                    execution_result = await compute_engine.execute_read_only(
-                        db=db,
-                        tenant_id=context.tenant_id,
-                        datasets=[dataset],
-                        query=sql_query
-                    )
-                
-                # Phase 5: Narrative Synthesis (Consumes LLM Tokens)
-                # Translates the mathematical JSON results back into a human-readable response
-                narrative_service = NarrativeService()
-                narrative = narrative_service.generate_narrative(execution_result, request.query)
-                
-                return execution_result, narrative, chart_spec
+    Phase 8: Unified Analytical Streaming Pipeline
 
-            # 4. Security Phase 2: Contextual Execution
-            # Routes the pipeline through metering and security guardrails via dependency injection.
-            try:
-                pipeline_data, pipeline_narrative, pipeline_chart = await tenant_security.execute_in_context(
-                    db=db,
-                    tenant_id=context.tenant_id,
-                    operation_name="chat_analytical_query",
-                    func=execute_analytical_pipeline
-                )
-                
-                return ChatResponse(
-                    response=pipeline_narrative,
-                    data=pipeline_data,
-                    chart_spec=pipeline_chart,
-                    route_taken="analytical"
-                )
-                
-            except PermissionError as pe:
-                # 402 Payment Required: Blocks execution before compute/LLM is hit
-                raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(pe))
-            except ValueError as ve:
-                # 400 Bad Request: LLM hallucinated bad SQL syntax beyond repair
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
-            except RuntimeError as re:
-                # 500 Internal Error: DuckDB Out-Of-Memory limit reached or unrecoverable crash
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(re))
-            
-        else:
-            # Handle standard RAG (Vector Search over document knowledge)
-            return ChatResponse(
-                response="I've processed your request as a textual inquiry. Based on the knowledge base, I can help you understand dataset rules or past queries. How can I assist further?",
-                route_taken="rag"
+    Executes the full analytics pipeline:
+
+    Natural Language
+        ↓
+    Query Planning
+        ↓
+    NL → SQL
+        ↓
+    Compute Engine
+        ↓
+    Insight Extraction
+        ↓
+    Narrative Generation
+
+    Streams responses via SSE.
+    """
+
+    tenant_id = context.tenant_id
+
+    logger.info(
+        f"[{tenant_id}] Starting orchestration for prompt: {request.prompt[:80]}"
+    )
+
+    # ------------------------------------------------------------------
+    # Validate datasets
+    # ------------------------------------------------------------------
+
+    if not request.active_dataset_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No active datasets provided for analysis."
+        )
+
+    datasets = db.query(Dataset).filter(
+        Dataset.id.in_(request.active_dataset_ids),
+        Dataset.tenant_id == tenant_id
+    ).all()
+
+    if not datasets:
+        logger.warning(
+            f"[{tenant_id}] Unauthorized dataset access attempt."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Requested datasets not found or unauthorized."
+        )
+
+    # ------------------------------------------------------------------
+    # Subscription & Credit Verification
+    # ------------------------------------------------------------------
+
+    try:
+        has_access = subscription_manager.verify_access_and_reserve_credits(
+            db=db,
+            tenant_id=tenant_id
+        )
+
+        if not has_access:
+            logger.warning(
+                f"[{tenant_id}] Compute credits exhausted."
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Compute credits exhausted or subscription inactive. Please upgrade your plan."
             )
 
     except HTTPException:
         raise
+
     except Exception as e:
-        logger.error(f"Critical Pipeline Failure for tenant {context.tenant_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Pipeline Failure")
+        logger.error(
+            f"[{tenant_id}] Subscription verification failed: {str(e)}"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Subscription verification failed."
+        )
+
+    # ------------------------------------------------------------------
+    # Build semantic schema context
+    # ------------------------------------------------------------------
+
+    full_schema: Dict[str, Dict[str, str]] = {}
+    file_uris: List[str] = []
+
+    for ds in datasets:
+
+        if ds.schema_metadata:
+
+            table_name = f"dataset_{str(ds.id).replace('-', '_')}"
+
+            full_schema[table_name] = ds.schema_metadata
+
+        if ds.file_url:
+            file_uris.append(ds.file_url)
+
+    # ------------------------------------------------------------------
+    # Build compute metadata
+    # ------------------------------------------------------------------
+
+    target_dataset_meta = DatasetMetadata(
+        dataset_id=str(datasets[0].id),
+        tenant_id=tenant_id,
+        location=ComputeLocation.LOCAL_DATA_LAKE,
+        size_bytes=sum(ds.file_size_bytes or 0 for ds in datasets),
+        file_uris=file_uris
+    )
+
+    # ------------------------------------------------------------------
+    # Start Streaming Orchestration
+    # ------------------------------------------------------------------
+
+    try:
+
+        pipeline_generator = orchestrator.run_full_pipeline(
+            prompt=request.prompt,
+            dataset=target_dataset_meta,
+            tenant_id=tenant_id,
+            full_schema=full_schema
+        )
+
+        return StreamingResponse(
+            pipeline_generator,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+
+    except Exception as e:
+
+        logger.error(
+            f"[{tenant_id}] Fatal orchestration error: {str(e)}"
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to initialize analytical stream."
+        )
+
+
+# ------------------------------------------------------------------
+# Legacy Sync Endpoint
+# ------------------------------------------------------------------
+
+@router.post("/sync", response_model=Dict[str, Any])
+async def process_chat_sync(
+    request: OrchestrateRequest,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Deprecated synchronous endpoint.
+    """
+
+    raise HTTPException(
+        status_code=status.HTTP_426_UPGRADE_REQUIRED,
+        detail="Upgrade Required. Use /api/chat/orchestrate for streaming analytics."
+    )

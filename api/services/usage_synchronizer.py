@@ -1,83 +1,73 @@
-"""
-api/services/usage_synchronizer.py
-Objective: Synchronize real-time usage metrics and quotas between the backend and frontend.
-Methodology: Hybrid Performance Paradigm (Supabase Realtime) and Security by Design.
-"""
+import logging
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
-from typing import Dict, Any, Optional
-from datetime import datetime
-from api.database import get_db_client #
-from api.services.subscription_manager import SubscriptionManager, UsageMetric #
-from api.services.audit_logger import AuditLogger #
+from api.database import SessionLocal
+from models import Organization
+
+# Depending on your stack, import your payment gateway client
+from api.services.lemon_squeezy_service import LemonSqueezyService 
+
+logger = logging.getLogger(__name__)
 
 class UsageSynchronizer:
-    def __init__(self, tenant_id: str):
-        self.tenant_id = tenant_id
-        self.db = get_db_client() #
-        self.sub_manager = SubscriptionManager(tenant_id) #
-        self.logger = AuditLogger() #
+    """
+    Phase 9: Background Metering Sync.
+    
+    Sweeps the local database for unbilled compute usage and syncs it with 
+    the external payment provider (Lemon Squeezy / Stripe).
+    """
 
-    async def sync_usage_to_client(self, metric: UsageMetric, current_value: int):
-        """
-        Pushes usage updates to the 'tenant_usage_sync' table.
-        Supabase Realtime listeners on the frontend will catch this change.
-        """
-        # 1. Fetch Plan Limits for context
-        sub = await self.sub_manager.get_current_subscription()
-        tier = sub.get("tier", "free")
-        
-        # 2. Update the sync table (Optimized for Frontend Consumption)
-        # This table should have Row Level Security (RLS) enabled so users 
-        # can only see their own tenant_id.
-        sync_payload = {
-            "tenant_id": self.tenant_id,
-            "metric_name": metric.value,
-            "current_usage": current_value,
-            "last_updated": datetime.utcnow().isoformat(),
-            "tier_context": tier
-        }
+    def __init__(self):
+        self.billing_provider = LemonSqueezyService()
 
-        try:
-            # Upsert the usage state so the frontend always has the 'latest' snapshot
-            self.db.table("tenant_usage_sync").upsert(
-                sync_payload, on_conflict="tenant_id, metric_name"
-            ).execute()
-            
-            # 3. Analytics: Check if we should trigger a 'Limit Warning'
-            await self._evaluate_threshold_triggers(metric, current_value, sub)
-            
-        except Exception as e:
-            self.logger.log_query_execution(
-                tenant_id=self.tenant_id,
-                user_id="SYSTEM",
-                natural_query=f"Sync usage: {metric.value}",
-                generated_sql="N/A",
-                execution_time_ms=0,
-                status="error",
-                error_message=str(e)
-            ) #
+    def run_batch_sync(self) -> int:
+        """
+        Called by a cron job (e.g., Celery Beat) every hour.
+        Returns the number of tenants successfully synced.
+        """
+        logger.info("Starting batch usage synchronization with billing provider...")
+        synced_count = 0
 
-    async def _evaluate_threshold_triggers(self, metric: UsageMetric, value: int, sub_data: Dict):
-        """
-        Business Logic: Detects if a user is nearing their SaaS tier limits.
-        If threshold > 90%, we push a notification payload to the frontend.
-        """
-        # Logic to compare 'value' against 'TIER_CONFIGS' from SubscriptionManager
-        # This can trigger a record in a 'notifications' table which the 
-        # NotificationRouter (api/services/notification_router.py) handles.
-        pass
+        with SessionLocal() as db:
+            # Find all active tenants with pending usage to report
+            tenants_to_sync = db.query(Organization).filter(
+                Organization.unbilled_usage_sync_pending > 0,
+                Organization.subscription_id != None
+            ).all()
 
-    def get_frontend_subscription_snapshot(self) -> Dict[str, Any]:
-        """
-        Provides a comprehensive 'Entitlement Manifest' for the frontend 
-        to use during initial app boot.
-        """
-        res = self.db.table("tenant_usage_sync").select("*").eq("tenant_id", self.tenant_id).execute()
-        
-        # Transform into a dictionary for easy frontend mapping
-        return {item['metric_name']: item['current_usage'] for item in res.data}
+            if not tenants_to_sync:
+                logger.info("No pending usage to sync.")
+                return 0
 
-# Example Integration in an API Route (e.g., api/routes/query.py):
-# After running a DuckDB query:
-# usage_sync = UsageSynchronizer(tenant_id)
-# await usage_sync.sync_usage_to_client(UsageMetric.COMPUTE_SECONDS, new_total)
+            for tenant in tenants_to_sync:
+                pending_usage = tenant.unbilled_usage_sync_pending
+                
+                try:
+                    # Report usage to Lemon Squeezy/Stripe
+                    success = self.billing_provider.report_usage(
+                        subscription_id=tenant.subscription_id,
+                        usage_amount=pending_usage
+                    )
+
+                    if success:
+                        # ATOMIC LOCK to reset the counter
+                        locked_tenant = db.query(Organization).filter(
+                            Organization.id == tenant.id
+                        ).with_for_update().first()
+                        
+                        locked_tenant.unbilled_usage_sync_pending -= pending_usage
+                        db.commit()
+                        synced_count += 1
+                        logger.info(f"[{tenant.id}] Successfully synced {pending_usage} compute credits to billing provider.")
+                    else:
+                        logger.error(f"[{tenant.id}] Billing provider rejected usage report.")
+
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"[{tenant.id}] Failed to sync usage: {str(e)}")
+
+        logger.info(f"Usage sync complete. Synced {synced_count} tenants.")
+        return synced_count
+
+usage_synchronizer = UsageSynchronizer()

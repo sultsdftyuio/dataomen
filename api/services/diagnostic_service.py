@@ -1,135 +1,173 @@
-# api/services/diagnostic_service.py
-
 import logging
-import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+import polars as pl
+
+# Import our core analytical ecosystem
+from api.services.query_planner import QueryPlan, QueryStep
+from api.services.nl2sql_generator import NL2SQLGenerator
+from api.services.compute_engine import ComputeEngine, DatasetMetadata
+from api.services.insight_orchestrator import AnomalyInsight
 
 logger = logging.getLogger(__name__)
 
+# -----------------------------------------------------------------------------
+# Strict Data Contracts
+# -----------------------------------------------------------------------------
+
+class DriverInsight(BaseModel):
+    dimension: str = Field(..., description="The category column used to slice the data (e.g., 'region', 'product_tier').")
+    category: str = Field(..., description="The specific value inside the dimension (e.g., 'North America', 'Enterprise').")
+    absolute_change: float = Field(..., description="The raw numerical difference driving the anomaly.")
+    contribution_percentage: float = Field(..., description="How much of the total anomaly this specific category is responsible for.")
+
+class DiagnosticPayload(BaseModel):
+    anomaly_analyzed: AnomalyInsight
+    top_drivers: List[DriverInsight] = []
+    diagnostic_sql: str
+
+# -----------------------------------------------------------------------------
+# The Diagnostic Agent
+# -----------------------------------------------------------------------------
+
 class DiagnosticService:
     """
-    Phase 1: Diagnostic RAG Pipeline
+    Phase 5: The Autonomous Root Cause Analyst.
     
-    Acts as an autonomous Data Analyst. When the mathematical AnomalyDetector flags an issue, 
-    this service steps in to find the *why*. It uses Contextual RAG to generate an exploratory 
-    SQL query, executes it against DuckDB, and synthesizes a human-readable root-cause summary.
+    Adheres to the Hybrid Performance Paradigm:
+    When an anomaly is detected, this service automatically isolates categorical 
+    dimensions in the schema, writes a sub-query to group the metric by those dimensions,
+    and uses vectorized Polars math to find the deterministic root causes (Top Drivers).
     """
-    def __init__(self, llm_client: Any = None, db_client: Any = None, compute_engine: Any = None, nl2sql_service: Any = None):
-        """
-        Dependency Injection. We allow late-binding (setting these after initialization) 
-        to avoid circular dependencies during app startup (The Modular Strategy).
-        """
-        self.llm = llm_client
-        self.db = db_client
-        self.compute = compute_engine
-        self.nl2sql = nl2sql_service
+    
+    def __init__(self, generator: NL2SQLGenerator, compute: ComputeEngine):
+        # Dependency Injection of our core analytical tools
+        self.generator = generator
+        self.compute = compute
 
-    async def _fetch_schema(self, tenant_id: str, dataset_id: str) -> Optional[Dict[str, Any]]:
+    async def investigate_anomaly(
+        self, 
+        anomaly: AnomalyInsight, 
+        dataset: DatasetMetadata, 
+        full_schema: Dict[str, Dict[str, str]],
+        tenant_id: str
+    ) -> Optional[DiagnosticPayload]:
         """
-        Retrieves the exact schema for Contextual RAG to prevent the LLM from hallucinating columns.
-        Enforces tenant isolation at the query level.
+        The core diagnostic loop. Slices the anomalous metric by dimensions to find 'WHY' it shifted.
         """
-        try:
-            # Using Supabase client to fetch metadata securely
-            response = self.db.table("datasets") \
-                .select("id, name, schema_metadata") \
-                .eq("tenant_id", tenant_id) \
-                .eq("id", dataset_id) \
-                .single() \
-                .execute()
-            
-            if not response.data:
-                return None
-            
-            return {
-                "id": response.data["id"],
-                "name": response.data["name"],
-                "schema": response.data["schema_metadata"]
-            }
-        except Exception as e:
-            logger.error(f"Failed to fetch schema for diagnostics (Tenant: {tenant_id}): {e}")
+        logger.info(f"[{tenant_id}] Autonomous diagnostic deep-dive triggered for {anomaly.column} anomaly on {anomaly.row_identifier}.")
+
+        # 1. Isolate Slicing Dimensions
+        # We look for VARCHAR/Categorical columns in the schema to slice the data by.
+        # We explicitly ignore ID columns to prevent meaningless groupings.
+        dimensions = []
+        for table, cols in full_schema.items():
+            for col, dtype in cols.items():
+                col_lower = col.lower()
+                if dtype.upper() in ["VARCHAR", "STRING", "TEXT"] and not col_lower.endswith("id") and col_lower != "id":
+                    dimensions.append(col)
+
+        if not dimensions:
+            logger.warning(f"[{tenant_id}] No categorical dimensions found to diagnose the {anomaly.column} anomaly.")
             return None
 
-    async def analyze(self, tenant_id: str, dataset_id: str, metric: str, anomaly_context: Dict[str, Any]) -> str:
-        """
-        The core orchestration loop for diagnostic reasoning.
-        Returns a concise, human-readable summary of what caused the anomaly.
-        """
-        logger.info(f"[Diagnostic Agent] Initiating root-cause analysis for {metric} (Tenant: {tenant_id}).")
+        # Take top 3-5 dimensions to prevent massive query explosion
+        target_dimensions = dimensions[:4]
+        dim_list_str = ", ".join(target_dimensions)
         
-        direction = anomaly_context.get('direction', 'an unexpected shift')
-        fallback_msg = f"Alert: A sudden {direction} was detected in your {metric} metric. Log in to your dashboard to investigate."
+        # 2. Create a Programmatic Execution Plan
+        # We bypass the LLM QueryPlanner here because we know EXACTLY what we need: a dimensional breakdown.
+        diagnostic_plan = QueryPlan(
+            intent=f"Root Cause Dimensional Breakdown for {anomaly.column} shift on {anomaly.row_identifier}",
+            is_achievable=True,
+            steps=[
+                QueryStep(
+                    step_number=1, 
+                    operation="AGGREGATE", 
+                    description=f"Group by dimensions ({dim_list_str}) and calculate the absolute variance/change of {anomaly.column} comparing {anomaly.row_identifier} to the previous period.", 
+                    columns_involved=[anomaly.column] + target_dimensions
+                )
+            ],
+            suggested_visualizations=["bar_chart"]
+        )
 
-        # Safety Check: Ensure the modular clients are injected
-        if not all([self.llm, self.db, self.compute, self.nl2sql]):
-            logger.warning("DiagnosticService dependencies missing. Bypassing deep analysis.")
-            return fallback_msg
-
-        # 1. Fetch schema context
-        schema = await self._fetch_schema(tenant_id, dataset_id)
-        if not schema:
-            return fallback_msg
-
-        # 2. Formulate the dynamic investigation prompt
-        # We instruct the LLM to write SQL that groups by dimensions to find the driver of the anomaly.
-        investigation_prompt = f"""
-        The metric '{metric}' has experienced a sudden {direction}. 
-        Generate a DuckDB SQL query to find the top contributing factors or dimensions (e.g., categories, regions, status) 
-        that caused this {direction} recently. Group by categorical columns and order by variance.
-        """
-
-        # 3. Generate SQL via the existing NL2SQL Generator (Contextual RAG)
         try:
-            sql_query, _ = await self.nl2sql.generate_sql(
-                prompt=investigation_prompt,
-                schemas=[schema],
-                history=[]
+            # 3. Compile Diagnostic SQL (Dialect Pushdown)
+            sql_query, _ = await self.generator.generate_sql(
+                plan=diagnostic_plan,
+                full_schema=full_schema,
+                target_engine=dataset.location.value,
+                tenant_id=tenant_id
             )
-            logger.debug(f"[Diagnostic Agent] Generated investigative SQL:\n{sql_query}")
+
+            # 4. Execute Compute
+            result = await self.compute.execute_query(sql_query, dataset)
+            if not result.data or result.row_count == 0:
+                return None
+
+            # 5. Extract Top Drivers via Vectorized Math (Zero LLM Hallucination)
+            df = pl.DataFrame(result.data)
+            drivers = self._extract_top_drivers(df, target_dimensions, anomaly)
+
+            return DiagnosticPayload(
+                anomaly_analyzed=anomaly,
+                top_drivers=drivers,
+                diagnostic_sql=sql_query
+            )
+
         except Exception as e:
-            logger.error(f"Diagnostic Agent failed to generate SQL: {e}")
-            return fallback_msg
+            logger.error(f"[{tenant_id}] Diagnostic deep-dive failed: {str(e)}")
+            return None
 
-        # 4. Execute the SQL against the DuckDB Compute Engine
-        try:
-            execution_result = await self.compute.execute_read_only(
-                tenant_id=tenant_id,
-                dataset_ids=[dataset_id],
-                query=sql_query
-            )
-        except Exception as e:
-            logger.error(f"Diagnostic Agent failed to execute DuckDB SQL: {e}")
-            return fallback_msg
+    # -------------------------------------------------------------------------
+    # Internal Math Helpers
+    # -------------------------------------------------------------------------
 
-        # 5. Synthesize the final human-readable insight
-        synthesis_prompt = f"""
-        You are a senior Data Analyst reporting directly to a stakeholder.
-        An anomaly was mathematically detected: '{metric}' showed a {direction}.
-        
-        We ran an internal diagnostic query and got these top results:
-        {json.dumps(execution_result, default=str)[:2500]} 
-        
-        Write a concise, 2-3 sentence root-cause summary explaining what drove this anomaly based ONLY on the data provided above. 
-        Be direct, analytical, and professional. Do NOT mention the SQL query itself or the fact that you are an AI.
+    def _extract_top_drivers(self, df: pl.DataFrame, dimensions: List[str], anomaly: AnomalyInsight) -> List[DriverInsight]:
         """
+        Uses Polars to sort the dimensional groupings and find the mathematical drivers.
+        """
+        drivers = []
+        
+        # Find the column the LLM used for the variance/change calculation
+        # E.g., 'absolute_change', 'variance', 'difference'
+        change_col = next((c for c in df.columns if any(keyword in c.lower() for keyword in ['change', 'diff', 'var'])), None)
+        
+        # If the LLM didn't name it well, fallback to the first numeric column that isn't the metric itself
+        if not change_col:
+            numeric_cols = [c for c in df.columns if df[c].dtype in pl.NUMERIC_DTYPES and c != anomaly.column]
+            if numeric_cols:
+                change_col = numeric_cols[0]
 
-        try:
-            summary = await self.llm.generate_text(
-                prompt=synthesis_prompt,
-                history=[]
-            )
-            logger.info("[Diagnostic Agent] Root-cause synthesis complete.")
-            return summary
+        if not change_col:
+            return drivers
+
+        # Calculate total absolute variance to determine contribution percentages
+        total_variance = df[change_col].abs().sum()
+
+        # Sort to find the biggest movers
+        top_rows = df.sort(change_col, descending=anomaly.is_positive).head(4).to_dicts()
+
+        for row in top_rows:
+            change_val = float(row.get(change_col, 0))
             
-        except Exception as e:
-            logger.error(f"Diagnostic Agent failed to synthesize final summary: {e}")
-            return fallback_msg
+            # Find which specific dimension caused this row's movement
+            dim_used = "Unknown"
+            cat_used = "Unknown"
+            
+            for d in dimensions:
+                if d in row and row[d] is not None:
+                    dim_used = d
+                    cat_used = str(row[d])
+                    break # We found the primary dimension for this grouping
 
-# ==========================================
-# Singleton Export (The Modular Strategy)
-# ==========================================
-# Export the instance. Inject the active DB, Compute, and LLM clients during app startup:
-# diagnostic_service.llm = my_llm_client
-# diagnostic_service.db = supabase_client
-# etc.
-diagnostic_service = DiagnosticService()
+            contribution = (abs(change_val) / total_variance * 100) if total_variance > 0 else 0.0
+
+            drivers.append(DriverInsight(
+                dimension=dim_used,
+                category=cat_used,
+                absolute_change=round(change_val, 2),
+                contribution_percentage=round(contribution, 2)
+            ))
+
+        return drivers

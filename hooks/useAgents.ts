@@ -1,51 +1,91 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Agent, AgentCreatePayload } from "@/types/agent";
 import { useToast } from "@/hooks/use-toast";
 
-export function useAgents() {
+// -----------------------------------------------------------------------------
+// Type Definitions
+// -----------------------------------------------------------------------------
+interface UseAgentsReturn {
+  agents: Agent[];
+  isLoading: boolean;
+  isCreating: boolean;
+  deletingId: string | null; // Tracks which specific agent is being deleted for targeted UI spinners
+  error: string | null;
+  fetchAgents: () => Promise<void>;
+  createAgent: (payload: AgentCreatePayload) => Promise<Agent>;
+  deleteAgent: (agentId: string) => Promise<void>;
+}
+
+// -----------------------------------------------------------------------------
+// The Hook
+// -----------------------------------------------------------------------------
+export function useAgents(): UseAgentsReturn {
+  // State Management
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
-  const supabase = createClient();
+  // Memoize the supabase client to prevent reference churn and infinite re-renders
+  const supabase = useMemo(() => createClient(), []);
   const { toast } = useToast();
+  
+  // Track active fetch requests to prevent memory leaks on component unmount
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchAgents = useCallback(async () => {
+    // Cancel any in-flight requests before starting a new one
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
     setIsLoading(true);
     setError(null);
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("No active session. Please log in.");
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) throw new Error("No active session. Please log in.");
 
       const response = await fetch("/api/agents/", {
+        method: "GET",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "Failed to fetch agents");
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Failed to fetch agents (${response.status})`);
       }
 
       const data: Agent[] = await response.json();
       setAgents(data);
-    } catch (err: any) {
-      setError(err.message);
-      toast({ 
-        title: "Connection Error", 
-        description: err.message, 
-        variant: "destructive" 
-      });
+      
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        if (err.name === "AbortError") return; // Safely ignore aborted fetches
+        
+        setError(err.message);
+        toast({ 
+          title: "Connection Error", 
+          description: err.message, 
+          variant: "destructive" 
+        });
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [supabase.auth, toast]);
+  }, [supabase, toast]);
 
-  const createAgent = async (payload: AgentCreatePayload) => {
+  const createAgent = async (payload: AgentCreatePayload): Promise<Agent> => {
+    setIsCreating(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("No active session. Please log in.");
@@ -60,13 +100,13 @@ export function useAgents() {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
+        const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || "Failed to provision agent");
       }
 
       const newAgent: Agent = await response.json();
       
-      // Optimistic UI update: unshift to put the newest agent at the top
+      // Optimistic UI update: unshift to put the newest agent at the top instantly
       setAgents((prev) => [newAgent, ...prev]);
       
       toast({ 
@@ -75,17 +115,22 @@ export function useAgents() {
       });
       
       return newAgent;
-    } catch (err: any) {
+      
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       toast({ 
         title: "Deployment Failed", 
-        description: err.message, 
+        description: errorMessage, 
         variant: "destructive" 
       });
       throw err;
+    } finally {
+      setIsCreating(false);
     }
   };
 
-  const deleteAgent = async (agentId: string) => {
+  const deleteAgent = async (agentId: string): Promise<void> => {
+    setDeletingId(agentId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("No active session. Please log in.");
@@ -93,11 +138,12 @@ export function useAgents() {
       const response = await fetch(`/api/agents/${agentId}`, {
         method: "DELETE",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
       });
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 204) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || "Failed to decommission agent");
       }
@@ -109,24 +155,37 @@ export function useAgents() {
         title: "Agent Decommissioned", 
         description: "The agent has been permanently removed from your workspace." 
       });
-    } catch (err: any) {
+      
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
       toast({ 
         title: "Decommission Failed", 
-        description: err.message, 
+        description: errorMessage, 
         variant: "destructive" 
       });
       throw err;
+    } finally {
+      setDeletingId(null);
     }
   };
 
   // Automatically fetch agents when the hook mounts
   useEffect(() => {
     fetchAgents();
+    
+    // Cleanup function to abort any active fetch if the component unmounts early
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [fetchAgents]);
 
   return { 
     agents, 
-    isLoading, 
+    isLoading,
+    isCreating,
+    deletingId,
     error, 
     fetchAgents, 
     createAgent, 

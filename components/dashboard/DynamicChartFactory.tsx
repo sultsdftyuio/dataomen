@@ -36,8 +36,18 @@ export interface ExecutionPayload {
   chart_spec?: ChartConfig; 
 }
 
+// Phase 3 Integration: Accept the InsightOrchestrator anomalies
+export interface AnomalyInsight {
+  column: string;
+  row_identifier: string;
+  value: number;
+  z_score: number;
+  is_positive: boolean;
+}
+
 interface DynamicChartFactoryProps {
   payload: ExecutionPayload;
+  anomalies?: AnomalyInsight[]; // Optional to support legacy/raw queries
 }
 
 // -----------------------------------------------------------------------------
@@ -46,8 +56,8 @@ interface DynamicChartFactoryProps {
 const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#06b6d4"];
 const ANOMALY_COLOR = "#ef4444"; 
 const EMA_COLOR = "#94a3b8"; 
-const FORECAST_COLOR = "#a855f7"; // Phase 7: Predictive Purple
-const SIGMA_THRESHOLD = 3.0; 
+const FORECAST_COLOR = "#a855f7"; 
+const SIGMA_THRESHOLD = 2.0; // Synced with InsightOrchestrator (2-Sigma Band)
 
 const renderCustomGradients = () => (
   <defs>
@@ -67,19 +77,23 @@ const renderCustomGradients = () => (
 // -----------------------------------------------------------------------------
 // Main Component
 // -----------------------------------------------------------------------------
-export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payload }) => {
+export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payload, anomalies = [] }) => {
   const [activeTab, setActiveTab] = useState<"chart" | "table" | "sql">(
     payload.chart_spec || payload.type === "ml_result" ? "chart" : "table"
   );
   const [copied, setCopied] = useState(false);
 
+  // Safely extract data to prevent undefined errors
+  const data = payload.data || [];
+  const rowCount = data.length;
+
   // 1. Data Export Implementation
   const downloadCSV = useCallback(() => {
-    if (!payload.data?.length) return;
-    const headers = Object.keys(payload.data[0]);
+    if (rowCount === 0) return;
+    const headers = Object.keys(data[0]);
     const csvContent = [
       headers.join(","),
-      ...payload.data.map(row => headers.map(h => `"${String(row[h] ?? "").replace(/"/g, '""')}"`).join(","))
+      ...data.map(row => headers.map(h => `"${String(row[h] ?? "").replace(/"/g, '""')}"`).join(","))
     ].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -89,7 +103,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     link.download = `dataomen_export_${Date.now()}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  }, [payload.data]);
+  }, [data, rowCount]);
 
   const copySQL = useCallback(() => {
     if (!payload.sql_used) return;
@@ -98,13 +112,16 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     setTimeout(() => setCopied(false), 2000);
   }, [payload.sql_used]);
 
-  // 2. Intelligent Rendering Engine (Upgraded for Phase 7 ML)
+  // 2. Intelligent Rendering Engine
   const resolved = useMemo(() => {
-    if (!payload.data?.length) return null;
-    const sample = payload.data[0];
+    if (rowCount === 0) return null;
+    const sample = data[0];
     const keys = Object.keys(sample);
     
-    const hasAnomalies = keys.some(k => /zscore|z_score/i.test(k));
+    // Check if anomalies exist either in raw SQL (legacy) or via the new Insight Payload
+    const hasLegacyAnomalies = keys.some(k => /zscore|z_score/i.test(k));
+    const hasExternalAnomalies = anomalies.length > 0;
+    const hasAnomalies = hasLegacyAnomalies || hasExternalAnomalies;
 
     // Determine Axis
     let x = keys.find(k => /date|time|month|ds/i.test(k)) || keys.find(k => typeof sample[k] === 'string') || keys[0];
@@ -113,7 +130,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         x = payload.chart_spec.encoding.x.field;
     }
 
-    // Phase 7: Categorize Y-Axis series for advanced layering
+    // Categorize Y-Axis series for advanced layering
     const forecastKeys = keys.filter(k => /forecast|predict|trend/i.test(k) && k !== x);
     const emaKeys = keys.filter(k => /_ema/i.test(k) && k !== x);
     const yKeys = keys.filter(k => 
@@ -129,7 +146,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         yKeys.push(payload.chart_spec.encoding.y.field);
     }
 
-    // Determine default chart type based on time-series presence
+    // Determine default chart type
     let detectedType = (x.toLowerCase().includes('date') || x.toLowerCase().includes('time')) ? "area" : "bar";
     if (payload.chart_spec?.mark) {
       const typeStr = typeof payload.chart_spec.mark === 'string' ? payload.chart_spec.mark : payload.chart_spec.mark.type;
@@ -144,20 +161,36 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         ema: emaKeys, 
         hasAnomalies 
     };
-  }, [payload.data, payload.chart_spec]);
+  }, [data, payload.chart_spec, anomalies, rowCount]);
 
   const formatNum = (v: any) => typeof v === 'number' 
     ? new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 2 }).format(v) 
     : v;
 
   /**
-   * Safe Custom Anomaly Dot Renderer
+   * Safe Custom Anomaly Dot Renderer (Bridging SQL ML with Polars InsightOrchestrator)
    */
   const renderAnomalyDot = (props: any) => {
     const { cx, cy, payload: row, dataKey } = props;
+    if (!row || !resolved) return <g key={`empty-${cx}-${cy}`} />;
+
+    let isAnomaly = false;
+
+    // 1. Legacy SQL ML Check
     const zKey = Object.keys(row).find(k => k.includes(`${dataKey}_zscore`) || k === 'z_score');
-    
     if (zKey && Math.abs(row[zKey]) > SIGMA_THRESHOLD) {
+      isAnomaly = true;
+    } 
+    // 2. Phase 3 InsightOrchestrator Check
+    else if (anomalies.length > 0) {
+      const xValue = String(row[resolved.x]);
+      const match = anomalies.find(a => a.column === dataKey && a.row_identifier === xValue);
+      if (match && match.z_score >= SIGMA_THRESHOLD) {
+        isAnomaly = true;
+      }
+    }
+
+    if (isAnomaly) {
       return (
         <g key={`anomaly-${cx}-${cy}`}>
           <circle cx={cx} cy={cy} r={6} fill={ANOMALY_COLOR} stroke="#0B1120" strokeWidth={2} className="animate-pulse" />
@@ -167,7 +200,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     return <g key={`normal-${cx}-${cy}`} />; 
   };
 
-  const keys = payload.data?.length ? Object.keys(payload.data[0]) : [];
+  const keys = rowCount > 0 ? Object.keys(data[0]) : [];
 
   // ---------------------------------------------------------------------------
   // Renderers
@@ -181,7 +214,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     );
   }
 
-  if (!payload.data?.length && payload.type !== "text") {
+  if (rowCount === 0 && payload.type !== "text") {
     return (
       <div className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl text-slate-400 text-sm italic mt-2">
         {payload.message || "No results found for current query context."}
@@ -207,7 +240,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
           <Button variant="ghost" size="sm" onClick={() => setActiveTab("table")}
             className={cn("h-8 text-xs gap-2", activeTab === "table" ? "bg-slate-800 text-blue-400" : "text-slate-400")}
           >
-            <Table2 size={14} /> Dataset ({payload.data?.length})
+            <Table2 size={14} /> Dataset ({rowCount})
           </Button>
           {payload.sql_used && (
             <Button variant="ghost" size="sm" onClick={() => setActiveTab("sql")}
@@ -228,7 +261,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
           <div className="w-full h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
               {resolved.type === "area" ? (
-                <AreaChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   {renderCustomGradients()}
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey={resolved.x} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={10} />
@@ -239,7 +272,6 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
                   
-                  {/* Base Historical Data */}
                   {resolved.y.map((key, i) => (
                     <Area 
                       key={key} type="monotone" dataKey={key} stroke={CHART_COLORS[i % CHART_COLORS.length]} 
@@ -249,7 +281,6 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                     />
                   ))}
 
-                  {/* Phase 7: Predictive Forecast Overlay */}
                   {resolved.forecast.map((key) => (
                     <Area 
                       key={key} type="monotone" dataKey={key} stroke={FORECAST_COLOR} 
@@ -258,13 +289,12 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                     />
                   ))}
 
-                  {/* Vectorized EMA Overlay */}
                   {resolved.ema.map((key) => (
                     <Area key={key} type="monotone" dataKey={key} stroke={EMA_COLOR} fill="none" strokeDasharray="3 3" strokeWidth={1.5} name={`${key.split('_')[0]} (EMA)`} />
                   ))}
                 </AreaChart>
               ) : resolved.type === "line" ? (
-                <LineChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey={resolved.x} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={10} />
                   <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
@@ -282,7 +312,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                   ))}
                 </LineChart>
               ) : (
-                <BarChart data={payload.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey={resolved.x} stroke="#475569" fontSize={11} tickLine={false} axisLine={false} dy={10} />
                   <YAxis stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} />
@@ -293,7 +323,6 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                     <Bar key={key} dataKey={key} fill={CHART_COLORS[i % CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
                   ))}
                   
-                  {/* Forecasts typically shouldn't be bars, but if forced, render with lower opacity */}
                   {resolved.forecast.map((key) => (
                     <Bar key={key} dataKey={key} fill={FORECAST_COLOR} fillOpacity={0.6} radius={[4, 4, 0, 0]} name={`${key} (Forecast)`} />
                   ))}
@@ -303,8 +332,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
           </div>
         )}
 
-        {/* VIEW: DATA TABLE (With Row-Level Anomaly Detection) */}
-        {activeTab === "table" && payload.data && (
+        {/* VIEW: DATA TABLE (With Unified Anomaly Tinting) */}
+        {activeTab === "table" && data && (
           <ScrollArea className="w-full h-[400px] rounded-lg border border-slate-800 bg-slate-950/20 shadow-inner">
             <table className="w-full text-left text-[12px] border-collapse">
               <thead className="sticky top-0 bg-slate-900 z-10 shadow-sm">
@@ -317,19 +346,26 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                 </tr>
               </thead>
               <tbody>
-                {payload.data.map((row, i) => {
-                  const isAnomalyRow = keys.some(k => k.includes('zscore') && Math.abs(row[k]) > SIGMA_THRESHOLD);
+                {data.map((row, i) => {
+                  const xValue = resolved ? String(row[resolved.x]) : '';
+                  
+                  // Unified row highlight logic
+                  const isLegacyAnomalyRow = keys.some(k => k.includes('zscore') && Math.abs(row[k]) > SIGMA_THRESHOLD);
+                  const isPhase3AnomalyRow = anomalies.some(a => a.row_identifier === xValue && a.z_score > SIGMA_THRESHOLD);
+                  const isAnomalyRow = isLegacyAnomalyRow || isPhase3AnomalyRow;
+                  
                   const isForecastRow = keys.some(k => /forecast|predict/i.test(k) && row[k] !== null && row[k] !== undefined);
                   
                   return (
                     <tr key={i} className={cn(
                       "hover:bg-slate-800/40 transition-colors", 
                       isAnomalyRow && "bg-red-950/10",
-                      isForecastRow && !isAnomalyRow && "bg-purple-950/10" // Tint forecast rows
+                      isForecastRow && !isAnomalyRow && "bg-purple-950/10"
                     )}>
                       {keys.map(k => {
-                        const isZ = k.includes('zscore');
-                        const isAnomCell = isZ && Math.abs(row[k]) > SIGMA_THRESHOLD;
+                        const isLegacyZ = k.includes('zscore') && Math.abs(row[k]) > SIGMA_THRESHOLD;
+                        const isPhase3Z = anomalies.some(a => a.column === k && a.row_identifier === xValue && a.z_score > SIGMA_THRESHOLD);
+                        const isAnomCell = isLegacyZ || isPhase3Z;
                         const isForecastCell = /forecast|predict/i.test(k);
                         
                         return (

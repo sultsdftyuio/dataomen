@@ -27,6 +27,9 @@ from api.services.compute_engine import compute_engine, ComputeRouter
 from api.services.metric_governance import MetricGovernanceService
 from api.services.ab_testing import ab_tester
 from api.services.narrative_service import narrative_service
+# --- ADD THIS AROUND LINE 26 (With other Core Services imports) ---
+from api.services.cache_manager import cache_manager
+from api.services.insight_orchestrator import InsightPayload # Required for the cache payload
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/query", tags=["Query"])
@@ -298,6 +301,17 @@ async def execute_persistent_query(
 
     if not dataset:
         raise HTTPException(404, "Dataset not found")
+    # --- ADD THIS BLOCK (Around Line 236) ---
+    # 1. Check Cache First
+    cached_result = await cache_manager.get_cached_insight(
+        tenant_id=tenant.tenant_id, 
+        dataset_id=request.dataset_id, 
+        prompt=request.natural_query
+    )
+    if cached_result:
+        logger.info(f"[{tenant.tenant_id}] Serving '{request.natural_query}' from Redis Cache.")
+        return cached_result
+    # ----------------------------------------
 
     sql_query = None
 
@@ -404,6 +418,17 @@ async def execute_persistent_query(
             "data": results,
             "execution_time_ms": execution_time_ms
         }
+        dummy_insight = InsightPayload(row_count=len(results), intent_analyzed=request.natural_query)
+        
+        await cache_manager.set_cached_insight(
+            tenant_id=tenant.tenant_id,
+            dataset_id=request.dataset_id,
+            prompt=request.natural_query,
+            sql_query=sql_query,
+            chart_spec=chart_spec,
+            insight_payload=dummy_insight, 
+            narrative=narrative
+        )
 
         if request.ab_test_config and results:
 
