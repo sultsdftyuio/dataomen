@@ -10,7 +10,8 @@ import {
   Database, 
   AlertCircle,
   HardDrive,
-  FileTerminal
+  FileTerminal,
+  Play
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
@@ -32,6 +33,7 @@ interface SyncDataset {
   row_count: number | null;
   size_bytes: number;
   message: string;
+  integration_name?: string; // Added to support specialized progress labels
 }
 
 // -----------------------------------------------------------------------------
@@ -66,6 +68,7 @@ export default function SyncDashboard() {
   const { toast } = useToast();
   const [datasets, setDatasets] = useState<SyncDataset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTriggering, setIsTriggering] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   
   // Simulated progress state for items currently "PROCESSING"
@@ -119,6 +122,45 @@ export default function SyncDashboard() {
     }
   }, [toast]);
 
+  // ---------------------------------------------------------------------------
+  // NEW: Trigger Sync Action
+  // ---------------------------------------------------------------------------
+  const triggerSync = async (datasetId: string) => {
+    setIsTriggering(datasetId);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) return;
+
+      const response = await fetch(`/api/ingest/trigger/${datasetId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+
+      if (!response.ok) {
+        throw new Error("Trigger failed");
+      }
+
+      toast({
+        title: "Sync Initiated",
+        description: "Background worker is now pulling historical data.",
+      });
+
+      // Refresh to update UI to 'PROCESSING'
+      fetchSyncStatus(true);
+    } catch (error) {
+      console.error("Trigger error:", error);
+      toast({
+        variant: "destructive",
+        title: "Sync Failed to Start",
+        description: "The background engine could not be reached.",
+      });
+    } finally {
+      setIsTriggering(null);
+    }
+  };
+
   // Initial Load
   useEffect(() => {
     fetchSyncStatus();
@@ -138,7 +180,6 @@ export default function SyncDashboard() {
       setSimulatedProgress(prev => {
         const next = { ...prev };
         Object.keys(next).forEach(id => {
-          // Slowly tick up to 90%, waiting for the backend to finalize to ACTIVE
           if (next[id] < 90) {
             next[id] = next[id] + Math.random() * 5;
           }
@@ -244,7 +285,7 @@ export default function SyncDashboard() {
                     </div>
 
                     {/* Status Text & Actions */}
-                    <div className="shrink-0 text-right">
+                    <div className="shrink-0 text-right flex flex-col items-end gap-2">
                       <span className={`text-xs font-semibold tracking-wider uppercase ${
                         dataset.status === 'ACTIVE' ? 'text-emerald-500' :
                         dataset.status === 'FAILED' ? 'text-destructive' :
@@ -252,6 +293,24 @@ export default function SyncDashboard() {
                       }`}>
                         {dataset.status}
                       </span>
+
+                      {/* Manual Sync Trigger Button */}
+                      {(dataset.status === 'ACTIVE' || dataset.status === 'FAILED') && (
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-7 px-2 text-[10px] gap-1.5 border-primary/20 hover:bg-primary/5 hover:text-primary transition-all"
+                          onClick={() => triggerSync(dataset.id)}
+                          disabled={isTriggering === dataset.id}
+                        >
+                          {isTriggering === dataset.id ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Play className="h-3 w-3 fill-current" />
+                          )}
+                          Sync Now
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -259,7 +318,11 @@ export default function SyncDashboard() {
                   {dataset.status === 'PROCESSING' && (
                     <div className="mt-3">
                       <div className="flex justify-between text-[10px] text-muted-foreground mb-1 font-mono uppercase tracking-wider">
-                        <span>Vectorizing to Parquet...</span>
+                        <span>
+                          {dataset.integration_name 
+                            ? `Pulling ${dataset.integration_name}...` 
+                            : 'Vectorizing to Parquet...'}
+                        </span>
                         <span>{Math.round(simulatedProgress[dataset.id] || 0)}%</span>
                       </div>
                       <Progress value={simulatedProgress[dataset.id] || 10} className="h-1.5" />
