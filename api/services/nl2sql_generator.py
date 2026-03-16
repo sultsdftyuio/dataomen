@@ -12,6 +12,7 @@ from sqlglot import exp
 from pydantic import BaseModel, Field
 
 from api.services.query_planner import QueryPlan
+from models import Agent, Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,9 @@ class NL2SQLGenerator:
       heuristics ranks remaining columns when the schema is still too wide.
     * **Dialect-aware** – Generates and validates native SQL for DuckDB,
       BigQuery, or Redshift.
+    * **Zero-copy DuckDB execution** – For DuckDB, table names are remapped to
+      ``read_parquet(file_path)`` sources so data is never loaded into RAM
+      beyond what DuckDB's vectorised engine requires.
     * **Deep-AST security gate** – sqlglot tree traversal blocks all
       destructive operations, including nested injection attempts.
     * **Intelligent self-correction** – Database engine errors are classified
@@ -226,6 +230,28 @@ class NL2SQLGenerator:
             for _, name, meta in scored[:_MAX_COLUMNS_PER_CONTEXT]
         }
 
+    # -----------------------------------------------------------------------
+    # Dataset → Schema hydration (DuckDB zero-copy path)
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _build_schema_from_datasets(datasets: List[Dataset]) -> Dict[str, Dict[str, Any]]:
+        """
+        Converts a list of ``Dataset`` ORM objects into the ``full_schema`` dict
+        expected by the pruning / RAG pipeline, keying each table by its
+        DuckDB ``read_parquet(file_path)`` source command so the LLM receives
+        the physically-correct table reference for zero-copy execution.
+        """
+        schema: Dict[str, Dict[str, Any]] = {}
+        for ds in datasets:
+            source_key = f"read_parquet('{ds.file_path}')"
+            cols = ds.schema_metadata or {}
+            schema[source_key] = {
+                col_name: {"type": dtype, "samples": [], "description": ""}
+                for col_name, dtype in cols.items()
+            }
+        return schema
+
     async def _build_contextual_schema(
         self,
         plan: QueryPlan,
@@ -260,6 +286,7 @@ class NL2SQLGenerator:
         contextual_schema: str,
         plan: QueryPlan,
         dialect: str,
+        agent: Optional[Agent] = None,
         semantic_views: Optional[Dict[str, str]] = None,
     ) -> str:
         views_block = ""
@@ -270,13 +297,19 @@ class NL2SQLGenerator:
                 f"{json.dumps(semantic_views, indent=2)}\n"
             )
 
+        # Inject agent role context when available so the LLM can tailor
+        # metric selection and output framing to the requesting persona.
+        agent_block = ""
+        if agent:
+            agent_block = f"\nAGENT CONTEXT:\n{agent.role_description}\n"
+
         return f"""You are an elite Data Engineer and SQL optimiser for an Enterprise Analytical SaaS.
 Your objective is to execute the provided Execution Plan by translating it into highly optimised, \
 read-only {dialect.upper()} SQL.
 
 TARGET DIALECT: {dialect.upper()}
 Always use functions and syntax native to {dialect.upper()}.
-
+{agent_block}
 SCHEMA CONTEXT (Pruned + semantically ranked subset):
 <schema_context>
 {contextual_schema}
@@ -298,6 +331,7 @@ CRITICAL ENGINEERING RULES:
 4. DIALECT-SPECIFIC HANDLING:
    - BigQuery  : UNNEST() for arrays, struct dot notation, TIMESTAMP_TRUNC / DATE_TRUNC.
    - DuckDB    : UNNEST(), list comprehensions, date_trunc(), strptime(), approx_count_distinct().
+                 Table names are read_parquet('...') sources — use them verbatim as the FROM target.
    - Redshift  : JSON_EXTRACT_PATH_TEXT(), SUPER type navigation, DATEADD / DATEDIFF.
 5. TABLE REFERENCING: Wrap table names in double-quotes to prevent reserved-keyword conflicts.
 6. MATHEMATICAL PRECISION: Prefer vectorised aggregate functions native to {dialect.upper()}
@@ -417,6 +451,8 @@ CHARTING RULES (Vega-Lite):
         target_engine: str,
         tenant_id: str,
         prompt: str = "",
+        agent: Optional[Agent] = None,
+        datasets: Optional[List[Dataset]] = None,
         semantic_views: Optional[Dict[str, str]] = None,
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
@@ -430,6 +466,11 @@ CHARTING RULES (Vega-Lite):
         target_engine:  One of ``"duckdb"``, ``"bigquery"``, ``"redshift"``.
         tenant_id:      Used for scoped log correlation.
         prompt:         Original natural-language question (used for semantic ranking).
+        agent:          Optional agent whose role description is injected into the
+                        system prompt to tailor metric selection and output framing.
+        datasets:       Optional list of ``Dataset`` ORM objects. When provided and
+                        ``target_engine`` is ``"duckdb"``, table names are remapped
+                        to ``read_parquet(file_path)`` sources for zero-copy execution.
         semantic_views: Pre-calculated CTE/metric view definitions (gold tier).
         history:        Prior conversation turns for multi-turn context.
 
@@ -439,9 +480,17 @@ CHARTING RULES (Vega-Lite):
         """
         logger.info("[%s] Compiling QueryPlan → %s SQL", tenant_id, target_engine.upper())
 
-        contextual_schema = await self._build_contextual_schema(plan, full_schema, prompt)
+        # For DuckDB, prefer the Dataset file-path schema so the LLM receives
+        # physically-correct read_parquet(...) table references.
+        effective_schema = (
+            self._build_schema_from_datasets(datasets)
+            if datasets and target_engine.lower() == "duckdb"
+            else full_schema
+        )
+
+        contextual_schema = await self._build_contextual_schema(plan, effective_schema, prompt)
         system_prompt = self._build_system_prompt(
-            contextual_schema, plan, target_engine, semantic_views
+            contextual_schema, plan, target_engine, agent, semantic_views
         )
         user_message = f"Compile the execution plan into {target_engine.upper()} SQL now."
 
@@ -484,6 +533,8 @@ CHARTING RULES (Vega-Lite):
         target_engine: str,
         tenant_id: str,
         prompt: str = "",
+        agent: Optional[Agent] = None,
+        datasets: Optional[List[Dataset]] = None,
         semantic_views: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """
@@ -498,9 +549,15 @@ CHARTING RULES (Vega-Lite):
             tenant_id, target_engine.upper(), error_msg,
         )
 
-        contextual_schema = await self._build_contextual_schema(plan, full_schema, prompt)
+        effective_schema = (
+            self._build_schema_from_datasets(datasets)
+            if datasets and target_engine.lower() == "duckdb"
+            else full_schema
+        )
+
+        contextual_schema = await self._build_contextual_schema(plan, effective_schema, prompt)
         system_prompt = self._build_system_prompt(
-            contextual_schema, plan, target_engine, semantic_views
+            contextual_schema, plan, target_engine, agent, semantic_views
         )
         hint = self._classify_error(error_msg, target_engine)
 
@@ -544,3 +601,7 @@ TASK:
             raise RuntimeError(
                 f"Unable to self-correct the query after {target_engine.upper()} error: {error_msg}"
             ) from exc
+
+
+# Global Singleton
+sql_generator = NL2SQLGenerator()
