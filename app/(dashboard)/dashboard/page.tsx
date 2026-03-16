@@ -9,9 +9,6 @@ import {
   ArrowUpRight, 
   Sparkles,
   Zap,
-  AlertTriangle,
-  TrendingDown,
-  TrendingUp,
   Clock,
   ArrowRight,
   BrainCircuit,
@@ -24,8 +21,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { createClient } from '@/utils/supabase/client'
+
+// Import the new Autonomous Insights Feed
+import { InsightsFeed } from "@/components/dashboard/InsightsFeed"
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -44,15 +43,6 @@ interface ActiveAgent {
   role: string;
   status: 'online' | 'analyzing' | 'offline';
   lastRun?: string;
-}
-
-interface AnomalyAlert {
-  id: string;
-  metric: string;
-  agent_name: string;
-  variance_pct: number;
-  created_at: string;
-  status: 'unresolved' | 'investigating' | 'resolved';
 }
 
 interface TimeSeriesDataPoint {
@@ -190,7 +180,6 @@ export default function DashboardOverviewPage() {
   });
   const [chartData, setChartData] = useState<TimeSeriesDataPoint[]>([]);
   const [agents, setAgents] = useState<ActiveAgent[]>([]);
-  const [alerts, setAlerts] = useState<AnomalyAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -228,7 +217,6 @@ export default function DashboardOverviewPage() {
         const data = await response.json();
         setMetrics(data.metrics || metrics);
         setAgents(data.agents || []);
-        setAlerts(data.alerts || []);
         setChartData(data.chartData || []);
 
       } catch (err: any) {
@@ -274,10 +262,6 @@ export default function DashboardOverviewPage() {
       setAgents([
         { id: '1', name: 'Stripe Revenue Watchdog', role: 'Financial Analyst', description: 'Monitors MRR and Churn velocity across EU and NA regions. Applies EMA for trend smoothing.', status: 'online', lastRun: '2 mins ago' },
         { id: '2', name: 'Conversion Monitor', role: 'Growth Agent', description: 'Tracks funnel drop-offs and API latencies on the checkout service.', status: 'analyzing', lastRun: 'Just now' }
-      ]);
-      setAlerts([
-        { id: 'sim_1', metric: 'MRR (EU Region)', agent_name: 'Stripe Revenue Watchdog', variance_pct: -12.4, created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(), status: 'unresolved' },
-        { id: 'sim_2', metric: 'Checkout Latency', agent_name: 'Conversion Monitor', variance_pct: 45.2, created_at: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(), status: 'investigating' },
       ]);
       setIsLoading(false);
     }, 1000);
@@ -444,68 +428,14 @@ export default function DashboardOverviewPage() {
           </Card>
         </div>
 
-        {/* Right Column: AI Incident Feed */}
+        {/* Right Column: AI Incident Feed / Autonomous Insights */}
         <div className="space-y-6">
-          <Card className="border-border shadow-sm flex flex-col h-[500px]">
-            <CardHeader className="border-b bg-muted/20">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Recent AI Diagnostics
-              </CardTitle>
-              <CardDescription>Anomalies detected and analyzed by your agents.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 p-0 overflow-hidden">
-              <ScrollArea className="h-full">
-                {isLoading ? (
-                  <div className="p-4 space-y-4">
-                    <Skeleton className="h-24 w-full rounded-lg" />
-                    <Skeleton className="h-24 w-full rounded-lg" />
-                  </div>
-                ) : alerts.length > 0 ? (
-                  <div className="divide-y">
-                    {alerts.map((alert) => {
-                      const isDrop = alert.variance_pct < 0;
-                      return (
-                        <div key={alert.id} className="p-4 hover:bg-muted/30 transition-colors group">
-                          <div className="flex justify-between items-start mb-2">
-                            <Badge variant="outline" className={`border ${isDrop ? 'text-destructive border-destructive/30 bg-destructive/5' : 'text-emerald-500 border-emerald-500/30 bg-emerald-500/5'}`}>
-                              {isDrop ? <TrendingDown className="mr-1 h-3 w-3" /> : <TrendingUp className="mr-1 h-3 w-3" />}
-                              {Math.abs(alert.variance_pct)}% Variance
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                              {new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                          <h4 className="font-semibold text-sm text-foreground mb-1">{alert.metric}</h4>
-                          <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1">
-                            <Bot className="h-3 w-3" /> Detected by {alert.agent_name}
-                          </p>
-                          <Button 
-                            variant="secondary" 
-                            size="sm" 
-                            className="w-full text-xs h-8 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20"
-                            onClick={() => router.push(`/investigate/${alert.id}`)}
-                          >
-                            View AI Report <ArrowRight className="ml-1.5 h-3 w-3 group-hover:translate-x-1 transition-transform" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-center p-6">
-                    <div className="p-3 bg-emerald-500/10 rounded-full mb-3">
-                      <Sparkles className="h-6 w-6 text-emerald-500" />
-                    </div>
-                    <h3 className="text-sm font-medium text-foreground">All Clear</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      No anomalies detected recently. Your agents are watching.
-                    </p>
-                  </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-          </Card>
+          
+          {/* THE NEW AUTONOMOUS INSIGHTS FEED 
+            Replaces the old hardcoded/simulated alert cards.
+            Automatically fetches from /api/insights 
+          */}
+          <InsightsFeed />
 
           {/* Chat Quick Launch */}
           <Card className="border-border shadow-sm bg-primary/5 border-primary/10">

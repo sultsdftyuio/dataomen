@@ -1,29 +1,83 @@
+# api/services/duckdb_validator.py
+
 import logging
 import duckdb
 import polars as pl
-from typing import Dict, Any, List
+import sqlglot
+from sqlglot import exp
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
 class SecurityError(Exception):
-    """Custom exception raised strictly when tenant isolation constraints are violated."""
+    """Custom exception raised strictly when tenant isolation constraints or SQL guardrails are violated."""
     pass
 
 class DuckDBValidator:
     """
-    Phase 6+: Enterprise QA & Security Gatekeeper.
+    Phase 1.3 & Phase 6+: Enterprise QA & Security Gatekeeper.
     
-    Upgraded Engineering:
-    - Context Manager: Guaranteed connection closure to prevent Render/Vercel OOM crashes.
-    - Full-Batch Validation: Mathematically guarantees 100% Parquet schema safety (no LIMITs).
-    - Memory Bounded: PRAGMA limits ensure the C++ engine respects container RAM.
+    Acts as the absolute perimeter defense for the Analytical Engine:
+    1. SQL Execution Guardrails: Uses AST parsing to categorically block destructive LLM queries.
+    2. Data Ingestion QA: Context Manager that enforces schema compliance and row-level tenant isolation.
+    3. Container Protection: Hardbounds the C++ engine memory to prevent Render/Vercel OOM crashes.
     """
     
-    def __init__(self, tenant_id: str, integration_name: str, memory_limit: str = "1GB"):
+    def __init__(self, tenant_id: Optional[str] = None, integration_name: Optional[str] = "analytical_engine", memory_limit: str = "1GB"):
         self.tenant_id = tenant_id
         self.integration_name = integration_name
         self.memory_limit = memory_limit
         self.conn = None
+
+    # =========================================================================
+    # Phase 1.3: Hard SQL Guardrails (Execution Layer)
+    # =========================================================================
+
+    def validate_sql(self, sql_query: str) -> bool:
+        """
+        Parses the AST of LLM-generated SQL to prevent Prompt Injection 
+        and destructive mutations from reaching the database.
+        """
+        try:
+            # Parse the query using DuckDB dialect
+            parsed = sqlglot.parse_one(sql_query, read="duckdb")
+        except Exception as e:
+            # If it can't be parsed, it's either invalid or intentionally obfuscated.
+            logger.error(f"SQL parsing failed, query rejected: {e}")
+            raise SecurityError(f"Invalid SQL syntax. Execution blocked for safety.")
+
+        # List of forbidden AST node types that mutate state
+        forbidden_nodes = (
+            exp.Drop,
+            exp.Delete,
+            exp.Update,
+            exp.Insert,
+            exp.AlterTable,
+            exp.Create,
+            exp.Command,  # Blocks PRAGMA or COPY commands injected by LLMs
+            exp.Commit,
+            exp.Rollback,
+        )
+
+        for node_type in forbidden_nodes:
+            if list(parsed.find_all(node_type)):
+                logger.critical(f"🚨 SECURITY BREACH BLOCKED: Detected destructive SQL command: {node_type.__name__}")
+                raise SecurityError(f"Destructive SQL blocked: {node_type.__name__} operations are strictly prohibited.")
+        
+        # Verify it's structurally a read-only query (SELECT / CTE)
+        is_select = isinstance(parsed, (exp.Select, exp.Union))
+        has_select = list(parsed.find_all(exp.Select))
+        
+        if not is_select and not has_select:
+             logger.critical(f"🚨 SECURITY BREACH BLOCKED: Query is not a recognized read operation.")
+             raise SecurityError("Only read-only SELECT queries are authorized.")
+        
+        logger.debug("SQL Guardrails passed. Query is read-only and mathematically safe.")
+        return True
+
+    # =========================================================================
+    # Phase 6+: Data Ingestion QA (Storage Layer)
+    # =========================================================================
 
     def __enter__(self):
         """
@@ -49,14 +103,17 @@ class DuckDBValidator:
 
     def validate_batch(self, df: pl.DataFrame, expected_schema: Dict[str, str]) -> bool:
         """
-        The Orchestrator for QA Validation.
+        The Orchestrator for Ingestion QA Validation.
         Passes the Polars DataFrame via zero-copy Arrow memory directly to DuckDB.
         """
         if df.height == 0:
             return True
 
         if not self.conn:
-            raise RuntimeError("DuckDBValidator must be used as a context manager (with 'with' statement).")
+            raise RuntimeError("DuckDBValidator must be used as a context manager to validate data batches.")
+        
+        if not self.tenant_id:
+            raise RuntimeError("tenant_id must be provided to validate ingestion batches.")
 
         try:
             # Register the Polars dataframe directly into DuckDB's memory space (Zero-Copy)
@@ -128,7 +185,7 @@ class DuckDBValidator:
         if not cast_clauses:
             return
 
-        # FULL-BATCH VALIDATION: We removed the LIMIT. Vectorized execution handles this natively fast.
+        # FULL-BATCH VALIDATION: Vectorized execution handles this natively fast.
         validation_query = f"""
             SELECT {', '.join(cast_clauses)}
             FROM temp_batch

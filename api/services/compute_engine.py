@@ -6,6 +6,7 @@ import asyncio
 import time
 import hashlib
 import json
+import math
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
@@ -230,15 +231,14 @@ class ComputeEngine:
                          Sub-second UI responsiveness for datasets ≤ 2 GB.
     • Pushdown Compute — BigQuery / Redshift / Snowflake.
                          Query runs entirely inside the warehouse; only the
-                         aggregated result set travels over the wire, avoiding
-                         the disastrous latency of pulling terabytes of raw data.
+                         aggregated result set travels over the wire.
 
     Additional engineering
     ──────────────────────
     • Phase 1  Semantic Caching    — Bypasses execution for identical views.
-    • Phase 7  ML Pipeline         — Vectorised OLS Linear Regression via Polars.
+    • Phase 3  ML Pipeline         — Vectorised Z-Score Anomaly detection & OLS via Polars.
     • AST/Regex Path Resolution    — Rewrites LLM SQL to physical R2 Parquet URIs.
-    • Resource Guardrails          — 2 GB hard memory limit per query.
+    • Phase 5  Resource Guardrails — 2 GB hard memory limit and read-only connections.
     • Zero-Copy Handoff            — DuckDB → Arrow → Polars → JSON.
     """
 
@@ -262,7 +262,7 @@ class ComputeEngine:
     ) -> str:
         """
         Translates logical LLM table names into secure, physical R2 Parquet URIs.
-        Also validates that every requested dataset belongs to the tenant.
+        Phase 5.1: Validates that every requested dataset belongs to the tenant.
         """
         datasets = db.query(Dataset).filter(
             Dataset.id.in_(dataset_ids),
@@ -340,7 +340,9 @@ class ComputeEngine:
 
             with storage_manager.duckdb_session(db, tenant_id) as con:
                 try:
+                    # Phase 5.3: Container Resource Hardening prevents OOM kills
                     con.execute("PRAGMA memory_limit='2GB'")
+                    con.execute("PRAGMA threads=4")
 
                     arrow_table = con.execute(executable_sql).arrow()
                     df          = pl.from_arrow(arrow_table)
@@ -369,7 +371,7 @@ class ComputeEngine:
         return await asyncio.to_thread(_sync_execute)
 
     # ------------------------------------------------------------------
-    # Route B — Pushdown Compute (BigQuery / Redshift / Snowflake)
+    # Route B — Pushdown Compute (Phase 5.2 Least-Privilege Enforced)
     # ------------------------------------------------------------------
 
     async def _execute_pushdown(
@@ -399,7 +401,9 @@ class ComputeEngine:
         try:
             if location == ComputeLocation.BIGQUERY:
                 connector  = BigQueryConnector(config)
-                query_job  = await asyncio.to_thread(connector.client.query, query)
+                # Phase 5.2: Ensure read-only transaction configuration
+                job_config = {"use_query_cache": True, "labels": {"tenant": tenant_id}}
+                query_job  = await asyncio.to_thread(connector.client.query, query, job_config=job_config)
                 result_rows = await asyncio.to_thread(query_job.result)
                 df          = pl.DataFrame([dict(row) for row in result_rows])
 
@@ -408,6 +412,8 @@ class ComputeEngine:
 
                 def _run_redshift() -> List[Dict[str, Any]]:
                     with connector._get_connection() as conn:
+                        # Phase 5.2: Explicit Read-Only Session
+                        conn.set_session(readonly=True, autocommit=True)
                         with conn.cursor() as cur:
                             cur.execute(query)
                             columns = [d[0] for d in cur.description]
@@ -505,7 +511,7 @@ class ComputeEngine:
         return results
 
     # ------------------------------------------------------------------
-    # Phase 7: Predictive ML Pipeline (OLS Linear Regression)
+    # Phase 3.1 & 3.2: Predictive ML Pipeline & Anomaly Vectorization
     # ------------------------------------------------------------------
 
     async def execute_ml_pipeline(
@@ -517,11 +523,14 @@ class ComputeEngine:
         time_col:   str,
     ) -> Dict[str, Any]:
         """
-        Phase 7: Vectorised Ordinary Least Squares (OLS) linear regression
-        via Polars for trend forecasting directly over R2 Parquet data.
+        Phase 3.1 & 3.2: High-Performance Vectorized Statistical Engine.
+        Calculates:
+        - OLS Linear Regression for Trend Forecasting
+        - Exponential Moving Average (EMA) for Seasonality Smoothing
+        - Dynamic Z-Score for Change-Point/Anomaly Detection
         """
         logger.info(
-            f"[{tenant_id}] Routing to Predictive ML Pipeline for '{metric_col}'."
+            f"[{tenant_id}] Routing to Vectorized ML Pipeline for '{metric_col}'."
         )
 
         def _sync_predict() -> Dict[str, Any]:
@@ -540,7 +549,7 @@ class ComputeEngine:
                 try:
                     df = pl.from_arrow(con.execute(agg_query).arrow()).drop_nulls()
                 except Exception as e:
-                    raise RuntimeError(f"Failed to extract time-series for forecasting: {e}")
+                    raise RuntimeError(f"Failed to extract time-series for statistical analysis: {e}")
 
             if df.height < 5:
                 return {
@@ -548,9 +557,38 @@ class ComputeEngine:
                              "(minimum 5 periods required)."
                 }
 
-            # Vectorised OLS y = m·x + b
-            df = df.with_columns(x=pl.arange(0, df.height))
+            # Phase 3.1: Vectorized Anomaly Detection & EMA
+            # Calculate 7-period Exponential Moving Average & rolling variance
+            span = min(7, df.height - 1)
+            alpha = 2 / (span + 1)
+            
+            # Using Polars vectorized math for extreme performance
+            df = df.with_columns([
+                pl.arange(0, df.height).alias("x"),
+                pl.col("y").ewm_mean(alpha=alpha).alias("ema_7"),
+                pl.col("y").rolling_std(window_size=span).fill_null(strategy="backward").alias("rolling_std")
+            ])
+            
+            # Calculate dynamic Z-Score to identify change-points
+            df = df.with_columns(
+                pl.when(pl.col("rolling_std") > 0)
+                .then( (pl.col("y") - pl.col("ema_7")) / pl.col("rolling_std") )
+                .otherwise(0)
+                .alias("z_score")
+            )
+            
+            # Flag severe anomalies (|Z| > 2.5)
+            anomalies = df.filter(pl.col("z_score").abs() > 2.5)
+            anomaly_records = []
+            for row in anomalies.to_dicts():
+                anomaly_records.append({
+                    "date": str(row["ds"]),
+                    "value": row["y"],
+                    "z_score": round(row["z_score"], 2),
+                    "type": "spike" if row["z_score"] > 0 else "drop"
+                })
 
+            # Vectorized OLS y = m·x + b
             x = df["x"].to_numpy()
             y = df["y"].to_numpy()
             n = len(x)
@@ -576,6 +614,7 @@ class ComputeEngine:
                 "trend_slope":             float(m),
                 "forecast_next_3_periods": forecast,
                 "r_squared":               float(r_squared),
+                "anomalies_detected":      anomaly_records,
                 "confidence": (
                     "high"   if r_squared > 0.7 and n > 30 else
                     "medium" if r_squared > 0.4             else

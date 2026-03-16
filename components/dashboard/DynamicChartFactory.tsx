@@ -3,11 +3,13 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { 
   Download, Table2, BarChart3, LineChart as LineChartIcon, 
-  Code2, AlertCircle, AreaChart as AreaChartIcon, Activity, Copy, Check, BrainCircuit 
+  Code2, AlertCircle, AreaChart as AreaChartIcon, Activity, 
+  Copy, Check, BrainCircuit, PieChart as PieChartIcon, ScatterChart as ScatterChartIcon
 } from "lucide-react";
 import { 
-  BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, 
-  CartesianGrid, Tooltip, ResponsiveContainer, Legend 
+  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
+  ScatterChart, Scatter, ZAxis, XAxis, YAxis, CartesianGrid, Tooltip, 
+  ResponsiveContainer, Legend 
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,7 +19,7 @@ import { cn } from "@/lib/utils";
 // Type Safety Layer
 // -----------------------------------------------------------------------------
 export interface ChartConfig {
-  type?: "bar" | "line" | "area" | "scatter";
+  type?: "bar" | "line" | "area" | "scatter" | "pie";
   xAxisKey?: string;
   yAxisKeys?: string[];
   mark?: string | { type: string };
@@ -25,6 +27,7 @@ export interface ChartConfig {
     x?: { field: string; type?: string };
     y?: { field: string; type?: string };
     color?: { field: string };
+    size?: { field: string }; // Useful for scatter
   };
 }
 
@@ -53,7 +56,7 @@ interface DynamicChartFactoryProps {
 // -----------------------------------------------------------------------------
 // Constants & Styling
 // -----------------------------------------------------------------------------
-const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#06b6d4"];
+const CHART_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#06b6d4", "#8b5cf6", "#ec4899", "#f43f5e", "#14b8a6"];
 const ANOMALY_COLOR = "#ef4444"; 
 const EMA_COLOR = "#94a3b8"; 
 const FORECAST_COLOR = "#a855f7"; 
@@ -75,7 +78,7 @@ const renderCustomGradients = () => (
 );
 
 // -----------------------------------------------------------------------------
-// Main Component
+// Phase 4.1: Automatic Chart Intelligence Component
 // -----------------------------------------------------------------------------
 export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payload, anomalies = [] }) => {
   const [activeTab, setActiveTab] = useState<"chart" | "table" | "sql">(
@@ -112,7 +115,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     setTimeout(() => setCopied(false), 2000);
   }, [payload.sql_used]);
 
-  // 2. Intelligent Rendering Engine
+  // 2. Intelligent Rendering Engine (Deterministic Data Shape Mapping)
   const resolved = useMemo(() => {
     if (rowCount === 0) return null;
     const sample = data[0];
@@ -123,11 +126,20 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     const hasExternalAnomalies = anomalies.length > 0;
     const hasAnomalies = hasLegacyAnomalies || hasExternalAnomalies;
 
-    // Determine Axis
-    let x = keys.find(k => /date|time|month|ds/i.test(k)) || keys.find(k => typeof sample[k] === 'string') || keys[0];
+    // Determine X-Axis (Prioritize Time-Series columns, then categorical strings)
+    let isTimeSeries = false;
+    let x = keys.find(k => {
+      if (/date|time|month|year|day|ds/i.test(k)) {
+        isTimeSeries = true;
+        return true;
+      }
+      return false;
+    }) || keys.find(k => typeof sample[k] === 'string') || keys[0];
     
     if (payload.chart_spec?.encoding?.x?.field) {
         x = payload.chart_spec.encoding.x.field;
+        // Re-evaluate timeseries based on explicit LLM spec
+        if (/date|time|month|year|day|ds/i.test(x)) isTimeSeries = true;
     }
 
     // Categorize Y-Axis series for advanced layering
@@ -136,7 +148,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
     const yKeys = keys.filter(k => 
         k !== x && 
         typeof sample[k] === 'number' && 
-        !/zscore|variance/i.test(k) && 
+        !/zscore|variance|id/i.test(k) && // Exclude IDs and statistical artifacts
         !forecastKeys.includes(k) && 
         !emaKeys.includes(k)
     );
@@ -146,11 +158,34 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         yKeys.push(payload.chart_spec.encoding.y.field);
     }
 
-    // Determine default chart type
-    let detectedType = (x.toLowerCase().includes('date') || x.toLowerCase().includes('time')) ? "area" : "bar";
-    if (payload.chart_spec?.mark) {
+    // Determine deterministic chart type based on Data Shape
+    let detectedType: "area" | "line" | "bar" | "pie" | "scatter" = "bar";
+    
+    // Auto-Intelligence Heuristics
+    if (isTimeSeries) {
+      detectedType = "line"; // Continuous data defaults to line/area
+    } else if (yKeys.length === 1 && rowCount <= 8 && !isTimeSeries) {
+      // Small categorical distribution -> Good candidate for Pie
+      // We'll leave default as Bar but allow explicit override to Pie easily
+      detectedType = "bar"; 
+    } else if (yKeys.length >= 2 && !isTimeSeries) {
+      // Multiple numeric metrics without time -> Good candidate for Scatter/Correlation
+      // Leaving default as Bar to be safe unless explicitly requested
+    }
+
+    // Explicit Overrides from LLM Spec
+    if (payload.chart_spec?.type) {
+      detectedType = payload.chart_spec.type;
+    } else if (payload.chart_spec?.mark) {
       const typeStr = typeof payload.chart_spec.mark === 'string' ? payload.chart_spec.mark : payload.chart_spec.mark.type;
-      detectedType = typeStr === 'area' ? 'area' : typeStr === 'line' ? 'line' : 'bar';
+      if (["area", "line", "bar", "pie", "scatter"].includes(typeStr.toLowerCase())) {
+        detectedType = typeStr.toLowerCase() as any;
+      }
+    }
+
+    // Force area if it's a forecast to show standard deviation bands cleanly
+    if (forecastKeys.length > 0 && detectedType === "line") {
+      detectedType = "area";
     }
 
     return { 
@@ -159,7 +194,8 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         y: yKeys, 
         forecast: forecastKeys, 
         ema: emaKeys, 
-        hasAnomalies 
+        hasAnomalies,
+        isTimeSeries
     };
   }, [data, payload.chart_spec, anomalies, rowCount]);
 
@@ -202,6 +238,18 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
 
   const keys = rowCount > 0 ? Object.keys(data[0]) : [];
 
+  // Get dynamic icon based on resolved type
+  const getChartIcon = () => {
+    if (!resolved) return <BarChart3 size={14} />;
+    switch (resolved.type) {
+      case "area": return <AreaChartIcon size={14} />;
+      case "line": return <LineChartIcon size={14} />;
+      case "pie": return <PieChartIcon size={14} />;
+      case "scatter": return <ScatterChartIcon size={14} />;
+      default: return <BarChart3 size={14} />;
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // Renderers
   // ---------------------------------------------------------------------------
@@ -231,7 +279,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
             <Button variant="ghost" size="sm" onClick={() => setActiveTab("chart")}
               className={cn("h-8 text-xs gap-2", activeTab === "chart" ? "bg-slate-800 text-emerald-400" : "text-slate-400")}
             >
-              {resolved.type === "area" ? <AreaChartIcon size={14} /> : resolved.type === "line" ? <LineChartIcon size={14} /> : <BarChart3 size={14} />}
+              {getChartIcon()}
               Visual
               {resolved.hasAnomalies && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
               {resolved.forecast.length > 0 && <BrainCircuit size={12} className="text-purple-400 ml-1" />}
@@ -260,7 +308,61 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
         {activeTab === "chart" && resolved && (
           <div className="w-full h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
-              {resolved.type === "area" ? (
+              {resolved.type === "pie" ? (
+                <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f8fafc' }}
+                    itemStyle={{ fontSize: '12px' }}
+                    formatter={(value: number) => formatNum(value)}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
+                  <Pie
+                    data={data}
+                    dataKey={resolved.y[0]}
+                    nameKey={resolved.x}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={130}
+                    innerRadius={60}
+                    paddingAngle={2}
+                    stroke="none"
+                  >
+                    {data.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                </PieChart>
+
+              ) : resolved.type === "scatter" ? (
+                <ScatterChart margin={{ top: 20, right: 20, left: -10, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  {/* For scatter, we use the first two Y keys as X and Y if X isn't purely numeric */}
+                  <XAxis 
+                    type="number" 
+                    dataKey={resolved.y.length > 1 ? resolved.y[0] : resolved.x} 
+                    name={resolved.y.length > 1 ? resolved.y[0] : resolved.x} 
+                    stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} 
+                  />
+                  <YAxis 
+                    type="number" 
+                    dataKey={resolved.y.length > 1 ? resolved.y[1] : resolved.y[0]} 
+                    name={resolved.y.length > 1 ? resolved.y[1] : resolved.y[0]} 
+                    stroke="#475569" fontSize={11} tickLine={false} axisLine={false} tickFormatter={formatNum} 
+                  />
+                  <ZAxis type="category" dataKey={resolved.x} name={resolved.x} />
+                  <Tooltip 
+                    cursor={{ strokeDasharray: '3 3' }}
+                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f8fafc' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '20px' }} />
+                  <Scatter name="Distribution" data={data} fill={CHART_COLORS[0]}>
+                    {data.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Scatter>
+                </ScatterChart>
+
+              ) : resolved.type === "area" ? (
                 <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   {renderCustomGradients()}
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
@@ -293,6 +395,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                     <Area key={key} type="monotone" dataKey={key} stroke={EMA_COLOR} fill="none" strokeDasharray="3 3" strokeWidth={1.5} name={`${key.split('_')[0]} (EMA)`} />
                   ))}
                 </AreaChart>
+
               ) : resolved.type === "line" ? (
                 <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
@@ -311,6 +414,7 @@ export const DynamicChartFactory: React.FC<DynamicChartFactoryProps> = ({ payloa
                     <Line key={key} type="monotone" dataKey={key} stroke={FORECAST_COLOR} strokeWidth={3} strokeDasharray="5 5" name={`${key} (Forecast)`} />
                   ))}
                 </LineChart>
+
               ) : (
                 <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />

@@ -1,5 +1,3 @@
-# compute_worker.py
-
 import os
 import asyncio
 import logging
@@ -8,26 +6,30 @@ import time
 import psutil
 from typing import Optional, Dict, Any
 from celery import Celery
+from celery.schedules import crontab
 from celery.exceptions import SoftTimeLimitExceeded
 
 # Core Database & Models
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from api.database import SessionLocal
-from models import Dataset, DatasetStatus
+from models import Dataset, DatasetStatus, Agent
 
 # Core Infrastructure Orchestrators
 from api.services.storage_manager import storage_manager
 from api.services.sync_engine import get_sync_engine
 from api.services.credential_manager import CredentialManager
 
-# Refactored Analytical Services (Now parameterless & Centralized)
+# Refactored Analytical Services
 from api.services.query_planner import QueryPlanner
 from api.services.nl2sql_generator import NL2SQLGenerator
 from api.services.compute_engine import compute_engine, DatasetMetadata
 from api.services.insight_orchestrator import InsightOrchestrator
 from api.services.narrative_service import narrative_service
 from api.services.cache_manager import cache_manager
+
+# The NEW Autonomous Orchestrator
+from api.services.watchdog_service import WatchdogService
 
 # ------------------------------------------------------------------------------
 # Worker Configuration & Observability
@@ -59,13 +61,22 @@ celery_app.conf.update(
 )
 
 # ------------------------------------------------------------------------------
-# Global Singletons (Refactored: No API Keys passed here!)
+# Autonomous Mode Cron Scheduler (Celery Beat)
 # ------------------------------------------------------------------------------
-# These now internally reference the global llm_client singleton.
+celery_app.conf.beat_schedule = {
+    'run-autonomous-scans-hourly': {
+        'task': 'run_autonomous_insight_scans',
+        'schedule': crontab(minute='0'), # Run at the top of every hour
+    },
+}
+
+# ------------------------------------------------------------------------------
+# Global Singletons
+# ------------------------------------------------------------------------------
 planner = QueryPlanner()
 generator = NL2SQLGenerator()
 insight_engine = InsightOrchestrator()
-# narrative_service and compute_engine are imported as ready-to-use singletons.
+
 
 # ------------------------------------------------------------------------------
 # Utility Helpers
@@ -209,7 +220,6 @@ def execute_heavy_analytical_pipeline(
 
         # 3. Vectorized Compute Execution
         self.update_state(state='PROGRESS', meta={'status': 'Executing warehouse scan...'})
-        # Note: In worker context, we pass db=None as compute_engine manages connections internally
         query_result = _run_async(compute_engine.execute_read_only(
             db=None, 
             tenant_id=tenant_id, 
@@ -262,3 +272,61 @@ def execute_heavy_analytical_pipeline(
         
     finally:
         gc.collect()
+
+# ------------------------------------------------------------------------------
+# Task 3: Autonomous Insight Engine & Governance (The AI Data Analyst)
+# ------------------------------------------------------------------------------
+
+@celery_app.task(bind=True, name="run_autonomous_insight_scans")
+def run_autonomous_insight_scans(self):
+    """
+    Scheduled Cron Job: Runs the Autonomous Insight Engine across all tenants.
+    Acts as the proactive "AI Data Analyst", finding metrics spikes/drops automatically.
+    """
+    logger.info("🤖 Starting Global Autonomous Insight Scan...")
+    
+    with SessionLocal() as db:
+        watchdog = WatchdogService(db_client=db)
+        
+        # 1. Pipeline Health & Staleness Audit
+        logger.info("Running system health and dataset staleness audits...")
+        _run_async(watchdog.detect_stale_datasets())
+        
+        # 2. Autonomous Insight Generation (Business Metrics)
+        # Fetch all active background agents assigned to datasets
+        active_agents = db.query(Agent).filter(Agent.is_active == True).all()
+        
+        if not active_agents:
+            logger.info("No active autonomous agents found. Skipping scan.")
+            return {"status": "success", "agents_scanned": 0, "insights_found": 0}
+            
+        insights_found = 0
+        
+        for agent in active_agents:
+            # Skip misconfigured agents missing columns
+            if not agent.metric_column or not agent.time_column:
+                continue
+                
+            try:
+                logger.info(f"Triggering Watchdog for Agent: {agent.id} (Tenant: {agent.tenant_id})")
+                
+                # Run the math + AI Narrative + Ranking + Database storage flow
+                insight = _run_async(watchdog.execute_autonomous_agent(
+                    agent_id=str(agent.id),
+                    tenant_id=agent.tenant_id,
+                    dataset_id=str(agent.dataset_id),
+                    metric_col=agent.metric_column,
+                    time_col=agent.time_column,
+                    sensitivity_threshold=agent.sensitivity_threshold
+                ))
+                
+                if insight:
+                    insights_found += 1
+                    logger.info(f"💡 Found high-impact insight for {agent.tenant_id}! Impact Score: {insight.impact_score}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to run autonomous scan for agent {agent.id}: {str(e)}")
+                continue # Do not let one bad tenant block the whole fleet
+                
+        logger.info(f"✅ Global Autonomous Scan Complete. Scanned {len(active_agents)} agents, generated {insights_found} new insights.")
+        return {"status": "success", "agents_scanned": len(active_agents), "insights_found": insights_found}

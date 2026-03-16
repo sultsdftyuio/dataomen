@@ -53,6 +53,14 @@ class SubscriptionTier(str, enum.Enum):
     PRO = "PRO"
     ENTERPRISE = "ENTERPRISE"
 
+class InsightType(str, enum.Enum):
+    """Categorization for the Autonomous Insight Engine"""
+    ANOMALY = "ANOMALY"
+    TREND = "TREND"
+    CORRELATION = "CORRELATION"
+    PREDICTION = "PREDICTION"
+    DATA_QUALITY = "DATA_QUALITY"
+
 # ==========================================
 # SAAS IDENTITY & BILLING
 # ==========================================
@@ -184,10 +192,11 @@ class Dataset(Base, TenantAwareMixin):
 
     # Relationships
     agents: Mapped[List["Agent"]] = relationship("Agent", back_populates="dataset", cascade="all, delete-orphan")
+    insights: Mapped[List["Insight"]] = relationship("Insight", back_populates="dataset", cascade="all, delete-orphan")
 
 
 # ==========================================
-# AGENTS & QUERY LOGS
+# AGENTS & AUTONOMOUS INSIGHTS
 # ==========================================
 class Agent(Base, TenantAwareMixin):
     """AI Assistant & Autonomous Background Worker assigned to a specific dataset."""
@@ -199,7 +208,7 @@ class Agent(Base, TenantAwareMixin):
     name: Mapped[str] = mapped_column(String, nullable=False)
     role_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # --- NEW: Autonomous Monitoring Fields ---
+    # --- Autonomous Monitoring Fields ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     cron_schedule: Mapped[Optional[str]] = mapped_column(String, nullable=True) # e.g., "0 * * * *" (hourly)
     metric_column: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -212,11 +221,47 @@ class Agent(Base, TenantAwareMixin):
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="agents")
     queries: Mapped[List["QueryHistory"]] = relationship("QueryHistory", back_populates="agent", cascade="all, delete-orphan")
     knowledge: Mapped[List["AgentKnowledge"]] = relationship("AgentKnowledge", back_populates="agent", cascade="all, delete-orphan")
+    insights: Mapped[List["Insight"]] = relationship("Insight", back_populates="agent")
+
+
+class Insight(Base, TenantAwareMixin):
+    """
+    The Storage Layer for the Autonomous Insight Mode.
+    Stores discovered anomalies, trends, and correlations for the Dashboard Feed.
+    """
+    __tablename__ = "insights"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False)
+    
+    # Optional: The background agent that discovered this insight
+    agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"), nullable=True)
+
+    type: Mapped[InsightType] = mapped_column(Enum(InsightType), nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False) # e.g., "Revenue dropped 18% yesterday"
+    description: Mapped[str] = mapped_column(Text, nullable=False) # AI Narrative root cause
+    
+    metric_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    
+    # Insight Ranking System: Score to determine if it should trigger an alert/be shown at the top
+    impact_score: Mapped[float] = mapped_column(Float, default=0.0, index=True) 
+    
+    # Stores the mathematical payload (Variance drivers, charts, actual/expected values)
+    payload: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    
+    # Notification state
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+    dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="insights")
+    agent: Mapped[Optional["Agent"]] = relationship("Agent", back_populates="insights")
 
 
 class AgentKnowledge(Base, TenantAwareMixin):
     """
-    NEW: Contextual RAG Vector Store.
+    Contextual RAG Vector Store.
     Stores semantic embeddings of dataset rules or past successful queries for AI alignment.
     Requires `pgvector` extension in PostgreSQL.
     """

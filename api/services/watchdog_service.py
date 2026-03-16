@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from api.services.storage_manager import storage_manager
 from api.services.anomaly_detector import AnomalyDetector
 from api.services.narrative_service import NarrativeService
-from models import Dataset
+from models import Dataset, Insight, InsightType, Agent
 
 logger = logging.getLogger(__name__)
 
@@ -32,18 +32,6 @@ class VarianceDriverItem(BaseModel):
     absolute_delta: float
     percentage_change: float
     contribution_to_variance_pct: float
-
-class AgentDiagnosticResult(BaseModel):
-    agent_id: str
-    tenant_id: str
-    dataset_id: str
-    date: str
-    metric: str
-    actual_value: float
-    expected_value: float
-    variance_pct: float
-    top_variance_drivers: List[VarianceDriverItem]
-    diagnostic_summary: Dict[str, Any]
 
 class TelemetryAnalysisResult(BaseModel):
     is_anomaly: bool
@@ -63,7 +51,7 @@ class WatchdogService:
     Phase 8.3: The Autonomous Orchestration Engine & Governance Watchdog.
     
     Layer 1: Evaluates scheduled business anomaly checks securely across tenants (DuckDB).
-             Provides automated Root Cause Analysis (Variance Drivers).
+             Provides automated Root Cause Analysis (Variance Drivers) and stores Ranked Insights.
     Layer 2: Monitors data pipeline integrity using Vectorized EMA and Adaptive Thresholds.
     Layer 3: Monitors dataset staleness to catch silent serverless timeouts and auto-heals.
     """
@@ -109,8 +97,27 @@ class WatchdogService:
             logger.error(f"Failed to extract schema for variance drivers: {e}")
             return []
 
+    def _calculate_impact_score(self, variance_pct: float, expected_value: float) -> float:
+        """
+        Insight Ranking Algorithm.
+        Calculates a business impact score (0-100) to rank insights on the dashboard.
+        Combines the relative percentage shift with the absolute magnitude (log scaled).
+        Prevents high-variance noise on low-volume metrics from dominating the feed.
+        """
+        # 1. Base score from percentage change (Caps at 50 points for 100%+ variance)
+        pct_score = min(abs(variance_pct) / 2.0, 50.0)
+        
+        # 2. Volume score via Logarithmic scale (Caps at 50 points)
+        # Prevents massive numbers from breaking the algorithm, but ensures large volumes score higher
+        vol_score = 0.0
+        if expected_value > 1.0:
+            vol_score = min(math.log10(expected_value) * 10.0, 50.0)
+            
+        score = round(pct_score + vol_score, 2)
+        return min(score, 100.0) # Hard cap at 100
+
     # ==========================================
-    # LAYER 1: BUSINESS METRIC GOVERNANCE
+    # LAYER 1: AUTONOMOUS BUSINESS GOVERNANCE
     # ==========================================
 
     def get_top_variance_drivers(
@@ -125,8 +132,7 @@ class WatchdogService:
     ) -> List[VarianceDriverItem]:
         """
         The Variance Driver Algorithm (Contextual RAG Prep):
-        Scans all categorical dimensions to find EXACTLY which sub-segments 
-        (e.g., specific Countries, Campaigns, or Customer Tiers) drove the anomaly.
+        Scans all categorical dimensions to find EXACTLY which sub-segments drove the anomaly.
         """
         dataset = self.db.query(Dataset).filter(
             Dataset.id == dataset_id,
@@ -142,7 +148,6 @@ class WatchdogService:
         with storage_manager.duckdb_session(self.db, tenant_id) as conn:
             categorical_cols = self._get_categorical_columns(conn, secure_path)
             
-            # Filter out low-cardinality noise or technical IDs
             excluded_cols = {'tenant_id', 'id', 'uuid', '_extracted_at', '_tenant_id', '_integration_name'}
             dimensions = [col for col in categorical_cols if col.lower() not in excluded_cols and not col.lower().endswith('_id')]
             
@@ -153,7 +158,7 @@ class WatchdogService:
             for category in dimensions:
                 safe_category = self._sanitize_identifier(category)
 
-                # Pushdown aggregation to DuckDB. We calculate both days in a single scan.
+                # Pushdown aggregation to DuckDB. Calculate both days in a single vectorized scan.
                 query = f"""
                     WITH daily_aggregates AS (
                         SELECT 
@@ -178,7 +183,7 @@ class WatchdogService:
                     WHERE (anomaly_day_val - comparison_day_val) != 0
                       AND category_val IS NOT NULL
                     ORDER BY ABS(anomaly_day_val - comparison_day_val) DESC
-                    LIMIT {top_n * 2}; -- Fetch extra to calculate global contribution accurately
+                    LIMIT {top_n * 2};
                 """
                 
                 try:
@@ -191,11 +196,9 @@ class WatchdogService:
                     logger.warning(f"[{tenant_id}] Skipping dimension {category} for variance analysis: {e}")
                     continue
 
-            # Sort all gathered drivers globally by absolute impact
             drivers.sort(key=lambda x: abs(x['absolute_delta']), reverse=True)
             top_drivers_raw = drivers[:top_n]
             
-            # Calculate Contribution to Variance (%)
             total_absolute_variance = sum(abs(d['absolute_delta']) for d in top_drivers_raw)
             
             final_drivers = []
@@ -213,7 +216,7 @@ class WatchdogService:
 
             return final_drivers
 
-    def evaluate_agent_rule(
+    async def execute_autonomous_agent(
         self, 
         agent_id: str,
         tenant_id: str, 
@@ -221,12 +224,15 @@ class WatchdogService:
         metric_col: str, 
         time_col: str,
         sensitivity_threshold: float = 2.0
-    ) -> Optional[AgentDiagnosticResult]:
+    ) -> Optional[Insight]:
         """
-        The Golden Path Execution for autonomous background agents.
-        Returns full anomaly context + AI narrative if flagged, else None.
+        The Golden Path for Autonomous Mode.
+        1. Detects mathematical anomaly (Polars)
+        2. Discovers root cause drivers (DuckDB)
+        3. Synthesizes AI Narrative (LLM)
+        4. Calculates Impact Score & Persists Insight to Dashboard Feed.
         """
-        logger.info(f"[{tenant_id}] Evaluating Agent {agent_id} on metric '{metric_col}'")
+        logger.info(f"[{tenant_id}] Running Autonomous Agent {agent_id} on '{metric_col}'")
         
         try:
             # 1. Math-First Detection (Vectorized/Polars via AnomalyDetector)
@@ -240,9 +246,12 @@ class WatchdogService:
             )
             
             if not anomaly_result:
+                # Update last run time even if no anomaly found
+                self.db.query(Agent).filter(Agent.id == agent_id).update({"last_run_at": datetime.now(timezone.utc)})
+                self.db.commit()
                 return None  # All good, no anomaly
                 
-            logger.info(f"🚨 Anomaly detected for Agent {agent_id}! Generating contextual RAG payload...")
+            logger.info(f"🚨 Anomaly detected for Agent {agent_id}! Generating Contextual Diagnostic Payload...")
             
             # 2. Contextual RAG (Variance Driver Algorithm)
             anomaly_date = anomaly_result['date']
@@ -256,27 +265,58 @@ class WatchdogService:
             )
             
             # 3. AI Diagnostic Synthesis (The "Why")
-            diagnostic_summary = self.narrative_service.generate_anomaly_summary(
+            diagnostic_summary = await self.narrative_service.generate_anomaly_summary(
                 metric=metric_col,
                 delta_percentage=anomaly_result['variance_pct'],
                 top_drivers=[d.model_dump() for d in top_drivers]
             )
             
-            return AgentDiagnosticResult(
-                agent_id=agent_id,
-                tenant_id=tenant_id,
-                dataset_id=dataset_id,
-                date=anomaly_date,
-                metric=metric_col,
-                actual_value=anomaly_result['actual_value'],
-                expected_value=anomaly_result['expected_value'],
+            # 4. Insight Ranking System
+            impact_score = self._calculate_impact_score(
                 variance_pct=anomaly_result['variance_pct'],
-                top_variance_drivers=top_drivers,
-                diagnostic_summary=diagnostic_summary
+                expected_value=anomaly_result['expected_value']
             )
             
+            direction_str = "spiked" if anomaly_result['z_score'] > 0 else "dropped"
+            
+            # 5. Persist the Insight for the User Dashboard Feed
+            new_insight = Insight(
+                tenant_id=tenant_id,
+                dataset_id=dataset_id,
+                agent_id=agent_id,
+                type=InsightType.ANOMALY,
+                title=f"Unusual Activity: {metric_col} {direction_str} by {abs(round(anomaly_result['variance_pct'], 1))}%",
+                description=diagnostic_summary.get('narrative', 'Anomaly detected requiring review.'),
+                metric_name=metric_col,
+                impact_score=impact_score,
+                payload={
+                    "actual_value": anomaly_result['actual_value'],
+                    "expected_value": anomaly_result['expected_value'],
+                    "variance_pct": anomaly_result['variance_pct'],
+                    "z_score": anomaly_result['z_score'],
+                    "date": anomaly_date,
+                    "top_drivers": [d.model_dump() for d in top_drivers],
+                    "ai_analysis": diagnostic_summary
+                }
+            )
+            
+            self.db.add(new_insight)
+            self.db.query(Agent).filter(Agent.id == agent_id).update({"last_run_at": datetime.now(timezone.utc)})
+            self.db.commit()
+            
+            # 6. Smart Alert Routing (Only alert if impact is High)
+            if impact_score >= 65.0 and self.notifications and hasattr(self.notifications, 'dispatch_alert'):
+                await self.notifications.dispatch_alert(
+                    tenant_id=tenant_id,
+                    alert_type="AUTONOMOUS_INSIGHT_CRITICAL",
+                    metadata={"insight_id": str(new_insight.id), "title": new_insight.title, "score": impact_score}
+                )
+
+            return new_insight
+            
         except Exception as e:
-            logger.error(f"[{tenant_id}] Fatal error evaluating agent {agent_id}: {str(e)}")
+            logger.error(f"[{tenant_id}] Fatal error running autonomous agent {agent_id}: {str(e)}")
+            self.db.rollback()
             return None
 
 
@@ -285,7 +325,6 @@ class WatchdogService:
     # ==========================================
 
     async def _fetch_sync_history(self, tenant_id: str, integration_id: str, days: int = 30) -> List[Dict[str, Any]]:
-        """Pulls raw ingestion telemetry logs securely via SQLAlchemy, offloaded to a thread."""
         if not self.db: return []
         target_date = datetime.now(timezone.utc) - timedelta(days=days)
         
@@ -308,10 +347,6 @@ class WatchdogService:
             return []
 
     def _compute_anomalies_polars(self, history: List[Dict[str, Any]], latest_volume: int) -> TelemetryAnalysisResult:
-        """
-        The Mathematical Core for Telemetry using Polars C++ EMA and Adaptive Volatility.
-        Adjusts the Z-score threshold automatically based on historical noise.
-        """
         if len(history) < 3:
             return TelemetryAnalysisResult(
                 is_anomaly=False, expected_volume_ema=latest_volume, actual_volume=latest_volume,
@@ -327,7 +362,6 @@ class WatchdogService:
                 reason="Insufficient successful history."
             )
 
-        # 1. Calculate Exponential Moving Average and Std Dev
         df = df.with_columns(
             ema=pl.col("rows_synced").ewm_mean(span=self.span, ignore_nulls=True),
             std_dev=pl.col("rows_synced").ewm_std(span=self.span, ignore_nulls=True)
@@ -337,22 +371,15 @@ class WatchdogService:
         expected_ema = last_row["ema"]
         current_std_dev = last_row["std_dev"] if last_row["std_dev"] and last_row["std_dev"] > 0 else 1.0
 
-        # 2. Adaptive Volatility Adjustment
-        # Coefficient of Variation = StdDev / Mean. (How noisy is the sync volume?)
         volatility_index = current_std_dev / max(expected_ema, 1.0)
         
-        # If volatility is high (>20%), relax the threshold to avoid alert fatigue.
-        # If volatility is low (<5%), tighten the threshold because the sync is usually perfect.
         applied_threshold = self.base_z_score_threshold
         if volatility_index > 0.20:
             applied_threshold = 3.5  # Relaxed
         elif volatility_index < 0.05:
             applied_threshold = 2.0  # Tightened
 
-        # 3. Z-Score calculation
         z_score = abs(latest_volume - expected_ema) / current_std_dev
-        
-        # We only alert on DROPS in volume, as spikes are usually just historical backfills
         is_anomaly = z_score > applied_threshold and latest_volume < expected_ema
 
         return TelemetryAnalysisResult(
@@ -366,7 +393,6 @@ class WatchdogService:
         )
 
     async def inspect_pipeline(self, tenant_id: str, integration_id: str, latest_volume: int) -> bool:
-        """Main entry point for evaluating pipeline health post-sync."""
         logger.info(f"[{tenant_id}] Watchdog inspecting pipeline {integration_id}...")
 
         history = await self._fetch_sync_history(tenant_id, integration_id)
@@ -385,19 +411,11 @@ class WatchdogService:
             
         return True
 
-
     # ==========================================
-    # LAYER 3: STALENESS, TIMEOUTS & AUTO-HEALING
+    # LAYER 3: STALENESS & AUTO-HEALING
     # ==========================================
 
     async def detect_stale_datasets(self) -> int:
-        """
-        Scans the entire global catalog to identify:
-        1. "Stuck" processing states (Render background worker died / OOM).
-        2. "Stale" datasets that missed their daily sync schedule.
-        
-        Auto-heals stuck PROCESSING states by forcing them to FAILED so the UI unlocks.
-        """
         now = datetime.now(timezone.utc)
         stuck_threshold = now - timedelta(hours=self.STUCK_PROCESSING_HOURS)
         stale_threshold = now - timedelta(hours=self.STALE_READY_HOURS)
@@ -419,7 +437,6 @@ class WatchdogService:
             stale_records = [dict(row._mapping) for row in result]
             healed_count = 0
             
-            # Auto-Heal stuck PROCESSING states
             for record in stale_records:
                 if record['status'] == 'PROCESSING':
                     heal_query = text("""
