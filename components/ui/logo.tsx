@@ -56,12 +56,9 @@ export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
 
       {/* Wordmark: ARCLI */}
       {!iconOnly && (
-        <div className="flex flex-col leading-none">
-          <span className="text-2xl font-extrabold tracking-[-0.03em] text-slate-100 uppercase">
-            Arcli<span className="text-blue-500">.</span>
-          </span>
-          <span className="text-[10px] font-black tracking-[0.35em] text-slate-500 uppercase mt-1">
-            Technologies
+        <div className="flex flex-col leading-none justify-center">
+          <span className="text-2xl font-extrabold tracking-[-0.03em] text-black dark:text-white uppercase">
+            ARCLI<span className="text-blue-500">.</span>
           </span>
         </div>
       )}
