@@ -13,17 +13,19 @@ export type ActionState = {
 
 /**
  * registerAction handles the multi-tenant registration flow.
- * It first registers the user/tenant via the Python backend, 
- * then automatically signs them in using Supabase to establish a session.
+ * Adapted for the optimized conversion funnel: derives missing 
+ * identity details from the email address to reduce user friction.
  */
 export async function registerAction(state: ActionState, formData: FormData): Promise<ActionState> {
   const cookieStore = await cookies()
   
-  // Strictly parse form values to string, defaulting to empty string if null
+  // Strictly parse essential form values
   const email = formData.get('email')?.toString() || ''
   const password = formData.get('password')?.toString() || ''
-  const fullName = formData.get('name')?.toString() || ''
-  const companyName = formData.get('company')?.toString() || ''
+  
+  // Generate smart defaults for backend fields omitted in the UI to reduce friction
+  const fallbackName = email.split('@')[0] || 'User'
+  const fallbackCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace'
 
   try {
     // 1. Register the tenant and user in the Core API
@@ -35,8 +37,8 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
       body: JSON.stringify({
         email,
         password,
-        full_name: fullName,
-        company_name: companyName,
+        full_name: fallbackName,
+        company_name: fallbackCompany,
       }),
     })
 
@@ -55,7 +57,9 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
           setAll(cookiesToSet) {
             try {
               cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-            } catch { /* Handle server component cookie limits */ }
+            } catch { 
+              // Handle server component cookie limits in Next.js
+            }
           },
         },
       }
@@ -65,7 +69,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (signInError) {
-      // If auto-login fails, we redirect to login so they can try manually
+      // If auto-login fails (e.g., email confirmation required), redirect to login
       redirect('/login')
     }
 
