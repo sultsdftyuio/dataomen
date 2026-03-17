@@ -1,239 +1,210 @@
-// components/landing/Interactivedemo.tsx
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Sparkles, TrendingUp, TrendingDown, ArrowRight, BarChart2 } from "lucide-react";
-import { useVisible } from "@/hooks/useVisible";
+import React, { useState, useEffect, useRef } from "react";
 
-// Extracted outside the component to avoid unnecessary re-allocations on every render.
-const QUERIES = [
-  {
-    q: "What was MRR last month?",
-    headline: "MRR last month was $312,400.",
-    detail: "That's up 8.7% month-over-month, driven by 43 new Enterprise subscriptions.",
-    metric: "$312,400",
-    delta: "+8.7%",
-    bars: [55, 60, 58, 65, 70, 68, 75, 80, 78, 85, 90, 100],
-    positive: true,
-  },
-  {
-    q: "Which campaign drove the most revenue in Q3?",
-    headline: '"Product-Led Growth" campaign led with $148K.',
-    detail: "It outperformed the next campaign by 2.3× and had the lowest CAC at $42/customer.",
-    metric: "$148,000",
-    delta: "+2.3×",
-    bars: [30, 45, 38, 60, 100, 55, 70, 48, 62, 75, 80, 68],
-    positive: true,
-  },
-  {
-    q: "What is churn by cohort this year?",
-    headline: "Churn is highest in the Feb cohort at 6.4%.",
-    detail: "Cohorts onboarded post-April show consistent improvement, averaging 2.1% monthly churn.",
-    metric: "2.1% avg",
-    delta: "↓ Improving",
-    bars: [100, 88, 75, 64, 55, 50, 45, 40, 36, 32, 28, 25],
-    positive: false,
-  },
-  {
-    q: "Which features increase retention?",
-    headline: "Users who activate 3+ integrations retain at 94%.",
-    detail: "Integration depth is your #1 retention driver. Users with 1 integration retain at only 61%.",
-    metric: "94% retention",
-    delta: "+33pts",
-    bars: [30, 40, 52, 61, 72, 80, 86, 90, 92, 93, 93, 94],
-    positive: true,
-  },
-];
+// Types to strictly type our component state
+type DemoStatus = "idle" | "running" | "complete";
+type PipelineStage = {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "done";
+};
 
-type QueryResult = typeof QUERIES[0];
+const DEMO_QUERY = "Analyze Q3 Enterprise churn rates and identify the leading root cause.";
 
 export function InteractiveDemo() {
-  const [secRef, secVis] = useVisible(0.15);
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [typing, setTyping] = useState(false);
-  const [inputVal, setInputVal] = useState("");
-  
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [status, setStatus] = useState<DemoStatus>("idle");
+  const [typedQuery, setTypedQuery] = useState("");
+  const [stages, setStages] = useState<PipelineStage[]>([
+    { id: "semantic", label: "Checking semantic memory & routing datasets", status: "pending" },
+    { id: "planner", label: "Architecting multi-dataset query strategy", status: "pending" },
+    { id: "compute", label: "Executing vectorized DuckDB compute", status: "pending" },
+    { id: "narrative", label: "Synthesizing executive narrative", status: "pending" },
+  ]);
+  const [activeStageIndex, setActiveStageIndex] = useState(-1);
 
-  // Cleanup timeout on unmount to prevent state updates on an unmounted component
+  // Auto-type the query when the user clicks "Run Analysis" to make it feel frictionless
   useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
+    if (status === "running" && typedQuery.length < DEMO_QUERY.length) {
+      const timeout = setTimeout(() => {
+        setTypedQuery(DEMO_QUERY.slice(0, typedQuery.length + 1));
+      }, 30); // Fast typing effect
+      return () => clearTimeout(timeout);
+    } else if (status === "running" && typedQuery.length === DEMO_QUERY.length && activeStageIndex === -1) {
+      // Start pipeline simulation once typing is done
+      setActiveStageIndex(0);
+    }
+  }, [status, typedQuery, activeStageIndex]);
 
-  const runQuery = useCallback((idx: number) => {
-    const q = QUERIES[idx];
-    setActiveIdx(idx);
-    setTyping(true);
-    setResult(null);
-    setInputVal(q.q);
+  // Simulate the backend orchestrator's SSE stream
+  useEffect(() => {
+    if (activeStageIndex >= 0 && activeStageIndex < stages.length) {
+      // Mark current stage as active
+      setStages((prev) =>
+        prev.map((s, i) => (i === activeStageIndex ? { ...s, status: "active" } : s))
+      );
 
-    // Clear existing timeout to handle rapid clicking cleanly (prevent race conditions)
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      // Simulate processing time for this specific engine layer
+      const processingTime = activeStageIndex === 2 ? 1500 : 800; // Compute takes longer
 
-    timeoutRef.current = setTimeout(() => {
-      setTyping(false);
-      setResult(q);
-    }, 900);
-  }, []);
+      const timeout = setTimeout(() => {
+        setStages((prev) =>
+          prev.map((s, i) => (i === activeStageIndex ? { ...s, status: "done" } : s))
+        );
+        setActiveStageIndex((prev) => prev + 1);
+      }, processingTime);
+
+      return () => clearTimeout(timeout);
+    } else if (activeStageIndex === stages.length) {
+      setStatus("complete");
+    }
+  }, [activeStageIndex, stages.length]);
+
+  const handleRun = () => {
+    if (status === "idle") {
+      setStatus("running");
+      setTypedQuery("");
+    }
+  };
+
+  const handleReset = () => {
+    setStatus("idle");
+    setTypedQuery("");
+    setActiveStageIndex(-1);
+    setStages((prev) => prev.map((s) => ({ ...s, status: "pending" })));
+  };
 
   return (
-    <section className="py-24 px-6 bg-slate-50 border-y border-slate-200">
-      <div className="max-w-5xl mx-auto" ref={secRef}>
+    <div className="w-full max-w-5xl mx-auto px-4 lg:px-8 font-sans">
+      <div className="flex flex-col items-center mb-10 text-center">
+        <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-white mb-4">
+          Experience the <span className="text-blue-400">Autonomous Engine</span>
+        </h2>
+        <p className="text-neutral-400 max-w-2xl">
+          Watch as DataOmen routes intent, generates optimized SQL, executes via vector compute, and delivers executive-ready insights in milliseconds.
+        </p>
+      </div>
+
+      {/* Terminal/IDE Window Mockup */}
+      <div className="rounded-xl border border-white/10 bg-neutral-900/50 backdrop-blur-xl shadow-2xl overflow-hidden">
         
-        {/* Header Section */}
-        <header className={`text-center mb-14 transition-all duration-700 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
-          <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 px-4 py-1.5 rounded-full mb-6 text-blue-600">
-            <Sparkles size={14} className="animate-pulse" /> 
-            <span className="text-sm font-bold tracking-wide">TRY IT LIVE</span>
+        {/* Window Chrome */}
+        <div className="flex items-center px-4 py-3 border-b border-white/5 bg-neutral-900/80">
+          <div className="flex space-x-2">
+            <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50" />
+            <div className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/50" />
+            <div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/50" />
           </div>
-          <h2 className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4 leading-tight">
-            Ask your data a question.
-          </h2>
-          <p className="text-slate-600 text-lg max-w-xl mx-auto">
-            Click any example below and watch the AI agent answer in real time.
-          </p>
-        </header>
+          <div className="mx-auto text-xs font-medium text-neutral-500 uppercase tracking-widest">
+            DataOmen Interactive Terminal
+          </div>
+        </div>
 
-        {/* Demo Interface Shell */}
-        <div className={`transition-all duration-700 delay-150 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
+        <div className="p-6 md:p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          {/* Suggestion Chips */}
-          <div className="flex flex-wrap gap-3 justify-center mb-8" role="group" aria-label="Demo Queries">
-            {QUERIES.map((q, i) => (
-              <button
-                key={i}
-                onClick={() => runQuery(i)}
-                onKeyDown={(e) => e.key === 'Enter' && runQuery(i)}
-                aria-pressed={activeIdx === i}
-                className={`px-5 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 border-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-50
-                  ${activeIdx === i 
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" 
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                  }`}
-              >
-                {q.q}
-              </button>
-            ))}
-          </div>
-
-          {/* App Window */}
-          <div className="bg-white border border-slate-300 rounded-2xl overflow-hidden shadow-2xl shadow-slate-200/50 min-h-[420px] flex flex-col">
-            
-            {/* Browser Chrome */}
-            <div className="h-12 bg-slate-50 border-b border-slate-200 flex items-center px-5 gap-2">
-              <div className="flex gap-2">
-                <div className="w-3 h-3 rounded-full bg-slate-300" />
-                <div className="w-3 h-3 rounded-full bg-slate-300" />
-                <div className="w-3 h-3 rounded-full bg-slate-300" />
-              </div>
-              <div className="flex-1 h-8 bg-white rounded-md border border-slate-200 ml-5 flex items-center px-3 gap-2 shadow-sm">
-                <Search size={14} className="text-slate-400 shrink-0" />
-                <span className="text-sm text-slate-900 font-medium truncate">
-                  {inputVal || "Click a question above to try the live demo..."}
-                </span>
+          {/* Left Column: Input & Pipeline Status */}
+          <div className="flex flex-col gap-6">
+            <div className="space-y-3">
+              <label className="text-sm font-medium text-neutral-400">Ask your data anything</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  readOnly
+                  value={status === "idle" ? "" : typedQuery}
+                  placeholder="e.g., Analyze Q3 Enterprise churn rates..."
+                  className="w-full bg-neutral-950 border border-white/10 rounded-lg py-3 px-4 text-slate-50 placeholder:text-neutral-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all"
+                />
+                <button
+                  onClick={status === "idle" ? handleRun : handleReset}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-1.5 px-4 rounded-md transition-colors"
+                >
+                  {status === "idle" ? "Run Analysis" : "Reset"}
+                </button>
               </div>
             </div>
 
-            {/* Response Area */}
-            <div 
-              className="p-8 md:p-12 flex-1 flex flex-col justify-center"
-              aria-live="polite"
-              aria-busy={typing}
-            >
-              {/* Idle State */}
-              {!typing && !result && (
-                <div className="text-center text-slate-400 animate-in fade-in duration-500">
-                  <BarChart2 size={48} className="mx-auto mb-4 opacity-30" />
-                  <p className="text-base font-medium">Select a question to see the engine in action</p>
-                </div>
-              )}
-
-              {/* Typing Indicator */}
-              {typing && (
-                <div className="flex items-center justify-center gap-3 animate-in fade-in duration-300">
-                  <div className="flex gap-1.5">
-                    {[0, 1, 2].map((i) => (
-                      <div 
-                        key={i} 
-                        className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-bounce"
-                        style={{ animationDelay: `${i * 0.15}s` }} 
-                      />
-                    ))}
+            {/* Pipeline Stage Indicators */}
+            <div className="flex-grow bg-neutral-950/50 rounded-lg border border-white/5 p-5 font-mono text-sm space-y-4">
+              {stages.map((stage, index) => (
+                <div key={stage.id} className="flex items-center gap-3">
+                  <div className="w-5 flex justify-center">
+                    {stage.status === "pending" && <span className="text-neutral-700">•</span>}
+                    {stage.status === "active" && (
+                      <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                    )}
+                    {stage.status === "done" && <span className="text-emerald-500">✓</span>}
                   </div>
-                  <span className="text-slate-500 text-sm font-medium">Querying vector embeddings…</span>
+                  <span
+                    className={`transition-colors duration-300 ${
+                      stage.status === "pending"
+                        ? "text-neutral-600"
+                        : stage.status === "active"
+                        ? "text-blue-400"
+                        : "text-neutral-300"
+                    }`}
+                  >
+                    {stage.label}
+                  </span>
                 </div>
-              )}
+              ))}
+            </div>
+          </div>
 
-              {/* Data Result */}
-              {!typing && result && (
-                <div className="w-full animate-in slide-in-from-bottom-4 fade-in duration-500">
-                  <div className="flex gap-5 items-start mb-8">
-                    <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-600/20">
-                      <Sparkles size={24} className="text-white" />
-                    </div>
-                    <div className="pt-1">
-                      <h4 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">
-                        {result.headline}
-                      </h4>
-                      <p className="text-slate-600 text-base leading-relaxed">
-                        {result.detail}
-                      </p>
-                    </div>
-                  </div>
+          {/* Right Column: Output Visualization */}
+          <div className="bg-neutral-950 border border-white/5 rounded-lg overflow-hidden flex flex-col relative min-h-[300px]">
+            {status === "idle" && (
+              <div className="absolute inset-0 flex items-center justify-center text-neutral-600 text-sm">
+                Awaiting input to generate insights...
+              </div>
+            )}
 
-                  {/* Chart Card */}
-                  <div className="bg-slate-50 rounded-2xl p-6 md:p-8 border border-slate-200">
-                    <div className="flex justify-between items-center mb-8">
-                      <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                        {result.metric}
+            {status !== "idle" && (
+              <>
+                {/* Result Tabs */}
+                <div className="flex border-b border-white/5">
+                  <button className="px-4 py-2 text-xs font-medium text-blue-400 border-b-2 border-blue-500 bg-blue-500/5">
+                    Executive Summary
+                  </button>
+                  <button className="px-4 py-2 text-xs font-medium text-neutral-500 hover:text-neutral-300 transition-colors">
+                    Generated SQL
+                  </button>
+                </div>
+
+                {/* Simulated Result Payload */}
+                <div className="p-5 flex-grow overflow-y-auto custom-scrollbar">
+                  {status === "complete" ? (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="p-4 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-100 text-sm leading-relaxed">
+                        <strong>Insight:</strong> Enterprise churn in Q3 increased by 2.4% primarily due to a drop in platform usage following the v4.0 update. Customers utilizing the new API endpoints showed a 98% retention rate.
                       </div>
-                      <div className={`flex items-center gap-1.5 font-bold text-sm px-4 py-2 rounded-full ${
-                        result.positive 
-                          ? "text-emerald-700 bg-emerald-100" 
-                          : "text-blue-700 bg-blue-100"
-                      }`}>
-                        {result.positive ? <TrendingUp size={16} /> : <TrendingDown size={16} />} 
-                        {result.delta}
-                      </div>
-                    </div>
-                    
-                    {/* Dynamic Bar Chart */}
-                    <div className="flex items-end gap-2 md:gap-3 h-32">
-                      {result.bars.map((heightPercent, i) => (
-                        <div key={i} className="flex-1 h-full flex items-end group relative">
-                          {/* Tooltip implementation for realism */}
-                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                            Value: {heightPercent}%
-                          </div>
+                      
+                      {/* Fake Data Visualization Block */}
+                      <div className="h-32 w-full mt-4 flex items-end gap-2 pt-4 border-b border-white/10">
+                        {[40, 30, 60, 80, 45, 25, 55].map((height, i) => (
                           <div 
-                            className={`w-full rounded-t-md transition-all duration-700 ease-out ${
-                              i > 8 ? "bg-blue-600 hover:bg-blue-500" : "bg-blue-300 hover:bg-blue-400 opacity-60"
-                            }`}
-                            style={{ height: `${heightPercent}%` }}
+                            key={i} 
+                            className="flex-1 bg-blue-500/20 border-t border-blue-500/50 rounded-t-sm hover:bg-blue-400/40 transition-colors"
+                            style={{ height: `${height}%` }}
                           />
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <div className="flex justify-between text-[10px] text-neutral-500 uppercase tracking-wider px-1">
+                        <span>Jul</span>
+                        <span>Aug</span>
+                        <span>Sep</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Call to Action */}
-          <div className="text-center mt-10">
-            <a 
-              href="/register" 
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white font-semibold text-base px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
-            >
-              Connect your own data <ArrowRight size={18} />
-            </a>
+              </>
+            )}
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
