@@ -1,7 +1,11 @@
 // components/landing/footer.tsx
-import React from 'react';
+"use client";
+
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
+// Modular Strategy: Consuming the central SEO registry
+import { seoPages } from '@/lib/seo/index';
 
 // --- Types & Interfaces ---
 
@@ -15,7 +19,7 @@ interface NavigationSection {
   links: NavigationLink[];
 }
 
-// --- Data Configuration ---
+// --- Data Configuration (Core Brand Links) ---
 
 const BRAND_SECTIONS: NavigationSection[] = [
   {
@@ -56,61 +60,6 @@ const BRAND_SECTIONS: NavigationSection[] = [
   },
 ];
 
-const SEO_SECTIONS: NavigationSection[] = [
-  {
-    title: 'Comparisons',
-    links: [
-      { name: 'Tableau vs AI Data Analyst', href: '/tableau-vs-ai-analytics' },
-      { name: 'Power BI vs AI Data Analyst', href: '/power-bi-vs-ai-analytics' },
-      { name: 'Metabase vs AI Data Analyst', href: '/metabase-vs-ai-analytics' },
-      { name: 'Looker vs AI Data Analyst', href: '/looker-vs-ai-analytics' },
-      { name: 'Hex vs AI Data Analyst', href: '/hex-vs-ai-analytics' },
-    ],
-  },
-  {
-    title: 'Features',
-    links: [
-      { name: 'AI Data Analysis Platform', href: '/ai-data-analysis-platform' },
-      { name: 'AI Business Intelligence', href: '/ai-business-intelligence-tools' },
-      { name: 'Automated AI Dashboards', href: '/automated-ai-dashboard-builder' },
-      { name: 'Proactive AI Watchdogs', href: '/ai-data-visualization-tool' },
-      { name: 'AI Excel & CSV Analysis', href: '/ai-excel-analysis' },
-      { name: 'Plain-English to SQL', href: '/nl2sql-generator' },
-    ],
-  },
-  {
-    title: 'Guides',
-    links: [
-      { name: 'Text to SQL AI Platform', href: '/text-to-sql' },
-      { name: 'Analyze CSV & Excel Files', href: '/analyze-csv-excel-ai' },
-      { name: 'Analyze Sales Data with AI', href: '/analyze-sales-data-ai' },
-      { name: 'Build Dashboards from CSV', href: '/build-dashboard-from-csv' },
-      { name: 'No-Code SQL Dashboards', href: '/sql-dashboard-no-code' },
-    ],
-  },
-  {
-    title: 'Integrations',
-    links: [
-      { name: 'PostgreSQL AI Analytics', href: '/postgresql-ai-analytics' },
-      { name: 'MySQL AI Dashboards', href: '/mysql-ai-analytics' },
-      { name: 'Snowflake AI Integration', href: '/snowflake-ai-analytics' },
-      { name: 'Google BigQuery AI', href: '/bigquery-ai-analytics' },
-      { name: 'Salesforce AI Analytics', href: '/salesforce-ai-analytics' },
-      { name: 'Shopify E-Commerce AI', href: '/shopify-ai-analytics' },
-      { name: 'Google Analytics 4 AI', href: '/ga4-ai-dashboard' },
-    ],
-  },
-  {
-    title: 'Templates',
-    links: [
-      { name: 'AI Sales Dashboard', href: '/sales-dashboard-template' },
-      { name: 'SaaS Metrics Dashboard', href: '/saas-metrics-template' },
-      { name: 'Marketing ROI Dashboard', href: '/marketing-roi-template' },
-      { name: 'E-Commerce Dashboard', href: '/ecommerce-dashboard-template' },
-    ],
-  },
-];
-
 // --- Sub-Components ---
 
 const LinkList: React.FC<{ section: NavigationSection; isSeo?: boolean }> = ({ section, isSeo = false }) => (
@@ -138,6 +87,38 @@ const LinkList: React.FC<{ section: NavigationSection; isSeo?: boolean }> = ({ s
 // --- Main Component ---
 
 export default function Footer() {
+  /**
+   * Engineering Excellence: Dynamically generating SEO sections 
+   * from the registry to ensure 1:1 parity with the link silo.
+   */
+  const dynamicSeoSections = useMemo(() => {
+    const sections: Record<string, NavigationLink[]> = {};
+    const typeMapping: Record<string, string> = {
+      comparison: 'Comparisons',
+      feature: 'Features',
+      guide: 'Guides',
+      integration: 'Integrations',
+      template: 'Templates'
+    };
+
+    Object.entries(seoPages).forEach(([slug, data]) => {
+      const typeLabel = typeMapping[data.type] || 'Resources';
+      
+      if (!sections[typeLabel]) {
+        sections[typeLabel] = [];
+      }
+
+      // Mathematical Precision: Standardizing title cleaning logic across components
+      const cleanTitle = data.title.split('|')[0].trim();
+      sections[typeLabel].push({ name: cleanTitle, href: `/${slug}` });
+    });
+
+    // Convert to sorted array for consistent UI rendering
+    return Object.entries(sections)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([title, links]) => ({ title, links }));
+  }, []);
+
   return (
     <footer className="w-full bg-white border-t border-zinc-200" aria-labelledby="footer-heading">
       <h2 id="footer-heading" className="sr-only">
@@ -188,7 +169,7 @@ export default function Footer() {
           </div>
         </div>
 
-        {/* Middle Section: Explore Arcli (SEO Links Silo) */}
+        {/* Middle Section: Explore Arcli (Synchronized SEO Links Silo) */}
         <div className="py-12 border-b border-zinc-100">
           <div className="mb-10">
             <h2 className="text-lg font-semibold text-zinc-900">Explore Arcli</h2>
@@ -197,7 +178,7 @@ export default function Footer() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
-            {SEO_SECTIONS.map((section) => (
+            {dynamicSeoSections.map((section) => (
               <LinkList key={section.title} section={section} isSeo={true} />
             ))}
           </div>
