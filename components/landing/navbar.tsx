@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Database, Play, User } from "lucide-react";
+import { Play, User } from "lucide-react";
 import { C } from "@/lib/tokens";
+import { Logo } from "@/components/ui/logo";
 
 /**
  * Navbar Component
@@ -54,21 +55,10 @@ export function Navbar() {
         {/* Logo Section */}
         <div 
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}
+          className="transition-transform hover:scale-105"
+          style={{ display: "flex", alignItems: "center", cursor: "pointer" }}
         >
-          <div style={{
-            width: 36, height: 36, borderRadius: 10, background: C.navy,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(10, 22, 40, 0.15)"
-          }}>
-            <Database size={18} color="#fff" />
-          </div>
-          <span style={{
-            fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: 24,
-            fontWeight: 800, color: C.navy, letterSpacing: "-0.03em", textTransform: "uppercase"
-          }}>
-            Arcli<span style={{ color: C.blue }}>.</span>
-          </span>
+          <Logo className="h-8 w-auto" />
         </div>
 
         {/* Navigation Links */}

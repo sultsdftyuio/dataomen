@@ -24,7 +24,7 @@ const C = {
 
 /**
  * RegisterPage Component
- * * Optimized for high conversion by reducing friction. 
+ * Optimized for high conversion by reducing friction. 
  * Only captures essential credentials (Email/Password) and provides Google OAuth.
  */
 export default function RegisterPage() {

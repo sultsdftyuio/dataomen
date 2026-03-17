@@ -1,11 +1,9 @@
 // components/landing/footer.tsx
 "use client";
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
-// Modular Strategy: Consuming the central SEO registry
-import { seoPages } from '@/lib/seo/index';
 
 // --- Types & Interfaces ---
 
@@ -62,9 +60,9 @@ const BRAND_SECTIONS: NavigationSection[] = [
 
 // --- Sub-Components ---
 
-const LinkList: React.FC<{ section: NavigationSection; isSeo?: boolean }> = ({ section, isSeo = false }) => (
+const LinkList: React.FC<{ section: NavigationSection }> = ({ section }) => (
   <div className="flex flex-col space-y-4">
-    <h3 className={`font-semibold text-zinc-900 ${isSeo ? 'text-sm' : 'text-base'}`}>
+    <h3 className="font-semibold text-zinc-900 text-base">
       {section.title}
     </h3>
     <ul className="flex flex-col space-y-3">
@@ -72,9 +70,7 @@ const LinkList: React.FC<{ section: NavigationSection; isSeo?: boolean }> = ({ s
         <li key={link.href}>
           <Link
             href={link.href}
-            className={`transition-colors hover:text-blue-600 ${
-              isSeo ? 'text-xs text-zinc-500' : 'text-sm text-zinc-600'
-            }`}
+            className="transition-colors hover:text-blue-600 text-sm text-zinc-600"
           >
             {link.name}
           </Link>
@@ -87,38 +83,6 @@ const LinkList: React.FC<{ section: NavigationSection; isSeo?: boolean }> = ({ s
 // --- Main Component ---
 
 export default function Footer() {
-  /**
-   * Engineering Excellence: Dynamically generating SEO sections 
-   * from the registry to ensure 1:1 parity with the link silo.
-   */
-  const dynamicSeoSections = useMemo(() => {
-    const sections: Record<string, NavigationLink[]> = {};
-    const typeMapping: Record<string, string> = {
-      comparison: 'Comparisons',
-      feature: 'Features',
-      guide: 'Guides',
-      integration: 'Integrations',
-      template: 'Templates'
-    };
-
-    Object.entries(seoPages).forEach(([slug, data]) => {
-      const typeLabel = typeMapping[data.type] || 'Resources';
-      
-      if (!sections[typeLabel]) {
-        sections[typeLabel] = [];
-      }
-
-      // Mathematical Precision: Standardizing title cleaning logic across components
-      const cleanTitle = data.title.split('|')[0].trim();
-      sections[typeLabel].push({ name: cleanTitle, href: `/${slug}` });
-    });
-
-    // Convert to sorted array for consistent UI rendering
-    return Object.entries(sections)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([title, links]) => ({ title, links }));
-  }, []);
-
   return (
     <footer className="w-full bg-white border-t border-zinc-200" aria-labelledby="footer-heading">
       <h2 id="footer-heading" className="sr-only">
@@ -166,21 +130,6 @@ export default function Footer() {
                 <LinkList section={BRAND_SECTIONS[3]} />
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Middle Section: Explore Arcli (Synchronized SEO Links Silo) */}
-        <div className="py-12 border-b border-zinc-100">
-          <div className="mb-10">
-            <h2 className="text-lg font-semibold text-zinc-900">Explore Arcli</h2>
-            <p className="mt-2 text-sm text-zinc-500 max-w-2xl">
-              Discover how our autonomous AI agents adapt to your specific analytical needs, datasets, and workflows.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
-            {dynamicSeoSections.map((section) => (
-              <LinkList key={section.title} section={section} isSeo={true} />
-            ))}
           </div>
         </div>
 

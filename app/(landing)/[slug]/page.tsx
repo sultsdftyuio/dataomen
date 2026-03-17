@@ -23,10 +23,13 @@ import { seoPages, type SEOPageData } from '@/lib/seo/index';
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://www.arcli.tech';
 
+/**
+ * Update: params is now a Promise in modern Next.js App Router
+ */
 interface PageProps { 
-  params: { 
+  params: Promise<{ 
     slug: string; 
-  }; 
+  }>; 
 }
 
 // --- 1. Static Parameter Generation (Analytical Efficiency) ---
@@ -37,9 +40,11 @@ export function generateStaticParams() {
 
 // --- 2. Dynamic Metadata & OG Image Routing ---
 
-export function generateMetadata({ params }: PageProps): Metadata {
-  const pageData = seoPages[params.slug];
-  if (!pageData) return { title: 'Page Not Found | Arclis' };
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const pageData = seoPages[slug];
+  
+  if (!pageData) return { title: 'Page Not Found | Arcli' };
 
   const ogImageUrl = new URL(`${BASE_URL}/api/og`);
   ogImageUrl.searchParams.set('title', pageData.h1);
@@ -52,10 +57,10 @@ export function generateMetadata({ params }: PageProps): Metadata {
       title: pageData.title,
       description: pageData.description,
       type: 'article',
-      url: `${BASE_URL}/${params.slug}`,
+      url: `${BASE_URL}/${slug}`,
       images: [{ url: ogImageUrl.toString(), width: 1200, height: 630 }]
     },
-    alternates: { canonical: `${BASE_URL}/${params.slug}` },
+    alternates: { canonical: `${BASE_URL}/${slug}` },
   };
 }
 
@@ -66,7 +71,7 @@ const generateJsonLd = (pageData: SEOPageData, slug: string) => ({
   '@graph': [
     {
       '@type': 'SoftwareApplication',
-      name: 'Arclis',
+      name: 'Arcli',
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Web',
       description: pageData.description,
@@ -76,10 +81,10 @@ const generateJsonLd = (pageData: SEOPageData, slug: string) => ({
       '@type': 'Article',
       headline: pageData.h1,
       description: pageData.description,
-      author: { '@type': 'Organization', name: 'Arclis', url: BASE_URL },
+      author: { '@type': 'Organization', name: 'Arcli', url: BASE_URL },
       publisher: { 
         '@type': 'Organization', 
-        name: 'Arclis', 
+        name: 'Arcli', 
         logo: { '@type': 'ImageObject', url: `${BASE_URL}/icon.png` } 
       },
       mainEntityOfPage: { '@type': 'WebPage', '@id:': `${BASE_URL}/${slug}` }
@@ -208,21 +213,23 @@ const SeoSidebar = ({ pageData }: { pageData: SEOPageData }) => (
 
 // --- 5. Main Page Component ---
 
-export default function SEOPage({ params }: PageProps) {
-  const pageData = seoPages[params.slug];
+export default async function SEOPage({ params }: PageProps) {
+  // Await the params Promise resolving the 404 issue
+  const { slug } = await params;
+  const pageData = seoPages[slug];
   
   if (!pageData) {
     notFound();
   }
 
-  const jsonLd = generateJsonLd(pageData, params.slug);
+  const jsonLd = generateJsonLd(pageData, slug);
 
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       <main className="min-h-screen bg-white pb-24">
-        <Breadcrumbs pageData={pageData} slug={params.slug} />
+        <Breadcrumbs pageData={pageData} slug={slug} />
         <SeoHero pageData={pageData} />
 
         <section className="py-16">
@@ -258,7 +265,7 @@ export default function SEOPage({ params }: PageProps) {
               {pageData.comparison && (
                 <div id="comparison" className="scroll-mt-24">
                   <h2 className="text-3xl font-bold text-zinc-900 mb-8 border-b border-zinc-200 pb-4">
-                    Arclis vs. {pageData.comparison.competitor}
+                    Arcli vs. {pageData.comparison.competitor}
                   </h2>
                   <div className="grid sm:grid-cols-2 gap-6">
                     {/* Competitor Box */}
@@ -273,10 +280,10 @@ export default function SEOPage({ params }: PageProps) {
                         ))}
                       </ul>
                     </div>
-                    {/* Arclis Box */}
+                    {/* Arcli Box */}
                     <div className="p-8 rounded-2xl border border-blue-200 bg-blue-50 relative overflow-hidden shadow-sm">
                       <div className="absolute top-0 right-0 px-3 py-1 bg-blue-600 text-xs font-bold text-white rounded-bl-lg">Modern Choice</div>
-                      <div className="text-xl font-bold text-blue-900 mb-6">Arclis</div>
+                      <div className="text-xl font-bold text-blue-900 mb-6">Arcli</div>
                       <ul className="space-y-4">
                         {pageData.comparison.arcliWins.map((win, idx) => (
                           <li key={idx} className="flex items-start text-blue-900/80">

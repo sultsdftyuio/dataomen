@@ -48,7 +48,8 @@ export const textToSqlFeatures: Record<string, SEOPageData> = {
       { q: 'Will the AI accidentally delete my data?', a: 'No. Arcli strictly enforces read-only analytical connections. Our security-by-design architecture prevents any DROP or DELETE operations.' },
       { q: 'Can it handle complex JOINs?', a: 'Yes. By utilizing semantic RAG on your schema, the AI understands primary and foreign key relationships to generate flawless multi-table JOINs.' }
     ],
-    relatedSlugs: ['postgresql-text-to-sql', 'snowflake-ai-analytics', 'chat-with-database']
+    // Fixed related slug reference
+    relatedSlugs: ['postgresql-text-to-sql', 'snowflake-text-to-sql', 'how-to-build-sql-dashboard']
   },
 
   // Hyper-Niche: Postgres Focus (High technical search intent)
@@ -79,8 +80,8 @@ export const textToSqlFeatures: Record<string, SEOPageData> = {
     relatedSlugs: ['natural-language-to-sql', 'ai-dashboard-builder']
   },
 
-  // Hyper-Niche: Snowflake Focus (Enterprise search intent)
-  'snowflake-ai-analytics': {
+  // FIXED: Renamed from 'snowflake-ai-analytics' to avoid collision with databaseIntegrations.tsx
+  'snowflake-text-to-sql': {
     type: 'integration',
     title: 'Snowflake Text to SQL & AI Analytics | Arcli',
     description: 'Transform your Snowflake data warehouse with AI. Generate Snowflake SQL from English and build automated analytical dashboards.',
@@ -99,6 +100,7 @@ export const textToSqlFeatures: Record<string, SEOPageData> = {
     faqs: [
       { q: 'How do you handle massive Snowflake schemas?', a: 'We utilize semantic routing. We only pass the metadata of relevant tables to the LLM context window, preventing token limits and hallucinations.' }
     ],
-    relatedSlugs: ['natural-language-to-sql', 'ai-business-intelligence']
+    // Updated reference to point to the correct DB integration page
+    relatedSlugs: ['natural-language-to-sql', 'snowflake-ai-analytics']
   }
 };
