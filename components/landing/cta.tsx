@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ArrowRight, Calendar } from "lucide-react";
+import { CheckCircle2, ArrowRight, Play } from "lucide-react";
 import { C } from "@/lib/tokens";
 
 export function CTA() {
@@ -17,7 +17,7 @@ export function CTA() {
           Stop guessing.<br />Start knowing.
         </h2>
         <p style={{ fontSize: 20, marginBottom: 48, opacity: 0.9, lineHeight: 1.6 }}>
-          Connect your first source and deploy your first AI agent in under 5 minutes.
+          Connect your first data source and deploy your first autonomous AI agent in under 5 minutes.
         </p>
 
         {/* CTA buttons */}
@@ -33,14 +33,14 @@ export function CTA() {
             onMouseOver={e => (e.currentTarget.style.transform = "scale(1.02)")}
             onMouseOut={e  => (e.currentTarget.style.transform = "scale(1)")}
           >
-            Start Free Trial <ArrowRight size={18} />
+            Initialize Agent <ArrowRight size={18} />
           </a>
           <a
-            href="/demo"
+            href="#demo"
             className="btn-ghost-white"
             style={{ padding: "20px 40px", fontSize: 17 }}
           >
-            <Calendar size={18} /> Book a Demo
+            <Play size={18} /> Try the Playground
           </a>
         </div>
 

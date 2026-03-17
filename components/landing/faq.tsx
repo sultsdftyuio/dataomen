@@ -6,23 +6,23 @@ import { C } from "@/lib/tokens";
 const items = [
   {
     q: "What if my database schema is messy or undocumented?",
-    a: "Arclis's semantic layer is designed for the real world. During setup, it scans your schema and allows you to add plain-English descriptions to tables or columns. It learns your business logic quickly.",
+    a: "Arcli's AI is built for real-world, messy data. During setup, it automatically maps your schema relationships. You can also add plain-English definitions to tables or columns so the AI instantly learns your unique business logic.",
   },
   {
     q: "Do you train your AI on my proprietary data?",
-    a: "Absolutely not. We use enterprise-grade LLM endpoints with zero-data-retention policies. Furthermore, only structural metadata (like column names) is sent to the LLM to generate the SQL query. Your actual row data stays in your infrastructure.",
+    a: "Never. We use enterprise-grade models with strict zero-data-retention policies. Arcli only looks at your structural metadata (like column names) to write the SQL. Your actual customer and revenue data never leaves your secure infrastructure.",
   },
   {
     q: "How long does setup really take?",
-    a: "Usually less than 5 minutes. You securely authenticate your data sources (like Stripe or a read-only Postgres replica), Arclis maps the relationships, and you can start asking questions immediately.",
+    a: "Under 5 minutes. Securely connect your data source (like a read-only Postgres replica or Stripe), and Arcli instantly maps the relationships. You can start asking plain-English questions immediately—no engineering tickets required.",
   },
   {
-    q: "How does pricing scale?",
-    a: "Pricing is based on compute (queries run) rather than per-seat licenses. This means you can invite your entire organization to use Arclis without paying arbitrary license fees per user.",
+    q: "How does pricing scale? Do I pay per user?",
+    a: "We charge based on compute (queries run), not per-seat licenses. We believe insights should be accessible to everyone, so you can invite your entire organization to use Arcli without paying arbitrary license fees per user.",
   },
   {
-    q: "Can I use Arclis with multiple data sources simultaneously?",
-    a: "Yes. Arclis can join and query across multiple connected sources in a single question. Ask \"Compare our Stripe revenue to our Salesforce pipeline\" and Arclis will query both, join them semantically, and give you a unified answer.",
+    q: "Can I query multiple data sources at the same time?",
+    a: "Yes. Arcli can join and query across multiple connected sources on the fly. Ask \"Compare our Stripe revenue to our Salesforce pipeline\" and Arcli will seamlessly merge the data to give you a single, unified chart.",
   },
 ];
 

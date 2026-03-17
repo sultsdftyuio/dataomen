@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, ArrowRight, CheckCircle2, TrendingUp, Sparkles, Bot, Calendar } from "lucide-react";
+import { Search, ArrowRight, CheckCircle2, TrendingUp, Sparkles, Bot, Play } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
@@ -22,7 +22,7 @@ export function Hero() {
         <div
           style={{ textAlign: "center", marginBottom: 60 }}
           className={`fu ${vis ? "vis" : ""}`}
-          ref={ref}
+          ref={ref as React.RefObject<HTMLDivElement>}
         >
           {/* Eyebrow badge */}
           <div style={{
@@ -33,7 +33,7 @@ export function Hero() {
           }}>
             <Sparkles size={14} color={C.blue} />
             <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>
-              Business intelligence without SQL
+              Business intelligence without the SQL
             </span>
           </div>
 
@@ -46,8 +46,7 @@ export function Hero() {
           </h1>
 
           <p style={{ fontSize: 20, color: C.muted, lineHeight: 1.6, maxWidth: 620, margin: "0 auto 48px" }}>
-            Connect Stripe, Postgres, or Snowflake in 3 clicks. Ask questions in plain English.
-            Deploy AI agents that watch your data 24/7. No SQL. No tickets. No waiting.
+            Connect Stripe, Postgres, or Snowflake in seconds. Ask Arcli questions in plain English, and deploy autonomous AI agents to watch your metrics 24/7. No SQL. No tickets. No waiting.
           </p>
 
           {/* CTAs */}
@@ -55,8 +54,8 @@ export function Hero() {
             <a href="/register" className="btn-blue" style={{ padding: "18px 44px", fontSize: 16 }}>
               Start Free Trial <ArrowRight size={18} />
             </a>
-            <a href="/demo" className="btn-ghost" style={{ padding: "18px 36px", fontSize: 16, background: "#fff" }}>
-              <Calendar size={17} /> Book a Demo
+            <a href="#demo" className="btn-ghost" style={{ padding: "18px 36px", fontSize: 16, background: "#fff" }}>
+              <Play size={17} /> Try the Playground
             </a>
           </div>
 
@@ -128,7 +127,7 @@ export function Hero() {
                   </h4>
                   <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.6 }}>
                     Growth was primarily driven by the Enterprise segment in Germany and the UK.
-                    Here is the trajectory breakdown.
+                    Arcli generated the following trajectory breakdown from your Stripe dataset.
                   </p>
                 </div>
               </div>
@@ -169,7 +168,7 @@ export function Hero() {
       {/* Trust logos */}
       <div style={{ maxWidth: 1000, margin: "80px auto 0", textAlign: "center", borderTop: `1px solid ${C.rule}`, paddingTop: 40, padding: "40px 24px 0" }}>
         <p style={{ fontSize: 13, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 24 }}>
-          Trusted by 1,200+ data teams worldwide
+          Trusted by 1,200+ fast-growing data teams worldwide
         </p>
         <div style={{ display: "flex", justifyContent: "center", gap: 48, flexWrap: "wrap", opacity: 0.45, filter: "grayscale(100%)" }}>
           {["Acme Corp", "GlobalTech", "Nexus", "Quantum", "Vertex"].map((logo, i) => (

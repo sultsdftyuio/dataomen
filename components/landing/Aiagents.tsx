@@ -7,38 +7,38 @@ import { useVisible } from "@/hooks/useVisible";
 const pipelineSteps = [
   {
     id: "01",
-    name: "Math Perception",
+    name: "Real-Time Monitoring",
     role: "Anomaly Detector",
     icon: <Activity size={20} color={C.blueLight} />,
-    desc: "Fast, vectorized algorithms constantly monitor data streams to flag statistical deviations in milliseconds.",
+    desc: "Vectorized algorithms monitor your business metrics 24/7, catching revenue drops or abnormal usage spikes in milliseconds.",
   },
   {
     id: "02",
-    name: "Stateful Memory",
-    role: "Context Engine",
+    name: "Contextual Analysis",
+    role: "Memory Engine",
     icon: <Database size={20} color={C.blueLight} />,
-    desc: "Retrieves historical logs to determine if this is a brand new trend or the continuation of an ongoing issue.",
+    desc: "Cross-references historical data to instantly determine if a fluctuation is a normal seasonal trend or a critical new issue.",
   },
   {
     id: "03",
-    name: "Deep Diagnostics",
-    role: "RAG Analyst",
+    name: "Automated Root-Cause",
+    role: "AI Data Analyst",
     icon: <Search size={20} color={C.blueLight} />,
-    desc: "Autonomously writes DuckDB SQL to drill into your schema and locate the exact business dimension driving the change.",
+    desc: "Autonomously writes and executes SQL to drill into your schema, pinpointing the exact region, product, or user segment driving the change.",
   },
   {
     id: "04",
-    name: "ML Forecasting",
-    role: "Predictive Modeler",
+    name: "Predictive Impact",
+    role: "Forecaster",
     icon: <LineChart size={20} color={C.blueLight} />,
-    desc: "Applies linear regression and EMA smoothing to project how the metric will behave over the next 7 days.",
+    desc: "Applies machine learning models to project exactly how this anomaly will impact your KPIs and bottom line over the next 7 days.",
   },
   {
     id: "05",
-    name: "Actionable Alert",
-    role: "Supervisor Agent",
+    name: "Smart Notifications",
+    role: "Dispatcher",
     icon: <Bell size={20} color={C.blueLight} />,
-    desc: "Synthesizes the entire investigation into a clean, executive-level Slack or webhook alert with a deep-link dashboard.",
+    desc: "Pushes a plain-English, executive summary to Slack or your webhook, complete with a 1-click link to a pre-built investigation dashboard.",
   },
 ];
 
@@ -67,7 +67,7 @@ export function AIAgents() {
       <div style={{ maxWidth: 1240, margin: "0 auto", position: "relative", zIndex: 1 }}>
 
         {/* Header */}
-        <div className={`fu ${vis ? "vis" : ""}`} style={{ textAlign: "center", marginBottom: 80 }} ref={ref}>
+        <div className={`fu ${vis ? "vis" : ""}`} style={{ textAlign: "center", marginBottom: 80 }} ref={ref as React.RefObject<HTMLDivElement>}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             background: "rgba(59,154,232,0.15)", padding: "6px 16px", borderRadius: 30,
@@ -80,8 +80,7 @@ export function AIAgents() {
             Don't just query your data.<br />Hire an AI team to watch it.
           </h2>
           <p style={{ color: C.faint, fontSize: 18, maxWidth: 650, margin: "0 auto", lineHeight: 1.6 }}>
-            Unlike standard dashboards that require you to actively look for problems, Arclis
-            uses a multi-agent orchestration pattern to proactively detect, diagnose, and predict outcomes.
+            Unlike standard BI dashboards that require you to actively hunt for problems, DataOmen uses a multi-agent orchestration pattern to proactively detect, diagnose, and predict outcomes for you.
           </p>
         </div>
 

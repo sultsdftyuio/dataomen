@@ -7,29 +7,29 @@ import { MessageSquareText, BellRing, Presentation, PlugZap } from 'lucide-react
 // Extracted static data to prevent re-allocations
 const FEATURES = [
   {
-    title: "Chat with your data.",
-    description: "No SQL, no complex pivot tables. Just type your question in plain English, like 'What was our MRR growth last month?' and get an instant answer.",
+    title: "Plain-English Queries.",
+    description: "Drop the complex SQL and rigid pivot tables. Ask Arcli questions in plain English—like 'Why did Q3 revenue drop?'—and get instant, accurate answers.",
     icon: <MessageSquareText className="w-6 h-6 text-blue-600" />,
     bgColor: "bg-blue-50",
     borderColor: "border-blue-100"
   },
   {
-    title: "Smart business alerts.",
-    description: "Our AI agents watch your metrics 24/7. Get a Slack or email notification the moment customer churn spikes or a marketing campaign goes viral.",
+    title: "Autonomous AI Watchdogs.",
+    description: "Never miss a critical anomaly. Our AI agents monitor your metrics 24/7, sending instant alerts with root-cause analysis the moment revenue drops or errors spike.",
     icon: <BellRing className="w-6 h-6 text-rose-600" />,
     bgColor: "bg-rose-50",
     borderColor: "border-rose-100"
   },
   {
-    title: "Presentation-ready charts.",
-    description: "Instantly generate beautiful, interactive graphs that are ready to drop directly into your next board deck or team presentation.",
+    title: "Instant Visualizations.",
+    description: "Turn raw data into beautiful, interactive graphs instantly. Export presentation-ready charts directly to your board deck with zero manual formatting.",
     icon: <Presentation className="w-6 h-6 text-violet-600" />,
     bgColor: "bg-violet-50",
     borderColor: "border-violet-100"
   },
   {
-    title: "One-click integrations.",
-    description: "Connect your favorite tools like Stripe, Shopify, and Salesforce in seconds. Zero coding or database configuration required.",
+    title: "Frictionless Integrations.",
+    description: "Connect your warehouse, database, or favorite SaaS tools like Stripe and Salesforce in seconds. Zero engineering tickets or pipeline configurations required.",
     icon: <PlugZap className="w-6 h-6 text-emerald-600" />,
     bgColor: "bg-emerald-50",
     borderColor: "border-emerald-100"
@@ -47,7 +47,7 @@ export function Features() {
             Stop waiting for the data team.
           </h2>
           <p className="text-slate-600 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-            We built a platform that empowers anyone on your team to find insights, track metrics, and make decisions without writing a single line of code.
+            Deploy an AI data analyst that empowers anyone on your team to find insights, track metrics, and make decisions without writing a single line of SQL.
           </p>
         </div>
 

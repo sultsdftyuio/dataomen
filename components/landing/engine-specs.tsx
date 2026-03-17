@@ -5,30 +5,30 @@ import { Terminal, Braces, Database, Shield } from 'lucide-react';
 const specs = [
   {
     id: "01",
-    module: "Semantic NL2SQL Router",
-    tech: "Contextual RAG + LLM",
-    description: "Transforms plain English into highly optimized SQL. Prevents hallucination by semantically routing only necessary schema fragments to the context window.",
+    module: "AI Query Engine",
+    tech: "Natural Language Processing",
+    description: "Ask questions in plain English. Our AI understands your unique data structure and generates accurate, presentation-ready answers instantly—no SQL required.",
     icon: <Terminal className="w-6 h-6" />
   },
   {
     id: "02",
-    module: "Anomaly Detection Watchdogs",
-    tech: "Pandas / NumPy / Polars",
-    description: "Vectorized operations utilizing linear algebra (EMA, variance matrices) replace slow loops. Seasonality-aware outlier detection running entirely statelessly.",
+    module: "Proactive Watchdogs",
+    tech: "Automated Anomaly Detection",
+    description: "Never miss a critical drop in revenue or spike in errors. Autonomous AI agents monitor your metrics 24/7, catching hidden anomalies the moment they happen.",
     icon: <Braces className="w-6 h-6" />
   },
   {
     id: "03",
-    module: "In-Process Analytics",
-    tech: "DuckDB + Parquet",
-    description: "Queries execute directly against columnar Parquet formats. Zero data transfer overhead. Computation is moved directly to the data layer.",
+    module: "Instant Computations",
+    tech: "High-Performance Analytics",
+    description: "Experience zero-wait reporting. We process massive datasets with vectorized efficiency, meaning your deep-dive insights and charts load in milliseconds, not minutes.",
     icon: <Database className="w-6 h-6" />
   },
   {
     id: "04",
-    module: "Strict Multi-Tenancy",
-    tech: "Supabase Auth + RLS",
-    description: "Object-oriented service managers enforce tenant isolation at the query level. Read-only analytical connections ensure complete data security by design.",
+    module: "Enterprise-Grade Security",
+    tech: "Strict Data Isolation",
+    description: "Your data remains entirely yours. We utilize read-only analytical connections and strict tenant isolation to ensure your business intelligence is completely secure by design.",
     icon: <Shield className="w-6 h-6" />
   }
 ];
@@ -42,7 +42,7 @@ export function EngineSpecs() {
         <div className="md:w-1/3 border-b-2 md:border-b-0 md:border-r-2 border-slate-900 p-8 md:p-12 flex flex-col justify-between bg-white">
           <div>
             <h2 className="text-4xl font-black uppercase text-slate-900 mb-4 tracking-tight">System<br/>Specs</h2>
-            <p className="text-slate-600 font-medium">The Hybrid Performance Paradigm in action. Swappable modules, raw power.</p>
+            <p className="text-slate-600 font-medium">Built for speed. Designed for business. Raw power under the hood.</p>
           </div>
         </div>
 

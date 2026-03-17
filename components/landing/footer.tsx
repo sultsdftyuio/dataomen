@@ -2,7 +2,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { ShieldCheck, ArrowRight } from 'lucide-react';
-import { Logo } from '@/components/ui/logo';
 
 // --- Types & Interfaces ---
 
@@ -61,53 +60,53 @@ const SEO_SECTIONS: NavigationSection[] = [
   {
     title: 'Comparisons',
     links: [
-      { name: 'Tableau vs AI Analytics: The Modern Stack', href: '/tableau-vs-ai-analytics' },
-      { name: 'Power BI vs AI Analytics', href: '/power-bi-vs-ai-analytics' },
-      { name: 'Metabase vs AI Analytics', href: '/metabase-vs-ai-analytics' },
-      { name: 'Looker vs AI Analytics', href: '/looker-vs-ai-analytics' },
-      { name: 'Hex vs AI Analytics', href: '/hex-vs-ai-analytics' },
+      { name: 'Tableau vs AI Data Analyst', href: '/tableau-vs-ai-analytics' },
+      { name: 'Power BI vs AI Data Analyst', href: '/power-bi-vs-ai-analytics' },
+      { name: 'Metabase vs AI Data Analyst', href: '/metabase-vs-ai-analytics' },
+      { name: 'Looker vs AI Data Analyst', href: '/looker-vs-ai-analytics' },
+      { name: 'Hex vs AI Data Analyst', href: '/hex-vs-ai-analytics' },
     ],
   },
   {
     title: 'Features',
     links: [
       { name: 'AI Data Analysis Platform', href: '/ai-data-analysis-platform' },
-      { name: 'AI Business Intelligence Tools', href: '/ai-business-intelligence-tools' },
-      { name: 'Automated AI Dashboard Builder', href: '/automated-ai-dashboard-builder' },
-      { name: 'AI Data Visualization Tool', href: '/ai-data-visualization-tool' },
-      { name: 'AI Excel Analysis Tool', href: '/ai-excel-analysis' },
-      { name: 'Natural Language to SQL Generator', href: '/nl2sql-generator' },
+      { name: 'AI Business Intelligence', href: '/ai-business-intelligence-tools' },
+      { name: 'Automated AI Dashboards', href: '/automated-ai-dashboard-builder' },
+      { name: 'Proactive AI Watchdogs', href: '/ai-data-visualization-tool' },
+      { name: 'AI Excel & CSV Analysis', href: '/ai-excel-analysis' },
+      { name: 'Plain-English to SQL', href: '/nl2sql-generator' },
     ],
   },
   {
     title: 'Guides',
     links: [
       { name: 'Text to SQL AI Platform', href: '/text-to-sql' },
-      { name: 'Analyze CSV & Excel Files with AI', href: '/analyze-csv-excel-ai' },
-      { name: 'How to Analyze Sales Data with AI', href: '/analyze-sales-data-ai' },
-      { name: 'How to Build a Dashboard from a CSV File', href: '/build-dashboard-from-csv' },
-      { name: 'How to Build a SQL Dashboard Without Coding', href: '/sql-dashboard-no-code' },
+      { name: 'Analyze CSV & Excel Files', href: '/analyze-csv-excel-ai' },
+      { name: 'Analyze Sales Data with AI', href: '/analyze-sales-data-ai' },
+      { name: 'Build Dashboards from CSV', href: '/build-dashboard-from-csv' },
+      { name: 'No-Code SQL Dashboards', href: '/sql-dashboard-no-code' },
     ],
   },
   {
     title: 'Integrations',
     links: [
-      { name: 'PostgreSQL AI Analytics & Reporting', href: '/postgresql-ai-analytics' },
-      { name: 'MySQL AI Analytics & Dashboard', href: '/mysql-ai-analytics' },
-      { name: 'Snowflake AI Analytics Integration', href: '/snowflake-ai-analytics' },
-      { name: 'Google BigQuery AI Analytics', href: '/bigquery-ai-analytics' },
-      { name: 'Analyze Salesforce Data with AI', href: '/salesforce-ai-analytics' },
-      { name: 'Analyze Shopify E-Commerce Data with AI', href: '/shopify-ai-analytics' },
-      { name: 'Google Analytics 4 AI Dashboard', href: '/ga4-ai-dashboard' },
+      { name: 'PostgreSQL AI Analytics', href: '/postgresql-ai-analytics' },
+      { name: 'MySQL AI Dashboards', href: '/mysql-ai-analytics' },
+      { name: 'Snowflake AI Integration', href: '/snowflake-ai-analytics' },
+      { name: 'Google BigQuery AI', href: '/bigquery-ai-analytics' },
+      { name: 'Salesforce AI Analytics', href: '/salesforce-ai-analytics' },
+      { name: 'Shopify E-Commerce AI', href: '/shopify-ai-analytics' },
+      { name: 'Google Analytics 4 AI', href: '/ga4-ai-dashboard' },
     ],
   },
   {
     title: 'Templates',
     links: [
-      { name: 'AI Sales Dashboard Template', href: '/sales-dashboard-template' },
-      { name: 'SaaS Metrics Dashboard Template', href: '/saas-metrics-template' },
-      { name: 'Marketing ROI Dashboard Template', href: '/marketing-roi-template' },
-      { name: 'E-Commerce Dashboard Template', href: '/ecommerce-dashboard-template' },
+      { name: 'AI Sales Dashboard', href: '/sales-dashboard-template' },
+      { name: 'SaaS Metrics Dashboard', href: '/saas-metrics-template' },
+      { name: 'Marketing ROI Dashboard', href: '/marketing-roi-template' },
+      { name: 'E-Commerce Dashboard', href: '/ecommerce-dashboard-template' },
     ],
   },
 ];
@@ -142,7 +141,7 @@ export default function Footer() {
   return (
     <footer className="w-full bg-white border-t border-zinc-200" aria-labelledby="footer-heading">
       <h2 id="footer-heading" className="sr-only">
-        Arclis Footer and Site Navigation
+        Arcli Footer and Site Navigation
       </h2>
       
       <div className="max-w-7xl mx-auto px-6 pt-16 pb-8 lg:px-8">
@@ -151,12 +150,12 @@ export default function Footer() {
         <div className="xl:grid xl:grid-cols-3 xl:gap-8 pb-12 border-b border-zinc-100">
           <div className="space-y-6 xl:col-span-1">
             <Link href="/" className="inline-block">
-              <span className="sr-only">Arclis</span>
+              <span className="sr-only">Arcli</span>
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xl">
                   A
                 </div>
-                <span className="text-xl font-bold text-zinc-900">Arclis.</span>
+                <span className="text-xl font-bold text-zinc-900">Arcli.</span>
               </div>
             </Link>
             <p className="text-sm text-zinc-600 leading-relaxed max-w-xs">
@@ -194,7 +193,7 @@ export default function Footer() {
           <div className="mb-10">
             <h2 className="text-lg font-semibold text-zinc-900">Explore Arcli</h2>
             <p className="mt-2 text-sm text-zinc-500 max-w-2xl">
-              Discover how our autonomous data department adapts to your specific analytical needs, features, and workflows.
+              Discover how our autonomous AI agents adapt to your specific analytical needs, datasets, and workflows.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
@@ -207,7 +206,7 @@ export default function Footer() {
         {/* Bottom Section: Copyright & Compliance */}
         <div className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex flex-col md:flex-row items-center gap-2 md:gap-4 text-xs text-zinc-500">
-            <p>&copy; {new Date().getFullYear()} Arclis Technologies Inc.</p>
+            <p>&copy; {new Date().getFullYear()} Arcli Technologies Inc.</p>
             <span className="hidden md:inline text-zinc-300">•</span>
             <p>Made with care for data teams worldwide.</p>
           </div>

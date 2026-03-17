@@ -11,15 +11,15 @@ export function IntegrationsAndSecurity() {
 
   return (
     <section id="integrations" style={{ padding: "140px 24px", background: "#fff" }}>
-      <div style={{ maxWidth: 1240, margin: "0 auto" }} ref={ref}>
+      <div style={{ maxWidth: 1240, margin: "0 auto" }} ref={ref as React.RefObject<HTMLDivElement>}>
 
         {/* Header */}
         <div className={`fu ${vis ? "vis" : ""}`} style={{ textAlign: "center", marginBottom: 80 }}>
           <h2 className="pfd" style={{ fontSize: 44, color: C.navy, marginBottom: 24 }}>
-            Connect your entire stack in 3 clicks.
+            Connect your data. Secure your insights.
           </h2>
           <p style={{ color: C.muted, fontSize: 18, maxWidth: 600, margin: "0 auto" }}>
-            Zero ETL pipelines required. Authenticate securely and our engine automatically maps your schema.
+            No engineering tickets or ETL pipelines required. Arcli securely authenticates with your tools and automatically maps your data for instant analysis.
           </p>
         </div>
 
@@ -68,10 +68,9 @@ export function IntegrationsAndSecurity() {
             color: "#fff", position: "relative", overflow: "hidden",
           }}>
             <Shield size={48} color={C.blueLight} style={{ marginBottom: 24 }} />
-            <h3 className="pfd" style={{ fontSize: 32, marginBottom: 16 }}>Bank-Grade Security</h3>
+            <h3 className="pfd" style={{ fontSize: 32, marginBottom: 16 }}>Enterprise-Grade Trust</h3>
             <p style={{ color: C.faint, fontSize: 16, lineHeight: 1.65, maxWidth: 420, marginBottom: 32 }}>
-              Your data is isolated and encrypted. Arclis connects via read-only credentials,
-              and our AI models only process metadata—never your raw sensitive customer data.
+              Your raw data never leaves your infrastructure. Arcli connects via 100% read-only credentials, and our AI models only process metadata to generate queries—never your sensitive row-level data.
             </p>
             <a href="#" style={{ color: C.blueLight, fontWeight: 700, fontSize: 15, display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
               Read our Security Whitepaper <ArrowRight size={16} />
@@ -87,9 +86,9 @@ export function IntegrationsAndSecurity() {
             border: `1px solid ${C.rule}`, display: "flex", flexDirection: "column", justifyContent: "center",
           }}>
             <Lock size={40} color={C.navy} style={{ marginBottom: 24 }} />
-            <h3 className="pfd" style={{ fontSize: 26, color: C.navy, marginBottom: 20 }}>Compliance First</h3>
+            <h3 className="pfd" style={{ fontSize: 26, color: C.navy, marginBottom: 20 }}>Compliance Built-In</h3>
             <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-              {["SOC2 Type II Certified", "GDPR & CCPA Compliant", "Zero Data Retention", "AES-256 Encryption", "SSO / SAML Ready"].map((item, i) => (
+              {["SOC2 Type II Certified", "GDPR & CCPA Compliant", "Zero Data Retention Policy", "AES-256 Data Encryption", "Enterprise SSO / SAML"].map((item, i) => (
                 <li key={i} style={{ display: "flex", gap: 10, alignItems: "center", color: C.muted, fontSize: 15, fontWeight: 500 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} /> {item}
                 </li>

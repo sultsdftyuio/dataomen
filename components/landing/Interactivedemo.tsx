@@ -1,47 +1,49 @@
-// components/landing/Interactivedemo.tsx
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Sparkles, TrendingUp, TrendingDown, ArrowRight, BarChart2 } from "lucide-react";
+import { Search, Sparkles, TrendingUp, TrendingDown, ArrowRight, BarChart2, Code, Terminal } from "lucide-react";
 import { useVisible } from "@/hooks/useVisible";
 
-// Extracted outside the component to avoid unnecessary re-allocations on every render.
 const QUERIES = [
   {
-    q: "What was MRR last month?",
-    headline: "MRR last month was $312,400.",
-    detail: "That's up 8.7% month-over-month, driven by 43 new Enterprise subscriptions.",
-    metric: "$312,400",
-    delta: "+8.7%",
-    bars: [55, 60, 58, 65, 70, 68, 75, 80, 78, 85, 90, 100],
+    q: "Why did Q4 revenue spike?",
+    headline: "Expansion revenue drove a 32% spike in Q4.",
+    detail: "Analysis pinpointed 14 'Pro' accounts that upgraded to 'Enterprise' following the v2.0 feature release.",
+    metric: "+32% Revenue",
+    delta: "Expansion Driven",
+    bars: [20, 25, 22, 30, 35, 32, 45, 50, 48, 70, 85, 100],
     positive: true,
+    sql: "SELECT account_tier, SUM(delta_mrr) FROM events WHERE type = 'upgrade' AND date > '2023-10-01' GROUP BY 1;"
   },
   {
-    q: "Which campaign drove the most revenue in Q3?",
-    headline: '"Product-Led Growth" campaign led with $148K.',
-    detail: "It outperformed the next campaign by 2.3× and had the lowest CAC at $42/customer.",
-    metric: "$148,000",
-    delta: "+2.3×",
-    bars: [30, 45, 38, 60, 100, 55, 70, 48, 62, 75, 80, 68],
-    positive: true,
-  },
-  {
-    q: "What is churn by cohort this year?",
-    headline: "Churn is highest in the Feb cohort at 6.4%.",
-    detail: "Cohorts onboarded post-April show consistent improvement, averaging 2.1% monthly churn.",
-    metric: "2.1% avg",
+    q: "Predict churn for the next 30 days.",
+    headline: "Projected churn is down 12% for next month.",
+    detail: "High-risk segments identified in the Feb cohort have stabilized following the new automated onboarding flow.",
+    metric: "1.4% Est. Churn",
     delta: "↓ Improving",
-    bars: [100, 88, 75, 64, 55, 50, 45, 40, 36, 32, 28, 25],
+    bars: [100, 95, 80, 70, 60, 55, 45, 40, 35, 30, 25, 20],
     positive: false,
+    sql: "SELECT cohort_month, predict_churn(user_id) FROM users WHERE last_active < now() - interval '7 days';"
   },
   {
-    q: "Which features increase retention?",
-    headline: "Users who activate 3+ integrations retain at 94%.",
-    detail: "Integration depth is your #1 retention driver. Users with 1 integration retain at only 61%.",
-    metric: "94% retention",
-    delta: "+33pts",
+    q: "What is the LTV/CAC ratio by channel?",
+    headline: "Organic Search leads with a 5.2x LTV/CAC ratio.",
+    detail: "While Paid Social has higher volume, Organic Search users retain 40% longer and cost 85% less to acquire.",
+    metric: "5.2x Ratio",
+    delta: "Organic Lead",
+    bars: [30, 40, 35, 50, 60, 55, 70, 75, 80, 90, 95, 100],
+    positive: true,
+    sql: "SELECT channel, (avg(ltv) / avg(cac)) as ratio FROM marketing_metrics GROUP BY 1 ORDER BY 2 DESC;"
+  },
+  {
+    q: "Which features drive 90-day retention?",
+    headline: "AI Agent deployment is the #1 retention driver.",
+    detail: "Users who deploy at least one 'Watchdog' agent show a 94% retention rate compared to 61% for dashboard-only users.",
+    metric: "94% Retention",
+    delta: "+33pts Lift",
     bars: [30, 40, 52, 61, 72, 80, 86, 90, 92, 93, 93, 94],
     positive: true,
+    sql: "SELECT feature_name, retention_rate FROM usage_stats WHERE day = 90 ORDER BY 2 DESC LIMIT 5;"
   },
 ];
 
@@ -56,7 +58,6 @@ export function InteractiveDemo() {
   
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Cleanup timeout on unmount to prevent state updates on an unmounted component
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -70,30 +71,29 @@ export function InteractiveDemo() {
     setResult(null);
     setInputVal(q.q);
 
-    // Clear existing timeout to handle rapid clicking cleanly (prevent race conditions)
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
     timeoutRef.current = setTimeout(() => {
       setTyping(false);
       setResult(q);
-    }, 900);
+    }, 1200);
   }, []);
 
   return (
-    <section className="py-24 px-6 bg-slate-50 border-y border-slate-200">
-      <div className="max-w-5xl mx-auto" ref={secRef}>
+    <section id="demo" className="py-24 px-6 bg-slate-50 border-y border-slate-200">
+      <div className="max-w-6xl mx-auto" ref={secRef as React.RefObject<HTMLDivElement>}>
         
         {/* Header Section */}
         <header className={`text-center mb-14 transition-all duration-700 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
           <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 px-4 py-1.5 rounded-full mb-6 text-blue-600">
             <Sparkles size={14} className="animate-pulse" /> 
-            <span className="text-sm font-bold tracking-wide">TRY IT LIVE</span>
+            <span className="text-sm font-bold tracking-wide uppercase">Interactive Playground</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-4 leading-tight">
-            Ask your data a question.
+          <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 leading-tight uppercase tracking-tighter">
+            Stop Guessing. <br className="hidden md:block" /> Ask Arcli.
           </h2>
           <p className="text-slate-600 text-lg max-w-xl mx-auto">
-            Click any example below and watch the AI agent answer in real time.
+            Experience the power of our AI Data Analyst. Click an example question below to see Arcli generate insights in real-time.
           </p>
         </header>
 
@@ -101,17 +101,15 @@ export function InteractiveDemo() {
         <div className={`transition-all duration-700 delay-150 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
           
           {/* Suggestion Chips */}
-          <div className="flex flex-wrap gap-3 justify-center mb-8" role="group" aria-label="Demo Queries">
+          <div className="flex flex-wrap gap-3 justify-center mb-10" role="group" aria-label="Demo Queries">
             {QUERIES.map((q, i) => (
               <button
                 key={i}
                 onClick={() => runQuery(i)}
-                onKeyDown={(e) => e.key === 'Enter' && runQuery(i)}
-                aria-pressed={activeIdx === i}
-                className={`px-5 py-2.5 rounded-full font-semibold text-sm transition-all duration-200 border-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-slate-50
+                className={`px-5 py-2.5 rounded-full font-bold text-sm transition-all duration-200 border-2 
                   ${activeIdx === i 
-                    ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm" 
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                    ? "border-blue-600 bg-blue-50 text-blue-700 shadow-md" 
+                    : "border-slate-200 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600"
                   }`}
               >
                 {q.q}
@@ -120,102 +118,108 @@ export function InteractiveDemo() {
           </div>
 
           {/* App Window */}
-          <div className="bg-white border border-slate-300 rounded-2xl overflow-hidden shadow-2xl shadow-slate-200/50 min-h-[420px] flex flex-col">
+          <div className="bg-white border-2 border-slate-900 rounded-2xl overflow-hidden shadow-[12px_12px_0px_0px_rgba(15,23,42,1)] min-h-[500px] flex flex-col">
             
             {/* Browser Chrome */}
-            <div className="h-12 bg-slate-50 border-b border-slate-200 flex items-center px-5 gap-2">
+            <div className="h-12 bg-slate-100 border-b-2 border-slate-900 flex items-center px-5 gap-2">
               <div className="flex gap-2">
-                <div className="w-3 h-3 rounded-full bg-slate-300" />
-                <div className="w-3 h-3 rounded-full bg-slate-300" />
-                <div className="w-3 h-3 rounded-full bg-slate-300" />
+                {[1, 2, 3].map(i => <div key={i} className="w-3 h-3 rounded-full bg-slate-300 border border-slate-400" />)}
               </div>
-              <div className="flex-1 h-8 bg-white rounded-md border border-slate-200 ml-5 flex items-center px-3 gap-2 shadow-sm">
+              <div className="flex-1 h-8 bg-white rounded border border-slate-300 ml-5 flex items-center px-3 gap-2">
                 <Search size={14} className="text-slate-400 shrink-0" />
-                <span className="text-sm text-slate-900 font-medium truncate">
-                  {inputVal || "Click a question above to try the live demo..."}
+                <span className="text-sm text-slate-900 font-mono truncate">
+                  {inputVal || "Initialize a query to see the engine in action..."}
                 </span>
               </div>
             </div>
 
             {/* Response Area */}
-            <div 
-              className="p-8 md:p-12 flex-1 flex flex-col justify-center"
-              aria-live="polite"
-              aria-busy={typing}
-            >
-              {/* Idle State */}
+            <div className="p-8 md:p-12 flex-1 flex flex-col" aria-live="polite">
+              
               {!typing && !result && (
-                <div className="text-center text-slate-400 animate-in fade-in duration-500">
-                  <BarChart2 size={48} className="mx-auto mb-4 opacity-30" />
-                  <p className="text-base font-medium">Select a question to see the engine in action</p>
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-center">
+                  <BarChart2 size={64} className="mb-4 opacity-20" />
+                  <p className="text-lg font-bold uppercase tracking-widest opacity-50">Awaiting Input Signal</p>
                 </div>
               )}
 
-              {/* Typing Indicator */}
               {typing && (
-                <div className="flex items-center justify-center gap-3 animate-in fade-in duration-300">
-                  <div className="flex gap-1.5">
+                <div className="flex-1 flex flex-col items-center justify-center gap-6">
+                  <div className="flex gap-2">
                     {[0, 1, 2].map((i) => (
-                      <div 
-                        key={i} 
-                        className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-bounce"
-                        style={{ animationDelay: `${i * 0.15}s` }} 
-                      />
+                      <div key={i} className="w-3 h-3 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                     ))}
                   </div>
-                  <span className="text-slate-500 text-sm font-medium">Querying vector embeddings…</span>
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-blue-600 text-xs font-black uppercase tracking-widest">Supervisor Engine Active</span>
+                    <span className="text-slate-400 text-sm font-mono">Scanning schema and calculating variance...</span>
+                  </div>
                 </div>
               )}
 
-              {/* Data Result */}
               {!typing && result && (
                 <div className="w-full animate-in slide-in-from-bottom-4 fade-in duration-500">
-                  <div className="flex gap-5 items-start mb-8">
-                    <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-600/20">
-                      <Sparkles size={24} className="text-white" />
+                  <div className="flex gap-6 items-start mb-10">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center shrink-0 border-2 border-blue-500">
+                      <Sparkles size={28} className="text-blue-400" />
                     </div>
-                    <div className="pt-1">
-                      <h4 className="text-xl md:text-2xl font-bold text-slate-900 mb-2">
+                    <div>
+                      <h4 className="text-2xl md:text-3xl font-black text-slate-900 mb-2 uppercase tracking-tighter">
                         {result.headline}
                       </h4>
-                      <p className="text-slate-600 text-base leading-relaxed">
+                      <p className="text-slate-600 text-lg leading-relaxed max-w-2xl">
                         {result.detail}
                       </p>
                     </div>
                   </div>
 
-                  {/* Chart Card */}
-                  <div className="bg-slate-50 rounded-2xl p-6 md:p-8 border border-slate-200">
-                    <div className="flex justify-between items-center mb-8">
-                      <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                        {result.metric}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Visual Result */}
+                    <div className="bg-slate-50 rounded-2xl p-8 border-2 border-slate-200">
+                      <div className="flex justify-between items-center mb-8">
+                        <div className="text-4xl font-black text-slate-900 tracking-tighter">
+                          {result.metric}
+                        </div>
+                        <div className={`flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-full border-2 ${
+                          result.positive ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-blue-700 bg-blue-50 border-blue-200"
+                        }`}>
+                          {result.positive ? <TrendingUp size={16} /> : <TrendingDown size={16} />} 
+                          {result.delta}
+                        </div>
                       </div>
-                      <div className={`flex items-center gap-1.5 font-bold text-sm px-4 py-2 rounded-full ${
-                        result.positive 
-                          ? "text-emerald-700 bg-emerald-100" 
-                          : "text-blue-700 bg-blue-100"
-                      }`}>
-                        {result.positive ? <TrendingUp size={16} /> : <TrendingDown size={16} />} 
-                        {result.delta}
+                      
+                      <div className="flex items-end gap-2 h-40">
+                        {result.bars.map((height, i) => (
+                          <div key={i} className="flex-1 h-full flex items-end group relative">
+                            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 font-mono">
+                              Val: {height}%
+                            </div>
+                            <div 
+                              className={`w-full rounded-t-sm transition-all duration-1000 ease-out border-x border-t border-slate-900/10 ${
+                                i > 8 ? "bg-blue-600" : "bg-slate-200"
+                              }`}
+                              style={{ height: `${height}%` }}
+                            />
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    
-                    {/* Dynamic Bar Chart */}
-                    <div className="flex items-end gap-2 md:gap-3 h-32">
-                      {result.bars.map((heightPercent, i) => (
-                        <div key={i} className="flex-1 h-full flex items-end group relative">
-                          {/* Tooltip implementation for realism */}
-                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">
-                            Value: {heightPercent}%
-                          </div>
-                          <div 
-                            className={`w-full rounded-t-md transition-all duration-700 ease-out ${
-                              i > 8 ? "bg-blue-600 hover:bg-blue-500" : "bg-blue-300 hover:bg-blue-400 opacity-60"
-                            }`}
-                            style={{ height: `${heightPercent}%` }}
-                          />
-                        </div>
-                      ))}
+
+                    {/* Logic Result (Generated SQL) */}
+                    <div className="bg-slate-900 rounded-2xl p-8 border-2 border-slate-700 flex flex-col">
+                      <div className="flex items-center gap-2 mb-4">
+                        <Code size={16} className="text-blue-400" />
+                        <span className="text-blue-400 text-xs font-black uppercase tracking-widest">Logic Generation</span>
+                      </div>
+                      <div className="font-mono text-sm text-slate-300 leading-relaxed flex-1 flex items-center italic opacity-80">
+                         {result.sql}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between">
+                         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                           <Terminal size={12} /> Compute Layer: DuckDB
+                         </span>
+                         <span className="text-[10px] text-emerald-500 font-black uppercase">Optimized</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -223,13 +227,12 @@ export function InteractiveDemo() {
             </div>
           </div>
 
-          {/* Call to Action */}
-          <div className="text-center mt-10">
+          <div className="text-center mt-12">
             <a 
               href="/register" 
-              className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white font-semibold text-base px-8 py-4 rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20"
+              className="inline-flex items-center justify-center gap-4 bg-slate-900 text-white font-black text-lg px-10 py-5 rounded-xl hover:bg-blue-600 transition-all border-2 border-slate-900 shadow-[6px_6px_0px_0px_rgba(59,154,232,1)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none"
             >
-              Connect your own data <ArrowRight size={18} />
+              INITIALIZE YOUR AGENT <ArrowRight size={20} />
             </a>
           </div>
         </div>
