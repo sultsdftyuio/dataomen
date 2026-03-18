@@ -11,8 +11,10 @@ from pydantic import BaseModel, EmailStr, Field
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
-# Configure logging for observability
-logger = logging.getLogger(__name__)
+# ------------------------------------------------------------------------------
+# 1. Configuration & Security Initialization
+# ------------------------------------------------------------------------------
+logger = logging.getLogger("DataOmenAuth")
 load_dotenv()
 
 # Initialize API Router for modular registration
@@ -24,9 +26,9 @@ security = HTTPBearer()
 # Singleton placeholder for the Supabase client
 _supabase_client: Optional[Client] = None
 
-
-# ─── Pydantic Schemas ──────────────────────────────────────────────
-
+# ------------------------------------------------------------------------------
+# 2. Strict Pydantic Data Models
+# ------------------------------------------------------------------------------
 class RegisterRequest(BaseModel):
     """
     Strict payload validation for the registration flow.
@@ -37,7 +39,6 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(..., description="Fallback or actual user name")
     company_name: str = Field(..., description="Fallback or actual tenant company name")
 
-
 @dataclass
 class TenantContext:
     """
@@ -47,18 +48,19 @@ class TenantContext:
     """
     user_id: str
     tenant_id: str
-    email: Optional[str] = None
+    email: str
+    role: str = "authenticated"
     app_metadata: Optional[Dict[str, Any]] = None
 
-
-# ─── Core Services & Dependencies ──────────────────────────────────
-
+# ------------------------------------------------------------------------------
+# 3. Core Services & Performance Dependencies
+# ------------------------------------------------------------------------------
 def get_supabase_client() -> Client:
     """Lazy initialization of the Supabase client to prevent startup crashes."""
     global _supabase_client
     if _supabase_client is None:
         url = os.getenv("SUPABASE_URL")
-        # Ensure we use the SERVICE_ROLE_KEY for admin actions like user creation bypassing email confirmation
+        # Ensure we use the SERVICE_ROLE_KEY for admin actions like user creation
         key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         
         if not url or not key:
@@ -66,7 +68,6 @@ def get_supabase_client() -> Client:
             
         _supabase_client = create_client(url, key)
     return _supabase_client
-
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """
@@ -112,37 +113,38 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-
 def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> TenantContext:
     """
     Security by Design: Validates and locks the context to a specific tenant.
     Inject this dependency into your routes to enforce strict multi-tenant boundaries.
     """
-    # Handle both stateless (JWT payload 'sub') and network (Supabase dump 'id') formats
     user_id = user_payload.get("sub") or user_payload.get("id")
-    email = user_payload.get("email")
+    email = user_payload.get("email", "")
     app_metadata = user_payload.get("app_metadata", {})
     user_metadata = user_payload.get("user_metadata", {})
     
-    # Priority 1: B2B Organization/Tenant ID from app_metadata
-    # Priority 2: User metadata fallback
-    # Priority 3: B2C Solo User ID
-    tenant_id = app_metadata.get("tenant_id") or user_metadata.get("tenant_id") or user_id
+    if not user_id or not email:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed identity profile.")
+
+    # 1. Zero-Config Organization Routing (Domain Extraction)
+    tenant_domain = email.split("@")[1].lower() if "@" in email else "unknown"
     
-    if not tenant_id or not user_id:
-        logger.error("Tenant isolation failed. Missing ID for payload.")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User does not belong to a valid tenant setup.",
-        )
-        
+    # 2. Global Admin Detection
+    is_admin = tenant_domain == "arcli.tech"
+
+    # 3. Explicit Override (If a user is manually assigned a tenant_id in Supabase metadata)
+    explicit_tenant = app_metadata.get("tenant_id") or user_metadata.get("tenant_id")
+    
+    # Priority: Explicit Metadata > Extracted Domain > User ID (B2C Solo)
+    final_tenant_id = explicit_tenant or tenant_domain or user_id
+    
     return TenantContext(
         user_id=str(user_id),
-        tenant_id=str(tenant_id),
+        tenant_id=str(final_tenant_id),
         email=email,
+        role="admin" if is_admin else "authenticated",
         app_metadata=app_metadata
     )
-
 
 def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)) -> str:
     """
@@ -150,21 +152,23 @@ def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)
     """
     return tenant_context.tenant_id
 
-
-# ─── Endpoints ─────────────────────────────────────────────────────
-
+# ------------------------------------------------------------------------------
+# 4. Endpoints
+# ------------------------------------------------------------------------------
 @auth_router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(payload: RegisterRequest):
     """
     Multi-tenant Registration Endpoint.
     1. Creates the user in Supabase Auth bypassing email checks (for immediate frontend login).
-    2. Embeds the generated company name and full name into the user's metadata.
+    2. Maps the user to their organizational domain tenant.
     """
     try:
         client = get_supabase_client()
         
+        # Extract domain from email for the initial tenant assignment
+        extracted_domain = payload.email.split("@")[1].lower() if "@" in payload.email else payload.email
+
         # Security by Design: We use the admin API to create the user and auto-confirm them.
-        # This allows the frontend's immediate `signInWithPassword` call to succeed.
         response = client.auth.admin.create_user({
             "email": payload.email,
             "password": payload.password,
@@ -172,22 +176,22 @@ async def register_user(payload: RegisterRequest):
             "user_metadata": {
                 "full_name": payload.full_name,
                 "company_name": payload.company_name,
-                "tenant_id": payload.email  # Temporary baseline tenant_id mapped to email/company
+                "tenant_id": extracted_domain  # Zero-config tenant assignment
             }
         })
         
-        # Here you would typically trigger your Database layer to create the physical 
-        # multi-tenant schema/rows, e.g., `db.create_tenant(...)`
+        # Next Step: Trigger your Database Service here to create the physical 
+        # multi-tenant schema/rows, e.g., `db.create_tenant(extracted_domain)`
         
         return {
             "status": "success", 
             "message": "User and tenant successfully provisioned.",
-            "user_id": response.user.id
+            "user_id": response.user.id,
+            "tenant_id": extracted_domain
         }
         
     except Exception as e:
         logger.error(f"Registration Failed for {payload.email}: {str(e)}")
-        # Handle cases where the user might already exist
         if "already registered" in str(e).lower():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists.")
             

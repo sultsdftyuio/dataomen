@@ -6,7 +6,7 @@ import logging
 import time
 import uuid
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -33,7 +33,6 @@ from api.services.query_planner import QueryPlan
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/query", tags=["Query"])
 
-
 # ------------------------------------------------------------
 # CONFIG
 # ------------------------------------------------------------
@@ -50,7 +49,6 @@ FORBIDDEN_SQL = {
     "PRAGMA",
 }
 
-
 # ------------------------------------------------------------
 # MODULE-LEVEL SINGLETONS
 # These reference the global llm_client internally; instantiate once.
@@ -58,7 +56,6 @@ FORBIDDEN_SQL = {
 
 generator = NL2SQLGenerator()
 insight_engine = InsightOrchestrator()
-
 
 # ------------------------------------------------------------
 # REQUEST CONTRACTS
@@ -88,7 +85,6 @@ class PersistentQueryRequest(BaseModel):
     ab_test_config: Optional[ABTestConfig] = None
     predictive_config: Optional[PredictiveConfig] = None
 
-
 # ------------------------------------------------------------
 # SECURITY UTILITIES
 # ------------------------------------------------------------
@@ -96,11 +92,17 @@ class PersistentQueryRequest(BaseModel):
 def validate_sql(query: str) -> None:
     """
     Keyword-blocklist guard against destructive or config-leaking SQL.
-    Operates on the uppercased query string to catch mixed-case attempts.
+
+    Uses word-boundary padding (`` f" {keyword} " in f" {upper} " ``) rather
+    than a bare substring check, so column names such as UPDATED_AT or
+    CREATED_AT are never falsely rejected. Logs a warning before raising so
+    injection attempts are always captured in the security audit trail.
     """
     upper = query.upper()
     for keyword in FORBIDDEN_SQL:
-        if keyword in upper:
+        # Pad both sides to avoid matching substrings (e.g. 'UPDATED_AT' ⊃ 'UPDATE')
+        if f" {keyword} " in f" {upper} ":
+            logger.warning(f"SQL injection attempt blocked. Forbidden keyword: '{keyword}'")
             raise HTTPException(
                 status_code=400,
                 detail=f"Security Violation: Unsafe SQL operation '{keyword}' detected.",
@@ -120,14 +122,18 @@ def enforce_result_limit(query: str) -> str:
 
 def validate_ephemeral_path(path: str) -> str:
     """
-    Resolves an upload path to its absolute form and verifies it is
-    strictly contained within the OS temp directory, preventing
-    directory-traversal attacks on the ephemeral endpoint.
-    """
-    temp_dir = tempfile.gettempdir()
-    absolute_path = os.path.abspath(path)
+    Resolves an upload path to its real, absolute form — following symlinks —
+    and verifies it is strictly contained within the OS temp directory.
 
-    if not absolute_path.startswith(os.path.abspath(temp_dir)):
+    Uses ``os.path.realpath`` rather than ``os.path.abspath`` so that
+    symlink-based traversal attacks are blocked in addition to plain
+    ``../`` sequences.
+    """
+    # realpath() resolves symlinks; abspath() does not — use realpath here.
+    temp_dir = os.path.realpath(tempfile.gettempdir())
+    absolute_path = os.path.realpath(path)
+
+    if not absolute_path.startswith(temp_dir):
         logger.warning(f"SECURITY ALERT: Path traversal attempt blocked — '{path}'")
         raise HTTPException(status_code=403, detail="Forbidden file access.")
 
@@ -135,7 +141,6 @@ def validate_ephemeral_path(path: str) -> str:
         raise HTTPException(status_code=404, detail="Ephemeral file has expired or was removed.")
 
     return absolute_path
-
 
 # ------------------------------------------------------------
 # BACKGROUND AUDIT LOGGER
@@ -170,7 +175,6 @@ async def async_audit_logger(
         db.commit()
     except Exception as e:
         logger.error(f"Audit logging failed: {e}")
-
 
 # ------------------------------------------------------------
 # DATASET MOUNTER  (ephemeral path only)
@@ -209,7 +213,6 @@ def mount_dataset(con: duckdb.DuckDBPyConnection, file_path: str, view_name: str
     except Exception as e:
         raise RuntimeError(f"Dataset mount failure ({ext}): {e}") from e
 
-
 # ------------------------------------------------------------
 # EPHEMERAL QUERY  (CSV / Excel / JSON upload path)
 # ------------------------------------------------------------
@@ -227,17 +230,25 @@ async def execute_ephemeral_query(
     the request; nothing is persisted between calls. Schema discovery,
     SQL generation, governance injection, and insight synthesis all follow
     the same Modular Intelligence pipeline as the persistent route.
+
+    Both ``mount_dataset`` and the subsequent ``DESCRIBE`` are offloaded to
+    a thread via ``asyncio.to_thread`` to avoid blocking the event loop
+    during potentially slow I/O or CPU-bound format parsing.
     """
     safe_path = validate_ephemeral_path(request.ephemeral_path)
-    start_time = time.time()
+    # perf_counter() is monotonic and high-resolution; use it for all latency
+    # measurements instead of time.time(), which can drift or go backwards.
+    start_time = time.perf_counter()
     con = duckdb.connect(":memory:")
 
     try:
-        # 1. Mount data & discover schema
+        # 1. Mount data & discover schema (offloaded to thread — may be I/O-bound)
         view_name = "ephemeral_source"
-        mount_dataset(con, safe_path, view_name)
+        await asyncio.to_thread(mount_dataset, con, safe_path, view_name)
 
-        schema_df = con.execute(f"DESCRIBE {view_name}").pl()
+        schema_df = await asyncio.to_thread(
+            lambda: con.execute(f"DESCRIBE {view_name}").pl()
+        )
         # Standardized schema dict — matches the format expected by NL2SQLGenerator
         full_schema: Dict[str, Dict[str, str]] = {
             view_name: {
@@ -299,12 +310,11 @@ async def execute_ephemeral_query(
             "narrative": narrative.model_dump(),
             "columns": df.columns,
             "data": df.to_dicts(),
-            "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+            "execution_time_ms": round((time.perf_counter() - start_time) * 1000, 2),
         }
 
     finally:
         con.close()
-
 
 # ------------------------------------------------------------
 # PERSISTENT QUERY  (Warehouse / Parquet path)
@@ -330,7 +340,7 @@ async def execute_persistent_query(
       7. Background audit + cache population
       8. Optional diagnostic extensions  (A/B testing, time-series forecast)
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     # 1. Organization context + quota enforcement
     org = db.query(Organization).filter(
@@ -431,7 +441,7 @@ async def execute_persistent_query(
                 query=sql_query,
             )
 
-        execution_time_ms = round((time.time() - start_time) * 1000, 2)
+        execution_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
         # Increment usage counter atomically before any further async work
         org.current_month_queries += 1
@@ -521,7 +531,7 @@ async def execute_persistent_query(
                 request.agent_id,
                 request.natural_query,
                 sql_query,
-                round((time.time() - start_time) * 1000, 2),
+                round((time.perf_counter() - start_time) * 1000, 2),
                 False,
                 str(e),
             )
