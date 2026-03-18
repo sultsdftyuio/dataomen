@@ -1,34 +1,88 @@
-import hashlib
+"""
+ARCLI.TECH - Intelligence Layer
+Component: Auto-Correcting NL2SQL Engine (The Compiler)
+Strategy: AST Validation, Cost Guardrails, & Schema-Strict Generation
+
+Architectural note
+------------------
+This module is intentionally schema-context-agnostic.  All RAG ranking and
+schema pruning is performed upstream by the QueryPlanner, which passes a
+fully-resolved ``execution_context`` string.  Running a second vector-search
+here would add 1-2 s of latency and risk dropping the exact columns the
+Planner just selected.
+"""
+
+from __future__ import annotations
+
 import json
 import logging
 import re
-import numpy as np
-from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from api.services.llm_client import llm_client
 import sqlglot
 from sqlglot import exp
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from api.services.llm_client import llm_client
 from api.services.query_planner import QueryPlan
-from models import Agent, Dataset
+from models import Agent
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Data Contracts
+# Constants
+# ---------------------------------------------------------------------------
+
+# Engine name -> sqlglot read/write dialect
+_DIALECT_MAP: Dict[str, str] = {
+    "duckdb":    "duckdb",
+    "bigquery":  "bigquery",
+    "redshift":  "postgres",   # sqlglot uses postgres grammar for Redshift
+    "snowflake": "snowflake",
+}
+
+# Cloud DW dialects that use proprietary extensions (JSON operators, SUPER type,
+# STRUCT dot notation) which can confuse the sqlglot AST parser.  For these,
+# a ParseError triggers a warning instead of a hard security block so genuine
+# DW syntax errors surface from the engine itself rather than from us.
+_LENIENT_AST_DIALECTS: Set[str] = {"bigquery", "redshift", "snowflake"}
+
+_CONFIDENCE_WARN_THRESHOLD = 0.6
+_DEFAULT_RESULT_LIMIT      = 1_000
+
+# Regex fallback used when sqlglot cannot parse a Cloud DW query.
+# Catches destructive SQL keywords even inside proprietary syntax that the
+# AST parser cannot tokenise — prevents prompt-injection bypass via obfuscation.
+_DESTRUCTIVE_KEYWORD_RE = re.compile(
+    r"\b(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|GRANT|TRUNCATE|REVOKE|REPLACE|MERGE|CALL|EXEC)\b",
+    re.IGNORECASE,
+)
+
+# Regex fallback used when sqlglot cannot parse a Cloud DW query.
+# Detects whether a LIMIT clause already exists so we can append a safe
+# default and prevent unbounded full-table scans that cause OOM failures.
+_LIMIT_PRESENT_RE = re.compile(r"\bLIMIT\b", re.IGNORECASE)
+
+_VEGA_REQUIRED_KEYS: Set[str] = {"mark", "encoding"}
+_VEGA_VALID_MARKS: Set[str] = {
+    "bar", "line", "area", "point", "circle", "square",
+    "tick", "rule", "text", "geoshape", "arc", "rect",
+    "trail", "image", "boxplot", "errorband", "errorbar",
+}
+
+
+# ---------------------------------------------------------------------------
+# Data Contract
 # ---------------------------------------------------------------------------
 
 class NL2SQLOutput(BaseModel):
     """
     Structured output contract for the LLM.
 
-    Enforces chain-of-thought reasoning before SQL emission to reduce
-    hallucinations and improve mathematical accuracy. The ``reasoning`` field
-    is required first so the model cannot short-circuit to SQL without
-    articulating its join path and dialect choices.
+    The ``reasoning`` field is intentionally ordered first so the model must
+    articulate its join path and dialect choices before emitting SQL — this
+    chain-of-thought scaffolding measurably reduces hallucinations.
     """
 
     reasoning: str = Field(
@@ -52,272 +106,29 @@ class NL2SQLOutput(BaseModel):
     confidence_score: float = Field(
         ...,
         description=(
-            "0.0-1.0 confidence that the query accurately implements the plan "
+            "0.0–1.0 confidence that the query accurately implements the plan "
             "without hallucinated columns or functions."
         ),
     )
 
 
 # ---------------------------------------------------------------------------
-# NL2SQL Compiler Agent - Phase 2 & 3
+# NL2SQL Compiler
 # ---------------------------------------------------------------------------
-
-# Internal dialect map: our engine names -> sqlglot read dialect
-_DIALECT_MAP: Dict[str, str] = {
-    "duckdb":   "duckdb",
-    "bigquery": "bigquery",
-    "redshift": "postgres",   # sqlglot uses postgres rules for Redshift
-}
-
-_CONFIDENCE_WARN_THRESHOLD = 0.6
-_MAX_COLUMNS_PER_CONTEXT = 25
-_DEFAULT_RESULT_LIMIT = 1000
-_COL_EMB_CACHE_MAX_SIZE = 10_000
-
-_VEGA_REQUIRED_KEYS: Set[str] = {"mark", "encoding"}
-_VEGA_VALID_MARKS: Set[str] = {
-    "bar", "line", "area", "point", "circle", "square",
-    "tick", "rule", "text", "geoshape", "arc", "rect",
-    "trail", "image", "boxplot", "errorband", "errorbar",
-}
-
-# Pre-compile regex for faster tokenization
-_WORD_PATTERN = re.compile(r"\w+")
-
 
 class NL2SQLGenerator:
     """
-    Phase 2 & 3: Enterprise RAG & Auto-Correcting NL2SQL Engine.
+    Enterprise Auto-Correcting NL2SQL Engine.
+
+    Responsibilities
+    ----------------
+    * Prompt construction  — execution_context is pre-built by QueryPlanner
+    * AST security gate    — SELECT / WITH only; destructive nodes hard-blocked
+    * Cost guardrails      — auto-inject LIMIT when absent; warn on SELECT *
+    * Join path validation — FK/PK convention check, parquet-path-safe
+    * Vega-Lite validation — mark type + SQL-alias alignment; explicit null fallback
+    * Correction loop      — Pydantic ValidationError feeds back into correct_sql
     """
-
-    def __init__(self) -> None:
-        # Process-level cache: SHA-256(column_doc) -> embedding vector.
-        # NOTE: This is instance-level; promote to a class variable if a true
-        # process-wide singleton cache is required across multiple instances.
-        self._col_emb_cache: Dict[str, List[float]] = {}
-
-    # -----------------------------------------------------------------------
-    # Embedding helpers (cache-aware)
-    # -----------------------------------------------------------------------
-
-    @staticmethod
-    def _doc_cache_key(doc: str) -> str:
-        """Deterministic cache key for a column document string."""
-        return hashlib.sha256(doc.encode()).hexdigest()
-
-    async def _get_column_embeddings(self, docs: List[str]) -> List[List[float]]:
-        """
-        Returns embeddings for *all* docs in the same order they were supplied,
-        serving cached entries where available.
-
-        FIX: Previously the method filtered out None slots with a bare list
-        comprehension, which silently returned a shorter list than ``docs`` and
-        caused silent index mismatches in the vectorised ranking step.  The
-        method now raises explicitly when a slot is unexpectedly empty.
-        """
-        results: List[Optional[List[float]]] = [None] * len(docs)
-        uncached_indices: List[int] = []
-        uncached_docs: List[str] = []
-
-        for i, doc in enumerate(docs):
-            key = self._doc_cache_key(doc)
-            cached = self._col_emb_cache.get(key)
-            if cached is not None:
-                results[i] = cached
-            else:
-                uncached_indices.append(i)
-                uncached_docs.append(doc)
-
-        if uncached_docs:
-            # Evict oldest 25 % of entries when approaching the size limit
-            if len(self._col_emb_cache) + len(uncached_docs) > _COL_EMB_CACHE_MAX_SIZE:
-                evict_count = _COL_EMB_CACHE_MAX_SIZE // 4
-                for old_key in list(self._col_emb_cache.keys())[:evict_count]:
-                    del self._col_emb_cache[old_key]
-                logger.debug("Embedding cache: evicted %d stale entries.", evict_count)
-
-            fresh_embs = await llm_client.embed_batch(uncached_docs)
-
-            if len(fresh_embs) != len(uncached_docs):
-                raise ValueError(
-                    f"embed_batch returned {len(fresh_embs)} embeddings for "
-                    f"{len(uncached_docs)} documents — length mismatch."
-                )
-
-            for idx, doc, emb in zip(uncached_indices, uncached_docs, fresh_embs):
-                key = self._doc_cache_key(doc)
-                self._col_emb_cache[key] = emb
-                results[idx] = emb
-
-        # Guard: every slot must have been filled
-        missing = [i for i, r in enumerate(results) if r is None]
-        if missing:
-            raise RuntimeError(
-                f"Embedding result slots {missing} are still None after fetch — "
-                "this indicates a cache/fetch logic bug."
-            )
-
-        return results  # type: ignore[return-value]  # all None slots verified above
-
-    # -----------------------------------------------------------------------
-    # Schema Pruning  (Plan-driven -> Global Hybrid RAG)
-    # -----------------------------------------------------------------------
-
-    def _prune_by_plan(
-        self,
-        plan: QueryPlan,
-        full_schema: Dict[str, Dict[str, Any]],
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Stage 1 - Deterministic allowlist pruning.
-        """
-        required: Set[str] = set()
-        for step in plan.steps:
-            required.update(step.columns_involved)
-
-        pruned: Dict[str, Dict[str, Any]] = {}
-        for table, columns in full_schema.items():
-            pruned[table] = {
-                col_name: col_meta
-                for col_name, col_meta in columns.items()
-                if col_name in required
-                or col_name.endswith("_id")
-                or col_name == "id"
-            }
-
-        return pruned
-
-    async def _rank_columns_globally(
-        self,
-        plan_pruned: Dict[str, Dict[str, Any]],
-        prompt: str,
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        Stage 2 - Global Hybrid RAG ranking.
-        Uses vectorised matrix operations for cosine similarity.
-        """
-        total_cols = sum(len(cols) for cols in plan_pruned.values())
-
-        # Already within budget — return as-is, no embeddings needed.
-        if total_cols <= _MAX_COLUMNS_PER_CONTEXT:
-            return plan_pruned
-
-        # Flatten all tables into one candidate list
-        flat: List[Tuple[str, str, Any]] = [
-            (table, col_name, col_meta)
-            for table, columns in plan_pruned.items()
-            for col_name, col_meta in columns.items()
-        ]
-
-        prompt_lower = prompt.lower()
-        keywords = set(_WORD_PATTERN.findall(prompt_lower))
-        vector_scores: Dict[Tuple[str, str], float] = {}
-
-        # --- Vectorised scoring ---
-        try:
-            prompt_emb = np.array(await llm_client.embed(prompt), dtype=np.float32)
-
-            # Build docs in the same order as ``flat`` so indices align 1-to-1.
-            docs = [
-                (
-                    f"Table: {table}. Column: {col_name}. "
-                    f"Type: {col_meta.get('type', '')}. "
-                    f"Description: {col_meta.get('description', '')}. "
-                    f"Examples: {', '.join(str(s) for s in col_meta.get('samples', [])[:3])}"
-                )
-                for table, col_name, col_meta in flat
-            ]
-
-            col_embs = await self._get_column_embeddings(docs)
-
-            # Vectorised cosine similarity via matrix-vector product (C-optimised)
-            col_embs_mat = np.array(col_embs, dtype=np.float32)   # (N, D)
-            prompt_norm  = float(np.linalg.norm(prompt_emb))
-            col_norms    = np.linalg.norm(col_embs_mat, axis=1)   # (N,)
-
-            sim_scores = np.zeros(len(flat), dtype=np.float32)
-            if prompt_norm > 0:
-                valid_mask = col_norms > 0
-                sim_scores[valid_mask] = (
-                    np.dot(col_embs_mat[valid_mask], prompt_emb)
-                    / (col_norms[valid_mask] * prompt_norm)
-                )
-
-            for i, (table, col_name, _) in enumerate(flat):
-                vector_scores[(table, col_name)] = float(sim_scores[i])
-
-        except Exception as exc:
-            logger.warning(
-                "Global vector ranking failed (%s). Falling back to deterministic scoring only.",
-                exc,
-            )
-
-        # --- Deterministic scoring ----------------------------------------
-        time_keywords = {"date", "time", "year", "month", "day", "trend", "predict", "forecast"}
-        agg_keywords  = {"total", "sum", "average", "revenue", "count", "metrics", "stats"}
-        time_intent   = bool(time_keywords & keywords)
-        agg_intent    = bool(agg_keywords  & keywords)
-
-        scored: List[Tuple[float, str, str, Any]] = []
-        for table, col_name, col_meta in flat:
-            col_lower = col_name.lower()
-            col_type  = str(col_meta.get("type", "")).upper()
-            score: float = 0.0
-
-            if col_lower in keywords:
-                score += 15
-            if any(k in col_lower for k in keywords if len(k) > 3):
-                score += 8
-            if any(k in col_meta.get("description", "").lower() for k in keywords if len(k) > 3):
-                score += 8
-            if time_intent and any(t in col_type for t in ("DATE", "TIMESTAMP", "TIME")):
-                score += 10
-            if agg_intent and any(t in col_type for t in ("INT", "FLOAT", "DOUBLE", "DECIMAL", "NUMERIC")):
-                score += 8
-            if col_lower.endswith("_id") or col_lower == "id":
-                score += 4
-
-            score += vector_scores.get((table, col_name), 0.0) * 20
-            scored.append((score, table, col_name, col_meta))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-        # Re-group the global top-K winners back by source table
-        result: Dict[str, Dict[str, Any]] = defaultdict(dict)
-        for _, table, col_name, col_meta in scored[:_MAX_COLUMNS_PER_CONTEXT]:
-            result[table][col_name] = {
-                "type":        col_meta.get("type", "UNKNOWN"),
-                "samples":     col_meta.get("samples", [])[:5],
-                "description": col_meta.get("description", ""),
-            }
-
-        return dict(result)
-
-    # -----------------------------------------------------------------------
-    # Dataset -> Schema hydration (DuckDB zero-copy path)
-    # -----------------------------------------------------------------------
-
-    @staticmethod
-    def _build_schema_from_datasets(datasets: List[Dataset]) -> Dict[str, Dict[str, Any]]:
-        schema: Dict[str, Dict[str, Any]] = {}
-        for ds in datasets:
-            source_key = f"read_parquet('{ds.file_path}')"
-            cols = ds.schema_metadata or {}
-            schema[source_key] = {
-                col_name: {"type": dtype, "samples": [], "description": ""}
-                for col_name, dtype in cols.items()
-            }
-        return schema
-
-    async def _build_contextual_schema(
-        self,
-        plan: QueryPlan,
-        full_schema: Dict[str, Dict[str, Any]],
-        prompt: str,
-    ) -> str:
-        plan_pruned = self._prune_by_plan(plan, full_schema)
-        ranked = await self._rank_columns_globally(plan_pruned, prompt)
-        return json.dumps(ranked, indent=2)
 
     # -----------------------------------------------------------------------
     # Prompt Construction
@@ -325,12 +136,15 @@ class NL2SQLGenerator:
 
     def _build_system_prompt(
         self,
-        contextual_schema: str,
+        execution_context: str,
         plan: QueryPlan,
         dialect: str,
         agent: Optional[Agent] = None,
         semantic_views: Optional[Dict[str, str]] = None,
     ) -> str:
+        agent_block = (
+            f"\nAGENT CONTEXT:\n{agent.role_description}\n" if agent else ""
+        )
         views_block = ""
         if semantic_views:
             views_block = (
@@ -339,66 +153,62 @@ class NL2SQLGenerator:
                 f"{json.dumps(semantic_views, indent=2)}\n"
             )
 
-        agent_block = ""
-        if agent:
-            agent_block = f"\nAGENT CONTEXT:\n{agent.role_description}\n"
-
         return f"""You are an elite Data Engineer and SQL optimiser for an Enterprise Analytical SaaS.
-Your objective is to execute the provided Execution Plan by translating it into highly optimised, \
-read-only {dialect.upper()} SQL.
+Your objective is to translate the Execution Plan below into highly optimised, read-only {dialect.upper()} SQL.
 
 TARGET DIALECT: {dialect.upper()}
 Always use functions and syntax native to {dialect.upper()}.
 {agent_block}
-SCHEMA CONTEXT (Pruned + globally semantically ranked subset):
-<schema_context>
-{contextual_schema}
-</schema_context>
+SCHEMA & EXECUTION CONTEXT (pre-built and ranked by the Query Planner — trust it verbatim):
+<execution_context>
+{execution_context}
+</execution_context>
 {views_block}
 LEAD ENGINEER'S EXECUTION PLAN:
-Execute every step in order. Do not skip or reorder steps.
+Execute every step in order.  Do not skip or reorder steps.
 <execution_plan>
 {plan.model_dump_json(indent=2)}
 </execution_plan>
 
 CRITICAL ENGINEERING RULES:
-1. SECURITY BY DESIGN: Output ONLY `SELECT` or `WITH` (CTE) statements. NEVER emit INSERT, UPDATE,
-   DELETE, DROP, ALTER, GRANT, or any DDL/DML.
-2. NO HALLUCINATIONS: Use ONLY columns and tables present in the Schema Context above. If a value
-   cannot be computed from available columns, use COALESCE or arithmetic on real columns.
-3. DATA GROUNDING: Honour the 'samples' in the schema for filter literals. Case matters
-   (e.g. if samples show 'ACTIVE', do not filter by 'active').
-4. DIALECT-SPECIFIC HANDLING:
-   - BigQuery  : UNNEST() for arrays, struct dot notation, TIMESTAMP_TRUNC / DATE_TRUNC.
-   - DuckDB    : UNNEST(), list comprehensions, date_trunc(), strptime(), approx_count_distinct().
-                 Table names are read_parquet('...') sources - use them verbatim as the FROM target.
-   - Redshift  : JSON_EXTRACT_PATH_TEXT(), SUPER type navigation, DATEADD / DATEDIFF.
-5. TABLE REFERENCING: Wrap table names in double-quotes to prevent reserved-keyword conflicts.
-6. ANALYTICAL MATH PREP (Phase 3 Integration - MANDATORY):
-   - ALWAYS CAST aggregating numeric metrics as DOUBLE.
-     Example: `CAST(SUM(revenue) AS DOUBLE)`, `CAST(AVG(score) AS DOUBLE)`.
-   - ALWAYS CAST temporal grouping columns as DATE or TIMESTAMP.
-     Example: `CAST(created_at AS DATE)`, `CAST(event_ts AS TIMESTAMP)`.
-   - This strict typing is non-negotiable: it guarantees type-safe input for the
-     downstream Polars vectorised compute engine (EMA, Z-Score, rolling windows).
-     Mixed integer/float types or implicit temporal coercions cause Phase 3 failures.
-7. MATHEMATICAL PRECISION: Prefer vectorised aggregate functions native to {dialect.upper()}
-   (e.g. corr(), regr_slope(), stddev_pop(), percentile_cont()).
-8. JOIN CORRECTNESS: Always join on FK -> PK relationships.
-   Correct  : orders.user_id = users.id
-   Incorrect: orders.id = users.id
-9. RESULT LIMITING: Always include an explicit LIMIT clause. Default to LIMIT {_DEFAULT_RESULT_LIMIT}
-   unless the Execution Plan specifies a different cardinality requirement.
+1.  SECURITY BY DESIGN: Output ONLY `SELECT` or `WITH` (CTE) statements.
+    NEVER emit INSERT, UPDATE, DELETE, DROP, ALTER, GRANT, or any DDL/DML.
+2.  NO HALLUCINATIONS: Use ONLY columns and tables present in the Execution Context.
+    For DuckDB, table names are literal Parquet paths — use them verbatim in the
+    FROM clause (e.g. `read_parquet('sync/stripe/invoices/*.parquet')`).
+3.  DATA GROUNDING: Honour the 'samples' in the schema for filter literals.
+    Case matters (e.g. if samples show 'ACTIVE', do NOT filter by 'active').
+4.  DIALECT-SPECIFIC HANDLING:
+    - DuckDB    : read_parquet() sources, date_trunc(), strptime(),
+                  approx_count_distinct(), list_aggregate().
+    - BigQuery  : UNNEST() for arrays, TIMESTAMP_TRUNC / DATE_TRUNC,
+                  struct dot notation.
+    - Redshift  : JSON_EXTRACT_PATH_TEXT(), SUPER type navigation,
+                  DATEADD / DATEDIFF, LISTAGG.
+    - Snowflake : FLATTEN() for semi-structured, TO_DATE(), ZEROIFNULL(),
+                  APPROX_COUNT_DISTINCT().
+5.  ANALYTICAL MATH PREP (MANDATORY — downstream Polars engine requirement):
+    - ALWAYS CAST aggregating numeric metrics as DOUBLE.
+      Example: `CAST(SUM(revenue) AS DOUBLE)`.
+    - ALWAYS CAST temporal grouping columns as DATE or TIMESTAMP.
+      Example: `CAST(created_at AS DATE)`.
+    Mixed integer/float types or implicit temporal coercions cause Phase 3 failures.
+6.  JOIN CORRECTNESS: Always join on FK -> PK relationships.
+    Correct  : orders.user_id = users.id
+    Incorrect: orders.id      = users.id
+7.  RESULT LIMITING: Always include an explicit LIMIT clause.
+    Default to LIMIT {_DEFAULT_RESULT_LIMIT} unless the plan specifies otherwise.
 
-CHARTING RULES (Vega-Lite / UI Shape):
-- If `suggested_visualizations` is non-empty in the plan, output a declarative Vega-Lite JSON spec.
-- Ensure the 'mark' (bar, line, area, scatter, pie) fits the data shape.
-- Use 'line'/'area' marks for time-series; 'bar' for categorical aggregations.
-- Field names in the spec MUST match SQL output aliases exactly.
+CHARTING RULES (Vega-Lite):
+- If the plan implies a visualisation, output a declarative Vega-Lite JSON spec.
+- Use 'line' / 'area' for time-series; 'bar' for categorical aggregations.
+- ALL SQL output aliases MUST be fully lowercase (e.g. `total_revenue`, not `Total_Revenue`).
+  Vega-Lite field matching is strictly case-sensitive; mixed-case aliases produce blank charts.
+- Every field name in `encoding` MUST match a SQL output alias exactly (character-for-character).
 """
 
     # -----------------------------------------------------------------------
-    # AST Security Gate (Defense-in-Depth, CTE-Aware)
+    # AST Security Gate
     # -----------------------------------------------------------------------
 
     _DESTRUCTIVE_NODES = (
@@ -407,11 +217,60 @@ CHARTING RULES (Vega-Lite / UI Shape):
         exp.Create, exp.Grant, exp.Pragma,
     )
 
+    @staticmethod
+    def _regex_security_scan(sql: str, dialect: str) -> None:
+        """
+        Last-resort security check used when sqlglot cannot parse the query
+        (typically proprietary Cloud DW syntax).
+
+        Scans the raw SQL string for destructive keywords via regex.  This is
+        intentionally conservative: a false positive on an identifier that
+        happens to contain a keyword (e.g. a column named ``insert_date``) is
+        acceptable — the user can rename the alias — whereas a missed
+        ``DROP TABLE`` injection is not.
+
+        Raises ``ValueError`` on any match.
+        """
+        match = _DESTRUCTIVE_KEYWORD_RE.search(sql)
+        if match:
+            raise ValueError(
+                f"Security Violation (regex gate): destructive keyword "
+                f"'{match.group().upper()}' detected in query submitted for "
+                f"{dialect.upper()} dialect."
+            )
+
     def _validate_security(self, sql: str, dialect: str) -> None:
+        """
+        Two-layer security gate: AST inspection (primary) + regex scan
+        (fallback for Cloud DW dialects where sqlglot may not parse cleanly).
+
+        Layer 1 — AST (all dialects):
+            Hard-blocks non-SELECT / non-CTE root nodes and any destructive
+            node found anywhere in the expression tree.
+
+        Layer 2 — Regex (lenient dialects only, on ParseError):
+            Cloud DW engines (BigQuery, Redshift, Snowflake) use proprietary
+            extensions (STRUCT dot-notation, SUPER type, FLATTEN) that can
+            confuse sqlglot.  When parsing fails for these dialects we fall
+            back to a regex keyword scan rather than returning early, so the
+            gate is never fully bypassed by obfuscated prompt injection.
+        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
+        is_lenient      = dialect.lower() in _LENIENT_AST_DIALECTS
+
         try:
             statements = sqlglot.parse(sql, read=sqlglot_dialect)
         except sqlglot.errors.ParseError as exc:
+            if is_lenient:
+                logger.warning(
+                    "AST parse warning (%s dialect) — proprietary syntax suspected. "
+                    "Falling back to regex security scan before forwarding to engine. "
+                    "Parse details: %s",
+                    dialect, exc,
+                )
+                # Regex scan replaces the AST check; raises on any destructive hit.
+                self._regex_security_scan(sql, dialect)
+                return
             logger.error("SQL parse error (%s dialect): %s", dialect, exc)
             raise ValueError(
                 f"Query is malformed or attempts syntax obfuscation "
@@ -424,7 +283,7 @@ CHARTING RULES (Vega-Lite / UI Shape):
 
             if not isinstance(statement, (exp.Select, exp.With, exp.Subquery)):
                 logger.critical(
-                    "AST root violation blocked: expected SELECT / WITH (CTE), got %s",
+                    "AST root violation blocked: expected SELECT/WITH, got %s",
                     type(statement).__name__,
                 )
                 raise ValueError(
@@ -434,7 +293,7 @@ CHARTING RULES (Vega-Lite / UI Shape):
             for node, *_ in statement.walk():
                 if isinstance(node, self._DESTRUCTIVE_NODES):
                     logger.critical(
-                        "Deep AST violation: destructive node %s inside query.",
+                        "Deep AST violation: destructive node %s blocked.",
                         type(node).__name__,
                     )
                     raise ValueError(
@@ -443,14 +302,43 @@ CHARTING RULES (Vega-Lite / UI Shape):
                     )
 
     # -----------------------------------------------------------------------
-    # Query Cost Guardrails
+    # Cost Guardrails
     # -----------------------------------------------------------------------
 
     def _apply_cost_guardrails(self, sql: str, dialect: str) -> str:
+        """
+        Enforces two cost guardrails:
+
+        1. Warns on SELECT * (full-table column scans).
+        2. Injects ``LIMIT {_DEFAULT_RESULT_LIMIT}`` when the terminal SELECT
+           has none — preventing unbounded scans that cause OOM failures.
+
+        AST path (primary)
+        ------------------
+        Uses sqlglot to locate and patch the terminal SELECT node precisely.
+
+        Regex path (fallback)
+        ---------------------
+        When sqlglot cannot parse the query (Cloud DW proprietary syntax), a
+        regex check determines whether a LIMIT clause is already present.  If
+        not, ``\\nLIMIT {_DEFAULT_RESULT_LIMIT}`` is appended to the raw
+        string.  This is intentionally conservative — appending at the end is
+        always syntactically valid for standard SQL and all supported dialects.
+        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
         try:
             statements = sqlglot.parse(sql, read=sqlglot_dialect)
         except sqlglot.errors.ParseError:
+            # Regex fallback — guard against OOM on unparseable Cloud DW queries.
+            if not _LIMIT_PRESENT_RE.search(sql):
+                logger.warning(
+                    "Cost guardrail (regex fallback): no LIMIT detected in "
+                    "unparseable %s query — appending LIMIT %d to prevent "
+                    "unbounded full-table scan.",
+                    dialect.upper(),
+                    _DEFAULT_RESULT_LIMIT,
+                )
+                return f"{sql.rstrip()}\nLIMIT {_DEFAULT_RESULT_LIMIT}"
             return sql
 
         modified = False
@@ -462,11 +350,12 @@ CHARTING RULES (Vega-Lite / UI Shape):
             for node, *_ in statement.walk():
                 if isinstance(node, exp.Star):
                     logger.warning(
-                        "Cost guardrail: SELECT * detected. "
-                        "Consider explicit column selection to avoid full-table reads."
+                        "Cost guardrail: SELECT * detected — "
+                        "explicit column selection reduces full-table scan cost."
                     )
                     break
 
+            # Find the terminal SELECT (unwrap CTEs)
             terminal: Optional[exp.Select] = None
             if isinstance(statement, exp.With):
                 inner = getattr(statement, "this", None)
@@ -483,104 +372,101 @@ CHARTING RULES (Vega-Lite / UI Shape):
                 modified = True
 
         if modified:
-            guarded_sql = " ".join(
-                s.sql(dialect=sqlglot_dialect) for s in statements if s is not None
-            )
             logger.info(
-                "Cost guardrail: injected LIMIT %d into query without explicit limit.",
+                "Cost guardrail: auto-injected LIMIT %d into query.",
                 _DEFAULT_RESULT_LIMIT,
             )
-            return guarded_sql
+            return " ".join(
+                s.sql(dialect=sqlglot_dialect) for s in statements if s is not None
+            )
 
         return sql
 
     # -----------------------------------------------------------------------
-    # Join Path Validation
+    # Join Path Validation  (parquet-path-safe)
     # -----------------------------------------------------------------------
 
-    @staticmethod
-    def _build_fk_graph(
-        schema: Dict[str, Dict[str, Any]],
-    ) -> Dict[str, Set[str]]:
-        fk_columns: Dict[str, Set[str]] = defaultdict(set)
-        for table, columns in schema.items():
-            for col_name in columns:
-                col_lower = col_name.lower()
-                if col_lower == "id" or col_lower.endswith("_id"):
-                    fk_columns[table].add(col_name)
-        return dict(fk_columns)
+    def _validate_join_paths(self, sql: str, dialect: str) -> None:
+        """
+        Emits a warning when a JOIN ON clause does not reference any column
+        that follows a FK/PK naming convention (`id` or `*_id`).
 
-    def _validate_join_paths(
-        self,
-        sql: str,
-        dialect: str,
-        schema: Dict[str, Dict[str, Any]],
-    ) -> None:
-        fk_graph = self._build_fk_graph(schema)
-        all_valid_join_cols: Set[str] = {
-            col.lower()
-            for cols in fk_graph.values()
-            for col in cols
-        }
+        Implementation note — parquet-path safety
+        -----------------------------------------
+        The previous implementation attempted to cross-reference join columns
+        against schema dictionary keys.  For DuckDB, those keys are
+        ``read_parquet('...')`` path strings that bear no resemblance to the
+        short table aliases the SQL AST produces, causing every join to be
+        flagged as invalid.
 
+        This implementation inspects only the AST itself: it checks whether
+        *at least one* column in each JOIN ON clause ends with ``_id`` or is
+        literally ``id`` — a lightweight but reliable FK/PK signal that works
+        regardless of how the table is referenced in the FROM clause.
+        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
         try:
             statements = sqlglot.parse(sql, read=sqlglot_dialect)
         except sqlglot.errors.ParseError:
-            return
+            return  # Security gate already handled parse errors
 
         for statement in statements:
             if statement is None:
                 continue
-
             for join in statement.find_all(exp.Join):
                 on_clause = join.args.get("on")
                 if on_clause is None:
                     continue
-
-                join_col_names = [
-                    col.name.lower()
-                    for col in on_clause.find_all(exp.Column)
+                join_cols = [
+                    col.name.lower() for col in on_clause.find_all(exp.Column)
                 ]
-                if not join_col_names:
+                if not join_cols:
                     continue
-
-                if not any(c in all_valid_join_cols for c in join_col_names):
+                if not any(c == "id" or c.endswith("_id") for c in join_cols):
                     logger.warning(
-                        "Join path warning: no FK/PK column found in JOIN ON condition "
-                        "(columns referenced: [%s]). "
+                        "Join path warning: no FK/PK column pattern found in "
+                        "JOIN ON (columns: [%s]). "
                         "Verify the predicate uses the correct FK -> PK relationship.",
-                        ", ".join(join_col_names),
+                        ", ".join(join_cols),
                     )
 
     # -----------------------------------------------------------------------
     # Chart Spec Validation
     # -----------------------------------------------------------------------
 
-    def _extract_sql_aliases(self, sql: str, dialect: str) -> Set[str]:
+    def _extract_sql_aliases(self, sql: str, dialect: str) -> Tuple[Set[str], Set[str]]:
+        """
+        Returns ``(lowercase_aliases, original_case_aliases)`` for all output
+        expressions in the terminal SELECT.
+
+        Two sets are returned so callers can:
+        * Use ``lowercase_aliases`` for case-insensitive existence checks.
+        * Use ``original_case_aliases`` to detect case-only mismatches that
+          pass backend validation but would produce blank Vega-Lite charts
+          (Vega-Lite field matching is strictly case-sensitive on the frontend).
+        """
         sqlglot_dialect = _DIALECT_MAP.get(dialect.lower(), dialect.lower())
-        aliases: Set[str] = set()
+        lower_aliases:    Set[str] = set()
+        original_aliases: Set[str] = set()
         try:
-            statements = sqlglot.parse(sql, read=sqlglot_dialect)
-            for statement in statements:
+            for statement in sqlglot.parse(sql, read=sqlglot_dialect):
                 if statement is None:
                     continue
                 select = (
-                    statement.this
-                    if isinstance(statement, exp.With)
-                    else statement
+                    statement.this if isinstance(statement, exp.With) else statement
                 )
                 if not isinstance(select, exp.Select):
                     continue
                 for expr in select.expressions:
                     if isinstance(expr, exp.Alias):
-                        aliases.add(expr.alias.lower())
+                        original_aliases.add(expr.alias)
+                        lower_aliases.add(expr.alias.lower())
                     elif isinstance(expr, exp.Column):
-                        aliases.add(expr.name.lower())
+                        original_aliases.add(expr.name)
+                        lower_aliases.add(expr.name.lower())
         except Exception as exc:
             logger.debug("SQL alias extraction failed (non-fatal): %s", exc)
-
-        return aliases
+        return lower_aliases, original_aliases
 
     def _validate_chart_spec(
         self,
@@ -588,13 +474,31 @@ CHARTING RULES (Vega-Lite / UI Shape):
         sql: str,
         dialect: str,
     ) -> Optional[Dict[str, Any]]:
-        if chart_spec is None:
+        """
+        Validates a Vega-Lite spec and returns either the validated spec or an
+        explicit ``None`` — a clean null signal telling the frontend to render
+        a standard data table rather than an empty or broken canvas.
+
+        Failure modes caught
+        --------------------
+        * ``None`` or empty dict (LLMs sometimes return ``{}`` instead of null)
+        * Missing required keys (``mark``, ``encoding``)
+        * Unrecognised ``mark`` type
+        * ``encoding.*.field`` values with no matching SQL output alias
+        * ``encoding.*.field`` values that match only case-insensitively —
+          Vega-Lite field matching is strictly case-sensitive on the frontend,
+          so a SQL alias of ``Total_Revenue`` paired with a chart field of
+          ``total_revenue`` would pass a lowercase-only check but render as
+          a blank box for the user.
+        """
+        # Fix: treat empty dict as absent — LLMs sometimes return {} instead of null.
+        if not chart_spec:
             return None
 
         missing = _VEGA_REQUIRED_KEYS - set(chart_spec.keys())
         if missing:
             logger.warning(
-                "Chart spec rejected: missing required key(s) %s. Falling back to table view.",
+                "Chart spec rejected — missing key(s) %s. Frontend will render table.",
                 missing,
             )
             return None
@@ -604,28 +508,50 @@ CHARTING RULES (Vega-Lite / UI Shape):
             mark = mark.get("type", "")
         if str(mark).lower() not in _VEGA_VALID_MARKS:
             logger.warning(
-                "Chart spec rejected: unrecognised mark type '%s'. Falling back to table view.",
+                "Chart spec rejected — unrecognised mark '%s'. Frontend will render table.",
                 mark,
             )
             return None
 
-        sql_aliases = self._extract_sql_aliases(sql, dialect)
-        if sql_aliases:
+        lower_aliases, original_aliases = self._extract_sql_aliases(sql, dialect)
+
+        if lower_aliases:
             encoding = chart_spec.get("encoding", {})
-            invalid: List[str] = []
+            missing_fields: List[str] = []
+            case_mismatch_fields: List[str] = []
+
             for channel, channel_def in encoding.items():
                 if not isinstance(channel_def, dict):
                     continue
                 field = channel_def.get("field", "")
-                if field and field.lower() not in sql_aliases:
-                    invalid.append(f"{channel}.field='{field}'")
+                if not field:
+                    continue
+                if field.lower() not in lower_aliases:
+                    # Field doesn't exist at all in the SQL output.
+                    missing_fields.append(f"{channel}.field='{field}'")
+                elif field not in original_aliases:
+                    # Field exists but with a different case — would break
+                    # Vega-Lite's case-sensitive field lookup on the frontend.
+                    case_mismatch_fields.append(
+                        f"{channel}.field='{field}' "
+                        f"(SQL aliases are case-sensitive: {original_aliases})"
+                    )
 
-            if invalid:
+            if missing_fields:
                 logger.warning(
-                    "Chart spec rejected: field reference(s) %s not present in SQL "
-                    "aliases %s. Falling back to table view.",
-                    invalid,
-                    sql_aliases,
+                    "Chart spec rejected — field(s) %s not present in SQL aliases %s. "
+                    "Frontend will render table.",
+                    missing_fields,
+                    original_aliases,
+                )
+                return None
+
+            if case_mismatch_fields:
+                logger.warning(
+                    "Chart spec rejected — field(s) %s match only case-insensitively. "
+                    "Vega-Lite requires exact case matching; frontend will render table. "
+                    "Ensure SQL aliases are fully lowercase to prevent this mismatch.",
+                    case_mismatch_fields,
                 )
                 return None
 
@@ -639,7 +565,7 @@ CHARTING RULES (Vega-Lite / UI Shape):
     def _classify_error(error_msg: str, dialect: str) -> str:
         e = error_msg.lower()
 
-        if ("binder error" in e) or ("column" in e and "not found" in e):
+        if "binder error" in e or ("column" in e and "not found" in e):
             return (
                 "HINT: You likely hallucinated a column name, or attempted to access a "
                 "nested JSON/Struct field without unnesting it first. "
@@ -651,10 +577,11 @@ CHARTING RULES (Vega-Lite / UI Shape):
                 f"{dialect.upper()} SQL syntax, not a different dialect."
             )
         if "function" in e and ("not found" in e or "does not exist" in e):
-            dialect_fns = {
-                "duckdb":   "date_trunc, approx_count_distinct, list_aggregate, regr_slope",
-                "bigquery": "DATE_TRUNC, TIMESTAMP_TRUNC, APPROX_COUNT_DISTINCT, ARRAY_AGG",
-                "redshift": "DATEADD, DATEDIFF, LISTAGG, APPROXIMATE COUNT(DISTINCT ...)",
+            dialect_fns: Dict[str, str] = {
+                "duckdb":    "date_trunc, approx_count_distinct, list_aggregate, regr_slope",
+                "bigquery":  "DATE_TRUNC, TIMESTAMP_TRUNC, APPROX_COUNT_DISTINCT, ARRAY_AGG",
+                "redshift":  "DATEADD, DATEDIFF, LISTAGG, APPROXIMATE COUNT(DISTINCT ...)",
+                "snowflake": "DATE_TRUNC, FLATTEN, TO_DATE, ZEROIFNULL, APPROX_COUNT_DISTINCT",
             }
             fns = dialect_fns.get(dialect.lower(), "dialect-native aggregate functions")
             return (
@@ -663,8 +590,8 @@ CHARTING RULES (Vega-Lite / UI Shape):
             )
         if "not unique" in e or "ambiguous" in e:
             return (
-                "HINT: An ambiguous column reference exists. "
-                "Qualify every column with its table alias (e.g., t.column_name)."
+                "HINT: Ambiguous column reference detected. "
+                "Qualify every column with its table alias (e.g. t.column_name)."
             )
         if "cast" in e or "conversion" in e or "coercion" in e:
             return (
@@ -672,8 +599,51 @@ CHARTING RULES (Vega-Lite / UI Shape):
                 "CAST AS DOUBLE and all temporal grouping columns are CAST AS DATE "
                 "or TIMESTAMP, as required by the Phase 3 Polars compute engine."
             )
-
         return ""
+
+    # -----------------------------------------------------------------------
+    # Internal Generation Helper
+    # -----------------------------------------------------------------------
+
+    async def _run_generation(
+        self,
+        system_prompt: str,
+        user_message: str,
+        dialect: str,
+        tenant_id: str,
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """
+        Calls the LLM, validates the NL2SQLOutput contract, applies all
+        guardrails, and returns ``(safe_sql, safe_chart)``.
+
+        Raises on any failure so the caller decides the retry strategy.
+        This consolidates the identical try-block that previously existed in
+        both ``generate_sql`` and ``correct_sql``.
+        """
+        result: NL2SQLOutput = await llm_client.generate_structured(
+            system_prompt=system_prompt,
+            prompt=user_message,
+            history=[],
+            response_model=NL2SQLOutput,
+        )
+
+        if result is None:
+            raise ValueError("Model returned None — structured output was refused.")
+
+        self._validate_security(result.sql_query, dialect)
+        self._validate_join_paths(result.sql_query, dialect)
+        safe_sql   = self._apply_cost_guardrails(result.sql_query, dialect)
+        safe_chart = self._validate_chart_spec(result.chart_spec, safe_sql, dialect)
+
+        if result.confidence_score < _CONFIDENCE_WARN_THRESHOLD:
+            logger.warning(
+                "[%s] Low-confidence SQL generation (score=%.2f) — "
+                "review for potential hallucinations.",
+                tenant_id,
+                result.confidence_score,
+            )
+
+        return safe_sql, safe_chart
 
     # -----------------------------------------------------------------------
     # Public API
@@ -682,57 +652,62 @@ CHARTING RULES (Vega-Lite / UI Shape):
     async def generate_sql(
         self,
         plan: QueryPlan,
-        full_schema: Dict[str, Dict[str, Any]],
+        execution_context: str,
         target_engine: str,
         tenant_id: str,
-        prompt: str = "",
         agent: Optional[Agent] = None,
-        datasets: Optional[List[Dataset]] = None,
         semantic_views: Optional[Dict[str, str]] = None,
         history: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """
+        Primary entry-point.
+
+        Translates a ``QueryPlan`` and a pre-built ``execution_context``
+        (produced by the QueryPlanner) into validated, cost-guarded SQL.
+
+        Pydantic ValidationError handling
+        ----------------------------------
+        If the LLM returns a structurally invalid response (wrong field types,
+        missing required fields), a raw ``ValidationError`` would previously
+        escape to the caller.  Instead, the error is now fed back into
+        ``correct_sql`` so the model gets one self-heal pass with explicit
+        guidance about the schema violation.
+        """
         logger.info("[%s] Compiling QueryPlan -> %s SQL", tenant_id, target_engine.upper())
 
-        effective_schema = (
-            self._build_schema_from_datasets(datasets)
-            if datasets and target_engine.lower() == "duckdb"
-            else full_schema
-        )
-
-        contextual_schema = await self._build_contextual_schema(plan, effective_schema, prompt)
         system_prompt = self._build_system_prompt(
-            contextual_schema, plan, target_engine, agent, semantic_views
+            execution_context, plan, target_engine, agent, semantic_views
         )
         user_message = f"Compile the execution plan into {target_engine.upper()} SQL now."
 
         try:
-            result: NL2SQLOutput = await llm_client.generate_structured(
+            safe_sql, safe_chart = await self._run_generation(
                 system_prompt=system_prompt,
-                prompt=user_message,
-                history=history or [],
-                response_model=NL2SQLOutput,
+                user_message=user_message,
+                dialect=target_engine,
+                tenant_id=tenant_id,
             )
-
-            if result is None:
-                raise ValueError("Model refused to generate SQL (returned None).")
-
-            self._validate_security(result.sql_query, target_engine)
-            self._validate_join_paths(result.sql_query, target_engine, effective_schema)
-            safe_sql = self._apply_cost_guardrails(result.sql_query, target_engine)
-            safe_chart = self._validate_chart_spec(result.chart_spec, safe_sql, target_engine)
-
-            if result.confidence_score < _CONFIDENCE_WARN_THRESHOLD:
-                logger.warning(
-                    "[%s] Low-confidence SQL generation (score=%.2f). "
-                    "Review for potential hallucinations.",
-                    tenant_id, result.confidence_score,
-                )
-
-            logger.info(
-                "[%s] SQL compiled successfully (confidence=%.2f).",
-                tenant_id, result.confidence_score,
-            )
+            logger.info("[%s] SQL compiled successfully.", tenant_id)
             return safe_sql, safe_chart
+
+        except ValidationError as ve:
+            # Feed the schema-validation failure back into the correction loop
+            # so the model can attempt to self-heal with explicit guidance.
+            logger.error(
+                "[%s] Output schema validation failed: %s — triggering correction loop.",
+                tenant_id,
+                ve,
+            )
+            return await self.correct_sql(
+                failed_query="<no query generated — output schema validation failed>",
+                error_msg=str(ve),
+                plan=plan,
+                execution_context=execution_context,
+                target_engine=target_engine,
+                tenant_id=tenant_id,
+                agent=agent,
+                semantic_views=semantic_views,
+            )
 
         except Exception as exc:
             logger.error("[%s] NL2SQL compilation failed: %s", tenant_id, exc)
@@ -743,33 +718,34 @@ CHARTING RULES (Vega-Lite / UI Shape):
         failed_query: str,
         error_msg: str,
         plan: QueryPlan,
-        full_schema: Dict[str, Dict[str, Any]],
+        execution_context: str,
         target_engine: str,
         tenant_id: str,
-        prompt: str = "",
         agent: Optional[Agent] = None,
-        datasets: Optional[List[Dataset]] = None,
         semantic_views: Optional[Dict[str, str]] = None,
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """
+        Auto-correction loop.
+
+        Given a failed query and its error message, constructs a targeted
+        correction prompt enriched with a dialect-specific hint and attempts
+        one self-heal pass through the LLM.
+
+        Raises ``RuntimeError`` on cascade failure so the orchestrator can
+        surface a clean error to the API layer.
+        """
         logger.warning(
             "[%s] Initiating SQL auto-correction for %s error: %s",
-            tenant_id, target_engine.upper(), error_msg,
+            tenant_id,
+            target_engine.upper(),
+            error_msg,
         )
 
-        effective_schema = (
-            self._build_schema_from_datasets(datasets)
-            if datasets and target_engine.lower() == "duckdb"
-            else full_schema
-        )
-
-        contextual_schema = await self._build_contextual_schema(plan, effective_schema, prompt)
         system_prompt = self._build_system_prompt(
-            contextual_schema, plan, target_engine, agent, semantic_views
+            execution_context, plan, target_engine, agent, semantic_views
         )
         hint = self._classify_error(error_msg, target_engine)
 
-        # FIX: The original f-string opened a ```sql fence but never closed it,
-        # resulting in a malformed prompt sent to the LLM on every retry.
         correction_prompt = f"""The following {target_engine.upper()} SQL query failed to execute:
 
 ```sql
@@ -786,32 +762,20 @@ TASK:
 2. Cross-check every column and function reference against the SCHEMA CONTEXT.
 3. Verify all aggregating metrics are CAST AS DOUBLE and all temporal grouping
    columns are CAST AS DATE or TIMESTAMP (Phase 3 Polars engine requirement).
-4. Verify every JOIN uses FK -> PK relationships (e.g. orders.user_id = users.id,
-   NOT orders.id = users.id).
+4. Verify every JOIN uses FK -> PK relationships
+   (e.g. orders.user_id = users.id, NOT orders.id = users.id).
 5. Output a corrected, highly-optimised {target_engine.upper()} SQL query that satisfies
    the original Execution Plan, plus an updated Vega-Lite chart spec if applicable.
 """
 
-        # FIX: The original try/except block was indented with stray spaces,
-        # placing it outside the method body and making it unreachable dead code
-        # that would have raised an IndentationError at import time.
         try:
-            result: NL2SQLOutput = await llm_client.generate_structured(
+            safe_sql, safe_chart = await self._run_generation(
                 system_prompt=system_prompt,
-                prompt=correction_prompt,
-                history=[],
-                response_model=NL2SQLOutput,
+                user_message=correction_prompt,
+                dialect=target_engine,
+                tenant_id=tenant_id,
             )
-
-            self._validate_security(result.sql_query, target_engine)
-            self._validate_join_paths(result.sql_query, target_engine, effective_schema)
-            safe_sql = self._apply_cost_guardrails(result.sql_query, target_engine)
-            safe_chart = self._validate_chart_spec(result.chart_spec, safe_sql, target_engine)
-
-            logger.info(
-                "[%s] SQL auto-correction succeeded (confidence=%.2f).",
-                tenant_id, result.confidence_score,
-            )
+            logger.info("[%s] SQL auto-correction succeeded.", tenant_id)
             return safe_sql, safe_chart
 
         except Exception as exc:

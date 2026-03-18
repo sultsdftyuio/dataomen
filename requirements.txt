@@ -1,5 +1,9 @@
+# ==============================================================================
+# ARCLI.TECH - DATAOMEN PRODUCTION DEPENDENCIES (2026 ARCHITECTURE)
+# ==============================================================================
+
 # --- Build Dependencies (FIX for Python 3.12 / Render) ---
-setuptools<70.0.0             # Temporary downgrade to restore pkg_resources for legacy sub-dependencies
+setuptools<70.0.0             # Temporary downgrade to restore pkg_resources
 wheel>=0.43.0
 
 # --- Web Framework & Production Server ---
@@ -7,6 +11,7 @@ fastapi==0.110.0
 uvicorn[standard]==0.27.1
 gunicorn==21.2.0              # Essential for process management on Render
 python-multipart==0.0.9       # Required for file uploads in ingestion_service
+anyio>=4.3.0                  # Explicit requirement for Thread pool offloading
 
 # --- Background Jobs & Task Queues (The Orchestrator) ---
 celery>=5.3.0                 # Distributed task queue for the compute worker
@@ -36,7 +41,7 @@ postgrest>=0.10.0
 psycopg2-binary>=2.9.9        # Postgres adapter
 sqlalchemy>=2.0.27            # ORM for models.py
 pgvector>=0.2.5               # Required for Vector type in models.py
-pydantic>=2.6.0
+pydantic[email]>=2.6.0        # CRITICAL FIX: Added [email] for RegisterRequest validation
 pydantic-settings>=2.2.0
 
 # --- Storage & Cloud Strategy (Modular Infrastructure) ---
@@ -46,6 +51,7 @@ fsspec==2024.2.0
 
 # --- Security & Utilities ---
 python-dotenv==1.0.1
+passlib[bcrypt]>=1.7.4        # CRITICAL FIX: Required by FastAPI Auth
 bcrypt>=4.1.2
 pyjwt>=2.10.0                 # UPGRADED: To support modern cryptography
 cryptography>=44.0.1          # FIX: Upgraded to satisfy snowflake-connector requirements
@@ -53,22 +59,30 @@ python-dateutil==2.8.2
 croniter==2.0.1               # Schedule handling
 openpyxl==3.1.2               # Excel ingestion support
 httpx==0.27.0                 # Async HTTP client for AI streaming/Supabase calls
+tenacity>=8.2.3               # Exponential backoff for SaaS Connectors
 
 # --- Observability & Telemetry ---
 prometheus-client==0.20.0
 structlog==24.1.0
-snowflake-connector-python[pandas]>=3.8.0 # High-throughput vectorized extraction
 loguru==0.6.0                 # Advanced logging capabilities
 sentry-sdk==1.28.0            # Error tracking and performance monitoring
 sqlglot>=23.8.0               # SQL parsing and transformation for query optimization
 psutil>=5.9.8                 # CRITICAL FIX: Hardware monitoring for the compute_worker
-tenacity>=8.2.3
+
+# --- SaaS & CRM Connectors ---
+stripe>=8.6.0                 # CRITICAL FIX: Missing Stripe SDK
+
+# --- Enterprise Data Warehouses ---
+snowflake-connector-python[pandas]>=3.8.0
 redshift-connector>=2.0.915
 google-cloud-bigquery[pandas,pyarrow]>=3.10.0
-snowflake-connector-python[pandas]>=3.8.0
+google-auth>=2.49.0
+google-api-core>=2.30.0
 
 # --- Performance Marketing ---
 google-ads>=23.1.0
-# --- Google Core Infrastructure ---
-google-auth>=2.49.0
-google-api-core>=2.30.0
+grpcio>=1.62.1
+grpcio-status>=1.62.1
+certifi>=2024.2.2
+greenlet>=3.0.3
+instructor>=1.2.0
