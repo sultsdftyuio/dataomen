@@ -58,6 +58,7 @@ app = FastAPI(
 # 3. Dynamic Health Check (CRITICAL: Must be defined FIRST)
 # ------------------------------------------------------------------------------
 @app.get("/health", tags=["System"])
+@app.get("/api/health", tags=["System"])
 async def health_check():
     """
     System heartbeat used by Render to verify instance stability.

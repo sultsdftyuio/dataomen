@@ -56,4 +56,5 @@ structlog==24.1.0
 snowflake-connector-python[pandas]>=3.8.0 # High-throughput vectorized extraction
 loguru==0.6.0                 # Advanced logging capabilities
 sentry-sdk==1.28.0            # Error tracking and performance monitoring
-sqlglot>=23.8.0                # SQL parsing and transformation for query optimization
+sqlglot>=23.8.0               # SQL parsing and transformation for query optimization
+psutil>=5.9.8                 # CRITICAL FIX: Hardware monitoring for the compute_worker
