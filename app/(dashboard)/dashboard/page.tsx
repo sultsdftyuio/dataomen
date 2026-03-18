@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/page.tsx
 'use client'
 
 import React, { useState, useEffect, useMemo } from 'react'
@@ -6,13 +7,15 @@ import {
   Database, 
   Bot, 
   MessageSquare, 
-  ArrowUpRight, 
   Sparkles,
   Zap,
   Clock,
-  ArrowRight,
   BrainCircuit,
-  BarChart3
+  BarChart3,
+  ShieldCheck,
+  Lock,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -22,8 +25,6 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from '@/utils/supabase/client'
-
-// Import the new Autonomous Insights Feed
 import { InsightsFeed } from "@/components/dashboard/InsightsFeed"
 
 // -----------------------------------------------------------------------------
@@ -58,16 +59,12 @@ const StatCard = ({
   title, 
   value, 
   icon: Icon, 
-  trend, 
-  trendLabel, 
   isLoading,
   accent = "default"
 }: { 
   title: string, 
   value: string | number, 
   icon: React.ElementType, 
-  trend?: string, 
-  trendLabel?: string,
   isLoading: boolean,
   accent?: "default" | "blue" | "emerald" | "purple"
 }) => {
@@ -79,33 +76,18 @@ const StatCard = ({
   };
 
   return (
-    <Card className="border-border shadow-sm hover:shadow-md transition-shadow duration-200 bg-background/50 backdrop-blur-sm">
+    <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         <div className={`p-2 rounded-md bg-muted/50 ${accentColors[accent]}`}>
           <Icon className="h-4 w-4" />
         </div>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <Skeleton className="h-8 w-20 mb-1" />
+          <Skeleton className="h-8 w-24" />
         ) : (
           <div className="text-2xl font-bold text-foreground tracking-tight">{value}</div>
-        )}
-        
-        {isLoading ? (
-          <Skeleton className="h-4 w-32 mt-2" />
-        ) : trend ? (
-          <p className="text-xs text-emerald-500 mt-1 flex items-center font-medium">
-            <ArrowUpRight className="h-3 w-3 mr-1" />
-            {trend} <span className="text-muted-foreground font-normal ml-1">{trendLabel}</span>
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground mt-1 flex items-center h-4">
-            No recent changes
-          </p>
         )}
       </CardContent>
     </Card>
@@ -113,53 +95,48 @@ const StatCard = ({
 };
 
 // -----------------------------------------------------------------------------
-// Lightweight SVG Trend Chart (No heavy external dependencies required)
+// Master Trend Chart
 // -----------------------------------------------------------------------------
 const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], isLoading: boolean }) => {
-  const maxRevenue = useMemo(() => Math.max(...data.map(d => d.revenue), 1), [data]);
+  const maxRevenue = useMemo(() => {
+    return data.length > 0 ? Math.max(...data.map(d => d.revenue), 1) : 1;
+  }, [data]);
   
-  if (isLoading) {
-    return <Skeleton className="w-full h-[250px] rounded-xl" />;
+  if (isLoading) return <Skeleton className="w-full h-[280px] rounded-xl" />;
+
+  if (data.length === 0) {
+    return (
+      <Card className="border-border bg-background/50 col-span-1 md:col-span-2 lg:col-span-4 h-[280px] flex flex-col items-center justify-center text-center">
+        <BarChart3 className="h-10 w-10 text-muted-foreground/20 mb-2" />
+        <p className="text-sm text-muted-foreground">No telemetry data available for this period.</p>
+      </Card>
+    );
   }
 
   return (
-    <Card className="border-border shadow-sm bg-background/50 backdrop-blur-sm col-span-1 md:col-span-2 lg:col-span-4">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
+    <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md col-span-1 md:col-span-2 lg:col-span-4 overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between pb-2 border-b bg-muted/5">
         <div>
           <CardTitle className="text-lg flex items-center gap-2">
             <BarChart3 className="h-5 w-5 text-primary" />
             30-Day Executive Overview
           </CardTitle>
-          <CardDescription>Cached DuckDB aggregation of primary business metrics.</CardDescription>
+          <CardDescription>Real-time analytical telemetry.</CardDescription>
         </div>
-        <Badge variant="secondary" className="font-mono text-xs text-muted-foreground">
-          <Clock className="h-3 w-3 mr-1 inline" /> Cached 2m ago
+        <Badge variant="secondary" className="font-mono text-[10px] text-muted-foreground">
+          <RefreshCw className="h-3 w-3 mr-1 inline" /> Live Engine Data
         </Badge>
       </CardHeader>
-      <CardContent>
-        <div className="h-[200px] w-full flex items-end gap-2 pt-4">
-          {data.map((point, i) => {
-            const heightPct = (point.revenue / maxRevenue) * 100;
-            return (
-              <div key={i} className="relative flex-1 group h-full flex items-end">
-                <div 
-                  className="w-full bg-primary/20 hover:bg-primary/50 transition-all rounded-t-sm"
-                  style={{ height: `${Math.max(heightPct, 5)}%` }}
-                />
-                {/* Tooltip on hover */}
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-foreground text-background text-xs rounded px-2 py-1 pointer-events-none whitespace-nowrap z-10">
-                  <div className="font-bold">{point.date}</div>
-                  <div>Rev: ${point.revenue.toLocaleString()}</div>
-                  <div>Queries: {point.queries}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex justify-between mt-2 text-xs text-muted-foreground font-mono">
-          <span>{data[0]?.date}</span>
-          <span>{data[Math.floor(data.length / 2)]?.date}</span>
-          <span>{data[data.length - 1]?.date}</span>
+      <CardContent className="pt-6">
+        <div className="h-[180px] w-full flex items-end gap-1.5 pt-4">
+          {data.map((point, i) => (
+            <div key={i} className="relative flex-1 group h-full flex items-end">
+              <div 
+                className="w-full bg-primary/20 group-hover:bg-primary/50 transition-all rounded-t-[2px]"
+                style={{ height: `${(point.revenue / maxRevenue) * 100}%` }}
+              />
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
@@ -167,293 +144,162 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
 };
 
 // -----------------------------------------------------------------------------
-// Main Dashboard Component
+// Main Dashboard Component (No Simulation / Real Data Only)
 // -----------------------------------------------------------------------------
 export default function DashboardOverviewPage() {
   const router = useRouter();
+  const supabase = createClient();
   
-  const [metrics, setMetrics] = useState<WorkspaceMetrics>({
-    totalDatasets: 0,
-    activeAgents: 0,
-    queriesRun: 0,
-    healthScore: 100,
-  });
+  const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
   const [chartData, setChartData] = useState<TimeSeriesDataPoint[]>([]);
   const [agents, setAgents] = useState<ActiveAgent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Data Fetching Orchestration
   useEffect(() => {
-    const fetchTenantDashboardData = async () => {
+    const fetchRealData = async () => {
       setIsLoading(true);
       setError(null);
-      
       try {
-        const supabase = createClient();
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        
-        if (authError || !session) {
-          throw new Error("Authentication required to view workspace.");
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          router.push('/login');
+          return;
         }
 
+        const role = user.app_metadata?.role || 'user';
+        setIsAdmin(role === 'admin');
+
+        const { data: { session } } = await supabase.auth.getSession();
         const response = await fetch('/api/workspace/metrics', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
+            'Authorization': `Bearer ${session?.access_token}`
           }
         });
 
-        if (!response.ok) {
-          if (response.status === 404) {
-             console.warn("API not implemented. Falling back to simulated presentation state.");
-             simulateBackendData();
-             return; 
-          }
-          throw new Error("Failed to fetch analytical data from the engine.");
-        }
+        if (!response.ok) throw new Error("Could not connect to the analytical engine.");
 
         const data = await response.json();
-        setMetrics(data.metrics || metrics);
+        setMetrics(data.metrics);
         setAgents(data.agents || []);
         setChartData(data.chartData || []);
-
       } catch (err: any) {
-        console.error("Dashboard orchestration error:", err);
-        // Fallback to simulated data so the UI remains visible for the demo/development
-        simulateBackendData();
+        setError(err.message);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchTenantDashboardData();
-  }, []);
+    fetchRealData();
+  }, [router, supabase.auth]);
 
-  // Simulated data for when the backend isn't fully wired during development
-  const simulateBackendData = () => {
-    setTimeout(() => {
-      setMetrics({
-        totalDatasets: 3,
-        activeAgents: 2,
-        queriesRun: 12450,
-        healthScore: 99.8,
-      });
-
-      // Generate realistic looking timeseries data for the Master Chart
-      const generatedChartData: TimeSeriesDataPoint[] = [];
-      let baseRevenue = 15000;
-      const today = new Date();
-      for (let i = 30; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - i);
-        
-        // Add some noise/variance to simulate reality
-        baseRevenue = baseRevenue + (Math.random() * 2000 - 800); 
-        generatedChartData.push({
-          date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          revenue: Math.floor(baseRevenue),
-          queries: Math.floor(Math.random() * 500 + 100)
-        });
-      }
-      setChartData(generatedChartData);
-
-      setAgents([
-        { id: '1', name: 'Stripe Revenue Watchdog', role: 'Financial Analyst', description: 'Monitors MRR and Churn velocity across EU and NA regions. Applies EMA for trend smoothing.', status: 'online', lastRun: '2 mins ago' },
-        { id: '2', name: 'Conversion Monitor', role: 'Growth Agent', description: 'Tracks funnel drop-offs and API latencies on the checkout service.', status: 'analyzing', lastRun: 'Just now' }
-      ]);
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  if (error && !isLoading && agents.length === 0) {
+  if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-        <Zap className="h-10 w-10 text-destructive/50" />
-        <h2 className="text-xl font-semibold text-foreground">Workspace Error</h2>
-        <p className="text-muted-foreground">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>Retry Connection</Button>
+      <div className="flex flex-col items-center justify-center h-[60vh] text-center space-y-4">
+        <AlertCircle className="h-12 w-12 text-destructive/50" />
+        <h2 className="text-xl font-bold text-foreground">Engine Connection Failed</h2>
+        <p className="text-muted-foreground max-w-md">{error}</p>
+        <Button variant="outline" onClick={() => window.location.reload()}>Retry Handshake</Button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-8 h-full animate-in fade-in duration-500 pb-10">
+    <div className="flex flex-col gap-8 h-full animate-in fade-in duration-700 pb-10">
       
-      {/* Header Section */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-            Command Center
-            {metrics.healthScore > 95 && !isLoading && (
-              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                System Optimal
-              </Badge>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">Command Center</h1>
+            {!isLoading && (
+              isAdmin ? (
+                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 px-2 py-0.5">
+                  <ShieldCheck className="h-3.5 w-3.5 mr-1" /> Admin
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-muted text-muted-foreground px-2 py-0.5">
+                  <Lock className="h-3.5 w-3.5 mr-1" /> Standard
+                </Badge>
+              )
             )}
-          </h1>
+          </div>
           <p className="text-muted-foreground mt-1 text-sm">
-            Supervise your autonomous data agents and review real-time cached analytics.
+            Operational orchestration for <span className="text-foreground font-medium">arcli.tech</span>.
           </p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" asChild>
-            <Link href="/datasets">
-              <Database className="mr-2 h-4 w-4" />
-              Add Source
-            </Link>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/datasets"><Database className="mr-2 h-4 w-4" />Sources</Link>
           </Button>
-          <Button className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90" asChild>
-            <Link href="/agents/create">
-              <Sparkles className="mr-2 h-4 w-4" />
-              Deploy Agent
-            </Link>
+          <Button className="bg-primary text-primary-foreground" size="sm" asChild>
+            <Link href="/agents/create"><Sparkles className="mr-2 h-4 w-4" />Deploy</Link>
           </Button>
         </div>
       </div>
 
-      {/* Top Level Metrics & Master Chart Grid */}
+      {/* Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          title="Connected Sources" 
-          value={metrics.totalDatasets} 
-          icon={Database} 
-          trend={metrics.totalDatasets > 0 ? "+1" : undefined} 
-          trendLabel="this week" 
-          isLoading={isLoading}
-          accent="blue"
-        />
-        <StatCard 
-          title="Agents Deployed" 
-          value={metrics.activeAgents} 
-          icon={BrainCircuit} 
-          trend={metrics.activeAgents > 0 ? "+1" : undefined} 
-          trendLabel="this month" 
-          isLoading={isLoading}
-          accent="purple"
-        />
-        <StatCard 
-          title="Automated Queries" 
-          value={(metrics.queriesRun).toLocaleString()} 
-          icon={Activity} 
-          trend={metrics.queriesRun > 0 ? "+12%" : undefined} 
-          trendLabel="vs last week" 
-          isLoading={isLoading}
-        />
-        <StatCard 
-          title="System Health" 
-          value={`${metrics.healthScore}%`} 
-          icon={Zap} 
-          trend={isLoading ? undefined : "Stable"} 
-          trendLabel={isLoading ? undefined : "latency < 50ms"} 
-          isLoading={isLoading}
-          accent="emerald"
-        />
+        <StatCard title="Connected Sources" value={metrics?.totalDatasets ?? 0} icon={Database} isLoading={isLoading} accent="blue" />
+        <StatCard title="Active Agents" value={metrics?.activeAgents ?? 0} icon={BrainCircuit} isLoading={isLoading} accent="purple" />
+        <StatCard title="Total Queries" value={(metrics?.queriesRun ?? 0).toLocaleString()} icon={Activity} isLoading={isLoading} />
+        <StatCard title="System Health" value={`${metrics?.healthScore ?? 0}%`} icon={Zap} isLoading={isLoading} accent="emerald" />
         
-        {/* The Executive Master Chart */}
         <MasterTrendChart data={chartData} isLoading={isLoading} />
       </div>
 
-      {/* Main Content Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        {/* Left Column: The Fleet (Agents) */}
         <div className="xl:col-span-2 space-y-6">
-          <Card className="border-border shadow-sm h-full flex flex-col">
+          <Card className="border-border shadow-sm h-full flex flex-col bg-background/50">
             <CardHeader className="border-b bg-muted/20">
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-md">
                 <Bot className="h-5 w-5 text-primary" />
-                The Agent Fleet
+                Agent Workforce
               </CardTitle>
-              <CardDescription>Your active AI workforce autonomously monitoring schemas.</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 pt-6">
-              {isLoading ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Skeleton className="h-32 w-full rounded-xl" />
-                  <Skeleton className="h-32 w-full rounded-xl" />
-                </div>
-              ) : agents.length > 0 ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {agents.map((agent) => (
-                    <div key={agent.id} className="group p-5 border rounded-xl hover:border-primary/50 hover:bg-muted/10 transition-all cursor-default bg-background">
-                      <div className="flex justify-between items-start mb-3">
-                        <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 text-xs">
-                          {agent.role}
-                        </Badge>
-                        <div className="flex items-center gap-2 text-xs font-medium">
-                          {agent.status === 'analyzing' && (
-                            <span className="text-blue-500 flex items-center gap-1">
-                              <Sparkles className="h-3 w-3 animate-pulse" />
-                              Analyzing
-                            </span>
-                          )}
-                          {agent.status === 'online' && (
-                            <span className="text-emerald-500 flex items-center gap-1">
-                              <span className="flex h-2 w-2 rounded-full bg-emerald-500"></span>
-                              Idle
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <h3 className="font-semibold text-foreground text-lg mb-1">{agent.name}</h3>
-                      <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{agent.description}</p>
-                      <div className="mt-4 pt-3 border-t flex justify-between items-center text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Last Run: {agent.lastRun}
-                        </span>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs hover:text-primary" onClick={() => router.push(`/agents/${agent.id}`)}>
-                          Configure
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+              {!isLoading && agents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <div className="p-4 bg-muted/50 rounded-full mb-4">
+                    <Bot className="h-8 w-8 text-muted-foreground/50" />
+                  </div>
+                  <h3 className="font-medium">No agents deployed</h3>
+                  <p className="text-sm text-muted-foreground mt-1 mb-6">Start by deploying an autonomous monitor.</p>
+                  <Button size="sm" asChild><Link href="/agents/create">Deploy Agent</Link></Button>
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center border-2 border-dashed rounded-xl border-muted bg-muted/10">
-                  <div className="p-4 bg-background rounded-full border mb-4 shadow-sm">
-                    <Bot className="h-8 w-8 text-muted-foreground opacity-50" />
-                  </div>
-                  <h3 className="text-lg font-medium text-foreground">No active agents</h3>
-                  <p className="text-sm text-muted-foreground mt-1 mb-6 max-w-sm">
-                    Your workforce is currently empty. Deploy a Supervisor Agent to start monitoring your data automatically.
-                  </p>
-                  <Button asChild>
-                    <Link href="/agents/create">Deploy your first Agent</Link>
-                  </Button>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {agents.map((agent) => (
+                    <div key={agent.id} className="p-4 border rounded-xl bg-background/80">
+                      <div className="flex justify-between items-center mb-2">
+                        <Badge variant="secondary" className="text-[10px]">{agent.role}</Badge>
+                        <span className="text-[10px] text-emerald-500 font-bold">● {agent.status}</span>
+                      </div>
+                      <h3 className="font-bold text-sm mb-1">{agent.name}</h3>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{agent.description}</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Right Column: AI Incident Feed / Autonomous Insights */}
         <div className="space-y-6">
-          
-          {/* THE NEW AUTONOMOUS INSIGHTS FEED 
-            Replaces the old hardcoded/simulated alert cards.
-            Automatically fetches from /api/insights 
-          */}
           <InsightsFeed />
-
-          {/* Chat Quick Launch */}
-          <Card className="border-border shadow-sm bg-primary/5 border-primary/10">
+          <Card className="border-primary/20 bg-primary/5">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <h4 className="font-semibold text-sm flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-primary" />
-                  Manual Query
-                </h4>
-                <p className="text-xs text-muted-foreground mt-1">Talk to your data directly.</p>
+                <h4 className="font-bold text-sm flex items-center gap-2"><MessageSquare className="h-4 w-4" />Manual Query</h4>
+                <p className="text-[11px] text-muted-foreground">Talk to your data directly.</p>
               </div>
-              <Button size="sm" asChild>
-                <Link href="/chat">Open Chat</Link>
-              </Button>
+              <Button size="sm" asChild><Link href="/chat">Open</Link></Button>
             </CardContent>
           </Card>
         </div>
-        
       </div>
     </div>
   )
