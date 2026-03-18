@@ -1,3 +1,9 @@
+"""
+ARCLI.TECH - Zero-ETL Orchestration Module
+Component: SyncEngine (The Conductor)
+Strategy: Hybrid Performance Paradigm & Strict Memory Governance
+"""
+
 import os
 import logging
 import asyncio
@@ -10,11 +16,12 @@ import polars as pl
 from fastapi import APIRouter, HTTPException, Request, Header, Depends, BackgroundTasks, status
 from sqlalchemy.orm import Session
 
-# Core dependencies (Modular Infrastructure)
+# Core Infrastructure
 from api.database import get_db, SessionLocal
 from models import Dataset, Organization, DatasetStatus
 from api.auth import verify_tenant, TenantContext
 
+# Modular Services
 from api.services.storage_manager import storage_manager
 from api.services.json_normalizer import PolarsNormalizer
 from api.services.data_sanitizer import DataSanitizer
@@ -22,11 +29,24 @@ from api.services.duckdb_validator import DuckDBValidator
 from api.services.watchdog_service import WatchdogService
 from api.services.credential_manager import CredentialManager
 
-# Phase 3: SaaS Integration Connectors
+# --- Integration Registry Imports ---
 from api.services.integrations.base_integration import BaseIntegration
+
+# SaaS & CRM
 from api.services.integrations.stripe_connector import StripeConnector
 from api.services.integrations.salesforce_connector import SalesforceConnector
 from api.services.integrations.shopify_connector import ShopifyConnector
+from api.services.integrations.hubspot_connector import HubSpotConnector
+from api.services.integrations.zendesk_connector import ZendeskConnector
+
+# Cloud Data Warehouses
+from api.services.integrations.snowflake_connector import SnowflakeConnector
+from api.services.integrations.redshift_connector import RedshiftConnector
+from api.services.integrations.bigquery_connector import BigQueryConnector
+
+# Performance Marketing
+from api.services.integrations.google_ads_connector import GoogleAdsConnector
+from api.services.integrations.meta_ads_connector import MetaAdsConnector
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +54,26 @@ logger = logging.getLogger(__name__)
 sync_router = APIRouter(prefix="/api/ingest", tags=["Ingestion", "Sync"])
 
 # -----------------------------------------------------------------------------
-# Integration Registry (Modular Strategy)
+# Integration Registry (The Dispatcher)
 # -----------------------------------------------------------------------------
 INTEGRATION_REGISTRY: Dict[str, Type[BaseIntegration]] = {
+    # Financial & E-commerce
     "stripe": StripeConnector,
-    "salesforce": SalesforceConnector,
     "shopify": ShopifyConnector,
+    
+    # CRM & Operations
+    "salesforce": SalesforceConnector,
+    "hubspot": HubSpotConnector,
+    "zendesk": ZendeskConnector,
+    
+    # Performance Marketing (Marketing Mix Modeling)
+    "google_ads": GoogleAdsConnector,
+    "meta_ads": MetaAdsConnector,
+    
+    # Enterprise Data Warehouses
+    "snowflake": SnowflakeConnector,
+    "redshift": RedshiftConnector,
+    "bigquery": BigQueryConnector,
 }
 
 class SyncEngine:
@@ -47,10 +81,10 @@ class SyncEngine:
     The Unified Orchestration Worker (Zero-ETL Engine).
     
     Upgraded Engineering:
-    - Integration Registry: Dynamically instantiates API connectors.
+    - Dynamic Instantiation: Pluggable API connectors.
     - Secure Credential Injection: Vaults API keys via CredentialManager.
-    - Schema Evolution Guard: Strictly casts Polars DataFrames to prevent Parquet chunk mismatches.
-    - Async Chunking: Prevents RAM OOM on massive historical SaaS syncs.
+    - Schema Evolution Guard: Validates against DuckDB contracts before Parquet writes.
+    - Async Chunking: Yields Polars DataFrames sequentially to prevent RAM OOM.
     """
     
     def __init__(self, db_session: Optional[Session] = None):
@@ -78,10 +112,11 @@ class SyncEngine:
         if df.height == 0:
             return df
             
-        # 2. Privacy Guardrails: PII Hashing & Type Coercion
+        # 2. Privacy Guardrails: PII Cryptographic Hashing (Security by Design)
         df = sanitizer.process_batch(df, pii_columns=pii_columns, expected_schema=expected_schema)
         
         # 3. Security Gatekeeper: In-Memory DuckDB Validation
+        # Raises an exception if the dataframe violates the connector's schema contract
         validator.validate_batch(df, expected_schema)
         
         return df
@@ -92,11 +127,12 @@ class SyncEngine:
         integration_name: str, 
         dataset_id: str, 
         stream_name: str, 
-        start_timestamp: str
+        start_timestamp: Optional[str] = None
     ) -> None:
         """
-        The Pull Pipeline (Background Worker Server).
-        Uses short-lived DB sessions to prevent Supabase connection pool exhaustion.
+        The Pull Pipeline.
+        Designed to be executed by Celery or FastAPI BackgroundTasks.
+        Uses short-lived DB sessions to prevent Supabase connection pool exhaustion during massive syncs.
         """
         start_time = time.perf_counter()
         logger.info(f"🚀 [{tenant_id}] Starting historical sync | Source: {integration_name} | Stream: {stream_name}")
@@ -110,6 +146,14 @@ class SyncEngine:
                 cred_manager = CredentialManager(db)
                 api_keys = cred_manager.get_integration_credentials(tenant_id, integration_name)
                 
+                # Fetch Checkpoint for Incremental Syncs if not provided
+                if not start_timestamp:
+                    dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+                    if dataset and dataset.schema_metadata:
+                        start_timestamp = dataset.schema_metadata.get("last_sync_time", "2024-01-01T00:00:00Z")
+                    else:
+                        start_timestamp = "2024-01-01T00:00:00Z"
+                
             if not api_keys:
                 raise PermissionError(f"Missing or expired credentials for {integration_name}")
 
@@ -120,10 +164,12 @@ class SyncEngine:
             await self._update_dataset_status(dataset_id, DatasetStatus.PROCESSING)
 
             # 3. Contextual RAG schemas & PII config
-            expected_schema = await integration.fetch_schema()
-            stream_schema = expected_schema.get(stream_name.lower(), {})
+            expected_schema_map = await integration.fetch_schema()
+            stream_schema = expected_schema_map.get(stream_name.lower(), {})
+            
+            # Normalize schema map for DuckDB validator
             flat_schema = {f["name"]: f["type"] for f in stream_schema} if isinstance(stream_schema, list) else stream_schema
-            pii_columns = getattr(integration, "PII_COLUMNS", ["email", "phone", "customer_email"])
+            pii_columns = getattr(integration, "PII_COLUMNS", ["email", "phone", "customer_email", "receipt_email"])
 
             total_rows_processed = 0
             saved_paths: List[str] = []
@@ -145,7 +191,7 @@ class SyncEngine:
                 if df.height == 0:
                     continue
 
-                # 5. Storage Layer: Hive-Partitioned Sink
+                # 5. Storage Layer: Hive-Partitioned Parquet Sink
                 now = datetime.now(timezone.utc)
                 partition_suffix = f"year={now.year}/month={now.month:02d}"
                 table_id = f"sync/{integration_name}/{stream_name}/{partition_suffix}"
@@ -184,17 +230,19 @@ class SyncEngine:
             logger.info(f"✅ [{tenant_id}] Sync Complete | {total_rows_processed} rows in {duration}s")
 
         except Exception as e:
-            logger.error(f"❌ [{tenant_id}] Sync Failed for {dataset_id}: {str(e)}")
-            await self._update_dataset_status(dataset_id, DatasetStatus.FAILED)
+            logger.error(f"❌ [{tenant_id}] Sync Failed for {dataset_id}: {str(e)}", exc_info=True)
+            await self._update_dataset_status(dataset_id, DatasetStatus.FAILED, error_msg=str(e))
 
 
     # --- Metadata Helpers ---
 
-    async def _update_dataset_status(self, dataset_id: str, status: DatasetStatus):
+    async def _update_dataset_status(self, dataset_id: str, status: DatasetStatus, error_msg: Optional[str] = None):
         with SessionLocal() as db:
             dataset = db.query(Dataset).filter(Dataset.id == dataset_id).first()
             if dataset:
                 dataset.status = status
+                if error_msg:
+                    dataset.schema_metadata = {**(dataset.schema_metadata or {}), "last_error": error_msg}
                 db.commit()
 
     async def _finalize_sync_metadata(
@@ -207,11 +255,18 @@ class SyncEngine:
                 dataset.file_path = f"sync/{integration_name}" # Root directory for partitioned dataset
                 dataset.updated_at = datetime.now(timezone.utc)
                 
+                # Update schema context for AI Agents
                 if total_rows > 0 and paths:
                     profile = storage_manager.convert_to_parquet_and_profile(db, tenant_id, paths[-1])
-                    dataset.schema_metadata = {"columns": profile.get("columns", [])}
+                    current_meta = dataset.schema_metadata or {}
+                    dataset.schema_metadata = {
+                        **current_meta,
+                        "columns": profile.get("columns", []),
+                        "last_sync_time": datetime.now(timezone.utc).isoformat(),
+                        "total_rows_synced": (current_meta.get("total_rows_synced", 0) + total_rows)
+                    }
             
-            # Storage Metering Update
+            # Storage Metering Update (For Billing)
             org = db.query(Organization).filter(Organization.id == tenant_id).first()
             if org and total_rows > 0:
                 estimated_mb = (total_rows / 10000.0) * 1.5
@@ -241,6 +296,7 @@ async def trigger_historical_sync(
     """
     The Frontend Trigger.
     Initiates an asynchronous historical data pull from a 3rd party SaaS.
+    Note: In heavy production environments, this can also trigger a Celery task.
     """
     dataset = db.query(Dataset).filter(
         Dataset.id == dataset_id, 
@@ -265,8 +321,7 @@ async def trigger_historical_sync(
         tenant_id=tenant.tenant_id,
         integration_name=dataset.integration_name,
         dataset_id=dataset_id,
-        stream_name=dataset.stream_name or "default",
-        start_timestamp="2024-01-01T00:00:00Z" # In production, pull from last_sync_time
+        stream_name=dataset.stream_name or "default"
     )
 
     return {"status": "sync_queued", "message": f"Historical pull for {dataset.integration_name} initiated in background."}
@@ -301,14 +356,14 @@ async def ingest_webhook_batch(
     
     engine = get_sync_engine(db)
     
-    # Dynamic Contextual RAG Schema Loading
+    # Dynamic Contextual RAG Schema Loading (Initialize without credentials just to fetch schema)
     integration_class = INTEGRATION_REGISTRY[integration_name]
     integration_instance = integration_class(tenant_id=tenant_id, credentials={})
     expected_schemas_map = await integration_instance.fetch_schema()
     
     stream_schema = expected_schemas_map.get(stream_name, {})
     flat_schema = {f["name"]: f["type"] for f in stream_schema} if isinstance(stream_schema, list) else stream_schema
-    pii_columns = getattr(integration_instance, "PII_COLUMNS", ["email", "phone", "customer_email"])
+    pii_columns = getattr(integration_instance, "PII_COLUMNS", ["email", "phone", "customer_email", "receipt_email"])
     
     try:
         raw_events = [event.get("payload", {}) for event in events]
@@ -321,7 +376,8 @@ async def ingest_webhook_batch(
         )
         
         if df.height > 0:
-            partition = f"year={datetime.now(timezone.utc).year}/month={datetime.now(timezone.utc).month:02d}"
+            now = datetime.now(timezone.utc)
+            partition = f"year={now.year}/month={now.month:02d}"
             table_id = f"sync/{integration_name}/live_webhooks/{partition}"
             
             storage_manager.write_dataframe(
@@ -331,5 +387,5 @@ async def ingest_webhook_batch(
         return {"status": "success", "rows": df.height}
         
     except Exception as e:
-        logger.error(f"Webhook ingestion failure for {integration_name}: {str(e)}")
+        logger.error(f"Webhook ingestion failure for {integration_name}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Compute engine ingestion anomaly.")

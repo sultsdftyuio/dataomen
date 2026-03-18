@@ -1,22 +1,30 @@
-# api/services/integrations/snowflake_connector.py
+"""
+ARCLI.TECH - SaaS Integration Module
+Connector: Snowflake (Enterprise Data Warehouse)
+Strategy: Compute Pushdown, Async Threading, & Vectorized Extraction
+"""
 
 import logging
-import anyio
 import contextlib
-import pandas as pd
 from datetime import datetime
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
+import anyio
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
 # --- Defensive Import Strategy ---
-# We gracefully handle the import so the rest of the application doesn't crash 
-# if this specific heavy connector isn't installed on a lightweight worker node.
+# Gracefully handle the import so the application doesn't crash 
+# if this heavy connector isn't installed on lightweight edge nodes.
 try:
     import snowflake.connector
-    from snowflake.connector.errors import DatabaseError
+    from snowflake.connector.errors import DatabaseError, OperationalError
+    import pandas as pd
+    import numpy as np
     SNOWFLAKE_AVAILABLE = True
 except ImportError:
     SNOWFLAKE_AVAILABLE = False
     DatabaseError = Exception  # Fallback for typing
+    OperationalError = Exception
 
 from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
 
@@ -25,15 +33,14 @@ logger = logging.getLogger(__name__)
 class SnowflakeConnector(BaseIntegration):
     """
     Phase 3: Snowflake Zero-ETL Connector (Enterprise Data Warehouse).
-    A direct database connector emphasizing Compute Pushdown and Async Threading.
     Leverages Pandas and Apache Arrow for high-throughput vectorized data extraction 
     without blocking the FastAPI event loop.
     """
 
-    # DWs can contain anything, but we set a baseline for the DataSanitizer to hunt for
-    PII_COLUMNS = ["EMAIL", "PHONE", "SSN", "FIRST_NAME", "LAST_NAME", "ADDRESS"]
+    # Data Warehouses can contain anything, but we set a baseline for the DataSanitizer to hunt for
+    PII_COLUMNS = ["EMAIL", "PHONE", "SSN", "FIRST_NAME", "LAST_NAME", "ADDRESS", "CUSTOMER_EMAIL"]
 
-    def __init__(self, tenant_id: str, credentials: Dict[str, str] = None):
+    def __init__(self, tenant_id: str, credentials: Optional[Dict[str, Any]] = None):
         config = IntegrationConfig(
             tenant_id=tenant_id, 
             integration_name="snowflake", 
@@ -42,7 +49,7 @@ class SnowflakeConnector(BaseIntegration):
         super().__init__(config)
         
         if not SNOWFLAKE_AVAILABLE:
-            logger.error("Attempted to initialize SnowflakeConnector, but 'snowflake-connector-python' is missing.")
+            logger.critical(f"[{self.tenant_id}] Missing 'snowflake-connector-python'.")
             raise ImportError(
                 "The Snowflake driver is not installed. "
                 "Please run: pip install 'snowflake-connector-python[pandas]>=3.8.0'"
@@ -54,7 +61,7 @@ class SnowflakeConnector(BaseIntegration):
         Context manager for safely yielding a Snowflake connection.
         Because Snowflake's driver is inherently synchronous, we offload the network
         I/O of connecting and disconnecting to worker threads via `anyio` to prevent 
-        blocking the async event loop.
+        blocking the async event loop (Hybrid Performance Paradigm).
         """
         creds = self.config.credentials
         
@@ -74,22 +81,29 @@ class SnowflakeConnector(BaseIntegration):
                 }
             )
 
-        conn = await anyio.to_thread.run_sync(_connect)
+        # Wrap connection in retry logic to survive transient warehouse wake-up timeouts
+        @retry(
+            retry=retry_if_exception_type((OperationalError, DatabaseError)),
+            wait=wait_exponential(multiplier=2, min=2, max=30),
+            stop=stop_after_attempt(5)
+        )
+        def _connect_with_retry():
+            return _connect()
+
+        conn = await anyio.to_thread.run_sync(_connect_with_retry)
         try:
             yield conn
         finally:
             await anyio.to_thread.run_sync(conn.close)
 
     async def test_connection(self) -> bool:
-        """
-        Fail-fast connection validation via a lightweight compute query.
-        """
+        """Fail-fast connection validation via a lightweight compute query."""
         def _ping(conn) -> bool:
             try:
                 with conn.cursor() as cur:
                     cur.execute("SELECT 1")
                     result = cur.fetchone()
-                    return result[0] == 1
+                    return result is not None and result[0] == 1
             except DatabaseError as e:
                 logger.error(f"[{self.tenant_id}] Snowflake ping failed: {str(e)}")
                 return False
@@ -136,7 +150,6 @@ class SnowflakeConnector(BaseIntegration):
                     table_name, col_name, dtype = row[0], row[1], row[2]
                     
                     table_clean = table_name.lower()
-                    
                     if table_clean not in schema_graph:
                         schema_graph[table_clean] = {}
                         
@@ -155,47 +168,64 @@ class SnowflakeConnector(BaseIntegration):
         """
         Phase 3.3: High-Throughput Extraction Pipeline.
         Utilizes `fetch_pandas_batches()` to stream data natively in vectorized DataFrames,
-        converts them to dictionaries, and yields them to the SyncEngine.
+        safely serializes NaN/NaT, and yields batches to the SyncEngine.
         """
         safe_table = "".join(c for c in stream_name if c.isalnum() or c == '_').upper()
         
-        # Handle timestamp parsing safely
+        # 1. Fetch current schema to intelligently inject Delta Sync logic
+        schema_graph = await self.fetch_schema()
+        table_schema = schema_graph.get(safe_table.lower(), {})
+        
+        # Detect chronology column for Compute Pushdown (Delta Sync)
+        chronology_col = None
+        for col in ["UPDATED_AT", "MODIFIED_AT", "CREATED_AT", "TIMESTAMP"]:
+            if col.lower() in table_schema:
+                chronology_col = col
+                break
+
+        # 2. Construct Safe SQL Query
         ts_filter = "2000-01-01 00:00:00"
-        if start_timestamp:
+        query = f"SELECT * FROM {safe_table}"
+        
+        if start_timestamp and chronology_col:
             try:
                 dt = datetime.fromisoformat(start_timestamp.replace('Z', '+00:00'))
                 ts_filter = dt.strftime("%Y-%m-%d %H:%M:%S")
+                # Push down the filter to Snowflake's compute engine
+                query += f" WHERE {chronology_col} >= '{ts_filter}'::TIMESTAMP_NTZ"
+                logger.info(f"[{self.tenant_id}] Applying Compute Pushdown Delta Sync via {chronology_col} >= {ts_filter}")
             except ValueError:
-                pass
-        
-        # Assuming an UPDATED_AT column exists for delta syncing. 
-        # In a generic DW connector, this might need to be configurable.
-        query = f"""
-            SELECT * FROM {safe_table} 
-            WHERE UPDATED_AT >= '{ts_filter}'::TIMESTAMP_NTZ
-        """
+                logger.warning(f"[{self.tenant_id}] Invalid start_timestamp. Defaulting to full table scan.")
 
+        # 3. Execution Helpers
         def _execute_query(conn):
             cursor = conn.cursor()
             cursor.execute(query)
-            # Utilizing the modern C++ backed pandas batch fetcher
+            # Utilizing the modern C++ backed pandas batch fetcher (Zero-Copy extraction)
             return cursor, cursor.fetch_pandas_batches()
 
         def _get_next_batch(iterator) -> Optional[List[Dict[str, Any]]]:
-            """Helper to safely fetch and convert the next batch synchronously."""
+            """Helper to safely fetch, sanitize, and convert the next batch synchronously."""
             try:
                 df_batch = next(iterator)
                 if df_batch is None or df_batch.empty:
                     return None
                 
-                # Convert timestamps to strings or ints to ensure JSON/Polars serialization succeeds
+                # A. Protect JSON Serialization: Convert Pandas NaT / NaN to pure Python None
+                df_batch = df_batch.replace({np.nan: None})
+                
+                # B. Stringify timestamps to prevent Polars type coercion panics down the line
                 for col in df_batch.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]']).columns:
-                    df_batch[col] = df_batch[col].astype(str)
+                    # fillna strictly required again after type conversion
+                    df_batch[col] = df_batch[col].astype(str).replace({'NaT': None, 'nan': None})
                     
-                # Convert to the List[Dict] format expected by SyncEngine
+                # C. Convert to the List[Dict] format expected by SyncEngine
                 return df_batch.to_dict(orient="records")
             except StopIteration:
                 return None
+            except Exception as e:
+                logger.error(f"[{self.tenant_id}] Pandas Batch Conversion Error: {str(e)}")
+                raise
 
         logger.info(f"[{self.config.tenant_id}] Executing Snowflake async extraction for {safe_table}...")
 
@@ -204,7 +234,7 @@ class SnowflakeConnector(BaseIntegration):
 
             try:
                 while True:
-                    # Offload the network I/O and Pandas conversion to a separate thread
+                    # Offload the Pandas manipulation to a thread to keep the Event Loop free
                     dict_batch = await anyio.to_thread.run_sync(_get_next_batch, batch_iterator)
                     
                     if dict_batch is None:
@@ -213,18 +243,18 @@ class SnowflakeConnector(BaseIntegration):
                     if dict_batch:
                         yield dict_batch
                     
-                    # Explicitly yield control back to the FastAPI event loop to keep the server highly responsive
+                    # Explicitly yield control back to the FastAPI event loop
                     await anyio.sleep(0)
                     
             finally:
-                # Ensure the cursor is cleanly released
+                # Ensure the cursor is cleanly released to free up Snowflake warehouse memory
                 await anyio.to_thread.run_sync(cursor.close)
 
     def get_semantic_views(self) -> Dict[str, str]:
         """
         Option A (Federated Querying Context): 
-        If DuckDB is configured with the 'snowflake' extension, we can query Snowflake 
-        directly without duplicating data into S3/R2.
+        If DuckDB is configured with the 'snowflake' extension, we can inject this into
+        the Contextual RAG to query Snowflake directly without duplicating data into S3/R2.
         """
         database = self.config.credentials.get("database")
         schema = self.config.credentials.get("schema", "PUBLIC")

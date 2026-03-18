@@ -1,35 +1,69 @@
+"""
+ARCLI.TECH - SaaS Integration Module
+Connector: Google BigQuery (Enterprise Data Warehouse)
+Strategy: Storage API Vectorization, Compute Pushdown, & Async Threading
+"""
+
 import json
-import asyncio
 import logging
+from datetime import datetime
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
-from google.cloud import bigquery
-from google.oauth2 import service_account
-from google.api_core.exceptions import GoogleAPIError
+import anyio
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
+# --- Defensive Import Strategy ---
+try:
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+    from google.api_core.exceptions import GoogleAPIError, RetryError
+    import pandas as pd
+    import numpy as np
+    BIGQUERY_AVAILABLE = True
+except ImportError:
+    BIGQUERY_AVAILABLE = False
+    GoogleAPIError = Exception
+    RetryError = Exception
 
 from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
 
 logger = logging.getLogger(__name__)
 
+class BigQueryNetworkError(Exception):
+    """Custom exception to trigger Tenacity backoff for transient GCP errors."""
+    pass
+
 class BigQueryConnector(BaseIntegration):
     """
     Google BigQuery Connector for Zero-ETL Syncs and Pushdown Compute.
     
-    Adheres to the Modular Strategy:
-    - Connects using secure Service Account JSONs injected via Vault.
-    - Introspects schemas and maps BigQuery native types strictly to DuckDB standard types.
-    - Yields massive datasets efficiently via paginated async generators to prevent memory bloat.
+    Engineering Upgrades:
+    - Vectorized Extraction: Uses BigQuery Storage API & Pandas for zero-copy memory transfers.
+    - Dynamic Delta Sync: Introspects schemas to safely push timestamp filters to GCP compute.
+    - Resilience: Exponential backoff via Tenacity handles transient Google API quotas.
     """
 
-    # BigQuery often stores raw CRM/App data. Instruct the DataSanitizer to hash these on the fly.
+    # BQ often stores raw CRM/App data. Instruct the DataSanitizer to hash these on the fly.
     PII_COLUMNS: List[str] = [
         "email", "email_address", "phone", "phone_number", 
-        "ssn", "social_security", "credit_card", "ip_address"
+        "ssn", "social_security", "credit_card", "ip_address", "first_name", "last_name"
     ]
 
-    def __init__(self, config: IntegrationConfig):
+    def __init__(self, tenant_id: str, credentials: Optional[Dict[str, Any]] = None):
+        config = IntegrationConfig(
+            tenant_id=tenant_id, 
+            integration_name="bigquery", 
+            credentials=credentials or {}
+        )
         super().__init__(config)
         
+        if not BIGQUERY_AVAILABLE:
+            logger.critical(f"[{self.tenant_id}] Missing 'google-cloud-bigquery'.")
+            raise ImportError(
+                "The BigQuery driver is not installed. "
+                "Please run: pip install 'google-cloud-bigquery[pandas,pyarrow]'"
+            )
+
         # Credentials must contain the service account payload and the target dataset
         raw_sa_info = self.config.credentials.get("service_account_json")
         self.dataset_id = self.config.credentials.get("dataset_id")
@@ -39,11 +73,10 @@ class BigQueryConnector(BaseIntegration):
             raise ValueError("BigQuery 'service_account_json' is required in credentials.")
             
         if not self.dataset_id:
-            logger.warning(f"[{self.tenant_id}] BigQuery 'dataset_id' not provided. Schema fetch will require explicit project-level scans.")
+            logger.warning(f"[{self.tenant_id}] BigQuery 'dataset_id' not provided. Operations will require explicit project-level scans.")
 
         # Parse stringified JSON if stored as a secure string in Supabase Vault
         sa_info = json.loads(raw_sa_info) if isinstance(raw_sa_info, str) else raw_sa_info
-        
         self.project_id = sa_info.get("project_id")
         
         try:
@@ -55,19 +88,27 @@ class BigQueryConnector(BaseIntegration):
             raise
 
     async def test_connection(self) -> bool:
-        """
-        Fast validation to ensure service account credentials haven't been revoked
-        and the client can access the warehouse.
-        """
+        """Fast validation to ensure service account credentials haven't been revoked."""
+        def _ping() -> bool:
+            try:
+                # A lightweight query that costs 0 bytes to process
+                query_job = self.client.query("SELECT 1 AS health_check")
+                result = query_job.result()
+                return len(list(result)) == 1
+            except Exception as e:
+                logger.error(f"[{self.tenant_id}] BigQuery connection test failed: {str(e)}")
+                return False
+
         try:
-            # A lightweight query that costs ~0 bytes to process
-            query_job = await asyncio.to_thread(self.client.query, "SELECT 1 AS health_check")
-            result = await asyncio.to_thread(query_job.result)
-            return len(list(result)) == 1
-        except Exception as e:
-            logger.error(f"[{self.tenant_id}] BigQuery connection test failed: {str(e)}")
+            return await anyio.to_thread.run_sync(_ping)
+        except Exception:
             return False
 
+    @retry(
+        retry=retry_if_exception_type((GoogleAPIError, RetryError, BigQueryNetworkError)),
+        wait=wait_exponential(multiplier=2, min=2, max=30),
+        stop=stop_after_attempt(5)
+    )
     async def fetch_schema(self) -> Dict[str, Any]:
         """
         The Schema Contract.
@@ -81,75 +122,101 @@ class BigQueryConnector(BaseIntegration):
             FROM `{self.project_id}.{self.dataset_id}.INFORMATION_SCHEMA.COLUMNS`
         """
         
-        try:
-            query_job = await asyncio.to_thread(self.client.query, query)
-            rows = await asyncio.to_thread(query_job.result)
+        def _fetch():
+            query_job = self.client.query(query)
+            rows = query_job.result()
             
             schema_map: Dict[str, Dict[str, str]] = {}
-            
             for row in rows:
-                table = row.table_name
-                column = row.column_name
+                table = row.table_name.lower()
+                column = row.column_name.lower()
                 bq_type = row.data_type
                 
                 if table not in schema_map:
                     schema_map[table] = {}
                     
                 schema_map[table][column] = self._map_bq_type_to_duckdb(bq_type)
-                
             return schema_map
-            
-        except GoogleAPIError as getattr_err:
+
+        try:
+            return await anyio.to_thread.run_sync(_fetch)
+        except Exception as getattr_err:
             logger.error(f"[{self.tenant_id}] Schema introspection failed: {str(getattr_err)}")
             raise
 
     async def sync_historical(self, stream_name: str, start_timestamp: Optional[str] = None) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
-        The Pull Pipeline (Batch).
-        Executes a table extract and streams pages (chunks) of rows back asynchronously.
-        This ensures we don't load a 100GB table into server memory at once.
+        Phase 3.3: High-Throughput Extraction Pipeline.
+        Executes a table extract and streams pages back using the BigQuery Storage API 
+        (Apache Arrow -> Pandas) to prevent massive memory bloat while maximizing speed.
         """
-        # Strictly format the table reference to prevent injection issues, 
-        # though stream_name comes from our internal Orchestrator mapping.
-        table_ref = f"{self.project_id}.{self.dataset_id}.{stream_name}"
+        safe_table = "".join(c for c in stream_name if c.isalnum() or c == '_')
+        table_ref = f"{self.project_id}.{self.dataset_id}.{safe_table}"
         
-        # Build the pull query
-        query = f"SELECT * FROM `{table_ref}`"
+        # 1. Fetch schema to discover the correct timestamp column for Delta Syncs
+        schema_graph = await self.fetch_schema()
+        table_schema = schema_graph.get(safe_table.lower(), {})
         
-        # Implement primitive time-travel/incremental loads if a timestamp is provided
-        # Assumes the table has a standard 'updated_at' or 'created_at' column. 
-        # In a production scenario, the SyncEngine should pass the specific replication key.
-        if start_timestamp:
-            query += f" WHERE updated_at >= TIMESTAMP('{start_timestamp}')"
-            
-        try:
-            logger.info(f"[{self.tenant_id}] Starting BigQuery sync for {table_ref}")
-            query_job = await asyncio.to_thread(self.client.query, query)
-            result = await asyncio.to_thread(query_job.result, page_size=10000) # Fetch 10k rows per page
-            
-            # Iterate through pages using the BigQuery iterator API
-            pages = result.pages
-            
-            # We must use an inner async generator loop to yield control back to the event loop
-            # while blocking network operations fetch the next page.
-            def fetch_next_page(page_iter):
-                try:
-                    return next(page_iter)
-                except StopIteration:
-                    return None
+        chronology_col = None
+        for col in ["updated_at", "modified_at", "created_at", "timestamp", "_partitiontime"]:
+            if col in table_schema:
+                chronology_col = col
+                break
 
-            page_iterator = iter(pages)
+        # 2. Compute Pushdown Query
+        query = f"SELECT * FROM `{table_ref}`"
+        ts_filter = "2000-01-01 00:00:00"
+        
+        if start_timestamp and chronology_col:
+            try:
+                dt = datetime.fromisoformat(start_timestamp.replace('Z', '+00:00'))
+                ts_filter = dt.strftime("%Y-%m-%d %H:%M:%S")
+                # Push computation to BQ to minimize network egress
+                query += f" WHERE {chronology_col} >= TIMESTAMP('{ts_filter}')"
+                logger.info(f"[{self.tenant_id}] Applying BQ Compute Pushdown: {chronology_col} >= {ts_filter}")
+            except ValueError:
+                pass
+
+        def _execute_and_get_iterator():
+            """Executes query and returns a highly-optimized Pandas dataframe iterator."""
+            query_job = self.client.query(query)
+            result = query_job.result()
+            # BQ Storage API automatically converts Arrow batches to Pandas
+            return result.to_dataframe_iterable(max_results=10000)
+
+        def _fetch_vectorized_chunk(iterator) -> Optional[List[Dict[str, Any]]]:
+            """Safely fetches, cleanses, and converts the next Pandas batch."""
+            try:
+                df_batch = next(iterator)
+                if df_batch is None or df_batch.empty:
+                    return None
+                
+                # Protect JSON Serialization: Convert Pandas NaT / NaN to pure Python None
+                df_batch = df_batch.replace({np.nan: None})
+                
+                # BigQuery returns TZ-aware datetimes. Clean them for Polars string parsing.
+                for col in df_batch.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]', 'datetimetz']).columns:
+                    df_batch[col] = df_batch[col].astype(str).replace({'NaT': None, 'nan': None})
+                    
+                return df_batch.to_dict(orient="records")
+            except StopIteration:
+                return None
+
+        logger.info(f"[{self.tenant_id}] Starting BigQuery sync for {table_ref}")
+
+        try:
+            batch_iterator = await anyio.to_thread.run_sync(_execute_and_get_iterator)
             
             while True:
-                # Run the blocking next() call in a separate thread
-                page = await asyncio.to_thread(fetch_next_page, page_iterator)
-                if page is None:
+                # Offload vectorization to background thread
+                chunk = await anyio.to_thread.run_sync(_fetch_vectorized_chunk, batch_iterator)
+                if not chunk:
                     break
                     
-                # Convert the RowIterator page to a list of dicts for the Polars Normalizer
-                chunk = [dict(row.items()) for row in page]
-                if chunk:
-                    yield chunk
+                yield chunk
+                
+                # Explicitly yield control back to the FastAPI event loop
+                await anyio.sleep(0)
 
         except Exception as e:
             logger.error(f"[{self.tenant_id}] BigQuery historical sync failed for {stream_name}: {str(e)}")
@@ -157,14 +224,28 @@ class BigQueryConnector(BaseIntegration):
 
     def get_semantic_views(self) -> Dict[str, str]:
         """
-        Optional mapping of core analytical views if Dataomen knows the schema structure beforehand
-        (e.g., standard Google Analytics 4 BigQuery export shapes).
+        Contextual RAG Mapping.
+        If Dataomen detects standard BQ exports (like Google Analytics 4), 
+        inject pre-calculated views to prevent LLM hallucination.
         """
         return {
-            "ga4_daily_active_users": f"""
-                SELECT event_date, COUNT(DISTINCT user_pseudo_id) as active_users
+            "vw_ga4_daily_active_users": f"""
+                -- DuckDB Macro mapped to standard GA4 BigQuery Schema
+                SELECT 
+                    event_date, 
+                    COUNT(DISTINCT user_pseudo_id) as active_users
                 FROM `{self.project_id}.{self.dataset_id}.events_*`
                 GROUP BY event_date
+                ORDER BY event_date DESC
+            """,
+            "vw_ga4_purchase_revenue": f"""
+                SELECT 
+                    event_date,
+                    SUM(CAST(event_value_in_usd AS DOUBLE)) as daily_revenue
+                FROM `{self.project_id}.{self.dataset_id}.events_*`
+                WHERE event_name = 'purchase'
+                GROUP BY event_date
+                ORDER BY event_date DESC
             """
         }
 
@@ -198,7 +279,7 @@ class BigQueryConnector(BaseIntegration):
             "DATETIME": "TIMESTAMP",
             "TIME": "TIME",
             "TIMESTAMP": "TIMESTAMP",
-            "GEOGRAPHY": "VARCHAR", # DuckDB spatial extension handles geometry as varchar/blob initially
+            "GEOGRAPHY": "VARCHAR", # DuckDB spatial handles geometry as varchar initially
             "JSON": "JSON"
         }
         
