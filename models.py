@@ -7,6 +7,7 @@ from sqlalchemy import String, Enum, DateTime, ForeignKey, Text, Boolean, Float,
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, declared_attr
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.sql import func
 
 # ==========================================
 # BASE CONFIGURATION & SECURITY MIXINS
@@ -84,7 +85,7 @@ class Organization(Base):
     monthly_query_limit: Mapped[int] = mapped_column(default=1000)
     current_month_queries: Mapped[int] = mapped_column(default=0)
     
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     settings: Mapped["TenantSettings"] = relationship("TenantSettings", back_populates="organization", uselist=False, cascade="all, delete-orphan")
@@ -102,7 +103,7 @@ class User(Base):
     organization_id: Mapped[str] = mapped_column(String, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String, default="member") # admin, member, viewer
     
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     organization: Mapped["Organization"] = relationship("Organization", back_populates="users")
 
@@ -124,10 +125,10 @@ class TenantSettings(Base, TenantAwareMixin):
     # BYOS Credentials (SECURITY NOTE: Encrypt via Fernet/KMS in production)
     byos_endpoint: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     byos_bucket: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    byos_access_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    byos_secret_key: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    byos_access_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    byos_secret_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     organization: Mapped["Organization"] = relationship("Organization", back_populates="settings")
 
@@ -142,7 +143,7 @@ class TenantApiKey(Base, TenantAwareMixin):
     key_hash: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     label: Mapped[str] = mapped_column(String, default="Default Key")
     
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_used: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -156,7 +157,7 @@ class TenantErrorLog(Base, TenantAwareMixin):
     operation: Mapped[str] = mapped_column(String, nullable=False)
     error_message: Mapped[str] = mapped_column(Text, nullable=False)
     
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ==========================================
@@ -187,8 +188,8 @@ class Dataset(Base, TenantAwareMixin):
     # Upgraded to Postgres JSONB for indexable schema traversal
     schema_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True) 
     
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     agents: Mapped[List["Agent"]] = relationship("Agent", back_populates="dataset", cascade="all, delete-orphan")
@@ -216,7 +217,7 @@ class Agent(Base, TenantAwareMixin):
     sensitivity_threshold: Mapped[float] = mapped_column(Float, default=2.0)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="agents")
     queries: Mapped[List["QueryHistory"]] = relationship("QueryHistory", back_populates="agent", cascade="all, delete-orphan")
@@ -253,7 +254,7 @@ class Insight(Base, TenantAwareMixin):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_dismissed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="insights")
     agent: Mapped[Optional["Agent"]] = relationship("Agent", back_populates="insights")
@@ -275,13 +276,19 @@ class AgentKnowledge(Base, TenantAwareMixin):
     # Vector Representation for cosine similarity (OpenAI standard 1536 dims)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536))
     
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     agent: Mapped["Agent"] = relationship("Agent", back_populates="knowledge")
 
-    # Composite Index: HNSW Vector Math constrained strictly by Tenant ID for high-performance SaaS RAG
+    # Vector-only HNSW Index (Postgres + pgvector handles the tenant_id scalar pre-filtering automatically)
     __table_args__ = (
-        Index('ix_agent_knowledge_tenant_vector', 'tenant_id', 'embedding', postgresql_using='hnsw', postgresql_ops={'embedding': 'vector_cosine_ops'}),
+        Index(
+            'ix_agent_knowledge_embedding', 
+            'embedding', 
+            postgresql_using='hnsw', 
+            postgresql_with={'m': 16, 'ef_construction': 64},
+            postgresql_ops={'embedding': 'vector_cosine_ops'}
+        ),
     )
 
 
@@ -301,6 +308,6 @@ class QueryHistory(Base, TenantAwareMixin):
     was_successful: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
     agent: Mapped["Agent"] = relationship("Agent", back_populates="queries")

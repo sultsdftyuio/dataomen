@@ -1,3 +1,4 @@
+// components/chat/ChatLayout.tsx
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
@@ -6,8 +7,10 @@ import { DynamicChartFactory } from "@/components/dashboard/DynamicChartFactory"
 import { ExecutionPayload } from "@/lib/chart-engine";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  Bot, User, FileText, Settings2, Sparkles, 
-  FileSpreadsheet, Database, LineChart, Activity 
+  Bot, FileText, Settings2, Sparkles, 
+  FileSpreadsheet, Database, LineChart, Activity,
+  ChevronDown, CheckCircle2, Copy, ThumbsUp, ThumbsDown, RotateCcw,
+  TerminalSquare
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -25,10 +28,6 @@ export interface RichMessage {
 }
 
 interface ChatLayoutProps {
-  /**
-   * The ID of the specific specialized agent this room is communicating with.
-   * If omitted, it defaults to the standard Semantic Router.
-   */
   agentId?: string;
   agentName?: string;
 }
@@ -38,13 +37,11 @@ interface ChatLayoutProps {
 // -----------------------------------------------------------------------------
 export const ChatLayout: React.FC<ChatLayoutProps> = ({ 
   agentId = "default-router", 
-  agentName = "Arcli Data Analyst" 
+  agentName = "Dataomen Omni-Engine" 
 }) => {
   const [messages, setMessages] = useState<RichMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState("");
-  
-  // Contextual RAG: Scoped to this specific chat room
   const [activeDatasetIds, setActiveDatasetIds] = useState<string[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -55,6 +52,20 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, progressStatus]);
+
+  // Dynamic Greeting based on time
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
+  };
+
+  // Copy to clipboard utility
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ description: "Copied to clipboard", duration: 2000 });
+  };
 
   // ---------------------------------------------------------------------------
   // Direct-to-R2 Upload Pipeline
@@ -78,7 +89,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     const uploadRes = await fetch(url, { method: "POST", body: formData });
     if (!uploadRes.ok) throw new Error(`Storage upload failed for ${file.name}`);
 
-    setProgressStatus(`Profiling and compressing ${file.name}...`);
+    setProgressStatus(`Profiling ${file.name}...`);
     const workerRes = await fetch("/api/ingestion/process-parquet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -164,63 +175,75 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     }
   };
 
-  // Julius-style intent suggestions
+  // Suggestions
   const SUGGESTIONS = [
-    { icon: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />, title: "Analyze a Dataset", desc: "Upload a CSV, Excel, or Parquet file." },
-    { icon: <Database className="w-5 h-5 text-blue-500" />, title: "Query Database", desc: "Connect to Postgres, Snowflake, or Stripe." },
-    { icon: <LineChart className="w-5 h-5 text-purple-500" />, title: "Forecast Trends", desc: "Predict future MRR or user growth." },
-    { icon: <Activity className="w-5 h-5 text-rose-500" />, title: "Detect Anomalies", desc: "Find statistical outliers in your metrics." }
+    { icon: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />, title: "Analyze a Dataset", desc: "Upload a CSV, Excel, or Parquet file" },
+    { icon: <Database className="w-5 h-5 text-blue-500" />, title: "Query Database", desc: "Connect Postgres, Snowflake, or Stripe" },
+    { icon: <LineChart className="w-5 h-5 text-purple-500" />, title: "Forecast Trends", desc: "Predict future MRR or user growth" },
+    { icon: <Activity className="w-5 h-5 text-rose-500" />, title: "Detect Anomalies", desc: "Find statistical outliers in your metrics" }
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] w-full bg-background rounded-2xl border border-border overflow-hidden shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] w-full bg-[#FAFAFA] dark:bg-[#0E0E10] relative overflow-hidden font-sans">
       
-      {/* ── Chat Header ── */}
-      <header className="flex-shrink-0 h-14 flex items-center justify-between px-5 border-b border-border bg-card/50 backdrop-blur-md z-10">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-sm">
-            <Sparkles className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-sm text-foreground tracking-tight">{agentName}</h2>
-            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">
-              {activeDatasetIds.length} Sources Connected
-            </p>
-          </div>
+      {/* ── Top Navigation Bar ── */}
+      <header className="absolute top-0 w-full flex-shrink-0 h-14 flex items-center justify-between px-4 md:px-6 z-20 bg-background/80 backdrop-blur-md border-b border-border/40">
+        <div className="flex items-center space-x-2">
+          {/* Agent Selector Dropdown (Visual) */}
+          <button className="flex items-center space-x-2 px-3 py-1.5 rounded-lg hover:bg-muted/60 transition-colors group">
+            <span className="text-sm font-medium text-foreground tracking-tight">{agentName}</span>
+            <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </button>
+          
+          {/* Active Context Badge */}
+          {activeDatasetIds.length > 0 && (
+            <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                {activeDatasetIds.length} Sources Connected
+              </span>
+            </div>
+          )}
         </div>
+        
         <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-8 w-8 rounded-lg">
-          <Settings2 className="w-4 h-4" />
+          <Settings2 className="w-4.5 h-4.5" />
         </Button>
       </header>
 
-      {/* ── Message Stream ── */}
-      <ScrollArea className="flex-1 p-4 md:p-6 scroll-smooth bg-muted/10">
-        <div className="max-w-4xl mx-auto space-y-8 pb-6">
+      {/* ── Main Chat Area ── */}
+      <ScrollArea className="flex-1 w-full scroll-smooth pt-14">
+        <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-8 space-y-12 pb-40">
           
-          {/* Julius AI Style Empty State */}
+          {/* ── Welcome / Empty State ── */}
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-6 shadow-sm border border-primary/20 rotate-3">
-                <Bot className="w-8 h-8 text-primary -rotate-3" />
+            <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in zoom-in-95 duration-700 mt-8">
+              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 shadow-sm border border-primary/10">
+                <Sparkles className="w-8 h-8 text-primary" />
               </div>
-              <h2 className="text-3xl font-bold text-foreground mb-3 tracking-tight text-center">What do you want to analyze?</h2>
-              <p className="text-muted-foreground mb-10 text-sm max-w-md text-center leading-relaxed">
-                Drop a dataset, connect a database, or ask a question in plain English. I'll write the SQL, build the charts, and explain the insights.
+              <h1 className="text-3xl font-medium text-foreground mb-3 tracking-tight text-center">
+                {getGreeting()}
+              </h1>
+              <p className="text-muted-foreground text-sm max-w-[420px] text-center leading-relaxed mb-10">
+                I am your high-performance data assistant. Drop a file, connect a database, or ask an analytical question to get started.
               </p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
                 {SUGGESTIONS.map((s, i) => (
                   <button 
                     key={i} 
                     onClick={() => handleSendMessage(`I want to ${s.title.toLowerCase()}`)}
-                    className="flex items-start text-left gap-4 p-4 rounded-2xl border border-border bg-card hover:bg-muted/50 hover:border-primary/30 transition-all shadow-sm group"
+                    className="flex items-start text-left gap-4 p-4 rounded-2xl border border-border/60 bg-card/50 hover:bg-card hover:border-primary/40 hover:shadow-sm transition-all duration-200 group"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                    <div className="w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-sm">
                       {s.icon}
                     </div>
                     <div className="flex flex-col mt-0.5">
-                      <span className="font-semibold text-sm text-foreground">{s.title}</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">{s.desc}</span>
+                      <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">{s.title}</span>
+                      <span className="text-xs text-muted-foreground mt-1 line-clamp-1">{s.desc}</span>
                     </div>
                   </button>
                 ))}
@@ -228,68 +251,130 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             </div>
           )}
 
-          {/* Message Bubbles */}
+          {/* ── Conversation Thread ── */}
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex w-full gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              {msg.role === "assistant" && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mt-1 shadow-sm">
-                  <Bot className="w-4 h-4 text-primary" />
+            <div key={msg.id} className="group flex flex-col w-full animate-in fade-in slide-in-from-bottom-3 duration-500">
+              
+              {/* USER MESSAGE */}
+              {msg.role === "user" && (
+                <div className="flex flex-col items-end w-full ml-auto max-w-[75%] md:max-w-[70%] space-y-2">
+                  {/* File Attachments */}
+                  {msg.files && msg.files.length > 0 && (
+                    <div className="flex flex-wrap gap-2 justify-end w-full">
+                      {msg.files.map((f, i) => (
+                        <div key={i} className="flex items-center space-x-2.5 bg-card px-3 py-2 rounded-xl border border-border/80 shadow-sm">
+                          <div className="w-6 h-6 rounded-md bg-emerald-500/10 flex items-center justify-center">
+                            <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="max-w-[150px] truncate text-[13px] font-medium text-foreground leading-tight">{f.name}</span>
+                            <span className="text-[11px] text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Text Content */}
+                  {msg.content && (
+                    <div className="px-5 py-3.5 text-[15px] shadow-sm leading-relaxed bg-[#ececec] dark:bg-[#2f2f31] text-foreground rounded-3xl rounded-br-sm border border-transparent dark:border-white/5">
+                      {msg.content}
+                    </div>
+                  )}
                 </div>
               )}
 
-              <div className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                
-                {/* Standard Text */}
-                {msg.content && (
-                  <div className={`px-5 py-3.5 text-sm shadow-sm leading-relaxed ${
-                    msg.role === "user" 
-                      ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm" 
-                      : "bg-card border border-border text-foreground rounded-2xl rounded-tl-sm"
-                  }`}>
-                    {msg.content}
+              {/* ASSISTANT MESSAGE */}
+              {msg.role === "assistant" && (
+                <div className="flex gap-4 md:gap-5 w-full max-w-full">
+                  {/* Avatar */}
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mt-1 shadow-sm">
+                    <Sparkles className="w-4 h-4 text-primary" />
                   </div>
-                )}
-                
-                {/* Uploaded Files Indicator */}
-                {msg.role === "user" && msg.files && msg.files.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2 justify-end">
-                    {msg.files.map((f, i) => (
-                      <div key={i} className="flex items-center space-x-1.5 bg-card px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground shadow-sm">
-                        <FileText className="w-3.5 h-3.5 text-primary" />
-                        <span className="max-w-[150px] truncate font-medium">{f.name}</span>
+                  
+                  {/* Response Content */}
+                  <div className="flex flex-col flex-1 min-w-0 pt-1.5 space-y-4">
+                    
+                    {/* Text block */}
+                    {msg.content && (
+                      <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none text-foreground leading-relaxed">
+                        {msg.content}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
+                    
+                    {/* Dynamic Chart / Data Payload block */}
+                    {msg.payload && (
+                      <div className="w-full bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all hover:shadow-md">
+                        <DynamicChartFactory payload={msg.payload} />
+                      </div>
+                    )}
 
-                {/* Rich Factory Payload (Tables/Charts/Errors) */}
-                {msg.role === "assistant" && msg.payload && (
-                  <div className="w-full mt-3 animate-in fade-in slide-in-from-bottom-2">
-                    <DynamicChartFactory payload={msg.payload} />
-                  </div>
-                )}
-              </div>
+                    {/* AI Feedback Action Bar (Appears on Hover) */}
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity pt-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => copyToClipboard(msg.content || JSON.stringify(msg.payload))}>
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-emerald-500">
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-rose-500">
+                        <ThumbsDown className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
 
-              {msg.role === "user" && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center mt-1 shadow-sm">
-                  <User className="w-4 h-4 text-secondary-foreground" />
+                  </div>
                 </div>
               )}
             </div>
           ))}
+
+          {/* ── Processing Indicator ── */}
+          {isProcessing && (
+            <div className="flex gap-4 md:gap-5 w-full animate-in fade-in duration-300">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center mt-1">
+                <TerminalSquare className="w-4 h-4 text-muted-foreground animate-pulse" />
+              </div>
+              <div className="flex flex-col pt-2.5">
+                <div className="flex items-center space-x-3 text-[15px] font-medium text-foreground/80">
+                  <div className="flex space-x-1">
+                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
+                  </div>
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-foreground to-muted-foreground animate-pulse">
+                    {progressStatus || "Orchestrating engines..."}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           
-          <div ref={scrollRef} className="h-4" />
+          <div ref={scrollRef} className="h-8" />
         </div>
       </ScrollArea>
 
-      {/* ── Unified Omni-Input Bar ── */}
-      <div className="flex-shrink-0 w-full bg-card p-4 border-t border-border z-10">
-        <OmniMessageInput
-          onSendMessage={handleSendMessage}
-          isProcessing={isProcessing}
-          progressStatus={progressStatus}
-        />
+      {/* ── Unified Omni-Input Bar (Floating w/ Gradient Mask) ── */}
+      <div className="absolute bottom-0 w-full z-10">
+        {/* Gradient Mask to smoothly hide scrolling text */}
+        <div className="h-12 w-full bg-gradient-to-t from-[#FAFAFA] dark:from-[#0E0E10] to-transparent pointer-events-none" />
+        
+        <div className="bg-[#FAFAFA] dark:bg-[#0E0E10] pb-6 pt-2 px-4 md:px-6">
+          <div className="max-w-3xl mx-auto w-full">
+            <OmniMessageInput
+              onSendMessage={handleSendMessage}
+              isProcessing={isProcessing}
+              progressStatus={progressStatus}
+            />
+            <div className="text-center mt-3 text-[11px] text-muted-foreground/60 font-medium tracking-wide">
+              Dataomen AI can make mistakes. Consider verifying important metrics.
+            </div>
+          </div>
+        </div>
       </div>
+
     </div>
   );
 };

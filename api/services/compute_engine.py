@@ -25,6 +25,8 @@ from api.services.integrations.redshift_connector import RedshiftConnector
 from api.services.integrations.base_integration import IntegrationConfig
 from models import Dataset
 from api.database import SessionLocal
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,18 @@ class ComputeLocation(str, Enum):
     REDSHIFT        = "redshift"
     SNOWFLAKE       = "snowflake"
 
-
+class DatasetMetadata(BaseModel):
+    """
+    Core data structure for passing dataset context into the execution engine.
+    Ensures type safety and tenant isolation during Zero-ETL operations.
+    """
+    dataset_id: str
+    object_key: str
+    tenant_id: Optional[str] = None
+    schema_info: Optional[Dict[str, Any]] = None
+    row_count: Optional[int] = 0
+    file_size_bytes: Optional[int] = 0
+    
 # -------------------------------------------------------------------------
 # Phase 1: Semantic Query Caching Layer (HARDENED)
 # -------------------------------------------------------------------------

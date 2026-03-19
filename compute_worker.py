@@ -579,7 +579,7 @@ class ComputeEngine:
             
             # Using Polars vectorized math for extreme performance
             df = df.with_columns([
-                pl.arange(0, df.height).alias("x"),
+                pl.int_range(0, df.height).alias("x"), # UPDATED: pl.arange -> pl.int_range
                 pl.col("y").ewm_mean(alpha=alpha).alias("ema_7"),
                 pl.col("y").rolling_std(window_size=span).fill_null(strategy="backward").alias("rolling_std")
             ])
@@ -632,7 +632,7 @@ class ComputeEngine:
                 "anomalies_detected":      anomaly_records,
                 "confidence": (
                     "high"   if r_squared > 0.7 and n > 30 else
-                    "medium" if r_squared > 0.4             else
+                    "medium" if r_squared > 0.4            else
                     "low"
                 ),
             }
