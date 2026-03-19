@@ -10,11 +10,10 @@ import {
   Settings, 
   CreditCard, 
   Bot,
-  Search,
-  ChevronsUpDown
+  Search
 } from "lucide-react"
 
-// FIX 1: Universal Brand Logo Integration
+// Universal Brand Logo Integration
 import { Logo } from "@/components/ui/logo" 
 
 import {
@@ -30,15 +29,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 // Adjust these to match your exact routing
 const navItems = [
@@ -61,7 +51,7 @@ export function DashboardSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r bg-background">
       
-      {/* FIX 2a: Strict Header Height
+      {/* Strict Header Height:
         Added fixed heights (h-16) and flex-shrink-0 to prevent 
         the top area from shifting layout during state changes.
       */}
@@ -82,43 +72,6 @@ export function DashboardSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden pt-4 custom-scrollbar">
-        
-        {/* FIX 2b: Strict Workspace Container bounds
-          This h-10 and flex-shrink-0 locks the vertical space, preventing the 
-          dropdown trigger from pushing the icons down when interacting/loading.
-        */}
-        <div className="px-2 mb-4 h-10 flex-shrink-0">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <SidebarMenuButton 
-                size="lg" 
-                className="w-full justify-between bg-muted/50 hover:bg-muted border border-border/50 transition-all"
-              >
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <Avatar className="h-6 w-6 rounded-md">
-                    <AvatarImage src="/placeholder-logo.png" alt="Workspace" />
-                    <AvatarFallback className="rounded-md bg-primary/10 text-primary">W</AvatarFallback>
-                  </Avatar>
-                  {state === "expanded" && (
-                    <div className="flex flex-col items-start overflow-hidden">
-                      <span className="text-sm font-medium leading-none truncate w-32 text-left">
-                        Main Workspace
-                      </span>
-                    </div>
-                  )}
-                </div>
-                {state === "expanded" && <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />}
-              </SidebarMenuButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>Main Workspace</DropdownMenuItem>
-              <DropdownMenuItem>Demo Environment</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
         <SidebarGroup>
           <SidebarGroupLabel className={state === "collapsed" ? "sr-only" : "px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2"}>
             Platform

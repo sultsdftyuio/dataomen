@@ -64,10 +64,8 @@ export default function DashboardRouteGroupLayout({
         </header>
 
         {/* Page Content Injection Area - Optimized for scrolling and layout shifts */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 animate-in fade-in duration-500 overflow-x-hidden">
-          <div className="mx-auto max-w-7xl h-full">
-            {children}
-          </div>
+        <main className="flex-1 flex flex-col h-[calc(100vh-64px)] animate-in fade-in duration-500 overflow-hidden">
+          {children}
         </main>
         
       </SidebarInset>

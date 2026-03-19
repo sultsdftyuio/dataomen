@@ -277,7 +277,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           --chat-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
         }
 
-        @media (prefers-color-scheme: dark) {
+         dark {
           :root {
             --chat-bg: #0f0f0f;
             --chat-fg: #f0f0f0;
@@ -516,7 +516,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       >
         <div
           style={{
-            maxWidth: 740,
+            maxWidth: "100%",
             margin: "0 auto",
             padding: messages.length === 0 ? "0 20px" : "28px 20px 0",
             paddingBottom: 24,
@@ -772,7 +772,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Input Area ── */}
       <div className="input-footer">
-        <div style={{ maxWidth: 740, margin: "0 auto" }}>
+        <div style={{ maxWidth: "100%", margin: "0 auto" }}>
           <OmniMessageInput
             onSendMessage={handleSendMessage}
             isProcessing={isProcessing}
