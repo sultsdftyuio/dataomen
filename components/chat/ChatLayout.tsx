@@ -1,4 +1,3 @@
-// components/chat/ChatLayout.tsx
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
@@ -6,11 +5,12 @@ import { OmniMessageInput } from "@/components/chat/OmniMessageInput";
 import { DynamicChartFactory } from "@/components/dashboard/DynamicChartFactory";
 import { ExecutionPayload } from "@/lib/chart-engine";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  Bot, FileText, Settings2, Sparkles, 
+import {
+  Settings2, Sparkles, FileText,
   FileSpreadsheet, Database, LineChart, Activity,
-  ChevronDown, CheckCircle2, Copy, ThumbsUp, ThumbsDown, RotateCcw,
-  TerminalSquare
+  Copy, ThumbsUp, ThumbsDown, RotateCcw,
+  Plus, ChevronDown, MoreHorizontal,
+  Table2, TrendingUp, Search, Zap
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -33,42 +33,95 @@ interface ChatLayoutProps {
 }
 
 // -----------------------------------------------------------------------------
+// Markdown-lite renderer (bold/inline-code only, avoids heavy deps)
+// -----------------------------------------------------------------------------
+function SimpleMarkdown({ text }: { text: string }) {
+  // Split on bold (**text**) and inline code (`text`)
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith("**") && part.endsWith("**")) {
+          return <strong key={i}>{part.slice(2, -2)}</strong>;
+        }
+        if (part.startsWith("`") && part.endsWith("`")) {
+          return (
+            <code
+              key={i}
+              className="px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[13px] font-mono text-rose-500 dark:text-rose-400"
+            >
+              {part.slice(1, -1)}
+            </code>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Step / Thinking Pill (like Julius AI's "Used Python" steps)
+// -----------------------------------------------------------------------------
+function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
+  return (
+    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 shadow-sm">
+      {done ? (
+        <svg className="w-3 h-3 text-emerald-500" viewBox="0 0 12 12" fill="none">
+          <circle cx="6" cy="6" r="5.5" stroke="currentColor" strokeWidth="1" />
+          <path d="M3.5 6l2 2 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ) : (
+        <span className="w-3 h-3 flex items-center justify-center">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        </span>
+      )}
+      {label}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Timestamp formatter
+// -----------------------------------------------------------------------------
+function formatTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
-export const ChatLayout: React.FC<ChatLayoutProps> = ({ 
-  agentId = "default-router", 
-  agentName = "Dataomen Omni-Engine" 
+export const ChatLayout: React.FC<ChatLayoutProps> = ({
+  agentId = "default-router",
+  agentName = "Arcli",
 }) => {
   const [messages, setMessages] = useState<RichMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState("");
+  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [activeDatasetIds, setActiveDatasetIds] = useState<string[]>([]);
-  
+  const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll mechanism
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages, progressStatus]);
+    scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, progressStatus, isProcessing]);
 
-  // Dynamic Greeting based on time
   const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
+    const h = new Date().getHours();
+    if (h < 12) return "Good morning";
+    if (h < 18) return "Good afternoon";
     return "Good evening";
   };
 
-  // Copy to clipboard utility
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast({ description: "Copied to clipboard", duration: 2000 });
   };
 
   // ---------------------------------------------------------------------------
-  // Direct-to-R2 Upload Pipeline
+  // Upload Pipeline
   // ---------------------------------------------------------------------------
   const uploadDirectToR2 = async (file: File): Promise<string> => {
     const initRes = await fetch("/api/ingestion/presigned-url", {
@@ -76,98 +129,86 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_name: file.name, content_type: file.type }),
     });
-    
     if (!initRes.ok) throw new Error(`Failed to initialize upload for ${file.name}`);
     const { url, fields, object_key, dataset_id } = await initRes.json();
 
     const formData = new FormData();
-    Object.entries(fields).forEach(([key, value]) => {
-      formData.append(key, value as string);
-    });
+    Object.entries(fields).forEach(([k, v]) => formData.append(k, v as string));
     formData.append("file", file);
 
     const uploadRes = await fetch(url, { method: "POST", body: formData });
     if (!uploadRes.ok) throw new Error(`Storage upload failed for ${file.name}`);
 
-    setProgressStatus(`Profiling ${file.name}...`);
+    setProgressStatus(`Profiling ${file.name}…`);
     const workerRes = await fetch("/api/ingestion/process-parquet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dataset_id, object_key }),
     });
-
     if (!workerRes.ok) throw new Error("Data profiling worker failed.");
-
     return dataset_id;
   };
 
   // ---------------------------------------------------------------------------
-  // Orchestration & Execution
+  // Orchestration
   // ---------------------------------------------------------------------------
   const handleSendMessage = async (text: string, files: File[] = []) => {
-    const newUserMsg: RichMessage = {
+    const userMsg: RichMessage = {
       id: Date.now().toString(),
       role: "user",
       content: text,
-      files: files,
+      files,
       timestamp: new Date(),
     };
-    
-    setMessages((prev) => [...prev, newUserMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setIsProcessing(true);
+    setCompletedSteps([]);
 
     try {
-      let newlyUploadedIds: string[] = [];
-
+      let newIds: string[] = [];
       if (files.length > 0) {
-        setProgressStatus("Uploading to secure analytical storage...");
-        newlyUploadedIds = await Promise.all(files.map(file => uploadDirectToR2(file)));
-        setActiveDatasetIds((prev) => [...new Set([...prev, ...newlyUploadedIds])]);
+        setProgressStatus("Uploading files…");
+        newIds = await Promise.all(files.map(uploadDirectToR2));
+        setCompletedSteps((prev) => [...prev, "Uploading files…"]);
+        setActiveDatasetIds((prev) => [...new Set([...prev, ...newIds])]);
       }
 
-      setProgressStatus("Analyzing semantics & generating execution plan...");
-      const currentActiveIds = [...new Set([...activeDatasetIds, ...newlyUploadedIds])];
-      const historyContext = messages.slice(-8).map(m => ({ role: m.role, content: m.content }));
+      setProgressStatus("Analyzing request…");
+      const currentIds = [...new Set([...activeDatasetIds, ...newIds])];
+      const history = messages.slice(-8).map((m) => ({ role: m.role, content: m.content }));
 
-      const queryRes = await fetch("/api/chat/orchestrate", {
+      setCompletedSteps((prev) => [...prev, "Analyzing request…"]);
+      setProgressStatus("Running analytical engine…");
+
+      const res = await fetch("/api/chat/orchestrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           agent_id: agentId,
           prompt: text,
-          active_dataset_ids: currentActiveIds,
-          history: historyContext,
+          active_dataset_ids: currentIds,
+          history,
         }),
       });
+      if (!res.ok) throw new Error("The analytical engine encountered an error.");
 
-      if (!queryRes.ok) throw new Error("The Analytical Engine encountered an error.");
-      
-      const payload: ExecutionPayload = await queryRes.json();
-
-      const assistantMsg: RichMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        payload: payload,
-        timestamp: new Date(),
-      };
-      
-      setMessages((prev) => [...prev, assistantMsg]);
-
-    } catch (error: any) {
-      toast({
-        title: "Execution Error",
-        description: error.message || "An unexpected analytical error occurred.",
-        variant: "destructive",
-      });
-      
+      setCompletedSteps((prev) => [...prev, "Running analytical engine…"]);
+      setProgressStatus("Rendering results…");
+      const payload: ExecutionPayload = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        { id: (Date.now() + 1).toString(), role: "assistant", payload, timestamp: new Date() },
+      ]);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
       setMessages((prev) => [
         ...prev,
         {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          payload: { type: "error", message: error.message },
+          content: `**Error:** ${err.message || "An unexpected error occurred."}`,
           timestamp: new Date(),
-        }
+        },
       ]);
     } finally {
       setIsProcessing(false);
@@ -175,206 +216,582 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     }
   };
 
-  // Suggestions
+  // ---------------------------------------------------------------------------
+  // Suggestion Cards
+  // ---------------------------------------------------------------------------
   const SUGGESTIONS = [
-    { icon: <FileSpreadsheet className="w-5 h-5 text-emerald-500" />, title: "Analyze a Dataset", desc: "Upload a CSV, Excel, or Parquet file" },
-    { icon: <Database className="w-5 h-5 text-blue-500" />, title: "Query Database", desc: "Connect Postgres, Snowflake, or Stripe" },
-    { icon: <LineChart className="w-5 h-5 text-purple-500" />, title: "Forecast Trends", desc: "Predict future MRR or user growth" },
-    { icon: <Activity className="w-5 h-5 text-rose-500" />, title: "Detect Anomalies", desc: "Find statistical outliers in your metrics" }
+    {
+      icon: <FileSpreadsheet className="w-4 h-4" />,
+      color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400",
+      title: "Analyze a dataset",
+      prompt: "I want to analyze a dataset",
+    },
+    {
+      icon: <Database className="w-4 h-4" />,
+      color: "text-blue-600 bg-blue-50 dark:bg-blue-500/10 dark:text-blue-400",
+      title: "Query a database",
+      prompt: "I want to query a database",
+    },
+    {
+      icon: <TrendingUp className="w-4 h-4" />,
+      color: "text-violet-600 bg-violet-50 dark:bg-violet-500/10 dark:text-violet-400",
+      title: "Forecast trends",
+      prompt: "I want to forecast trends and predict future metrics",
+    },
+    {
+      icon: <Search className="w-4 h-4" />,
+      color: "text-rose-600 bg-rose-50 dark:bg-rose-500/10 dark:text-rose-400",
+      title: "Detect anomalies",
+      prompt: "I want to detect anomalies in my data",
+    },
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] w-full bg-[#FAFAFA] dark:bg-[#0E0E10] relative overflow-hidden font-sans">
-      
-      {/* ── Top Navigation Bar ── */}
-      <header className="absolute top-0 w-full flex-shrink-0 h-14 flex items-center justify-between px-4 md:px-6 z-20 bg-background/80 backdrop-blur-md border-b border-border/40">
-        <div className="flex items-center space-x-2">
-          {/* Agent Selector Dropdown (Visual) */}
-          <button className="flex items-center space-x-2 px-3 py-1.5 rounded-lg hover:bg-muted/60 transition-colors group">
-            <span className="text-sm font-medium text-foreground tracking-tight">{agentName}</span>
-            <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+    <div
+      className="flex flex-col h-full w-full relative overflow-hidden"
+      style={{
+        fontFamily: "'DM Sans', 'Geist', system-ui, sans-serif",
+        backgroundColor: "var(--chat-bg, #ffffff)",
+        color: "var(--chat-fg, #111111)",
+      }}
+    >
+      {/* ─────────────────────────────────────────────────────────────────────
+          CSS Reset & Custom Variables injected via <style>
+         ──────────────────────────────────────────────────────────────────── */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+
+        :root {
+          --chat-bg: #ffffff;
+          --chat-fg: #111111;
+          --chat-muted: #6b7280;
+          --chat-border: #e5e7eb;
+          --chat-surface: #f9fafb;
+          --chat-surface-2: #f3f4f6;
+          --chat-user-bubble: #f3f4f6;
+          --chat-accent: #2563eb;
+          --chat-accent-light: #eff6ff;
+          --chat-radius: 16px;
+          --chat-radius-sm: 8px;
+          --chat-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+          --chat-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
+        }
+
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --chat-bg: #0f0f0f;
+            --chat-fg: #f0f0f0;
+            --chat-muted: #9ca3af;
+            --chat-border: #1f1f1f;
+            --chat-surface: #161616;
+            --chat-surface-2: #1c1c1c;
+            --chat-user-bubble: #1c1c1c;
+            --chat-accent: #3b82f6;
+            --chat-accent-light: rgba(59,130,246,0.08);
+            --chat-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+            --chat-shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.4);
+          }
+        }
+
+        .chat-scroll-area {
+          overflow-y: auto;
+          scroll-behavior: smooth;
+        }
+        .chat-scroll-area::-webkit-scrollbar { width: 4px; }
+        .chat-scroll-area::-webkit-scrollbar-track { background: transparent; }
+        .chat-scroll-area::-webkit-scrollbar-thumb { background: var(--chat-border); border-radius: 99px; }
+
+        @keyframes fadeSlideUp {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .msg-enter { animation: fadeSlideUp 0.22s ease both; }
+
+        @keyframes shimmer {
+          0%   { background-position: -200% 0; }
+          100% { background-position:  200% 0; }
+        }
+        .skeleton {
+          background: linear-gradient(90deg, var(--chat-surface) 25%, var(--chat-surface-2) 50%, var(--chat-surface) 75%);
+          background-size: 200% 100%;
+          animation: shimmer 1.6s infinite;
+          border-radius: 6px;
+        }
+
+        @keyframes blink {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0; }
+        }
+        .cursor-blink {
+          display: inline-block;
+          width: 2px; height: 1em;
+          background: var(--chat-fg);
+          vertical-align: text-bottom;
+          margin-left: 1px;
+          animation: blink 1s step-end infinite;
+        }
+
+        .suggestion-card {
+          background: var(--chat-bg);
+          border: 1px solid var(--chat-border);
+          border-radius: 12px;
+          padding: 14px 16px;
+          cursor: pointer;
+          transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          text-align: left;
+          width: 100%;
+          font-family: inherit;
+        }
+        .suggestion-card:hover {
+          border-color: var(--chat-accent);
+          box-shadow: 0 0 0 3px var(--chat-accent-light);
+          transform: translateY(-1px);
+        }
+
+        .action-btn {
+          width: 28px; height: 28px;
+          border-radius: 6px;
+          display: flex; align-items: center; justify-content: center;
+          background: transparent;
+          border: none; cursor: pointer;
+          color: var(--chat-muted);
+          transition: background 0.12s, color 0.12s;
+        }
+        .action-btn:hover { background: var(--chat-surface-2); color: var(--chat-fg); }
+
+        .chart-card {
+          border: 1px solid var(--chat-border);
+          border-radius: 14px;
+          overflow: hidden;
+          background: var(--chat-bg);
+          box-shadow: var(--chat-shadow);
+          transition: box-shadow 0.2s;
+        }
+        .chart-card:hover { box-shadow: var(--chat-shadow-md); }
+
+        .chart-header {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--chat-border);
+          background: var(--chat-surface);
+        }
+
+        .step-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 99px;
+          border: 1px solid var(--chat-border);
+          background: var(--chat-bg);
+          font-size: 12px;
+          color: var(--chat-muted);
+          box-shadow: var(--chat-shadow);
+        }
+
+        .dataset-badge {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 3px 9px; border-radius: 99px;
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          font-size: 11px; font-weight: 600;
+          color: #059669; letter-spacing: 0.03em; text-transform: uppercase;
+        }
+
+        .top-bar {
+          height: 52px;
+          border-bottom: 1px solid var(--chat-border);
+          background: var(--chat-bg);
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 0 20px;
+          position: sticky; top: 0; z-index: 20;
+          flex-shrink: 0;
+        }
+
+        .input-footer {
+          border-top: 1px solid var(--chat-border);
+          background: var(--chat-bg);
+          padding: 16px 20px 20px;
+          flex-shrink: 0;
+        }
+
+        .user-bubble {
+          background: var(--chat-user-bubble);
+          border-radius: 18px 18px 4px 18px;
+          padding: 10px 16px;
+          font-size: 14.5px;
+          line-height: 1.6;
+          color: var(--chat-fg);
+          max-width: 100%;
+          word-break: break-word;
+        }
+
+        .file-chip {
+          display: flex; align-items: center; gap: 10px;
+          background: var(--chat-bg);
+          border: 1px solid var(--chat-border);
+          border-radius: 10px;
+          padding: 8px 12px;
+          box-shadow: var(--chat-shadow);
+        }
+        .file-chip-icon {
+          width: 32px; height: 32px;
+          border-radius: 8px;
+          background: rgba(16, 185, 129, 0.08);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .assistant-text {
+          font-size: 14.5px;
+          line-height: 1.75;
+          color: var(--chat-fg);
+        }
+        .assistant-text p { margin: 0 0 10px; }
+        .assistant-text p:last-child { margin-bottom: 0; }
+
+        .agent-avatar {
+          width: 28px; height: 28px;
+          border-radius: 8px;
+          background: #111;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+          box-shadow: var(--chat-shadow);
+        }
+      `}</style>
+
+      {/* ── Top Bar ── */}
+      <div className="top-bar">
+        {/* Left: Agent name + model selector */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="agent-avatar">
+            <Zap style={{ width: 14, height: 14, color: "#fff" }} />
+          </div>
+          <button
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: "none", border: "none", cursor: "pointer",
+              fontFamily: "inherit", fontSize: 14, fontWeight: 600,
+              color: "var(--chat-fg)", padding: "4px 6px", borderRadius: 6,
+            }}
+          >
+            {agentName}
+            <ChevronDown style={{ width: 14, height: 14, color: "var(--chat-muted)" }} />
           </button>
-          
-          {/* Active Context Badge */}
+
           {activeDatasetIds.length > 0 && (
-            <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-              <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
-                {activeDatasetIds.length} Sources Connected
-              </span>
+            <div className="dataset-badge">
+              <span style={{
+                width: 6, height: 6, borderRadius: "50%",
+                background: "#10b981", display: "inline-block",
+                boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
+                animation: "blink 2s step-end infinite",
+              }} />
+              {activeDatasetIds.length} source{activeDatasetIds.length > 1 ? "s" : ""} active
             </div>
           )}
         </div>
-        
-        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-8 w-8 rounded-lg">
-          <Settings2 className="w-4.5 h-4.5" />
-        </Button>
-      </header>
 
-      {/* ── Main Chat Area ── */}
-      <ScrollArea className="flex-1 w-full scroll-smooth pt-14">
-        <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-8 space-y-12 pb-40">
-          
-          {/* ── Welcome / Empty State ── */}
+        {/* Right: actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <button className="action-btn" title="New chat">
+            <Plus style={{ width: 15, height: 15 }} />
+          </button>
+          <button className="action-btn" title="Settings">
+            <Settings2 style={{ width: 15, height: 15 }} />
+          </button>
+          <button className="action-btn" title="More options">
+            <MoreHorizontal style={{ width: 15, height: 15 }} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Chat Body ── */}
+      <div
+        className="chat-scroll-area"
+        style={{ flex: 1, overflowY: "auto" }}
+      >
+        <div
+          style={{
+            maxWidth: 740,
+            margin: "0 auto",
+            padding: messages.length === 0 ? "0 20px" : "28px 20px 0",
+            paddingBottom: 24,
+          }}
+        >
+
+          {/* ── Empty / Welcome State ── */}
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in zoom-in-95 duration-700 mt-8">
-              <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6 shadow-sm border border-primary/10">
-                <Sparkles className="w-8 h-8 text-primary" />
+            <div
+              className="msg-enter"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                justifyContent: "center", minHeight: "calc(100vh - 220px)",
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  width: 52, height: 52, borderRadius: 14,
+                  background: "#111", display: "flex", alignItems: "center",
+                  justifyContent: "center", marginBottom: 20,
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+                }}
+              >
+                <Zap style={{ width: 24, height: 24, color: "#fff" }} />
               </div>
-              <h1 className="text-3xl font-medium text-foreground mb-3 tracking-tight text-center">
+
+              <h1
+                style={{
+                  fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em",
+                  margin: "0 0 8px", color: "var(--chat-fg)",
+                }}
+              >
                 {getGreeting()}
               </h1>
-              <p className="text-muted-foreground text-sm max-w-[420px] text-center leading-relaxed mb-10">
-                I am your high-performance data assistant. Drop a file, connect a database, or ask an analytical question to get started.
+              <p
+                style={{
+                  fontSize: 15, color: "var(--chat-muted)", maxWidth: 400,
+                  lineHeight: 1.65, margin: "0 0 36px",
+                }}
+              >
+                Ask a question, upload a file, or pick a task below to get started.
               </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
+
+              {/* Suggestion Grid */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: 10, width: "100%", maxWidth: 520,
+                }}
+              >
                 {SUGGESTIONS.map((s, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => handleSendMessage(`I want to ${s.title.toLowerCase()}`)}
-                    className="flex items-start text-left gap-4 p-4 rounded-2xl border border-border/60 bg-card/50 hover:bg-card hover:border-primary/40 hover:shadow-sm transition-all duration-200 group"
+                  <button
+                    key={i}
+                    className="suggestion-card"
+                    onClick={() => handleSendMessage(s.prompt)}
+                    style={{ animationDelay: `${i * 60}ms` }}
                   >
-                    <div className="w-8 h-8 rounded-lg bg-background border border-border/50 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-sm">
-                      {s.icon}
+                    <div
+                      style={{
+                        width: 32, height: 32, borderRadius: 8,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                      className={s.color.split(" ").slice(1).join(" ")}
+                    >
+                      <span className={s.color.split(" ")[0]}>{s.icon}</span>
                     </div>
-                    <div className="flex flex-col mt-0.5">
-                      <span className="font-medium text-sm text-foreground group-hover:text-primary transition-colors">{s.title}</span>
-                      <span className="text-xs text-muted-foreground mt-1 line-clamp-1">{s.desc}</span>
-                    </div>
+                    <span
+                      style={{
+                        fontSize: 13.5, fontWeight: 500, color: "var(--chat-fg)",
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {s.title}
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* ── Conversation Thread ── */}
-          {messages.map((msg) => (
-            <div key={msg.id} className="group flex flex-col w-full animate-in fade-in slide-in-from-bottom-3 duration-500">
-              
-              {/* USER MESSAGE */}
-              {msg.role === "user" && (
-                <div className="flex flex-col items-end w-full ml-auto max-w-[75%] md:max-w-[70%] space-y-2">
-                  {/* File Attachments */}
-                  {msg.files && msg.files.length > 0 && (
-                    <div className="flex flex-wrap gap-2 justify-end w-full">
-                      {msg.files.map((f, i) => (
-                        <div key={i} className="flex items-center space-x-2.5 bg-card px-3 py-2 rounded-xl border border-border/80 shadow-sm">
-                          <div className="w-6 h-6 rounded-md bg-emerald-500/10 flex items-center justify-center">
-                            <FileText className="w-3.5 h-3.5 text-emerald-500" />
+          {/* ── Message Thread ── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+            {messages.map((msg, idx) => (
+              <div
+                key={msg.id}
+                className="msg-enter"
+                style={{ animationDelay: `${Math.min(idx * 20, 80)}ms` }}
+                onMouseEnter={() => setHoveredMsgId(msg.id)}
+                onMouseLeave={() => setHoveredMsgId(null)}
+              >
+
+                {/* ── USER MESSAGE ── */}
+                {msg.role === "user" && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                    {/* File chips */}
+                    {msg.files && msg.files.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+                        {msg.files.map((f, i) => (
+                          <div key={i} className="file-chip">
+                            <div className="file-chip-icon">
+                              <FileText style={{ width: 16, height: 16, color: "#10b981" }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--chat-fg)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {f.name}
+                              </div>
+                              <div style={{ fontSize: 11.5, color: "var(--chat-muted)" }}>
+                                {(f.size / 1024 / 1024).toFixed(2)} MB
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex flex-col">
-                            <span className="max-w-[150px] truncate text-[13px] font-medium text-foreground leading-tight">{f.name}</span>
-                            <span className="text-[11px] text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Text bubble */}
+                    {msg.content && (
+                      <div style={{ maxWidth: "72%" }}>
+                        <div className="user-bubble">{msg.content}</div>
+                        <div style={{ fontSize: 11, color: "var(--chat-muted)", marginTop: 4, textAlign: "right" }}>
+                          {formatTime(msg.timestamp)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── ASSISTANT MESSAGE ── */}
+                {msg.role === "assistant" && (
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    {/* Avatar */}
+                    <div className="agent-avatar" style={{ marginTop: 2 }}>
+                      <Zap style={{ width: 13, height: 13, color: "#fff" }} />
+                    </div>
+
+                    {/* Content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Text content */}
+                      {msg.content && (
+                        <div className="assistant-text">
+                          {msg.content.split("\n").map((line, i) => (
+                            <p key={i} style={{ margin: 0, marginBottom: i < msg.content!.split("\n").length - 1 ? 8 : 0 }}>
+                              <SimpleMarkdown text={line} />
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Chart / Data Payload */}
+                      {msg.payload && (
+                        <div
+                          className="chart-card"
+                          style={{ marginTop: msg.content ? 16 : 0, width: "100%" }}
+                        >
+                          {/* Chart header bar */}
+                          <div className="chart-header">
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <Table2 style={{ width: 14, height: 14, color: "var(--chat-muted)" }} />
+                              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--chat-fg)" }}>
+                                Analysis Result
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button className="action-btn" onClick={() => copyToClipboard(JSON.stringify(msg.payload))}>
+                                <Copy style={{ width: 13, height: 13 }} />
+                              </button>
+                              <button className="action-btn">
+                                <MoreHorizontal style={{ width: 13, height: 13 }} />
+                              </button>
+                            </div>
+                          </div>
+                          {/* Chart body */}
+                          <div style={{ padding: 16 }}>
+                            <DynamicChartFactory payload={msg.payload} />
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {/* Text Content */}
-                  {msg.content && (
-                    <div className="px-5 py-3.5 text-[15px] shadow-sm leading-relaxed bg-[#ececec] dark:bg-[#2f2f31] text-foreground rounded-3xl rounded-br-sm border border-transparent dark:border-white/5">
-                      {msg.content}
-                    </div>
-                  )}
-                </div>
-              )}
+                      )}
 
-              {/* ASSISTANT MESSAGE */}
-              {msg.role === "assistant" && (
-                <div className="flex gap-4 md:gap-5 w-full max-w-full">
-                  {/* Avatar */}
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mt-1 shadow-sm">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                  </div>
-                  
-                  {/* Response Content */}
-                  <div className="flex flex-col flex-1 min-w-0 pt-1.5 space-y-4">
-                    
-                    {/* Text block */}
-                    {msg.content && (
-                      <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none text-foreground leading-relaxed">
-                        {msg.content}
+                      {/* Timestamp + Action bar */}
+                      <div
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          marginTop: 10,
+                          opacity: hoveredMsgId === msg.id ? 1 : 0,
+                          transition: "opacity 0.15s",
+                        }}
+                      >
+                        <div style={{ fontSize: 11, color: "var(--chat-muted)" }}>
+                          {formatTime(msg.timestamp)}
+                        </div>
+                        <div style={{ display: "flex", gap: 2 }}>
+                          <button
+                            className="action-btn"
+                            onClick={() => copyToClipboard(msg.content || JSON.stringify(msg.payload))}
+                            title="Copy"
+                          >
+                            <Copy style={{ width: 13, height: 13 }} />
+                          </button>
+                          <button className="action-btn" title="Good response">
+                            <ThumbsUp style={{ width: 13, height: 13 }} />
+                          </button>
+                          <button className="action-btn" title="Bad response">
+                            <ThumbsDown style={{ width: 13, height: 13 }} />
+                          </button>
+                          <button className="action-btn" title="Retry">
+                            <RotateCcw style={{ width: 13, height: 13 }} />
+                          </button>
+                        </div>
                       </div>
-                    )}
-                    
-                    {/* Dynamic Chart / Data Payload block */}
-                    {msg.payload && (
-                      <div className="w-full bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all hover:shadow-md">
-                        <DynamicChartFactory payload={msg.payload} />
-                      </div>
-                    )}
-
-                    {/* AI Feedback Action Bar (Appears on Hover) */}
-                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity pt-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => copyToClipboard(msg.content || JSON.stringify(msg.payload))}>
-                        <Copy className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-emerald-500">
-                        <ThumbsUp className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-rose-500">
-                        <ThumbsDown className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </Button>
                     </div>
-
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* ── Processing Indicator ── */}
-          {isProcessing && (
-            <div className="flex gap-4 md:gap-5 w-full animate-in fade-in duration-300">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center mt-1">
-                <TerminalSquare className="w-4 h-4 text-muted-foreground animate-pulse" />
+                )}
               </div>
-              <div className="flex flex-col pt-2.5">
-                <div className="flex items-center space-x-3 text-[15px] font-medium text-foreground/80">
-                  <div className="flex space-x-1">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
+            ))}
+
+            {/* ── Processing State ── */}
+            {isProcessing && (
+              <div
+                className="msg-enter"
+                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+              >
+                <div className="agent-avatar" style={{ marginTop: 2 }}>
+                  <Zap style={{ width: 13, height: 13, color: "#fff" }} />
+                </div>
+                <div style={{ paddingTop: 4 }}>
+                  {/* Completed steps + current active step rendered as ThinkingStep pills */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+                    {completedSteps.map((step) => (
+                      <ThinkingStep key={step} label={step} done />
+                    ))}
+                    {progressStatus && !completedSteps.includes(progressStatus) && (
+                      <ThinkingStep label={progressStatus} done={false} />
+                    )}
                   </div>
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-foreground to-muted-foreground animate-pulse">
-                    {progressStatus || "Orchestrating engines..."}
-                  </span>
+
+                  {/* Skeleton preview lines */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div className="skeleton" style={{ height: 13, width: "72%" }} />
+                    <div className="skeleton" style={{ height: 13, width: "52%" }} />
+                    <div className="skeleton" style={{ height: 13, width: "62%" }} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          
-          <div ref={scrollRef} className="h-8" />
-        </div>
-      </ScrollArea>
+            )}
 
-      {/* ── Unified Omni-Input Bar (Floating w/ Gradient Mask) ── */}
-      <div className="absolute bottom-0 w-full z-10">
-        {/* Gradient Mask to smoothly hide scrolling text */}
-        <div className="h-12 w-full bg-gradient-to-t from-[#FAFAFA] dark:from-[#0E0E10] to-transparent pointer-events-none" />
-        
-        <div className="bg-[#FAFAFA] dark:bg-[#0E0E10] pb-6 pt-2 px-4 md:px-6">
-          <div className="max-w-3xl mx-auto w-full">
-            <OmniMessageInput
-              onSendMessage={handleSendMessage}
-              isProcessing={isProcessing}
-              progressStatus={progressStatus}
-            />
-            <div className="text-center mt-3 text-[11px] text-muted-foreground/60 font-medium tracking-wide">
-              Dataomen AI can make mistakes. Consider verifying important metrics.
-            </div>
+            <div ref={scrollRef} />
           </div>
         </div>
       </div>
 
+      {/* ── Input Area ── */}
+      <div className="input-footer">
+        <div style={{ maxWidth: 740, margin: "0 auto" }}>
+          <OmniMessageInput
+            onSendMessage={handleSendMessage}
+            isProcessing={isProcessing}
+            progressStatus={progressStatus}
+          />
+          <div
+            style={{
+              textAlign: "center", marginTop: 10,
+              fontSize: 11.5, color: "var(--chat-muted)",
+              letterSpacing: "0.01em",
+            }}
+          >
+            Arcli can make mistakes — verify critical outputs.{" "}
+            <a href="mailto:support@arcli.tech" style={{ color: "inherit", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 2 }}>
+              Get help
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
