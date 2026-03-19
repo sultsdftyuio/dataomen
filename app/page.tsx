@@ -5,9 +5,6 @@ import "../styles/globals.css";
 
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
-import { SocialProof } from "@/components/landing/Socialproof";
-import { InteractiveDemo } from "@/components/landing/Interactivedemo";
-import { UseCases } from "@/components/landing/Usecases";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
 import { AIAgents } from "@/components/landing/Aiagents";
 import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
@@ -22,9 +19,6 @@ import  Footer  from "@/components/landing/footer";
  * Component structure (optimized for high-velocity conversion and SEO discovery):
  * Navbar                   ← Multi-tenant isolated navigation
  * Hero                     ← High-impact value proposition + conversion anchor
- * SocialProof              ← Trust signals (performance stats + social validation)
- * InteractiveDemo          ← Zero-friction vectorized analytics experience
- * UseCases                 ← Vertical-specific alignment for high-performance teams
  * DeepDiveFeatures         ← Technical architecture deep-dive
  * AIAgents                 ← Autonomous "Arc" supervisor pipeline logic
  * IntegrationsAndSecurity  ← Enterprise-grade trust & secure hybrid connectivity
@@ -53,9 +47,6 @@ export default function Page() {
         {/* Semantic Content Stack */}
         <section className="relative z-10">
           <Hero />
-          <SocialProof />
-          <InteractiveDemo />
-          <UseCases />
           <DeepDiveFeatures />
           <AIAgents />
           <IntegrationsAndSecurity />

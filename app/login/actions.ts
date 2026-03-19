@@ -49,5 +49,5 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
    * Next.js redirect() throws a special error to halt execution and trigger the navigation.
    * It is placed outside the try/catch block to ensure it is not caught and suppressed.
    */
-  redirect('/dashboard');
+  redirect('/chat');
 }

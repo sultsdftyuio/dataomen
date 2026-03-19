@@ -80,5 +80,5 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
   }
 
   // 4. Redirect to dashboard upon successful registration and login
-  redirect('/dashboard')
+  redirect('/chat')
 }

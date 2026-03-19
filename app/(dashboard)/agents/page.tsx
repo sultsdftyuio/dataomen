@@ -1,21 +1,27 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import { 
   Bot, 
   Search, 
   Plus, 
   Activity, 
-  Settings, 
   Play, 
   Square,
   Database,
-  Clock,
   Trash2,
   Sparkles,
   MoreHorizontal,
-  AlertTriangle,
-  Timer
+  Cpu,
+  SquareTerminal,
+  FileBox,
+  Megaphone,
+  Briefcase,
+  Box,
+  LineChart,
+  Target,
+  Layers,
+  Settings2
 } from 'lucide-react'
 
 import { Button } from "@/components/ui/button"
@@ -24,8 +30,6 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Slider } from "@/components/ui/slider"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,7 +45,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Table,
@@ -53,124 +56,161 @@ import {
 } from "@/components/ui/table"
 
 // -----------------------------------------------------------------------------
-// Type Definitions & Schemas
+// Core Schema & State Types
 // -----------------------------------------------------------------------------
-interface Agent {
+interface UIAgent {
   id: string;
   name: string;
   description: string;
-  model: string;
-  status: 'Active' | 'Paused' | 'Training' | 'Failed';
-  dataSources: string[];
-  schedule: string; // Cron syntax or human readable
-  sensitivity: number; // 1-100 threshold for alerting
-  lastActive: string;
+  system_prompt: string;
+  dataset_ids: string[];
+  created_at: string;
+  status: 'Active' | 'Paused' | 'Deploying';
   themeColor: string;
 }
 
-// Agent Templates for Quick Deployment
-const AGENT_TEMPLATES = {
-  custom: { name: "", prompt: "", schedule: "Hourly", sensitivity: 50 },
-  revenue: { 
-    name: "Revenue Analyst", 
-    prompt: "Monitor Stripe MRR and churn metrics. Generate weekly forecasts and flag sudden downgrades in enterprise tiers.",
-    schedule: "Daily (9:00 AM)",
-    sensitivity: 80
-  },
-  telemetry: { 
-    name: "Telemetry Watchdog", 
-    prompt: "Continuously scan PostgreSQL event logs. Alert immediately if core session activity drops by >10% within a 1-hour window.",
-    schedule: "Every 5 Minutes",
-    sensitivity: 95
-  },
-  support: { 
-    name: "Sentiment Engine", 
-    prompt: "Analyze incoming customer support data. Classify tickets by sentiment and auto-route high-risk churn threats to human managers.",
-    schedule: "Hourly",
-    sensitivity: 60
-  }
-}
+const MOCK_DATASETS = [
+  { id: "ds_stripe_prod", name: "Stripe Production", type: "PostgreSQL" },
+  { id: "ds_hubspot_crm", name: "HubSpot CRM", type: "API Sync" },
+  { id: "ds_app_telemetry", name: "App Telemetry", type: "Parquet" },
+];
 
 const THEME_COLORS = ['bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-cyan-500']
 
 // -----------------------------------------------------------------------------
-// Component
+// Massive Template Library
+// -----------------------------------------------------------------------------
+type Category = 'Marketing' | 'Finance' | 'Product' | 'Data' | 'RevOps' | 'More';
+
+interface Template {
+  id: string;
+  name: string;
+  desc: string;
+  category: Category;
+  prompt: string;
+}
+
+const TEMPLATES: Template[] = [
+  // MARKETING
+  { id: "mkt_1", category: "Marketing", name: "Customer Segmentation Agent", desc: "Analyzes customer segments and marketing performance across demographics", prompt: "You are an elite Marketing Analyst. Segment customers based on purchasing behavior, demographics, and engagement metrics to identify high-value cohorts." },
+  { id: "mkt_2", category: "Marketing", name: "Marketing Budget Optimizing Agent", desc: "Optimizes marketing budget allocation across channels for maximum ROI", prompt: "You are a Growth Marketer. Analyze spend vs. return across all acquisition channels. Recommend budget reallocations to maximize overall ROI." },
+  { id: "mkt_3", category: "Marketing", name: "Google Ads Expert", desc: "Expert AI analyst specializing in Google Ads campaign analysis and optimization", prompt: "You are a Google Ads Expert. Analyze CPC, CTR, and conversion rates. Provide data-driven recommendations for keyword bidding and ad copy optimization." },
+  { id: "mkt_4", category: "Marketing", name: "Cohort Analysis Agent", desc: "Tracks customer retention, revenue patterns, and behavior trends over time", prompt: "Generate cohort retention matrices. Analyze how user behavior and LTV evolve based on their acquisition month and first-action triggers." },
+  { id: "mkt_5", category: "Marketing", name: "Email Performance Agent", desc: "Analyzes email campaign metrics, engagement patterns, and subscriber trends", prompt: "Analyze open rates, click-through rates, and unsubscribe patterns across email campaigns. Correlate subject line strategies with conversion spikes." },
+  { id: "mkt_6", category: "Marketing", name: "A/B Test Analysis Agent", desc: "Analyzes experiment results and determines statistical significance", prompt: "You are an Experimentation Data Scientist. Evaluate A/B test variants. Calculate p-values, confidence intervals, and declare definitive winners." },
+  { id: "mkt_7", category: "Marketing", name: "Marketing Mix Modeling Agent", desc: "Measures marketing channel impact and forecasts performance", prompt: "Use regression models to measure the incremental impact of various marketing channels on total sales, accounting for seasonality and external factors." },
+  { id: "mkt_8", category: "Marketing", name: "Marketing Attribution Agent", desc: "Attributes conversions across marketing touchpoints to measure contribution", prompt: "Apply multi-touch attribution models (first-touch, last-touch, linear, time-decay) to accurately distribute credit for user conversions." },
+  { id: "mkt_9", category: "Marketing", name: "Content Performance Agent", desc: "Analyze which content drives engagement, conversions, and ROI", prompt: "Evaluate blog, video, and social content performance. Correlate content topics and formats with downstream user acquisition and retention." },
+
+  // FINANCE
+  { id: "fin_1", category: "Finance", name: "Expense Category Analysis Agent", desc: "Automatically categorize and analyze company spending patterns efficiently", prompt: "You are a Corporate Controller. Categorize line-item expenses, identify anomalous spending, and track departmental burn rates against historical averages." },
+  { id: "fin_2", category: "Finance", name: "Financial Statement Agent", desc: "Analyze income statements, balance sheets, and cash flow instantly", prompt: "Analyze core financial statements. Calculate gross margin, EBITDA, and working capital ratios. Flag liquidity risks." },
+  { id: "fin_3", category: "Finance", name: "Cash Flow Agent", desc: "Predict future cash positions and identify potential shortfalls", prompt: "Forecast 30, 60, and 90-day cash flow based on historical receivables, payables, and recurring revenue schedules." },
+  { id: "fin_4", category: "Finance", name: "Budget vs Actual Agent", desc: "Track spending against budgets and identify variances automatically", prompt: "Compare actual ledger expenses against projected departmental budgets. Highlight significant positive and negative variances." },
+
+  // PRODUCT
+  { id: "prd_1", category: "Product", name: "Product Engagement Agent", desc: "Measure user engagement patterns and identify drivers of active usage", prompt: "You are a Product Manager. Analyze event telemetry to determine Daily Active Users (DAU) / Monthly Active Users (MAU) ratios and core loop completion." },
+  { id: "prd_2", category: "Product", name: "User Retention Agent", desc: "Analyze retention curves and identify what keeps users coming back", prompt: "Plot user retention curves. Identify the specific feature interactions in a user's first 7 days that correlate most strongly with long-term retention." },
+  { id: "prd_3", category: "Product", name: "Churn Analysis Agent", desc: "Identify churn patterns and predict at-risk users before they leave", prompt: "Analyze trailing indicators of churn. Identify drop-offs in usage frequency and predict which current users are highly likely to cancel their subscriptions." },
+  { id: "prd_4", category: "Product", name: "Feature Adoption Agent", desc: "Track feature usage and identify adoption barriers across user base", prompt: "Measure feature discoverability and time-to-first-use. Identify which segments of users are ignoring new feature releases." },
+
+  // DATA
+  { id: "dat_1", category: "Data", name: "Trend Analysis Agent", desc: "Identify trends, growth patterns, and seasonality in your metrics", prompt: "You are a Data Scientist. Perform time-series decomposition. Extract underlying trends, cyclical seasonality, and irregular noise from core business metrics." },
+  { id: "dat_2", category: "Data", name: "Data Exploration Agent", desc: "Automatically profile and explore datasets with comprehensive statistical analysis", prompt: "Perform exploratory data analysis (EDA). Generate distribution shapes, missing value counts, and correlation matrices for all numerical columns." },
+  { id: "dat_3", category: "Data", name: "Model Performance Agent", desc: "Track ML model metrics, drift, and performance over time", prompt: "Monitor model endpoints. Calculate precision, recall, F1-score, and identify conceptual or data drift in incoming inference requests." },
+  { id: "dat_4", category: "Data", name: "Summary Statistics Agent", desc: "Generate comprehensive statistical summaries and data profiles instantly", prompt: "Calculate mean, median, mode, standard deviation, variance, and interquartile ranges for all quantitative fields in the dataset." },
+  { id: "dat_5", category: "Data", name: "Comparison Agent", desc: "Compare datasets, metrics, and segments to identify key differences", prompt: "Run cross-sectional analysis between two distinct user groups or time periods. Highlight the statistically significant differences." },
+  { id: "dat_6", category: "Data", name: "Data Quality Agent", desc: "Monitor data quality issues and identify anomalies automatically", prompt: "You are a Data Steward. Scan databases for nulls, duplicate primary keys, schema violations, and anomalous outliers." },
+
+  // REVOPS
+  { id: "rev_1", category: "RevOps", name: "Sales Territory Agent", desc: "Compare territories and identify top performers across regions", prompt: "You are a RevOps Leader. Analyze sales performance across geographic territories. Calculate average deal size, win rate, and sales cycle length per region." },
+  { id: "rev_2", category: "RevOps", name: "Win/Loss Analysis Agent", desc: "Uncover why deals are won or lost systematically", prompt: "Analyze CRM opportunity data. Identify the primary objection categories for lost deals and the key feature drivers for won deals." },
+  { id: "rev_3", category: "RevOps", name: "Rep Productivity Agent", desc: "Analyze rep performance and identify productivity drivers", prompt: "Track sales rep activity metrics (calls, emails, meetings) against pipeline generated and revenue closed. Identify efficiency bottlenecks." },
+  { id: "rev_4", category: "RevOps", name: "Sales Forecasting Agent", desc: "Predict revenue and identify forecast risks with data-driven projections", prompt: "Use historical win rates and current pipeline stages to generate a probabilistic revenue forecast for the current quarter." },
+  { id: "rev_5", category: "RevOps", name: "Sales Pipeline Health Agent", desc: "Diagnose pipeline bottlenecks and forecast deal closure", prompt: "Evaluate pipeline coverage ratios, stage-to-stage conversion rates, and stagnant deals that have exceeded average time-in-stage." },
+  { id: "rev_6", category: "RevOps", name: "Lead Scoring and Qualification Agent", desc: "Prioritize leads based on conversion likelihood and value", prompt: "Develop a dynamic lead scoring model based on firmographics and behavioral intent signals to route high-propensity leads to sales." },
+
+  // MORE
+  { id: "mor_1", category: "More", name: "Meta Ads Expert", desc: "Analyzes Meta campaigns, identifies optimization opportunities, and scales profitable ads", prompt: "You are a Meta Ads Media Buyer. Analyze ROAS, CPM, and creative fatigue across Facebook/Instagram campaigns. Recommend scaling or cutting ad sets." },
+  { id: "mor_2", category: "More", name: "Synthetic Dataset Agent", desc: "Creates synthetic datasets based on your use case / analysis you want to do", prompt: "You are a Data Engineer. Generate realistic, schema-compliant synthetic mock data that preserves the statistical distributions of the original dataset while ensuring PII privacy." },
+];
+
+const CATEGORY_ICONS: Record<Category, React.ReactNode> = {
+  Marketing: <Megaphone className="w-4 h-4" />,
+  Finance: <Briefcase className="w-4 h-4" />,
+  Product: <Box className="w-4 h-4" />,
+  Data: <Database className="w-4 h-4" />,
+  RevOps: <Target className="w-4 h-4" />,
+  More: <Layers className="w-4 h-4" />
+};
+
+// -----------------------------------------------------------------------------
+// Main Component
 // -----------------------------------------------------------------------------
 export default function AgentsPage() {
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
+  const [agents, setAgents] = useState<UIAgent[]>([])
+  
+  // Tab/Filtering State
+  const [activeCategory, setActiveCategory] = useState<Category>('Marketing')
+  
+  // Modal State
   const [isDeployOpen, setIsDeployOpen] = useState(false)
-
-  // Deploy Form State
-  const [selectedTemplate, setSelectedTemplate] = useState<keyof typeof AGENT_TEMPLATES>('custom')
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
-  const [newSchedule, setNewSchedule] = useState('Hourly')
-  const [newSensitivity, setNewSensitivity] = useState([50])
-  const [sources, setSources] = useState({ postgres: true, stripe: false, duckdb: false })
+  const [newPrompt, setNewPrompt] = useState('')
+  const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(new Set())
 
-  // Auto-fill form when a template is selected
-  useEffect(() => {
-    if (selectedTemplate !== 'custom') {
-      const template = AGENT_TEMPLATES[selectedTemplate]
-      setNewName(template.name)
-      setNewDescription(template.prompt)
-      setNewSchedule(template.schedule)
-      setNewSensitivity([template.sensitivity])
-      
-      // Smart source toggling based on template
-      if (selectedTemplate === 'revenue') setSources({ postgres: false, stripe: true, duckdb: true })
-      if (selectedTemplate === 'telemetry') setSources({ postgres: true, stripe: false, duckdb: false })
-      if (selectedTemplate === 'support') setSources({ postgres: true, stripe: false, duckdb: true })
+  const templatesInCategory = useMemo(() => TEMPLATES.filter(t => t.category === activeCategory), [activeCategory]);
+
+  const openDeployModal = (template?: Template) => {
+    if (template) {
+      setNewName(template.name);
+      setNewDescription(template.desc);
+      setNewPrompt(template.prompt);
+    } else {
+      setNewName("");
+      setNewDescription("");
+      setNewPrompt("");
     }
-  }, [selectedTemplate])
+    setSelectedDatasets(new Set());
+    setIsDeployOpen(true);
+  }
 
-  const filteredAgents = useMemo(() => {
-    return agents.filter(agent => 
-      agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.description.toLowerCase().includes(searchQuery.toLowerCase())
-    )
-  }, [searchQuery, agents])
+  const toggleDataset = (id: string) => {
+    const next = new Set(selectedDatasets);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedDatasets(next);
+  }
 
   const handleDeployAgent = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newName.trim() || !newDescription.trim()) return
+    if (!newName.trim() || !newPrompt.trim()) return
 
     const randomColor = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)]
-    const activeSources = Object.entries(sources).filter(([_, isActive]) => isActive).map(([name]) => name)
 
-    const newAgent: Agent = {
-      id: `agt_${Date.now()}`,
+    const newAgent: UIAgent = {
+      id: `agent_${Date.now()}`,
       name: newName.trim(),
-      description: newDescription.trim(),
-      model: 'gpt-4o-mini',
-      status: 'Training', 
-      dataSources: activeSources,
-      schedule: newSchedule,
-      sensitivity: newSensitivity[0],
-      lastActive: 'Initializing...',
+      description: newDescription.trim() || "Custom AI Agent",
+      system_prompt: newPrompt.trim(),
+      dataset_ids: Array.from(selectedDatasets),
+      created_at: new Date().toISOString(),
+      status: 'Deploying', 
       themeColor: randomColor,
     }
 
     setAgents(prev => [newAgent, ...prev])
-    
-    // Reset Form & Close
-    setSelectedTemplate('custom')
-    setNewName('')
-    setNewDescription('')
-    setNewSchedule('Hourly')
-    setNewSensitivity([50])
-    setSources({ postgres: true, stripe: false, duckdb: false })
     setIsDeployOpen(false)
 
-    // Simulate training completion
+    // Simulate deployment completion
     setTimeout(() => {
-      setAgents(prev => prev.map(a => a.id === newAgent.id ? { ...a, status: 'Active', lastActive: 'Just now' } : a))
-    }, 3000)
+      setAgents(prev => prev.map(a => a.id === newAgent.id ? { ...a, status: 'Active' } : a))
+    }, 2500)
   }
 
   const toggleAgentStatus = (id: string, currentStatus: string) => {
-    if (currentStatus === 'Training' || currentStatus === 'Failed') return; 
+    if (currentStatus === 'Deploying') return; 
     const newStatus = currentStatus === 'Active' ? 'Paused' : 'Active';
     setAgents(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
   }
@@ -179,316 +219,221 @@ export default function AgentsPage() {
     setAgents(prev => prev.filter(a => a.id !== id))
   }
 
-  const getStatusBadge = (status: Agent['status']) => {
-    switch (status) {
-      case 'Active':
-        return <Badge variant="default" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-none"><Activity className="w-3 h-3 mr-1.5 animate-pulse" /> Active</Badge>
-      case 'Paused':
-        return <Badge variant="secondary" className="bg-muted text-muted-foreground border-border shadow-none"><Square className="w-3 h-3 mr-1.5" /> Paused</Badge>
-      case 'Training':
-        return <Badge variant="outline" className="text-amber-600 border-amber-500/20 bg-amber-500/10 shadow-none"><Clock className="w-3 h-3 mr-1.5 animate-spin" /> Training</Badge>
-      case 'Failed':
-        return <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-500/20 shadow-none"><AlertTriangle className="w-3 h-3 mr-1.5" /> Failed</Badge>
-    }
-  }
-
   return (
-    <div className="flex flex-col gap-8 h-full container mx-auto p-6 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex flex-col gap-10 h-full container mx-auto p-6 md:p-10 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {/* Header Section */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-6">
+      {/* ── HEADER ── */}
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Bot className="w-8 h-8 text-primary" />
-            Agent Fleet
+          <h1 className="text-3xl font-extrabold tracking-tight text-foreground flex items-center gap-3">
+            Build agents tailored to your team
           </h1>
-          <p className="text-muted-foreground mt-2 text-sm max-w-2xl">
-            Deploy and manage scheduled analytical workers strictly partitioned to your tenant workspace. 
-            Agents run vector-optimized SQL queries behind the scenes.
+          <p className="text-muted-foreground mt-2 text-base max-w-2xl">
+            Arcli Agents can be customized to your data structure and the way you do analysis. 
+            Select a template below or start from scratch.
           </p>
         </div>
-
-        {/* Deploy Agent Modal */}
-        <Dialog open={isDeployOpen} onOpenChange={setIsDeployOpen}>
-          <DialogTrigger asChild>
-            <Button className="shrink-0 group shadow-sm">
-              <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90 duration-200" />
-              Deploy Agent
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[550px] bg-background border-border text-foreground">
-            <form onSubmit={handleDeployAgent}>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-foreground">
-                  <Sparkles className="w-5 h-5 text-primary" /> Deploy Analytical Agent
-                </DialogTitle>
-                <DialogDescription className="text-muted-foreground">
-                  Configure a new autonomous worker with specific cron schedules and anomaly thresholds.
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="grid gap-5 py-5">
-                {/* Template Selector */}
-                <div className="grid gap-2">
-                  <Label className="text-foreground">Agent Template</Label>
-                  <Select value={selectedTemplate} onValueChange={(val: any) => setSelectedTemplate(val)}>
-                    <SelectTrigger className="bg-background border-input">
-                      <SelectValue placeholder="Select a template..." />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover border-border">
-                      <SelectItem value="custom">Blank Canvas (Custom)</SelectItem>
-                      <SelectItem value="revenue">Revenue Analyst</SelectItem>
-                      <SelectItem value="telemetry">Telemetry Watchdog</SelectItem>
-                      <SelectItem value="support">Support Sentiment Engine</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Basic Info */}
-                <div className="grid gap-2">
-                  <Label htmlFor="name" className="text-foreground">Agent Name</Label>
-                  <Input 
-                    id="name" 
-                    placeholder="e.g., Marketing ROI Tracker" 
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    required
-                    className="bg-background border-input focus-visible:ring-primary/50"
-                  />
-                </div>
-
-                {/* Schedule & Sensitivity */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label className="text-foreground">Execution Schedule</Label>
-                    <Select value={newSchedule} onValueChange={setNewSchedule}>
-                      <SelectTrigger className="bg-background border-input">
-                        <Timer className="w-4 h-4 mr-2 text-muted-foreground" />
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover border-border">
-                        <SelectItem value="Every 5 Minutes">Every 5 Minutes (Real-time)</SelectItem>
-                        <SelectItem value="Hourly">Hourly</SelectItem>
-                        <SelectItem value="Daily (9:00 AM)">Daily (9:00 AM)</SelectItem>
-                        <SelectItem value="Weekly (Monday)">Weekly (Monday)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-2">
-                    <div className="flex justify-between items-center">
-                      <Label className="text-foreground">Anomaly Sensitivity</Label>
-                      <span className="text-xs text-primary font-mono">{newSensitivity[0]}%</span>
-                    </div>
-                    <div className="pt-2">
-                      <Slider 
-                        defaultValue={[50]} 
-                        max={100} 
-                        step={1} 
-                        value={newSensitivity}
-                        onValueChange={setNewSensitivity}
-                        className="[&_[role=slider]]:bg-primary [&_[role=slider]]:border-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Core Instructions */}
-                <div className="grid gap-2">
-                  <Label htmlFor="description" className="text-foreground">Analytical Prompt</Label>
-                  <Textarea 
-                    id="description" 
-                    placeholder="Describe exactly what data this agent should query via DuckDB..."
-                    className="resize-none h-20 text-sm bg-background border-input focus-visible:ring-primary/50"
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    required
-                  />
-                </div>
-
-                {/* Data Access Controls */}
-                <div className="space-y-3 pt-2">
-                  <Label className="text-foreground">Granted Data Access</Label>
-                  <div className="grid gap-3 bg-muted/30 p-4 rounded-xl border border-border">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="ds-pg" className="font-normal cursor-pointer flex items-center gap-2 text-foreground">
-                        <Database className="w-4 h-4 text-muted-foreground" /> PostgreSQL (Production)
-                      </Label>
-                      <Switch id="ds-pg" checked={sources.postgres} onCheckedChange={(c) => setSources(s => ({...s, postgres: c}))} className="data-[state=checked]:bg-primary" />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="ds-st" className="font-normal cursor-pointer flex items-center gap-2 text-foreground">
-                        <Database className="w-4 h-4 text-muted-foreground" /> Stripe (Billing)
-                      </Label>
-                      <Switch id="ds-st" checked={sources.stripe} onCheckedChange={(c) => setSources(s => ({...s, stripe: c}))} className="data-[state=checked]:bg-primary" />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="ds-dd" className="font-normal cursor-pointer flex items-center gap-2 text-foreground">
-                        <Database className="w-4 h-4 text-muted-foreground" /> DuckDB (Local Warehouse)
-                      </Label>
-                      <Switch id="ds-dd" checked={sources.duckdb} onCheckedChange={(c) => setSources(s => ({...s, duckdb: c}))} className="data-[state=checked]:bg-primary" />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-              <DialogFooter className="border-t border-border pt-4">
-                <Button type="button" variant="ghost" onClick={() => setIsDeployOpen(false)} className="text-muted-foreground hover:text-foreground">Cancel</Button>
-                <Button type="submit" disabled={!newName.trim() || !newDescription.trim()}>
-                  Initialize Agent
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-3">
+          <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/20 cursor-pointer px-3 py-1 text-sm font-medium transition-colors">
+            Customize templates with Enterprise
+          </Badge>
+          <Button onClick={() => openDeployModal()} className="rounded-full shadow-sm px-6">
+            <Settings2 className="w-4 h-4 mr-2" /> Create Custom
+          </Button>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-6">
-        {/* Toolbar */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full gap-4">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-foreground">Active Workers</h2>
-            <Badge variant="outline" className="bg-muted text-muted-foreground border-border">{filteredAgents.length}</Badge>
-          </div>
-          <div className="relative w-full max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search by name, task, or database..."
-              className="pl-9 bg-background border-input text-foreground focus-visible:ring-primary/50"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* High-End Data Table View */}
-        {filteredAgents.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center border rounded-2xl border-dashed border-border p-16 text-center bg-muted/20">
-            <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-6 shadow-sm border">
-              <Bot className="h-8 w-8 text-muted-foreground" />
+      {/* ── SECTION 1: YOUR WORKSPACE ── */}
+      <section className="space-y-4">
+        <h2 className="text-xl font-bold tracking-tight text-foreground">Your Agents</h2>
+        
+        {agents.length === 0 ? (
+          <div className="w-full border border-dashed border-border rounded-2xl p-10 flex flex-col items-center justify-center text-center bg-muted/10">
+            <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
+              <Bot className="w-6 h-6 text-muted-foreground" />
             </div>
-            <h3 className="text-xl font-semibold text-foreground">No agents deployed</h3>
-            <p className="text-sm text-muted-foreground mt-2 max-w-md mb-8 leading-relaxed">
-              Your autonomous workforce is currently empty. Deploy your first vector-optimized agent to begin orchestrating scheduled analytics.
-            </p>
-            <Button onClick={() => setIsDeployOpen(true)} variant="outline" className="bg-background">
-              <Plus className="h-4 w-4 mr-2 text-primary" /> Deploy First Agent
-            </Button>
+            <p className="text-muted-foreground font-medium">Your custom agents will appear here.</p>
+            <p className="text-sm text-muted-foreground/70 mt-1 mb-6">Create your first agent from the templates below to get started.</p>
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
             <Table>
-              <TableHeader className="bg-muted/50 border-b border-border">
+              <TableHeader className="bg-muted/30 border-b border-border">
                 <TableRow className="border-none">
-                  <TableHead className="w-[300px] text-muted-foreground font-medium">Agent / Task</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Status</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Schedule (Cron)</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Sensitivity</TableHead>
-                  <TableHead className="text-muted-foreground font-medium">Connections</TableHead>
-                  <TableHead className="text-muted-foreground font-medium text-right">Actions</TableHead>
+                  <TableHead className="w-[300px] text-xs font-bold uppercase tracking-widest text-muted-foreground">Identity</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Status</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Memory / Context</TableHead>
+                  <TableHead className="text-right text-xs font-bold uppercase tracking-widest text-muted-foreground">Manage</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-border/60">
-                {filteredAgents.map((agent) => (
+                {agents.map((agent) => (
                   <TableRow key={agent.id} className="hover:bg-muted/50 transition-colors border-border/60 group">
-                    {/* Name & Prompt */}
                     <TableCell className="py-4">
                       <div className="flex items-start gap-3">
                         <div className={`mt-0.5 w-2 h-2 rounded-full shadow-sm ${agent.themeColor}`} />
                         <div className="flex flex-col">
                           <span className="font-semibold text-foreground">{agent.name}</span>
-                          <span className="text-xs text-muted-foreground truncate max-w-[250px] mt-1" title={agent.description}>
-                            {agent.description}
-                          </span>
+                          <span className="text-xs text-muted-foreground truncate max-w-[250px] mt-1">{agent.description}</span>
                         </div>
                       </div>
                     </TableCell>
-
-                    {/* Status Toggle */}
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Switch 
                           checked={agent.status === 'Active'} 
-                          disabled={agent.status === 'Training' || agent.status === 'Failed'}
+                          disabled={agent.status === 'Deploying'}
                           onCheckedChange={() => toggleAgentStatus(agent.id, agent.status)}
-                          className="data-[state=checked]:bg-primary scale-90"
+                          className="data-[state=checked]:bg-primary scale-90 shadow-sm"
                         />
-                        {getStatusBadge(agent.status)}
+                        {agent.status === 'Active' ? <Badge variant="default" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 shadow-none">Active</Badge> : 
+                         agent.status === 'Paused' ? <Badge variant="secondary" className="shadow-none">Paused</Badge> : 
+                         <Badge variant="outline" className="text-amber-600 border-amber-500/20 bg-amber-500/10 shadow-none"><Cpu className="w-3 h-3 mr-1.5 animate-pulse" /> Deploying</Badge>}
                       </div>
                     </TableCell>
-
-                    {/* Schedule */}
-                    <TableCell>
-                      <div className="flex items-center text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded w-fit border border-border">
-                        <Timer className="w-3 h-3 mr-1.5 text-muted-foreground" />
-                        {agent.schedule}
-                      </div>
-                    </TableCell>
-
-                    {/* Sensitivity */}
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-primary rounded-full" 
-                            style={{ width: `${agent.sensitivity}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-muted-foreground">{agent.sensitivity}%</span>
+                        <Database className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm font-medium">{agent.dataset_ids.length} Datasets</span>
                       </div>
                     </TableCell>
-
-                    {/* Data Sources */}
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1.5">
-                        {agent.dataSources.map(ds => (
-                          <Badge key={ds} variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-muted text-muted-foreground border-border">
-                            {ds === 'postgres' ? 'PG' : ds === 'stripe' ? 'Stripe' : 'DuckDB'}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-
-                    {/* Actions Menu */}
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-[160px] bg-popover border-border text-popover-foreground">
-                          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Agent Controls</DropdownMenuLabel>
-                          <DropdownMenuSeparator className="bg-border" />
-                          
-                          {agent.status === 'Paused' ? (
-                            <DropdownMenuItem className="cursor-pointer focus:bg-muted text-primary" onClick={() => toggleAgentStatus(agent.id, agent.status)}>
-                              <Play className="mr-2 h-4 w-4" /> Resume Task
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem className="cursor-pointer focus:bg-muted text-amber-600" onClick={() => toggleAgentStatus(agent.id, agent.status)} disabled={agent.status === 'Training'}>
-                              <Square className="mr-2 h-4 w-4" /> Pause Task
-                            </DropdownMenuItem>
-                          )}
-                          
-                          <DropdownMenuItem className="cursor-pointer focus:bg-muted">
-                            <Settings className="mr-2 h-4 w-4 text-muted-foreground" /> Reconfigure
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator className="bg-border" />
+                        <DropdownMenuContent align="end" className="w-[160px] bg-popover border-border rounded-xl shadow-xl">
+                          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Controls</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem className="cursor-pointer focus:bg-destructive/10 text-destructive" onClick={() => deleteAgent(agent.id)}>
-                            <Trash2 className="mr-2 h-4 w-4" /> Decommission
+                            <Trash2 className="mr-2 h-4 w-4" /> Delete Agent
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
-
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
         )}
-      </div>
+      </section>
+
+      {/* ── SECTION 2: TEMPLATE LIBRARY ── */}
+      <section className="space-y-6">
+        <h2 className="text-xl font-bold tracking-tight text-foreground">Templates</h2>
+        
+        {/* Category Tabs (Pills) */}
+        <div className="flex flex-wrap gap-2">
+          {(['Marketing', 'Finance', 'Product', 'Data', 'RevOps', 'More'] as Category[]).map(category => (
+            <button
+              key={category}
+              onClick={() => setActiveCategory(category)}
+              className={`px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2 transition-all duration-200 border ${
+                activeCategory === category 
+                  ? 'bg-primary text-primary-foreground border-primary shadow-sm' 
+                  : 'bg-background text-foreground border-border hover:bg-muted'
+              }`}
+            >
+              {CATEGORY_ICONS[category]}
+              {category}
+            </button>
+          ))}
+        </div>
+
+        {/* Template Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {templatesInCategory.map(template => (
+            <div 
+              key={template.id} 
+              onClick={() => openDeployModal(template)}
+              className="group flex flex-col p-5 rounded-2xl border border-border bg-card hover:bg-muted/50 hover:border-primary/30 transition-all cursor-pointer shadow-sm hover:shadow-md"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                  {CATEGORY_ICONS[template.category]}
+                </div>
+                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-3 rounded-full bg-background border shadow-sm">
+                  Use Template
+                </Button>
+              </div>
+              <h3 className="font-bold text-base text-foreground mb-1">{template.name}</h3>
+              <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{template.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── DEPLOYMENT MODAL ── */}
+      <Dialog open={isDeployOpen} onOpenChange={setIsDeployOpen}>
+        <DialogContent className="sm:max-w-[650px] bg-background border-border text-foreground p-0 overflow-hidden shadow-2xl">
+          <div className="bg-muted/30 px-6 py-4 border-b border-border flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-bold">Configure Agent</DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">Define persona, strict directives, and data memory.</DialogDescription>
+            </div>
+          </div>
+
+          <form onSubmit={handleDeployAgent} className="p-6 space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Agent Name</Label>
+                <Input id="name" value={newName} onChange={(e) => setNewName(e.target.value)} required className="bg-background" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="desc">Short Description</Label>
+                <Input id="desc" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} className="bg-background" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="prompt" className="flex items-center gap-2">
+                  <SquareTerminal className="w-4 h-4 text-primary" /> System Prompt (Directives)
+                </Label>
+                <Badge variant="secondary" className="text-[10px] font-mono">LLM Persona</Badge>
+              </div>
+              <Textarea 
+                id="prompt" 
+                className="resize-none h-32 text-sm bg-background/50 font-mono leading-relaxed focus-visible:ring-primary/50"
+                value={newPrompt}
+                onChange={(e) => setNewPrompt(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Label className="flex items-center gap-2">
+                <FileBox className="w-4 h-4 text-muted-foreground" /> Memory Boundaries (Datasets)
+              </Label>
+              <div className="grid gap-2 border border-border p-2 rounded-xl bg-muted/20 max-h-40 overflow-y-auto">
+                {MOCK_DATASETS.map(ds => (
+                  <div key={ds.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <Database className="w-4 h-4 text-muted-foreground" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">{ds.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{ds.type}</span>
+                      </div>
+                    </div>
+                    <Switch checked={selectedDatasets.has(ds.id)} onCheckedChange={() => toggleDataset(ds.id)} className="data-[state=checked]:bg-primary" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <DialogFooter className="mt-8 pt-4 border-t border-border flex items-center justify-between w-full">
+              <Button type="button" variant="ghost" onClick={() => setIsDeployOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={!newName.trim() || !newPrompt.trim()} className="rounded-full px-8">Deploy Agent</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

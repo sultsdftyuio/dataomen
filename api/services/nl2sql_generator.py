@@ -213,7 +213,7 @@ CHARTING RULES (Vega-Lite):
 
     _DESTRUCTIVE_NODES = (
         exp.Drop, exp.Delete, exp.Update, exp.Insert,
-        exp.AlterTable, exp.Command, exp.Commit, exp.Rollback,
+        exp.Alter, exp.Command, exp.Commit, exp.Rollback,
         exp.Create, exp.Grant, exp.Pragma,
     )
 

@@ -2,6 +2,7 @@
  * ARCLI.TECH - Edge Middleware Orchestrator
  * Deployment Stack: Cloudflare (DNS/Edge) -> Vercel (Next.js) -> Render (FastAPI/Backend)
  * Strategy: Hybrid Performance (Supabase SSR + Next.js Edge Security)
+ * * Objective: Prioritize the Chat-First experience as the primary landing zone.
  */
 
 import { createServerClient } from '@supabase/ssr'
@@ -100,10 +101,11 @@ export async function middleware(request: NextRequest) {
       )
     }
   } else {
-    // C. Authenticated users attempting to view auth pages -> Fast-forward to dashboard
+    // C. Authenticated users attempting to view auth pages -> Fast-forward to Chat
+    // We prioritize the high-quality Chat/AI Analyst as the "first thing" users see.
     if (isAuthRoute) {
       const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
+      url.pathname = '/chat'
       return NextResponse.redirect(url)
     }
   }
