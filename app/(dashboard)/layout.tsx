@@ -26,7 +26,7 @@ export default function DashboardRouteGroupLayout({
       <DashboardSidebar />
       
       {/* SidebarInset ensures the main content area adjusts perfectly to the sidebar's width & state */}
-      <SidebarInset className="bg-background flex flex-col min-h-screen">
+      <SidebarInset className="bg-background flex flex-col min-h-[100dvh]">
         
         {/* Persistent Global Header */}
         <header className="flex h-16 shrink-0 items-center gap-2 border-b border-border bg-card/50 backdrop-blur-md px-4 sticky top-0 z-20 transition-all">
@@ -64,7 +64,7 @@ export default function DashboardRouteGroupLayout({
         </header>
 
         {/* Page Content Injection Area - Optimized for scrolling and layout shifts */}
-        <main className="flex-1 flex flex-col h-[calc(100vh-64px)] animate-in fade-in duration-500 overflow-hidden">
+        <main className="flex-1 flex flex-col relative animate-in fade-in duration-500 overflow-hidden">
           {children}
         </main>
         
