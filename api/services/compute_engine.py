@@ -14,7 +14,7 @@ import polars as pl
 import duckdb
 import sqlglot
 from sqlglot import exp
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 from cachetools import LRUCache
 
@@ -25,8 +25,6 @@ from api.services.integrations.redshift_connector import RedshiftConnector
 from api.services.integrations.base_integration import IntegrationConfig
 from models import Dataset
 from api.database import SessionLocal
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +40,23 @@ class ComputeLocation(str, Enum):
     SNOWFLAKE       = "snowflake"
 
 class DatasetMetadata(BaseModel):
-    """
-    Core data structure for passing dataset context into the execution engine.
-    Ensures type safety and tenant isolation during Zero-ETL operations.
-    """
-    dataset_id: str
-    object_key: str
-    tenant_id: Optional[str] = None
-    schema_info: Optional[Dict[str, Any]] = None
-    row_count: Optional[int] = 0
-    file_size_bytes: Optional[int] = 0
+    """Data contract for dataset metadata passed through Celery message queues."""
+    dataset_id: str = Field(alias="id", default="")
+    location: ComputeLocation = ComputeLocation.LOCAL_DATA_LAKE
     
+    # Pydantic V2: Replaced `class Config:` with `model_config` ConfigDict
+    model_config = ConfigDict(
+        extra='ignore',
+        populate_by_name=True
+    )
+    
+    def __init__(self, **data):
+        # Gracefully handle database 'id' vs task 'dataset_id' payloads
+        if 'dataset_id' not in data and 'id' in data:
+            data['dataset_id'] = str(data['id'])
+        super().__init__(**data)
+
+
 # -------------------------------------------------------------------------
 # Phase 1: Semantic Query Caching Layer (HARDENED)
 # -------------------------------------------------------------------------
@@ -577,7 +581,7 @@ class ComputeEngine:
             
             # Using Polars vectorized math for extreme performance
             df = df.with_columns([
-                pl.arange(0, df.height).alias("x"),
+                pl.int_range(0, df.height).alias("x"), # UPDATED: pl.arange -> pl.int_range
                 pl.col("y").ewm_mean(alpha=alpha).alias("ema_7"),
                 pl.col("y").rolling_std(window_size=span).fill_null(strategy="backward").alias("rolling_std")
             ])
@@ -630,7 +634,7 @@ class ComputeEngine:
                 "anomalies_detected":      anomaly_records,
                 "confidence": (
                     "high"   if r_squared > 0.7 and n > 30 else
-                    "medium" if r_squared > 0.4             else
+                    "medium" if r_squared > 0.4            else
                     "low"
                 ),
             }
