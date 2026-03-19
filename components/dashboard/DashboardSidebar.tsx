@@ -1,16 +1,21 @@
-'use client'
+"use client"
 
-import React from "react"
+import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { 
-  Database, 
-  Bot, 
+  LayoutDashboard, 
   MessageSquare, 
-  Settings,
-  LayoutDashboard,
-  Folder
+  Database, 
+  Settings, 
+  CreditCard, 
+  Bot,
+  Search,
+  ChevronsUpDown
 } from "lucide-react"
+
+// FIX 1: Universal Brand Logo Integration
+import { Logo } from "@/components/ui/logo" 
 
 import {
   Sidebar,
@@ -25,76 +30,114 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-// 1. Type Safety: Define the interface for our modular navigation items
-interface NavItem {
-  title: string;
-  url: string;
-  icon: React.ElementType;
-}
-
-// 2. Data Structure: Centralized routing logic
-const mainNavItems: NavItem[] = [
-  { title: "Chat", url: "/chat", icon: MessageSquare },
-  { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
-  { title: "My Files", url: "/files", icon: Folder },
-  { title: "Integrations", url: "/datasets", icon: Database },
-  { title: "Agents", url: "/agents", icon: Bot },
+// Adjust these to match your exact routing
+const navItems = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Chat", href: "/chat", icon: MessageSquare },
+  { name: "Datasets", href: "/datasets", icon: Database },
+  { name: "Agents", href: "/agents", icon: Bot },
+  { name: "Investigate", href: "/investigate", icon: Search },
 ]
 
-const systemNavItems: NavItem[] = [
-  { title: "Settings", url: "/settings", icon: Settings },
+const footerItems = [
+  { name: "Billing", href: "/billing", icon: CreditCard },
+  { name: "Settings", href: "/settings", icon: Settings },
 ]
 
 export function DashboardSidebar() {
   const pathname = usePathname()
-  // 3. Logic: Use the sidebar context to control expansion on hover
-  const { setOpen } = useSidebar()
+  const { state } = useSidebar()
 
   return (
-    <Sidebar 
-      variant="inset" 
-      collapsible="icon"
-      // 4. Hover Expansion Logic:
-      // When the mouse enters the sidebar area, we expand it to show names.
-      // When it leaves, we collapse it back to icons.
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <SidebarHeader className="flex h-[60px] items-center px-4 border-b border-sidebar-border bg-sidebar">
-        <Link href="/chat" className="flex items-center gap-3 font-semibold text-sidebar-foreground transition-opacity hover:opacity-80">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden">
-            <img src="/icon.svg" alt="Arcli Logo" className="h-full w-full object-contain" />
-          </div>
-          {/* group-data-[collapsible=icon]:hidden ensures text is only visible when expanded */}
-          <span className="truncate text-lg group-data-[collapsible=icon]:hidden font-bold tracking-tight">
-            Arcli
-          </span>
-        </Link>
-      </SidebarHeader>
+    <Sidebar collapsible="icon" className="border-r bg-background">
       
-      <SidebarContent>
-        {/* Core Workspace Routes */}
+      {/* FIX 2a: Strict Header Height
+        Added fixed heights (h-16) and flex-shrink-0 to prevent 
+        the top area from shifting layout during state changes.
+      */}
+      <SidebarHeader className="flex-shrink-0 h-16 flex justify-center border-b border-border/50">
+        <div className="flex items-center justify-between px-2 w-full">
+          <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+            <div className="flex-shrink-0">
+              {/* Brand Logo perfectly matching the Landing Page */}
+              <Logo className="h-8 w-8" /> 
+            </div>
+            {state === "expanded" && (
+              <span className="font-bold text-lg tracking-tight whitespace-nowrap">
+                Arcli.tech
+              </span>
+            )}
+          </Link>
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden pt-4 custom-scrollbar">
+        
+        {/* FIX 2b: Strict Workspace Container bounds
+          This h-10 and flex-shrink-0 locks the vertical space, preventing the 
+          dropdown trigger from pushing the icons down when interacting/loading.
+        */}
+        <div className="px-2 mb-4 h-10 flex-shrink-0">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarMenuButton 
+                size="lg" 
+                className="w-full justify-between bg-muted/50 hover:bg-muted border border-border/50 transition-all"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <Avatar className="h-6 w-6 rounded-md">
+                    <AvatarImage src="/placeholder-logo.png" alt="Workspace" />
+                    <AvatarFallback className="rounded-md bg-primary/10 text-primary">W</AvatarFallback>
+                  </Avatar>
+                  {state === "expanded" && (
+                    <div className="flex flex-col items-start overflow-hidden">
+                      <span className="text-sm font-medium leading-none truncate w-32 text-left">
+                        Main Workspace
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {state === "expanded" && <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />}
+              </SidebarMenuButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>Main Workspace</DropdownMenuItem>
+              <DropdownMenuItem>Demo Environment</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
         <SidebarGroup>
-          <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 group-data-[collapsible=icon]:hidden">
-            Workspace
+          <SidebarGroupLabel className={state === "collapsed" ? "sr-only" : "px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2"}>
+            Platform
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => {
-                const isActive = pathname === item.url || pathname.startsWith(`${item.url}/`);
-                
+              {navItems.map((item) => {
+                const isActive = pathname?.startsWith(item.href)
                 return (
-                  <SidebarMenuItem key={item.title}>
+                  <SidebarMenuItem key={item.name}>
                     <SidebarMenuButton 
                       asChild 
                       isActive={isActive}
-                      tooltip={item.title} // Shows name as tooltip when fully collapsed
-                      className="transition-all duration-200"
+                      tooltip={item.name}
+                      className="transition-colors"
                     >
-                      <Link href={item.url}>
+                      <Link href={item.href} className="flex items-center gap-3">
                         <item.icon className="h-4 w-4 shrink-0" />
-                        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+                        {state === "expanded" && <span>{item.name}</span>}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -103,45 +146,29 @@ export function DashboardSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* System & Configuration Routes */}
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 group-data-[collapsible=icon]:hidden">
-            System
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {systemNavItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={pathname === item.url}
-                    tooltip={item.title}
-                    className="transition-all duration-200"
-                  >
-                    <Link href={item.url}>
-                      <item.icon className="h-4 w-4 shrink-0" />
-                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
 
-      {/* Footer: Workspace Profile Area */}
-      <SidebarFooter className="border-t border-sidebar-border p-3 bg-sidebar">
-        <div className="flex items-center gap-3 rounded-md p-2 hover:bg-sidebar-accent cursor-pointer transition-colors">
-          <div className="h-8 w-8 shrink-0 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
-            WS
-          </div>
-          <div className="flex flex-col flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-semibold leading-none truncate text-sidebar-foreground">Workspace User</span>
-            <span className="text-[10px] text-muted-foreground mt-1.5 truncate">user@workspace.com</span>
-          </div>
-        </div>
+      <SidebarFooter className="border-t border-border/50 p-2 flex-shrink-0">
+        <SidebarMenu>
+          {footerItems.map((item) => {
+            const isActive = pathname?.startsWith(item.href)
+            return (
+               <SidebarMenuItem key={item.name}>
+                 <SidebarMenuButton 
+                   asChild 
+                   isActive={isActive}
+                   tooltip={item.name}
+                   className="transition-colors"
+                 >
+                   <Link href={item.href} className="flex items-center gap-3">
+                     <item.icon className="h-4 w-4 shrink-0" />
+                     {state === "expanded" && <span>{item.name}</span>}
+                   </Link>
+                 </SidebarMenuButton>
+               </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   )
