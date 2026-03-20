@@ -10,7 +10,6 @@ import { AIAgents } from "@/components/landing/Aiagents";
 import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
-import { SeoLinkSilo } from "@/components/landing/seo-link-silo";
 import  Footer  from "@/components/landing/footer";
 
 /**
@@ -52,10 +51,8 @@ export default function Page() {
           <IntegrationsAndSecurity />
           <FAQ />
           <CTA />
-          <SeoLinkSilo />
         </section>
       </div>
-
       <Footer />
     </main>
   );

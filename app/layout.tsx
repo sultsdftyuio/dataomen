@@ -17,30 +17,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'DataOmen - Your Autonomous Data Department',
-  description: 'Stop writing SQL and building messy dashboards. Connect your database, ask questions in plain English, and let AI clean, query, and narrate your business insights instantly.',
+  title: 'Arcli - Your Autonomous Data Department',
+  description: 'Stop writing SQL and building messy dashboards. Connect your database, ask questions in plain English, and let autonomous AI agents clean, query, and narrate your business insights instantly.',
   generator: 'Next.js',
-  icons: {
-    // Points to the logo symbol files in your public directory
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        sizes: '32x32',
-        type: 'image/png',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: [
-      {
-        url: '/apple-icon.png',
-        sizes: '180x180',
-        type: 'image/png',
-      }
-    ],
-  },
+  // Note: We removed the manual 'icons' block. 
+  // Next.js will auto-generate favicons from the 'icon.png' file placed in the app/ directory!
 }
 
 export default function RootLayout({

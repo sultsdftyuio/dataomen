@@ -23,7 +23,10 @@ class DuckDBValidator:
     3. Container Protection: Hardbounds the C++ engine memory to prevent Render/Vercel OOM crashes.
     """
     
-    def __init__(self, tenant_id: Optional[str] = None, integration_name: Optional[str] = "analytical_engine", memory_limit: str = "1GB"):
+    # CRITICAL RENDER FIX: Changed default memory limit from 1GB to 256MB
+    # This ensures it stays well under the 512MB strict container limit and forces DuckDB
+    # to page safely to disk instead of crashing the server when analyzing massive files.
+    def __init__(self, tenant_id: Optional[str] = None, integration_name: Optional[str] = "analytical_engine", memory_limit: str = "256MB"):
         self.tenant_id = tenant_id
         self.integration_name = integration_name
         self.memory_limit = memory_limit

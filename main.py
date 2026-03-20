@@ -1,10 +1,32 @@
 # main.py
 
-import logging
-import time
 import os
 import sys
-import re
+
+# ==============================================================================
+# 0. C-LEVEL CONTAINER GUARDRAILS (CRITICAL FOR 512MB RENDER/VERCEL INSTANCES)
+# ==============================================================================
+# MUST BE SET BEFORE ANY NATIVE LIBRARIES (Polars, DuckDB, NumPy, PyTorch) ARE IMPORTED.
+# These engines read the Host Node's resources (often 64GB RAM / 16 cores) and will
+# instantly allocate massive thread pools/buffers, causing an immediate OOM crash.
+
+# 1. Clamp thread pools to prevent CPU thrashing and per-thread memory bloat
+os.environ.setdefault("POLARS_MAX_THREADS", "1")
+os.environ.setdefault("DUCKDB_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
+# 2. Fix Python memory leaks in containers: Force glibc to return freed RAM to the OS instantly
+os.environ.setdefault("MALLOC_TRIM_THRESHOLD_", "100000")
+
+# 3. Prevent ML libraries (transformers/faiss) from pre-allocating unused tensors
+os.environ.setdefault("PYTORCH_NO_CUDA_MEMORY_CACHING", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+
+import logging
+import time
+import gc
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -29,19 +51,24 @@ logger = logging.getLogger("DataOmenEngine")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Ensures heavy analytical engines (DuckDB/Postgres pools) 
-    spin up cleanly without blocking the health checks.
+    Ensures heavy analytical engines spin up cleanly.
+    Forces a deep garbage collection cycle immediately after boot imports to 
+    clear out transient import bloat before accepting traffic.
     """
-    logger.info("🚀 Data Omen Engine initializing...")
+    logger.info("🚀 Data Omen Engine initializing with Strict Container Guardrails...")
+    
     try:
         from api.database import init_db
         init_db()
         logger.info("✅ Database infrastructure synchronized.")
     except Exception as e:
-        # Catch and log to keep the web server alive for Render health checks
         logger.error(f"⚠️ Database Sync Failed on Boot: {str(e)}")
         logger.error("⚠️ Check that DATABASE_URL is set in your Render Environment Variables.")
-        
+    
+    # Force OS to reclaim RAM from massive module imports
+    gc.collect()
+    logger.info("🧹 Boot-time Garbage Collection complete. Ready for traffic.")
+    
     yield
     
     logger.info("🔌 Shutting down Engine... Cleaning up resources.")
@@ -50,7 +77,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Data Omen Engine",
     description="High-performance multi-tenant analytical API engine.",
-    version="1.2.0",
+    version="1.2.1",
     lifespan=lifespan
 )
 
@@ -67,7 +94,8 @@ async def health_check():
     return {
         "status": "optimal",
         "environment": os.getenv("ENVIRONMENT", "production"),
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "memory_guardrails_active": True
     }
 
 # ------------------------------------------------------------------------------
@@ -132,7 +160,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 # 7. Defensive Route Orchestration
 # ------------------------------------------------------------------------------
 def register_routes(fastapi_app: FastAPI) -> None:
-    # Lazy-loading routes prevents circular dependencies and isolates import crashes
+    # Lazy-loading routes prevents circular dependencies and isolates import crashes.
+    # Because of our C-level guardrails at the top of the file, these heavy imports 
+    # will no longer spike RAM during the module resolution phase.
     from api.routes import agents, datasets, query, narrative, chat, webhooks
     
     fastapi_app.include_router(agents.router)
@@ -155,8 +185,14 @@ except Exception as e:
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    # Cleaned up environment variable fetching and enabled dynamic reload for local dev
+    
     port = int(os.getenv("PORT", "8000"))
     is_dev = os.getenv("ENVIRONMENT") == "development"
     
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=is_dev)
+    # CRITICAL RENDER FIX: Limit to 1 worker on 512MB instances.
+    # If Uvicorn or Gunicorn spawns multiple workers, the baseline RAM of imports
+    # multiplies, causing an instant OOM.
+    workers = int(os.getenv("WEB_CONCURRENCY", "1"))
+    
+    logger.info(f"Starting Uvicorn server on port {port} with {workers} worker(s)...")
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=is_dev, workers=workers)
