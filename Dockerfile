@@ -24,6 +24,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
+# CRITICAL FIX: CPU-Only PyTorch (OOM Prevention)
+# Installs the lightweight PyTorch version first to prevent DigitalOcean
+# from downloading massive NVIDIA GPU binaries and crashing out of memory.
+# ------------------------------------------------------------------------------
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
+# ------------------------------------------------------------------------------
 # Python Dependencies
 # ------------------------------------------------------------------------------
 COPY requirements.txt .
@@ -36,6 +43,13 @@ COPY . .
 
 # ------------------------------------------------------------------------------
 # Execution
-# Run the Celery worker and the Beat scheduler concurrently
 # ------------------------------------------------------------------------------
-CMD ["celery", "-A", "compute_worker.celery_app", "worker", "--loglevel=info", "-Q", "analytics,ingestion,cron", "-B"]
+EXPOSE 8080
+
+# NOTE: If you are using this single Dockerfile for BOTH your Web API and 
+# your Worker in DigitalOcean, it is safer to leave this as the API command:
+CMD ["python", "main.py"]
+
+# (Your DigitalOcean Worker component will automatically ignore the line above 
+# because we explicitly pasted the Celery command into the "Run Command" 
+# override box in the DigitalOcean dashboard earlier!)
