@@ -4,6 +4,7 @@ import logging
 import gc
 import time
 import psutil
+from typing import Dict, Any, Optional
 
 # ------------------------------------------------------------------------------
 # C-Level Thread Guardrails — MUST be set before any native library is imported.
@@ -32,7 +33,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ComputeWorker")
 
-# Deployment Context: Vercel KV → Upstash → Render Redis → local fallback
+# Deployment Context: Upstash Redis (Serverless) → DigitalOcean Managed → Local fallback
 redis_url = (
     os.getenv("KV_URL")
     or os.getenv("UPSTASH_REDIS_REST_URL")
@@ -82,12 +83,11 @@ celery_app.conf.beat_schedule = {
 # ------------------------------------------------------------------------------
 # Database Prefork Safety
 # Celery forks child processes from the parent. Any SQLAlchemy connection pool
-# inherited across the fork boundary becomes corrupted, causing
-# "SSL SYSCALL error: EOF detected" drops. We dispose of the engine on each
-# child's first breath so every process builds its own clean pool.
+# inherited across the fork boundary becomes corrupted. We dispose of the engine 
+# on each child's first breath so every process builds its own clean pool.
 # ------------------------------------------------------------------------------
 @worker_process_init.connect
-def reset_db_connection_pool(**kwargs):
+def reset_db_connection_pool(**kwargs: Any) -> None:
     """Dispose inherited SQLAlchemy engine connections on worker fork."""
     try:
         from api.database import engine
@@ -101,7 +101,7 @@ def reset_db_connection_pool(**kwargs):
 # Async Bridge & Resource Guardrails
 # ------------------------------------------------------------------------------
 
-def _run_async(coro):
+def _run_async(coro: Any) -> Any:
     """
     Hybrid Performance Bridge: executes async IO-bound services inside
     synchronous Celery worker threads without a persistent event loop.
@@ -109,7 +109,7 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
-def _check_memory_pressure(task, threshold: float = 85.0):
+def _check_memory_pressure(task: Any, threshold: float = 85.0) -> None:
     """
     Proactive OOM Prevention: if RAM utilisation exceeds the threshold,
     yield the task back to the queue so a less-pressured node can handle it.
@@ -124,45 +124,43 @@ def _check_memory_pressure(task, threshold: float = 85.0):
 
 
 # ------------------------------------------------------------------------------
-# Lazy-Loaded Service Accessors
+# Lazy-Loaded Service Accessors & AI Dependency Injection
 #
-# Heavy analytical services (QueryPlanner, NL2SQLGenerator, etc.) are NOT
-# imported at module level. The Celery parent process evaluates this file on
-# startup; global imports would load every ML model and engine into the parent's
-# RAM, and every forked child would copy that bloated state — causing high
-# baseline memory usage before a single task has run.
-#
-# Instead, each accessor imports and instantiates its service on first call,
-# then caches it in _singletons for the lifetime of that child process only.
+# Heavy analytical services are imported and instantiated on first call,
+# caching them in _singletons for the lifetime of that child process only.
+# This strictly adheres to the Orchestration methodology by injecting the 
+# llm_client instance post-fork to prevent async event loop corruption.
 # ------------------------------------------------------------------------------
-_singletons: dict = {}
+_singletons: Dict[str, Any] = {}
 
-
-def _get_service(key: str, factory):
+def _get_service(key: str, factory: Any) -> Any:
     """Generic lazy singleton: import & instantiate once per child process."""
     if key not in _singletons:
         _singletons[key] = factory()
     return _singletons[key]
 
 
-def _planner():
-    def _build():
+def _planner() -> Any:
+    def _build() -> Any:
         from api.services.query_planner import QueryPlanner
-        return QueryPlanner()
+        from api.services.llm_client import llm_client
+        return QueryPlanner(llm_client=llm_client)
     return _get_service("planner", _build)
 
 
-def _generator():
-    def _build():
+def _generator() -> Any:
+    def _build() -> Any:
         from api.services.nl2sql_generator import NL2SQLGenerator
-        return NL2SQLGenerator()
+        from api.services.llm_client import llm_client
+        return NL2SQLGenerator(llm_client=llm_client)
     return _get_service("generator", _build)
 
 
-def _insight_engine():
-    def _build():
+def _insight_engine() -> Any:
+    def _build() -> Any:
         from api.services.insight_orchestrator import InsightOrchestrator
-        return InsightOrchestrator()
+        from api.services.llm_client import llm_client
+        return InsightOrchestrator(llm_client=llm_client)
     return _get_service("insight_engine", _build)
 
 
@@ -177,19 +175,16 @@ def _insight_engine():
     max_retries=3,
     queue="ingestion",
 )
-def process_ingestion_dataset(self, dataset_id: str, tenant_id: str):
+def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Optional[Dict[str, Any]]:
     """
     Two ingestion paths:
       A) Local file upload  → DuckDB Parquet vectorisation & schema profiling.
       B) SaaS / Warehouse   → Zero-ETL historical multi-stream pull via SyncEngine.
-
-    Retries up to 3 × with a 60 s back-off on transient failures.
     """
     _check_memory_pressure(self)
     logger.info(f"[{tenant_id}] ⚡ Starting ingestion for Dataset: {dataset_id}")
     start_time = time.perf_counter()
 
-    # Lazy imports — only resolved when this task actually executes
     from api.database import SessionLocal
     from models import Dataset, DatasetStatus
     from api.services.storage_manager import storage_manager
@@ -206,7 +201,7 @@ def process_ingestion_dataset(self, dataset_id: str, tenant_id: str):
 
             if not dataset:
                 logger.error(f"[{tenant_id}] Dataset {dataset_id} not found. Aborting.")
-                return
+                return None
 
             dataset.status = DatasetStatus.PROCESSING
             db.commit()
@@ -298,33 +293,25 @@ def process_ingestion_dataset(self, dataset_id: str, tenant_id: str):
     queue="analytics",
 )
 def execute_heavy_analytical_pipeline(
-    self,
+    self: Any,
     job_id: str,
     prompt: str,
     tenant_id: str,
-    dataset_dict: dict,
-    full_schema: dict,
-):
+    dataset_dict: Dict[str, Any],
+    full_schema: Dict[str, Any],
+) -> Dict[str, Any]:
     """
     End-to-end BI analytics pipeline for queries requiring warehouse aggregations.
-
-    Stages:
-      1. AI Planning          — QueryPlanner builds an achievability-checked plan.
-      2. SQL Compilation      — NL2SQLGenerator emits dialect-specific, optimised SQL.
-      3. Vectorised Compute   — ComputeEngine executes a read-only warehouse scan.
-      4. Statistical Insights — InsightOrchestrator extracts anomalies & KPIs.
-      5. Narrative Synthesis  — NarrativeService generates an executive summary.
-      6. Cache Commit         — Result persisted to Redis to unblock frontend polling.
     """
     _check_memory_pressure(self)
     logger.info(f"[{tenant_id}] 🧠 Orchestrating Heavy BI Pipeline: {job_id}")
 
-    # Lazy imports — only resolved when this task actually executes
     from api.services.compute_engine import compute_engine, DatasetMetadata
     from api.services.narrative_service import narrative_service
     from api.services.cache_manager import cache_manager
+    from api.services.llm_client import llm_client
 
-    df = None  # declared early for explicit cleanup in the finally block
+    df = None
 
     try:
         dataset = DatasetMetadata(**dataset_dict)
@@ -373,8 +360,6 @@ def execute_heavy_analytical_pipeline(
         df = pl.DataFrame(query_result)
         insights = _insight_engine().analyze_dataframe(df, plan, tenant_id)
 
-        # Free the DataFrame immediately — it can be hundreds of MB and holds
-        # C-level Arrow buffers that the Python GC cannot see until dereferenced.
         del df
         df = None
         gc.collect()
@@ -384,11 +369,13 @@ def execute_heavy_analytical_pipeline(
             state="PROGRESS",
             meta={"status": "Synthesising executive summary..."},
         )
+        # Injecting LLM dependency dynamically for the narrative orchestrator 
         narrative_obj = _run_async(narrative_service.generate_executive_summary(
             payload=insights,
             plan=plan,
             chart_spec=chart_spec,
             tenant_id=tenant_id,
+            llm_client=llm_client  # Dependency Injection
         ))
 
         # 6. Cache Commit — unblocks frontend polling ──────────────────────────
@@ -419,8 +406,6 @@ def execute_heavy_analytical_pipeline(
         return {"status": "error", "message": str(e)}
 
     finally:
-        # Explicit cleanup before GC — Polars DataFrames hold C-level buffers
-        # that the Python GC cannot reclaim until they are explicitly dereferenced.
         if df is not None:
             del df
         gc.collect()
@@ -436,24 +421,20 @@ def execute_heavy_analytical_pipeline(
     name="run_autonomous_insight_scans",
     queue="cron",
 )
-def run_autonomous_insight_scans(self):
+def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
     """
     Celery Beat Cron Job — fires at the top of every hour.
-
-    Proactive monitoring across all tenants:
-      1. Pipeline health & dataset staleness audit.
-      2. Per-agent anomaly detection (EMA / Z-Score weighting).
-         Failures are isolated per agent — one bad tenant never stalls the fleet.
     """
     logger.info("🤖 Starting Global Autonomous Insight Scan...")
 
-    # Lazy imports — only resolved when this task actually executes
     from api.database import SessionLocal
     from models import Agent
     from api.services.watchdog_service import WatchdogService
+    from api.services.llm_client import llm_client
 
     with SessionLocal() as db:
-        watchdog = WatchdogService(db_client=db)
+        # Dependency Injection for watchdog
+        watchdog = WatchdogService(db_client=db, llm_client=llm_client)
 
         # 1. System Health & Staleness Audit ──────────────────────────────────
         logger.info("Running pipeline health and dataset staleness audits...")
@@ -470,7 +451,7 @@ def run_autonomous_insight_scans(self):
 
         for agent in active_agents:
             if not agent.metric_column or not agent.time_column:
-                continue  # Skip misconfigured agents silently
+                continue
 
             try:
                 logger.info(
@@ -494,7 +475,6 @@ def run_autonomous_insight_scans(self):
                     )
 
             except Exception as e:
-                # Fault isolation: one bad tenant must never stall the fleet
                 logger.error(
                     f"Agent {agent.id} (Tenant: {agent.tenant_id}) failed: {e}"
                 )
@@ -514,15 +494,15 @@ def run_autonomous_insight_scans(self):
 
 
 # ------------------------------------------------------------------------------
-# Execution Block for Render Deployments
+# Execution Block for DigitalOcean App Platform / Docker Container
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
     """
     Ensure all queues are actively listened to.
     -Q specifies the queues.
-    -B runs the beat scheduler (cron) in the same process to save Render costs.
+    -B runs the beat scheduler (cron) in the same process to save infrastructure costs.
     """
-    logger.info("Initializing Compute Worker Daemon across all priority queues...")
+    logger.info("Initializing Containerized Compute Worker Daemon across all priority queues...")
     celery_app.worker_main(
         argv=[
             "worker",

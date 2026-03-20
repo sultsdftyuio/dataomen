@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Play, User } from "lucide-react";
+import { User } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { Logo } from "@/components/ui/logo";
 
@@ -85,21 +85,6 @@ export function Navbar() {
 
         {/* Action CTAs */}
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <a
-            href="#demo"
-            className="btn-ghost hide-mobile"
-            style={{ 
-              padding: "10px 18px", 
-              display: "inline-flex", 
-              alignItems: "center", 
-              gap: 8, 
-              fontSize: 14,
-              fontWeight: 700,
-              color: C.navy
-            }}
-          >
-            <Play size={14} fill={C.navy} /> Try Playground
-          </a>
           
           <a 
             href="/login" 

@@ -2,13 +2,17 @@
 
 import os
 import sys
+import logging
+import time
+import gc
+from contextlib import asynccontextmanager
 
 # ==============================================================================
-# 0. C-LEVEL CONTAINER GUARDRAILS (CRITICAL FOR 512MB RENDER/VERCEL INSTANCES)
+# 0. C-LEVEL CONTAINER GUARDRAILS (CRITICAL FOR DIGITALOCEAN / CLOUD DEPLOYMENTS)
 # ==============================================================================
 # MUST BE SET BEFORE ANY NATIVE LIBRARIES (Polars, DuckDB, NumPy, PyTorch) ARE IMPORTED.
-# These engines read the Host Node's resources (often 64GB RAM / 16 cores) and will
-# instantly allocate massive thread pools/buffers, causing an immediate OOM crash.
+# These engines read the Host Node's resources and will instantly allocate massive 
+# thread pools/buffers, causing an immediate OOM crash if not clamped.
 
 # 1. Clamp thread pools to prevent CPU thrashing and per-thread memory bloat
 os.environ.setdefault("POLARS_MAX_THREADS", "1")
@@ -23,27 +27,21 @@ os.environ.setdefault("MALLOC_TRIM_THRESHOLD_", "100000")
 os.environ.setdefault("PYTORCH_NO_CUDA_MEMORY_CACHING", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-
-import logging
-import time
-import gc
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 # ------------------------------------------------------------------------------
-# 1. Observability Configuration (Render Optimized)
+# 1. Observability Configuration
 # ------------------------------------------------------------------------------
-# We force stream=sys.stdout to ensure logs flush instantly to the Render dashboard.
+# We force stream=sys.stdout to ensure logs flush instantly to the cloud dashboard.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
     stream=sys.stdout
 )
-logger = logging.getLogger("DataOmenEngine")
+logger = logging.getLogger("DataOmenAPI")
 
 # ------------------------------------------------------------------------------
 # 2. Lifecycle Management (The Modular Strategy)
@@ -55,7 +53,7 @@ async def lifespan(app: FastAPI):
     Forces a deep garbage collection cycle immediately after boot imports to 
     clear out transient import bloat before accepting traffic.
     """
-    logger.info("🚀 Data Omen Engine initializing with Strict Container Guardrails...")
+    logger.info("🚀 Data Omen API initializing with Strict Container Guardrails...")
     
     try:
         from api.database import init_db
@@ -63,7 +61,8 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Database infrastructure synchronized.")
     except Exception as e:
         logger.error(f"⚠️ Database Sync Failed on Boot: {str(e)}")
-        logger.error("⚠️ Check that DATABASE_URL is set in your Render Environment Variables.")
+        # We do not exit here; in cloud cold-starts, the database might take 
+        # a few extra seconds to become fully available.
     
     # Force OS to reclaim RAM from massive module imports
     gc.collect()
@@ -71,13 +70,13 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    logger.info("🔌 Shutting down Engine... Cleaning up resources.")
+    logger.info("🔌 Shutting down API... Cleaning up resources.")
 
 
 app = FastAPI(
-    title="Data Omen Engine",
+    title="Data Omen API",
     description="High-performance multi-tenant analytical API engine.",
-    version="1.2.1",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -88,7 +87,7 @@ app = FastAPI(
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """
-    System heartbeat used by Render to verify instance stability.
+    System heartbeat used by DigitalOcean to verify instance stability.
     Defined at the top so it is instantly available before heavy routes load.
     """
     return {
@@ -174,11 +173,9 @@ def register_routes(fastapi_app: FastAPI) -> None:
     
     logger.info("🗺️ Modular routes registered successfully.")
 
-try:
-    register_routes(app)
-except Exception as e:
-    # Catch ALL errors (not just imports) so the container stays alive for debugging
-    logger.critical("🚨 CRITICAL BOOT ERROR: A route module failed to load. Check your logs below.", exc_info=True)
+# CRITICAL FIX: If routes fail to load, the app MUST crash so DigitalOcean
+# restarts the container and flags the deployment as failed.
+register_routes(app)
 
 # ------------------------------------------------------------------------------
 # Entrypoint
@@ -186,13 +183,14 @@ except Exception as e:
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.getenv("PORT", "8000"))
+    # DigitalOcean injects the PORT dynamically. Default to 8080 if not found.
+    port = int(os.getenv("PORT", "8080"))
     is_dev = os.getenv("ENVIRONMENT") == "development"
     
-    # CRITICAL RENDER FIX: Limit to 1 worker on 512MB instances.
+    # CRITICAL CLOUD FIX: Limit to 1 worker on standard cloud containers.
     # If Uvicorn or Gunicorn spawns multiple workers, the baseline RAM of imports
-    # multiplies, causing an instant OOM.
+    # multiplies, causing an instant OOM on 512MB-1GB instances.
     workers = int(os.getenv("WEB_CONCURRENCY", "1"))
     
-    logger.info(f"Starting Uvicorn server on port {port} with {workers} worker(s)...")
+    logger.info(f"Starting API server on port {port} with {workers} worker(s)...")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=is_dev, workers=workers)
