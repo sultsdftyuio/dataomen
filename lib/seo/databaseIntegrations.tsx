@@ -4,17 +4,31 @@ import { Database, Server } from 'lucide-react';
 
 /**
  * SEOPageData Interface
- * Upgraded to the "Search-Intent Machine" schema to capture high-intent users
- * looking to bypass traditional BI bottlenecks on specific data warehouses.
+ * Upgraded to the "Integration Blueprint" schema. 
+ * Designed specifically for Data Engineers and DevOps professionals. 
+ * Focuses on connection protocols, dialect-specific capabilities, and security.
  */
 export type SEOPageData = {
-  type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
+  type: 'integration';
   title: string;
   description: string;
   h1: string;
   subtitle: string;
   icon: React.ReactElement;
   features: string[];
+  technicalArchitecture: {
+    connectionMethod: string;
+    computeModel: string;
+    securityProtocol: string;
+  };
+  dialectCapabilities: {
+    supportedNativeFeatures: string[];
+    aiOptimizations: string;
+  };
+  workflowTransformation: {
+    beforeArcli: string[];
+    withArcli: string[];
+  };
   steps: { name: string; text: string }[];
   realExample?: {
     query: string;
@@ -22,18 +36,8 @@ export type SEOPageData = {
     output: string;
     insight: string;
   };
-  painPoints?: {
-    title: string;
-    points: string[];
-    solution: string;
-  };
   useCases: { title: string; description: string }[];
   faqs: { q: string; a: string }[];
-  comparison?: { 
-    competitor: string; 
-    arcliWins: string[]; 
-    competitorFlaws: string[]; 
-  };
   relatedSlugs: string[];
 };
 
@@ -41,29 +45,46 @@ export const databaseIntegrations: Record<string, SEOPageData> = {
   'postgresql-ai-analytics': {
     type: 'integration',
     title: 'PostgreSQL AI Analytics & Reporting | Arcli',
-    description: 'Connect your PostgreSQL database to Arcli. Bypass traditional BI and unlock AI-driven insights, deep JSONB querying, and instant visualizations.',
-    h1: 'Supercharge PostgreSQL with AI Analytics',
-    subtitle: 'Securely connect your Postgres replica and let your team query terabytes of relational data using plain English, powered by semantic schema RAG.',
+    description: 'Connect your PostgreSQL replica to Arcli. Leverage generative AI to query complex JSONB payloads and relational data with zero-latency DuckDB rendering.',
+    h1: 'Native AI Intelligence for PostgreSQL',
+    subtitle: 'Securely connect your Postgres read-replica and empower your team to query complex relational schemas and unstructured data using plain English.',
     icon: <Database className="w-12 h-12 text-indigo-500 mb-6" />,
     features: [
       'Direct Secure Read-Only Connections', 
-      'Native JSONB & CTE Support', 
-      'In-Browser DuckDB Result Visualization',
-      'Automated Foreign Key Mapping'
+      'Native JSONB Object Extraction', 
+      'In-Browser DuckDB Visualization',
+      'Automated Foreign Key Routing'
     ],
-    painPoints: {
-      title: 'Why PostgreSQL Reporting is Usually a Nightmare',
-      points: [
-        'Setting up traditional BI tools (like Tableau or Metabase) requires weeks of building semantic models and ETL pipelines.',
-        'Extracting metrics from complex JSONB columns or deeply nested relationships requires highly specialized SQL knowledge.',
-        'Caching layers in standard dashboards mean your "live" data is actually 12 to 24 hours old.'
+    technicalArchitecture: {
+      connectionMethod: 'Direct URI Connection (postgres://) with Static IP Whitelisting.',
+      computeModel: 'Hybrid: Aggregation pushed to Postgres; rendering handled by in-browser DuckDB (WebAssembly).',
+      securityProtocol: 'Mandated Read-Only user roles. Application-level transaction wrappers actively drop all mutating commands (INSERT, DELETE, DROP).'
+    },
+    dialectCapabilities: {
+      supportedNativeFeatures: [
+        'Deep JSONB traversal and array unwrapping (->, ->>, @>)',
+        'Recursive Common Table Expressions (CTEs)',
+        'Advanced Window Functions for time-intelligence',
+        'PostGIS geospatial query generation (optional)'
       ],
-      solution: 'Arcli connects directly to your Postgres replica and reads the schema metadata. You ask questions in English, and we generate highly optimized native Postgres SQL. Results are streamed to your browser via DuckDB for instantaneous, zero-cache filtering.'
+      aiOptimizations: 'Arcli’s semantic router is specifically trained on the PostgreSQL 12+ dialect, ensuring it prioritizes highly efficient indexing and native date-truncation functions over generic SQL translations.'
+    },
+    workflowTransformation: {
+      beforeArcli: [
+        'Extracting metrics from unstructured JSONB columns requires highly specialized SQL knowledge.',
+        'Data must be modeled and flattened via ETL pipelines before traditional BI tools can ingest it.',
+        'Dashboard caching layers introduce latency, resulting in stale operational data.'
+      ],
+      withArcli: [
+        'The AI natively writes complex JSONB extraction operators based on user intent.',
+        'Zero upfront modeling required; Arcli dynamically maps the schema directly from the replica.',
+        'Zero-latency visual filtering powered by continuous WebAssembly execution.'
+      ]
     },
     steps: [
-      { name: '1. Whitelist IP', text: 'Whitelist Arcli\'s secure, static IP addresses in your VPC or firewall settings.' },
-      { name: '2. Provide Read-Only URL', text: 'Connect using a standard postgres:// connection string with a read-only user.' },
-      { name: '3. Query Live Data', text: 'Start using Natural Language to instantly generate charts and complex queries.' }
+      { name: '1. Network Authorization', text: 'Securely whitelist Arcli\'s static IP addresses within your VPC.' },
+      { name: '2. Authenticate Replica', text: 'Provide a read-only connection string to your Postgres instance.' },
+      { name: '3. Conversational Discovery', text: 'Generate analytical SQL and interactive visualizations via natural language.' }
     ],
     realExample: {
       query: "Show me the 30-day trailing revenue, broken down by the user's subscription tier stored inside the 'metadata' JSONB column.",
@@ -77,28 +98,15 @@ WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY 1, 2
 ORDER BY 1 ASC;`,
       output: "Stacked Area Chart",
-      insight: "Enterprise tier revenue has maintained steady growth, while the Pro tier spiked sharply following the latest feature release on the 15th."
-    },
-    comparison: {
-      competitor: 'Traditional BI (Tableau / Metabase)',
-      competitorFlaws: [
-        'Requires an entire data engineering team to maintain the semantic layer.',
-        'Terrible native support for unpacking unstructured JSONB payloads.',
-        'Slow, clunky interfaces for ad-hoc business user exploration.'
-      ],
-      arcliWins: [
-        'Zero setup time: connect the URL and start asking questions immediately.',
-        'AI natively understands and writes the exact operators for Postgres JSONB extraction.',
-        'Sub-second filtering enabled by in-browser WebAssembly compute.'
-      ]
+      insight: "Unstructured JSONB fields extracted natively, revealing real-time cohort revenue."
     },
     useCases: [
-      { title: 'SaaS Production Analytics', description: 'Query read-replicas of your production Postgres DB to understand live feature adoption without impacting app performance.' },
-      { title: 'Internal Tooling', description: 'Instantly spin up customer support dashboards to investigate user payment histories without building custom admin panels.' }
+      { title: 'Production Telemetry Analysis', description: 'Analyze live feature adoption directly from your production replica without degrading application performance.' },
+      { title: 'Operational Support', description: 'Instantly generate support dashboards to investigate user transactional histories without building custom admin panels.' }
     ],
     faqs: [
-      { q: 'Do you support self-hosted Postgres instances?', a: 'Yes, as long as the database is accessible via a secure connection string or our static IP allowlist. We support AWS RDS, Aurora, Supabase, Neon, and bare-metal setups.' },
-      { q: 'Can Arcli accidentally delete or drop my tables?', a: 'Absolutely not. In addition to requiring a read-only user, our execution engine wraps all queries in a transaction block that actively rejects any INSERT, UPDATE, DELETE, or DROP commands.' }
+      { q: 'Do you support self-hosted Postgres instances?', a: 'Yes. Arcli supports any Postgres instance accessible via a secure connection string, including AWS RDS, Aurora, Supabase, Neon, and bare-metal deployments.' },
+      { q: 'How does the system map foreign keys?', a: 'Upon connection, Arcli’s RAG engine scans your `information_schema`. It uses explicit foreign keys, as well as semantic column naming conventions (e.g., `user_id` matching `users.id`), to build a highly accurate relational graph.' }
     ],
     relatedSlugs: ['snowflake-ai-analytics', 'mysql-ai-analytics', 'natural-language-to-sql']
   },
@@ -106,29 +114,45 @@ ORDER BY 1 ASC;`,
   'mysql-ai-analytics': {
     type: 'integration',
     title: 'MySQL AI Analytics & Dashboard Builder | Arcli',
-    description: 'Connect your MySQL database to Arcli. Generate instant dashboards and run complex natural language queries on your relational tables without writing SQL.',
-    h1: 'AI Analytics for MySQL Databases',
-    subtitle: 'Give your entire team secure, conversational access to your MySQL database without writing a single line of boilerplate SQL or configuring brittle data models.',
+    description: 'Connect your MySQL database to Arcli. Leverage conversational AI to navigate highly normalized schemas and automate complex multi-table JOINs instantly.',
+    h1: 'Relational Agility for MySQL',
+    subtitle: 'Provide your organization with secure, conversational access to your MySQL instances. Automate complex JOINs without writing boilerplate SQL.',
     icon: <Database className="w-12 h-12 text-blue-400 mb-6" />,
     features: [
       'Direct Secure MySQL Connections', 
       'Automated Multi-Table JOINs', 
       'Zero Data Movement Architecture',
-      'Real-time Schema Syncing'
+      'Real-Time Schema Synchronization'
     ],
-    painPoints: {
-      title: 'The Bottleneck of MySQL Ad-Hoc Requests',
-      points: [
-        'Writing MySQL queries that require JOINs across 5+ normalized tables is tedious and highly prone to error.',
-        'Engineers spend 20% of their week answering basic "How many users did X today?" questions for the product team.',
-        'Exporting MySQL tables to Excel for analysis leads to massive security and compliance risks.'
+    technicalArchitecture: {
+      connectionMethod: 'Direct URI Connection (mysql://) protected by TLS encryption.',
+      computeModel: 'Push-Down Compute: All heavy data crunching is executed on the MySQL server to minimize data egress.',
+      securityProtocol: 'Strict Read-Only isolation. No raw data is permanently stored on Arcli servers.'
+    },
+    dialectCapabilities: {
+      supportedNativeFeatures: [
+        'Native MySQL Date and Time functions (MAKEDATE, DATE_ADD)',
+        'Complex Multi-Table INNER and LEFT JOIN orchestrations',
+        'GROUP_CONCAT aggregation for relational flattening'
       ],
-      solution: 'Arcli acts as an autonomous data analyst. Our semantic engine indexes your MySQL relationships. When a product manager asks a question, Arcli safely writes the complex JOINs, executes the query, and visualizes it—freeing up your engineering team.'
+      aiOptimizations: 'Trained explicitly on MySQL 8.0+ syntax, the AI intuitively navigates highly normalized relational environments, accurately inferring multi-hop JOIN paths.'
+    },
+    workflowTransformation: {
+      beforeArcli: [
+        'Analyzing highly normalized schemas requires engineers to write precise JOINs across 5+ tables.',
+        'Data engineering teams dedicate excessive bandwidth to fulfilling basic operational data requests.',
+        'Business operators frequently export raw data into local spreadsheets, creating compliance risks.'
+      ],
+      withArcli: [
+        'Arcli autonomously orchestrates complex, multi-hop JOIN logic based on plain English queries.',
+        'Empowers true self-serve analytics, bypassing the centralized engineering queue.',
+        'Maintains data securely within the database while providing interactive visualizations in the browser.'
+      ]
     },
     steps: [
-      { name: '1. Provide Credentials', text: 'Connect using a standard mysql:// read-only string.' },
-      { name: '2. Schema Syncing', text: 'Our Semantic Router instantly indexes your tables, column types, and foreign key relationships.' },
-      { name: '3. Start Querying', text: 'Type questions in plain English to generate real-time, interactive Vega charts.' }
+      { name: '1. Establish Connection', text: 'Provide a read-only MySQL credential.' },
+      { name: '2. Schema Synchronization', text: 'The Semantic Router indexes table structures, column types, and relational metadata.' },
+      { name: '3. Natural Querying', text: 'Ask business questions to generate interactive charts natively.' }
     ],
     realExample: {
       query: "Show me the top 5 product categories by total sales volume this quarter, excluding refunded orders.",
@@ -145,28 +169,15 @@ GROUP BY c.id
 ORDER BY total_sales_volume DESC
 LIMIT 5;`,
       output: "Horizontal Bar Chart",
-      insight: "The 'Electronics' category dominates sales volume, but 'Home Goods' is surprisingly driving the second highest revenue this quarter."
-    },
-    comparison: {
-      competitor: 'Standard SQL Clients (DBeaver / DataGrip)',
-      competitorFlaws: [
-        'Built exclusively for engineers; unusable by business stakeholders.',
-        'Requires manual writing of every JOIN and aggregation.',
-        'Visualization capabilities are usually limited to basic, non-interactive grids.'
-      ],
-      arcliWins: [
-        'Conversational interface built for non-technical users.',
-        'AI dynamically generates complex JOIN paths based on schema mapping.',
-        'Beautiful, highly interactive dashboards out of the box.'
-      ]
+      insight: "A complex 4-table relational JOIN orchestrated flawlessly via conversational intent."
     },
     useCases: [
-      { title: 'Live Application Analytics', description: 'Analyze live user behavior and funnel conversion rates directly from your production MySQL replica.' },
-      { title: 'E-commerce Reporting', description: 'Instantly build dashboards tracking inventory levels, shipping times, and cart abandonment.' }
+      { title: 'Application Funnel Tracking', description: 'Evaluate live user progression and conversion drop-offs directly from your application database.' },
+      { title: 'E-commerce Telemetry', description: 'Deploy automated tracking for inventory levels, fulfillment pipelines, and cart abandonment rates.' }
     ],
     faqs: [
-      { q: 'Is this safe for a production environment?', a: 'We strongly mandate connecting Arcli to a read-replica database to ensure zero analytical query loads impact your live application\'s performance.' },
-      { q: 'How does it understand my cryptic column names?', a: 'You can provide semantic descriptions directly in Arcli (e.g., mapping "usr_stat_cd" to "User Status"). Our RAG engine uses these definitions to translate natural language perfectly.' }
+      { q: 'Is this safe for high-traffic production environments?', a: 'We strictly mandate connecting Arcli to a MySQL read-replica to ensure analytical workloads do not consume compute resources required by your primary application.' },
+      { q: 'Can the AI understand my legacy column names?', a: 'Yes. Arcli’s Semantic Governance layer allows you to alias cryptic columns (e.g., mapping `usr_stat_cd` to `User Status`), ensuring perfect translation from natural language.' }
     ],
     relatedSlugs: ['postgresql-ai-analytics', 'natural-language-to-sql']
   },
@@ -174,29 +185,45 @@ LIMIT 5;`,
   'snowflake-ai-analytics': {
     type: 'integration',
     title: 'Snowflake AI Analytics & SQL Generator | Arcli',
-    description: 'Deploy AI directly on top of your Snowflake data warehouse. Maximize your cloud compute with intelligent, cost-aware SQL generation and natural language dashboards.',
-    h1: 'Native AI Analytics for Snowflake Data Clouds',
-    subtitle: 'Stop wasting warehouse compute credits on poorly optimized analytical queries. Arcli generates cost-efficient, performant Snowflake SQL from plain English automatically.',
+    description: 'Deploy generative AI on your Snowflake data cloud. Evaluate how Arcli\'s Context-Aware RAG ensures cost-efficient, push-down compute across massive enterprise schemas.',
+    h1: 'Generative AI Designed for Snowflake Economics',
+    subtitle: 'Maximize your cloud compute ROI. Arcli generates highly optimized, cost-aware Snowflake SQL from plain English, utilizing dynamic push-down compute.',
     icon: <Server className="w-12 h-12 text-sky-500 mb-6" />,
     features: [
       'Cost-Aware Push-Down Compute', 
       'Semantic RAG for 1000+ Table Schemas', 
       'Native Snowflake RBAC Security',
-      'Zero-Copy Clone & Time Travel Querying'
+      'Vectorized Embedded Search'
     ],
-    painPoints: {
-      title: 'Why Snowflake BI Gets Too Expensive',
-      points: [
-        'Non-technical users using drag-and-drop BI tools often generate massive, unoptimized "SELECT *" queries that burn through compute credits.',
-        'Navigating enterprise schemas with thousands of tables and views causes LLMs to hallucinate or hit token limits instantly.',
-        'Pulling large datasets out of Snowflake into external BI tools incurs heavy data egress fees.'
+    technicalArchitecture: {
+      connectionMethod: 'Secure authentication via Snowflake Account Locator and specific Warehouse targeting.',
+      computeModel: 'Extreme Push-Down: Arcli acts as a highly optimized query orchestrator, leveraging Snowflake’s native elastic compute for all aggregations.',
+      securityProtocol: 'Inherits your native Snowflake Role-Based Access Control (RBAC). Arcli can only query what its designated role is permitted to see.'
+    },
+    dialectCapabilities: {
+      supportedNativeFeatures: [
+        'Time Travel and Zero-Copy Clone querying',
+        'Native Snowflake JSON parsing (FLATTEN, PARSE_JSON)',
+        'Highly specific Snowflake date functions (DATEADD, DATEDIFF)'
       ],
-      solution: 'Arcli solves the Snowflake scale problem. We use Vector RAG to selectively inject only the metadata of the 3-5 necessary tables into the AI prompt. The AI then writes highly explicit, column-specific SQL (push-down compute), saving you massive amounts of credits.'
+      aiOptimizations: 'Arcli’s engine is programmed for cost-efficiency. It aggressively avoids "SELECT *" patterns, utilizing explicit column declarations to minimize Snowflake compute credits and scanning costs.'
+    },
+    workflowTransformation: {
+      beforeArcli: [
+        'Visual BI tools frequently generate unoptimized queries that consume excessive Snowflake warehouse credits.',
+        'Passing enterprise schemas (thousands of tables) into standard LLMs results in token exhaustion and hallucinations.',
+        'Extracting massive data sets into external visualization layers incurs high data egress fees.'
+      ],
+      withArcli: [
+        'Cost-aware SQL generation ensures minimum necessary bytes are scanned per query.',
+        'Context-Aware Vector RAG dynamically injects only the metadata of the 3-5 relevant tables required for the query.',
+        'Zero-Data Movement ensures data stays within Snowflake; only aggregated visual metadata is returned to the client.'
+      ]
     },
     steps: [
-      { name: '1. Create Read-Only Role', text: 'Create a dedicated, scoped Arcli read-only role in your Snowflake instance.' },
-      { name: '2. Connect Warehouse', text: 'Input your Account Locator, Warehouse, and Database parameters.' },
-      { name: '3. Analyze at Scale', text: 'Let Arcli write the optimized SQL while Snowflake handles the heavy compute lifting securely.' }
+      { name: '1. Scoped Role Creation', text: 'Configure a dedicated, read-only Arcli role within Snowflake.' },
+      { name: '2. Connect Environment', text: 'Input your Account Locator, target Warehouse, and Database.' },
+      { name: '3. Optimized Execution', text: 'Generate explicit, dialect-perfect SQL using conversational commands.' }
     ],
     realExample: {
       query: "Analyze our cloud cost table. Show me the total credits used by warehouse name over the last 7 days, excluding the 'ADMIN_WH'.",
@@ -210,28 +237,15 @@ WHERE START_TIME >= DATEADD(DAY, -7, CURRENT_DATE())
 GROUP BY 1, 2
 ORDER BY 2 DESC, 3 DESC;`,
       output: "Multi-Series Line Chart",
-      insight: "The 'DATA_SCIENCE_WH' consumed 450 credits on Tuesday, indicating a massive model training run that needs review."
-    },
-    comparison: {
-      competitor: 'Snowflake Snowsight (Native UI)',
-      competitorFlaws: [
-        'Requires deep knowledge of Snowflake-specific SQL syntax and functions.',
-        'Dashboards are highly static and difficult to share externally.',
-        'No conversational interface for rapid ad-hoc data discovery.'
-      ],
-      arcliWins: [
-        'Conversational interface translates English directly into Snowflake SQL.',
-        'Renders results into highly interactive, shareable React-Vega dashboards.',
-        'Maintains state across chat turns for iterative, deep-dive data exploration.'
-      ]
+      insight: "Compute anomalies identified seamlessly using explicit, cost-efficient querying."
     },
     useCases: [
-      { title: 'Executive Data Democratization', description: 'Allow C-Suite executives to query petabytes of Snowflake data lakes securely via chat, bypassing the BI queue.' },
-      { title: 'Financial Operations (FinOps)', description: 'Instantly build dashboards tracking Snowflake credit consumption and cost allocation across different departments.' }
+      { title: 'Executive Data Access', description: 'Enable enterprise leaders to query petabyte-scale data clouds securely via chat, bypassing engineering bottlenecks.' },
+      { title: 'Financial Operations (FinOps)', description: 'Deploy instant dashboards tracking Snowflake credit consumption and cross-departmental chargebacks.' }
     ],
     faqs: [
-      { q: 'Does Arcli pull my raw data out of Snowflake?', a: 'No. The heavy aggregation compute is pushed down into your Snowflake warehouse. We only retrieve the highly compressed, final aggregated result sets (via Parquet) for in-browser visualization.' },
-      { q: 'How do you handle massive enterprise schemas?', a: 'We utilize advanced semantic routing. Instead of cramming your entire schema into an LLM, we generate embeddings for your tables. When a question is asked, we perform a vector search to pull only the relevant table metadata, preventing token bloat.' }
+      { q: 'How does Arcli handle schemas with thousands of tables?', a: 'We employ High-Dimensional Vector Routing. Rather than passing your entire schema to an LLM, we generate embeddings for your tables. A semantic search pulls only the strictly necessary table metadata for any given query, preventing token bloat.' },
+      { q: 'Does Arcli integrate with our existing dbt models?', a: 'Yes. Arcli reads your `schema.yml` files, seamlessly inheriting the descriptions and relationships modeled by your data engineering team in dbt.' }
     ],
     relatedSlugs: ['postgresql-ai-analytics', 'bigquery-ai-analytics', 'natural-language-to-sql']
   },
@@ -239,9 +253,9 @@ ORDER BY 2 DESC, 3 DESC;`,
   'bigquery-ai-analytics': {
     type: 'integration',
     title: 'Google BigQuery AI Analytics & Dashboards | Arcli',
-    description: 'Connect Arcli to Google BigQuery. Run AI-generated analytics on petabytes of data, easily unpack arrays, and build instant dashboards with zero data movement.',
-    h1: 'Native AI Intelligence for Google BigQuery',
-    subtitle: 'Harness the massive compute power of BigQuery with an intuitive conversational AI that natively understands how to UNNEST arrays and optimize partition scanning.',
+    description: 'Connect Arcli to Google BigQuery. Leverage an AI engine specifically trained to UNNEST complex structs, optimize partition scanning, and control query costs.',
+    h1: 'Structural AI Intelligence for BigQuery',
+    subtitle: 'Harness BigQuery’s massive scale with an AI that natively unwraps nested arrays and enforces strict partition scanning guardrails.',
     icon: <Server className="w-12 h-12 text-blue-600 mb-6" />,
     features: [
       'Native ARRAY and STRUCT Unnesting', 
@@ -249,22 +263,38 @@ ORDER BY 2 DESC, 3 DESC;`,
       'Cost Control & Partition Guardrails',
       'Push-Down Columnar Compute'
     ],
-    painPoints: {
-      title: 'The Headache of BigQuery Data Structures',
-      points: [
-        'Google Analytics 4 (GA4) and Firebase exports to BigQuery use deeply nested RECORD and ARRAY structures that are incredibly difficult for standard analysts to UNNEST.',
-        'Accidental queries that scan non-partitioned petabyte tables can result in surprise $1,000+ cloud bills instantly.',
-        'Connecting BigQuery to Looker Studio results in horribly slow, cached dashboards.'
+    technicalArchitecture: {
+      connectionMethod: 'Secure authentication via scoped Google Cloud IAM Service Account JSON keys.',
+      computeModel: 'BigQuery API Push-Down: Arcli utilizes the native BigQuery REST API to execute complex workloads on GCP architecture.',
+      securityProtocol: 'Enforces strict adherence to GCP IAM permissions. Supports VPC Service Controls for enterprise perimeters.'
+    },
+    dialectCapabilities: {
+      supportedNativeFeatures: [
+        'Advanced UNNEST capabilities for REPEATED and STRUCT fields',
+        'Partition and Clustering filter enforcement (_TABLE_SUFFIX, _PARTITIONTIME)',
+        'Native BigQuery ML model invocation via SQL'
       ],
-      solution: 'Arcli is purpose-built for BigQuery. Our AI is explicitly trained on BigQuery Standard SQL, seamlessly writing the UNNEST logic for complex structs. Furthermore, our query planner enforces partition filters to guarantee cost-control before execution.'
+      aiOptimizations: 'Arcli’s query planner is optimized for GCP billing economics. It is programmatically forced to utilize partition keys and explicit column selection, strictly minimizing the bytes scanned per execution.'
+    },
+    workflowTransformation: {
+      beforeArcli: [
+        'Exports from GA4 or Firebase utilize deeply nested ARRAY structures that are exceptionally difficult to unwrap manually.',
+        'Accidental queries scanning unpartitioned petabyte tables can generate severe cloud billing spikes.',
+        'Connecting massive datasets to legacy visualization tools results in heavy latency and slow dashboard load times.'
+      ],
+      withArcli: [
+        'The generative engine seamlessly authors the necessary UNNEST logic based on standard conversational requests.',
+        'Mandated partition filters guarantee maximum cost-control before a query is ever executed.',
+        'Sub-second visual rendering is achieved by pushing the heavy math to BigQuery and rendering only the aggregated output via WebAssembly.'
+      ]
     },
     steps: [
-      { name: '1. Authenticate with GCP', text: 'Connect securely using a scoped Google Cloud Service Account JSON key.' },
-      { name: '2. Map Datasets', text: 'Select which BigQuery datasets and materialized views you want to expose to the AI engine.' },
-      { name: '3. Query at Scale', text: 'Arcli writes the complex SQL and pushes the heavy lifting to Google\'s infrastructure.' }
+      { name: '1. IAM Authentication', text: 'Connect utilizing a secure Google Cloud Service Account credential.' },
+      { name: '2. Dataset Targeting', text: 'Specify which BigQuery datasets and materialized views are exposed to the AI router.' },
+      { name: '3. Orchestrated Compute', text: 'Arcli authors the complex nested SQL and pushes the processing layer to Google.' }
     ],
     realExample: {
-      query: "Analyze our GA4 BigQuery export. Show me the total number of 'purchase' events and total revenue, grouped by the device category.",
+      query: "Analyze our GA4 export. Show me the total purchases and revenue, grouped by device category for the last 30 days.",
       sql: `SELECT 
   device.category AS device_category,
   COUNT(*) AS total_purchases,
@@ -275,28 +305,15 @@ WHERE event_name = 'purchase'
 GROUP BY 1
 ORDER BY 3 DESC;`,
       output: "Donut Chart & Metric Scorecard",
-      insight: "Mobile devices drove 65% of total purchases, but Desktop users had a 40% higher Average Order Value (AOV)."
-    },
-    comparison: {
-      competitor: 'Looker Studio (Native GCP Integration)',
-      competitorFlaws: [
-        'Notoriously slow rendering times, especially when joining massive datasets.',
-        'Requires complex, manual data blending to achieve simple cross-table metrics.',
-        'UI feels incredibly dated and lacks modern interactive charting capabilities.'
-      ],
-      arcliWins: [
-        'Zero-latency charting. BigQuery crunches the data, Arcli renders it instantly via WebAssembly.',
-        'AI completely automates the cross-table JOINs and data blending.',
-        'Modern, high-performance Vega visualizations.'
-      ]
+      insight: "Nested GA4 event parameters unpacked flawlessly while adhering to strict _TABLE_SUFFIX partition constraints."
     },
     useCases: [
-      { title: 'GA4 / Firebase Analytics', description: 'Easily parse through complex, nested Google Analytics 4 event streams to extract precise conversion funnels without fighting the GA4 UI.' },
-      { title: 'Massive Log Analysis', description: 'Search and aggregate across millions of server logs or telemetry data streams instantly using plain English parameters.' }
+      { title: 'GA4 / Firebase Telemetry', description: 'Parse complex Google Analytics 4 event streams to extract precise conversion funnels without navigating the rigid GA4 UI.' },
+      { title: 'Petabyte Log Aggregation', description: 'Execute semantic searches across millions of server logs or event streams utilizing natural language parameters.' }
     ],
     faqs: [
-      { q: 'Will this cause my GCP bill to spike with accidental full scans?', a: 'No. Arcli\'s semantic engine is heavily optimized for BigQuery cost-control. The AI is instructed to always utilize partition keys (like _TABLE_SUFFIX) and explicit column selection to absolutely minimize the bytes scanned per query.' },
-      { q: 'Does Arcli store my BigQuery data?', a: 'No. We utilize a zero-data-movement architecture. Your data remains securely in Google Cloud. Arcli only orchestrates the SQL and retrieves the final, aggregated rows to render the visual charts.' }
+      { q: 'How does Arcli prevent accidental full-table scans?', a: 'Arcli’s semantic layer is structurally mandated to identify partitioned tables. If a partition exists, the AI is forced to inject a date or boundary filter into the WHERE clause, ensuring runaway billing events do not occur.' },
+      { q: 'Is my BigQuery data stored by Arcli?', a: 'No. Your raw data remains securely within your Google Cloud perimeter. Arcli acts purely as a stateless orchestration engine, generating the SQL and retrieving only the lightweight result set.' }
     ],
     relatedSlugs: ['snowflake-ai-analytics', 'google-analytics-ai-dashboard', 'natural-language-to-sql']
   }

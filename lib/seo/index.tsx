@@ -1,7 +1,6 @@
-// lib/seo/index.tsx
 import React from 'react';
 
-// Modular Silo Imports
+// Master Type Imports from our specialized silos
 import { coreFeatures } from './core-features';
 import { textToSqlFeatures } from './text-to-sql';
 import { fileAnalysis } from './file-analysis';
@@ -9,48 +8,32 @@ import { databaseIntegrations } from './databaseIntegrations';
 import { saasIntegrations } from './saas-integrations';
 import { competitorComparisons } from './competitorComparisons';
 import { howToGuides } from './guides';
-import { dashboardTemplates } from './templates';
+import { dashboardTemplates, TemplateBlueprint } from './templates';
 
-// --- 1. Type Safety & Interfaces ---
+// --- 1. The Polymorphic Registry System ---
 
 /**
- * Arclis SEO System Configuration Interface.
- * Marked entirely as `readonly` to enforce strict functional immutability 
- * during Next.js static generation and client hydration.
+ * Since each SEO silo now has a unique architectural schema (UI design),
+ * we define a union type. This fixes the "property missing" errors 
+ * and enables Type-Safe component rendering based on the 'type' field.
  */
-export interface SEOPageData {
-  readonly type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
-  readonly title: string;
-  readonly description: string;
-  readonly h1: string;
-  readonly subtitle: string;
-  readonly icon: React.ReactElement;
-  readonly features: readonly string[];
-  readonly steps: readonly { 
-    readonly name: string; 
-    readonly text: string; 
-  }[];
-  readonly useCases: readonly { 
-    readonly title: string; 
-    readonly description: string; 
-  }[];
-  readonly faqs: readonly { 
-    readonly q: string; 
-    readonly a: string; 
-  }[];
-  readonly comparison?: { 
-    readonly competitor: string; 
-    readonly arcliWins: readonly string[]; // Synchronized with rebranding
-    readonly competitorFlaws: readonly string[]; 
-  };
-  readonly relatedSlugs: readonly string[];
-}
+export type SEOPageData = 
+  | typeof coreFeatures[keyof typeof coreFeatures]
+  | typeof textToSqlFeatures[keyof typeof textToSqlFeatures]
+  | typeof fileAnalysis[keyof typeof fileAnalysis]
+  | typeof databaseIntegrations[keyof typeof databaseIntegrations]
+  | typeof saasIntegrations[keyof typeof saasIntegrations]
+  | typeof competitorComparisons[keyof typeof competitorComparisons]
+  | typeof howToGuides[keyof typeof howToGuides]
+  | TemplateBlueprint; // Explicitly uses the TemplateBlueprint from templates.tsx
 
 // --- 2. Data Aggregation (The Registry) ---
 
 /**
- * Combined SEO Pages - Main Export
- * Merges all modularized category records into a single O(1) lookup object.
+ * Main Registry lookup.
+ * Uses 'any' for the record value only during the merge to prevent 
+ * deep-nested inheritance conflicts, but casts back to our Union 
+ * for safe consumption in the app.
  */
 export const seoPages: Record<string, SEOPageData> = {
   ...coreFeatures,
@@ -61,11 +44,11 @@ export const seoPages: Record<string, SEOPageData> = {
   ...competitorComparisons,
   ...howToGuides,
   ...dashboardTemplates
-};
+} as Record<string, SEOPageData>;
 
 /**
- * Categorized Export
- * For silo-based internal linking and categorized sitemap generation.
+ * Silo-Based Registry.
+ * Used for generating the /sitemap.xml and category-specific navigations.
  */
 export const seoPagesByCategory = {
   coreFeatures,
@@ -80,40 +63,44 @@ export const seoPagesByCategory = {
 
 export type SEOCategory = keyof typeof seoPagesByCategory;
 
-// --- 3. High-Performance Selectors & Utilities ---
+// --- 3. High-Performance Selectors ---
 
 /**
- * Retrieve metadata for a specific slug with fallback.
- * O(1) time complexity.
+ * Retrieve metadata for a specific slug.
+ * The calling component should check 'page.type' to decide which UI layout to use.
  */
 export const getPage = (slug: string): SEOPageData | undefined => {
   return seoPages[slug];
 };
 
 /**
- * Get all unique page slugs for Next.js static path generation.
- * Used inside `generateStaticParams()`.
+ * Returns all slugs for Next.js Dynamic Routes (generateStaticParams).
  */
 export const getAllSlugs = (): string[] => {
   return Object.keys(seoPages);
 };
 
 /**
- * Get all pages of a specific type (e.g., all 'comparison' pages).
- * Useful for building dynamic index pages or sidebar navigation.
+ * Type-Guard Utility.
+ * Helps the frontend identify which specific design blueprint is being used.
  */
-export const getPagesByType = (type: SEOPageData['type']): Record<string, SEOPageData> => {
-  return Object.entries(seoPages).reduce((acc, [slug, page]) => {
-    if (page.type === type) {
-      acc[slug] = page;
-    }
-    return acc;
-  }, {} as Record<string, SEOPageData>);
+export function isTemplatePage(page: SEOPageData): page is TemplateBlueprint {
+  return page.type === 'template';
+}
+
+/**
+ * Retrieves all pages belonging to a specific programmatic silo.
+ */
+export const getPagesByCategory = (category: SEOCategory) => {
+  return seoPagesByCategory[category];
 };
 
 /**
- * Access pages grouped by their specific programmatic category.
+ * Utility for SEO Internal Linking.
+ * Suggests related pages within the same architectural silo to boost domain authority.
  */
-export const getPagesByCategory = (category: SEOCategory): Record<string, SEOPageData> => {
-  return seoPagesByCategory[category];
+export const getRelatedPages = (slugs: string[]): SEOPageData[] => {
+  return slugs
+    .map(slug => seoPages[slug])
+    .filter((page): page is SEOPageData => !!page);
 };

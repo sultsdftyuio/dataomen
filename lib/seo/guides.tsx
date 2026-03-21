@@ -1,10 +1,13 @@
+// lib/seo/guides.tsx
 import React from 'react';
 import { TrendingUp, FileText, LayoutTemplate } from 'lucide-react';
 
 /**
  * SEOPageData Interface
- * Upgraded to the "Search-Intent Machine" schema to capture high-intent users
- * looking for tactical solutions to specific analytical bottlenecks.
+ * Upgraded to the "Tactical Execution Blueprint" schema. 
+ * Designed for high-intent users looking for concrete, step-by-step 
+ * methodological solutions to specific analytical hurdles. Focuses on 
+ * technical execution, strategy, and measurable business impact.
  */
 export type SEOPageData = {
   type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
@@ -14,6 +17,18 @@ export type SEOPageData = {
   subtitle: string;
   icon: React.ReactElement;
   features: string[];
+  challengeContext: {
+    traditionalMethod: string;
+    bottlenecks: string[];
+  };
+  executionStrategy: {
+    approach: string;
+    technicalEnablers: string[];
+  };
+  businessImpact: {
+    metricImprovements: string[];
+    workflowOptimization: string;
+  };
   steps: { name: string; text: string }[];
   realExample?: {
     query: string;
@@ -21,18 +36,8 @@ export type SEOPageData = {
     output: string;
     insight: string;
   };
-  painPoints?: {
-    title: string;
-    points: string[];
-    solution: string;
-  };
   useCases: { title: string; description: string }[];
   faqs: { q: string; a: string }[];
-  comparison?: { 
-    competitor: string; 
-    arcliWins: string[]; 
-    competitorFlaws: string[]; 
-  };
   relatedSlugs: string[];
 };
 
@@ -40,29 +45,43 @@ export const howToGuides: Record<string, SEOPageData> = {
   'how-to-analyze-sales-data': {
     type: 'guide',
     title: 'How to Analyze Sales Data with AI | Arcli Analytics',
-    description: 'A step-by-step guide on analyzing sales data, pipeline velocity, and rep performance using high-performance AI and natural language.',
-    h1: 'How to Analyze Sales Data Without Excel',
-    subtitle: 'Learn how to automatically extract win rates, pipeline velocity, and forecasting metrics using vectorized AI operations instead of broken spreadsheets.',
+    description: 'A tactical guide to analyzing sales data, pipeline velocity, and rep performance using high-performance AI and natural language generation.',
+    h1: 'Executing Advanced Sales Analytics via AI',
+    subtitle: 'Extract win rates, pipeline velocity, and forecasting metrics using vectorized AI operations, bypassing the limitations of static spreadsheet models.',
     icon: <TrendingUp className="w-12 h-12 text-green-500 mb-6" />,
     features: [
       'Vectorized Pipeline Velocity Formulas', 
       'Automated Win/Loss Cohort Tracking', 
       'Linear Algebra Forecasting Models',
-      'Instant CRM Integration (Salesforce/HubSpot)'
+      'Instant CRM Database Integration'
     ],
-    painPoints: {
-      title: 'Why Excel is Killing Your Sales Forecasting',
-      points: [
-        'Exporting CRM data to Excel immediately makes it stale and breaks version control.',
-        'Calculating true pipeline velocity requires complex snapshotting that spreadsheets cannot handle.',
-        'Sales operations teams spend 80% of their time building reports instead of analyzing the outcomes.'
+    challengeContext: {
+      traditionalMethod: 'Heavy reliance on static CSV exports from CRMs (Salesforce/HubSpot) loaded into local spreadsheet applications for macro-based analysis.',
+      bottlenecks: [
+        'Exporting live CRM data instantly creates disconnected, stale snapshots.',
+        'Calculating true pipeline velocity requires complex historical snapshotting that standard grid software struggles to process.',
+        'Sales operations teams dedicate excessive weekly cycles to maintaining reporting infrastructure rather than driving strategy.'
+      ]
+    },
+    executionStrategy: {
+      approach: 'Direct integration with your CRM read-replica or data warehouse, utilizing semantic AI to translate natural language into dynamic, mathematically precise SQL forecasting models.',
+      technicalEnablers: [
+        'Direct API/Warehouse synchronization',
+        'Vectorized Exponential Moving Average (EMA) forecasting',
+        'Context-Aware NLP schema mapping'
+      ]
+    },
+    businessImpact: {
+      metricImprovements: [
+        'Real-time pipeline velocity and stage-conversion tracking.',
+        'Instantaneous cohort win-rate visibility by lead source.'
       ],
-      solution: 'Arcli connects directly to your CRM or data warehouse. Our AI understands your specific sales schema, allowing you to ask complex forecasting and velocity questions in plain English and get mathematically precise answers instantly.'
+      workflowOptimization: 'Shifts RevOps and Sales Operations teams from manual report builders to strategic revenue analysts, automating the extraction of board-level metrics.'
     },
     steps: [
-      { name: '1. Connect Your Data', text: 'Securely connect your Salesforce, HubSpot, or SQL database. We pull the raw data into our high-speed columnar engine.' },
-      { name: '2. Ask for Velocity', text: 'Type: "Calculate our pipeline velocity by sales rep for Q3." The Semantic Router instantly maps your schema to the formula.' },
-      { name: '3. Generate Forecast', text: 'Ask the AI to project Q4 revenue based on historical win rates and open pipeline using precision EMA calculations.' }
+      { name: '1. Establish Connection', text: 'Securely connect your CRM warehouse (e.g., Snowflake, Postgres). Arcli indexes the raw opportunity data into its high-speed semantic engine.' },
+      { name: '2. Conversational Extraction', text: 'Request complex metrics naturally (e.g., "Calculate pipeline velocity by sales rep for Q3"). The router maps your schema to the correct formula.' },
+      { name: '3. Generate Forecasts', text: 'Command the AI to project Q4 revenue based on historical win rates and open pipeline utilizing precision calculations.' }
     ],
     realExample: {
       query: "Calculate our Win Rate and Average Deal Size for the last 4 quarters, grouped by Lead Source.",
@@ -77,48 +96,62 @@ GROUP BY 1, 2
 HAVING COUNT(id) > 10
 ORDER BY 1 DESC, 3 DESC;`,
       output: "Multi-Series Line Chart + Data Table",
-      insight: "Inbound Organic search yields a 38% win rate with a $45k average deal size, significantly outperforming Outbound SDR efforts."
+      insight: "Inbound Organic search yields a 38% win rate with a $45k average deal size, statistically outperforming Outbound SDR pipelines."
     },
     useCases: [
-      { title: 'Sales Operations', description: 'Automate your weekly sales forecasting models and CRO board decks without writing complex spreadsheet macros.' },
-      { title: 'RevOps Alignment', description: 'Instantly bridge the gap between marketing spend and closed-won sales by joining ad data with CRM pipeline.' }
+      { title: 'CRO Board Reporting', description: 'Automate weekly sales forecasting models and executive presentations without writing complex spreadsheet macros or VLOOKUPs.' },
+      { title: 'RevOps Alignment', description: 'Bridge the gap between marketing spend and closed-won sales by using AI to seamlessly join ad-spend tables with CRM pipeline data.' }
     ],
     faqs: [
-      { q: 'What metrics should I track for sales analysis?', a: 'To move beyond basic revenue, focus on Win Rate, Average Deal Size, Sales Cycle Length (in days), and Pipeline Velocity. Arcli calculates these natively.' },
-      { q: 'Can I combine quota spreadsheets with my live CRM data?', a: 'Yes. You can upload your static quota/commission CSVs into Arcli and ask the AI to join it against your live CRM database to track attainment in real-time.' }
+      { q: 'What advanced metrics can Arcli calculate natively?', a: 'Beyond basic revenue totals, Arcli\'s engine is trained to calculate Win Rate, Average Deal Size, Sales Cycle Length (in days), and aggregate Pipeline Velocity using standard SQL.' },
+      { q: 'Can I combine static quota spreadsheets with live CRM data?', a: 'Yes. You can upload static quota/commission CSVs into your Arcli workspace and command the AI to execute cross-joins against your live CRM database to track attainment.' }
     ],
-    relatedSlugs: ['analyze-salesforce-data', 'sales-dashboard-template']
+    relatedSlugs: ['how-to-build-dashboard-from-csv', 'sales-dashboard-template']
   },
 
   'how-to-build-dashboard-from-csv': {
     type: 'guide',
     title: 'How to Build a Dashboard from a CSV File | Arcli',
-    description: 'Learn how to instantly turn a massive, static CSV or Excel file into a live, interactive business dashboard using AI and in-browser WebAssembly.',
-    h1: 'Turn Any CSV into an Interactive Dashboard in 60 Seconds',
-    subtitle: 'Stop crashing Excel with million-row datasets. Upload your CSV and let our ephemeral, in-browser WebAssembly engine (DuckDB) generate a blazing-fast analytical suite.',
+    description: 'Learn the tactical methodology to turn massive, static CSV files into live, interactive business dashboards using in-browser WebAssembly.',
+    h1: 'Building Dashboards from Massive CSVs',
+    subtitle: 'Deploy ephemeral, in-browser WebAssembly (DuckDB) to convert massive static datasets into blazing-fast, interactive analytical suites.',
     icon: <FileText className="w-12 h-12 text-blue-400 mb-6" />,
     features: [
-      'In-Browser DuckDB Processing (Zero Server Lag)', 
-      'Auto-Pivot via Natural Language', 
-      'Secure Tenant-Isolated Link Sharing',
+      'In-Browser DuckDB Processing', 
+      'Conversational Pivot Generation', 
+      'Secure Tenant-Isolated Sharing',
       'Handles 5M+ Rows Effortlessly'
     ],
-    painPoints: {
-      title: 'The 1-Million Row Excel Limit',
-      points: [
-        'Excel and Google Sheets freeze, crash, or refuse to open CSV files with millions of rows.',
-        'Building pivot tables on large datasets is painfully slow and prone to errors.',
-        'Sharing static files via email creates massive security risks and "version_final_v3.xlsx" confusion.'
+    challengeContext: {
+      traditionalMethod: 'Attempting to force large datasets into standard grid software (Excel/Sheets) or requiring data engineers to stand up temporary database tables for visualization.',
+      bottlenecks: [
+        'Grid-based spreadsheet applications face hard physical memory limits around 1.04 million rows.',
+        'Executing pivot calculations on datasets exceeding 100k rows typically freezes the standard UI thread.',
+        'Distributing raw CSVs via email poses severe data security risks and version-control fragmentation.'
+      ]
+    },
+    executionStrategy: {
+      approach: 'Client-side columnar processing. Arcli ingests the CSV, converts it to highly compressed Parquet format in-memory, and utilizes WebAssembly to execute SQL locally.',
+      technicalEnablers: [
+        'Embedded WebAssembly compute (WASM)',
+        'Parquet columnar compression',
+        'Zero-retention ephemeral architecture'
+      ]
+    },
+    businessImpact: {
+      metricImprovements: [
+        'Process and visualize 5M+ rows without UI latency.',
+        'Eliminates server-side upload wait times and processing queues.'
       ],
-      solution: 'Arcli bypasses spreadsheet limits entirely. When you drop a CSV into Arcli, we convert it into an optimized Parquet file and query it using an in-browser DuckDB instance. This means you can query 5 million rows instantly, securely, entirely on your machine.'
+      workflowOptimization: 'Empowers operators to visualize and distribute insights from massive datasets instantly, without requiring intervention from data engineering or IT.'
     },
     steps: [
-      { name: '1. Upload the File', text: 'Drag and drop your massive CSV into the secure Arcli interface. Data is processed locally for maximum privacy.' },
-      { name: '2. Conversational Analysis', text: 'Our semantic engine reads the headers. Simply type what you want to see (e.g., "Show me revenue by region and product category").' },
-      { name: '3. Publish & Share', text: 'Click "Pin" to build your dashboard layout, then share a secure, live-updating link with your team.' }
+      { name: '1. Local Ingestion', text: 'Drag and drop massive CSVs into the interface. Data is processed locally within the browser sandbox for maximum privacy.' },
+      { name: '2. Semantic Pivoting', text: 'The engine reads the headers. Describe your visual intent (e.g., "Show revenue by region and product category") to generate the UI.' },
+      { name: '3. Publish & Distribute', text: 'Pin the generated React-Vega charts to a dashboard layout, securing a live-updating link for stakeholder distribution.' }
     ],
     realExample: {
-      query: "Analyze this 2GB transaction log CSV. Show me the top 10 store locations by total sales volume, filtering out refunded or failed transactions.",
+      query: "Analyze this 2GB transaction log CSV. Show me the top 10 store locations by total sales volume, filtering out refunded transactions.",
       sql: `-- Executed instantly in-browser via WebAssembly DuckDB
 SELECT 
   store_location, 
@@ -129,45 +162,59 @@ GROUP BY 1
 ORDER BY 2 DESC
 LIMIT 10;`,
       output: "Interactive Horizontal Bar Chart",
-      insight: "The Downtown Chicago location generated $2.4M, outpacing the flagship NY store despite 40% less foot traffic."
+      insight: "Automated extraction revealed the Downtown Chicago location generated $2.4M, outpacing the NY flagship store."
     },
     useCases: [
-      { title: 'Ad-Hoc Financial Reporting', description: 'Quickly visualize massive ledger exports from Netsuite or Quickbooks to spot anomalies without heavy BI setup.' },
-      { title: 'Marketing Campaign Logs', description: 'Drop in massive raw event logs from your ad platforms to build instant ROAS dashboards.' }
+      { title: 'Ad-Hoc Financial Auditing', description: 'Instantly visualize massive general ledger exports from ERPs (Netsuite/SAP) to spot transactional anomalies without heavy BI setup.' },
+      { title: 'Telemetry & Log Analysis', description: 'Ingest raw event logs from ad platforms or server endpoints to construct instant, shareable monitoring dashboards.' }
     ],
     faqs: [
-      { q: 'Is there a file size limit for CSV uploads?', a: 'Because Arcli processes CSVs using in-browser WebAssembly (DuckDB) and converts them to highly compressed Parquet formats, you can easily process files up to 2GB directly in your browser without waiting for server uploads.' },
-      { q: 'Is my uploaded data secure?', a: 'Yes. Our standard CSV processor runs entirely client-side. Your raw data never touches our backend servers, ensuring strict compliance with data privacy policies.' }
+      { q: 'Is there a file size limit for CSV ingestion?', a: 'Because Arcli processes CSVs using client-side WebAssembly and converts them to highly compressed Parquet binaries, you can comfortably process files up to 2GB directly in the browser.' },
+      { q: 'Is my uploaded data secure?', a: 'Strictly yes. Standard CSV processing executes entirely client-side. The raw data never touches our backend servers, ensuring absolute compliance with enterprise data privacy policies.' }
     ],
-    relatedSlugs: ['how-to-build-sql-dashboard', 'natural-language-to-sql']
+    relatedSlugs: ['how-to-build-sql-dashboard', 'analyze-csv-with-ai']
   },
 
   'how-to-build-sql-dashboard': {
     type: 'guide',
     title: 'How to Build a SQL Dashboard Without Coding | Arcli',
-    description: 'Learn how to connect your Postgres or Snowflake database and build an automated, live-updating SQL dashboard using context-aware AI.',
-    h1: 'How to Build a SQL Dashboard in Minutes',
-    subtitle: 'Stop writing boilerplate SQL and managing brittle semantic layers. Let Arcli\'s RAG AI write highly-optimized queries and build your dashboard interactively.',
+    description: 'A methodological guide to connecting your database and building automated, real-time SQL dashboards using Context-Aware Generative AI.',
+    h1: 'Automating SQL Dashboard Construction',
+    subtitle: 'Bypass boilerplate query writing and brittle semantic layers. Utilize Context-Aware RAG to generate optimized SQL and interactive layouts dynamically.',
     icon: <LayoutTemplate className="w-12 h-12 text-indigo-400 mb-6" />,
     features: [
-      'Auto-Generated, Highly Optimized SQL', 
+      'Auto-Generated, Optimized SQL', 
       'Direct Database Read-Replica Syncing', 
       'Interactive Vectorized Cross-Filtering',
-      'Context-Aware Schema Routing (Zero Hallucinations)'
+      'Context-Aware Schema Routing'
     ],
-    painPoints: {
-      title: 'The Traditional BI Dashboard Bottleneck',
-      points: [
-        'Setting up a dashboard in Tableau or Looker requires weeks of defining semantic layers (LookML) and data models.',
-        'Business users cannot answer their own ad-hoc questions and constantly interrupt the data engineering team.',
-        'Traditional BI dashboards cache heavily, meaning your "live" dashboard is often 24 hours out of date.'
+    challengeContext: {
+      traditionalMethod: 'Centralized BI architectures where data engineers build rigid, predefined dashboard views based on anticipated business questions using proprietary modeling languages.',
+      bottlenecks: [
+        'Deploying a traditional dashboard requires weeks of defining semantic layers (e.g., LookML) and ETL pipelines.',
+        'Ad-hoc stakeholder requests fall outside predefined dashboard filters, creating severe engineering ticket bottlenecks.',
+        'Server-side caching layers introduce latency, resulting in dashboards that display stale, 24-hour-old data.'
+      ]
+    },
+    executionStrategy: {
+      approach: 'A zero-setup intelligence layer that dynamically maps replica schemas and utilizes generative AI to author and execute production-grade SQL upon natural language requests.',
+      technicalEnablers: [
+        'Context-Aware Semantic Routing',
+        'Read-replica push-down compute',
+        'React-Vega real-time rendering logic'
+      ]
+    },
+    businessImpact: {
+      metricImprovements: [
+        'Drastic reduction in ad-hoc SQL ticket volume for data teams.',
+        'Zero-latency data availability for operational stakeholders.'
       ],
-      solution: 'Arcli is a zero-setup intelligence layer. Point it at your read-replica database. We instantly map the schema relationships. You type questions in English, we execute pristine SQL, and your dashboard updates in real-time.'
+      workflowOptimization: 'Achieves true self-serve analytics by translating operator intent into secure, production-grade SQL instantly, bypassing the central data queue.'
     },
     steps: [
-      { name: '1. Connect Database', text: 'Add your Postgres, MySQL, BigQuery, or Snowflake connection string via our secure, read-only integration layer.' },
-      { name: '2. Ask for Metrics', text: 'Type: "Create a chart showing Daily Active Users alongside our Daily Server Error rate." The RAG engine handles the complex JOINs.' },
-      { name: '3. Pin to Board', text: 'The AI executes the optimized SQL. Click "Pin to Dashboard" to add the resulting interactive charts to your live, multi-tenant workspace.' }
+      { name: '1. Replica Integration', text: 'Securely connect your Postgres, MySQL, BigQuery, or Snowflake read-replica via our read-only integration perimeter.' },
+      { name: '2. Intent Translation', text: 'Command the engine (e.g., "Create a chart showing DAU against Server Error rates"). The RAG engine orchestrates the necessary JOINs.' },
+      { name: '3. Layout Pinning', text: 'The AI executes the optimized SQL and returns a visual asset. Pin the asset to compile a live, multi-tenant workspace.' }
     ],
     realExample: {
       query: "Build a cohort retention matrix showing the percentage of users returning in months 1 through 6, grouped by the month they signed up.",
@@ -190,16 +237,16 @@ WHERE a.activity_month >= c.cohort_month
 GROUP BY 1, 2
 ORDER BY 1, 2;`,
       output: "Interactive Heatmap Matrix",
-      insight: "Month-3 retention dropped from 42% to 28% for the September cohort, indicating a potential issue with the onboarding update released that month."
+      insight: "Complex SQL generation executed flawlessly, revealing a critical Month-3 retention drop-off in the September cohort."
     },
     useCases: [
-      { title: 'Product Analytics', description: 'Quickly spin up dashboards monitoring feature adoption, user drop-off, and DAU/MAU ratios without waiting for a data engineer.' },
-      { title: 'Live Operational Monitoring', description: 'Build screens tracking live inventory levels, support ticket queues, or server health metrics.' }
+      { title: 'Product Analytics & Telemetry', description: 'Quickly deploy dashboards monitoring live feature adoption, funnel drop-off, and DAU/MAU ratios without utilizing data engineering bandwidth.' },
+      { title: 'Operational Command Centers', description: 'Construct real-time screens tracking live inventory levels, support ticket queues, or microservice health metrics.' }
     ],
     faqs: [
-      { q: 'Can I view and edit the underlying SQL?', a: 'Absolutely. Arcli is built for engineers as well as operators. You can inspect, modify, and export the exact SQL queries generated by the AI to ensure total transparency and mathematical precision.' },
-      { q: 'Is it safe to connect to my database?', a: 'Yes. We enforce strict read-only analytical connections. Furthermore, all query executions are wrapped in transaction blocks that proactively reject any INSERT, UPDATE, DELETE, or DROP operations before they reach your server.' }
+      { q: 'Can engineers view and edit the underlying generated SQL?', a: 'Absolutely. Arcli provides full transparency. Engineers can inspect, modify, and export the exact SQL queries generated by the orchestration engine to verify mathematical precision.' },
+      { q: 'Is it safe to connect Arcli directly to my database?', a: 'Yes. We enforce strict read-only analytical connections. Additionally, all AI-generated queries are wrapped in transaction blocks that proactively reject any mutating operations (INSERT, DROP) at the application layer.' }
     ],
-    relatedSlugs: ['postgresql-text-to-sql', 'natural-language-to-sql']
+    relatedSlugs: ['how-to-build-dashboard-from-csv', 'natural-language-to-sql']
   }
 };

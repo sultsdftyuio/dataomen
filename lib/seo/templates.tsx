@@ -1,324 +1,309 @@
-// lib/seo/templates.tsx
 import React from 'react';
-import { LayoutTemplate, DollarSign, Users, ShoppingCart } from 'lucide-react';
+import { LayoutTemplate, DollarSign, Users, ShoppingCart, Activity, ShieldCheck } from 'lucide-react';
 
 /**
- * SEOPageData Interface
- * Standardized for the Arcli high-performance analytical stack.
- * Upgraded to the "Search-Intent Machine" schema with real-world code examples,
- * pain-point targeting, and deep technical FAQs.
+ * TemplateBlueprint Schema
+ * Refined for the Arcli High-Performance Stack.
+ * Fixed property mismatch: 'application' is now correctly typed.
+ * UI Focus: Tactical spec-sheets for analytical workflows.
  */
-export type SEOPageData = {
-  type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
-  title: string;
-  description: string;
-  h1: string;
-  subtitle: string;
-  icon: React.ReactElement;
-  features: string[];
-  steps: { name: string; text: string }[];
-  realExample?: {
-    query: string;
-    sql: string;
-    output: string;
+export type TemplateBlueprint = {
+  id: string;
+  type: 'template';
+  metadata: {
+    title: string;
+    description: string;
+    canonicalDomain: string; // arcli.tech
+  };
+  hero: {
+    h1: string;
+    subtitle: string;
+    icon: React.ReactElement;
+  };
+  technicalStack: {
+    engine: 'DuckDB' | 'Polars' | 'SQL-Pushdown';
+    format: 'Parquet' | 'Columnar' | 'JSONB-Unnested';
+    compute: string;
+  };
+  performanceMetrics: string[];
+  orchestrationWorkflow: {
+    phase: string;
+    action: string;
+  }[];
+  queryArchitecture: {
+    intent: string;
+    vectorizedPattern: string;
+    logicalOutcome: string;
     insight: string;
   };
-  painPoints?: {
+  strategicContext: {
     title: string;
-    points: string[];
-    solution: string;
+    industrialConstraints: string[];
+    arcliEfficiency: string;
   };
-  useCases: { title: string; description: string }[];
-  faqs: { q: string; a: string }[];
-  comparison?: { 
-    competitor: string; 
-    arcliWins: string[]; 
-    competitorFlaws: string[]; 
-  };
-  relatedSlugs: string[];
+  enterpriseApplications: {
+    vertical: string;
+    application: string; // Fixed: Property name now matches object literal
+  }[];
+  governanceAndSecurity: {
+    q: string;
+    a: string;
+  }[];
+  relatedBlueprints: string[];
 };
 
-export const dashboardTemplates: Record<string, SEOPageData> = {
+export const dashboardTemplates: Record<string, TemplateBlueprint> = {
   'sales-dashboard-template': {
+    id: 'sales-blueprint-001',
     type: 'template',
-    title: 'AI Sales Dashboard Template | Arcli Analytics',
-    description: 'Deploy our automated Sales Dashboard template to track win rates, pipeline velocity, and rep performance instantly via high-performance AI and RAG.',
-    h1: 'The Ultimate AI Sales Leadership Dashboard',
-    subtitle: 'Connect your CRM or warehouse and let our semantic AI instantiate a best-in-class sales leadership dashboard using highly optimized, vectorized KPI logic.',
-    icon: <LayoutTemplate className="w-12 h-12 text-indigo-500 mb-6" />,
-    features: [
-      'Vectorized KPI Logic (Win Rates, Cycle Time)', 
-      'Sub-second In-Browser Data Sync', 
-      'Multi-tenant Rep Level Isolation',
-      'Automated Pipeline Snapshotting'
-    ],
-    painPoints: {
-      title: 'Why Native CRM Reporting is Broken',
-      points: [
-        'Salesforce and HubSpot native reports are rigid and require specialized admins to modify.',
-        'Tracking historical pipeline changes (snapshotting) requires expensive add-ons.',
-        'Combining CRM data with external quota or commission sheets in Excel leads to version control nightmares.'
-      ],
-      solution: 'Arcli bypasses clunky CRM report builders. We pull your raw data into our semantic engine and generate dynamic, real-time SQL models to calculate true pipeline velocity and rep efficiency without writing custom code.'
+    metadata: {
+      title: 'AI Sales Dashboard Blueprint | Arcli Analytics',
+      description: 'Deploy pre-configured Sales analytics. Leverage vectorized KPI logic to track pipeline velocity and win-rates with sub-second latency.',
+      canonicalDomain: 'arcli.tech'
     },
-    steps: [
-      { name: '1. Select Template', text: 'Choose the Sales Executive Dashboard template from our AI library.' },
-      { name: '2. Map Data Sources', text: 'Point the template to your Salesforce/HubSpot database via secure read-only connections.' },
-      { name: '3. AI Deployment', text: 'Our RAG engine maps your specific CRM schema to standard sales metrics and instantiates the dashboard.' }
+    hero: {
+      h1: 'The Sales Intelligence Blueprint',
+      subtitle: 'Instantiate a high-performance sales leadership dashboard. Decouple your CRM data from rigid UI constraints using semantic RAG and vectorized SQL orchestration.',
+      icon: <LayoutTemplate className="w-12 h-12 text-indigo-500 mb-6" />
+    },
+    technicalStack: {
+      engine: 'SQL-Pushdown',
+      format: 'Columnar',
+      compute: 'Vectorized Window Functions for Pipeline Snapshotting'
+    },
+    performanceMetrics: [
+      'Vectorized Win-Rate Calculation',
+      'Stateless Pipeline Snapshotting',
+      'Tenant-Isolated Rep Views',
+      'Semantic Fragment Schema Mapping'
     ],
-    realExample: {
-      query: "Show me the win rate percentage by sales rep for the current quarter, excluding leads disqualified in the first stage.",
-      sql: `WITH qualified_opportunities AS (
+    strategicContext: {
+      title: 'Overcoming CRM Ecosystem Rigidity',
+      industrialConstraints: [
+        'Traditional CRM reporting engines rely on hierarchical relational models that struggle with complex cross-object joins.',
+        'Historical pipeline state tracking (snapshotting) often requires heavy manual data movement or third-party middleware.',
+        'Siloed data prevents a unified view of sales performance against external finance or quota spreadsheets.'
+      ],
+      arcliEfficiency: 'Arcli functions as a modular compute layer. By utilizing semantic routing, we map your unique CRM schema to optimized SQL patterns, executing complex aggregations like pipeline velocity in milliseconds.'
+    },
+    orchestrationWorkflow: [
+      { phase: 'Discovery', action: 'Securely link Salesforce/HubSpot via read-only credentials. Arcli maps the schema metadata instantly.' },
+      { phase: 'Hydration', action: 'The AI orchestrator populates pre-configured KPI modules with your specific deal stages and custom fields.' },
+      { phase: 'Execution', action: 'Render interactive Vega-Lite visualizations powered by in-process DuckDB compute.' }
+    ],
+    queryArchitecture: {
+      intent: "Calculate win-rate by sales rep for the current quarter, isolating qualified pipeline.",
+      vectorizedPattern: `WITH qualified_ops AS (
   SELECT owner_id, is_won, is_closed
   FROM opportunities
   WHERE created_at >= DATE_TRUNC('quarter', CURRENT_DATE)
-    AND stage_name != 'Disqualified - Initial'
+    AND stage_name NOT IN ('Initial Inquiry', 'Disqualified')
 )
 SELECT 
   u.name AS sales_rep,
   COUNT(*) FILTER (WHERE o.is_won = TRUE) * 100.0 / NULLIF(COUNT(*) FILTER (WHERE o.is_closed = TRUE), 0) AS win_rate_pct
-FROM qualified_opportunities o
+FROM qualified_ops o
 JOIN users u ON o.owner_id = u.id
-GROUP BY 1
-ORDER BY 2 DESC;`,
-      output: "Ranked Horizontal Bar Chart",
-      insight: "Sarah Jenkins leads with a 42% win rate on highly qualified pipeline."
+GROUP BY 1 ORDER BY 2 DESC;`,
+      logicalOutcome: "High-density Ranked Bar Chart",
+      insight: "Automated isolation of top-performing reps based on high-intent pipeline conversion."
     },
-    comparison: {
-      competitor: 'Salesforce Native Dashboards',
-      competitorFlaws: [
-        'Extremely difficult to join cross-object data without complex Apex code.',
-        'No ability to ask natural language follow-up questions.',
-        'UI feels dated and charting capabilities are highly restricted.'
-      ],
-      arcliWins: [
-        'Flawless cross-table joins automatically handled by schema RAG.',
-        'Interactive chat interface for ad-hoc slicing (e.g., "Filter this by enterprise deals").',
-        'Modern, high-performance Vega charting.'
-      ]
-    },
-    useCases: [
-      { title: 'Executive Visibility', description: 'Give your CRO real-time access to the metrics that matter with mathematical precision, without waiting on RevOps.' },
-      { title: '1-on-1 Rep Coaching', description: 'Filter the entire dashboard context to a single rep instantly during pipeline review meetings.' }
+    enterpriseApplications: [
+      { vertical: 'Sales Operations', application: 'Automate executive forecasting models without the overhead of maintaining complex CRM report types.' },
+      { vertical: 'Revenue Leadership', application: 'Enable ad-hoc, conversational deep-dives into rep-level efficiency during 1-on-1 coaching cycles.' }
     ],
-    faqs: [
-      { q: 'Can I modify the template after deploying?', a: 'Yes. Once deployed, you can use plain English to add, modify, or remove charts. The underlying AI simply rewrites the SQL to match your new requirements.' },
-      { q: 'How does it handle custom CRM fields?', a: 'Our semantic indexer scans your metadata upon connection. It understands your custom fields (e.g., "target_launch_date__c") and seamlessly incorporates them into the LLM context window.' }
+    governanceAndSecurity: [
+      { q: 'How does the template handle custom CRM objects?', a: 'Arcli uses semantic RAG to scan your metadata. It identifies custom __c fields and objects, incorporating them into the query planner to ensure your unique business logic is preserved.' },
+      { q: 'Is my CRM data modified?', a: 'No. Arcli maintains a strict read-only analytical perimeter. We utilize least-privilege access to fetch data for computation without ever altering the source of truth.' }
     ],
-    relatedSlugs: ['how-to-analyze-sales-data', 'analyze-salesforce-data']
+    relatedBlueprints: ['saas-metrics-dashboard-template', 'analyze-salesforce-data']
   },
 
   'saas-metrics-dashboard-template': {
+    id: 'saas-blueprint-002',
     type: 'template',
-    title: 'SaaS Metrics Dashboard Template | Arcli',
-    description: 'Track MRR, ARR, Churn, LTV, and CAC automatically with our AI-powered, high-performance SaaS metrics dashboard template.',
-    h1: 'Automated SaaS Financial Metrics Dashboard',
-    subtitle: 'Stop calculating Net Revenue Retention in brittle Excel sheets. Deploy this template and track the exact health of your SaaS business with linear algebra-based precision.',
-    icon: <DollarSign className="w-12 h-12 text-emerald-500 mb-6" />,
-    features: [
-      'Precise MRR/ARR Waterfall Tracking', 
-      'Vectorized Cohort Retention Analysis', 
-      'Automated CAC Payback Modeling',
-      'Real-Time Subscription Event Streaming'
-    ],
-    painPoints: {
-      title: 'The Nightmare of SaaS Revenue Recognition',
-      points: [
-        'Stripe native dashboards don\'t account for your specific refund policies or custom enterprise contracts.',
-        'Calculating accurate Net Revenue Retention (NRR) requires complex self-joins to track cohort behavior over time.',
-        'Spreadsheets break as soon as you surpass 10,000 monthly active subscriptions.'
-      ],
-      solution: 'Arcli handles the heavy lifting at the database layer. We use advanced window functions and CTEs to partition your revenue streams into exact buckets (New, Expansion, Contraction, Churn) with zero manual data entry.'
+    metadata: {
+      title: 'SaaS Metrics & Revenue Blueprint | Arcli',
+      description: 'Automate MRR, Churn, and LTV tracking. High-precision SaaS financial modeling using window-function orchestration and vectorized compute.',
+      canonicalDomain: 'arcli.tech'
     },
-    steps: [
-      { name: '1. Connect Billing', text: 'Link your Stripe, Paddle, or custom payment processor database securely.' },
-      { name: '2. Connect Product Data', text: 'Link your Postgres or Snowflake database to overlay active usage metrics against revenue.' },
-      { name: '3. Generate Insights', text: 'The Arcli compute engine calculates complex SaaS metrics like NRR and Gross Margin instantly.' }
+    hero: {
+      h1: 'The SaaS Revenue Recognition Blueprint',
+      subtitle: 'Eliminate manual revenue reconciliation. Track MRR waterfalls and cohort retention with linear-algebraic precision using our decoupled compute engine.',
+      icon: <DollarSign className="w-12 h-12 text-emerald-500 mb-6" />
+    },
+    technicalStack: {
+      engine: 'Polars',
+      format: 'Parquet',
+      compute: 'Linear Algebra-based Forecasting (EMA) and Cohort Inversion'
+    },
+    performanceMetrics: [
+      'Stateless MRR Waterfall Logic',
+      'Vectorized Cohort Retention Matrix',
+      'Automated CAC Payback Modeling',
+      'Real-Time Event Stream Processing'
     ],
-    realExample: {
-      query: "Generate a monthly MRR waterfall showing new revenue, expansion, contraction, and churn for the last 6 months.",
-      sql: `WITH mrr_movements AS (
+    strategicContext: {
+      title: 'The Complexity of Revenue Recognition',
+      industrialConstraints: [
+        'Native billing platforms often lack the flexibility to handle custom enterprise contracts or specific refund-recognition logic.',
+        'Calculating Net Revenue Retention (NRR) requires complex self-joins and state-tracking that spreadsheets cannot scale.',
+        'Separation of billing data (Stripe) and product usage data (Postgres) leads to fragmented health scoring.'
+      ],
+      arcliEfficiency: 'Arcli utilizes advanced window functions and CTEs to partition revenue movements (Expansion, Churn, Contraction) at the compute layer. This ensures mathematical precision while maintaining 100% data freshness.'
+    },
+    orchestrationWorkflow: [
+      { phase: 'Ingestion', action: 'Connect billing (Stripe/Paddle) and product usage databases.' },
+      { phase: 'Mapping', action: 'Define the semantic boundary for "Active User" and "Recognized Revenue" within the Arcli Metric Governance layer.' },
+      { phase: 'Insight', action: 'Instantly generate audit-ready SaaS metrics and waterfall charts.' }
+    ],
+    queryArchitecture: {
+      intent: "Generate a 6-month MRR waterfall isolating Expansion and Contraction movements.",
+      vectorizedPattern: `WITH mrr_delta AS (
   SELECT 
     DATE_TRUNC('month', billing_date) AS month,
-    SUM(CASE WHEN movement_type = 'new' THEN amount ELSE 0 END) AS new_mrr,
-    SUM(CASE WHEN movement_type = 'expansion' THEN amount ELSE 0 END) AS expansion_mrr,
-    SUM(CASE WHEN movement_type = 'contraction' THEN amount ELSE 0 END) AS contraction_mrr,
-    SUM(CASE WHEN movement_type = 'churn' THEN amount ELSE 0 END) AS churn_mrr
+    movement_type,
+    SUM(amount) as delta
   FROM subscription_events
   WHERE billing_date >= CURRENT_DATE - INTERVAL '6 months'
-  GROUP BY 1
+  GROUP BY 1, 2
 )
-SELECT * FROM mrr_movements ORDER BY month ASC;`,
-      output: "Stacked Waterfall Bar Chart",
-      insight: "Expansion MRR outpaced churn for the first time this quarter, pushing NRR to 104%."
+SELECT * FROM mrr_delta PIVOT (SUM(delta) FOR movement_type IN ('new', 'expansion', 'contraction', 'churn'));`,
+      logicalOutcome: "Stacked Waterfall Visualization",
+      insight: "Precise identification of expansion revenue growth outpacing churn, driving NRR improvements."
     },
-    comparison: {
-      competitor: 'Point Solutions (ChartMogul, Baremetrics)',
-      competitorFlaws: [
-        'Creates another data silo outside of your main data warehouse.',
-        'Rigid definitions of "Active User" or "Churn" that you cannot alter.',
-        'Difficult to combine billing data with in-app product usage.'
-      ],
-      arcliWins: [
-        'Operates directly on your data warehouse; zero data movement.',
-        'Fully customizable metric definitions using natural language.',
-        'Easily overlays product usage data with revenue data for health scoring.'
-      ]
-    },
-    useCases: [
-      { title: 'Board & Investor Reporting', description: 'Generate perfectly accurate, audit-ready SaaS metrics for your investor updates and board decks instantly.' },
-      { title: 'Pricing Strategy', description: 'Analyze LTV by pricing tier to understand exactly which features are driving expansion revenue.' }
+    enterpriseApplications: [
+      { vertical: 'Finance & Investors', application: 'Deliver audit-ready, high-fidelity SaaS metrics for board meetings and investor due diligence.' },
+      { vertical: 'Product Growth', application: 'Overlay usage telemetry with revenue data to identify high-LTV feature adoption patterns.' }
     ],
-    faqs: [
-      { q: 'Does it handle complex upgrades and downgrades?', a: 'Yes. Our template automatically partitions MRR movements by utilizing precise delta logic between billing periods to correctly categorize expansions vs. net-new revenue.' },
-      { q: 'Can I track usage-based pricing models?', a: 'Absolutely. Arcli thrives on complex datasets. Simply point it to your metering database to calculate hybrid usage + flat-fee revenue models.' }
+    governanceAndSecurity: [
+      { q: 'Can this blueprint handle usage-based pricing?', a: 'Yes. Arcli thrives on complex metering data. By pointing the template to your usage database, it can orchestrate hybrid models combining flat-fee and usage-based revenue.' },
+      { q: 'How secure is the financial data processing?', a: 'Arcli is built with tenant-isolation by design. Every query is executed within a secure, isolated compute context, ensuring that sensitive financial rows are never leaked across environments.' }
     ],
-    relatedSlugs: ['analyze-stripe-data', 'ai-business-intelligence']
+    relatedBlueprints: ['marketing-dashboard-template', 'ecommerce-dashboard-template']
   },
 
   'marketing-dashboard-template': {
+    id: 'mkt-blueprint-003',
     type: 'template',
-    title: 'Marketing ROI Dashboard Template | Arcli',
-    description: 'Deploy our automated Marketing Dashboard template to track CAC, ROAS, and conversion funnels across all channels with zero data movement.',
-    h1: 'The Ultimate AI Marketing Attribution Dashboard',
-    subtitle: 'Stop merging siloed ad data in Excel. Deploy this template to track your true blended ROI using our semantic attribution AI.',
-    icon: <Users className="w-12 h-12 text-pink-500 mb-6" />,
-    features: [
-      'Blended CAC & True ROAS Attribution', 
-      'Vectorized Funnel Drop-off Calculation', 
-      'Cross-Platform Semantic Sync',
-      'Automated UTM Parameter Parsing'
-    ],
-    painPoints: {
-      title: 'Why Marketing Attribution is Usually Guesswork',
-      points: [
-        'Ad platforms (Meta, Google) inherently over-report their own conversions.',
-        'Connecting ad spend directly to closed-won revenue in the CRM is historically a data engineering nightmare.',
-        'Calculating true blended CAC requires pulling from 5 different APIs daily.'
-      ],
-      solution: 'Arcli acts as the semantic bridge. By connecting your ad warehouse and CRM warehouse, our AI automatically writes the SQL to join UTM parameters to lead IDs, calculating true pipeline ROI per channel.'
+    metadata: {
+      title: 'Marketing ROI & Attribution Blueprint | Arcli',
+      description: 'Unify ad-spend and revenue data. Deploy automated ROAS and CAC dashboards using cross-platform semantic joins and vectorized compute.',
+      canonicalDomain: 'arcli.tech'
     },
-    steps: [
-      { name: '1. Connect Ad Platforms', text: 'Ensure your Google Ads, Meta, and LinkedIn data is syncing to your warehouse (via Fivetran, Airbyte, etc.).' },
-      { name: '2. Connect CRM', text: 'Link Salesforce or HubSpot to track actual closed-won revenue.' },
-      { name: '3. Launch Template', text: 'The AI dynamically maps spend against recognized revenue to calculate true ROAS with sub-second rendering.' }
+    hero: {
+      h1: 'The Marketing Attribution Blueprint',
+      subtitle: 'Unify siloed ad data and CRM revenue. Track true blended ROAS using our semantic bridge that links UTM parameters directly to closed-won outcomes.',
+      icon: <Users className="w-12 h-12 text-pink-500 mb-6" />
+    },
+    technicalStack: {
+      engine: 'DuckDB',
+      format: 'Columnar',
+      compute: 'WASM-Powered Cross-Platform Joins at the Edge'
+    },
+    performanceMetrics: [
+      'Blended CAC Vectorization',
+      'Multi-Touch Attribution Logic',
+      'Automated UTM Parsing',
+      'Zero-Latency Funnel Rendering'
     ],
-    realExample: {
-      query: "Calculate the fully loaded Customer Acquisition Cost (CAC) by UTM Source for the last 90 days.",
-      sql: `WITH ad_spend AS (
-  SELECT utm_source, SUM(spend) as total_spend 
-  FROM daily_ad_metrics 
-  WHERE date >= CURRENT_DATE - 90 
-  GROUP BY 1
+    strategicContext: {
+      title: 'The Marketing Attribution Silo',
+      industrialConstraints: [
+        'Ad platforms (Google/Meta Ads) inherently prioritize their own conversion metrics, leading to over-reported ROI.',
+        'Linking fragmented ad-spend with actual CRM revenue usually requires extensive custom data engineering.',
+        'Standard marketing dashboards suffer from high latency when processing massive event-level traffic logs.'
+      ],
+      arcliEfficiency: 'Arcli acts as the semantic orchestrator. By joining your ad warehouse (spend) with your CRM (revenue), the AI writes optimized SQL to attribute real pipeline value to specific UTM sources, eliminating guesswork.'
+    },
+    orchestrationWorkflow: [
+      { phase: 'Aggregation', action: 'Connect ad-spend warehouses and CRM datasets.' },
+      { phase: 'Correlation', action: 'Utilize Arcli’s semantic mapper to link click-stream UTMs with lead-conversion records.' },
+      { phase: 'Optimization', action: 'Evaluate ROAS in real-time and reallocate budgets via conversational ad-hoc queries.' }
+    ],
+    queryArchitecture: {
+      intent: "Calculate Blended CAC by UTM Source for the last 90 days.",
+      vectorizedPattern: `WITH spend_attr AS (
+  SELECT utm_source, SUM(spend) as total_spend FROM daily_ads WHERE date >= CURRENT_DATE - 90 GROUP BY 1
 ),
-new_customers AS (
-  SELECT utm_source, COUNT(DISTINCT user_id) as total_customers
-  FROM users 
-  WHERE created_at >= CURRENT_DATE - 90 
-  GROUP BY 1
+conversions AS (
+  SELECT utm_source, COUNT(id) as customers FROM users WHERE created_at >= CURRENT_DATE - 90 GROUP BY 1
 )
-SELECT 
-  s.utm_source,
-  s.total_spend,
-  c.total_customers,
-  s.total_spend / NULLIF(c.total_customers, 0) AS blended_cac
-FROM ad_spend s
-LEFT JOIN new_customers c ON s.utm_source = c.utm_source
-ORDER BY blended_cac ASC;`,
-      output: "Data Table with Heatmap Formatting",
-      insight: "LinkedIn Ads CAC is $850, while Organic Search CAC remains at a highly efficient $42."
+SELECT s.utm_source, s.total_spend / NULLIF(c.customers, 0) AS blended_cac
+FROM spend_attr s JOIN conversions c USING (utm_source) ORDER BY 2 ASC;`,
+      logicalOutcome: "Heatmapped Attribution Table",
+      insight: "Discovery of high-efficiency organic channels vs. expensive paid acquisition segments."
     },
-    comparison: {
-      competitor: 'Marketing Middleware (Funnel.io, Supermetrics)',
-      competitorFlaws: [
-        'Just moves data around, doesn\'t provide deep analytical intelligence.',
-        'Extremely expensive volume-based pricing.',
-        'Relies heavily on Looker Studio which suffers from high dashboard latency.'
-      ],
-      arcliWins: [
-        'Analyzes the data exactly where it lives.',
-        'Brings complex queries into browser-level DuckDB for zero-latency filtering.',
-        'Allows marketers to ask follow-up questions in English rather than learning SQL.'
-      ]
-    },
-    useCases: [
-      { title: 'Performance Agency Reporting', description: 'Provide clients with perfectly transparent, real-time campaign performance dashboards that tie directly back to their revenue.' },
-      { title: 'Budget Reallocation', description: 'Instantly identify which campaigns are burning cash without generating pipeline, and shift budget dynamically.' }
+    enterpriseApplications: [
+      { vertical: 'Growth Marketing', application: 'Execute real-time budget reallocation based on true pipeline ROI rather than platform-reported clicks.' },
+      { vertical: 'Performance Agencies', application: 'Provide clients with transparent, revenue-backed reporting that proves actual business impact.' }
     ],
-    faqs: [
-      { q: 'Does it handle multi-touch attribution?', a: 'Yes. Depending on your schema, our AI can generate the logic for first-touch, last-touch, or linear attribution models based on your raw event tracking streams.' },
-      { q: 'Can I track offline conversions?', a: 'If offline conversions are logged in your central database or CRM, Arcli will seamlessly incorporate them into your ROI calculations via schema mapping.' }
+    governanceAndSecurity: [
+      { q: 'Do you support multi-touch attribution?', a: 'Yes. Our AI orchestrator can generate logic for first-touch, last-touch, or linear models based on your raw event-tracking data stored in the warehouse.' },
+      { q: 'Is there a limit on log data volume?', a: 'No. Arcli pushes the heavy compute to your warehouse and uses in-browser DuckDB for visual rendering, handling millions of event logs with zero server-side lag.' }
     ],
-    relatedSlugs: ['google-analytics-ai-dashboard', 'sales-dashboard-template']
+    relatedBlueprints: ['google-analytics-ai-dashboard', 'sales-dashboard-template']
   },
 
   'ecommerce-dashboard-template': {
+    id: 'ecom-blueprint-004',
     type: 'template',
-    title: 'E-Commerce Dashboard Template | Arcli Analytics',
-    description: 'Track Shopify sales, inventory depletion, and LTV with our AI-powered, columnar e-commerce dashboard template.',
-    h1: 'High-Velocity E-Commerce Analytics Dashboard',
-    subtitle: 'Know exactly what your true margins are and when to reorder inventory with our plug-and-play e-commerce semantic template.',
-    icon: <ShoppingCart className="w-12 h-12 text-emerald-400 mb-6" />,
-    features: [
-      'Columnar Inventory Depletion Forecasting', 
-      'Vectorized LTV/CAC Ratio Tracking', 
-      'High-Precision Margin & COGS Analytics',
-      'Real-Time Cart Abandonment Funnels'
-    ],
-    painPoints: {
-      title: 'The Blindspots in E-Commerce Analytics',
-      points: [
-        'Basic Shopify analytics don\'t factor in variable COGS, shipping, or ad spend, giving a false sense of profitability.',
-        'Cohort analysis for repeat purchase rates is notoriously slow and difficult to build.',
-        'Inventory forecasting is often done by guessing via historical Excel dumps.'
-      ],
-      solution: 'Arcli unites your Shopify, shipping, and ad spend data in the warehouse. We use AI to generate vectorized queries that calculate your True Net Margin by SKU in milliseconds.'
+    metadata: {
+      title: 'E-Commerce Intelligence Blueprint | Arcli Analytics',
+      description: 'Optimize retail profitability. Track inventory velocity, true SKU margins, and cohort LTV using high-velocity columnar compute patterns.',
+      canonicalDomain: 'arcli.tech'
     },
-    steps: [
-      { name: '1. Centralize Data', text: 'Ensure your Shopify database and ad spend are housed in a central location (Postgres, BigQuery, Snowflake).' },
-      { name: '2. Map COGS', text: 'Input or link your Cost of Goods Sold tables via our semantic interface.' },
-      { name: '3. Deploy Insights', text: 'Get instant architectural visibility into profitability by SKU, returning customer rate, and inventory health.' }
+    hero: {
+      h1: 'The E-Commerce Performance Blueprint',
+      subtitle: 'Identify true SKU margins and inventory reorder points. Deploy this blueprint to unify Shopify, shipping, and ad data for absolute profitability visibility.',
+      icon: <ShoppingCart className="w-12 h-12 text-emerald-400 mb-6" />
+    },
+    technicalStack: {
+      engine: 'DuckDB',
+      format: 'JSONB-Unnested',
+      compute: 'Predictive Inventory Depletion via ARIMA/Linear Extrapolation'
+    },
+    performanceMetrics: [
+      'Inventory Depletion Forecasting',
+      'True Net Margin Calculation',
+      'LTV/CAC Vectorized Ratios',
+      'Nested JSON Order Parsing'
     ],
-    realExample: {
-      query: "Show me the 30-day repeat purchase rate for customers acquired during our Black Friday sale vs standard months.",
-      sql: `WITH black_friday_cohort AS (
-  SELECT user_id FROM orders 
-  WHERE order_date BETWEEN '2025-11-25' AND '2025-11-30'
-  AND order_number = 1
+    strategicContext: {
+      title: 'The Blindspots of Retail Analytics',
+      industrialConstraints: [
+        'Basic e-commerce reporting often ignores variable shipping costs and COGS, inflating perceived profitability.',
+        'Repurchase rate analysis across cohorts is computationally expensive and difficult to build in traditional tools.',
+        'Inventory forecasting often relies on static historical averages, ignoring recent seasonality and trends.'
+      ],
+      arcliEfficiency: 'Arcli unites transactional and operational data. By utilizing vectorized EMA (Exponential Moving Average) logic, we forecast inventory depletion and calculate True Net Margin at the individual SKU level.'
+    },
+    orchestrationWorkflow: [
+      { phase: 'Normalization', action: 'Unpack nested Shopify JSON payloads into optimized columnar tables.' },
+      { phase: 'Correlation', action: 'Link COGS and shipping data to transactional line items.' },
+      { phase: 'Forecasting', action: 'Utilize predictive AI to determine optimal inventory reorder points.' }
+    ],
+    queryArchitecture: {
+      intent: "Show 30-day repeat purchase rate for Black Friday cohorts vs. annual baseline.",
+      vectorizedPattern: `WITH bf_cohort AS (
+  SELECT user_id, MIN(order_date) as start FROM orders WHERE order_date BETWEEN '2025-11-25' AND '2025-11-30' GROUP BY 1
 ),
-bf_repeat_purchases AS (
-  SELECT COUNT(DISTINCT user_id) as repeat_users 
-  FROM orders 
-  WHERE user_id IN (SELECT user_id FROM black_friday_cohort)
-  AND order_date > '2025-11-30' AND order_date <= '2025-12-30'
+repeats AS (
+  SELECT b.user_id FROM bf_cohort b JOIN orders o ON b.user_id = o.user_id 
+  WHERE o.order_date > b.start AND o.order_date <= b.start + INTERVAL '30 days'
 )
-SELECT 
-  (SELECT repeat_users FROM bf_repeat_purchases) * 100.0 / 
-  NULLIF((SELECT COUNT(*) FROM black_friday_cohort), 0) AS bf_30_day_repeat_rate;`,
-      output: "Comparison KPI Cards",
-      insight: "Black Friday cohorts have a 12% repeat purchase rate, significantly lower than our 22% annual baseline."
+SELECT COUNT(DISTINCT r.user_id) * 100.0 / COUNT(DISTINCT b.user_id) as repeat_rate_pct FROM bf_cohort b LEFT JOIN repeats r USING (user_id);`,
+      logicalOutcome: "Cohort Comparison KPI Cards",
+      insight: "Quantification of seasonal customer quality vs. standard acquisition channels."
     },
-    comparison: {
-      competitor: 'Standard Shopify Analytics',
-      competitorFlaws: [
-        'No concept of blended customer acquisition cost (CAC).',
-        'Cannot query custom historical data outside of predefined reports.',
-        'Struggles with deep cohort segmentation.'
-      ],
-      arcliWins: [
-        'Calculates True LTV to CAC ratios automatically.',
-        'Allows deep conversational segmentation (e.g., "Show me margin for customers in California who bought socks").',
-        'In-memory DuckDB processing allows massive dataset exploration without lag.'
-      ]
-    },
-    useCases: [
-      { title: 'Flash Sale Monitoring', description: 'Monitor live conversion rates, exact margins, and inventory depletion using our high-velocity compute engine during peak traffic events.' },
-      { title: 'Merchandising Optimization', description: 'Identify which products act as "gateway" purchases that lead to the highest 12-month LTV.' }
+    enterpriseApplications: [
+      { vertical: 'Merchandising', application: 'Optimize product mix by identifying "gateway" SKUs that drive the highest 12-month Customer Lifetime Value.' },
+      { vertical: 'Operations', application: 'Manage stock levels dynamically based on real-time depletion rates and supplier lead times.' }
     ],
-    faqs: [
-      { q: 'Can it track subscription boxes or recurring orders?', a: 'Yes. The AI handles recurring billing metrics natively, integrating flawlessly with subscription schemas like Recharge or Stripe Billing to calculate cohort retention.' },
-      { q: 'How fast does the data update?', a: 'If your underlying database updates in real-time, Arcli queries it in real-time. Our zero-caching direct execution means you always see the freshest data.' }
+    governanceAndSecurity: [
+      { q: 'How does it handle massive order volumes?', a: 'Arcli uses a zero-caching direct execution model. It leverages your warehouse compute and DuckDB WebAssembly to explore millions of rows without degrading performance.' },
+      { q: 'Can I track subscription revenue?', a: 'Absolutely. The blueprint integrates with subscription schemas (like Recharge or Stripe) to calculate MRR and churn within the e-commerce context.' }
     ],
-    relatedSlugs: ['analyze-shopify-data', 'analyze-stripe-data']
+    relatedBlueprints: ['saas-metrics-dashboard-template', 'analyze-shopify-data']
   }
 };

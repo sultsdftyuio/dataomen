@@ -4,8 +4,9 @@ import { Sparkles, LineChart, BarChart3, PieChart, FileSpreadsheet } from 'lucid
 
 /**
  * SEOPageData Interface
- * Upgraded to the "Search-Intent Machine" schema to capture high-intent users
- * looking to replace legacy BI, manual dashboarding, and brittle spreadsheets.
+ * Upgraded to the "Architectural Contrast" schema. Focuses on objective, 
+ * professional comparisons of underlying technologies, targeting high-intent 
+ * enterprise buyers evaluating modern data stacks.
  */
 export type SEOPageData = {
   type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
@@ -22,17 +23,17 @@ export type SEOPageData = {
     output: string;
     insight: string;
   };
-  painPoints?: {
+  theAlternative?: {
     title: string;
-    points: string[];
-    solution: string;
+    focus: string[];
+    arcliApproach: string;
   };
   useCases: { title: string; description: string }[];
   faqs: { q: string; a: string }[];
   comparison?: { 
     competitor: string; 
-    arcliWins: string[]; 
-    competitorFlaws: string[]; 
+    theArcliAdvantage: string[]; 
+    traditionalApproach: string[]; 
   };
   relatedSlugs: string[];
 };
@@ -41,9 +42,9 @@ export const coreFeatures: Record<string, SEOPageData> = {
   'ai-data-analysis': {
     type: 'feature',
     title: 'AI Data Analysis Platform | Arcli Analytics',
-    description: 'Transform raw data into actionable business intelligence instantly. Upload CSVs or connect databases for high-speed, zero-code AI data analysis.',
-    h1: 'AI Data Analysis Built for Speed and Precision',
-    subtitle: 'Stop waiting weeks for the data engineering team. Connect your data and let our AI engine uncover patterns, calculate complex metrics, and build verified models in seconds.',
+    description: 'Transform raw data into actionable business intelligence instantly. Evaluate how Arcli\'s browser-native AI compute engine accelerates exploratory data analysis.',
+    h1: 'AI Data Analysis Built for Agility and Precision',
+    subtitle: 'Shift from heavy data engineering pipelines to instant, conversational exploration. Connect your data and let our AI engine calculate complex metrics in seconds.',
     icon: <Sparkles className="w-12 h-12 text-blue-500 mb-6" />,
     features: [
       'Conversational Data Exploration', 
@@ -51,19 +52,20 @@ export const coreFeatures: Record<string, SEOPageData> = {
       'Linear Algebra Predictive Forecasting',
       'In-Browser Vectorized Compute (DuckDB)'
     ],
-    painPoints: {
-      title: 'The Data Bottleneck',
-      points: [
-        'Business users wait weeks in the BI queue just to get a simple question answered.',
-        'Data analysts spend 80% of their time writing boilerplate SQL instead of actually finding insights.',
-        'Exploratory data analysis (EDA) in Python or R requires heavy local environment setup and coding skills.'
+    theAlternative: {
+      title: 'Programmatic Environments vs. Conversational UI',
+      focus: [
+        'Exploratory Data Analysis (EDA) traditionally requires deep expertise in Python, Pandas, or R.',
+        'Data analysts dedicate significant time to writing boilerplate SQL and managing local compute environments.',
+        'Sharing interactive programmatic findings requires deploying secondary applications (like Streamlit or Dash).',
+        'Business stakeholders are reliant on a centralized data queue for complex ad-hoc questions.'
       ],
-      solution: 'Arcli democratizes exploratory analysis. Our semantic engine understands your database schema natively. You ask questions in plain English, and the AI translates them into highly optimized, dialect-specific SQL, rendering the results instantly.'
+      arcliApproach: 'Arcli democratizes exploratory analysis through a semantic engine that understands your database schema natively. By compiling plain English into highly optimized, dialect-specific SQL, Arcli provides the analytical depth of a programmatic environment with the accessibility of a chat interface.'
     },
     steps: [
-      { name: '1. Connect Data', text: 'Securely connect your Postgres/Snowflake database or upload a massive CSV.' },
-      { name: '2. Ask in Plain English', text: 'Type your question naturally (e.g., "Why did our retention drop last month?"). Our RAG AI maps the request to your schema.' },
-      { name: '3. Instant Verified Insights', text: 'Our execution engine runs the generated SQL safely and builds an interactive dashboard instantly.' }
+      { name: '1. Secure Connection', text: 'Connect your Postgres/Snowflake instance or upload analytical datasets directly.' },
+      { name: '2. Natural Language Exploration', text: 'Ask questions naturally (e.g., "Analyze last month\'s retention drop"). Our RAG AI maps the request to your schema.' },
+      { name: '3. Instant Verified Insights', text: 'The execution engine runs the generated logic safely, rendering a dynamic dashboard instantly.' }
     ],
     realExample: {
       query: "Analyze our daily transaction volume for the last 90 days and flag any days where the volume was more than 2 standard deviations below the 7-day moving average.",
@@ -89,29 +91,29 @@ SELECT
 FROM moving_metrics
 WHERE transaction_count < (moving_avg - (2 * std_dev))
 ORDER BY date DESC;`,
-      output: "Time-Series Line Chart with Red Anomaly Markers",
-      insight: "Detected a critical 34% drop in transactions on October 12th, corresponding to the AWS us-east-1 outage."
+      output: "Time-Series Line Chart with Anomaly Markers",
+      insight: "Detected a statistically significant variance in transactions corresponding to external infrastructure events."
     },
     comparison: {
-      competitor: 'Python Pandas / Jupyter',
-      competitorFlaws: [
-        'Requires deep programming knowledge to set up and execute.',
-        'Visualizations (Matplotlib/Seaborn) are static and hard to share interactively.',
-        'Environment management (pip, conda) is a nightmare for non-engineers.'
+      competitor: 'Python/Pandas Ecosystem',
+      theArcliAdvantage: [
+        'Zero environment setup: the entire analysis engine runs securely in the browser.',
+        'Interactive, publishable React-Vega charting is generated natively.',
+        'Conversational interface bypasses the need for specialized Pandas syntax.'
       ],
-      arcliWins: [
-        'Zero setup: entire analysis environment runs securely in the browser.',
-        'Interactive, publishable React-Vega charting built-in.',
-        'Conversational interface entirely replaces writing Pandas syntax.'
+      traditionalApproach: [
+        'Requires deep programming knowledge to configure and execute.',
+        'Standard visualizations (e.g., Matplotlib) are often static and require extra steps to share interactively.',
+        'Environment management creates friction for non-engineering stakeholders.'
       ]
     },
     useCases: [
-      { title: 'Financial Variance Analysis', description: 'Automatically compare actuals vs. budget across hundreds of departments to find cost overruns instantly.' },
-      { title: 'Product Telemetry', description: 'Drop in massive event logs to instantly visualize user drop-off points in your application funnel.' }
+      { title: 'Financial Variance Analysis', description: 'Quickly compare actuals vs. budget across multiple departments to identify spending trends.' },
+      { title: 'Product Telemetry', description: 'Analyze event logs to visualize user progression and identify funnel drop-off points.' }
     ],
     faqs: [
-      { q: 'Is it safe to let AI query my database?', a: 'Yes. Arcli only requires read-only credentials. Furthermore, our execution engine wraps every AI-generated query in a transaction block that actively rejects any mutating commands (INSERT, DELETE, DROP).' },
-      { q: 'Can I see the math behind the AI\'s answer?', a: 'Always. We believe in "Trust, but Verify." You can inspect, edit, and export the exact SQL or execution logic the AI used to arrive at its conclusion.' }
+      { q: 'Is it safe to let AI query my database?', a: 'Yes. Arcli operates strictly on read-only credentials. Our execution engine wraps every query in a transaction block that actively drops mutating commands.' },
+      { q: 'Can I verify the underlying logic?', a: 'Always. We follow a "Trust, but Verify" principle. You can inspect, edit, and export the exact SQL the AI utilized to arrive at its conclusion.' }
     ],
     relatedSlugs: ['natural-language-to-sql', 'ai-business-intelligence', 'analyze-csv-with-ai']
   },
@@ -119,9 +121,9 @@ ORDER BY date DESC;`,
   'ai-business-intelligence': {
     type: 'feature',
     title: 'AI Business Intelligence Tools | Arcli',
-    description: 'Empower your entire organization with AI-native Business Intelligence. Replace legacy BI tools with conversational analytics and semantic governance.',
+    description: 'Empower your organization with AI-native Business Intelligence. Evaluate how Arcli combines conversational analytics with strict semantic governance.',
     h1: 'Next-Generation AI Business Intelligence',
-    subtitle: 'Give your operators the power of a dedicated data science team. Define your metrics once, and let your team ask questions, get answers, and drive revenue in plain English.',
+    subtitle: 'Deploy enterprise-grade analytics powered by generative AI. Define your core metrics once, and allow your team to explore data securely in plain English.',
     icon: <LineChart className="w-12 h-12 text-cyan-500 mb-6" />,
     features: [
       'Centralized Semantic Metric Governance', 
@@ -129,19 +131,20 @@ ORDER BY date DESC;`,
       'Automated Root Cause Analysis (RCA)',
       'Scheduled Executive Briefings'
     ],
-    painPoints: {
-      title: 'Why Traditional BI Fails Modern Teams',
-      points: [
-        'Metric sprawl: Marketing defines "Active User" differently than Product, leading to conflicting board reports.',
-        'Dashboards are brittle; if a user wants to view the data by a dimension not included in the original LookML model, they are stuck.',
-        'Legacy BI tools (Tableau, PowerBI) have steep learning curves, restricting data access to a few certified analysts.'
+    theAlternative: {
+      title: 'Rigid Modeling vs. Dynamic Governance',
+      focus: [
+        'Traditional BI relies on highly rigid semantic layers that require dedicated engineering teams to maintain.',
+        'Metric definitions often become fragmented across disparate dashboards, leading to conflicting reports.',
+        'Business users are constrained by predefined dashboard filters; answering a new question requires a new engineering request.',
+        'Adoption is limited by the steep learning curve of proprietary BI interfaces.'
       ],
-      solution: 'Arcli introduces an AI-native semantic layer. You define the core logic for "Revenue" or "Active User" once. When anyone in the company asks a question in English, the AI perfectly utilizes those governed definitions to generate accurate, on-the-fly SQL and visualizations.'
+      arcliApproach: 'Arcli utilizes a dynamic Semantic Governance layer. You centrally define core business logic (like "Active User" or "Net Revenue"). When a user asks a question naturally, the AI automatically routes the query through these governed definitions, ensuring complete mathematical consistency without locking users into rigid dashboard views.'
     },
     steps: [
-      { name: '1. Define Semantic Metrics', text: 'Set up your core KPIs and business logic once using our Semantic Governance layer (or import from dbt).' },
-      { name: '2. Distribute Access', text: 'Give operators secure, natural language chat access to the BI engine.' },
-      { name: '3. Automate Reporting', text: 'Schedule AI-generated insights and anomaly alerts to be delivered to Slack or Email weekly.' }
+      { name: '1. Define Semantic Metrics', text: 'Establish your core KPIs once using our Governance layer (or import directly from dbt).' },
+      { name: '2. Democratize Access', text: 'Provide operators with a secure, natural language interface to query the governed BI engine.' },
+      { name: '3. Automate Delivery', text: 'Schedule AI-generated insights and formatted alerts for delivery to Slack or Email.' }
     ],
     realExample: {
       query: "Show me our Net Revenue Retention (NRR) for the current quarter, utilizing our official 'Enterprise_Revenue' semantic definition.",
@@ -162,15 +165,28 @@ SELECT
 FROM starting_mrr s
 LEFT JOIN current_mrr c ON s.user_id = c.user_id;`,
       output: "Gauge Chart with Historical Trendline",
-      insight: "NRR is currently at 108%, driven entirely by expansion revenue in the EMEA region."
+      insight: "NRR calculated seamlessly utilizing centrally governed dbt models."
+    },
+    comparison: {
+      competitor: 'Traditional BI Suites',
+      theArcliAdvantage: [
+        'AI maps natural language directly to centrally governed metric definitions.',
+        'Empowers true self-serve analytics for non-technical operators.',
+        'Integrates natively with existing modern data stack tools like dbt.'
+      ],
+      traditionalApproach: [
+        'Requires specialized knowledge of proprietary modeling languages (LookML/DAX).',
+        'Lengthy turnaround times for ad-hoc analytical requests.',
+        'High licensing costs for basic "Viewer" access.'
+      ]
     },
     useCases: [
-      { title: 'Cross-Functional Alignment', description: 'Ensure the CRO, CMO, and CPO are all looking at the exact same definition of "Pipeline" and "Conversion Rate."' },
-      { title: 'Self-Serve Analytics', description: 'Empower Account Executives to pull their own custom usage reports for client QBRs without messaging the data team.' }
+      { title: 'Cross-Functional Alignment', description: 'Ensure the CRO, CMO, and CPO are analyzing the exact same semantic definitions for "Pipeline" and "Conversion Rate."' },
+      { title: 'Operator Independence', description: 'Enable Account Executives to generate custom usage reports for client reviews without waiting for an analyst.' }
     ],
     faqs: [
-      { q: 'Can Arcli integrate with our existing dbt models?', a: 'Yes. Arcli seamlessly integrates with modern data stack tools. We can read your dbt `schema.yml` files to instantly ingest your existing metric definitions and descriptions.' },
-      { q: 'How do you prevent the LLM from hallucinating metrics?', a: 'We use strict Context-Aware Semantic Routing. The LLM is forced to route requests through your defined semantic layer formulas, preventing it from "guessing" how to calculate revenue.' }
+      { q: 'Can Arcli integrate with our existing dbt models?', a: 'Yes. Arcli reads your dbt `schema.yml` files to instantly ingest your existing metric definitions and descriptions into our semantic router.' },
+      { q: 'How do you prevent the LLM from hallucinating metrics?', a: 'We employ strict Context-Aware Semantic Routing. The LLM is programmatically forced to route specific requests through your defined formulas, preventing mathematical hallucinations.' }
     ],
     relatedSlugs: ['ai-data-analysis', 'ai-dashboard-builder']
   },
@@ -178,50 +194,51 @@ LEFT JOIN current_mrr c ON s.user_id = c.user_id;`,
   'ai-dashboard-builder': {
     type: 'feature',
     title: 'Automated AI Dashboard Builder | Arcli',
-    description: 'Build beautiful, interactive business dashboards automatically using AI. Connect your database and get a full reporting suite without dragging a single widget.',
-    h1: 'The Zero-Click AI Dashboard Builder',
-    subtitle: 'Why drag and drop when AI can build it for you? Generate tailored, highly-interactive, and mathematically precise dashboards just by describing what you want.',
+    description: 'Transition from manual UI configuration to generative design. Use Arcli to build interactive business dashboards automatically via natural language.',
+    h1: 'The Generative AI Dashboard Builder',
+    subtitle: 'Move beyond manual widget configuration. Describe your reporting goals, and Arcli\'s orchestration engine generates tailored, interactive layouts instantly.',
     icon: <BarChart3 className="w-12 h-12 text-purple-500 mb-6" />,
     features: [
       'Prompt-to-Dashboard Generation', 
       'Dynamic Chart Type Selection', 
-      'Real-Time Database Sync Engine',
+      'Real-Time Database Sync',
       'Secure iFrame Embeds'
     ],
-    painPoints: {
-      title: 'The Drag-and-Drop Fatigue',
-      points: [
-        'Building a dashboard in traditional tools requires manually configuring grid layouts, chart types, and color palettes for hours.',
-        'Cross-filtering usually breaks unless complex relationship models are manually mapped in the UI.',
-        'Mobile responsiveness in standard BI dashboards is notoriously terrible, requiring you to build the dashboard twice.'
+    theAlternative: {
+      title: 'Manual UI Configuration vs. Intent-Driven Layouts',
+      focus: [
+        'Standard dashboard builders require manual, grid-based configuration of every individual chart and filter.',
+        'Cross-filtering behavior must be explicitly mapped between different data sources.',
+        'Iterating on a dashboard\'s design (e.g., swapping line charts for bar charts) is a tedious, click-heavy process.',
+        'Mobile responsiveness often requires building a secondary layout manually.'
       ],
-      solution: 'Arcli utilizes an LLM-driven orchestration layer. You describe the audience and the goal (e.g., "A mobile-friendly daily sales health dashboard"). The AI writes the SQL, determines the best statistical visualizations (bar vs. line vs. scatter), and writes the React layout code dynamically.'
+      arcliApproach: 'Arcli introduces an intent-driven generation layer. You describe the audience and the objective (e.g., "A daily sales health dashboard"). The AI authors the underlying SQL, selects the statistically optimal visualizations, and generates the responsive React layout code dynamically.'
     },
     steps: [
-      { name: '1. Connect Source', text: 'Link your database, API, or upload your raw files.' },
-      { name: '2. Provide Prompt', text: 'Tell the AI what you want to track (e.g., "Build a comprehensive SaaS metrics dashboard tracking MRR, Churn, and LTV").' },
-      { name: '3. Auto-Generate & Tweak', text: 'The AI builds the full suite. You can use natural language to tweak it ("Change the MRR chart to a stacked bar showing plan tiers").' }
+      { name: '1. Connect the Source', text: 'Authenticate your data warehouse or upload analytical files.' },
+      { name: '2. Provide the Prompt', text: 'Describe your tracking requirements (e.g., "Build a comprehensive SaaS metrics dashboard tracking MRR and Churn").' },
+      { name: '3. Generate and Refine', text: 'The AI constructs the suite. You can refine it conversationally ("Segment the MRR chart by geographic region").' }
     ],
     comparison: {
-      competitor: 'Looker Studio / Tableau',
-      competitorFlaws: [
-        'Heavily reliant on manual UI configuration for every single visual element.',
-        'Requires specialized training to understand the proprietary calculation languages (LookML / DAX).',
-        'Dashboards load slowly due to heavy server-side rendering.'
+      competitor: 'Manual Dashboard Builders',
+      theArcliAdvantage: [
+        'Generates comprehensive layouts via natural language prompts in seconds.',
+        'Utilizes transparent, standard SQL under the hood for all visual logic.',
+        'High-performance rendering via in-browser WebAssembly and Vega-Lite.'
       ],
-      arcliWins: [
-        'Generates full layouts via English prompts in seconds.',
-        'Uses standard, transparent SQL under the hood for all logic.',
-        'Lightning-fast rendering using in-browser WebAssembly and Vega-Lite.'
+      traditionalApproach: [
+        'Heavily reliant on manual UI configuration for every visual element.',
+        'Requires deep familiarity with the tool\'s specific visualization limitations.',
+        'Often suffers from slow load times due to heavy server-side rendering.'
       ]
     },
     useCases: [
-      { title: 'Agency Client Reporting', description: 'Automatically spin up white-labeled, real-time ROI dashboards for your marketing clients in minutes instead of days.' },
-      { title: 'Incident Response Command Centers', description: 'During a server outage, ask the AI to instantly build a dashboard tracking error rates, latency, and active connections across specific microservices.' }
+      { title: 'Rapid Client Reporting', description: 'Quickly generate tailored, white-labeled performance dashboards for clients or stakeholders.' },
+      { title: 'Incident Response', description: 'Instantly build targeted dashboards tracking system telemetry and error rates during operational anomalies.' }
     ],
     faqs: [
-      { q: 'Can I customize the generated dashboards manually if I want to?', a: 'Yes. The AI generates the high-quality baseline, but every chart, layout grid, and underlying SQL query is fully exposed for manual overriding and fine-tuning.' },
-      { q: 'Do these dashboards update in real-time?', a: 'Yes. Unlike traditional cached BI, Arcli dashboards execute their optimized SQL directly against your database upon load, ensuring you always see the freshest data.' }
+      { q: 'Can I customize the generated dashboards manually?', a: 'Yes. The AI provides a high-quality baseline, but every chart, layout parameter, and underlying SQL query is exposed for manual fine-tuning.' },
+      { q: 'Do these dashboards update in real-time?', a: 'Yes. Arcli dashboards execute optimized SQL directly against your read-replica upon load, ensuring stakeholders view current data.' }
     ],
     relatedSlugs: ['ai-data-visualization-tool', 'how-to-build-sql-dashboard']
   },
@@ -229,33 +246,34 @@ LEFT JOIN current_mrr c ON s.user_id = c.user_id;`,
   'ai-data-visualization-tool': {
     type: 'feature',
     title: 'AI Data Visualization Tool | Arcli',
-    description: 'Turn complex datasets into beautiful, interactive charts instantly. Use our AI data visualization tool to generate Vega-Lite graphs without coding.',
-    h1: 'AI-Powered Data Visualization Studio',
-    subtitle: 'Stop wrestling with Excel chart formatting and D3.js libraries. Tell our semantic AI what you want to see, and it generates the perfect interactive visualization instantly.',
+    description: 'Transform complex result sets into mathematically precise charts. Use Arcli\'s AI to generate interactive Vega-Lite visualizations automatically.',
+    h1: 'Automated Statistical Data Visualization',
+    subtitle: 'Streamline the visualization process. Arcli analyzes your data\'s dimensionality and automatically generates the most effective interactive charts.',
     icon: <PieChart className="w-12 h-12 text-pink-500 mb-6" />,
     features: [
-      'Automated Chart Selection (Best-Fit Statistics)', 
+      'Automated Statistical Chart Selection', 
       'High-Performance Vega-Lite Rendering', 
       'Interactive Tooltips & Cross-Filtering',
-      'One-Click Export (PNG, SVG, JSON)'
+      'JSON Specification Export'
     ],
-    painPoints: {
-      title: 'Why Most Charts Are Misleading',
-      points: [
-        'Users frequently choose the wrong chart type for their data (e.g., using a pie chart for time-series data).',
-        'Building complex visualizations (like Sunbursts, Heatmaps, or Sankey diagrams) requires writing hundreds of lines of D3.js or Python code.',
-        'Static image exports from Excel lack interactivity, making deep-dives impossible in presentations.'
+    theAlternative: {
+      title: 'Manual Chart Libraries vs. Automated Generation',
+      focus: [
+        'Building complex, interactive charts traditionally requires authoring hundreds of lines of code using libraries like D3.js or Plotly.',
+        'Non-technical users frequently select suboptimal chart types (e.g., using pie charts for deep time-series data).',
+        'Standard spreadsheet charting tools produce static images that lack the interactivity required for deep presentations.',
+        'Ensuring visual consistency across a large organization requires strict manual design guidelines.'
       ],
-      solution: 'Arcli acts as an expert data designer. The AI analyzes the dimensionality and cardinality of your result set and automatically selects the statistically appropriate visualization (React-Vega). It generates the interactive code natively.'
+      arcliApproach: 'Arcli acts as an automated data designer. The AI evaluates the cardinality, temporal nature, and quantitative spread of your result set to select the statistically appropriate visualization. It natively generates a robust React-Vega implementation, ensuring interactivity and design consistency.'
     },
     steps: [
-      { name: '1. Select Data Payload', text: 'Upload your dataset, or let Arcli query your database to generate a result set.' },
-      { name: '2. Conversational Generation', text: 'Type "Visualize our sales funnel drop-off rates." The AI builds the exact SQL and pairs it with a Funnel Chart.' },
-      { name: '3. Style and Embed', text: 'Tweak colors to match your brand via chat, then copy the secure iframe snippet.' }
+      { name: '1. Establish Data Payload', text: 'Upload a dataset or allow Arcli to execute a query against your warehouse.' },
+      { name: '2. Conversational Rendering', text: 'Request a visual output (e.g., "Visualize the cohort drop-off matrix"). The AI generates both the logic and the chart.' },
+      { name: '3. Embed and Export', text: 'Export the visualization as a high-res image, or copy the Vega-Lite JSON specification for use in your own app.' }
     ],
     realExample: {
-      query: "Create a cohort retention heatmap showing the percentage of users active in months 1 through 6, grouped by their signup month.",
-      sql: `-- AI generates the complex Cohort SQL, then pairs it with this Vega-Lite spec:
+      query: "Create a cohort retention heatmap showing the percentage of users active in months 1 through 6, grouped by signup month.",
+      sql: `-- The AI evaluates the dense matrix output and generates the optimal Vega-Lite spec:
 {
   "mark": "rect",
   "encoding": {
@@ -268,81 +286,95 @@ LEFT JOIN current_mrr c ON s.user_id = c.user_id;`,
   }
 }`,
       output: "Interactive Density Heatmap",
-      insight: "Visual contrast immediately highlights that the July cohort had exceptionally poor Month-2 retention compared to the historical baseline."
+      insight: "Automated visualization correctly highlights specific cohort anomalies without requiring manual color-scale configuration."
+    },
+    comparison: {
+      competitor: 'Code-Heavy Charting Libraries (D3.js)',
+      theArcliAdvantage: [
+        'Zero code required; chart specifications are generated entirely via intent.',
+        'Guarantees statistically appropriate chart selection based on data shape.',
+        'Native cross-filtering and tooltip interactivity built-in.'
+      ],
+      traditionalApproach: [
+        'Requires specialized front-end engineering expertise to implement.',
+        'Time-consuming to iterate on visual designs or swap chart paradigms.',
+        'High maintenance overhead when underlying data structures change.'
+      ]
     },
     useCases: [
-      { title: 'Board Deck Preparation', description: 'Generate pixel-perfect, highly customized charts for executive presentations in seconds, bypassing the design team.' },
-      { title: 'Web Application Embedding', description: 'Product teams can use Arcli to prototype complex D3/Vega visualizations and instantly copy the JSON spec into their own React codebase.' }
+      { title: 'Executive Presentations', description: 'Generate highly customized, interactive charts for strategic reviews in seconds.' },
+      { title: 'Application Prototyping', description: 'Product engineers can use Arcli to prototype complex visualizations and seamlessly copy the JSON spec into their own React codebase.' }
     ],
     faqs: [
-      { q: 'Can I embed these charts into my own website?', a: 'Yes! Every generated chart provides a secure iframe snippet, or you can export the raw Vega-Lite JSON specification to render it natively in your own application.' },
-      { q: 'Does it support complex chart types?', a: 'Absolutely. Beyond standard bar and line charts, Arcli\'s AI is trained to generate complex overlays, dual-axis charts, Sankey diagrams, heatmaps, and geographic scatter plots.' }
+      { q: 'Can I embed these charts into my own web application?', a: 'Yes. Every generated chart provides a secure iframe, or you can export the raw Vega-Lite JSON to render it natively using your own front-end components.' },
+      { q: 'Does the AI support advanced chart configurations?', a: 'Absolutely. Arcli is trained to generate complex overlays, dual-axis formats, Sankey diagrams, and geographic density plots.' }
     ],
     relatedSlugs: ['ai-dashboard-builder', 'analyze-csv-with-ai']
   },
 
   'ai-excel-analysis': {
     type: 'feature',
-    title: 'AI Excel & Spreadsheet Analysis Tool | Arcli',
-    description: 'Upgrade your Excel workflows. Use AI to analyze large financial models, merge cross-sheet data, and bypass VBA macros effortlessly.',
-    h1: 'AI-Powered Excel & Spreadsheet Analysis',
-    subtitle: 'Excel is incredible for viewing data, but terrible for analyzing millions of rows. Let our AI handle the heavy lifting, broken VLOOKUPs, and VBA nightmares.',
+    title: 'AI Spreadsheet Analysis Engine | Arcli',
+    description: 'Upgrade your spreadsheet workflows. Evaluate how Arcli\'s columnar engine processes millions of rows and bypasses complex macro limitations.',
+    h1: 'High-Performance Spreadsheet Analysis',
+    subtitle: 'Spreadsheets are excellent for data entry, but struggle at scale. Arcli leverages vectorized compute to analyze massive datasets via natural language.',
     icon: <FileSpreadsheet className="w-12 h-12 text-green-600 mb-6" />,
     features: [
-      'Handles 5M+ Row Workbooks Instantly', 
+      'Infinite Scale via Columnar Processing', 
       'Conversational Cross-Sheet Joins', 
-      'Bypass Brittle VBA Macros',
-      'Automated Data Cleansing'
+      'Automated Data Normalization',
+      'Zero VBA Required'
     ],
-    painPoints: {
-      title: 'The Nightmare of Excel at Scale',
-      points: [
-        'Excel crashes, freezes, or corrupts when files exceed a few hundred thousand rows.',
-        'VLOOKUPs and INDEX/MATCH formulas break silently if a single column is inserted or moved.',
-        'Writing and maintaining VBA macros requires legacy programming knowledge that slows down modern teams.'
+    theAlternative: {
+      title: 'In-Memory Cells vs. Vectorized Analytics',
+      focus: [
+        'Traditional spreadsheets struggle or crash when processing files exceeding a few hundred thousand rows.',
+        'Cell-based reference formulas (like VLOOKUP or INDEX/MATCH) are rigid and break if underlying structures shift.',
+        'Automating repetitive spreadsheet tasks often requires maintaining complex legacy VBA macros.',
+        'Merging disparate files requires tedious manual data alignment and cleansing.'
       ],
-      solution: 'Arcli extracts your Excel sheets into a high-performance, in-memory database (DuckDB). Instead of writing brittle cell formulas, you ask questions in English. We write indestructible SQL to join your sheets and aggregate the data instantly, handling millions of rows without a single crash.'
+      arcliApproach: 'Arcli extracts spreadsheet data into a high-performance analytical engine (DuckDB). By transitioning from cell-based logic to columnar SQL execution, you can join, pivot, and analyze millions of rows instantly using plain English—bypassing the memory constraints of traditional grid applications.'
     },
     steps: [
-      { name: '1. Upload Workbook', text: 'Drop your massive .xlsx or .csv files securely into our browser-based engine.' },
-      { name: '2. AI Normalization', text: 'Our semantic engine automatically detects schemas, fixes broken date formats, and maps the relationships between different sheets.' },
-      { name: '3. Conversational Pivots', text: 'Chat with your workbook. Ask "Join the Employee sheet with the Payroll sheet to show average salary by department" to instantly generate the summary.' }
+      { name: '1. Secure Upload', text: 'Ingest massive .xlsx or .csv files directly into the browser-based engine.' },
+      { name: '2. Schema Inference', text: 'Arcli automatically infers data types, normalizes date formats, and maps potential sheet relationships.' },
+      { name: '3. Conversational Analytics', text: 'Query the data seamlessly (e.g., "Join the Employee and Payroll sheets to show average salary by department").' }
     ],
     realExample: {
-      query: "Clean this messy inventory export. Remove any rows where the SKU is blank, convert the 'Last_Stocked' text to a real date, and show me items out of stock.",
-      sql: `-- Executed via DuckDB on the uploaded Excel file
+      query: "Clean this inventory export. Remove rows missing a SKU, convert the 'Last_Stocked' text to a valid date, and identify items out of stock.",
+      sql: `-- Executed via embedded DuckDB on the ingested file:
 SELECT 
   SKU_ID,
   Product_Name,
   CAST(STRPTIME(Last_Stocked_Text, '%m/%d/%Y') AS DATE) AS Last_Stocked_Date
-FROM read_excel('inventory_messy.xlsx', sheet='Sheet1')
+FROM read_excel('inventory_export.xlsx', sheet='Sheet1')
 WHERE SKU_ID IS NOT NULL 
   AND SKU_ID != ''
   AND Current_Stock = 0
 ORDER BY Last_Stocked_Date ASC;`,
-      output: "Cleaned Data Grid & Bar Chart",
-      insight: "Successfully cleaned 14,000 messy rows instantly. Identified 42 core products that have been out of stock for over 90 days."
+      output: "Cleaned Data Grid & Status Chart",
+      insight: "Cleaned thousands of rows and executed conditional logic instantly, bypassing manual row filtering."
     },
     comparison: {
-      competitor: 'Excel Native Features (Pivot Tables / PowerQuery)',
-      competitorFlaws: [
-        'PowerQuery has a steep learning curve similar to learning a new programming language (M).',
-        'Pivot tables on large datasets cause Excel to consume all system RAM and freeze.',
-        'Difficult to share interactive findings without sending the massive underlying source file.'
+      competitor: 'Traditional Spreadsheet Software',
+      theArcliAdvantage: [
+        'Processes data in highly optimized columnar formats (Parquet) for immense scale.',
+        'Replaces rigid cell formulas with robust, natural language-driven SQL logic.',
+        'Enables sharing of interactive insights without exposing the raw underlying file.'
       ],
-      arcliWins: [
-        'Zero code or formula syntax required. Driven entirely by natural language.',
-        'Processes data externally in highly optimized columnar formats (Parquet) for infinite scale.',
-        'Share findings via secure web links without exposing the raw underlying file data.'
+      traditionalApproach: [
+        'Memory limits often cause application freezing during heavy pivot table calculations.',
+        'Advanced data shaping requires learning new languages like PowerQuery (M).',
+        'High risk of manual errors when writing cross-sheet cell formulas.'
       ]
     },
     useCases: [
-      { title: 'Consolidating Regional Reports', description: 'Merge 15 different regional Excel reports into a single, cohesive AI dashboard using conversational commands instead of copy-pasting.' },
-      { title: 'Financial Audit & Reconciliation', description: 'Quickly upload general ledgers and bank statements to instantly spot discrepancies and anomalies without writing complex matching macros.' }
+      { title: 'Financial Consolidation', description: 'Merge regional reporting sheets into a unified, clean analytical view using conversational commands.' },
+      { title: 'Audit & Reconciliation', description: 'Upload general ledgers to quickly identify data discrepancies and anomalies via automated SQL matching.' }
     ],
     faqs: [
-      { q: 'Does this overwrite or destroy my original Excel file?', a: 'Never. Arcli operates in a strict read-only analytical mode. We extract the data into our ephemeral memory for analysis, leaving your original `.xlsx` file completely untouched.' },
-      { q: 'Can I export the cleaned and analyzed data back to Excel?', a: 'Yes. Once the AI has cleaned, joined, or pivoted your data, you can export the refined result set directly back to a clean CSV or Parquet file.' }
+      { q: 'Does this modify my original file?', a: 'No. Arcli operates in a strict read-only capacity. Data is extracted into an ephemeral memory space for analysis, leaving your original file completely untouched.' },
+      { q: 'Can I export the aggregated results?', a: 'Yes. Once the AI has processed and joined your data, the refined result set can be exported back to a standard CSV or Parquet file for downstream use.' }
     ],
     relatedSlugs: ['analyze-csv-with-ai', 'how-to-build-dashboard-from-csv']
   }

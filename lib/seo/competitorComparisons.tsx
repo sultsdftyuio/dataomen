@@ -3,9 +3,9 @@ import { PieChart, Activity, Database, Target, Hexagon } from 'lucide-react';
 
 /**
  * SEOPageData Interface
- * Upgraded to the "Search-Intent Machine" schema. Captures high-intent users
- * who are actively frustrated by the limitations, costs, and learning curves
- * of legacy Business Intelligence tools.
+ * Upgraded to the "Architectural Contrast" schema. Focuses on objective, 
+ * professional comparisons of underlying technologies, targeting high-intent 
+ * enterprise buyers evaluating modern data stacks.
  */
 export type SEOPageData = {
   type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
@@ -22,17 +22,17 @@ export type SEOPageData = {
     output: string;
     insight: string;
   };
-  painPoints?: {
+  theAlternative?: {
     title: string;
-    points: string[];
-    solution: string;
+    focus: string[];
+    arcliApproach: string;
   };
   useCases: { title: string; description: string }[];
   faqs: { q: string; a: string }[];
   comparison?: { 
     competitor: string; 
-    arcliWins: string[]; 
-    competitorFlaws: string[]; 
+    theArcliAdvantage: string[]; 
+    traditionalApproach: string[]; 
   };
   relatedSlugs: string[];
 };
@@ -40,10 +40,10 @@ export type SEOPageData = {
 export const competitorComparisons: Record<string, SEOPageData> = {
   'tableau-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Tableau vs AI Analytics: The Modern Stack | Arcli',
-    description: 'See why modern data teams are switching from traditional BI tools like Tableau to Arcli\'s AI-native, WebAssembly-powered analytics platform.',
-    h1: 'Move Beyond Legacy BI. Switch to AI Analytics.',
-    subtitle: 'Stop wrestling with calculated fields and heavy desktop clients. Discover how AI-native analytics reduces time-to-insight from weeks to seconds.',
+    title: 'Tableau vs AI Analytics: The Generative Shift | Arcli',
+    description: 'Compare Tableau\'s desktop-first visual exploration with Arcli\'s browser-native, generative AI analytics architecture. Evaluate the modern data stack.',
+    h1: 'From Visual Exploration to Generative AI',
+    subtitle: 'Tableau pioneered drag-and-drop analytics. Arcli represents the next evolution: a 100% cloud-native platform driven by natural language and in-browser compute.',
     icon: <PieChart className="w-12 h-12 text-rose-500 mb-6" />,
     features: [
       'Conversational Interface (Zero VizQL)', 
@@ -51,24 +51,24 @@ export const competitorComparisons: Record<string, SEOPageData> = {
       'Instant Setup via Semantic RAG',
       'In-Memory DuckDB Execution'
     ],
-    painPoints: {
-      title: 'Why Tableau is Slowing Your Team Down',
-      points: [
-        'Requires expensive, heavy desktop licenses (Tableau Desktop) just to build a basic dashboard.',
-        'Learning to write VizQL and complex Level of Detail (LOD) expressions takes months of training.',
-        'Publishing from Desktop to Cloud is a clunky, slow workflow that creates version control nightmares.',
-        'Dashboards are highly rigid; business users cannot ask ad-hoc questions outside the predefined filters.'
+    theAlternative: {
+      title: 'Desktop-Centric vs. Cloud-Native Agility',
+      focus: [
+        'Tableau relies heavily on a desktop application (Tableau Desktop) for robust dashboard authoring.',
+        'Core analytical logic is built using VizQL and Level of Detail (LOD) calculations.',
+        'Moving from authoring to sharing requires a distinct publishing step to Tableau Cloud or Server.',
+        'Designed primarily for specialized data analysts focused on visual data exploration.'
       ],
-      solution: 'Arcli replaces the entire Tableau build-publish-consume pipeline. You connect your database via a web browser. Our AI understands the schema natively. You type what you want to see in plain English, and we generate the interactive charts instantly.'
+      arcliApproach: 'Arcli collapses the authoring and consumption layers into a single, browser-native experience. By replacing proprietary calculation languages with an AI that natively understands standard SQL and your database schema, time-to-insight is dramatically compressed.'
     },
     steps: [
-      { name: '1. Connect Data', text: 'Skip the heavy data engineering extract pipeline. Connect databases directly via read-only URLs.' },
-      { name: '2. Ask Questions', text: 'Instead of dragging and dropping dimensions into rows and columns, just type what you want to know.' },
-      { name: '3. Share Insights', text: 'Send interactive, self-updating charts via secure URLs instantly, without worrying about "Viewer" licenses.' }
+      { name: '1. Direct Cloud Connection', text: 'Connect data warehouses directly via read-only URLs, bypassing desktop-to-cloud extraction pipelines.' },
+      { name: '2. Natural Language Querying', text: 'Type business questions in plain English; the AI handles the complex semantic mapping.' },
+      { name: '3. Instantaneous Sharing', text: 'Generate secure, live-updating URL links for stakeholders with a single click.' }
     ],
     realExample: {
-      query: "Show me a cohort analysis of user retention over the first 6 months. (In Tableau, this requires 5 calculated fields and complex LODs).",
-      sql: `-- Arcli AI writes the SQL instantly, bypassing manual LOD calculations:
+      query: "Show me a cohort analysis of user retention over the first 6 months.",
+      sql: `-- Arcli AI writes the SQL natively, bypassing manual LOD calculations:
 WITH cohort_items AS (
   SELECT user_id, DATE_TRUNC('month', MIN(created_at)) as cohort_month
   FROM events GROUP BY 1
@@ -81,63 +81,63 @@ SELECT cohort_month, month_number, COUNT(DISTINCT user_id) as active_users
 FROM cohort_items JOIN user_activities USING(user_id)
 GROUP BY 1, 2 ORDER BY 1, 2;`,
       output: "Interactive Heatmap Matrix",
-      insight: "Generated instantly via natural language, bypassing hours of manual Tableau configuration."
+      insight: "Complex retention matrices generated instantly via natural language."
     },
     comparison: {
       competitor: 'Tableau',
-      arcliWins: [
-        'Conversational AI Interface (NL2SQL) requires zero training.', 
-        'Executes heavy analytics directly in the browser via WebAssembly.', 
-        'No expensive desktop licenses required to be a "Creator".'
+      theArcliAdvantage: [
+        'Zero proprietary syntax to learn; driven by conversational AI and standard SQL.', 
+        'Executes heavy analytics directly in the browser via WebAssembly, requiring no desktop software.', 
+        'Unified authoring and sharing environment.'
       ],
-      competitorFlaws: [
-        'Requires deeply specialized knowledge of VizQL and LOD expressions.', 
-        'Extremely expensive for full-org deployment.', 
-        'Slow, disjointed desktop-to-cloud publishing workflows.'
+      traditionalApproach: [
+        'Requires specialized training in VizQL and LOD expressions.', 
+        'Heavy reliance on desktop applications for deep authoring.', 
+        'Separated build-then-publish workflows.'
       ]
     },
     useCases: [
-      { title: 'Democratizing Data', description: 'Allow marketing and sales teams to pull their own complex reports without waiting weeks in the data analyst queue.' },
-      { title: 'Embedded Analytics', description: 'Easily embed Arcli\'s modern React-Vega charts into your own SaaS application without paying exorbitant Tableau Server fees.' }
+      { title: 'Data Democratization', description: 'Enable marketing and sales leaders to perform deep-dive analytics without entering a centralized analyst queue.' },
+      { title: 'Agile Prototyping', description: 'Quickly validate data models and KPIs in seconds before committing them to formal enterprise dashboards.' }
     ],
     faqs: [
-      { q: 'Can I migrate my existing Tableau dashboards to Arcli?', a: 'Yes. By connecting Arcli to the same underlying data warehouse (e.g., Snowflake or Postgres), our AI can recreate your core dashboard metrics in minutes simply by asking it to track those specific KPIs.' },
-      { q: 'How does performance compare to Tableau Data Extracts (.hyper)?', a: 'Arcli utilizes a highly optimized hybrid engine. We push heavy aggregation down to your database, and stream the compressed results (Parquet) to an in-browser DuckDB instance, resulting in lightning-fast, zero-latency cross-filtering.' }
+      { q: 'Can I migrate my core reporting metrics to Arcli?', a: 'Yes. By connecting Arcli to your existing data warehouse, our Semantic Governance layer can replicate and track your established KPIs using natural language definitions.' },
+      { q: 'How does performance compare to traditional data extracts?', a: 'Arcli pushes heavy aggregation down to your database and streams the compressed results (via Parquet) to an in-browser DuckDB instance, ensuring highly responsive cross-filtering.' }
     ],
     relatedSlugs: ['powerbi-vs-ai-analytics', 'looker-vs-ai-analytics']
   },
 
   'powerbi-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Power BI vs AI Analytics | Arcli',
-    description: 'Compare Microsoft Power BI with modern AI analytics. Learn why startups and modern enterprises are ditching DAX and Windows for Arcli.',
-    h1: 'Ditch DAX. Embrace AI Analytics.',
-    subtitle: 'Power BI is ubiquitous, but it forces your team to learn complex DAX formulas and use Windows machines. Arcli replaces formulas with plain English.',
+    title: 'Power BI vs AI Analytics: Cross-Platform Agility | Arcli',
+    description: 'Evaluate Microsoft Power BI against Arcli. Understand the architectural differences between DAX-heavy ecosystems and natural-language AI.',
+    h1: 'The Microsoft Ecosystem vs. Standalone Agility',
+    subtitle: 'Power BI is an enterprise powerhouse deeply tied to Windows and Azure. Arcli offers a lightweight, cross-platform alternative powered by AI.',
     icon: <Activity className="w-12 h-12 text-yellow-600 mb-6" />,
     features: [
-      '100% Cloud-Native (Mac & PC)', 
-      'Zero DAX Required (Plain English)', 
+      'OS-Agnostic (Flawless on Mac & Linux)', 
+      'Zero DAX Required', 
       'Automated Cross-Filtering',
       'Modern Vega-Lite Visualizations'
     ],
-    painPoints: {
-      title: 'The Hidden Costs of Power BI',
-      points: [
-        'DAX (Data Analysis Expressions) has an infamously brutal learning curve for basic time-intelligence metrics.',
-        'Power BI Desktop is strictly Windows-only, alienating data teams and executives who use Macs.',
-        'The Power Query Editor is incredibly clunky and difficult to debug when data sources change.',
-        'Visuals look dated and heavily corporate out-of-the-box.'
+    theAlternative: {
+      title: 'DAX Modeling vs. Semantic AI',
+      focus: [
+        'Power BI requires deep expertise in DAX (Data Analysis Expressions) for complex time-intelligence and relational modeling.',
+        'The primary authoring environment, Power BI Desktop, is strictly available on Windows OS.',
+        'Optimized for organizations heavily invested in the broader Microsoft Office 365 and Azure data ecosystem.',
+        'Requires deliberate, upfront star-schema modeling for optimal performance.'
       ],
-      solution: 'Arcli is built for the modern, cross-platform workforce. It runs entirely in your browser. Instead of writing DAX to calculate a 3-month rolling average, you simply ask the AI. We compile it to standard SQL and visualize it with beautiful, modern charts.'
+      arcliApproach: 'Arcli is built for the modern, cross-platform workforce. It runs entirely in any web browser. Instead of writing DAX to calculate rolling averages or YTD metrics, the AI compiles English requests directly into optimized SQL Window Functions.'
     },
     steps: [
-      { name: '1. Connect Anywhere', text: 'Link your cloud data warehouses seamlessly via the web.' },
-      { name: '2. Query in English', text: 'Ask questions without writing a single DAX formula or building a star-schema model manually.' },
-      { name: '3. Publish Instantly', text: 'Share live, interactive dashboards instantly across your organization with a single click.' }
+      { name: '1. OS-Agnostic Access', text: 'Work seamlessly from a Mac, PC, or Linux machine without virtualization.' },
+      { name: '2. Query via Chat', text: 'Bypass formula languages; ask questions and let AI construct the underlying query logic.' },
+      { name: '3. Render Beautifully', text: 'Leverage auto-selected, modern Vega-Lite charts designed for high-density information display.' }
     ],
     realExample: {
-      query: "Calculate the Year-over-Year (YoY) revenue growth percentage for the current month. (A notoriously complex DAX pattern).",
-      sql: `-- Arcli handles time-intelligence using standard SQL Window Functions:
+      query: "Calculate the Year-over-Year (YoY) revenue growth percentage for the current month.",
+      sql: `-- Arcli handles time-intelligence using standard SQL Window Functions rather than DAX:
 WITH monthly_revenue AS (
   SELECT DATE_TRUNC('month', date) as month, SUM(revenue) as total
   FROM sales GROUP BY 1
@@ -149,61 +149,62 @@ SELECT
   (total - LAG(total, 12) OVER (ORDER BY month)) / NULLIF(LAG(total, 12) OVER (ORDER BY month), 0) as yoy_growth
 FROM monthly_revenue
 ORDER BY month DESC LIMIT 1;`,
-      output: "KPI Scorecard with Green Trend Indicator",
-      insight: "YoY Revenue Growth calculated in 1.2 seconds. No DAX time-intelligence tables required."
+      output: "KPI Scorecard with Trend Indicator",
+      insight: "Time-intelligence metrics calculated instantly via standard SQL logic."
     },
     comparison: {
       competitor: 'Microsoft Power BI',
-      arcliWins: [
-        'No proprietary formulas (DAX) to learn; driven by AI and SQL.', 
-        'Browser-first architecture works flawlessly on Mac, Windows, and Linux.', 
-        'Automated AI chart selection prevents misleading data visualizations.'
+      theArcliAdvantage: [
+        'No proprietary formulas (DAX) to learn; logic is driven by natural language and standard SQL.', 
+        'Browser-first architecture provides full authoring capabilities to macOS users.', 
+        'Automated AI chart selection reduces time spent configuring visual formats.'
       ],
-      competitorFlaws: [
-        'DAX is unintuitive and requires specialized engineering talent.', 
-        'The desktop application is completely unavailable for macOS users.', 
-        'Clunky, multi-step cloud publishing and workspace management.'
+      traditionalApproach: [
+        'DAX requires dedicated study and specialized engineering talent.', 
+        'Windows-only desktop application creates friction for mixed-OS teams.', 
+        'Heavy integration reliance on the Azure/Microsoft ecosystem.'
       ]
     },
     useCases: [
-      { title: 'Agile Executive Reporting', description: 'Pivot reporting metrics instantly during executive meetings using chat, rather than telling the board "I\'ll have to rebuild the Power BI model and get back to you."' }
+      { title: 'Mac-Based Data Teams', description: 'Empower analysts and executives using macOS to build full-scale dashboards without virtual machines.' }
     ],
     faqs: [
-      { q: 'Is Arcli Mac compatible?', a: 'Yes! Arcli is 100% cloud-native. You get the full power of a dedicated BI suite directly in Chrome, Safari, or Firefox on any operating system.' },
-      { q: 'Do I need to build a Star Schema first?', a: 'While clean data always helps, Arcli\'s semantic RAG engine is highly adept at navigating normalized, real-world database schemas, automatically inferring the correct JOIN paths without a strict Star Schema requirement.' }
+      { q: 'Is Arcli fully functional on macOS?', a: 'Yes. Arcli is 100% cloud-native. You receive the full power of a dedicated BI suite directly in Chrome, Safari, or Firefox on any operating system.' },
+      { q: 'Do I need to build a Star Schema first?', a: 'While clean data always improves performance, Arcli\'s semantic RAG engine is highly adept at navigating normalized, real-world database schemas, automatically inferring correct JOIN paths.' }
     ],
     relatedSlugs: ['tableau-vs-ai-analytics', 'metabase-vs-ai-analytics']
   },
 
   'metabase-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Metabase vs AI Analytics | Arcli',
-    description: 'Compare Metabase with modern AI analytics platforms. See why fast-growing startups are switching from visual query builders to conversational BI.',
-    h1: 'Metabase vs. Modern AI Analytics',
-    subtitle: 'Metabase is a great V1 BI tool, but its visual builder breaks down on complex queries. See how Arcli replaces manual querying with semantic AI.',
+    title: 'Metabase vs AI Analytics: Beyond the Visual Builder | Arcli',
+    description: 'Transitioning from Metabase? Discover how Arcli\'s AI handles complex SQL, CTEs, and Window Functions natively, pushing beyond visual builder limits.',
+    h1: 'Navigating Beyond the Visual Builder Ceiling',
+    subtitle: 'Visual query builders are excellent for simple selections. See how Arcli\'s conversational AI empowers users to execute complex logic without dropping into raw SQL.',
     icon: <Database className="w-12 h-12 text-blue-500 mb-6" />,
     features: [
       'Conversational AI Interface', 
       'Generates Complex SQL Natively', 
       'Instant Schema RAG Indexing',
-      'Zero JVM Overhead'
+      'Serverless Edge Compute Architecture'
     ],
-    painPoints: {
-      title: 'The "Visual Builder" Wall',
-      points: [
-        'Metabase\'s visual query builder is great for simple "SELECT *", but completely falls apart when you need complex JOINs, CTEs, or Window Functions.',
-        'Once you hit the limit of the visual builder, you are forced to write raw SQL, locking out business users.',
-        'Self-hosting Metabase requires managing a heavy Java Virtual Machine (JVM) that frequently suffers from memory leaks and out-of-memory crashes on large queries.'
+    theAlternative: {
+      title: 'Visual Builders vs. Semantic Generation',
+      focus: [
+        'Metabase relies on a visual UI for non-technical users to filter and aggregate data.',
+        'When questions require complex JOINs, subqueries, or Window Functions, users often hit a "wall" in the visual UI.',
+        'Hitting the visual ceiling forces a transition to the raw SQL editor, locking out business operators.',
+        'Self-hosting requires managing a Java Virtual Machine (JVM) environment.'
       ],
-      solution: 'Arcli acts as an expert SQL analyst. Instead of clicking through a limited visual interface, you tell Arcli what you want. It writes the complex CTEs and Window Functions natively, executing them securely against your database.'
+      arcliApproach: 'Arcli replaces the visual query builder with a highly capable Semantic Engine. By conversing with the AI, business users can trigger advanced SQL logic—like rolling averages and recursive CTEs—without ever needing to write or debug code.'
     },
     steps: [
-      { name: '1. Connect DB', text: 'Link your Postgres, MySQL, or Snowflake database just like Metabase.' },
-      { name: '2. Skip the Builder', text: 'Instead of fighting a visual query interface, just type your question in English.' },
-      { name: '3. Auto-Dashboard', text: 'Pin your AI-generated interactive charts directly to a live, tenant-isolated dashboard.' }
+      { name: '1. Connect the Warehouse', text: 'Link your Postgres, MySQL, or Snowflake instance securely.' },
+      { name: '2. Speak in Logic', text: 'Instead of clicking through filter menus, describe your exact analytical requirements in English.' },
+      { name: '3. Maintain Context', text: 'Ask follow-up questions to drill down without starting the query from scratch.' }
     ],
     realExample: {
-      query: "Show me a 7-day rolling average of daily active users (DAU) for the past 30 days. (In Metabase, this forces you into the raw SQL editor).",
+      query: "Show me a 7-day rolling average of daily active users (DAU) for the past 30 days.",
       sql: `SELECT 
   event_date,
   dau_count,
@@ -216,134 +217,136 @@ FROM (
 )
 ORDER BY event_date DESC;`,
       output: "Dual-Axis Line & Bar Chart",
-      insight: "Rolling averages handled flawlessly by AI-generated Window Functions, fully accessible to non-engineers."
+      insight: "Rolling averages executed natively without dropping the user into a code editor."
     },
     comparison: {
       competitor: 'Metabase',
-      arcliWins: [
-        'Conversational AI handles logic that visual builders cannot process.', 
-        'No Java (JVM) required; entirely built on modern WebAssembly and Serverless edge compute.', 
-        'Maintains conversational state for easy follow-up questions ("Now filter that by Enterprise tier").'
+      theArcliAdvantage: [
+        'Conversational AI handles advanced analytical logic that visual builders cannot accommodate.', 
+        'Maintains conversational state for easy follow-up questions and drill-downs.', 
+        'Modern WebAssembly and Serverless architecture removes JVM management overhead.'
       ],
-      competitorFlaws: [
-        'Visual builder breaks quickly on real-world analytical questions.', 
-        'Forces business users to constantly ask engineers for custom SQL snippets.', 
-        'Notoriously heavy memory footprint for self-hosted instances.'
+      traditionalApproach: [
+        'Visual interfaces struggle with highly complex, multi-step data transformations.', 
+        'Forces business users to rely on engineers for custom SQL snippets when questions get hard.', 
+        'Java-based infrastructure requires careful memory tuning.'
       ]
     },
     useCases: [
-      { title: 'Scaling Data Access', description: 'Move from a centralized data request queue (where engineers write Metabase SQL) to true self-serve analytics for the whole company.' }
+      { title: 'True Self-Serve Analytics', description: 'Eliminate the "can you write a SQL snippet for this Metabase report?" request queue for your engineering team.' }
     ],
     faqs: [
-      { q: 'Is Arcli harder to set up than Metabase?', a: 'No. Both require a simple read-only database connection string. Arcli\'s semantic router maps your schema in seconds, making it ready to query instantly.' },
-      { q: 'Can I write my own SQL in Arcli?', a: 'Yes. While the AI is incredibly capable, you always have full access to inspect, modify, and run raw SQL directly in the platform.' }
+      { q: 'Can I still write my own SQL in Arcli?', a: 'Yes. While the AI is incredibly capable at generating logic, you always have full access to a specialized editor to inspect, modify, and run raw SQL directly.' },
+      { q: 'Is it hard to map our schema?', a: 'Not at all. Arcli\'s semantic router maps your schema and foreign key relationships in seconds upon connection, making it ready to query instantly.' }
     ],
     relatedSlugs: ['looker-vs-ai-analytics', 'powerbi-vs-ai-analytics']
   },
 
   'looker-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Looker vs AI Analytics | Arcli',
-    description: 'Compare Google Looker with Arcli. See why agile data teams are moving away from monolithic LookML deployments to nimble, semantic AI platforms.',
-    h1: 'The Modern Alternative to Looker',
-    subtitle: 'Looker is incredibly powerful, but maintaining LookML requires an expensive, dedicated team of engineers. Discover the high-velocity AI alternative.',
+    title: 'Looker vs AI Analytics: Semantic Agility | Arcli',
+    description: 'Compare Looker\'s centralized LookML modeling with Arcli\'s dynamic, AI-driven semantic layer. Find the right balance of governance and speed.',
+    h1: 'Enterprise Governance vs. Semantic Agility',
+    subtitle: 'Looker provides strict, centralized data definitions. Arcli provides dynamic, context-aware RAG, allowing teams to explore data without months of upfront modeling.',
     icon: <Target className="w-12 h-12 text-purple-600 mb-6" />,
     features: [
+      'Dynamic Semantic Routing', 
       'Zero LookML Required', 
-      'RAG-Based Semantic Routing', 
-      'Instant Deployment (Days, not Months)',
-      'Conversational Explore Interface'
+      'Rapid Deployment Cycle',
+      'Conversational Data Exploration'
     ],
-    painPoints: {
-      title: 'The LookML Bottleneck',
-      points: [
-        'Implementing Looker successfully takes 3 to 6 months of dedicated data engineering time to build the LookML semantic layer.',
-        'Looker "Explores" are highly rigid. If a business user wants to join a table not explicitly defined in the LookML model, they cannot do it.',
-        'Enterprise pricing for Looker is prohibitively expensive for startups and mid-market companies.'
+    theAlternative: {
+      title: 'Upfront Modeling vs. Context-Aware AI',
+      focus: [
+        'Looker requires defining all business logic upfront in LookML, a proprietary modeling language.',
+        'Implementation cycles are lengthy, often taking months of dedicated data engineering time.',
+        'Data exploration is confined to predefined "Explores"; joining non-modeled tables is heavily restricted.',
+        'Built for large-scale enterprise deployments with strict, centralized data governance requirements.'
       ],
-      solution: 'Arcli utilizes a dynamic, AI-driven semantic layer. You can define your core metrics easily, but for exploratory analysis, our AI acts as a dynamic LookML engine, writing the optimal JOIN paths on the fly based on your schema metadata.'
+      arcliApproach: 'Arcli utilizes a dynamic, AI-driven semantic layer. While you can explicitly define core metrics in Arcli for strict governance, our Context-Aware RAG engine dynamically infers table relationships on the fly, enabling instant, ad-hoc exploration of new data.'
     },
     steps: [
-      { name: '1. Skip the Modeling', text: 'Arcli infers semantic relationships automatically via Vector RAG, bypassing massive setup times.' },
-      { name: '2. Ask Questions', text: 'Use natural language to explore data instead of navigating rigid Looker drop-down menus.' },
-      { name: '3. Deploy Faster', text: 'Get your entire organization operational on data in minutes, not months.' }
+      { name: '1. Dynamic Indexing', text: 'Arcli securely scans database metadata to infer relationships, bypassing massive manual setup times.' },
+      { name: '2. Define Core Metrics', text: 'Lock in definitions for critical board-level KPIs (like "Active User") using simple English.' },
+      { name: '3. Unrestricted Exploration', text: 'Use natural language to seamlessly query and join tables that haven\'t been formally modeled.' }
     ],
     comparison: {
       competitor: 'Google Looker',
-      arcliWins: [
-        'No proprietary language (LookML) to learn or maintain.', 
-        'Radically faster implementation time (hours vs. months).', 
-        'Conversational interface is vastly more intuitive for non-technical operators.'
+      theArcliAdvantage: [
+        'Radically faster implementation time (hours vs. months) by leveraging dynamic AI mapping.', 
+        'No proprietary language (LookML) to maintain; standard SQL and English drive the platform.', 
+        'Flexibility to perform ad-hoc analysis on newly ingested data immediately.'
       ],
-      competitorFlaws: [
-        'Requires hiring specialized LookML developers.', 
-        'Looker\'s UI feels dated and highly complex for average business users.', 
-        'Inflexible rigid data models prevent rapid ad-hoc exploration.'
+      traditionalApproach: [
+        'Requires hiring specialized LookML developers to build and maintain the semantic layer.', 
+        'Lengthy, rigid deployment cycles before business users can extract value.', 
+        'Exploration is heavily constrained by the boundaries of predefined models.'
       ]
     },
     useCases: [
-      { title: 'Agile Startups & Mid-Market', description: 'Get enterprise-grade BI and governed metrics without hiring a 3-person data team just to manage the tool.' },
-      { title: 'Ad-Hoc Exploratory Analysis', description: 'Allow analysts to freely query and join tables that haven\'t been officially modeled into the core semantic layer yet.' }
+      { title: 'Agile Mid-Market Analytics', description: 'Acquire enterprise-grade BI and governed metrics without dedicating a specialized engineering team to tool maintenance.' },
+      { title: 'Rapid Prototyping', description: 'Allow analysts to freely query and join new product tables before officially merging them into the core reporting suite.' }
     ],
     faqs: [
-      { q: 'Can Arcli handle complex, governed metric definitions like Looker does?', a: 'Yes. Our Semantic Governance layer allows you to strictly define core metrics (like "Recognized Revenue" or "Active User") once. The AI routes requests through these definitions so it never miscalculates board-level KPIs.' },
-      { q: 'Does Arcli integrate with dbt?', a: 'Yes. We seamlessly read your dbt `schema.yml` files, utilizing your existing dbt descriptions and models to inform our semantic routing AI.' }
+      { q: 'Does Arcli offer any metric governance?', a: 'Yes. Our Semantic Governance layer allows you to strictly define core metrics once. The AI routes requests through these definitions to ensure consistent calculation of critical KPIs.' },
+      { q: 'Does Arcli integrate with dbt?', a: 'Yes. We seamlessly read your dbt `schema.yml` files, utilizing your existing dbt descriptions and models to enhance our semantic routing AI.' }
     ],
     relatedSlugs: ['tableau-vs-ai-analytics', 'hex-vs-ai-analytics']
   },
 
   'hex-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Hex vs AI Analytics | Arcli',
-    description: 'Compare Hex Technologies with Arcli. Find the right platform for your data science and business intelligence needs.',
-    h1: 'The Alternative to Hex for Business Teams',
-    subtitle: 'Hex is an amazing tool built for Python-heavy data scientists. Arcli is built for the rest of the company—operators who want instant answers without seeing code.',
+    title: 'Hex vs AI Analytics: Notebooks vs Chat | Arcli',
+    description: 'Compare Hex Technologies with Arcli. Understand the difference between Python-first notebook environments and zero-code conversational BI.',
+    h1: 'Data Scientists vs. Business Operators',
+    subtitle: 'Hex is an exceptional platform for Python-native data scientists. Arcli is built for the business operator who needs instant answers without looking at code.',
     icon: <Hexagon className="w-12 h-12 text-purple-500 mb-6" />,
     features: [
-      'Zero-Code Required', 
-      'Instant NLP-to-SQL Queries', 
-      'Business-Friendly Dashboard UI',
-      'No Notebook Environments'
+      'Zero-Code User Experience', 
+      'Conversational NLP-to-SQL', 
+      'Familiar Dashboard UI',
+      'Instant Metric Publishing'
     ],
-    painPoints: {
-      title: 'Why Notebooks Alienate Business Users',
-      points: [
-        'Hex is fundamentally a Python Notebook environment (Jupyter-style), which is deeply intimidating to Sales, Marketing, and Operations teams.',
-        'Building a dashboard in Hex still requires writing SQL or Python/Pandas logic in cells before publishing.',
-        'View-only licenses for business stakeholders who just want to check a metric can become very expensive.'
+    theAlternative: {
+      title: 'Notebook Environments vs. Chat Interfaces',
+      focus: [
+        'Hex operates as a highly collaborative Python/SQL Notebook environment (similar to Jupyter).',
+        'Authoring insights requires writing code in sequential cells before compiling them into an application.',
+        'Targeted primarily at technical personas: Data Scientists, Analytics Engineers, and quants.',
+        'Can be intimidating for non-technical stakeholders (Sales, CS, Marketing) to navigate.'
       ],
-      solution: 'Arcli abstracts the code away entirely. While we run high-performance compute under the hood, the user interface is a simple, familiar chat window. Operators ask questions, and Arcli returns beautiful, production-ready charts instantly.'
+      arcliApproach: 'Arcli abstracts the computational complexity entirely. Under the hood, we run high-performance vectorized compute (Rust/Polars/DuckDB), but the user interacts via a simple chat interface. Operators ask questions and receive production-ready charts instantly.'
     },
     steps: [
-      { name: '1. Bypass Python', text: 'No need to write Pandas code or SQL cells. Interact purely using natural language.' },
-      { name: '2. AI Generates Logic', text: 'Our orchestration engine handles the complex vectorization and query planning in the background.' },
-      { name: '3. Deploy Fast', text: 'Publish insights to your team via live dashboards without managing heavy notebook states.' }
+      { name: '1. Chat-Driven Analysis', text: 'Interact purely using natural language; no need to write Pandas code or SQL cells.' },
+      { name: '2. Orchestrated Compute', text: 'Arcli\'s engine handles complex query planning and vectorization invisibly in the background.' },
+      { name: '3. Direct to Dashboard', text: 'Publish insights to live, traditional dashboard layouts instantly, skipping the notebook-to-app conversion.' }
     ],
     realExample: {
-      query: "Predict our Q4 revenue based on the historical exponential moving average of the last 24 months.",
-      sql: `-- Instead of writing Python/Statsmodels in a Hex cell, Arcli generates the SQL and passes it to its internal vectorized execution engine automatically.`,
-      output: "Time-Series Line Chart with Dotted Forecast Projection",
-      insight: "Complex forecasting executed via a single conversational prompt, no Python required."
+      query: "Show me the 30-day moving average of our daily active users.",
+      sql: `-- Arcli generates the SQL and passes it to its internal vectorized execution engine automatically, requiring zero Python configuration.`,
+      output: "Time-Series Line Chart",
+      insight: "Advanced statistical smoothing executed via a conversational prompt."
     },
     comparison: {
       competitor: 'Hex Technologies',
-      arcliWins: [
-        'Built specifically for non-technical users and business operators.', 
-        'No Python or SQL required to generate advanced analytics.', 
-        'Instantly generates traditional dashboard layouts, skipping the "notebook-to-app" step.'
+      theArcliAdvantage: [
+        'Built specifically for the accessibility of non-technical users and business operators.', 
+        'No Python or SQL required to generate advanced analytical outputs.', 
+        'Instantly generates traditional dashboard layouts, removing the multi-step app building process.'
       ],
-      competitorFlaws: [
-        'Steep learning curve; requires data science (Python/SQL) skills to author.', 
-        'Notebook interfaces overwhelm business users who just want to see a chart.', 
-        'Complex environment management for dependencies.'
+      traditionalApproach: [
+        'Requires data science coding skills (Python/Pandas/SQL) to author effectively.', 
+        'Notebook interfaces can overwhelm stakeholders who simply want to consume a final metric.', 
+        'Requires management of underlying code dependencies and cell execution order.'
       ]
     },
     useCases: [
-      { title: 'Operator Empowerment', description: 'Give your non-technical teams (Marketing, Sales, CS) the analytical power of a data scientist without forcing them to learn Python.' }
+      { title: 'Operator Empowerment', description: 'Give your Operations and Revenue teams the ability to self-serve advanced insights without needing a data scientist to write a notebook.' }
     ],
     faqs: [
-      { q: 'Do you support Python execution?', a: 'Arcli\'s backend is powered by high-performance Python and Rust (Polars/DuckDB) for vectorized compute, but the user experience is strictly 100% zero-code. You do not need to write Python to use Arcli.' },
-      { q: 'Can I export the data if I want to use it in a notebook later?', a: 'Absolutely. You can explore the data conversationally in Arcli, and export the clean, aggregated results as a CSV or Parquet file to use in Hex, Jupyter, or any other data science environment.' }
+      { q: 'Do you support Python execution?', a: 'Arcli\'s backend utilizes high-performance Python and Rust for vectorized compute, but the platform is strictly a zero-code environment for the user. You do not need to write Python to use Arcli.' },
+      { q: 'Can I export data to a notebook later?', a: 'Absolutely. You can explore data conversationally in Arcli and export the clean, aggregated results as a Parquet or CSV file for deeper modeling in Hex, Jupyter, or any specialized data science environment.' }
     ],
     relatedSlugs: ['looker-vs-ai-analytics', 'tableau-vs-ai-analytics']
   }

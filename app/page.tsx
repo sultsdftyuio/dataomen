@@ -5,26 +5,28 @@ import "../styles/globals.css";
 
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
+import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
 import { AIAgents } from "@/components/landing/Aiagents";
 import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
-import  Footer  from "@/components/landing/footer";
+import Footer from "@/components/landing/footer";
 
 /**
  * Arcli Landing Page
  *
  * Component structure (optimized for high-velocity conversion and SEO discovery):
- * Navbar                   ← Multi-tenant isolated navigation
- * Hero                     ← High-impact value proposition + conversion anchor
- * DeepDiveFeatures         ← Technical architecture deep-dive
- * AIAgents                 ← Autonomous "Arc" supervisor pipeline logic
- * IntegrationsAndSecurity  ← Enterprise-grade trust & secure hybrid connectivity
- * FAQ                      ← Objection handling + semantic context expansion
- * CTA                      ← High-velocity conversion final push
- * SeoLinkSilo              ← Internal linking strategy (crawler discovery & siloing)
- * Footer                   ← Global directory and legal
+ * Navbar                 <- Multi-tenant isolated navigation
+ * Hero                   <- High-impact value proposition + conversion anchor
+ * HowItWorks             <- 3-step high-level pipeline flow
+ * DeepDiveFeatures       <- Technical architecture deep-dive
+ * AIAgents               <- Autonomous "Arc" supervisor pipeline logic
+ * IntegrationsAndSecurity<- Enterprise-grade trust & secure hybrid connectivity
+ * FAQ                    <- Objection handling + semantic context expansion
+ * CTA                    <- High-velocity conversion final push
+ * SeoLinkSilo            <- Internal linking strategy (crawler discovery & siloing)
+ * Footer                 <- Global directory and legal
  */
 export default function Page() {
   return (
@@ -46,6 +48,7 @@ export default function Page() {
         {/* Semantic Content Stack */}
         <section className="relative z-10">
           <Hero />
+          <HowItWorks />
           <DeepDiveFeatures />
           <AIAgents />
           <IntegrationsAndSecurity />

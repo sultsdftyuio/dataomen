@@ -3,19 +3,33 @@ import React from 'react';
 import { Database, Zap, Server, Cloud } from 'lucide-react';
 
 /**
- * SEOPageData Interface
- * Standardized for the Arcli high-performance analytical stack.
- * Upgraded to a "Search-Intent Machine" schema with real-world code examples,
- * pain-point targeting, and deep technical FAQs.
+ * SemanticOrchestration Schema
+ * Specifically engineered for Text-to-SQL intent.
+ * Focuses on the "Orchestration" layer—the bridge between Natural Language 
+ * and high-performance, dialect-specific SQL execution.
  */
 export type SEOPageData = {
-  type: 'feature' | 'integration' | 'comparison' | 'guide' | 'template';
+  type: 'feature' | 'integration';
   title: string;
   description: string;
   h1: string;
   subtitle: string;
   icon: React.ReactElement;
   features: string[];
+  nlpOrchestration: {
+    intentParsing: string;
+    contextAwareRAG: string;
+    securityPerimeter: string;
+  };
+  dialectPrecision: {
+    specializedOperators: string[];
+    optimizationStrategy: string;
+  };
+  interfaceFriction: {
+    traditionalBottleneck: string;
+    theArcliSolution: string;
+    architecturalImpact: string[];
+  };
   steps: { name: string; text: string }[];
   realExample?: {
     query: string;
@@ -23,111 +37,118 @@ export type SEOPageData = {
     output: string;
     insight: string;
   };
-  painPoints?: {
-    title: string;
-    points: string[];
-    solution: string;
-  };
   useCases: { title: string; description: string }[];
   faqs: { q: string; a: string }[];
-  comparison?: { 
-    competitor: string; 
-    arcliWins: string[]; 
-    competitorFlaws: string[]; 
-  };
   relatedSlugs: string[];
 };
 
 export const textToSqlFeatures: Record<string, SEOPageData> = {
-  // Broad / Mid-Tail Niche
   'natural-language-to-sql': {
     type: 'feature',
     title: 'Natural Language to SQL Generator | Arcli Analytics',
-    description: 'Transform plain English into highly optimized, vectorized SQL queries. Arcli uses Context-Aware RAG to chat securely with your database without moving your data.',
-    h1: 'Chat With Your Database Using Natural Language',
-    subtitle: 'Type what you want to know in plain English. Our semantic engine writes the SQL, executes it via secure read-only connections, and visualizes the results instantly using in-browser DuckDB.',
+    description: 'Convert plain English into highly optimized, vectorized SQL. Evaluate how Arcli utilizes Context-Aware RAG to bridge the gap between business intent and database logic.',
+    h1: 'The Semantic Bridge: Natural Language to SQL',
+    subtitle: 'Transform conversational intent into production-grade SQL. Our orchestration engine maps schema metadata fragments to ensure zero-hallucination query generation.',
     icon: <Database className="w-12 h-12 text-emerald-500 mb-6" />,
     features: [
-      'Context-Aware Schema RAG (Zero Token Bloat)', 
-      'Multi-Dialect Vectorized Support (Postgres, Snowflake, BigQuery)', 
-      'Strict Multi-Tenant Read-Only Execution',
-      'In-Browser Visualization via WebAssembly DuckDB'
+      'Context-Aware Schema RAG', 
+      'Multi-Dialect Vectorized Support', 
+      'Multi-Tenant Read-Only Execution',
+      'WASM-Powered In-Browser Visualization'
     ],
+    nlpOrchestration: {
+      intentParsing: 'Utilizes high-dimensional semantic routing to deconstruct complex business questions into logical query components.',
+      contextAwareRAG: 'Injects relevant schema fragments (tables, columns, types) dynamically, preventing LLM token bloat and maintaining strict privacy.',
+      securityPerimeter: 'All generated SQL is passed through a validation layer and executed within a strictly read-only transactional block.'
+    },
+    dialectPrecision: {
+      specializedOperators: [
+        'Automatic CTE (Common Table Expression) construction',
+        'Complex Window Function generation for time-series analysis',
+        'Cross-table relational mapping via foreign-key inference'
+      ],
+      optimizationStrategy: 'Prioritizes push-down compute, ensuring heavy aggregations are performed by the database engine while rendering is handled by local DuckDB.'
+    },
+    interfaceFriction: {
+      traditionalBottleneck: 'The "Technical Translation Debt": Business users waiting days for analysts to translate English questions into SQL code.',
+      theArcliSolution: 'A zero-setup semantic layer that enables instant, conversational data exploration directly against the read-replica.',
+      architecturalImpact: [
+        'Eliminates the centralized data request queue.',
+        'Ensures mathematical consistency across different business departments.',
+        'Reduces computational waste by generating highly targeted, non-expansive SQL.'
+      ]
+    },
     steps: [
-      { name: '1. Index Schema Metadata', text: 'Arcli securely scans your database metadata fragments without touching underlying row-level data.' },
-      { name: '2. Semantic Routing', text: 'Our intelligent routing engine injects only relevant schema context into the LLM prompt, preventing hallucinations.' },
-      { name: '3. Dialect-Specific Generation', text: 'The AI generates precisely formatted SQL for your specific database dialect.' },
-      { name: '4. Secure Execution & Charting', text: 'Results are returned as optimized Parquet files and instantly visualized.' }
+      { name: '1. Metadata Indexing', text: 'Securely scan database headers to create a semantic map without touching row-level data.' },
+      { name: '2. Semantic Routing', text: 'The orchestrator identifies the 3-5 tables required for your specific question.' },
+      { name: '3. Dialect Formatting', text: 'The AI generates precise SQL tailored for Postgres, Snowflake, or BigQuery.' }
     ],
     realExample: {
       query: "Show me monthly revenue growth for the last 12 months, split by subscription tier.",
       sql: `SELECT 
-  date_trunc('month', created_at) AS month,
+  DATE_TRUNC('month', created_at) AS month,
   tier,
   SUM(revenue) AS total_revenue
 FROM subscriptions
 WHERE created_at >= NOW() - INTERVAL '12 months'
 GROUP BY 1, 2
 ORDER BY 1 DESC;`,
-      output: "Interactive React-Vega Time-Series Bar Chart",
-      insight: "Enterprise tier revenue grew 18% MoM, outpacing Pro tier."
-    },
-    comparison: {
-      competitor: 'Traditional BI Tools (Tableau, Looker)',
-      competitorFlaws: [
-        'Requires weeks of data modeling and ETL pipeline setup.',
-        'Forces users to learn complex proprietary semantic layers (e.g., LookML).',
-        'High latency for ad-hoc exploration.'
-      ],
-      arcliWins: [
-        'Zero setup: Connect a read-only URL and ask questions instantly.',
-        'No modeling required; RAG natively understands your existing schema.',
-        'Instantaneous slicing via in-memory browser compute.'
-      ]
+      output: "Interactive Time-Series Chart",
+      insight: "Revenue growth trends visualized instantly via automated window-function generation."
     },
     useCases: [
-      { title: 'Self-Serve Product Analytics', description: 'Empower Product Managers to query live application data, bypassing the BI queue.' },
-      { title: 'Dynamic Client Reporting', description: 'Generate custom, ad-hoc reports for clients on the fly.' }
+      { title: 'Self-Serve Product Analytics', description: 'Enable product leads to query application telemetry without utilizing engineering resources.' },
+      { title: 'Ad-Hoc Strategic Reporting', description: 'Generate custom board-level metrics in real-time during strategic meetings.' }
     ],
     faqs: [
-      { q: 'Is it safe to connect production databases?', a: 'Yes. We strictly enforce read-only analytical connections. Our execution engine wraps all operations in transaction blocks that drop any query attempting to use INSERT, UPDATE, DELETE, or DROP commands.' },
-      { q: 'How do you handle large datasets?', a: 'We process the heavy lifting at the database layer (vectorized aggregation), stream the compressed results via Parquet, and render them using WebAssembly-powered DuckDB in the browser, easily handling millions of returned rows without crashing your tab.' },
-      { q: 'Does it support joins automatically?', a: 'Yes. Our semantic RAG engine indexes foreign keys and infers relationships based on column naming conventions, allowing the AI to construct flawless multi-table JOINs natively.' }
+      { q: 'How do you prevent SQL hallucinations?', a: 'By utilizing Context-Aware RAG. We do not ask the LLM to guess your schema; we provide it with exact, metadata-verified table and column fragments before generation.' },
+      { q: 'Is it safe for production environments?', a: 'Yes. We enforce read-only connections and utilize transaction-level guardrails that reject any non-SELECT commands at the application layer.' }
     ],
     relatedSlugs: ['postgresql-text-to-sql', 'snowflake-text-to-sql', 'ai-dashboard-builder']
   },
 
-  // Hyper-Niche: Postgres Focus (High technical search intent)
   'postgresql-text-to-sql': {
     type: 'integration',
     title: 'PostgreSQL Text to SQL AI Generator | Arcli',
-    description: 'Connect your Postgres database to Arcli. Convert natural language to optimized PostgreSQL queries instantly using AI and RAG schema awareness.',
-    h1: 'AI-Powered Text to SQL for PostgreSQL',
-    subtitle: 'Generate complex PostgreSQL queries, recursive CTEs, and JSONB extractions instantly just by typing your analytical questions in plain English.',
+    description: 'Generate optimized PostgreSQL queries from natural language. Evaluate how Arcli handles native JSONB extraction and recursive CTEs with semantic precision.',
+    h1: 'Precision Text-to-SQL for PostgreSQL',
+    subtitle: 'Bypass manual SQL authoring. Generate complex PostgreSQL queries, deep JSONB extractions, and recursive CTEs using conversational English.',
     icon: <Server className="w-12 h-12 text-blue-600 mb-6" />,
     features: [
-      'Native Postgres Syntax & Dialect Formatting', 
-      'Deep JSONB Field Extraction Support (->, ->>)', 
+      'Native Postgres Syntax Formatting', 
+      'Deep JSONB Field Extraction (->, ->>)', 
       'Automated Index Awareness',
-      'Direct-to-DuckDB Zero-Latency Export'
+      'DuckDB Result Export'
     ],
-    painPoints: {
-      title: 'Why PostgreSQL Analytics is Hard',
-      points: [
-        'Writing and maintaining complex multi-table JOINs and recursive CTEs.',
-        'Wrestling with exact syntax to unpack nested JSONB arrays and payloads.',
-        'Query optimization on massive transactional datasets.',
-        'Slow dashboard rendering times requiring heavy caching layers.'
+    nlpOrchestration: {
+      intentParsing: 'Deconstructs natural language into Postgres-specific analytical patterns.',
+      contextAwareRAG: 'Focuses on Postgres-specific types, including JSONB schemas and partitioned table metadata.',
+      securityPerimeter: 'Strictly read-only execution with mandatory IP whitelisting for all Postgres read-replicas.'
+    },
+    dialectPrecision: {
+      specializedOperators: [
+        'Unpacking nested JSONB objects and arrays',
+        'Generating recursive CTEs for hierarchical data',
+        'Utilizing Postgres-specific date truncation and interval logic'
       ],
-      solution: 'Arcli bypasses these bottlenecks. We compile English directly into highly-optimized Postgres syntax, offload the execution to read-replicas, and stream the output to a local DuckDB instance for zero-latency charting.'
+      optimizationStrategy: 'Leverages Postgres’s native aggregation engine for high-performance result set generation.'
+    },
+    interfaceFriction: {
+      traditionalBottleneck: 'The complexity of writing and debugging multi-layered JSONB and relational queries in Standard SQL.',
+      theArcliSolution: 'Direct-to-Postgres orchestration that understands the nuances of the 12+ dialect, including custom JSONB operators.',
+      architecturalImpact: [
+        'Sub-second turnaround for complex schema exploration.',
+        'Reduced load on production databases through optimized query planning.',
+        'Zero-code access to unstructured database payloads.'
+      ]
     },
     steps: [
-      { name: 'Connect Postgres URL', text: 'Provide a read-only Postgres connection string. We map the schema instantly.' },
-      { name: 'Ask Complex Questions', text: 'e.g., "Show me top users by JSONB event metrics..."' },
-      { name: 'Execute and Analyze', text: 'Results are streamed directly into an in-browser DuckDB instance.' }
+      { name: '1. Connect Replica', text: 'Provide a secure, read-only connection string to your Postgres instance.' },
+      { name: '2. Converse with Data', text: 'Request logic (e.g., "Analyze cart status from the JSON payload").' },
+      { name: '3. Stream Results', text: 'Results are streamed to the browser-level DuckDB engine for instant charting.' }
     ],
     realExample: {
-      query: "Calculate the cart abandonment rate for the last 30 days by extracting the status from the event_payload JSONB column.",
+      query: "Calculate the cart abandonment rate by extracting the status from the event_payload JSONB column.",
       sql: `WITH cart_events AS (
   SELECT 
     user_id,
@@ -140,62 +161,60 @@ SELECT
   COUNT(CASE WHEN cart_status = 'abandoned' THEN 1 END) * 100.0 / COUNT(*) AS abandonment_rate
 FROM cart_events;`,
       output: "Gauge Chart Indicator",
-      insight: "Cart abandonment rate is currently 64.2%."
-    },
-    comparison: {
-      competitor: 'Generic LLMs (ChatGPT/Claude)',
-      competitorFlaws: [
-        'Hallucinates non-existent Postgres table and column names.', 
-        'Struggles heavily with correct JSONB extraction syntax.', 
-        'Requires manual copy-pasting into DataGrip or pgAdmin.'
-      ],
-      arcliWins: [
-        '100% Schema accuracy guaranteed via semantic routing RAG.', 
-        'Flawless native JSONB, CTE, and Window Function generation.', 
-        'Executes queries securely and charts results in one unified UI.'
-      ]
+      insight: "Unstructured JSONB payloads analyzed natively without manual flattening or ETL."
     },
     useCases: [
-      { title: 'SaaS App Analytics', description: 'Query your production Postgres read-replica directly to understand user behavior.' }
+      { title: 'SaaS Production Monitoring', description: 'Analyze live feature usage and transactional health directly from your database replica.' }
     ],
     faqs: [
-      { q: 'Does Arcli support PostgreSQL JSONB queries?', a: 'Yes. Our Text-to-SQL engine is heavily optimized to unpack and query Postgres JSONB arrays and objects efficiently, utilizing the correct operators (->, ->>, @>) based on your schema.' },
-      { q: 'Is it safe to connect production databases?', a: 'We highly recommend connecting Arcli to a read-replica, but our strict execution environment wraps everything in read-only transactions, ensuring absolute data safety.' },
-      { q: 'How do you handle large datasets?', a: 'We utilize Postgres\'s native aggregation capabilities to crunch the numbers server-side, returning only the vectorized analytical results to the client.' }
+      { q: 'Does Arcli support native Postgres JSONB operators?', a: 'Yes. Our engine is specifically trained to utilize the correct Postgres operators (->, ->>, @>) based on your column metadata.' },
+      { q: 'How do you handle massive datasets?', a: 'We push the heavy math to the Postgres engine and only stream the final aggregated results (via Parquet) to the client for visualization.' }
     ],
     relatedSlugs: ['natural-language-to-sql', 'snowflake-text-to-sql']
   },
 
-  // Hyper-Niche: Snowflake Focus (Enterprise search intent)
   'snowflake-text-to-sql': {
     type: 'integration',
     title: 'Snowflake Text to SQL & AI Analytics | Arcli',
-    description: 'Transform your Snowflake data warehouse with AI. Generate highly efficient Snowflake SQL from English and build automated analytical dashboards.',
-    h1: 'Natural Language AI for Snowflake Data Clouds',
-    subtitle: 'Stop wasting warehouse compute credits on poorly optimized analytical queries. Arcli generates cost-efficient, highly-performant Snowflake SQL automatically.',
+    description: 'Optimize your Snowflake data cloud with generative AI. Evaluate how Arcli generates cost-efficient, performant Snowflake SQL from conversational intent.',
+    h1: 'Cost-Aware Text-to-SQL for Snowflake',
+    subtitle: 'Minimize Snowflake compute credits. Transform natural language into highly explicit, cost-optimized SQL queries using enterprise-grade RAG.',
     icon: <Cloud className="w-12 h-12 text-sky-400 mb-6" />,
     features: [
-      'Warehouse Compute & Cost Optimization', 
-      'Columnar RAG Indexing for Massive Schemas', 
-      'Native Snowflake Role-Based Access Control (RBAC)',
+      'Warehouse Cost Optimization', 
+      'Massive Schema Vectorized RAG', 
+      'Native Snowflake RBAC Integration',
       'Time Travel Query Support'
     ],
-    painPoints: {
-      title: 'Why Snowflake Analytics is Expensive & Slow',
-      points: [
-        'Non-technical users writing unoptimized queries that consume massive warehouse credits.',
-        'Data teams bottlenecked by constant ad-hoc BI requests from executives.',
-        'Struggling to navigate schemas with thousands of tables across multiple databases.'
+    nlpOrchestration: {
+      intentParsing: 'Maps conversational requests to the specific analytical functions of the Snowflake Data Cloud.',
+      contextAwareRAG: 'Utilizes high-dimensional embeddings to navigate enterprise schemas containing thousands of tables across multiple databases.',
+      securityPerimeter: 'Inherits native Snowflake Role-Based Access Control (RBAC) and scoped warehouse permissions.'
+    },
+    dialectPrecision: {
+      specializedOperators: [
+        'Native Snowflake Date functions (DATEADD, DATEDIFF)',
+        'Efficient FLATTEN logic for Snowflake semi-structured data',
+        'Cost-aware column selection to minimize credit consumption'
       ],
-      solution: 'Arcli acts as an AI optimizer and orchestrator. It uses RAG to find the exact tables needed, writes highly explicit, cost-saving SQL (no SELECT *), and executes via scoped roles.'
+      optimizationStrategy: 'Aggressively avoids non-targeted queries (SELECT *), generating explicit, warehouse-friendly SQL orchestration.'
+    },
+    interfaceFriction: {
+      traditionalBottleneck: 'The high cost of "Technical Debt" queries: Business users writing unoptimized SQL that burns through Snowflake credits.',
+      theArcliSolution: 'An AI-orchestrator that authors precise, cost-efficient queries while providing a conversational layer for non-technical leaders.',
+      architecturalImpact: [
+        'Significant reduction in Snowflake warehouse credit consumption.',
+        'Unified semantic governance across petabyte-scale data lakes.',
+        'Immediate visual feedback without additional data movement.'
+      ]
     },
     steps: [
-      { name: 'Secure Warehouse Linking', text: 'Securely authenticate Arcli using a scoped, read-only Snowflake role.' },
-      { name: 'Mass Schema RAG Indexing', text: 'We index your massive warehouse schemas without moving your underlying petabyte-scale data.' },
-      { name: 'Cost-Aware SQL Generation', text: 'The AI generates dialect-compliant Snowflake SQL, utilizing cost-saving techniques.' }
+      { name: '1. Scoped Integration', text: 'Authenticate Arcli using a read-only, warehouse-scoped Snowflake role.' },
+      { name: '2. Semantic Indexing', text: 'Arcli indexes your warehouse metadata without moving any underlying row-level data.' },
+      { name: '3. Cost-Aware Querying', text: 'Generate dialect-perfect Snowflake SQL designed for maximum compute efficiency.' }
     ],
     realExample: {
-      query: "What was the total compute cost for the 'MARKETING_WH' warehouse last week, grouped by day?",
+      query: "What was the compute cost for the 'MARKETING_WH' warehouse last week, grouped by day?",
       sql: `SELECT 
   DATE_TRUNC('DAY', START_TIME) AS usage_day,
   SUM(CREDITS_USED) AS total_credits
@@ -204,29 +223,15 @@ WHERE WAREHOUSE_NAME = 'MARKETING_WH'
   AND START_TIME >= DATEADD(WEEK, -1, CURRENT_DATE())
 GROUP BY 1
 ORDER BY 1 ASC;`,
-      output: "Line Chart View",
-      insight: "Compute spiked by 300% on Thursday due to scheduled dbt runs."
-    },
-    comparison: {
-      competitor: 'Standard SQL Editors',
-      competitorFlaws: [
-        'Requires deep knowledge of Snowflake specific functions (e.g., DATEADD, FLATTEN).',
-        'No guardrails against expensive, unoptimized queries.',
-        'Disconnected from visualization tools.'
-      ],
-      arcliWins: [
-        'Generates highly explicit, cost-optimized SQL automatically.',
-        'Connects Natural Language directly to visual outputs.',
-        'Semantic routing handles the schema complexity for the user.'
-      ]
+      output: "Warehouse Metering Chart",
+      insight: "Compute trends identified natively using Snowflake’s account usage metadata."
     },
     useCases: [
-      { title: 'Executive Data Democratization', description: 'Allow C-suite executives to query the entire Snowflake data lake securely via chat.' }
+      { title: 'Executive Data Democratization', description: 'Empower enterprise leadership to query the Snowflake data lake securely via natural language chat.' }
     ],
     faqs: [
-      { q: 'How do you handle massive Snowflake schemas with thousands of tables?', a: 'We utilize advanced semantic routing. We generate embeddings for your tables, performing a vector search to pull only the metadata of the 3-5 relevant tables into the LLM context window.' },
-      { q: 'Will this increase my Snowflake compute costs?', a: 'No, it optimizes them. Our engine writes explicit queries to avoid scanning unnecessary columns. By bringing results into browser-level DuckDB, subsequent slicing requires ZERO additional Snowflake compute credits.' },
-      { q: 'Does it support joins automatically?', a: 'Yes. It maps your enterprise schema relationships to automatically join fact and dimension tables appropriately based on user intent.' }
+      { q: 'How does Arcli handle schemas with 1,000+ tables?', a: 'We use Vector Routing. We store embeddings of your table metadata; when you ask a question, we perform a vector search to inject only the relevant table context into the LLM prompt.' },
+      { q: 'Will this help reduce my Snowflake bill?', a: 'Yes. By generating highly explicit SQL that only scans necessary columns and utilizes partition filters, Arcli minimizes the I/O and compute credits required for each query.' }
     ],
     relatedSlugs: ['natural-language-to-sql', 'postgresql-text-to-sql']
   }

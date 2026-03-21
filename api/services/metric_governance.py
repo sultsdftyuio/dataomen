@@ -59,9 +59,10 @@ class MetricGovernanceService:
 
     def __init__(self):
         # SQL operations strictly forbidden in metric definitions
+        # CRITICAL FIX: Changed exp.AlterTable to exp.Alter to match sqlglot >= 23.8.0 specs
         self.FORBIDDEN_OPERATIONS = (
             exp.Drop, exp.Delete, exp.Insert, exp.Update, 
-            exp.AlterTable, exp.Command, exp.Commit
+            exp.Alter, exp.Command, exp.Commit
         )
 
     # ==========================================
