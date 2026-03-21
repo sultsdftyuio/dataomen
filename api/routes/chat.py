@@ -38,7 +38,6 @@ insight_engine = InsightOrchestrator()
 llm_client = LLMClient()
 
 diagnostic_service = DiagnosticService(
-    generator=generator,
     compute=compute_engine
 )
 
