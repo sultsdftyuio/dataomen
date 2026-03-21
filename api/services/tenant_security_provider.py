@@ -18,7 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import text
 
 # Import the modernized SaaS billing manager and Organization model
-from api.services.subscription_manager import SubscriptionManager, UsageMetric
+from api.services.subscription_manager import SubscriptionManager,UsageMetric
 from models import Organization
 
 logger = logging.getLogger(__name__)

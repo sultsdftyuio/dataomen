@@ -2,10 +2,31 @@ import logging
 from typing import Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from dataclasses import dataclass
+from datetime import datetime
 
 from models import Organization, SubscriptionTier # Assuming Organization represents the Tenant
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class UsageMetric:
+    """
+    Data structure representing a single unit of work/compute.
+    Used by the tenant_security_provider to track and log specific actions
+    before they are committed to the database.
+    """
+    tenant_id: str
+    action_type: str
+    tokens_used: int = 0
+    compute_time_ms: int = 0
+    timestamp: datetime = datetime.utcnow()
+    
+    @property
+    def cost_estimate(self) -> float:
+        """Dynamically calculates the cost based on the action type."""
+        return SubscriptionManager.COST_TABLE.get(self.action_type, 1.0)
+
 
 class SubscriptionManager:
     """
