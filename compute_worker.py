@@ -1,4 +1,15 @@
 import os
+import sys
+
+# ------------------------------------------------------------------------------
+# Absolute Path Resolution for Celery Prefork Workers
+# ------------------------------------------------------------------------------
+# Fixes: "Could not reset DB pool on fork: No module named 'api'"
+# Forces the root directory into the Python path regardless of how the container is launched.
+_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
+
 import asyncio
 import logging
 import gc
@@ -338,6 +349,26 @@ def execute_heavy_analytical_pipeline(
             tenant_id=tenant_id,
             prompt=prompt,
         ))
+
+        # =====================================================================
+        # NEW: 2.5 SEMANTIC LAYER INJECTION
+        # Intercept the AI's raw SQL and inject any pre-approved business metrics
+        # =====================================================================
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": "Applying strict semantic governance..."},
+        )
+        from api.database import SessionLocal
+        from api.services.metric_governance import metric_governance_service
+        
+        with SessionLocal() as db:
+            sql_query = metric_governance_service.inject_governed_metrics(
+                db=db,
+                tenant_id=tenant_id,
+                dataset_id=dataset.dataset_id,
+                raw_execution_sql=sql_query
+            )
+        # =====================================================================
 
         # 3. Vectorised Compute Execution ─────────────────────────────────────
         self.update_state(

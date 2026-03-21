@@ -34,6 +34,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/components/ui/use-toast"
 import { createClient } from '@/utils/supabase/client'
 
+// Import the new Semantic Layer Builder
+import SemanticMetricBuilder from '@/components/datasets/SemanticMetricBuilder'
+
 // -----------------------------------------------------------------------------
 // Type Definitions
 // -----------------------------------------------------------------------------
@@ -194,7 +197,7 @@ export default function DatasetSchemaManagerPage() {
   if (!dataset) return null;
 
   return (
-    <div className="flex flex-col gap-6 h-full animate-in fade-in duration-500 pb-10 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-8 h-full animate-in fade-in duration-500 pb-10 max-w-6xl mx-auto">
       
       {/* Header & Navigation */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -247,7 +250,7 @@ export default function DatasetSchemaManagerPage() {
           <CardTitle className="text-lg">Schema & Dictionary Mapping</CardTitle>
           <CardDescription>Inferred from Parquet metadata. Edit descriptions to improve Agent accuracy.</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader className="bg-muted/10">
               <TableRow>
@@ -327,6 +330,32 @@ export default function DatasetSchemaManagerPage() {
         )}
       </Card>
       
+      {/* ----------------------------------------------------------------------
+          NEW: Semantic Layer Metric Builder 
+      ----------------------------------------------------------------------- */}
+      <div className="pt-4 flex flex-col items-center sm:items-start w-full">
+        <div className="mb-6">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">Semantic Metrics Library</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Build and govern custom business metrics that your NL2SQL agents will rely on for perfect calculations.
+          </p>
+        </div>
+        
+        <div className="w-full">
+          <SemanticMetricBuilder 
+            datasetId={datasetId} 
+            apiUrl={process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}
+            onMetricSaved={() => {
+              toast({
+                title: "Metric Saved",
+                description: "This metric is now globally available for this dataset.",
+              });
+              // Note: You can add an API call here later to re-fetch and display a table of saved metrics!
+            }}
+          />
+        </div>
+      </div>
+
     </div>
   )
 }

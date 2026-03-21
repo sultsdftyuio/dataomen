@@ -161,7 +161,7 @@ class TenantErrorLog(Base, TenantAwareMixin):
 
 
 # ==========================================
-# DATASETS
+# DATASETS & SEMANTICS
 # ==========================================
 class Dataset(Base, TenantAwareMixin):
     """
@@ -194,6 +194,26 @@ class Dataset(Base, TenantAwareMixin):
     # Relationships
     agents: Mapped[List["Agent"]] = relationship("Agent", back_populates="dataset", cascade="all, delete-orphan")
     insights: Mapped[List["Insight"]] = relationship("Insight", back_populates="dataset", cascade="all, delete-orphan")
+    semantic_metrics: Mapped[List["SemanticMetric"]] = relationship("SemanticMetric", back_populates="dataset", cascade="all, delete-orphan")
+
+
+class SemanticMetric(Base, TenantAwareMixin):
+    """
+    Governed Semantic Layer Metric definition.
+    Ensures consistent, pre-compiled DuckDB SQL logic across all analytical queries.
+    """
+    __tablename__ = "semantic_metrics"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False)
+    
+    metric_name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    compiled_sql: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="semantic_metrics")
 
 
 # ==========================================
