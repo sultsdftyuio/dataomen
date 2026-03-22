@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { 
   TrendingDown, 
   TrendingUp, 
   Zap, 
   CheckCircle2, 
-  ArrowRight,
   Sparkles,
   MessageSquare,
   BarChart2,
@@ -52,6 +52,7 @@ interface Insight {
 }
 
 export function InsightsFeed() {
+  const router = useRouter();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -85,9 +86,9 @@ export function InsightsFeed() {
   };
 
   const handleInvestigate = (insight: Insight) => {
-    // Routes to the AI chat pre-filled with the context of this specific anomaly
+    // Routes to the AI chat pre-filled with the context of this specific anomaly using Next.js router
     const query = encodeURIComponent(`Tell me more about the recent anomaly in ${insight.metric_name}.`);
-    window.location.assign(`/dashboard/chat?q=${query}&context_id=${insight.id}`);
+    router.push(`/chat?prompt=${query}&context_id=${insight.id}`);
   };
 
   // --- Loading State ---
@@ -96,7 +97,7 @@ export function InsightsFeed() {
       <Card className="w-full h-full min-h-[500px] border-slate-200 shadow-sm bg-white">
         <CardHeader className="pb-4 border-b border-slate-100 bg-slate-50/50">
           <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
-            <Zap className="h-5 w-5 text-blue-500 animate-pulse" /> AI Business Alerts
+            <Zap className="h-5 w-5 text-indigo-500 animate-pulse" /> AI Business Alerts
           </CardTitle>
           <CardDescription>Scanning your data for significant changes...</CardDescription>
         </CardHeader>
@@ -129,7 +130,7 @@ export function InsightsFeed() {
         <p className="text-base text-slate-500 max-w-sm mb-8 leading-relaxed">
           Your AI agents are actively monitoring your metrics 24/7. We'll notify you here if any unusual trends or anomalies occur.
         </p>
-        <Button variant="outline" className="gap-2 rounded-full text-blue-600 border-blue-200 hover:bg-blue-50">
+        <Button variant="outline" className="gap-2 rounded-full text-indigo-600 border-indigo-200 hover:bg-indigo-50 font-medium">
           <BarChart2 className="w-4 h-4" /> View All Metrics
         </Button>
       </Card>
@@ -143,14 +144,14 @@ export function InsightsFeed() {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 tracking-tight">
-              <Bell className="h-5 w-5 text-blue-600 fill-blue-600/20" /> 
+              <Bell className="h-5 w-5 text-indigo-600 fill-indigo-600/20" /> 
               AI Business Alerts
             </CardTitle>
             <CardDescription className="mt-1 text-slate-500">
               High-impact events automatically detected in your data.
             </CardDescription>
           </div>
-          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 font-bold px-3 py-1 rounded-full border-0">
+          <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 font-bold px-3 py-1 rounded-full border-0">
             {insights.length} New
           </Badge>
         </div>
@@ -163,11 +164,10 @@ export function InsightsFeed() {
             const isSpike = insight.payload.variance_pct > 0;
             const Icon = isSpike ? TrendingUp : TrendingDown;
             
-            // For a real app, you might want to map certain metrics (like CAC or Churn) to be "bad" if they spike.
             // Assuming default: Spike = Positive (Emerald), Drop = Negative (Rose)
             const isPositive = isSpike; 
             const colorClass = isPositive ? "text-emerald-700" : "text-rose-700";
-            const bgClass = isPositive ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100";
+            const bgClass = isPositive ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200";
             const iconBg = isPositive ? "bg-emerald-100" : "bg-rose-100";
 
             return (
@@ -205,7 +205,7 @@ export function InsightsFeed() {
                 {insight.payload.top_drivers && insight.payload.top_drivers.length > 0 && (
                   <div className="ml-14 bg-white/60 rounded-xl p-4 border border-white/40 shadow-sm backdrop-blur-sm">
                     <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3 text-blue-500" /> Key Factors
+                      <Sparkles className="h-3 w-3 text-indigo-500" /> Key Factors
                     </p>
                     <div className="space-y-2.5">
                       {insight.payload.top_drivers.slice(0, 2).map((driver, idx) => (
@@ -213,8 +213,8 @@ export function InsightsFeed() {
                           <span className="font-medium text-slate-700">
                             {driver.dimension}: <span className="text-slate-900 font-bold">{driver.category_name}</span>
                           </span>
-                          <span className="text-slate-600 text-xs font-medium bg-white px-2 py-1 rounded-md shadow-sm">
-                            {driver.percentage_change > 0 ? "+" : ""}{driver.percentage_change}% change
+                          <span className="text-slate-600 text-xs font-medium bg-white px-2 py-1 rounded-md shadow-sm border border-slate-100">
+                            {driver.percentage_change > 0 ? "+" : ""}{driver.percentage_change.toFixed(1)}% change
                           </span>
                         </div>
                       ))}
@@ -236,7 +236,7 @@ export function InsightsFeed() {
                     variant="default" 
                     size="sm" 
                     onClick={() => handleInvestigate(insight)}
-                    className="gap-2 bg-slate-900 hover:bg-slate-800 text-white shadow-md rounded-full px-5 font-semibold text-xs"
+                    className="gap-2 bg-slate-900 hover:bg-slate-800 text-white shadow-md rounded-full px-5 font-semibold text-xs transition-transform active:scale-95"
                   >
                     <MessageSquare className="h-3.5 w-3.5" /> Ask AI about this
                   </Button>

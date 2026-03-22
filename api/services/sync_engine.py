@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 # Core Infrastructure
 from api.database import get_db, SessionLocal
-from models import Dataset, Organization, DatasetStatus
+from models import Dataset, Organization, DatasetStatus, SemanticMetric
 from api.auth import verify_tenant, TenantContext
 
 # Modular Services
@@ -28,6 +28,9 @@ from api.services.data_sanitizer import DataSanitizer
 from api.services.duckdb_validator import DuckDBValidator
 from api.services.watchdog_service import WatchdogService
 from api.services.credential_manager import CredentialManager
+
+# Assuming an internal LLM wrapper is available for standard AI augmentation if needed
+from api.services.llm_client import llm_client 
 
 # --- Integration Registry Imports ---
 from api.services.integrations.base_integration import BaseIntegration
@@ -85,6 +88,7 @@ class SyncEngine:
     - Secure Credential Injection: Vaults API keys via CredentialManager.
     - Schema Evolution Guard: Validates against DuckDB contracts before Parquet writes.
     - Async Chunking: Yields Polars DataFrames sequentially to prevent RAM OOM.
+    - Golden Metrics Auto-Seeding: Automatically writes cross-platform formulas (True ROAS).
     """
     
     def __init__(self, db_session: Optional[Session] = None):
@@ -120,6 +124,75 @@ class SyncEngine:
         validator.validate_batch(df, expected_schema)
         
         return df
+
+    def seed_golden_metrics(self, tenant_id: str) -> None:
+        """
+        Phase 2: Backend - Auto-Seeding "Golden Metrics" on Connection.
+        When a user connects both Revenue (Stripe/Shopify) and Spend (Meta/Google),
+        this module automatically writes the perfectly optimized deterministic "True ROAS" 
+        DuckDB SQL directly into their SemanticMetric database table.
+        """
+        try:
+            with SessionLocal() as db:
+                # 1. Check if the "True ROAS" golden metric is already seeded
+                existing_roas = db.query(SemanticMetric).filter(
+                    SemanticMetric.tenant_id == tenant_id,
+                    SemanticMetric.metric_name == "True ROAS"
+                ).first()
+
+                if existing_roas:
+                    return # Already seeded
+
+                # 2. Check for the existence of required multi-platform datasets
+                datasets = db.query(Dataset).filter(Dataset.tenant_id == tenant_id).all()
+                
+                revenue_sources = [d for d in datasets if d.integration_name in ['stripe', 'shopify']]
+                spend_sources = [d for d in datasets if d.integration_name in ['meta_ads', 'google_ads']]
+
+                if not revenue_sources or not spend_sources:
+                    return # Missing prerequisites to calculate True ROAS
+
+                # Pick primary sources for the initial cross-join template
+                rev_ds = revenue_sources[0]
+                spend_ds = spend_sources[0]
+
+                # Convert names to alphanumeric for safe CTE/Table AST aliasing in metric_governance
+                rev_table_name = "".join(e for e in rev_ds.name.lower() if e.isalnum())
+                spend_table_name = "".join(e for e in spend_ds.name.lower() if e.isalnum())
+
+                # Schema normalization mappings
+                rev_col = "amount" if rev_ds.integration_name == "stripe" else "total_price"
+                rev_date = "created" if rev_ds.integration_name == "stripe" else "created_at"
+                spend_col = "spend"
+                spend_date = "date"
+
+                # 3. Construct deterministic, optimized DuckDB SQL for the Metric Injector
+                compiled_sql = f"""
+                SELECT
+                    SUM(rev.{rev_col}) / NULLIF(SUM(spend.{spend_col}), 0) AS true_roas
+                FROM {rev_table_name} AS rev
+                FULL OUTER JOIN {spend_table_name} AS spend
+                    ON date_trunc('day', CAST(rev.{rev_date} AS TIMESTAMP)) = date_trunc('day', CAST(spend.{spend_date} AS TIMESTAMP))
+                """
+
+                # 4. Save to Semantic Catalog (Global Metric -> dataset_id = None)
+                golden_metric = SemanticMetric(
+                    tenant_id=tenant_id,
+                    dataset_id=None,
+                    metric_name="True ROAS",
+                    description="Out-of-the-box cross-platform Return on Ad Spend (Actual Cash Revenue / Total Platform Spend)",
+                    compiled_sql=compiled_sql.strip(),
+                    created_at=datetime.utcnow()
+                )
+
+                db.add(golden_metric)
+                db.commit()
+                
+                logger.info(f"[{tenant_id}] 🌟 Golden Metric 'True ROAS' automatically seeded across {rev_ds.integration_name} and {spend_ds.integration_name}!")
+                
+        except Exception as e:
+            logger.error(f"[{tenant_id}] Failed to seed Golden Metrics: {e}")
+            # Non-fatal error, do not crash the sync pipeline
 
     async def run_historical_sync(
         self, 
@@ -216,7 +289,10 @@ class SyncEngine:
                 tenant_id, integration_name, dataset_id, total_rows_processed, duration, saved_paths
             )
             
-            # 7. Watchdog Telemetry (Anomaly detection on row volumes)
+            # 7. Check and Auto-Seed "Golden Metrics" (like True ROAS) across integrations
+            self.seed_golden_metrics(tenant_id)
+
+            # 8. Watchdog Telemetry (Anomaly detection on row volumes)
             with SessionLocal() as db:
                 watchdog = WatchdogService(db_client=db)
                 asyncio.create_task(
@@ -383,6 +459,9 @@ async def ingest_webhook_batch(
             storage_manager.write_dataframe(
                 db=db, df=df, tenant_id=tenant_id, dataset_id=table_id, format="parquet"
             )
+            
+            # Seed golden metrics silently on webhook ingestion too if applicable thresholds are hit
+            engine.seed_golden_metrics(tenant_id)
         
         return {"status": "success", "rows": df.height}
         

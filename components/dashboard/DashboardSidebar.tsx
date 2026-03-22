@@ -10,7 +10,10 @@ import {
   Settings, 
   CreditCard, 
   Bot,
-  Search
+  Search,
+  TrendingUp,
+  Target,
+  Users
 } from "lucide-react"
 
 // Universal Brand Logo Integration
@@ -30,13 +33,36 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
-// Adjust these to match your exact routing
+// Core Platform Navigation
 const navItems = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Datasets", href: "/datasets", icon: Database },
   { name: "Agents", href: "/agents", icon: Bot },
   { name: "Investigate", href: "/investigate", icon: Search },
+]
+
+// Phase 4: Golden Metrics Quick Triggers
+// Deep-links into the AI chat or investigation engine with a pre-optimized prompt
+const goldenMetrics = [
+  { 
+    name: "True ROAS", 
+    href: "/chat?prompt=Calculate+my+True+ROAS+across+Meta+and+Stripe+for+the+last+30+days", 
+    icon: Target,
+    color: "text-amber-500"
+  },
+  { 
+    name: "Blended CAC", 
+    href: "/chat?prompt=What+is+my+Blended+CAC+this+quarter", 
+    icon: Users,
+    color: "text-blue-500"
+  },
+  { 
+    name: "Predictive LTV", 
+    href: "/chat?prompt=Show+me+predictive+LTV+by+customer+cohort", 
+    icon: TrendingUp,
+    color: "text-emerald-500"
+  },
 ]
 
 const footerItems = [
@@ -51,15 +77,11 @@ export function DashboardSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r bg-background">
       
-      {/* Strict Header Height:
-        Added fixed heights (h-16) and flex-shrink-0 to prevent 
-        the top area from shifting layout during state changes.
-      */}
+      {/* Strict Header Height to prevent layout shifts */}
       <SidebarHeader className="flex-shrink-0 h-16 flex justify-center border-b border-border/50">
         <div className="flex items-center justify-between px-2 w-full">
           <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
             <div className="flex-shrink-0">
-              {/* Brand Logo perfectly matching the Landing Page */}
               <Logo className="h-8 w-8" /> 
             </div>
             {state === "expanded" && (
@@ -72,6 +94,8 @@ export function DashboardSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden pt-4 custom-scrollbar">
+        
+        {/* Main Navigation */}
         <SidebarGroup>
           <SidebarGroupLabel className={state === "collapsed" ? "sr-only" : "px-2 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2"}>
             Platform
@@ -79,7 +103,7 @@ export function DashboardSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
-                const isActive = pathname?.startsWith(item.href)
+                const isActive = pathname?.startsWith(item.href) && !pathname.includes('prompt=')
                 return (
                   <SidebarMenuItem key={item.name}>
                     <SidebarMenuButton 
@@ -99,6 +123,32 @@ export function DashboardSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Phase 4: Golden Metrics Injection */}
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className={state === "collapsed" ? "sr-only" : "px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2"}>
+            Golden Metrics
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {goldenMetrics.map((item) => (
+                <SidebarMenuItem key={item.name}>
+                  <SidebarMenuButton 
+                    asChild 
+                    tooltip={item.name}
+                    className="transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 group"
+                  >
+                    <Link href={item.href} className="flex items-center gap-3">
+                      <item.icon className={`h-4 w-4 shrink-0 ${item.color} group-hover:scale-110 transition-transform`} />
+                      {state === "expanded" && <span className="font-medium text-slate-700 dark:text-slate-300">{item.name}</span>}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
       </SidebarContent>
 
       <SidebarFooter className="border-t border-border/50 p-2 flex-shrink-0">

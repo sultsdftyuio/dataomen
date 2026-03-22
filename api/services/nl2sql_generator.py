@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import sqlglot
@@ -692,7 +693,11 @@ CHARTING RULES (Vega-Lite):
         ``correct_sql`` so the model gets one self-heal pass with explicit
         guidance about the schema violation.
         """
-        logger.info("[%s] Compiling QueryPlan -> %s SQL", tenant_id, target_engine.upper())
+        start_time = time.perf_counter()
+        logger.info(
+            "⚙️ [%s] Compiling QueryPlan -> %s SQL for intent: '%s'",
+            tenant_id, target_engine.upper(), plan.intent_summary,
+        )
 
         system_prompt = self._build_system_prompt(
             execution_context, plan, target_engine, agent, semantic_views
@@ -706,14 +711,15 @@ CHARTING RULES (Vega-Lite):
                 dialect=target_engine,
                 tenant_id=tenant_id,
             )
-            logger.info("[%s] SQL compiled successfully.", tenant_id)
+            duration = round(time.perf_counter() - start_time, 3)
+            logger.info("✅ [%s] SQL compiled successfully in %ss.", tenant_id, duration)
             return safe_sql, safe_chart
 
         except ValidationError as ve:
             # Feed the schema-validation failure back into the correction loop
             # so the model can attempt to self-heal with explicit guidance.
             logger.error(
-                "[%s] Output schema validation failed: %s — triggering correction loop.",
+                "❌ [%s] Output schema validation failed: %s — triggering correction loop.",
                 tenant_id,
                 ve,
             )
@@ -729,7 +735,7 @@ CHARTING RULES (Vega-Lite):
             )
 
         except Exception as exc:
-            logger.error("[%s] NL2SQL compilation failed: %s", tenant_id, exc)
+            logger.error("❌ [%s] NL2SQL compilation failed: %s", tenant_id, exc)
             raise
 
     async def correct_sql(
@@ -753,8 +759,9 @@ CHARTING RULES (Vega-Lite):
         Raises ``RuntimeError`` on cascade failure so the orchestrator can
         surface a clean error to the API layer.
         """
+        start_time = time.perf_counter()
         logger.warning(
-            "[%s] Initiating SQL auto-correction for %s error: %s",
+            "⚙️ [%s] Initiating SQL auto-correction for %s error: %s",
             tenant_id,
             target_engine.upper(),
             error_msg,
@@ -794,12 +801,13 @@ TASK:
                 dialect=target_engine,
                 tenant_id=tenant_id,
             )
-            logger.info("[%s] SQL auto-correction succeeded.", tenant_id)
+            duration = round(time.perf_counter() - start_time, 3)
+            logger.info("✅ [%s] SQL auto-correction succeeded in %ss.", tenant_id, duration)
             return safe_sql, safe_chart
 
         except Exception as exc:
             logger.critical(
-                "[%s] Cascade failure in SQL auto-correction: %s", tenant_id, exc
+                "❌ [%s] Cascade failure in SQL auto-correction: %s", tenant_id, exc
             )
             raise RuntimeError(
                 f"Unable to self-correct the query after {target_engine.upper()} "

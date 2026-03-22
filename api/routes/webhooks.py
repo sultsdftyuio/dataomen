@@ -4,14 +4,17 @@ import logging
 from fastapi import APIRouter, Depends, Request, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Dict, Any
+from pydantic import BaseModel
 
-from database import get_db
-from services.lemon_squeezy_service import LemonSqueezyService
-# --- ADD THIS AROUND LINE 9 ---
-from services.cache_manager import cache_manager
+# Absolute imports ensure the C-level container environment can resolve modules
+from api.database import get_db
+from api.services.lemon_squeezy_service import LemonSqueezyService
+from api.services.cache_manager import cache_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
+
+# --- LEMON SQUEEZY BILLING WEBHOOK ---
 
 @router.post("/lemonsqueezy")
 async def handle_lemonsqueezy_webhook(
@@ -51,9 +54,15 @@ async def handle_lemonsqueezy_webhook(
         logger.error(f"Critical failure handling Lemon Squeezy webhook: {str(e)}")
         # Returning a 500 ensures Lemon Squeezy's retry logic kicks in if the server is genuinely failing
         raise HTTPException(status_code=500, detail="Internal webhook processing error")
-    # --- ADD THIS AT THE BOTTOM OF THE FILE (Around Line 43) ---
+
+
+# --- INTERNAL DATA SYNC WEBHOOK ---
 
 class DataSyncPayload(BaseModel):
+    """
+    Schema for internal data synchronization completion events.
+    Used to trigger cache invalidation across the multi-tenant cluster.
+    """
     tenant_id: str
     dataset_id: str
     sync_status: str
@@ -68,9 +77,11 @@ async def handle_data_sync_webhook(
     Triggers an immediate cache bust so users see the freshest data.
     """
     if payload.sync_status != "success":
+        logger.info(f"[{payload.tenant_id}] Ignored sync webhook for dataset {payload.dataset_id} (Status: {payload.sync_status})")
         return {"status": "ignored", "message": "Sync not successful"}
 
-    # Offload cache busting to background task to respond to webhook instantly
+    # Offload cache busting to background task to respond to webhook instantly.
+    # This prevents the ingestion engine from hanging while waiting for cache clearing.
     background_tasks.add_task(
         cache_manager.invalidate_dataset_cache, 
         payload.tenant_id, 
