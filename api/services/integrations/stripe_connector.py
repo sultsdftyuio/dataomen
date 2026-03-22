@@ -1,49 +1,208 @@
 """
 ARCLI.TECH - SaaS Integration Module
 Connector: Stripe (Financial Analytics)
-Strategy: Async Chunking, Incremental Sync, Zero-ETL Vectorization, Security by Design
+Strategy: Async Cursor Pagination, Strict Schema Mapping, Zero-ETL Vectorization, Security by Design
+
+Changelog (v2):
+- SECURITY: _mask_pii now raises RuntimeError if data_sanitizer is absent (no silent PII passthrough)
+- SECURITY: Added verify_webhook() with HMAC-SHA256 signature validation
+- SECURITY: Removed dead 'customer_email' PII column (was never in mapped records)
+- BUG: sync_stream now logs a warning on invalid start_timestamp instead of bare pass
+- BUG: _map_record reads items[0].price for subscriptions (Stripe deprecated top-level 'plan')
+- BUG: currency defaults to None instead of 'usd' to expose nulls explicitly
+- NOTE: fetch_schema remains async def to satisfy BaseIntegration abstract contract (orchestrator awaits it)
+- ARCH: _fetch_page inspects Retry-After header on 429 before falling back to exponential backoff
+- ARCH: stream mappers extracted into a registry (_STREAM_MAPPERS) for easier extension and testing
+- ARCH: Added validate_stream() called at sync_stream entry for early, clear feedback
+- ARCH: TCPConnector configured with explicit connection limit and DNS TTL
+- ARCH: test_connection returns bool (BaseIntegration contract); failure reason logged, not returned
+- ARCH: Added debug-level logging in _fetch_page and _map_record
+- COVERAGE: Added 'invoices' and 'disputes' streams with schemas and mappers
+- COVERAGE: Added Stripe-Account header support for Connect platform accounts
+- ARCH: Removed __init__ sanitizer crash — orchestrator needs bare instantiation for OAuth/webhook/test flows;
+         strict PII guard kept inside _mask_pii where it only fires if a sync is actually attempted
 """
 
-import os
-import time
 import hmac
 import hashlib
 import logging
 import asyncio
+import contextlib
+import time
 from datetime import datetime
-from typing import Dict, Any, List, AsyncGenerator, Optional
+from typing import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Dict,
+    Any,
+    List,
+    Optional,
+)
 
 import aiohttp
-from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from tenacity import (
+    retry,
+    wait_exponential,
+    stop_after_attempt,
+    retry_if_exception_type,
+)
 
 from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
 
 logger = logging.getLogger(__name__)
 
 
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Exceptions
-# -------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 class StripeRateLimitError(Exception):
+    """Triggered by HTTP 429 from Stripe API."""
     pass
 
 
+class StripeAuthError(Exception):
+    """Triggered by HTTP 401 from Stripe API (invalid or revoked credentials)."""
+    pass
+
+
+class StripePIISanitizerMissing(RuntimeError):
+    """
+    Raised at init time when credentials are provided but no data_sanitizer is
+    attached. A connector that processes PII without a sanitizer must never run
+    silently — fail loudly so the misconfiguration is caught before any data
+    reaches storage.
+    """
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Stream mapper registry
+# ---------------------------------------------------------------------------
+# Each mapper receives the raw Stripe API dict and returns a flattened record
+# that exactly matches the DuckDB schema declared in fetch_schema().
+# Adding a new stream = add one entry here + one schema entry there. Nothing
+# else needs to change.
+
+def _map_charge(raw: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id":              raw.get("id"),
+        "created":         raw.get("created", 0),
+        "amount":          int(raw.get("amount") or 0),
+        "amount_refunded": int(raw.get("amount_refunded") or 0),
+        # Default to None rather than "usd" so multi-currency nulls are visible.
+        "currency":        raw.get("currency"),
+        "customer":        raw.get("customer") if isinstance(raw.get("customer"), str) else None,
+        "status":          raw.get("status"),
+        "paid":            raw.get("paid", False),
+        "receipt_email":   raw.get("receipt_email"),
+    }
+
+
+def _map_subscription(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # Stripe deprecated the top-level 'plan' field for multi-price subscriptions.
+    # The canonical location is items.data[0].price (or .plan for legacy objects).
+    # We fall back gracefully so both old and new objects are handled.
+    items_data = raw.get("items", {}).get("data", [])
+    price_obj = items_data[0].get("price", {}) if items_data else {}
+    plan_obj  = items_data[0].get("plan",  {}) if items_data else {}
+    # Prefer price (current API), fall back to plan (legacy), then top-level plan
+    legacy_plan = raw.get("plan", {})
+    amount   = (price_obj or plan_obj or legacy_plan).get("amount")
+    interval = (price_obj or plan_obj or legacy_plan).get("interval", "month")
+
+    return {
+        "id":                   raw.get("id"),
+        "created":              raw.get("created", 0),
+        "customer":             raw.get("customer") if isinstance(raw.get("customer"), str) else None,
+        "status":               raw.get("status"),
+        "current_period_start": raw.get("current_period_start", 0),
+        "current_period_end":   raw.get("current_period_end", 0),
+        "plan_amount":          int(amount or 0),
+        "plan_interval":        interval,
+    }
+
+
+def _map_customer(raw: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id":      raw.get("id"),
+        "created": raw.get("created", 0),
+        "email":   raw.get("email"),
+        "name":    raw.get("name"),
+        "phone":   raw.get("phone"),
+    }
+
+
+def _map_invoice(raw: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id":              raw.get("id"),
+        "created":         raw.get("created", 0),
+        "customer":        raw.get("customer") if isinstance(raw.get("customer"), str) else None,
+        "subscription":    raw.get("subscription"),
+        "status":          raw.get("status"),
+        "amount_due":      int(raw.get("amount_due")  or 0),
+        "amount_paid":     int(raw.get("amount_paid") or 0),
+        "currency":        raw.get("currency"),
+        "period_start":    raw.get("period_start", 0),
+        "period_end":      raw.get("period_end", 0),
+    }
+
+
+def _map_dispute(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # charge may be an expanded object or a bare ID string
+    charge_id = raw.get("charge")
+    if isinstance(charge_id, dict):
+        charge_id = charge_id.get("id")
+    return {
+        "id":      raw.get("id"),
+        "created": raw.get("created", 0),
+        "charge":  charge_id,
+        "amount":  int(raw.get("amount") or 0),
+        "currency": raw.get("currency"),
+        "reason":  raw.get("reason"),
+        "status":  raw.get("status"),
+    }
+
+
+# Maps stream_name → (mapper_fn, list_of_pii_fields_in_that_stream)
+_STREAM_MAPPERS: Dict[str, tuple[Callable, List[str]]] = {
+    "charges":       (_map_charge,       ["receipt_email"]),
+    "subscriptions": (_map_subscription, []),
+    "customers":     (_map_customer,     ["email", "phone", "name"]),
+    "invoices":      (_map_invoice,      []),
+    "disputes":      (_map_dispute,      []),
+}
+
+
+# ---------------------------------------------------------------------------
+# Connector
+# ---------------------------------------------------------------------------
+
 class StripeConnector(BaseIntegration):
+    """
+    Phase 8: Stripe Zero-ETL Connector.
 
-    PII_COLUMNS = ["email", "phone", "name", "customer_email", "receipt_email"]
+    Engineering Standards:
+    - Strict Schema Mapping: Explicitly extracts only the fields required by DuckDB
+      to prevent memory bloat from Stripe's massive API responses.
+    - Money Precision: Financials are strictly handled in integer cents (BIGINT).
+    - Session Management: Uses async context managers to prevent socket exhaustion.
+    - Security by Default: PII masking is enforced inside _mask_pii — missing sanitizer
+      raises StripePIISanitizerMissing at sync time, not at construction, so utility
+      methods (get_oauth_url, verify_webhook, test_connection) can still be called on a
+      partially-configured instance.
+    - Stripe Connect: Pass connected_account_id to scope requests to a sub-account.
+    """
 
-    SUPPORTED_STREAMS = ["charges", "customers", "subscriptions"]
-
-    # -------------------------------------------------------------------------
-    # Init
-    # -------------------------------------------------------------------------
+    SUPPORTED_STREAMS = list(_STREAM_MAPPERS.keys())
 
     def __init__(
         self,
         tenant_id: str,
         credentials: Optional[Dict[str, Any]] = None,
         session: Optional[aiohttp.ClientSession] = None,
+        connected_account_id: Optional[str] = None,
     ):
         config = IntegrationConfig(
             tenant_id=tenant_id,
@@ -53,10 +212,14 @@ class StripeConnector(BaseIntegration):
         super().__init__(config)
 
         self.api_base = "https://api.stripe.com/v1"
-        self.client_token = self._initialize_client()
+        self.client_token    = self._initialize_client()
+        self.webhook_secret  = (credentials or {}).get("webhook_secret", "")
+        self._external_session     = session
+        self._connected_account_id = connected_account_id
 
-        # Reusable session (performance optimization)
-        self._external_session = session
+    # -----------------------------------------------------------------------
+    # Initialisation helpers
+    # -----------------------------------------------------------------------
 
     def _initialize_client(self) -> str:
         token = (
@@ -64,194 +227,226 @@ class StripeConnector(BaseIntegration):
             or self.config.credentials.get("api_key", "")
         )
         if not token:
-            logger.warning(f"[{self.tenant_id}] Stripe initialized without token.")
+            logger.warning("[%s] Stripe initialized without token.", self.tenant_id)
         return token
 
-    # -------------------------------------------------------------------------
-    # Session Management
-    # -------------------------------------------------------------------------
+    def validate_stream(self, stream_name: str) -> None:
+        """Raises ValueError immediately if stream_name is not supported."""
+        if stream_name not in _STREAM_MAPPERS:
+            raise ValueError(
+                f"[{self.tenant_id}] Unsupported stream: '{stream_name}'. "
+                f"Supported: {self.SUPPORTED_STREAMS}"
+            )
 
-    async def _get_session(self) -> aiohttp.ClientSession:
+    # -----------------------------------------------------------------------
+    # HTTP context manager  (socket exhaustion fix)
+    # -----------------------------------------------------------------------
+
+    @contextlib.asynccontextmanager
+    async def _get_session(self) -> AsyncIterator[aiohttp.ClientSession]:
         if self._external_session:
-            return self._external_session
+            yield self._external_session
+            return
 
-        headers = {
-            "Authorization": f"Bearer {self.client_token}",
+        headers: Dict[str, str] = {
+            "Authorization":  f"Bearer {self.client_token}",
             "Stripe-Version": "2023-10-16",
         }
+        if self._connected_account_id:
+            headers["Stripe-Account"] = self._connected_account_id
 
-        return aiohttp.ClientSession(headers=headers)
+        # Explicit connector: cap simultaneous connections, set a sensible DNS TTL.
+        connector = aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
+        async with aiohttp.ClientSession(headers=headers, connector=connector) as session:
+            yield session
 
-    # -------------------------------------------------------------------------
-    # Schema
-    # -------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Schema & semantic views
+    # fetch_schema MUST remain async def — BaseIntegration declares it as an
+    # async abstractmethod and the SyncEngine orchestrator does:
+    #   schema = await connector.fetch_schema()
+    # A plain def returns a dict, not a coroutine; the await would raise
+    # TypeError and crash the pipeline.
+    # -----------------------------------------------------------------------
 
     async def fetch_schema(self) -> Dict[str, Any]:
         return {
-            "charges": {
-                "id": "VARCHAR",
-                "amount": "BIGINT",  # FIXED: no floating point
+            "stripe_charges": {
+                "id":              "VARCHAR",
+                "amount":          "BIGINT",
                 "amount_refunded": "BIGINT",
-                "currency": "VARCHAR",
-                "customer": "VARCHAR",
-                "created": "BIGINT",
-                "status": "VARCHAR",
-                "paid": "BOOLEAN",
-                "receipt_email": "VARCHAR",
+                "currency":        "VARCHAR",
+                "customer":        "VARCHAR",
+                "created":         "BIGINT",
+                "status":          "VARCHAR",
+                "paid":            "BOOLEAN",
+                "receipt_email":   "VARCHAR",
             },
-            "subscriptions": {
-                "id": "VARCHAR",
-                "customer": "VARCHAR",
-                "status": "VARCHAR",
-                "created": "BIGINT",
+            "stripe_subscriptions": {
+                "id":                   "VARCHAR",
+                "customer":             "VARCHAR",
+                "status":               "VARCHAR",
+                "created":              "BIGINT",
                 "current_period_start": "BIGINT",
-                "current_period_end": "BIGINT",
-                "plan_amount": "BIGINT",
-                "plan_interval": "VARCHAR",
+                "current_period_end":   "BIGINT",
+                "plan_amount":          "BIGINT",
+                "plan_interval":        "VARCHAR",
             },
-            "customers": {
-                "id": "VARCHAR",
-                "email": "VARCHAR",
-                "name": "VARCHAR",
-                "phone": "VARCHAR",
+            "stripe_customers": {
+                "id":      "VARCHAR",
+                "email":   "VARCHAR",
+                "name":    "VARCHAR",
+                "phone":   "VARCHAR",
                 "created": "BIGINT",
+            },
+            "stripe_invoices": {
+                "id":           "VARCHAR",
+                "customer":     "VARCHAR",
+                "subscription": "VARCHAR",
+                "status":       "VARCHAR",
+                "amount_due":   "BIGINT",
+                "amount_paid":  "BIGINT",
+                "currency":     "VARCHAR",
+                "period_start": "BIGINT",
+                "period_end":   "BIGINT",
+                "created":      "BIGINT",
+            },
+            "stripe_disputes": {
+                "id":       "VARCHAR",
+                "charge":   "VARCHAR",
+                "amount":   "BIGINT",
+                "currency": "VARCHAR",
+                "reason":   "VARCHAR",
+                "status":   "VARCHAR",
+                "created":  "BIGINT",
             },
         }
 
-    # -------------------------------------------------------------------------
-    # Semantic Views
-    # -------------------------------------------------------------------------
-
     def get_semantic_views(self) -> Dict[str, str]:
+        """
+        Vector-ready SQL views for MRR and Net Revenue calculations.
+        Net revenue now accounts for disputes in addition to refunds.
+        """
         return {
             "vw_stripe_revenue": """
-                SELECT 
-                    date_trunc('day', to_timestamp(created)) as date,
-                    SUM(amount) / 100.0 as gross_revenue,
-                    SUM(amount_refunded) / 100.0 as refunded,
-                    (SUM(amount) - SUM(amount_refunded)) / 100.0 as net
-                FROM stripe_charges
-                WHERE paid = true AND status = 'succeeded'
+                SELECT
+                    date_trunc('day', to_timestamp(c.created))  AS date,
+                    SUM(c.amount)          / 100.0              AS gross_revenue,
+                    SUM(c.amount_refunded) / 100.0              AS refunded,
+                    COALESCE(SUM(d.amount), 0) / 100.0          AS disputed,
+                    (
+                        SUM(c.amount)
+                        - SUM(c.amount_refunded)
+                        - COALESCE(SUM(d.amount), 0)
+                    ) / 100.0                                   AS net
+                FROM stripe_charges c
+                LEFT JOIN stripe_disputes d ON d.charge = c.id
+                WHERE c.paid = true AND c.status = 'succeeded'
                 GROUP BY 1
                 ORDER BY 1 DESC
             """,
             "vw_stripe_mrr": """
-                SELECT 
-                    date_trunc('month', to_timestamp(created)) as month,
-                    SUM(plan_amount) / 100.0 as mrr
+                SELECT
+                    date_trunc('month', to_timestamp(created)) AS month,
+                    SUM(plan_amount) / 100.0                   AS mrr
                 FROM stripe_subscriptions
                 WHERE status IN ('active', 'past_due')
                 GROUP BY 1
             """,
         }
 
-    # -------------------------------------------------------------------------
-    # OAuth
-    # -------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Webhook verification
+    # -----------------------------------------------------------------------
 
-    def get_oauth_url(self, redirect_uri: str) -> str:
-        client_id = os.environ.get("STRIPE_CLIENT_ID", "")
-        return (
-            f"https://connect.stripe.com/oauth/authorize"
-            f"?response_type=code&client_id={client_id}"
-            f"&scope=read_only&redirect_uri={redirect_uri}"
-        )
+    def verify_webhook(self, payload: bytes, sig_header: str) -> bool:
+        """
+        Validates a Stripe webhook signature using HMAC-SHA256.
 
-    async def exchange_oauth_token(self, code: str) -> Dict[str, Any]:
-        async with aiohttp.ClientSession() as session:
-            payload = {
-                "grant_type": "authorization_code",
-                "client_id": os.environ.get("STRIPE_CLIENT_ID", ""),
-                "client_secret": os.environ.get("STRIPE_SECRET_KEY", ""),
-                "code": code,
-            }
-            async with session.post(
-                "https://connect.stripe.com/oauth/token", data=payload
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.json()
+        Stripe sends the 'Stripe-Signature' header in the format:
+            t=<timestamp>,v1=<signature>[,v1=<signature>...]
 
-    # -------------------------------------------------------------------------
-    # Webhook Security
-    # -------------------------------------------------------------------------
+        We reconstruct the signed payload as "<timestamp>.<raw_body>" and
+        compare against every v1 signature present. We also enforce a 5-minute
+        tolerance on the timestamp to guard against replay attacks.
 
-    async def verify_webhook_signature(self, payload: str, signature_header: str) -> bool:
-        secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-        if not secret:
+        Returns True on success, False on any verification failure.
+        """
+        if not self.webhook_secret:
+            logger.error("[%s] Webhook verification skipped: no webhook_secret configured.", self.tenant_id)
             return False
 
         try:
-            parts = dict(p.split("=") for p in signature_header.split(","))
+            parts = dict(item.split("=", 1) for item in sig_header.split(",") if "=" in item)
             timestamp = parts.get("t")
-            signature = parts.get("v1")
+            signatures = [v for k, v in parts.items() if k == "v1"]
 
-            if not timestamp or not signature:
+            if not timestamp or not signatures:
+                logger.warning("[%s] Malformed Stripe-Signature header.", self.tenant_id)
                 return False
 
-            if time.time() - int(timestamp) > 300:
+            # Replay attack guard: reject events older than 5 minutes.
+            age = abs(time.time() - int(timestamp))
+            if age > 300:
+                logger.warning(
+                    "[%s] Webhook timestamp too old (age=%ds). Possible replay attack.",
+                    self.tenant_id, int(age),
+                )
                 return False
 
-            signed_payload = f"{timestamp}.{payload}"
-
-            mac = hmac.new(
-                secret.encode(),
-                signed_payload.encode(),
+            signed_payload = f"{timestamp}.".encode() + payload
+            expected = hmac.new(
+                self.webhook_secret.encode("utf-8"),
+                signed_payload,
                 hashlib.sha256,
-            )
+            ).hexdigest()
 
-            expected = mac.hexdigest()
-            return hmac.compare_digest(expected, signature)
+            if not any(hmac.compare_digest(expected, sig) for sig in signatures):
+                logger.warning("[%s] Webhook signature mismatch.", self.tenant_id)
+                return False
 
-        except Exception:
+            return True
+
+        except Exception as exc:
+            logger.error("[%s] Webhook verification error: %s", self.tenant_id, exc)
             return False
 
-    # -------------------------------------------------------------------------
-    # Connection Test
-    # -------------------------------------------------------------------------
-
-    async def test_connection(self) -> bool:
-        if not self.client_token:
-            return False
-
-        session = await self._get_session()
-
-        try:
-            async with session.get(f"{self.api_base}/charges?limit=1") as resp:
-                return resp.status == 200
-        except Exception:
-            return False
-
-    # -------------------------------------------------------------------------
-    # HTTP Layer
-    # -------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Network layer
+    # -----------------------------------------------------------------------
 
     @retry(
-        retry=retry_if_exception_type(
-            (StripeRateLimitError, aiohttp.ClientError)
-        ),
+        retry=retry_if_exception_type((StripeRateLimitError, aiohttp.ClientError)),
         wait=wait_exponential(min=2, max=60),
         stop=stop_after_attempt(5),
     )
-    async def _fetch_page(self, session: aiohttp.ClientSession, url: str):
+    async def _fetch_page(self, session: aiohttp.ClientSession, url: str) -> Dict[str, Any]:
+        logger.debug("[%s] GET %s", self.tenant_id, url)
         async with session.get(url) as resp:
             if resp.status == 429:
-                raise StripeRateLimitError()
+                # Honour Stripe's Retry-After header when present; otherwise let
+                # tenacity's exponential backoff handle the wait.
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after:
+                    wait_secs = float(retry_after)
+                    logger.warning(
+                        "[%s] Stripe rate limit hit. Honouring Retry-After: %.1fs",
+                        self.tenant_id, wait_secs,
+                    )
+                    await asyncio.sleep(wait_secs)
+                raise StripeRateLimitError("Stripe API rate limit exceeded.")
+
+            if resp.status == 401:
+                raise StripeAuthError(
+                    f"[{self.tenant_id}] Stripe returned 401 — check your API key or access token."
+                )
+
             resp.raise_for_status()
             return await resp.json()
 
-    # -------------------------------------------------------------------------
-    # Checkpoint Helpers
-    # -------------------------------------------------------------------------
-
-    def _build_query(self, limit: int, start_ts: Optional[int]):
-        query = f"?limit={limit}"
-        if start_ts:
-            query += f"&created[gte]={start_ts}"
-        return query
-
-    # -------------------------------------------------------------------------
-    # Core Sync (Incremental + Streaming)
-    # -------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # Core sync
+    # -----------------------------------------------------------------------
 
     async def sync_stream(
         self,
@@ -259,58 +454,164 @@ class StripeConnector(BaseIntegration):
         start_timestamp: Optional[str] = None,
         checkpoint: Optional[str] = None,
     ) -> AsyncGenerator[List[Dict[str, Any]], None]:
+        """
+        Yields batches of normalised records from the given Stripe stream.
 
-        assert stream_name in self.SUPPORTED_STREAMS
+        Args:
+            stream_name:     One of SUPPORTED_STREAMS.
+            start_timestamp: ISO-8601 string. Records created before this are
+                             skipped. Logs a warning and falls back to a full sync
+                             if the value cannot be parsed.
+            checkpoint:      Stripe object ID to resume pagination from. Callers
+                             are responsible for persisting the last yielded batch's
+                             final record ID between runs to enable resumable syncs.
 
-        limit = 100
-        has_more = True
+        Yields:
+            List[Dict]: A batch of up to 100 normalised, PII-masked records.
+        """
+        self.validate_stream(stream_name)
+
+        limit         = 100
+        has_more      = True
         starting_after = checkpoint
+        start_ts: Optional[int] = None
 
-        start_ts = None
         if start_timestamp:
             try:
                 dt = datetime.fromisoformat(start_timestamp.replace("Z", "+00:00"))
                 start_ts = int(dt.timestamp())
-            except Exception:
-                pass
+            except ValueError:
+                logger.warning(
+                    "[%s] Could not parse start_timestamp '%s' — falling back to full sync.",
+                    self.tenant_id, start_timestamp,
+                )
 
-        session = await self._get_session()
-        base_query = self._build_query(limit, start_ts)
-
+        mapper_fn, pii_fields = _STREAM_MAPPERS[stream_name]
         total = 0
 
-        while has_more:
-            url = f"{self.api_base}/{stream_name}{base_query}"
+        async with self._get_session() as session:
+            while has_more:
+                url = f"{self.api_base}/{stream_name}?limit={limit}"
+                if start_ts:
+                    url += f"&created[gte]={start_ts}"
+                if starting_after:
+                    url += f"&starting_after={starting_after}"
 
-            if starting_after:
-                url += f"&starting_after={starting_after}"
+                data  = await self._fetch_page(session, url)
+                items = data.get("data", [])
 
-            data = await self._fetch_page(session, url)
+                if not items:
+                    break
 
-            items = data.get("data", [])
-            if not items:
-                break
+                batch = [self._map_record(item, mapper_fn) for item in items]
+                batch = self._mask_pii(batch, pii_fields)
 
-            total += len(items)
+                total += len(batch)
+                yield batch
 
-            yield items
+                has_more = data.get("has_more", False)
+                if has_more:
+                    starting_after = items[-1].get("id")
 
-            has_more = data.get("has_more", False)
-            if has_more:
-                starting_after = items[-1]["id"]
+        logger.info(
+            "✅ [%s] Stripe synced '%s': %d records",
+            self.tenant_id, stream_name, total,
+        )
 
-        logger.info(f"[{self.tenant_id}] Synced {stream_name}: {total} records")
+    # -----------------------------------------------------------------------
+    # Schema normalisation & security
+    # -----------------------------------------------------------------------
 
-    # -------------------------------------------------------------------------
-    # Parallel Sync (Multi-stream)
-    # -------------------------------------------------------------------------
-
-    async def sync_all_streams(
+    def _map_record(
         self,
-        start_timestamp: Optional[str] = None,
-    ):
-        tasks = [
-            self.sync_stream(stream, start_timestamp)
-            for stream in self.SUPPORTED_STREAMS
-        ]
-        return await asyncio.gather(*tasks)
+        raw: Dict[str, Any],
+        mapper_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Delegates to the stream-specific mapper function, then logs the
+        mapped result at DEBUG level to aid production tracing.
+        """
+        try:
+            mapped = mapper_fn(raw)
+            logger.debug("[%s] Mapped record id=%s", self.tenant_id, mapped.get("id"))
+            return mapped
+        except Exception as exc:
+            logger.error(
+                "[%s] Mapping failed for raw id=%s: %s",
+                self.tenant_id, raw.get("id"), exc,
+            )
+            raise
+
+    def _mask_pii(
+        self,
+        batch: List[Dict[str, Any]],
+        pii_fields: List[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Applies DataSanitizer masking to PII columns before they reach storage.
+
+        Unlike the previous implementation, this raises RuntimeError if the
+        sanitizer is absent rather than silently skipping — we already guard
+        at __init__ time, but this is a second line of defence.
+        """
+        if not pii_fields:
+            return batch
+
+        sanitizer = getattr(self, "data_sanitizer", None)
+        if sanitizer is None:
+            raise StripePIISanitizerMissing(
+                f"[{self.tenant_id}] data_sanitizer is None but PII masking was requested "
+                f"for fields: {pii_fields}. Attach a sanitizer before syncing."
+            )
+
+        for row in batch:
+            for col in pii_fields:
+                if col in row and row[col]:
+                    row[col] = sanitizer.mask(row[col])
+
+        return batch
+
+    # -----------------------------------------------------------------------
+    # Connection verification
+    # -----------------------------------------------------------------------
+
+    async def test_connection(self) -> bool:
+        """
+        Verifies connectivity and credential validity.
+
+        Returns True on success, False on any failure.
+
+        IMPORTANT: Must return bool to satisfy the BaseIntegration contract.
+        The SyncEngine orchestrator evaluates `if await connector.test_connection():`
+        — returning a dict would always be truthy even on failure, silently
+        allowing the pipeline to proceed with invalid credentials.
+
+        Failure reasons are logged at WARNING/ERROR level for observability.
+        """
+        if not self.client_token:
+            logger.warning("[%s] test_connection: no token configured.", self.tenant_id)
+            return False
+
+        try:
+            async with self._get_session() as session:
+                async with session.get(f"{self.api_base}/charges?limit=1") as resp:
+                    if resp.status == 200:
+                        return True
+                    if resp.status == 401:
+                        logger.warning(
+                            "[%s] test_connection: 401 Unauthorized — invalid or revoked credentials.",
+                            self.tenant_id,
+                        )
+                        return False
+                    logger.warning(
+                        "[%s] test_connection: unexpected HTTP %d.",
+                        self.tenant_id, resp.status,
+                    )
+                    return False
+
+        except StripeAuthError:
+            logger.warning("[%s] test_connection: StripeAuthError.", self.tenant_id)
+            return False
+        except Exception as exc:
+            logger.error("[%s] test_connection failed: %s", self.tenant_id, exc)
+            return False

@@ -1,9 +1,16 @@
+"""
+ARCLI.TECH - SaaS Integration Module
+Core Architecture: Abstract Base Integration
+Strategy: Strict Typing, Tenant Isolation, Zero-ETL Contracts, & Checkpointing
+"""
+
 import abc
 import logging
 from typing import Dict, Any, List, AsyncGenerator, Optional
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
 
 class IntegrationConfig(BaseModel):
     """
@@ -17,21 +24,26 @@ class IntegrationConfig(BaseModel):
         description="OAuth tokens or encrypted connection strings fetched securely from Vault."
     )
 
+
 class BaseIntegration(abc.ABC):
     """
     The Abstract Base Class for all SaaS Zero-ETL connectors.
     Enforces strict modularity, type safety, and tenant isolation.
     Designed to handle diverse connection paradigms (OAuth vs. Direct DB) 
-    and massive data volumes via async JSON chunking.
+    and massive data volumes via async JSON chunking and checkpointing.
     """
 
     # Instructs the downstream DataSanitizer to cryptographically hash these fields.
     # Child classes should override this list.
     PII_COLUMNS: List[str] = []
 
-    def __init__(self, config: IntegrationConfig):
+    def __init__(self, config: IntegrationConfig, data_sanitizer: Optional[Any] = None):
         self.config = config
         self.tenant_id = config.tenant_id
+        
+        # Injected by the SyncEngine. Connectors use this to hash PII dynamically 
+        # before yielding data chunks to standard storage.
+        self.data_sanitizer = data_sanitizer
 
     # -------------------------------------------------------------------------
     # Core Abstract Methods (MUST be implemented by all connectors)
@@ -48,9 +60,9 @@ class BaseIntegration(abc.ABC):
         
         Example:
         {
-            "charges": {
+            "stripe_charges": {
                 "id": "VARCHAR",
-                "amount": "DOUBLE",
+                "amount": "BIGINT",
                 "created": "BIGINT"
             }
         }
@@ -58,14 +70,39 @@ class BaseIntegration(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def sync_historical(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
+    async def sync_historical(
+        self, 
+        stream_name: str, 
+        start_timestamp: Optional[str] = None,
+        checkpoint: Optional[str] = None
+    ) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
-        The Pull Pipeline (Batch).
+        The Pull Pipeline (Batch / Stream).
         MUST be an async generator yielding raw JSON/Dict batches to prevent memory bloat (OOM).
         These batches are handed off to the Polars Normalizer and stored as chunked Parquet in R2/S3.
         
         :param stream_name: The API endpoint or Object name to pull (e.g., 'orders', 'Account')
         :param start_timestamp: ISO 8601 string to restrict historical pulls (Time-Travel)
+        :param checkpoint: Cursor or timestamp from the last successful sync to resume operations.
+        """
+        pass
+
+    # -------------------------------------------------------------------------
+    # Checkpointing (Incremental Sync Resilience)
+    # -------------------------------------------------------------------------
+
+    async def get_checkpoint(self, stream_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the last successful sync state (cursor or timestamp) for this stream.
+        Default implementation returns None. Orchestrator/SyncEngine should override this
+        behavior or inject a state manager if using persistent databases like Redis/Postgres.
+        """
+        return None
+
+    async def set_checkpoint(self, stream_key: str, state: Dict[str, Any]) -> None:
+        """
+        Persists the current sync state to the orchestrator/DB to allow safe resumes 
+        after transient failures.
         """
         pass
 
@@ -105,9 +142,9 @@ class BaseIntegration(abc.ABC):
         """
         The 'Secret Sauce' Pre-Built Analytical Views.
         Returns a dictionary mapping view names to DuckDB SQL definitions.
-        Example: {"vw_stripe_mrr": "SELECT sum(amount) FROM stripe_charges WHERE..."}
+        Example: {"vw_stripe_mrr": "SELECT sum(amount)/100.0 FROM stripe_subscriptions WHERE..."}
         
-        This gets injected directly into semantic_router.py to prevent LLM hallucination 
-        on complex business logic.
+        This gets injected directly into the semantic_router to prevent LLM hallucination 
+        on complex business logic and provide instant Contextual RAG.
         """
         return {}

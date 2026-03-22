@@ -1,7 +1,7 @@
 """
 ARCLI.TECH - SaaS Integration Module
 Connector: Snowflake (Enterprise Data Warehouse)
-Strategy: Compute Pushdown, Precision Mapping, Projection Pushdown, & Async Vectorization
+Strategy: Compute Pushdown, Vectorized Pandas Extraction, & Async Threading
 """
 
 import logging
@@ -16,6 +16,7 @@ from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_excep
 try:
     import snowflake.connector
     from snowflake.connector.errors import DatabaseError, OperationalError
+    import pandas as pd
     import numpy as np
     SNOWFLAKE_AVAILABLE = True
 except ImportError:
@@ -29,6 +30,17 @@ logger = logging.getLogger(__name__)
 
 
 class SnowflakeConnector(BaseIntegration):
+    """
+    Phase 8: Snowflake Zero-ETL Connector.
+
+    Engineering Standards:
+    - Vectorization: Uses `fetch_pandas_batches()` via Arrow to securely pull millions 
+      of rows in highly-compressed columnar chunks, converting them directly to DuckDB formats.
+    - Precision Mapping: Dynamically converts Snowflake's NUMBER(p,s) to either BIGINT
+      or DECIMAL(p,s) depending on scale to prevent floating-point drift on financial data.
+    - Async Threading: Wraps Snowflake's blocking native C-extensions in `anyio.to_thread`
+      to prevent the FastAPI event loop from stalling during heavy EDW pulls.
+    """
 
     PII_COLUMNS = ["EMAIL", "PHONE", "SSN", "FIRST_NAME", "LAST_NAME"]
 
@@ -45,17 +57,18 @@ class SnowflakeConnector(BaseIntegration):
         super().__init__(config)
 
         if not SNOWFLAKE_AVAILABLE:
-            raise ImportError("snowflake-connector-python is required")
+            raise ImportError("snowflake-connector-python and pandas are required")
 
         self._schema_cache: Optional[Dict[str, Any]] = None
         self._schema_cache_time: float = 0
 
     # ---------------------------------------------------------------------
-    # Connection
+    # Connection Management
     # ---------------------------------------------------------------------
 
     @contextlib.asynccontextmanager
     async def _get_client(self):
+        """Yields a thread-safe Snowflake connection."""
         creds = self.config.credentials
 
         def _connect():
@@ -87,17 +100,31 @@ class SnowflakeConnector(BaseIntegration):
         finally:
             await anyio.to_thread.run_sync(conn.close)
 
+    async def test_connection(self) -> bool:
+        """Lightweight check invoked by the orchestrator to verify credentials."""
+        try:
+            async with self._get_client() as conn:
+                def _test():
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT 1")
+                        return cur.fetchone() is not None
+                return await anyio.to_thread.run_sync(_test)
+        except Exception as e:
+            logger.error("[%s] Snowflake connection failed: %s", self.tenant_id, str(e))
+            return False
+
     # ---------------------------------------------------------------------
-    # Schema (Cached + Precision Safe)
+    # Schema Introspection (Cached + Precision Safe)
     # ---------------------------------------------------------------------
 
     async def fetch_schema(self) -> Dict[str, Any]:
+        """Maps Snowflake internal types to strict DuckDB / Parquet schemas."""
         now = time.time()
 
         if self._schema_cache and (now - self._schema_cache_time < self.SCHEMA_CACHE_TTL):
             return self._schema_cache
 
-        def _introspect(conn):
+        def _introspect(conn) -> Dict[str, Any]:
             schema = {}
 
             query = """
@@ -110,7 +137,6 @@ class SnowflakeConnector(BaseIntegration):
             with conn.cursor() as cur:
                 cur.execute(query)
                 for table, col, dtype in cur.fetchall():
-
                     table = table.lower()
                     if table not in schema:
                         schema[table] = {}
@@ -132,7 +158,7 @@ class SnowflakeConnector(BaseIntegration):
 
                     elif base in ["FLOAT", "DOUBLE"]:
                         mapped = "DOUBLE"
-                    elif base in ["VARCHAR", "TEXT"]:
+                    elif base in ["VARCHAR", "TEXT", "STRING"]:
                         mapped = "VARCHAR"
                     elif base == "BOOLEAN":
                         mapped = "BOOLEAN"
@@ -156,7 +182,7 @@ class SnowflakeConnector(BaseIntegration):
         return schema
 
     # ---------------------------------------------------------------------
-    # Sync
+    # Core Sync Execution (Vectorized)
     # ---------------------------------------------------------------------
 
     async def sync_stream(
@@ -166,16 +192,17 @@ class SnowflakeConnector(BaseIntegration):
         selected_columns: Optional[List[str]] = None,
         limit: Optional[int] = None,
     ) -> AsyncGenerator[List[Dict[str, Any]], None]:
-
+        
+        # Sanitize against SQL injection in table name
         safe_table = "".join(c for c in stream_name if c.isalnum() or c == "_").upper()
 
         schema = await self.fetch_schema()
         table_schema = schema.get(safe_table.lower())
 
         if not table_schema:
-            raise ValueError(f"Table {safe_table} not found")
+            raise ValueError(f"Table {safe_table} not found in Snowflake schema")
 
-        # --- Column projection ---
+        # Column projection pushdown
         if selected_columns:
             cols = [c for c in selected_columns if c.lower() in table_schema]
         else:
@@ -183,10 +210,10 @@ class SnowflakeConnector(BaseIntegration):
 
         col_sql = ", ".join([f'"{c.upper()}"' for c in cols])
 
-        # --- Detect timestamp column ---
+        # Auto-detect CDC / Incremental timestamp columns
         chrono_col = None
-        for c in ["updated_at", "created_at", "modified_at"]:
-            if c in table_schema:
+        for c in ["UPDATED_AT", "CREATED_AT", "MODIFIED_AT", "TIMESTAMP"]:
+            if c.lower() in table_schema:
                 chrono_col = c
                 break
 
@@ -200,65 +227,69 @@ class SnowflakeConnector(BaseIntegration):
         if limit:
             query += f" LIMIT {limit}"
 
-        logger.info(f"[{self.tenant_id}] Querying {safe_table}")
+        logger.info("[%s] Executing Snowflake Pushdown: %s", self.tenant_id, safe_table)
 
-        def _execute(conn):
+        def _execute_and_fetch(conn):
             cur = conn.cursor()
-            cur.execute(query)
-            return cur, cur.fetch_pandas_batches(self.DEFAULT_BATCH_SIZE)
-
-        def _next_batch(iterator):
             try:
-                df = next(iterator)
-                if df is None or df.empty:
-                    return None
+                cur.execute(query)
+                # fetch_pandas_batches is a massive memory/CPU optimization
+                for df in cur.fetch_pandas_batches(self.DEFAULT_BATCH_SIZE):
+                    if df is None or df.empty:
+                        continue
+                    
+                    # Clean the dataframe
+                    df = df.replace({np.nan: None})
+                    for col in df.select_dtypes(include=["datetime64[ns]", "datetime64[ns, UTC]"]).columns:
+                        df[col] = df[col].astype(str).replace({"NaT": None})
 
-                df = df.replace({np.nan: None})
-
-                for col in df.select_dtypes(include=["datetime64[ns]"]).columns:
-                    df[col] = df[col].astype(str).replace({"NaT": None})
-
-                return df.to_dict(orient="records")
-
-            except StopIteration:
-                return None
-
-        async with self._get_client() as conn:
-            cursor, iterator = await anyio.to_thread.run_sync(_execute, conn)
-
-            try:
-                while True:
-                    batch = await anyio.to_thread.run_sync(_next_batch, iterator)
-
-                    if batch is None:
-                        break
-
-                    yield batch
-
-                    await anyio.sleep(0)
-
+                    yield df.to_dict(orient="records")
             finally:
-                await anyio.to_thread.run_sync(cursor.close)
+                cur.close()
+
+        # Isolate blocking generator iteration to a worker thread
+        async with self._get_client() as conn:
+            iterator = await anyio.to_thread.run_sync(_execute_and_fetch, conn)
+            
+            while True:
+                try:
+                    # Pull next chunk from the thread
+                    batch = await anyio.to_thread.run_sync(next, iterator)
+                    
+                    # Security boundary: Mask PII before yielding to async application space
+                    batch = self._mask_pii(batch)
+                    
+                    yield batch
+                    
+                    # Yield event loop
+                    await anyio.sleep(0)
+                except StopIteration:
+                    break
 
     # ---------------------------------------------------------------------
-    # Sampling Mode (Fast UX)
+    # Security & Masking
     # ---------------------------------------------------------------------
 
-    async def sample_table(self, table: str, limit: int = 1000):
-        async for batch in self.sync_stream(table, limit=limit):
+    def _mask_pii(self, batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Applies DataSanitizer masking securely across potential case variations."""
+        if not hasattr(self, 'data_sanitizer') or not self.data_sanitizer:
             return batch
-        return []
+
+        for row in batch:
+            # Snowflake standardizes columns to uppercase, but we check comprehensively
+            for key in list(row.keys()):
+                if key.upper() in self.PII_COLUMNS and row[key]:
+                    row[key] = self.data_sanitizer.mask(row[key])
+        return batch
 
     # ---------------------------------------------------------------------
     # Semantic Views
     # ---------------------------------------------------------------------
 
     def get_semantic_views(self) -> Dict[str, str]:
-        db = self.config.credentials.get("database")
-        schema = self.config.credentials.get("schema", "PUBLIC")
-
-        return {
-            "vw_snowflake_live": f"""
-                SELECT * FROM snowflake_scan('{db}', '{schema}', 'SOME_TABLE')
-            """
-        }
+        """
+        Since EDWs don't have static schemas like SaaS tools, we map an empty 
+        view dictionary here to prevent the AI orchestrator from throwing missing view errors.
+        Dynamic view mapping for Snowflake is handled at the QueryPlanner RAG layer.
+        """
+        return {}

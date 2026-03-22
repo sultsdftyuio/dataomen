@@ -35,12 +35,13 @@ class BigQueryNetworkError(Exception):
 
 class BigQueryConnector(BaseIntegration):
     """
-    Google BigQuery Connector for Zero-ETL Syncs and Pushdown Compute.
+    Phase 8: Google BigQuery Connector for Zero-ETL Syncs and Pushdown Compute.
     
     Engineering Upgrades:
     - Vectorized Extraction: Uses BigQuery Storage API & Pandas for zero-copy memory transfers.
     - Dynamic Delta Sync: Introspects schemas to safely push timestamp filters to GCP compute.
     - Resilience: Exponential backoff via Tenacity handles transient Google API quotas.
+    - Security: Applies dynamic data sanitization dynamically over case-insensitive schema outputs.
     """
 
     # BQ often stores raw CRM/App data. Instruct the DataSanitizer to hash these on the fly.
@@ -58,7 +59,7 @@ class BigQueryConnector(BaseIntegration):
         super().__init__(config)
         
         if not BIGQUERY_AVAILABLE:
-            logger.critical(f"[{self.tenant_id}] Missing 'google-cloud-bigquery'.")
+            logger.critical("[%s] Missing 'google-cloud-bigquery'.", self.tenant_id)
             raise ImportError(
                 "The BigQuery driver is not installed. "
                 "Please run: pip install 'google-cloud-bigquery[pandas,pyarrow]'"
@@ -69,11 +70,11 @@ class BigQueryConnector(BaseIntegration):
         self.dataset_id = self.config.credentials.get("dataset_id")
         
         if not raw_sa_info:
-            logger.error(f"[{self.tenant_id}] BigQuery initialization failed: Missing service_account_json.")
+            logger.error("[%s] BigQuery initialization failed: Missing service_account_json.", self.tenant_id)
             raise ValueError("BigQuery 'service_account_json' is required in credentials.")
             
         if not self.dataset_id:
-            logger.warning(f"[{self.tenant_id}] BigQuery 'dataset_id' not provided. Operations will require explicit project-level scans.")
+            logger.warning("[%s] BigQuery 'dataset_id' not provided. Operations will require explicit project-level scans.", self.tenant_id)
 
         # Parse stringified JSON if stored as a secure string in Supabase Vault
         sa_info = json.loads(raw_sa_info) if isinstance(raw_sa_info, str) else raw_sa_info
@@ -84,7 +85,7 @@ class BigQueryConnector(BaseIntegration):
             # Initialize the thread-safe BQ Client
             self.client = bigquery.Client(credentials=gcp_creds, project=self.project_id)
         except Exception as e:
-            logger.error(f"[{self.tenant_id}] Failed to authenticate BigQuery client: {str(e)}")
+            logger.error("[%s] Failed to authenticate BigQuery client: %s", self.tenant_id, str(e))
             raise
 
     async def test_connection(self) -> bool:
@@ -96,7 +97,7 @@ class BigQueryConnector(BaseIntegration):
                 result = query_job.result()
                 return len(list(result)) == 1
             except Exception as e:
-                logger.error(f"[{self.tenant_id}] BigQuery connection test failed: {str(e)}")
+                logger.error("[%s] BigQuery connection test failed: %s", self.tenant_id, str(e))
                 return False
 
         try:
@@ -141,12 +142,12 @@ class BigQueryConnector(BaseIntegration):
         try:
             return await anyio.to_thread.run_sync(_fetch)
         except Exception as getattr_err:
-            logger.error(f"[{self.tenant_id}] Schema introspection failed: {str(getattr_err)}")
+            logger.error("[%s] Schema introspection failed: %s", self.tenant_id, str(getattr_err))
             raise
 
     async def sync_historical(self, stream_name: str, start_timestamp: Optional[str] = None) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
-        Phase 3.3: High-Throughput Extraction Pipeline.
+        High-Throughput Extraction Pipeline.
         Executes a table extract and streams pages back using the BigQuery Storage API 
         (Apache Arrow -> Pandas) to prevent massive memory bloat while maximizing speed.
         """
@@ -165,7 +166,6 @@ class BigQueryConnector(BaseIntegration):
 
         # 2. Compute Pushdown Query
         query = f"SELECT * FROM `{table_ref}`"
-        ts_filter = "2000-01-01 00:00:00"
         
         if start_timestamp and chronology_col:
             try:
@@ -173,7 +173,7 @@ class BigQueryConnector(BaseIntegration):
                 ts_filter = dt.strftime("%Y-%m-%d %H:%M:%S")
                 # Push computation to BQ to minimize network egress
                 query += f" WHERE {chronology_col} >= TIMESTAMP('{ts_filter}')"
-                logger.info(f"[{self.tenant_id}] Applying BQ Compute Pushdown: {chronology_col} >= {ts_filter}")
+                logger.info("[%s] Applying BQ Compute Pushdown: %s >= %s", self.tenant_id, chronology_col, ts_filter)
             except ValueError:
                 pass
 
@@ -194,7 +194,7 @@ class BigQueryConnector(BaseIntegration):
                 # Protect JSON Serialization: Convert Pandas NaT / NaN to pure Python None
                 df_batch = df_batch.replace({np.nan: None})
                 
-                # BigQuery returns TZ-aware datetimes. Clean them for Polars string parsing.
+                # BigQuery returns TZ-aware datetimes. Clean them for Polars/DuckDB string parsing.
                 for col in df_batch.select_dtypes(include=['datetime64[ns]', 'datetime64[ns, UTC]', 'datetimetz']).columns:
                     df_batch[col] = df_batch[col].astype(str).replace({'NaT': None, 'nan': None})
                     
@@ -202,7 +202,7 @@ class BigQueryConnector(BaseIntegration):
             except StopIteration:
                 return None
 
-        logger.info(f"[{self.tenant_id}] Starting BigQuery sync for {table_ref}")
+        logger.info("[%s] Starting BigQuery sync for %s", self.tenant_id, table_ref)
 
         try:
             batch_iterator = await anyio.to_thread.run_sync(_execute_and_get_iterator)
@@ -213,36 +213,57 @@ class BigQueryConnector(BaseIntegration):
                 if not chunk:
                     break
                     
+                # Apply Security Pipeline BEFORE yielding to memory
+                chunk = self._mask_pii(chunk)
+                
                 yield chunk
                 
                 # Explicitly yield control back to the FastAPI event loop
                 await anyio.sleep(0)
 
         except Exception as e:
-            logger.error(f"[{self.tenant_id}] BigQuery historical sync failed for {stream_name}: {str(e)}")
+            logger.error("[%s] BigQuery historical sync failed for %s: %s", self.tenant_id, stream_name, str(e))
             raise
+
+    # -------------------------------------------------------------------------
+    # Security & Masking
+    # -------------------------------------------------------------------------
+
+    def _mask_pii(self, batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Applies DataSanitizer securely across case-insensitive schema outputs."""
+        sanitizer = getattr(self, "data_sanitizer", None)
+        if not sanitizer:
+            return batch
+
+        for row in batch:
+            for key in list(row.keys()):
+                if key.lower() in self.PII_COLUMNS and row[key]:
+                    row[key] = sanitizer.mask(row[key])
+        return batch
+
+    # -------------------------------------------------------------------------
+    # Semantic Views
+    # -------------------------------------------------------------------------
 
     def get_semantic_views(self) -> Dict[str, str]:
         """
         Contextual RAG Mapping.
-        If Dataomen detects standard BQ exports (like Google Analytics 4), 
-        inject pre-calculated views to prevent LLM hallucination.
+        Defines local DuckDB views targeting the synced local table data.
         """
         return {
-            "vw_ga4_daily_active_users": f"""
-                -- DuckDB Macro mapped to standard GA4 BigQuery Schema
+            "vw_ga4_daily_active_users": """
                 SELECT 
                     event_date, 
                     COUNT(DISTINCT user_pseudo_id) as active_users
-                FROM `{self.project_id}.{self.dataset_id}.events_*`
+                FROM bigquery_events
                 GROUP BY event_date
                 ORDER BY event_date DESC
             """,
-            "vw_ga4_purchase_revenue": f"""
+            "vw_ga4_purchase_revenue": """
                 SELECT 
                     event_date,
                     SUM(CAST(event_value_in_usd AS DOUBLE)) as daily_revenue
-                FROM `{self.project_id}.{self.dataset_id}.events_*`
+                FROM bigquery_events
                 WHERE event_name = 'purchase'
                 GROUP BY event_date
                 ORDER BY event_date DESC
@@ -260,10 +281,8 @@ class BigQueryConnector(BaseIntegration):
         """
         bq_type_upper = bq_type.upper()
         
-        # Handle Array types e.g., ARRAY<STRING>
         if bq_type_upper.startswith("ARRAY"):
             return "LIST"
-        # Handle Struct types
         if bq_type_upper.startswith("STRUCT"):
             return "STRUCT"
 
@@ -279,7 +298,7 @@ class BigQueryConnector(BaseIntegration):
             "DATETIME": "TIMESTAMP",
             "TIME": "TIME",
             "TIMESTAMP": "TIMESTAMP",
-            "GEOGRAPHY": "VARCHAR", # DuckDB spatial handles geometry as varchar initially
+            "GEOGRAPHY": "VARCHAR", 
             "JSON": "JSON"
         }
         

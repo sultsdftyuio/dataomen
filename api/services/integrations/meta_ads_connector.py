@@ -3,16 +3,44 @@ ARCLI.TECH - SaaS Integration Module
 Connector: Meta Ads (Facebook & Instagram Analytics)
 Strategy: Insights API · Cursor Pagination · AppSecret Proof · CAC Analytics
 
-Upgrade changelog (v2)
-──────────────────────
-1. Date chunking       — weekly windows prevent OOM on large accounts
-2. Checkpointing       — resumes from last_synced_date on failure
-3. Money precision     — spend stored as integer cents; raw string preserved
-4. Dynamic conversions — conversion_events list driven by tenant credentials
-5. Breakdown support   — country / device / placement segmentation
-6. Sampling mode       — fast preview path with configurable row cap
-7. Retry taxonomy      — transient Graph API error codes retried explicitly
-8. Concurrency         — asyncio.gather across multiple ad accounts / streams
+File path: api/services/integrations/meta_ads_connector.py
+
+Upgrade changelog
+─────────────────
+v1 → v2
+  1. Date chunking       — weekly windows prevent Graph API timeouts on large accounts
+  2. Checkpointing       — resumes from last_synced_date on failure
+  3. Money precision     — spend stored as integer cents; raw string preserved
+  4. Dynamic conversions — conversion_events list driven by tenant credentials
+  5. Breakdown support   — country / device / placement segmentation
+  6. Sampling mode       — fast preview path with configurable row cap
+  7. Retry taxonomy      — transient Graph API error codes retried explicitly
+  8. Bearer auth         — access_token moved to Authorization header (never in URL)
+  9. Proactive throttle  — X-Business-Use-Case-Usage parsed before hard 429
+ 10. Proof caching       — appsecret_proof computed once at init, not per-request
+
+v2 → v3
+ 11. OOM safety          — sync_multiple_accounts removed; multi-account concurrency
+                           is orchestrated at the SyncEngine layer, not inside the
+                           connector. The connector is a strict 1-to-1 stream.
+ 12. PII masker safety   — getattr guard prevents AttributeError in lightweight
+                           contexts where data_sanitizer has not been injected.
+
+Architecture principles
+───────────────────────
+Security      — AppSecret Proof on every request; Bearer auth (token never in URL);
+                proof re-attached to every cursor hop (paging.next omits it).
+Resilience    — Weekly date chunking + per-window checkpointing; typed retry
+                taxonomy covering proactive throttle, hard 429, transient Graph
+                faults, and token expiry.
+Precision     — spend_cents (BIGINT) avoids float drift on large budgets; spend_raw
+                (VARCHAR) preserves the original API string for audit/reconciliation.
+Flexibility   — Conversion events, breakdowns, and sampling mode are all
+                tenant-configurable via credentials or call-site keyword flags.
+Privacy       — DataSanitizer applied to PII_COLUMNS before any yield; getattr
+                guard makes the check safe in test/diagnostic contexts.
+Memory        — Strict streaming (AsyncGenerator); memory usage is O(batch_size),
+                constant relative to total account data volume.
 """
 
 import json
@@ -39,31 +67,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Module-level tuneable constants
 # ---------------------------------------------------------------------------
-_CHUNK_SIZE_DAYS     = 7          # Weekly windows for date chunking
-_PAGINATION_DELAY_S  = 0.3        # Burst-limit buffer between cursor hops
-_REQUEST_TIMEOUT_S   = 60.0       # Shared across all client calls
-_DEFAULT_SINCE_DATE  = "2024-01-01"
-_SAMPLE_ROW_CAP      = 1_000      # Max rows returned in sampling mode
-_DEFAULT_PAGE_LIMIT  = 250        # Records per API page (full sync)
+_CHUNK_SIZE_DAYS    = 7      # Weekly windows for date chunking
+_PAGINATION_DELAY_S = 0.3    # Burst-limit buffer between cursor hops
+_REQUEST_TIMEOUT_S  = 60.0   # Shared across all client calls
+_DEFAULT_SINCE_DATE = "2024-01-01"
+_SAMPLE_ROW_CAP     = 1_000  # Max rows returned in sampling mode
+_DEFAULT_PAGE_LIMIT = 250    # Records per API page (full sync)
 
-# Graph API error codes that are safe to retry (transient server faults)
+# Graph API error codes that are safe to retry (transient server faults).
+# Source: https://developers.facebook.com/docs/graph-api/using-graph-api/error-handling
 _RETRYABLE_GRAPH_CODES = {1, 2, 4, 17, 341}
 
 
 # ---------------------------------------------------------------------------
-# Exceptions
+# Custom exceptions
 # ---------------------------------------------------------------------------
 
 class MetaAdsRateLimitError(Exception):
-    """Triggered by hard 429s or proactive X-Business-Use-Case-Usage threshold."""
-
+    """
+    Raised on hard 429s or when proactive X-Business-Use-Case-Usage parsing
+    detects the call_count threshold has reached 85%.  Both paths are handled
+    by the same tenacity retry policy.
+    """
 
 class MetaAdsTokenExpiredError(Exception):
-    """Triggered when Meta returns OAuthException code 190 (token expiry)."""
-
+    """
+    Raised when Meta returns OAuthException code 190 (token expiry).
+    Signals the SyncEngine / Vault layer to trigger credential rotation.
+    Not retried — a new token must be issued before the sync can resume.
+    """
 
 class MetaAdsTransientError(Exception):
-    """Triggered by retryable Graph API error codes (1, 2, 4, 17, 341)."""
+    """
+    Raised for Graph API error codes in _RETRYABLE_GRAPH_CODES.
+    These are temporary server-side faults that resolve without intervention.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +110,24 @@ class MetaAdsTransientError(Exception):
 
 def _weekly_windows(since: str, until: str) -> List[Tuple[str, str]]:
     """
-    Splits [since, until] into non-overlapping 7-day chunks.
+    Splits a date range into non-overlapping 7-day chunks.
+
+    Splitting requests into bounded windows instead of issuing a single large
+    time_range query prevents Graph API timeouts on large accounts, keeps
+    individual request payloads small, and makes per-window checkpointing
+    cheap.  Window size is controlled by _CHUNK_SIZE_DAYS.
+
+    Parameters
+    ----------
+    since : str
+        Start date, inclusive, in %Y-%m-%d format.
+    until : str
+        End date, inclusive, in %Y-%m-%d format.
+
+    Returns
+    -------
+    List[Tuple[str, str]]
+        Ordered list of (window_since, window_until) pairs.
 
     Example
     -------
@@ -81,9 +136,9 @@ def _weekly_windows(since: str, until: str) -> List[Tuple[str, str]]:
        ("2024-01-08", "2024-01-14"),
        ("2024-01-15", "2024-01-20")]
     """
-    fmt     = "%Y-%m-%d"
-    start   = datetime.strptime(since, fmt)
-    end     = datetime.strptime(until, fmt)
+    fmt    = "%Y-%m-%d"
+    start  = datetime.strptime(since, fmt)
+    end    = datetime.strptime(until, fmt)
     windows: List[Tuple[str, str]] = []
 
     cursor = start
@@ -101,19 +156,33 @@ def _weekly_windows(since: str, until: str) -> List[Tuple[str, str]]:
 
 class MetaAdsConnector(BaseIntegration):
     """
-    Phase 8 (v2): Meta Ads Zero-ETL Connector.
+    Meta Ads Zero-ETL Connector (v3, production-ready).
 
-    Key design principles
-    ─────────────────────
-    Security    — AppSecret Proof on every request; Bearer auth (token never
-                  in URL); proof re-attached to every cursor hop.
-    Resilience  — Weekly date chunking + checkpointing; typed retry taxonomy.
-    Precision   — Spend stored as integer cents + raw string to avoid float
-                  drift on large budgets.
-    Flexibility — Conversion events, breakdowns, and sampling mode are all
-                  tenant-configurable via credentials / call-site flags.
-    Scale       — asyncio.gather for multi-account / multi-stream concurrency.
-    Privacy     — DataSanitizer applied to PII_COLUMNS before any yield.
+    Responsibilities
+    ────────────────
+    This class is responsible for exactly one thing: streaming performance
+    data from a single Meta Ad Account into normalised, DuckDB-compatible
+    batches.
+
+    Multi-account concurrency is intentionally NOT handled here.  The
+    SyncEngine orchestrator must spawn one connector instance per account and
+    fan out with asyncio.gather.  Collecting results inside this connector
+    would convert the streaming pipeline into a full in-memory load, causing
+    OOM on large tenants.
+
+    Supported streams
+    ─────────────────
+    - insights_performance  Campaign-level daily spend, reach, clicks, and
+                            conversion data.
+
+    DuckDB / Parquet integration
+    ────────────────────────────
+    - fetch_schema()       Returns the column → DuckDB type map for Parquet
+                           validation.
+    - get_semantic_views() Returns pre-computed SQL that the LLM uses for
+                           contextual RAG, CAC, CPM, CTR, and ROAS analysis.
+                           spend_cents / 100.0 converts cents to dollars at
+                           query time without any precision loss.
     """
 
     PII_COLUMNS = ["campaign_name", "adset_name", "ad_name"]
@@ -135,28 +204,34 @@ class MetaAdsConnector(BaseIntegration):
 
         creds = self.config.credentials
         self.access_token  = creds.get("access_token")
-        self.ad_account_id = creds.get("ad_account_id")   # e.g. "act_XXXXXXXX"
+        self.ad_account_id = creds.get("ad_account_id")  # e.g. "act_XXXXXXXX"
 
         # ── Configurable conversion events ────────────────────────────────────
-        # Tenants specify which Meta action_types count as a conversion.
-        # Default covers standard e-commerce; override in credentials for
-        # lead-gen ("lead"), SaaS ("CompleteRegistration"), or custom events.
-        self.conversion_events: List[str] = creds.get(
-            "conversion_events", ["purchase"]
-        )
+        # Tenants declare which Meta action_types constitute a conversion.
+        # Default covers standard e-commerce.  Override in credentials for:
+        #   lead-gen       → ["lead"]
+        #   SaaS           → ["CompleteRegistration"]
+        #   custom events  → ["custom_event_name"]
+        #   multi-funnel   → ["lead", "purchase"]
+        self.conversion_events: List[str] = creds.get("conversion_events", ["purchase"])
 
         # ── Breakdown support ─────────────────────────────────────────────────
-        # Optional list; e.g. ["country", "device_platform", "publisher_platform"]
-        # Unlocks geo dashboards, device analytics, and placement segmentation.
+        # Optional list of Meta breakdown dimensions.  Examples:
+        #   ["country"]                          → geo analytics
+        #   ["device_platform"]                  → device analytics
+        #   ["publisher_platform"]               → placement analytics
+        #   ["country", "device_platform"]       → combined segmentation
+        # Columns are appended dynamically to fetch_schema() and each record.
         self.breakdowns: List[str] = creds.get("breakdowns", [])
 
         if not all([self.access_token, self.ad_account_id, self.client_secret]):
             logger.error(
                 "[%s] Meta Ads initialised with incomplete Vault secrets.",
-                self.tenant_id
+                self.tenant_id,
             )
 
-        # Pre-compute proof once — token is stable for the connector's lifetime
+        # Pre-compute proof once — access_token is stable for the connector's
+        # lifetime and the HMAC computation is non-trivial at high throughput.
         self._appsecret_proof: Optional[str] = (
             self._generate_appsecret_proof()
             if self.access_token and self.client_secret
@@ -168,7 +243,10 @@ class MetaAdsConnector(BaseIntegration):
     # -------------------------------------------------------------------------
 
     def _generate_appsecret_proof(self) -> str:
-        """HMAC-SHA256 proof for Meta's high-security API tier."""
+        """
+        Returns the HMAC-SHA256 signature required by Meta's high-security API
+        tier.  Called once at init; result stored in self._appsecret_proof.
+        """
         return hmac.new(
             self.client_secret.encode("utf-8"),
             self.access_token.encode("utf-8"),
@@ -177,12 +255,20 @@ class MetaAdsConnector(BaseIntegration):
 
     @property
     def _auth_headers(self) -> Dict[str, str]:
-        """Bearer-token header keeps the access_token out of URLs and logs."""
+        """
+        Returns the Authorization header for every outbound request.
+        Keeping the token in the header (not the URL) prevents it from
+        appearing in server access logs, proxy caches, or curl history.
+        """
         return {"Authorization": f"Bearer {self.access_token}"}
 
     @property
     def _proof_params(self) -> Dict[str, str]:
-        """appsecret_proof fragment merged into every outgoing param dict."""
+        """
+        Returns the appsecret_proof query-param fragment.  Merged into the
+        initial params dict and re-appended to every paging.next cursor URL
+        because Meta's cursor URLs carry the access_token but omit the proof.
+        """
         return {"appsecret_proof": self._appsecret_proof}
 
     # -------------------------------------------------------------------------
@@ -190,23 +276,28 @@ class MetaAdsConnector(BaseIntegration):
     # -------------------------------------------------------------------------
 
     async def fetch_schema(self) -> Dict[str, Any]:
-        """Schema contract for DuckDB Parquet validation."""
+        """
+        Returns the DuckDB column-type contract for Parquet validation.
+
+        spend_cents is BIGINT (integer cents) rather than DOUBLE to prevent
+        floating-point drift on large budgets.  spend_raw preserves the
+        original API string for financial audit and reconciliation.
+
+        Breakdown dimension columns are appended dynamically so the schema
+        automatically stays in sync with the tenant's breakdown configuration.
+        """
         base: Dict[str, str] = {
             "campaign_id":   "VARCHAR",
             "campaign_name": "VARCHAR",
             "date_start":    "DATE",
-            # Spend as integer cents avoids float drift on large budgets.
-            # Use: spend_cents / 100.0 for dollar presentation in SQL.
-            "spend_cents":   "BIGINT",
-            "spend_raw":     "VARCHAR",   # Original API string for audit / reconciliation
+            "spend_cents":   "BIGINT",   # Integer cents; use / 100.0 in SQL for dollars
+            "spend_raw":     "VARCHAR",  # Original API string for audit / reconciliation
             "impressions":   "BIGINT",
             "clicks":        "BIGINT",
             "reach":         "BIGINT",
             "conversions":   "DOUBLE",
             "objective":     "VARCHAR",
         }
-        # Append breakdown dimension columns dynamically so the schema
-        # stays in sync with whatever breakdowns the tenant has enabled.
         for bd in self.breakdowns:
             base[bd] = "VARCHAR"
 
@@ -214,27 +305,34 @@ class MetaAdsConnector(BaseIntegration):
 
     def get_semantic_views(self) -> Dict[str, str]:
         """
-        Pre-computed SQL for ROAS and CAC analysis.
-        Spend is stored in cents → divide by 100 for dollar presentation.
+        Pre-computed SQL views for Contextual RAG, ROAS, and CAC analysis.
+
+        spend_cents / 100.0 converts the stored integer cents to dollars at
+        query time, giving the LLM clean decimal representations without any
+        precision loss in the underlying storage layer.
+
+        These views are registered in DuckDB at sync time and exposed to the
+        LLM as semantic context.  They provide the exact logic for CPM, CTR,
+        and CAC so the model doesn't need to derive formulas from raw columns.
         """
         return {
             "vw_meta_ads_performance": """
                 SELECT
-                    date_start                                                   AS date,
+                    date_start                                                  AS date,
                     campaign_name,
-                    spend_cents / 100.0                                          AS spend,
+                    spend_cents / 100.0                                         AS spend,
                     impressions,
-                    ((spend_cents / 100.0) / NULLIF(impressions, 0)) * 1000     AS cpm,
-                    (clicks * 1.0) / NULLIF(impressions, 0)                     AS ctr,
-                    (spend_cents / 100.0) / NULLIF(conversions, 0)              AS cac
+                    ((spend_cents / 100.0) / NULLIF(impressions, 0)) * 1000    AS cpm,
+                    (clicks * 1.0) / NULLIF(impressions, 0)                    AS ctr,
+                    (spend_cents / 100.0) / NULLIF(conversions, 0)             AS cac
                 FROM meta_ads_insights_performance
                 ORDER BY 1 DESC
             """,
             "vw_meta_daily_totals": """
                 SELECT
-                    date_start                       AS date,
-                    SUM(spend_cents) / 100.0         AS total_spend,
-                    SUM(conversions)                 AS total_conversions
+                    date_start                      AS date,
+                    SUM(spend_cents) / 100.0        AS total_spend,
+                    SUM(conversions)                AS total_conversions
                 FROM meta_ads_insights_performance
                 GROUP BY 1
                 ORDER BY 1 DESC
@@ -250,7 +348,7 @@ class MetaAdsConnector(BaseIntegration):
             (MetaAdsRateLimitError, MetaAdsTransientError, httpx.NetworkError)
         ),
         wait=wait_exponential(multiplier=2, min=5, max=60),
-        stop=stop_after_attempt(5)
+        stop=stop_after_attempt(5),
     )
     async def _request(
         self,
@@ -259,15 +357,26 @@ class MetaAdsConnector(BaseIntegration):
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Single authenticated GET with:
-        - Proactive throttle detection via X-Business-Use-Case-Usage header
-        - Hard 429 handling
-        - Typed Graph API error taxonomy (retryable vs fatal)
-        - OAuthException code-190 detection for token expiry
+        Executes a single authenticated GET request with full error taxonomy.
+
+        Error handling layers (in order of evaluation)
+        ───────────────────────────────────────────────
+        1. Proactive throttle  — X-Business-Use-Case-Usage header parsed on
+                                 every response; backs off at ≥ 85% call_count
+                                 before the hard 429 threshold is reached.
+        2. Hard rate-limit     — HTTP 429 → MetaAdsRateLimitError → retried.
+        3. HTTP errors         — raise_for_status() surfaces 4xx/5xx that
+                                 aren't handled above.
+        4. Token expiry        — OAuthException code 190 → MetaAdsTokenExpiredError
+                                 → NOT retried; signals upstream to rotate creds.
+        5. Transient faults    — Graph API codes in _RETRYABLE_GRAPH_CODES →
+                                 MetaAdsTransientError → retried.
+        6. Fatal Graph errors  — All other error payloads surface immediately
+                                 as httpx.HTTPStatusError.
         """
         resp = await client.get(url, params=params, headers=self._auth_headers)
 
-        # ── Proactive throttle (fires before the hard 429) ────────────────────
+        # ── 1. Proactive throttle ─────────────────────────────────────────────
         usage_header = resp.headers.get("X-Business-Use-Case-Usage")
         if usage_header:
             try:
@@ -285,14 +394,15 @@ class MetaAdsConnector(BaseIntegration):
             except (json.JSONDecodeError, AttributeError):
                 pass  # Malformed header — continue normally
 
-        # ── Hard rate-limit ───────────────────────────────────────────────────
+        # ── 2. Hard rate-limit ────────────────────────────────────────────────
         if resp.status_code == 429:
             raise MetaAdsRateLimitError("Meta API hard rate limit hit. Backing off…")
 
+        # ── 3. HTTP errors ────────────────────────────────────────────────────
         resp.raise_for_status()
         payload = resp.json()
 
-        # ── Graph API error taxonomy ──────────────────────────────────────────
+        # ── 4 / 5 / 6. Graph API error taxonomy ──────────────────────────────
         error = payload.get("error", {})
         if error:
             code      = error.get("code")
@@ -309,9 +419,8 @@ class MetaAdsConnector(BaseIntegration):
                     f"Transient Graph API error {code}: {error_msg}"
                 )
 
-            # Non-retryable Graph errors — surface immediately
             raise httpx.HTTPStatusError(
-                f"Graph API error {code}: {error_msg}",
+                f"Fatal Graph API error {code}: {error_msg}",
                 request=resp.request,
                 response=resp,
             )
@@ -328,15 +437,28 @@ class MetaAdsConnector(BaseIntegration):
         since: str,
         until: str,
         sample_mode: bool,
-        rows_yielded: List[int],   # Single-element list; mutable int for cross-scope sharing
+        rows_yielded: List[int],  # Single-element mutable list for cross-scope int sharing
         sample_cap: int,
     ) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
-        Fetches all cursor pages for a single [since, until] window and
-        yields normalised, PII-masked batches.
+        Streams all cursor pages for a single [since, until] date window.
 
-        The appsecret_proof is re-appended to every cursor URL because
-        Meta's paging.next URLs carry the access_token but omit the proof.
+        Yields normalised, PII-masked record batches to sync_historical, which
+        passes them directly to the caller without buffering.  Memory usage
+        per window is bounded by _DEFAULT_PAGE_LIMIT (250 rows per page).
+
+        Cursor proof re-attachment
+        ──────────────────────────
+        Meta's paging.next URLs include the access_token but omit the
+        appsecret_proof.  The proof is manually appended to every cursor URL
+        so authenticated requests remain consistent across all pages.
+
+        Normalisation
+        ─────────────
+        - spend_cents:  int(round(float(spend_raw) * 100)) — precision-safe
+        - conversions:  summed from the nested actions[] array, filtered by
+                        self.conversion_events — tenant-configurable
+        - breakdowns:   attached as dynamic columns when self.breakdowns is set
         """
         params: Optional[Dict[str, Any]] = {
             "level":          "campaign",
@@ -360,7 +482,7 @@ class MetaAdsConnector(BaseIntegration):
 
         while next_url:
             data   = await self._request(client, next_url, params)
-            params = None   # Cursor URLs are self-contained; clear initial params
+            params = None  # Cursor URLs are self-contained; clear initial params after first hop
 
             records = data.get("data", [])
             if not records:
@@ -424,7 +546,7 @@ class MetaAdsConnector(BaseIntegration):
                 next_url = None
 
     # -------------------------------------------------------------------------
-    # Public sync entry-point  (chunked + checkpointed)
+    # Public sync entry-point
     # -------------------------------------------------------------------------
 
     async def sync_historical(
@@ -436,34 +558,49 @@ class MetaAdsConnector(BaseIntegration):
         sample_cap: int   = _SAMPLE_ROW_CAP,
     ) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
-        Pull pipeline — Insights API with weekly date chunking & checkpointing.
+        Primary pull pipeline — Insights API with weekly chunking and
+        per-window checkpointing.
 
         Parameters
         ----------
-        stream_name
-            Must be ``"insights_performance"``.
-        start_timestamp
-            ISO-8601 string.  Sync resumes from the stored checkpoint if one
-            exists, falling back to this value only when no checkpoint is found.
-        sample_mode
-            When ``True``, stops after ``sample_cap`` rows — ideal for UI
-            previews, embedding generation, and instant UX feedback loops.
-        sample_cap
-            Row limit for sample mode (default 1 000).
+        stream_name : str
+            Must be ``"insights_performance"``.  Additional streams (adset,
+            ad-level) should be added as separate stream_name branches rather
+            than new methods.
+        start_timestamp : str
+            ISO-8601 date or datetime string.  Used only when no checkpoint
+            exists; otherwise the stored checkpoint date takes precedence.
+        sample_mode : bool
+            Stops after ``sample_cap`` rows.  Intended for UI previews,
+            embedding generation, and instant UX feedback loops where a full
+            historical sync would be wasteful.
+        sample_cap : int
+            Maximum rows yielded in sample mode (default: 1 000).
+
+        Memory guarantee
+        ────────────────
+        This method yields batches directly from _paginate_window without
+        buffering.  Peak memory usage is O(batch_size) — constant relative to
+        total account data volume.  Do NOT aggregate results here.
+        Multi-account concurrency belongs at the SyncEngine layer:
+
+            await asyncio.gather(*[
+                engine.collect(MetaAdsConnector(tid, creds=acc))
+                for acc in accounts
+            ])
 
         Checkpointing
-        -------------
-        ``last_synced_date`` is read from the Vault / Redis checkpoint store
-        before starting and written after each successfully completed weekly
-        window.  A mid-sync failure therefore resumes from the last complete
-        week rather than restarting from scratch.
+        ─────────────
+        _load_checkpoint() is called before the first window.  On success,
+        _save_checkpoint() is written after each completed window so that a
+        mid-sync crash resumes from the last complete week rather than
+        restarting the full historical range.
 
         Date chunking
-        -------------
-        The full date range is split into ``_CHUNK_SIZE_DAYS``-day windows
-        before any API call is made.  This prevents single requests from
-        pulling millions of rows, keeps retries cheap, and matches the
-        Google Ads connector's chunking pattern for architectural consistency.
+        ─────────────
+        _weekly_windows() splits the full range into _CHUNK_SIZE_DAYS-day
+        windows before any API call is issued.  This keeps each request small,
+        retries cheap, and is consistent with the Google Ads connector pattern.
         """
         if stream_name != "insights_performance":
             raise ValueError(
@@ -471,7 +608,8 @@ class MetaAdsConnector(BaseIntegration):
                 "Supported: 'insights_performance'."
             )
 
-        # ── Resolve effective start date (checkpoint beats argument) ──────────
+        # ── Resolve effective start date ──────────────────────────────────────
+        # Checkpoint beats start_timestamp — always resume from last success.
         checkpoint = await self._load_checkpoint(stream_name)
         if checkpoint:
             since = checkpoint
@@ -494,7 +632,7 @@ class MetaAdsConnector(BaseIntegration):
             self.tenant_id, len(windows), since, until,
         )
 
-        rows_yielded: List[int] = [0]   # Mutable counter shared with _paginate_window
+        rows_yielded: List[int] = [0]  # Mutable counter shared into _paginate_window
 
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_S) as client:
             for window_since, window_until in windows:
@@ -508,7 +646,9 @@ class MetaAdsConnector(BaseIntegration):
                 ):
                     yield batch
 
-                # Checkpoint written after each successfully completed window
+                # Checkpoint written only after the full window completes.
+                # A failure mid-window leaves the previous checkpoint intact
+                # so the window is retried cleanly on the next run.
                 await self._save_checkpoint(stream_name, window_until)
 
                 if sample_mode and rows_yielded[0] >= sample_cap:
@@ -520,76 +660,40 @@ class MetaAdsConnector(BaseIntegration):
         )
 
     # -------------------------------------------------------------------------
-    # Multi-account concurrency
-    # -------------------------------------------------------------------------
-
-    async def sync_multiple_accounts(
-        self,
-        account_ids: List[str],
-        stream_name: str,
-        start_timestamp: str,
-        **kwargs: Any,
-    ) -> Dict[str, Any]:
-        """
-        Runs sync_historical concurrently across multiple ad account IDs using
-        asyncio.gather.  Each account gets its own connector instance so
-        credentials, checkpoints, and appsecret proofs remain fully isolated.
-
-        Returns a dict keyed by account_id.  Errors per account are caught,
-        logged, and stored as ``{"error": ...}`` so one bad account never
-        blocks the others.
-        """
-        async def _collect(account_id: str) -> Tuple[str, Any]:
-            connector = MetaAdsConnector(
-                tenant_id=self.tenant_id,
-                credentials={**self.config.credentials, "ad_account_id": account_id},
-            )
-            rows: List[Dict[str, Any]] = []
-            try:
-                async for batch in connector.sync_historical(
-                    stream_name, start_timestamp, **kwargs
-                ):
-                    rows.extend(batch)
-            except Exception as exc:
-                logger.error(
-                    "[%s] Account %s failed during concurrent sync: %s",
-                    self.tenant_id, account_id, exc,
-                )
-                return account_id, {"error": str(exc)}
-            return account_id, rows
-
-        results = await asyncio.gather(*[_collect(aid) for aid in account_ids])
-        return dict(results)
-
-    # -------------------------------------------------------------------------
-    # Checkpointing  (delegates to BaseIntegration store)
+    # Checkpointing
     # -------------------------------------------------------------------------
 
     async def _load_checkpoint(self, stream_name: str) -> Optional[str]:
         """
-        Returns the last successfully synced date for this stream, or None.
-        Reads from the Vault / Redis checkpoint store via BaseIntegration.
+        Reads the last successfully synced date from the BaseIntegration
+        checkpoint store (Vault / Redis / DB, depending on deployment).
+        Returns None if no checkpoint exists or the store is unavailable,
+        causing sync_historical to fall back to start_timestamp.
         """
         try:
-            cp = await self.get_checkpoint(f"meta_ads_{stream_name}")
-            return cp.get("last_synced_date") if cp else None
+            if hasattr(self, "get_checkpoint"):
+                cp = await self.get_checkpoint(f"meta_ads_{stream_name}")
+                return cp.get("last_synced_date") if cp else None
         except Exception as exc:
             logger.warning(
                 "[%s] Could not load checkpoint: %s — starting from scratch.",
                 self.tenant_id, exc,
             )
-            return None
+        return None
 
     async def _save_checkpoint(self, stream_name: str, last_date: str) -> None:
         """
-        Persists the last successfully synced date for this stream.
-        Writes to the Vault / Redis checkpoint store via BaseIntegration.
+        Persists the last successfully synced date to the BaseIntegration
+        checkpoint store.  Failures are logged but not re-raised — a failed
+        checkpoint write degrades gracefully to a full re-sync on the next
+        run rather than halting the current sync mid-flight.
         """
         try:
-            await self.set_checkpoint(
-                f"meta_ads_{stream_name}",
-                {"last_synced_date": last_date},
-            )
+            if hasattr(self, "set_checkpoint"):
+                await self.set_checkpoint(
+                    f"meta_ads_{stream_name}",
+                    {"last_synced_date": last_date},
+                )
         except Exception as exc:
             logger.error(
                 "[%s] Failed to save checkpoint for date %s: %s",
@@ -601,11 +705,24 @@ class MetaAdsConnector(BaseIntegration):
     # -------------------------------------------------------------------------
 
     def _mask_pii(self, batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Applies DataSanitizer to all PII_COLUMNS before yielding downstream."""
+        """
+        Applies DataSanitizer.mask() to every value in PII_COLUMNS.
+
+        The getattr guard ensures this method is safe to call in any context —
+        full production (sanitizer injected by orchestrator), lightweight
+        connection tests, and unit test suites where the sanitizer is absent.
+        When no sanitizer is present the batch is returned unmodified; the
+        orchestrator is responsible for ensuring production deployments always
+        inject the sanitizer before starting a sync.
+        """
+        sanitizer = getattr(self, "data_sanitizer", None)
+        if not sanitizer:
+            return batch
+
         for row in batch:
             for col in self.PII_COLUMNS:
                 if col in row and row[col] is not None:
-                    row[col] = self.data_sanitizer.mask(row[col])
+                    row[col] = sanitizer.mask(row[col])
         return batch
 
     # -------------------------------------------------------------------------
@@ -613,7 +730,15 @@ class MetaAdsConnector(BaseIntegration):
     # -------------------------------------------------------------------------
 
     async def test_connection(self) -> bool:
-        """Verifies authenticated access to the target Ad Account."""
+        """
+        Pings the target Ad Account endpoint to verify that the access_token,
+        ad_account_id, and appsecret_proof are all valid and have the required
+        permissions.  Returns True on success, False on any failure.
+
+        Separates MetaAdsTokenExpiredError from generic failures so the
+        caller can distinguish an expired token (trigger rotation) from a
+        network or misconfiguration error (investigate credentials / Vault).
+        """
         try:
             url    = f"https://graph.facebook.com/{self.api_version}/{self.ad_account_id}"
             params = {"fields": "name", **self._proof_params}
@@ -623,8 +748,14 @@ class MetaAdsConnector(BaseIntegration):
                 return "name" in data
 
         except MetaAdsTokenExpiredError:
-            logger.error("[%s] Meta Ads: token expired.", self.tenant_id)
+            logger.error(
+                "[%s] Meta Ads connection failed: token expired.",
+                self.tenant_id,
+            )
             return False
         except Exception as exc:
-            logger.error("[%s] Meta Ads connection failed: %s", self.tenant_id, exc)
+            logger.error(
+                "[%s] Meta Ads connection failed: %s",
+                self.tenant_id, exc,
+            )
             return False
