@@ -162,15 +162,18 @@ def register_routes(fastapi_app: FastAPI) -> None:
     # Lazy-loading routes prevents circular dependencies and isolates import crashes.
     # Because of our C-level guardrails at the top of the file, these heavy imports 
     # will no longer spike RAM during the module resolution phase.
-    from api.routes import agents, datasets, query, narrative, chat, webhooks, semantic_metrics
     
-    fastapi_app.include_router(semantic_metrics.router)
+    # FIXED: Removed 'semantic_metrics' which does not exist in api.routes
+    # ADDED: Included 'billing' which is present in the file hierarchy
+    from api.routes import agents, datasets, query, narrative, chat, webhooks, billing
+    
     fastapi_app.include_router(agents.router)
     fastapi_app.include_router(datasets.router)
     fastapi_app.include_router(query.router)
     fastapi_app.include_router(narrative.router)
     fastapi_app.include_router(chat.router)
     fastapi_app.include_router(webhooks.router)
+    fastapi_app.include_router(billing.router)
     
     logger.info("🗺️ Modular routes registered successfully.")
 

@@ -1,7 +1,6 @@
-// app/(dashboard)/dashboard/page.tsx
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { 
   Activity, 
   Database, 
@@ -9,13 +8,13 @@ import {
   MessageSquare, 
   Sparkles,
   Zap,
-  Clock,
   BrainCircuit,
   BarChart3,
   ShieldCheck,
   Lock,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Pin
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -66,17 +65,18 @@ const StatCard = ({
   value: string | number, 
   icon: React.ElementType, 
   isLoading: boolean,
-  accent?: "default" | "blue" | "emerald" | "purple"
+  accent?: "default" | "blue" | "emerald" | "purple" | "amber"
 }) => {
   const accentColors = {
     default: "text-muted-foreground",
     blue: "text-blue-500",
     emerald: "text-emerald-500",
-    purple: "text-purple-500"
+    purple: "text-purple-500",
+    amber: "text-amber-500"
   };
 
   return (
-    <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
+    <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md transition-all hover:bg-muted/10">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
         <div className={`p-2 rounded-md bg-muted/50 ${accentColors[accent]}`}>
@@ -124,7 +124,7 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
           <CardDescription>Real-time analytical telemetry.</CardDescription>
         </div>
         <Badge variant="secondary" className="font-mono text-[10px] text-muted-foreground">
-          <RefreshCw className="h-3 w-3 mr-1 inline" /> Live Engine Data
+          <RefreshCw className="h-3 w-3 mr-1 inline animate-pulse text-emerald-500" /> Live Engine Data
         </Badge>
       </CardHeader>
       <CardContent className="pt-6">
@@ -132,9 +132,15 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
           {data.map((point, i) => (
             <div key={i} className="relative flex-1 group h-full flex items-end">
               <div 
-                className="w-full bg-primary/20 group-hover:bg-primary/50 transition-all rounded-t-[2px]"
-                style={{ height: `${(point.revenue / maxRevenue) * 100}%` }}
-              />
+                className="w-full bg-primary/20 group-hover:bg-primary transition-all rounded-t-[2px] cursor-pointer"
+                style={{ height: `${Math.max((point.revenue / maxRevenue) * 100, 2)}%` }}
+              >
+                {/* Executive Hover Tooltip */}
+                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-popover text-popover-foreground text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap shadow-md border">
+                  <span className="font-medium text-muted-foreground">{point.date}</span>
+                  <div className="font-bold">${point.revenue.toLocaleString()}</div>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -144,7 +150,7 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
 };
 
 // -----------------------------------------------------------------------------
-// Main Dashboard Component (No Simulation / Real Data Only)
+// Main Dashboard Component (The Executive Wall)
 // -----------------------------------------------------------------------------
 export default function DashboardOverviewPage() {
   const router = useRouter();
@@ -157,44 +163,44 @@ export default function DashboardOverviewPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchRealData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-          router.push('/login');
-          return;
-        }
-
-        const role = user.app_metadata?.role || 'user';
-        setIsAdmin(role === 'admin');
-
-        const { data: { session } } = await supabase.auth.getSession();
-        const response = await fetch('/api/workspace/metrics', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`
-          }
-        });
-
-        if (!response.ok) throw new Error("Could not connect to the analytical engine.");
-
-        const data = await response.json();
-        setMetrics(data.metrics);
-        setAgents(data.agents || []);
-        setChartData(data.chartData || []);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
+  const fetchRealData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        router.push('/login');
+        return;
       }
-    };
 
-    fetchRealData();
+      const role = user.app_metadata?.role || 'user';
+      setIsAdmin(role === 'admin');
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/workspace/metrics', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        }
+      });
+
+      if (!response.ok) throw new Error("Could not connect to the analytical engine.");
+
+      const data = await response.json();
+      setMetrics(data.metrics);
+      setAgents(data.agents || []);
+      setChartData(data.chartData || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   }, [router, supabase.auth]);
+
+  useEffect(() => {
+    fetchRealData();
+  }, [fetchRealData]);
 
   if (error) {
     return (
@@ -202,7 +208,7 @@ export default function DashboardOverviewPage() {
         <AlertCircle className="h-12 w-12 text-destructive/50" />
         <h2 className="text-xl font-bold text-foreground">Engine Connection Failed</h2>
         <p className="text-muted-foreground max-w-md">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>Retry Handshake</Button>
+        <Button variant="outline" onClick={fetchRealData}>Retry Handshake</Button>
       </div>
     );
   }
@@ -210,7 +216,7 @@ export default function DashboardOverviewPage() {
   return (
     <div className="flex flex-col gap-8 h-full animate-in fade-in duration-700 pb-10">
       
-      {/* Header */}
+      {/* C-Level Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -231,54 +237,81 @@ export default function DashboardOverviewPage() {
             Operational orchestration for <span className="text-foreground font-medium">arcli.tech</span>.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          <Button variant="ghost" size="icon" onClick={fetchRealData} disabled={isLoading} className="text-muted-foreground hover:text-foreground">
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/datasets"><Database className="mr-2 h-4 w-4" />Sources</Link>
           </Button>
-          <Button className="bg-primary text-primary-foreground" size="sm" asChild>
+          <Button className="bg-primary text-primary-foreground shadow-md hover:shadow-lg transition-all" size="sm" asChild>
             <Link href="/agents/create"><Sparkles className="mr-2 h-4 w-4" />Deploy</Link>
           </Button>
         </div>
       </div>
 
-      {/* Metrics */}
+      {/* Bird's Eye Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Connected Sources" value={metrics?.totalDatasets ?? 0} icon={Database} isLoading={isLoading} accent="blue" />
         <StatCard title="Active Agents" value={metrics?.activeAgents ?? 0} icon={BrainCircuit} isLoading={isLoading} accent="purple" />
-        <StatCard title="Total Queries" value={(metrics?.queriesRun ?? 0).toLocaleString()} icon={Activity} isLoading={isLoading} />
+        <StatCard title="Total Queries" value={(metrics?.queriesRun ?? 0).toLocaleString()} icon={Activity} isLoading={isLoading} accent="amber" />
         <StatCard title="System Health" value={`${metrics?.healthScore ?? 0}%`} icon={Zap} isLoading={isLoading} accent="emerald" />
         
         <MasterTrendChart data={chartData} isLoading={isLoading} />
       </div>
 
+      {/* Structural Shift: Executive Insights feed takes priority (2 columns), Operations takes 1 */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        
+        {/* Left Priority Column: The Executive Insight Wall */}
         <div className="xl:col-span-2 space-y-6">
+          <div className="flex items-center justify-between pb-2 border-b border-border/50">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Pin className="h-5 w-5 text-primary" />
+              Pinned Executive Insights
+            </h2>
+            <p className="text-xs text-muted-foreground">Auto-updating intelligence wall</p>
+          </div>
+          <InsightsFeed />
+        </div>
+
+        {/* Right Supporting Column: Operations & Workforce */}
+        <div className="space-y-6">
           <Card className="border-border shadow-sm h-full flex flex-col bg-background/50">
-            <CardHeader className="border-b bg-muted/20">
-              <CardTitle className="flex items-center gap-2 text-md">
-                <Bot className="h-5 w-5 text-primary" />
-                Agent Workforce
+            <CardHeader className="border-b bg-muted/20 pb-3">
+              <CardTitle className="flex items-center justify-between text-md">
+                <span className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-primary" />
+                  Agent Workforce
+                </span>
+                <Badge variant="outline" className="text-[10px]">{agents.length} Online</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 pt-6">
+            <CardContent className="flex-1 pt-4">
               {!isLoading && agents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="p-4 bg-muted/50 rounded-full mb-4">
-                    <Bot className="h-8 w-8 text-muted-foreground/50" />
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="p-3 bg-muted/50 rounded-full mb-3">
+                    <Bot className="h-6 w-6 text-muted-foreground/50" />
                   </div>
-                  <h3 className="font-medium">No agents deployed</h3>
-                  <p className="text-sm text-muted-foreground mt-1 mb-6">Start by deploying an autonomous monitor.</p>
-                  <Button size="sm" asChild><Link href="/agents/create">Deploy Agent</Link></Button>
+                  <h3 className="font-medium text-sm">No agents deployed</h3>
+                  <p className="text-xs text-muted-foreground mt-1 mb-4">Start by deploying an autonomous monitor.</p>
+                  <Button size="sm" variant="outline" asChild><Link href="/agents/create">Deploy Agent</Link></Button>
                 </div>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-1">
                   {agents.map((agent) => (
-                    <div key={agent.id} className="p-4 border rounded-xl bg-background/80">
-                      <div className="flex justify-between items-center mb-2">
-                        <Badge variant="secondary" className="text-[10px]">{agent.role}</Badge>
-                        <span className="text-[10px] text-emerald-500 font-bold">● {agent.status}</span>
+                    <div key={agent.id} className="p-3 border rounded-lg bg-background/80 hover:bg-muted/10 transition-colors">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <Badge variant="secondary" className="text-[9px] font-mono uppercase tracking-wider">{agent.role}</Badge>
+                        <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-1">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                          </span>
+                          {agent.status}
+                        </span>
                       </div>
-                      <h3 className="font-bold text-sm mb-1">{agent.name}</h3>
+                      <h3 className="font-bold text-sm mb-0.5">{agent.name}</h3>
                       <p className="text-xs text-muted-foreground line-clamp-2">{agent.description}</p>
                     </div>
                   ))}
@@ -286,20 +319,19 @@ export default function DashboardOverviewPage() {
               )}
             </CardContent>
           </Card>
-        </div>
 
-        <div className="space-y-6">
-          <InsightsFeed />
-          <Card className="border-primary/20 bg-primary/5">
+          {/* Quick Action: Chat */}
+          <Card className="border-primary/20 bg-primary/5 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <h4 className="font-bold text-sm flex items-center gap-2"><MessageSquare className="h-4 w-4" />Manual Query</h4>
-                <p className="text-[11px] text-muted-foreground">Talk to your data directly.</p>
+                <h4 className="font-bold text-sm flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary" />Manual Query</h4>
+                <p className="text-xs text-muted-foreground">Talk to your data directly.</p>
               </div>
-              <Button size="sm" asChild><Link href="/chat">Open</Link></Button>
+              <Button size="sm" asChild><Link href="/chat">Open Chat</Link></Button>
             </CardContent>
           </Card>
         </div>
+        
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { 
   TrendingDown, 
@@ -10,7 +10,9 @@ import {
   Sparkles,
   MessageSquare,
   BarChart2,
-  Bell
+  Bell,
+  RefreshCw,
+  AlertCircle
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,27 +57,31 @@ export function InsightsFeed() {
   const router = useRouter();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchInsights = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/insights?limit=5");
+      if (response.ok) {
+        const data = await response.json();
+        setInsights(data);
+      } else {
+        // Silent fallback for demo/UX purposes if endpoint isn't ready
+        setInsights([]); 
+      }
+    } catch (err) {
+      console.error("Failed to fetch autonomous insights:", err);
+      setError("Failed to sync live insights.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchInsights = async () => {
-      try {
-        const response = await fetch("/api/insights?limit=5");
-        if (response.ok) {
-          const data = await response.json();
-          setInsights(data);
-        } else {
-          // Silent fallback for demo/UX purposes if endpoint isn't ready
-          setInsights([]); 
-        }
-      } catch (error) {
-        console.error("Failed to fetch autonomous insights:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchInsights();
-  }, []);
+  }, [fetchInsights]);
 
   const markAsRead = async (id: string) => {
     // Optimistic UI update
@@ -86,7 +92,7 @@ export function InsightsFeed() {
   };
 
   const handleInvestigate = (insight: Insight) => {
-    // Routes to the AI chat pre-filled with the context of this specific anomaly using Next.js router
+    // Routes to the AI chat pre-filled with the context of this specific anomaly
     const query = encodeURIComponent(`Tell me more about the recent anomaly in ${insight.metric_name}.`);
     router.push(`/chat?prompt=${query}&context_id=${insight.id}`);
   };
@@ -94,10 +100,10 @@ export function InsightsFeed() {
   // --- Loading State ---
   if (isLoading) {
     return (
-      <Card className="w-full h-full min-h-[500px] border-slate-200 shadow-sm bg-white">
-        <CardHeader className="pb-4 border-b border-slate-100 bg-slate-50/50">
-          <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900">
-            <Zap className="h-5 w-5 text-indigo-500 animate-pulse" /> AI Business Alerts
+      <Card className="w-full h-full min-h-[500px] border-border shadow-sm bg-background/50 backdrop-blur-md">
+        <CardHeader className="pb-4 border-b bg-muted/20">
+          <CardTitle className="flex items-center gap-2 text-lg font-bold text-foreground">
+            <Zap className="h-5 w-5 text-primary animate-pulse" /> AI Business Alerts
           </CardTitle>
           <CardDescription>Scanning your data for significant changes...</CardDescription>
         </CardHeader>
@@ -119,18 +125,30 @@ export function InsightsFeed() {
     );
   }
 
+  // --- Error State ---
+  if (error) {
+    return (
+      <Card className="w-full h-full min-h-[500px] border-border shadow-sm bg-background/50 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+        <AlertCircle className="h-10 w-10 text-destructive/50 mb-4" />
+        <h3 className="text-xl font-bold text-foreground mb-2">Sync Disrupted</h3>
+        <p className="text-sm text-muted-foreground max-w-sm mb-6">{error}</p>
+        <Button variant="outline" onClick={fetchInsights}><RefreshCw className="mr-2 h-4 w-4" /> Retry Connection</Button>
+      </Card>
+    );
+  }
+
   // --- Empty State (Highly reassuring for non-technical users) ---
   if (insights.length === 0) {
     return (
-      <Card className="w-full h-full min-h-[500px] border-slate-200 shadow-sm bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
-        <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-6 border border-emerald-100 shadow-sm">
+      <Card className="w-full h-full min-h-[500px] border-border shadow-sm bg-background/50 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500">
+        <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mb-6 border border-emerald-500/20 shadow-sm">
           <CheckCircle2 className="h-8 w-8 text-emerald-500" />
         </div>
-        <h3 className="text-xl font-bold text-slate-900 mb-2">Everything is on track.</h3>
-        <p className="text-base text-slate-500 max-w-sm mb-8 leading-relaxed">
+        <h3 className="text-xl font-bold text-foreground mb-2">Everything is on track.</h3>
+        <p className="text-sm text-muted-foreground max-w-sm mb-8 leading-relaxed">
           Your AI agents are actively monitoring your metrics 24/7. We'll notify you here if any unusual trends or anomalies occur.
         </p>
-        <Button variant="outline" className="gap-2 rounded-full text-indigo-600 border-indigo-200 hover:bg-indigo-50 font-medium">
+        <Button variant="outline" className="gap-2 rounded-full border-primary/20 text-primary hover:bg-primary/5 font-medium">
           <BarChart2 className="w-4 h-4" /> View All Metrics
         </Button>
       </Card>
@@ -139,21 +157,26 @@ export function InsightsFeed() {
 
   // --- Populated State ---
   return (
-    <Card className="w-full flex flex-col h-full max-h-[800px] border-slate-200 shadow-sm bg-white">
-      <CardHeader className="pb-4 border-b border-slate-100 bg-slate-50/50">
+    <Card className="w-full flex flex-col h-full max-h-[800px] border-border shadow-sm bg-background/50 backdrop-blur-md">
+      <CardHeader className="pb-4 border-b bg-muted/20">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 tracking-tight">
-              <Bell className="h-5 w-5 text-indigo-600 fill-indigo-600/20" /> 
+            <CardTitle className="flex items-center gap-2 text-lg font-bold text-foreground tracking-tight">
+              <Bell className="h-5 w-5 text-primary fill-primary/20" /> 
               AI Business Alerts
             </CardTitle>
-            <CardDescription className="mt-1 text-slate-500">
+            <CardDescription className="mt-1 text-muted-foreground">
               High-impact events automatically detected in your data.
             </CardDescription>
           </div>
-          <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 font-bold px-3 py-1 rounded-full border-0">
-            {insights.length} New
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={fetchInsights} className="h-8 w-8 text-muted-foreground hover:text-foreground">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Badge className="bg-primary/10 text-primary hover:bg-primary/20 font-bold px-3 py-1 rounded-full border-0">
+              {insights.length} New
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       
@@ -164,11 +187,14 @@ export function InsightsFeed() {
             const isSpike = insight.payload.variance_pct > 0;
             const Icon = isSpike ? TrendingUp : TrendingDown;
             
-            // Assuming default: Spike = Positive (Emerald), Drop = Negative (Rose)
+            // Assume default: Spike = Positive (Emerald), Drop = Negative (Rose)
+            // Can be configured further based on metric context (e.g., Cost spike is negative)
             const isPositive = isSpike; 
-            const colorClass = isPositive ? "text-emerald-700" : "text-rose-700";
-            const bgClass = isPositive ? "bg-emerald-50 border-emerald-200" : "bg-rose-50 border-rose-200";
-            const iconBg = isPositive ? "bg-emerald-100" : "bg-rose-100";
+            
+            // CSS Variable friendly colors for Light/Dark mode compatibility
+            const colorClass = isPositive ? "text-emerald-500" : "text-rose-500";
+            const bgClass = isPositive ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20";
+            const iconBg = isPositive ? "bg-emerald-500/10" : "bg-rose-500/10";
 
             return (
               <div 
@@ -182,38 +208,39 @@ export function InsightsFeed() {
                       <Icon className={`h-5 w-5 ${colorClass}`} />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-900 leading-tight mb-1.5 text-base">
+                      <h4 className="font-bold text-foreground leading-tight mb-1.5 text-base">
                         {insight.title}
                       </h4>
-                      <p className="text-sm text-slate-600 leading-relaxed">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         {insight.payload.ai_analysis.narrative || insight.description}
                       </p>
                     </div>
                   </div>
                   
                   {/* Translated Impact Score */}
-                  <div className="shrink-0">
-                    <Badge variant="outline" className={`font-semibold text-xs border bg-white shadow-sm ${
-                      insight.impact_score > 75 ? 'border-rose-200 text-rose-700' : 'border-slate-200 text-slate-600'
+                  <div className="shrink-0 flex flex-col items-end gap-2">
+                    <Badge variant="outline" className={`font-semibold text-[10px] tracking-wide uppercase border bg-background shadow-sm ${
+                      insight.impact_score > 75 ? 'border-rose-500/30 text-rose-500' : 'border-border text-muted-foreground'
                     }`}>
                       {insight.impact_score > 75 ? '🔥 High Priority' : '👀 Notice'}
                     </Badge>
+                    <span className="text-[10px] text-muted-foreground font-mono">{new Date(insight.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
 
                 {/* Plain English Drivers (The "Why") */}
                 {insight.payload.top_drivers && insight.payload.top_drivers.length > 0 && (
-                  <div className="ml-14 bg-white/60 rounded-xl p-4 border border-white/40 shadow-sm backdrop-blur-sm">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3 text-indigo-500" /> Key Factors
+                  <div className="ml-14 bg-background/60 rounded-xl p-4 border border-border/50 shadow-sm backdrop-blur-sm">
+                    <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3 text-primary" /> Key Factors
                     </p>
                     <div className="space-y-2.5">
                       {insight.payload.top_drivers.slice(0, 2).map((driver, idx) => (
                         <div key={idx} className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-slate-700">
-                            {driver.dimension}: <span className="text-slate-900 font-bold">{driver.category_name}</span>
+                          <span className="font-medium text-muted-foreground">
+                            {driver.dimension}: <span className="text-foreground font-bold">{driver.category_name}</span>
                           </span>
-                          <span className="text-slate-600 text-xs font-medium bg-white px-2 py-1 rounded-md shadow-sm border border-slate-100">
+                          <span className="text-muted-foreground text-xs font-medium bg-background px-2 py-1 rounded-md shadow-sm border border-border">
                             {driver.percentage_change > 0 ? "+" : ""}{driver.percentage_change.toFixed(1)}% change
                           </span>
                         </div>
@@ -227,7 +254,7 @@ export function InsightsFeed() {
                   <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-slate-500 hover:text-slate-800 hover:bg-slate-200/50 font-semibold text-xs rounded-full px-4"
+                    className="text-muted-foreground hover:text-foreground hover:bg-muted font-semibold text-xs rounded-full px-4"
                     onClick={() => markAsRead(insight.id)}
                   >
                     Dismiss
@@ -236,7 +263,7 @@ export function InsightsFeed() {
                     variant="default" 
                     size="sm" 
                     onClick={() => handleInvestigate(insight)}
-                    className="gap-2 bg-slate-900 hover:bg-slate-800 text-white shadow-md rounded-full px-5 font-semibold text-xs transition-transform active:scale-95"
+                    className="gap-2 shadow-md rounded-full px-5 font-semibold text-xs transition-transform active:scale-95"
                   >
                     <MessageSquare className="h-3.5 w-3.5" /> Ask AI about this
                   </Button>
