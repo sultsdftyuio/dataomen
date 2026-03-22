@@ -10,14 +10,15 @@ export interface UploadSuccessData {
   datasetId?: string;
   fileName: string;
   rowCount?: number;
-  columns?: string[];
+  columns?: any[];
   message?: string;
+  isDocument?: boolean;
 }
 
 // 2. Explicitly define the props the component accepts
 export interface FileUploadZoneProps {
   isEphemeral?: boolean;
-  token?: string;
+  token?: string; // Optional auth token passed from parent
   onUploadSuccess?: (data: UploadSuccessData) => void;
 }
 
@@ -26,9 +27,10 @@ interface FileUploadState {
   progress: number;
   status: 'pending' | 'uploading' | 'completed' | 'error';
   id: string;
+  isDocument: boolean;
 }
 
-// 3. Named export matching the strict import in DashboardOrchestrator with typed props
+// 3. Named export matching the strict import in DashboardOrchestrator
 export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ 
   isEphemeral = false, 
   token, 
@@ -49,16 +51,19 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   }, []);
 
   const handleFiles = useCallback((newFiles: File[]) => {
-    // Validate files and handle case-insensitive extensions
     const validFiles = newFiles.filter(file => {
       const fileName = file.name.toLowerCase();
-      const isValidType = fileName.endsWith('.csv') || fileName.endsWith('.json') || fileName.endsWith('.parquet');
+      
+      const isStructured = fileName.endsWith('.csv') || fileName.endsWith('.json') || fileName.endsWith('.parquet');
+      const isUnstructured = fileName.endsWith('.pdf') || fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.docx');
+      
+      const isValidType = isStructured || isUnstructured;
       const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB
 
       if (!isValidType) {
         toast({ 
           title: "Invalid file type", 
-          description: `${file.name} is not supported.`, 
+          description: `${file.name} is not supported. Use analytical formats (CSV, Parquet) or Documents (PDF, TXT, MD).`, 
           variant: "destructive" 
         });
       }
@@ -71,12 +76,16 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       }
       
       return isValidType && isValidSize;
-    }).map(file => ({
-      file,
-      id: Math.random().toString(36).substring(7),
-      progress: 0,
-      status: 'pending' as const
-    }));
+    }).map(file => {
+      const isDoc = file.name.toLowerCase().match(/\.(pdf|txt|md|docx)$/) !== null;
+      return {
+        file,
+        id: Math.random().toString(36).substring(7),
+        progress: 0,
+        status: 'pending' as const,
+        isDocument: isDoc
+      };
+    });
 
     setFiles(prev => [...prev, ...validFiles]);
   }, [toast]);
@@ -93,7 +102,6 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       handleFiles(Array.from(e.target.files));
-      // Reset input value to allow selecting the same file again if removed
       e.target.value = '';
     }
   };
@@ -103,38 +111,96 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   };
 
   const uploadFiles = async () => {
-    // Mock upload process
     const pendingFiles = files.filter(f => f.status === 'pending');
     
     for (const fileObj of pendingFiles) {
       setFiles(prev => prev.map(f => 
-        f.id === fileObj.id ? { ...f, status: 'uploading' } : f
+        f.id === fileObj.id ? { ...f, status: 'uploading', progress: 0 } : f
       ));
 
-      // Simulate progress
-      for (let i = 0; i <= 100; i += 10) {
-        await new Promise(r => setTimeout(r, 100));
+      try {
+        // 1. Prepare the Payload
+        const formData = new FormData();
+        formData.append('file', fileObj.file);
+        formData.append('dataset_name', fileObj.file.name);
+        formData.append('mask_pii', 'true'); // Security best practice
+
+        // 2. Real Network Request using XHR for Native Progress Events
+        const response: any = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          
+          // Adjust this URL to match your FastAPI/Next.js route that calls `ingestion_service.py`
+          xhr.open('POST', '/api/datasets/upload', true);
+          
+          if (token) {
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          }
+
+          // Real-time progress tracking
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = Math.round((event.loaded / event.total) * 100);
+              setFiles(prev => prev.map(f => 
+                f.id === fileObj.id ? { ...f, progress: percentComplete } : f
+              ));
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch (e) {
+                resolve({});
+              }
+            } else {
+              reject(new Error(xhr.responseText || `Upload failed with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('Network error during upload'));
+          
+          // Execute the request
+          xhr.send(formData);
+        });
+
+        // 3. Handle Success
         setFiles(prev => prev.map(f => 
-          f.id === fileObj.id ? { ...f, progress: i } : f
+          f.id === fileObj.id ? { ...f, status: 'completed', progress: 100 } : f
         ));
-      }
+        
+        toast({
+          title: "Upload complete",
+          description: `${fileObj.file.name} has been processed ${fileObj.isDocument ? 'into semantic vectors' : 'into structured parquet'}.`
+        });
 
-      setFiles(prev => prev.map(f => 
-        f.id === fileObj.id ? { ...f, status: 'completed' } : f
-      ));
-      
-      toast({
-        title: "Upload complete",
-        description: `${fileObj.file.name} has been processed successfully.`
-      });
+        // 4. Pass the actual backend response data to the parent orchestrator
+        if (onUploadSuccess) {
+          // Extract the UUID from the storage path (e.g., "qdrant://collection/UUID" or "s3://bucket/UUID")
+          const parsedId = response.storage_path?.split('/').pop() || response.dataset_id;
 
-      // 4. Safely call the prop if provided so the Orchestrator updates
-      if (onUploadSuccess) {
-        onUploadSuccess({
-          fileName: fileObj.file.name,
-          rowCount: 1000, // Mock row count, replace with actual backend response later
-          columns: ["id", "value", "timestamp"], // Mock columns
-          message: "Upload completed successfully."
+          onUploadSuccess({
+            datasetId: parsedId,
+            fileName: fileObj.file.name,
+            rowCount: response.row_count || 0,
+            columns: response.columns || [],
+            message: "Upload completed successfully.",
+            isDocument: fileObj.isDocument
+          });
+        }
+
+      } catch (error: any) {
+        // 5. Handle Failure gracefully
+        console.error(`[Upload Error] ${fileObj.file.name}:`, error);
+        
+        setFiles(prev => prev.map(f => 
+          f.id === fileObj.id ? { ...f, status: 'error' } : f
+        ));
+        
+        toast({
+          title: "Upload Failed",
+          description: error.message || `There was an error processing ${fileObj.file.name}.`,
+          variant: "destructive"
         });
       }
     }
@@ -158,7 +224,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           Drag and drop files here or click to browse
         </p>
         <p className="text-xs text-zinc-500 mb-4">
-          Supported formats: CSV, JSON, Parquet (Max 50MB)
+          Structured (CSV, JSON, Parquet) & Documents (PDF, TXT, MD, DOCX)
         </p>
         
         <input
@@ -166,12 +232,10 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           type="file"
           className="hidden"
           onChange={handleFileSelect}
-          // Added extensive MIME types to fix OS-level greyed out files
-          accept=".csv,text/csv,application/csv,.json,application/json,.parquet,application/vnd.apache.parquet"
+          accept=".csv,text/csv,application/csv,.json,application/json,.parquet,application/vnd.apache.parquet,.pdf,application/pdf,.txt,text/plain,.md,text/markdown,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           multiple
         />
         
-        {/* Changed from <button> to <div> to avoid nested interactive elements issues in forms/labels */}
         <div className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium text-sm transition-colors shadow-sm">
           Select Files
         </div>
@@ -187,8 +251,11 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
               <div className="flex items-center space-x-3 flex-1 min-w-0">
                 <FileIcon className="w-5 h-5 text-indigo-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-zinc-200 truncate">
+                  <p className="text-sm font-medium text-zinc-200 truncate flex items-center gap-2">
                     {fileObj.file.name}
+                    {fileObj.isDocument && (
+                      <span className="text-[10px] uppercase tracking-wider bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">RAG Doc</span>
+                    )}
                   </p>
                   <div className="flex items-center space-x-2 mt-1">
                     <span className="text-xs text-zinc-500">

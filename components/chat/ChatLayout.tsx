@@ -11,7 +11,8 @@ import {
   FileSpreadsheet, Database, LineChart, Activity,
   Copy, ThumbsUp, ThumbsDown, RotateCcw,
   Plus, ChevronDown, MoreHorizontal,
-  Table2, TrendingUp, Search, Zap
+  Table2, TrendingUp, Search, Zap,
+  ChevronRight, Code2, BrainCircuit, FlaskConical,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,11 @@ export interface RichMessage {
   files?: File[];
   payload?: ExecutionPayload;
   timestamp: Date;
+  // Chain-of-thought fields from the new AnalyticalOrchestrator
+  plan?: any;
+  sql?: string;
+  insights?: any;
+  diagnostics?: any;
 }
 
 interface ChatLayoutProps {
@@ -38,7 +44,6 @@ interface ChatLayoutProps {
 // -----------------------------------------------------------------------------
 function SimpleMarkdown({ text }: { text: string }) {
   if (!text) return null;
-  // Split on bold (**text**) and inline code (`text`)
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return (
     <>
@@ -63,7 +68,7 @@ function SimpleMarkdown({ text }: { text: string }) {
 }
 
 // -----------------------------------------------------------------------------
-// Step / Thinking Pill (like Julius AI's "Used Python" steps)
+// Step / Thinking Pill
 // -----------------------------------------------------------------------------
 function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
   if (!label) return null;
@@ -80,6 +85,166 @@ function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
         </span>
       )}
       {label}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Chain-of-Thought Panel — collapsible reasoning drawer
+// -----------------------------------------------------------------------------
+function ReasoningPanel({ plan, sql, insights, diagnostics }: {
+  plan?: any;
+  sql?: string;
+  insights?: any;
+  diagnostics?: any;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasContent = plan || sql || insights || diagnostics;
+  if (!hasContent) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        border: "1px solid var(--chat-border)",
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "var(--chat-surface)",
+      }}
+    >
+      {/* Toggle header */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "8px 12px",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--chat-muted)",
+          letterSpacing: "0.03em",
+          textTransform: "uppercase",
+        }}
+      >
+        <BrainCircuit style={{ width: 13, height: 13 }} />
+        Reasoning
+        <ChevronRight
+          style={{
+            width: 13,
+            height: 13,
+            marginLeft: "auto",
+            transition: "transform 0.2s",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+          }}
+        />
+      </button>
+
+      {/* Expandable body */}
+      {open && (
+        <div
+          style={{
+            padding: "0 12px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            borderTop: "1px solid var(--chat-border)",
+          }}
+          className="animate-in fade-in slide-in-from-top-1"
+        >
+          {/* Plan */}
+          {plan && (
+            <ReasoningBlock
+              icon={<FlaskConical style={{ width: 12, height: 12 }} />}
+              label="Plan"
+              content={typeof plan === "string" ? plan : JSON.stringify(plan, null, 2)}
+              mono={false}
+            />
+          )}
+
+          {/* SQL */}
+          {sql && (
+            <ReasoningBlock
+              icon={<Code2 style={{ width: 12, height: 12 }} />}
+              label="SQL"
+              content={sql}
+              mono
+            />
+          )}
+
+          {/* Insights */}
+          {insights && (
+            <ReasoningBlock
+              icon={<Sparkles style={{ width: 12, height: 12 }} />}
+              label="Insights"
+              content={typeof insights === "string" ? insights : JSON.stringify(insights, null, 2)}
+              mono={false}
+            />
+          )}
+
+          {/* Diagnostics */}
+          {diagnostics && (
+            <ReasoningBlock
+              icon={<Activity style={{ width: 12, height: 12 }} />}
+              label="Diagnostics"
+              content={typeof diagnostics === "string" ? diagnostics : JSON.stringify(diagnostics, null, 2)}
+              mono
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReasoningBlock({
+  icon, label, content, mono,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  content: string;
+  mono: boolean;
+}) {
+  return (
+    <div style={{ paddingTop: 10 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          fontSize: 11,
+          fontWeight: 600,
+          color: "var(--chat-muted)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          marginBottom: 6,
+        }}
+      >
+        {icon}
+        {label}
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          padding: "10px 12px",
+          borderRadius: 8,
+          background: "var(--chat-surface-2)",
+          fontSize: mono ? 12 : 13,
+          fontFamily: mono ? "'DM Mono', monospace" : "inherit",
+          lineHeight: 1.65,
+          color: "var(--chat-fg)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          overflowX: "auto",
+        }}
+      >
+        {content}
+      </pre>
     </div>
   );
 }
@@ -103,6 +268,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const [progressStatus, setProgressStatus] = useState("");
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [activeDatasetIds, setActiveDatasetIds] = useState<string[]>([]);
+  const [activeDocumentIds, setActiveDocumentIds] = useState<string[]>([]); // NEW: for Qdrant RAG
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -124,32 +290,26 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   };
 
   // ---------------------------------------------------------------------------
-  // Upload Pipeline
+  // Upgraded Hybrid Upload Pipeline
   // ---------------------------------------------------------------------------
-  const uploadDirectToR2 = async (file: File): Promise<string> => {
-    const initRes = await fetch("/api/ingestion/presigned-url", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file_name: file.name, content_type: file.type }),
-    });
-    if (!initRes.ok) throw new Error(`Failed to initialize upload for ${file.name}`);
-    const { url, fields, object_key, dataset_id } = await initRes.json();
-
+  const handleHybridUpload = async (file: File): Promise<{ id: string; isDoc: boolean }> => {
+    setProgressStatus(`Ingesting ${file.name}…`);
     const formData = new FormData();
-    Object.entries(fields).forEach(([k, v]) => formData.append(k, v as string));
     formData.append("file", file);
+    formData.append("dataset_name", file.name);
 
-    const uploadRes = await fetch(url, { method: "POST", body: formData });
-    if (!uploadRes.ok) throw new Error(`Storage upload failed for ${file.name}`);
-
-    setProgressStatus(`Profiling ${file.name}…`);
-    const workerRes = await fetch("/api/ingestion/process-parquet", {
+    const uploadRes = await fetch("/api/datasets/upload", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dataset_id, object_key }),
+      body: formData,
     });
-    if (!workerRes.ok) throw new Error("Data profiling worker failed.");
-    return dataset_id;
+
+    if (!uploadRes.ok) throw new Error(`Ingestion failed for ${file.name}`);
+
+    const data = await uploadRes.json();
+    const extractedId = data.storage_path?.split("/").pop() || data.dataset_id;
+    const isDoc = file.name.match(/\.(pdf|txt|md|docx)$/i) !== null;
+
+    return { id: extractedId, isDoc };
   };
 
   // ---------------------------------------------------------------------------
@@ -163,45 +323,58 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       files,
       timestamp: new Date(),
     };
-    
+
     setMessages((prev) => [...prev, userMsg]);
     setIsProcessing(true);
     setCompletedSteps([]);
     setProgressStatus("");
 
     try {
-      let newIds: string[] = [];
+      // 1. Process uploads and route to correct state arrays
+      let currentDatasetIds = [...activeDatasetIds];
+      let currentDocumentIds = [...activeDocumentIds];
+
       if (files.length > 0) {
-        setProgressStatus("Uploading files…");
-        newIds = await Promise.all(files.map(uploadDirectToR2));
         setCompletedSteps((prev) => [...prev, "Uploading files…"]);
-        setActiveDatasetIds((prev) => [...new Set([...prev, ...newIds])]);
+        const results = await Promise.all(files.map(handleHybridUpload));
+
+        const newDatasets = results.filter((r) => !r.isDoc).map((r) => r.id);
+        const newDocs = results.filter((r) => r.isDoc).map((r) => r.id);
+
+        currentDatasetIds = [...new Set([...currentDatasetIds, ...newDatasets])];
+        currentDocumentIds = [...new Set([...currentDocumentIds, ...newDocs])];
+
+        setActiveDatasetIds(currentDatasetIds);
+        setActiveDocumentIds(currentDocumentIds);
       }
 
-      const currentIds = [...new Set([...activeDatasetIds, ...newIds])];
-      const history = messages.slice(-5).map((m) => ({ role: m.role, content: m.content || "" }));
+      const history = messages
+        .slice(-5)
+        .map((m) => ({ role: m.role, content: m.content || "" }));
 
-      // Initialize an empty assistant message to stream into
+      // Initialize empty assistant message to stream into
       const assistantMsgId = (Date.now() + 1).toString();
       setMessages((prev) => [
         ...prev,
         { id: assistantMsgId, role: "assistant", content: "", timestamp: new Date() },
       ]);
 
+      // 2. Pass BOTH id arrays to the orchestrator
       const res = await fetch("/api/chat/orchestrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           agent_id: agentId,
           prompt: text,
-          active_dataset_ids: currentIds,
+          active_dataset_ids: currentDatasetIds,
+          active_document_ids: currentDocumentIds, // NEW: required for Qdrant RAG
           history,
         }),
       });
 
       if (!res.ok || !res.body) throw new Error("The analytical engine encountered an error.");
 
-      // Stream Reader Implementation
+      // Stream Reader
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let doneReading = false;
@@ -226,33 +399,61 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               const parsed = JSON.parse(dataStr);
               const { type, content, message } = parsed;
 
+              // 3. Handle the new richer SSE packet types
               switch (type) {
                 case "status":
                   setProgressStatus((currentStatus) => {
                     if (currentStatus && !completedSteps.includes(currentStatus)) {
                       setCompletedSteps((prev) => [...prev, currentStatus]);
                     }
-                    return content || message; // Handle both payload shapes
+                    return content || message;
                   });
                   break;
-                case "narrative_chunk":
-                  streamedContent += (content || message || "");
-                  setMessages((prev) => 
-                    prev.map((m) => m.id === assistantMsgId ? { ...m, content: streamedContent } : m)
+
+                // NEW: chain-of-thought packets from the AnalyticalOrchestrator
+                case "plan":
+                case "sql":
+                case "insights":
+                case "diagnostics":
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, [type]: content } : m
+                    )
                   );
                   break;
+
+                case "narrative":
+                case "narrative_chunk":
+                  // "narrative" from the new backend; "narrative_chunk" from old — handle both
+                  streamedContent += content?.executive_summary || content || message || "";
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, content: streamedContent } : m
+                    )
+                  );
+                  break;
+
                 case "data":
                 case "cache_hit":
-                  setMessages((prev) => 
-                    prev.map((m) => m.id === assistantMsgId ? { ...m, payload: content } : m)
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId ? { ...m, payload: content } : m
+                    )
                   );
+                  doneReading = true; // data packet signals end of stream
                   break;
+
                 case "error":
                   toast({ title: "Error", description: content || message, variant: "destructive" });
-                  setMessages((prev) => 
-                    prev.map((m) => m.id === assistantMsgId ? { ...m, content: streamedContent + `\n\n**Error:** ${content || message}` } : m)
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMsgId
+                        ? { ...m, content: streamedContent + `\n\n**Error:** ${content || message}` }
+                        : m
+                    )
                   );
                   break;
+
                 case "done":
                   doneReading = true;
                   break;
@@ -266,10 +467,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setMessages((prev) => {
-        // If it failed before stream started, push a new error msg
-        const hasAssistant = prev[prev.length - 1].role === "assistant";
+        const hasAssistant = prev[prev.length - 1]?.role === "assistant";
         if (hasAssistant) {
-           return prev.map((m, i) => i === prev.length -1 ? {...m, content: `**Error:** ${err.message}`} : m);
+          return prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, content: `**Error:** ${err.message}` } : m
+          );
         }
         return [
           ...prev,
@@ -279,7 +481,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             content: `**Error:** ${err.message || "An unexpected error occurred."}`,
             timestamp: new Date(),
           },
-        ]
+        ];
       });
     } finally {
       setIsProcessing(false);
@@ -317,6 +519,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     },
   ];
 
+  const totalSources = activeDatasetIds.length + activeDocumentIds.length;
+
   return (
     <div
       className="flex flex-col h-full w-full relative overflow-hidden"
@@ -326,9 +530,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         color: "var(--chat-fg, #111111)",
       }}
     >
-      {/* ─────────────────────────────────────────────────────────────────────
-          CSS Reset & Custom Variables injected via <style>
-         ──────────────────────────────────────────────────────────────────── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 
@@ -348,7 +549,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           --chat-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
         }
 
-         .dark {
+        .dark {
           :root {
             --chat-bg: #0f0f0f;
             --chat-fg: #f0f0f0;
@@ -364,10 +565,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           }
         }
 
-        .chat-scroll-area {
-          overflow-y: auto;
-          scroll-behavior: smooth;
-        }
+        .chat-scroll-area { overflow-y: auto; scroll-behavior: smooth; }
         .chat-scroll-area::-webkit-scrollbar { width: 4px; }
         .chat-scroll-area::-webkit-scrollbar-track { background: transparent; }
         .chat-scroll-area::-webkit-scrollbar-thumb { background: var(--chat-border); border-radius: 99px; }
@@ -459,6 +657,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           color: #059669; letter-spacing: 0.03em; text-transform: uppercase;
         }
 
+        .doc-badge {
+          display: inline-flex; align-items: center; gap: 5px;
+          padding: 3px 9px; border-radius: 99px;
+          background: rgba(99, 102, 241, 0.08);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          font-size: 11px; font-weight: 600;
+          color: #6366f1; letter-spacing: 0.03em; text-transform: uppercase;
+        }
+
         .top-bar {
           height: 52px;
           border-bottom: 1px solid var(--chat-border);
@@ -502,6 +709,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0;
         }
+        .file-chip-icon.doc {
+          background: rgba(99, 102, 241, 0.08);
+        }
 
         .assistant-text {
           font-size: 14.5px;
@@ -523,7 +733,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Top Bar ── */}
       <div className="top-bar">
-        {/* Left: Agent name + model selector */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div className="agent-avatar">
             <Zap style={{ width: 14, height: 14, color: "#fff" }} />
@@ -540,6 +749,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             <ChevronDown style={{ width: 14, height: 14, color: "var(--chat-muted)" }} />
           </button>
 
+          {/* Dataset badge */}
           {activeDatasetIds.length > 0 && (
             <div className="dataset-badge">
               <span style={{
@@ -548,12 +758,23 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
                 animation: "blink 2s step-end infinite",
               }} />
-              {activeDatasetIds.length} source{activeDatasetIds.length > 1 ? "s" : ""} active
+              {activeDatasetIds.length} dataset{activeDatasetIds.length > 1 ? "s" : ""}
+            </div>
+          )}
+
+          {/* Document badge — NEW */}
+          {activeDocumentIds.length > 0 && (
+            <div className="doc-badge">
+              <span style={{
+                width: 6, height: 6, borderRadius: "50%",
+                background: "#6366f1", display: "inline-block",
+                boxShadow: "0 0 0 2px rgba(99,102,241,0.3)",
+              }} />
+              {activeDocumentIds.length} doc{activeDocumentIds.length > 1 ? "s" : ""}
             </div>
           )}
         </div>
 
-        {/* Right: actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button className="action-btn" title="New chat">
             <Plus style={{ width: 15, height: 15 }} />
@@ -568,10 +789,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       </div>
 
       {/* ── Chat Body ── */}
-      <div
-        className="chat-scroll-area"
-        style={{ flex: 1, overflowY: "auto" }}
-      >
+      <div className="chat-scroll-area" style={{ flex: 1, overflowY: "auto" }}>
         <div
           style={{
             maxWidth: "100%",
@@ -580,7 +798,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             paddingBottom: 24,
           }}
         >
-
           {/* ── Empty / Welcome State ── */}
           {messages.length === 0 && (
             <div
@@ -619,7 +836,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 Ask a question, upload a file, or pick a task below to get started.
               </p>
 
-              {/* Suggestion Grid */}
               <div
                 style={{
                   display: "grid",
@@ -668,32 +884,37 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 onMouseEnter={() => setHoveredMsgId(msg.id)}
                 onMouseLeave={() => setHoveredMsgId(null)}
               >
-
                 {/* ── USER MESSAGE ── */}
                 {msg.role === "user" && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                    {/* File chips */}
                     {msg.files && msg.files.length > 0 && (
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
-                        {msg.files.map((f, i) => (
-                          <div key={i} className="file-chip">
-                            <div className="file-chip-icon">
-                              <FileText style={{ width: 16, height: 16, color: "#10b981" }} />
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--chat-fg)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {f.name}
+                        {msg.files.map((f, i) => {
+                          const isDoc = f.name.match(/\.(pdf|txt|md|docx)$/i) !== null;
+                          return (
+                            <div key={i} className="file-chip">
+                              <div className={`file-chip-icon${isDoc ? " doc" : ""}`}>
+                                <FileText
+                                  style={{
+                                    width: 16, height: 16,
+                                    color: isDoc ? "#6366f1" : "#10b981",
+                                  }}
+                                />
                               </div>
-                              <div style={{ fontSize: 11.5, color: "var(--chat-muted)" }}>
-                                {(f.size / 1024 / 1024).toFixed(2)} MB
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--chat-fg)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {f.name}
+                                </div>
+                                <div style={{ fontSize: 11.5, color: "var(--chat-muted)" }}>
+                                  {(f.size / 1024 / 1024).toFixed(2)} MB · {isDoc ? "Document" : "Dataset"}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
-                    {/* Text bubble */}
                     {msg.content && (
                       <div style={{ maxWidth: "72%" }}>
                         <div className="user-bubble">{msg.content}</div>
@@ -708,14 +929,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 {/* ── ASSISTANT MESSAGE ── */}
                 {msg.role === "assistant" && (
                   <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                    {/* Avatar */}
                     <div className="agent-avatar" style={{ marginTop: 2 }}>
                       <Zap style={{ width: 13, height: 13, color: "#fff" }} />
                     </div>
 
-                    {/* Content */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      
                       {/* Streaming Status Pills */}
                       {isProcessing && idx === messages.length - 1 && (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, paddingTop: 4 }}>
@@ -742,13 +960,22 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                         </div>
                       )}
 
+                      {/* Chain-of-thought Reasoning Panel — NEW */}
+                      {(msg.plan || msg.sql || msg.insights || msg.diagnostics) && (
+                        <ReasoningPanel
+                          plan={msg.plan}
+                          sql={msg.sql}
+                          insights={msg.insights}
+                          diagnostics={msg.diagnostics}
+                        />
+                      )}
+
                       {/* Chart / Data Payload */}
                       {msg.payload && (
                         <div
                           className="chart-card animate-in fade-in slide-in-from-bottom-4"
                           style={{ marginTop: msg.content ? 16 : 0, width: "100%" }}
                         >
-                          {/* Chart header bar */}
                           <div className="chart-header">
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <Table2 style={{ width: 14, height: 14, color: "var(--chat-muted)" }} />
@@ -765,7 +992,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                               </button>
                             </div>
                           </div>
-                          {/* Chart body */}
                           <div style={{ padding: 16 }}>
                             <DynamicChartFactory payload={msg.payload} />
                           </div>
@@ -830,7 +1056,10 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             }}
           >
             Arcli can make mistakes — verify critical outputs.{" "}
-            <a href="mailto:support@arcli.tech" style={{ color: "inherit", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 2 }}>
+            <a
+              href="mailto:support@arcli.tech"
+              style={{ color: "inherit", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 2 }}
+            >
               Get help
             </a>
           </div>

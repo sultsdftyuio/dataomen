@@ -9,12 +9,24 @@ const BACKEND_URL = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
 
 /**
  * Protocol: Analytical Stream Event
- * Upgraded for Phase 6 (Async Jobs) and Phase 7 (Predictive Insights).
+ * Upgraded for Phase 8: Hybrid Engine (Structured Math + Unstructured Document RAG)
  */
 interface StreamPacket {
-  type: "status" | "reasoning" | "data" | "error" | "job_queued" | "predictive_insights";
+  type: 
+    | "status" 
+    | "reasoning" 
+    | "data" 
+    | "error" 
+    | "job_queued" 
+    | "predictive_insights"
+    | "plan"          // Hybrid query plan
+    | "sql"           // Generated DuckDB SQL
+    | "insights"      // Polars mathematical insights
+    | "diagnostics"   // Root cause anomalies
+    | "narrative"     // LLM synthesized text (from DB or PDFs)
+    | "cache_hit";
   content?: string | any;
-  job_id?: string; // Phase 6: Async Job tracking ID
+  job_id?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -45,14 +57,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Extracted Phase 6 & Phase 7 Configurations
+    // Extracted Hybrid Pipeline Configurations
     const { 
       agent_id, 
       prompt, 
-      active_dataset_ids, 
+      active_dataset_ids,    // Structured Parquet Assets
+      active_document_ids,   // Unstructured PDF/Text Assets (NEW)
       history,
-      predictive_config, // Phase 7: ML Forecasting request
-      ab_test_config     // Phase 2.4: A/B Testing request
+      predictive_config, 
+      ab_test_config     
     } = body;
 
     if (!prompt) {
@@ -75,7 +88,7 @@ export async function POST(req: NextRequest) {
         };
 
         // YIELD IMMEDIATELY: Prevents Vercel Edge Runtime from dropping the connection
-        sendPacket({ type: "status", content: "Establishing secure connection to Analytical Engine..." });
+        sendPacket({ type: "status", content: "Establishing secure connection to Hybrid Engine..." });
 
         let backendResponse: Response | null = null;
         let retries = 0;
@@ -97,9 +110,10 @@ export async function POST(req: NextRequest) {
                 agent_id: agent_id || "default-router",
                 prompt,
                 active_dataset_ids: active_dataset_ids || [],
+                active_document_ids: active_document_ids || [], // Pass RAG context to Python
                 history: history || [],
-                predictive_config, // Pass to Python Phase 7 Pipeline
-                ab_test_config,    // Pass to Python Phase 2 Pipeline
+                predictive_config, 
+                ab_test_config,    
                 stream: true, 
               }),
             });
@@ -132,7 +146,7 @@ export async function POST(req: NextRequest) {
             if (retries === 1) {
               sendPacket({ 
                 type: "status", 
-                content: "Waking up the Analytical Compute Engine (this can take ~30 seconds)..." 
+                content: "Waking up the Hybrid Compute Engine (this can take ~30 seconds)..." 
               });
             } else if (retries === 4) {
               sendPacket({ 

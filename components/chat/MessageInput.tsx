@@ -3,17 +3,23 @@
 import { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent, ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Paperclip, X, FileSpreadsheet, ImageIcon } from "lucide-react";
-import { Attachment } from "@/types/chat";
+import { Send, Paperclip, X, FileSpreadsheet, FileText, ImageIcon } from "lucide-react";
+
+export interface Attachment {
+  id: string;
+  file: File;
+  status: "pending" | "uploading" | "error" | "done";
+  previewUrl?: string;
+}
 
 interface MessageInputProps {
   onSendMessage: (text: string, attachments: Attachment[]) => void;
-  pendingAttachments: Attachment[];
-  setPendingAttachments: React.Dispatch<React.SetStateAction<Attachment[]>>;
+  isLoading?: boolean;
 }
 
-export function MessageInput({ onSendMessage, pendingAttachments, setPendingAttachments }: MessageInputProps) {
+export function MessageInput({ onSendMessage, isLoading = false }: MessageInputProps) {
   const [text, setText] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -29,6 +35,12 @@ export function MessageInput({ onSendMessage, pendingAttachments, setPendingAtta
     if (text.trim() || pendingAttachments.length > 0) {
       onSendMessage(text, pendingAttachments);
       setText("");
+      setPendingAttachments([]); // Clear attachments after sending to the orchestrator
+      
+      // Reset textarea height immediately
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     }
   };
 
@@ -65,41 +77,47 @@ export function MessageInput({ onSendMessage, pendingAttachments, setPendingAtta
     setPendingAttachments((prev) => [...prev, ...newAttachments]);
   };
 
-  // Accept undefined to satisfy TS, return early if no ID exists
   const removeAttachment = (id?: string) => {
     if (!id) return;
     setPendingAttachments(prev => prev.filter(a => a.id !== id));
   };
 
   return (
-    <div className="flex flex-col rounded-xl border bg-card text-card-foreground shadow-sm focus-within:ring-1 focus-within:ring-ring transition-shadow">
+    <div className="flex flex-col rounded-2xl border border-gray-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
+      
       {/* File Pills Context Area */}
       {pendingAttachments.length > 0 && (
         <div className="flex flex-wrap gap-2 p-3 pb-0">
-          {pendingAttachments.map((att, index) => (
-            <div 
-              // Provide a fallback key to satisfy React if att.id is somehow undefined
-              key={att.id || `pending-att-${index}`} 
-              className="group relative flex items-center gap-2 bg-muted pr-2 pl-3 py-1.5 rounded-full text-sm border border-border animate-in fade-in zoom-in-95"
-            >
-              {/* Safely check for file type using optional chaining */}
-              {att.file?.type.startsWith("image/") ? (
-                 <ImageIcon className="w-4 h-4 text-blue-500" />
-              ) : (
-                 <FileSpreadsheet className="w-4 h-4 text-green-600" />
-              )}
-              {/* Safely access file name with a fallback */}
-              <span className="truncate max-w-[150px] font-medium">
-                {att.file?.name || "Attached File"}
-              </span>
-              <button 
-                onClick={() => removeAttachment(att.id)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-background text-muted-foreground hover:text-foreground transition-all"
+          {pendingAttachments.map((att, index) => {
+            const isDocument = att.file?.name.match(/\.(pdf|txt|md|docx)$/i);
+            
+            return (
+              <div 
+                key={att.id || `pending-att-${index}`} 
+                className="group relative flex items-center gap-2 bg-gray-50 pr-2 pl-3 py-1.5 rounded-lg text-sm border border-gray-200 animate-in fade-in zoom-in-95"
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
+                {att.file?.type.startsWith("image/") ? (
+                   <ImageIcon className="w-4 h-4 text-blue-500" />
+                ) : isDocument ? (
+                   <FileText className="w-4 h-4 text-purple-500" />
+                ) : (
+                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                )}
+                
+                <span className="truncate max-w-[150px] font-medium text-gray-700">
+                  {att.file?.name || "Attached File"}
+                </span>
+                
+                <button 
+                  onClick={() => removeAttachment(att.id)}
+                  disabled={isLoading}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-gray-200 text-gray-500 hover:text-gray-900 transition-all disabled:opacity-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -110,13 +128,16 @@ export function MessageInput({ onSendMessage, pendingAttachments, setPendingAtta
             ref={fileInputRef} 
             className="hidden" 
             multiple 
+            accept=".csv,.json,.parquet,.pdf,.txt,.md,.docx"
             onChange={handleFileSelect}
         />
+        
         <Button 
             variant="ghost" 
             size="icon" 
-            className="shrink-0 text-muted-foreground hover:text-foreground"
+            className="shrink-0 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl"
             onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading}
         >
           <Paperclip className="w-5 h-5" />
           <span className="sr-only">Attach file</span>
@@ -128,16 +149,17 @@ export function MessageInput({ onSendMessage, pendingAttachments, setPendingAtta
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder="Ask anything or drop files here..."
-          className="min-h-[40px] w-full resize-none border-0 bg-transparent p-2 focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-muted-foreground"
+          placeholder="Ask a question or drop files to analyze..."
+          className="min-h-[40px] w-full resize-none border-0 bg-transparent p-2 focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-gray-400 text-gray-800"
           rows={1}
+          disabled={isLoading}
         />
 
         <Button 
             size="icon" 
             onClick={handleSend}
-            disabled={!text.trim() && pendingAttachments.length === 0}
-            className="shrink-0 rounded-full h-10 w-10 transition-transform active:scale-95"
+            disabled={(!text.trim() && pendingAttachments.length === 0) || isLoading}
+            className="shrink-0 rounded-xl h-10 w-10 bg-blue-600 hover:bg-blue-700 text-white transition-transform active:scale-95 shadow-sm"
         >
           <Send className="w-4 h-4 ml-0.5" />
           <span className="sr-only">Send</span>

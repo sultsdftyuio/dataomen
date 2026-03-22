@@ -5,6 +5,7 @@ import asyncio
 import polars as pl
 
 from typing import Dict, Any, List, AsyncGenerator, Optional
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.services.query_planner import QueryPlanner, QueryPlan
@@ -17,10 +18,17 @@ from api.services.cache_manager import cache_manager
 from api.services.duckdb_validator import DuckDBValidator
 from api.services.llm_client import llm_client
 from api.services.semantic_router import SemanticRouter
+from api.services.vector_service import vector_service
 
 from models import Dataset
 
 logger = logging.getLogger(__name__)
+
+# -----------------------------------------------------------------------------
+# LLM Synthesis Contracts
+# -----------------------------------------------------------------------------
+class SynthesizedNarrative(BaseModel):
+    executive_summary: str = Field(..., description="The synthesized text answer to the user's question.")
 
 
 class AnalyticalOrchestrator:
@@ -30,12 +38,12 @@ class AnalyticalOrchestrator:
     Responsibilities
     ----------------
     1. Semantic dataset routing (Contextual RAG)
-    2. Query planning & validation
-    3. Secure SQL generation
-    4. Time-bounded Parallel compute execution
+    2. Hybrid Query planning (Intent Classification)
+    3. Secure SQL generation / Qdrant Document Search
+    4. Time-bounded Parallel compute execution (DuckDB + Vectors)
     5. Vectorized Insight extraction (Polars)
     6. Root cause diagnostics
-    7. Executive narrative synthesis
+    7. Executive narrative synthesis (Standard & Hybrid)
     8. Asynchronous Vector caching
     """
 
@@ -106,24 +114,17 @@ class AnalyticalOrchestrator:
             # -------------------------------------------------------
             # STAGE 2 — Semantic Dataset Routing
             # -------------------------------------------------------
-            yield self._packet("status", "🧠 Routing datasets via semantic index...")
+            yield self._packet("status", "🧠 Routing assets via semantic index...")
 
             routed_datasets = await self.router.route_datasets(
-                db=db,
-                tenant_id=tenant_id,
-                prompt=prompt,
-                embedding=prompt_embedding
+                db=db, tenant_id=tenant_id, prompt=prompt, embedding=prompt_embedding
             )
 
-            if not routed_datasets:
-                yield self._packet("error", "No datasets were relevant to this query.")
-                return
-
-            dataset_meta = [DatasetMetadata.from_model(d) for d in routed_datasets]
-            full_schema = {str(d.id): d.schema_definition for d in routed_datasets}
+            dataset_meta = [DatasetMetadata.from_model(d) for d in routed_datasets] if routed_datasets else []
+            full_schema = {str(d.id): d.schema_definition for d in routed_datasets} if routed_datasets else {}
 
             # -------------------------------------------------------
-            # STAGE 3 — Query Planning
+            # STAGE 3 — Query Planning & Intent Classification
             # -------------------------------------------------------
             yield self._packet("status", "🧠 Architecting query strategy...")
 
@@ -135,9 +136,60 @@ class AnalyticalOrchestrator:
 
             yield self._packet("plan", plan.model_dump())
 
-            if not plan.is_achievable:
-                yield self._packet("error", plan.missing_data_reason)
+            intent = getattr(plan, "execution_intent", "ANALYTICAL")
+
+            # -------------------------------------------------------
+            # INTENT BRANCH 1: PURE DOCUMENT RAG
+            # -------------------------------------------------------
+            if intent == "DOCUMENT_RAG":
+                yield self._packet("status", "📄 Analyzing unstructured documents...")
+                document_ids = getattr(plan, "primary_document_ids", [])
+                
+                chunks = await vector_service.search_documents(
+                    tenant_id=tenant_id,
+                    document_ids=document_ids,
+                    prompt_embedding=prompt_embedding,
+                    top_k=5
+                )
+
+                if not chunks:
+                    yield self._packet("error", "Could not find relevant text in the uploaded documents.")
+                    return
+
+                yield self._packet("status", "📝 Synthesizing document response...")
+                system_prompt = "You are an AI assistant. Answer the user's question strictly using the provided document excerpts."
+                content = f"QUESTION: {prompt}\n\nEXCERPTS:\n" + "\n\n".join(chunks)
+                
+                synthesis = await llm_client.generate_structured(system_prompt, content, SynthesizedNarrative)
+                
+                yield self._packet("narrative", {
+                    "executive_summary": synthesis.executive_summary,
+                    "key_takeaways": ["Sourced directly from uploaded documents."]
+                })
+                yield self._packet("data", {"type": "text", "execution_time_ms": round((time.time() - start_time) * 1000, 2)})
                 return
+
+            # -------------------------------------------------------
+            # STRUCTURED SETUP (For ANALYTICAL & HYBRID)
+            # -------------------------------------------------------
+            if not dataset_meta:
+                yield self._packet("error", "No structured datasets were relevant to this analytical query.")
+                return
+
+            if not getattr(plan, "is_achievable", True):
+                yield self._packet("error", getattr(plan, "missing_data_reason", "Data unavailable."))
+                return
+
+            # Launch Document Search in the background if HYBRID
+            rag_task = None
+            if intent == "HYBRID" and getattr(plan, "primary_document_ids", []):
+                yield self._packet("status", "🔄 Launching parallel Structured & Unstructured engines...")
+                rag_task = asyncio.create_task(
+                    vector_service.search_documents(
+                        tenant_id=tenant_id, document_ids=plan.primary_document_ids,
+                        prompt_embedding=prompt_embedding, top_k=5
+                    )
+                )
 
             # -------------------------------------------------------
             # STAGE 4 — SQL Generation & Security Validation
@@ -147,14 +199,10 @@ class AnalyticalOrchestrator:
             target_engine = dataset_meta[0].location.value
 
             sql_query, chart_spec = await self.generator.generate_sql(
-                plan=plan,
-                full_schema=full_schema,
-                datasets=dataset_meta,
-                target_engine=target_engine,
-                tenant_id=tenant_id
+                plan=plan, full_schema=full_schema, datasets=dataset_meta,
+                target_engine=target_engine, tenant_id=tenant_id
             )
 
-            # Strict SQL injection and syntax validation
             self.validator.validate_sql(sql_query)
             yield self._packet("sql", sql_query)
 
@@ -163,7 +211,6 @@ class AnalyticalOrchestrator:
             # -------------------------------------------------------
             yield self._packet("status", "🚀 Executing vectorized compute engine...")
 
-            # Wrap tasks in wait_for to enforce SLAs and prevent infinite hangs
             compute_tasks = [
                 asyncio.wait_for(
                     self.compute_engine.execute_query_async(sql_query, dataset, tenant_id),
@@ -198,13 +245,10 @@ class AnalyticalOrchestrator:
             # -------------------------------------------------------
             yield self._packet("status", "📊 Extracting statistical insights...")
 
-            # Zero-copy Polars ingestion where possible, high-performance C-level ops
             df = pl.DataFrame(combined_data)
 
             insights: InsightPayload = self.insight_engine.analyze_dataframe(
-                df,
-                plan,
-                tenant_id
+                df, plan, tenant_id
             )
 
             yield self._packet("insights", insights.model_dump())
@@ -213,16 +257,12 @@ class AnalyticalOrchestrator:
             # STAGE 7 — Root Cause Diagnostics
             # -------------------------------------------------------
             diagnostic_dump = None
-
             if insights.anomalies:
                 anomaly = insights.anomalies[0]
                 yield self._packet("status", f"🕵️ Investigating anomaly in {anomaly.column}...")
 
                 diagnostic = await self.diagnostic_service.investigate_anomaly(
-                    anomaly=anomaly,
-                    datasets=dataset_meta,
-                    full_schema=full_schema,
-                    tenant_id=tenant_id
+                    anomaly=anomaly, datasets=dataset_meta, full_schema=full_schema, tenant_id=tenant_id
                 )
 
                 if diagnostic:
@@ -233,15 +273,32 @@ class AnalyticalOrchestrator:
             # STAGE 8 — Executive Narrative Generation
             # -------------------------------------------------------
             yield self._packet("status", "📝 Synthesizing executive narrative...")
+            
+            narrative_dump = {}
 
-            narrative = await self.narrative_service.generate_executive_summary(
-                payload=insights,
-                plan=plan,
-                chart_spec=chart_spec,
-                tenant_id=tenant_id
-            )
+            if intent == "HYBRID" and rag_task:
+                # Merge DuckDB mathematical insights with Qdrant text chunks
+                rag_chunks = await rag_task
+                data_summary = json.dumps(insights.model_dump())
+                doc_context = "\n".join(rag_chunks)
+                
+                system_prompt = "You are an analytical AI. Answer the user's question by synthesizing BOTH the mathematical data insights and the document context provided."
+                content = f"QUESTION: {prompt}\n\nDATA INSIGHTS:\n{data_summary}\n\nDOCUMENT EXCERPTS:\n{doc_context}"
+                
+                hybrid_res = await llm_client.generate_structured(system_prompt, content, SynthesizedNarrative)
+                
+                narrative_dump = {
+                    "executive_summary": hybrid_res.executive_summary,
+                    "key_takeaways": ["Derived from Hybrid Execution (Structured Math + Unstructured Documents)"]
+                }
+            else:
+                # Standard analytical narrative
+                narrative = await self.narrative_service.generate_executive_summary(
+                    payload=insights, plan=plan, chart_spec=chart_spec, tenant_id=tenant_id
+                )
+                narrative_dump = narrative.model_dump()
 
-            yield self._packet("narrative", narrative.model_dump())
+            yield self._packet("narrative", narrative_dump)
 
             # -------------------------------------------------------
             # FINAL RESULT DELIVERY
@@ -275,10 +332,9 @@ class AnalyticalOrchestrator:
                     sql_query=sql_query,
                     chart_spec=chart_spec,
                     insight_payload=insights,
-                    narrative=narrative.model_dump()
+                    narrative=narrative_dump
                 )
             )
-            # Retain a safe execution callback so unhandled exceptions do not destroy the loop
             cache_task.add_done_callback(_cache_error_handler)
 
         except Exception as e:

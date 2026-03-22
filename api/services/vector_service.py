@@ -12,7 +12,8 @@ from qdrant_client.models import (
     PointStruct, 
     Filter, 
     FieldCondition, 
-    MatchValue
+    MatchValue,
+    MatchAny
 )
 
 from api.services.llm_client import llm_client
@@ -21,17 +22,19 @@ logger = logging.getLogger(__name__)
 
 class VectorService:
     """
-    Phase 2: Semantic Schema Indexing & RAG Optimization.
+    Phase 2 & 3: Semantic Schema Indexing & Document RAG Engine.
     
     This service treats the LLM's context window as a highly restricted resource.
-    Instead of dumping entire database schemas into the LLM (which bloats tokens 
-    and causes hallucinations), this service embeds table/column metadata into a 
-    vector database (Qdrant). 
+    It manages two vector spaces:
+    1. 'dataomen_schemas': Embeds table/column metadata to route structured NL2SQL.
+    2. 'dataomen_documents': Embeds semantic chunks from PDFs/Text for unstructured RAG.
     
-    At query time, it retrieves ONLY the most semantically relevant tables.
+    Multi-tenant isolation is strictly enforced at the database level via payload filtering.
     """
 
-    COLLECTION_NAME = "dataomen_schemas"
+    SCHEMA_COLLECTION = "dataomen_schemas"
+    DOCUMENT_COLLECTION = "dataomen_documents"
+    
     # text-embedding-3-small dimension
     EMBEDDING_DIMENSION = 1536  
 
@@ -41,7 +44,7 @@ class VectorService:
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
         
         if not self.qdrant_url:
-            logger.warning("QDRANT_URL missing. Semantic RAG falls back to exact match/full schema.")
+            logger.warning("QDRANT_URL missing. Semantic RAG and Document routing will fall back to exact match/full context.")
             self.client = None
         else:
             self.client = AsyncQdrantClient(
@@ -50,54 +53,51 @@ class VectorService:
                 timeout=10.0
             )
 
-    async def initialize_collection(self):
-        """Ensures the vector collection exists with the correct dimensions."""
+    async def initialize_collections(self):
+        """Ensures both vector collections exist with correct dimensions and tenant indexing."""
         if not self.client: return
         
         collections = await self.client.get_collections()
-        if not any(c.name == self.COLLECTION_NAME for c in collections.collections):
-            logger.info(f"Creating Qdrant collection: {self.COLLECTION_NAME}")
+        existing_names = [c.name for c in collections.collections]
+
+        # 1. Ensure Schema Collection
+        if self.SCHEMA_COLLECTION not in existing_names:
+            logger.info(f"Creating Qdrant collection: {self.SCHEMA_COLLECTION}")
             await self.client.create_collection(
-                collection_name=self.COLLECTION_NAME,
-                vectors_config=VectorParams(
-                    size=self.EMBEDDING_DIMENSION, 
-                    distance=Distance.COSINE
-                ),
+                collection_name=self.SCHEMA_COLLECTION,
+                vectors_config=VectorParams(size=self.EMBEDDING_DIMENSION, distance=Distance.COSINE),
             )
-            # Create a payload index on tenant_id for high-performance multi-tenant filtering
             await self.client.create_payload_index(
-                collection_name=self.COLLECTION_NAME,
-                field_name="tenant_id",
-                field_schema="keyword"
+                collection_name=self.SCHEMA_COLLECTION, field_name="tenant_id", field_schema="keyword"
+            )
+
+        # 2. Ensure Document Collection
+        if self.DOCUMENT_COLLECTION not in existing_names:
+            logger.info(f"Creating Qdrant collection: {self.DOCUMENT_COLLECTION}")
+            await self.client.create_collection(
+                collection_name=self.DOCUMENT_COLLECTION,
+                vectors_config=VectorParams(size=self.EMBEDDING_DIMENSION, distance=Distance.COSINE),
+            )
+            await self.client.create_payload_index(
+                collection_name=self.DOCUMENT_COLLECTION, field_name="tenant_id", field_schema="keyword"
             )
 
     # -------------------------------------------------------------------------
-    # Phase 2.1: Semantic Schema Indexing
+    # Structured Data (Schema Routing)
     # -------------------------------------------------------------------------
 
     async def index_dataset_schema(self, tenant_id: str, dataset_id: str, schema_metadata: Dict[str, Any]):
-        """
-        Translates raw database schema into semantic text chunks, vectorizes them 
-        in parallel batches, and indexes them into Qdrant.
-        """
-        if not self.client:
-            logger.warning("Skipping schema indexing: Qdrant client not initialized.")
-            return
+        """Translates raw database schema into semantic text chunks and indexes them."""
+        if not self.client: return
 
         chunks = []
         payloads = []
         
-        # Flatten the schema into semantic descriptions
         for table_name, table_info in schema_metadata.items():
             description = table_info.get("description", "")
-            columns = ", ".join(table_info.get("columns", []))
+            columns = ", ".join([c.get("name", "") for c in table_info.get("columns", [])]) if isinstance(table_info.get("columns"), list) else ""
             
-            # Create a dense, semantic chunk optimized for LLM embedding understanding
-            semantic_text = (
-                f"Dataset: {dataset_id}. Table: {table_name}. "
-                f"Description: {description}. "
-                f"Available Columns: {columns}."
-            )
+            semantic_text = f"Dataset: {dataset_id}. Table: {table_name}. Description: {description}. Available Columns: {columns}."
             chunks.append(semantic_text)
             
             payloads.append({
@@ -107,47 +107,17 @@ class VectorService:
                 "semantic_text": semantic_text
             })
 
-        if not chunks:
-            return
+        if not chunks: return
 
         logger.info(f"[{tenant_id}] Embedding {len(chunks)} schema chunks for dataset {dataset_id}...")
-        
-        # Vectorization over Loops: Embed all chunks in a single parallel network call
         embeddings = await llm_client.embed_batch(chunks)
         
         points = [
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=embedding,
-                payload=payload
-            )
-            for embedding, payload in zip(embeddings, payloads)
+            PointStruct(id=str(uuid.uuid4()), vector=emb, payload=pay)
+            for emb, pay in zip(embeddings, payloads)
         ]
 
-        # Upsert to Vector DB
-        await self.client.upsert(
-            collection_name=self.COLLECTION_NAME,
-            points=points
-        )
-        logger.info(f"[{tenant_id}] Successfully indexed {len(points)} vectors into Qdrant.")
-
-    async def delete_dataset_index(self, tenant_id: str, dataset_id: str):
-        """Removes a dataset from the vector index (e.g., when deleted by the user)."""
-        if not self.client: return
-        
-        await self.client.delete(
-            collection_name=self.COLLECTION_NAME,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
-                    FieldCondition(key="dataset_id", match=MatchValue(value=dataset_id)),
-                ]
-            )
-        )
-
-    # -------------------------------------------------------------------------
-    # Phase 2.2: Contextual RAG Routing
-    # -------------------------------------------------------------------------
+        await self.client.upsert(collection_name=self.SCHEMA_COLLECTION, points=points)
 
     async def search_relevant_schemas(
         self, 
@@ -155,44 +125,95 @@ class VectorService:
         prompt_embedding: List[float], 
         top_k: int = 5
     ) -> Dict[str, List[str]]:
-        """
-        Searches the vector database for the most relevant tables to answer the prompt.
-        
-        Returns:
-            Dict mapping dataset_id to a list of relevant table descriptions.
-        """
-        if not self.client:
-            return {}
+        """Searches for the most relevant analytical tables."""
+        if not self.client: return {}
 
-        # Multi-Tenant Security by Design: Hard filter preventing cross-tenant leakage
-        tenant_filter = Filter(
-            must=[FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))]
-        )
+        tenant_filter = Filter(must=[FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))])
 
         search_results = await self.client.search(
-            collection_name=self.COLLECTION_NAME,
+            collection_name=self.SCHEMA_COLLECTION,
             query_vector=prompt_embedding,
             query_filter=tenant_filter,
             limit=top_k,
-            score_threshold=0.3  # Ensure only highly semantically relevant tables match
+            score_threshold=0.3
         )
 
-        # Group retrieved schemas by dataset_id so the orchestrator can inject them
         relevant_schemas: Dict[str, List[str]] = {}
-        
         for hit in search_results:
             dataset_id = hit.payload.get("dataset_id")
             semantic_text = hit.payload.get("semantic_text")
-            
             if dataset_id and semantic_text:
                 if dataset_id not in relevant_schemas:
                     relevant_schemas[dataset_id] = []
                 relevant_schemas[dataset_id].append(semantic_text)
-
-        hit_count = sum(len(texts) for texts in relevant_schemas.values())
-        logger.info(f"[{tenant_id}] RAG retrieved {hit_count} relevant tables for query execution.")
         
         return relevant_schemas
+
+    # -------------------------------------------------------------------------
+    # Unstructured Data (Document RAG)
+    # -------------------------------------------------------------------------
+
+    async def search_documents(
+        self, 
+        tenant_id: str, 
+        document_ids: List[str],
+        prompt_embedding: List[float], 
+        top_k: int = 5
+    ) -> List[str]:
+        """
+        Retrieves the most semantically relevant text chunks from specific uploaded documents.
+        Uses a strict tenant_id + document_ids intersection filter.
+        """
+        if not self.client or not document_ids:
+            return []
+
+        # STRICT SECURITY: Filter by Tenant AND the specific Document UUIDs the AI Planner requested
+        strict_filter = Filter(
+            must=[
+                FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
+                FieldCondition(key="document_id", match=MatchAny(any=document_ids))
+            ]
+        )
+
+        logger.info(f"[{tenant_id}] Searching vector DB across {len(document_ids)} documents...")
+
+        search_results = await self.client.search(
+            collection_name=self.DOCUMENT_COLLECTION,
+            query_vector=prompt_embedding,
+            query_filter=strict_filter,
+            limit=top_k,
+            # Higher threshold for text to prevent AI hallucination from noisy/irrelevant chunks
+            score_threshold=0.4 
+        )
+
+        # Extract just the raw text chunks to feed to the downstream LLM
+        chunks = [hit.payload.get("chunk_text") for hit in search_results if hit.payload and "chunk_text" in hit.payload]
+        
+        logger.info(f"[{tenant_id}] Retrieved {len(chunks)} relevant document chunks for RAG context.")
+        return chunks
+
+    # -------------------------------------------------------------------------
+    # Global Cleanup
+    # -------------------------------------------------------------------------
+
+    async def delete_asset_index(self, tenant_id: str, asset_id: str):
+        """Removes a dataset or document from the vector index (e.g., when deleted by the user)."""
+        if not self.client: return
+        
+        # We attempt to delete from both collections to ensure clean state
+        for collection in [self.SCHEMA_COLLECTION, self.DOCUMENT_COLLECTION]:
+            # Handle both payload keys (dataset_id or document_id) depending on the collection
+            key = "dataset_id" if collection == self.SCHEMA_COLLECTION else "document_id"
+            
+            await self.client.delete(
+                collection_name=collection,
+                points_selector=Filter(
+                    must=[
+                        FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
+                        FieldCondition(key=key, match=MatchValue(value=asset_id)),
+                    ]
+                )
+            )
 
 # Global Singleton Service
 vector_service = VectorService()

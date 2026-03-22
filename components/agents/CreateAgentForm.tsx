@@ -4,220 +4,296 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import { Bot, Target, Activity, Clock, Sparkles, Database, ShieldAlert, Cpu } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { 
+  Bot, 
+  Database, 
+  Sparkles, 
+  BrainCircuit, 
+  FileText, 
+  ShieldCheck, 
+  Settings2,
+  CheckCircle2
+} from "lucide-react";
 
-// Updated to match the backend AgentRuleCreate schema
+// -----------------------------------------------------------------------------
+// Interfaces
+// -----------------------------------------------------------------------------
 export interface AgentCreatePayload {
   name: string;
-  dataset_id: string;
-  metric_column: string;
-  time_column: string;
-  cron_schedule: string;
-  sensitivity_threshold: number;
+  description: string;
+  role_description: string; // The system prompt / instructions
+  dataset_ids: string[];    // Structured Data Access
+  document_ids: string[];   // Unstructured Data Access
+  temperature: number;      // Creativity vs. Determinism
+}
+
+interface MockAsset {
+  id: string;
+  name: string;
+  type: 'dataset' | 'document';
 }
 
 interface CreateAgentFormProps {
   onSubmit: (payload: AgentCreatePayload) => Promise<void>;
   isLoading?: boolean;
+  // In a real app, pass these down from your useDatasets() hook
+  availableAssets?: MockAsset[]; 
 }
 
-export function CreateAgentForm({ onSubmit, isLoading = false }: CreateAgentFormProps) {
+// Fallback mock data if not provided by parent
+const MOCK_ASSETS: MockAsset[] = [
+  { id: 'ds_stripe_prod', name: 'Stripe Transactions (Prod)', type: 'dataset' },
+  { id: 'ds_hubspot_crm', name: 'HubSpot CRM Contacts', type: 'dataset' },
+  { id: 'doc_hr_policy', name: 'Employee_Handbook_2024.pdf', type: 'document' },
+  { id: 'doc_sec_audit', name: 'SOC2_Compliance_Audit.pdf', type: 'document' },
+];
+
+export function CreateAgentForm({ 
+  onSubmit, 
+  isLoading = false,
+  availableAssets = MOCK_ASSETS 
+}: CreateAgentFormProps) {
+  
   // 1. Identity
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   
-  // 2. Data Target
-  const [datasetId, setDatasetId] = useState("");
-  const [metricColumn, setMetricColumn] = useState("");
-  const [timeColumn, setTimeColumn] = useState("created_at"); // Default common time column
+  // 2. Instructions (System Prompt)
+  const [roleDescription, setRoleDescription] = useState("");
 
-  // 3. Orchestration & Sensitivity
-  const [schedule, setSchedule] = useState("0 * * * *"); // Default: Hourly
-  const [sensitivity, setSensitivity] = useState<number[]>([2.0]); // Default: 2 standard deviations
+  // 3. Knowledge Base (RAG & SQL Context)
+  const [selectedDatasets, setSelectedDatasets] = useState<string[]>([]);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+
+  // 4. Engine Behavior
+  const [temperature, setTemperature] = useState<number[]>([0.0]); // Default: 0 (Deterministic)
+
+  const toggleDataset = (id: string) => {
+    setSelectedDatasets(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleDocument = (id: string) => {
+    setSelectedDocuments(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     const payload: AgentCreatePayload = {
       name,
-      dataset_id: datasetId,
-      metric_column: metricColumn,
-      time_column: timeColumn,
-      cron_schedule: schedule,
-      sensitivity_threshold: sensitivity[0],
+      description,
+      role_description: roleDescription,
+      dataset_ids: selectedDatasets,
+      document_ids: selectedDocuments,
+      temperature: temperature[0],
     };
 
     await onSubmit(payload);
 
-    // Reset form upon successful orchestration
+    // Reset form upon successful creation
     setName("");
-    setDatasetId("");
-    setMetricColumn("");
-    setTimeColumn("created_at");
-    setSchedule("0 * * * *");
-    setSensitivity([2.0]);
+    setDescription("");
+    setRoleDescription("");
+    setSelectedDatasets([]);
+    setSelectedDocuments([]);
+    setTemperature([0.0]);
   };
 
-  // Helper to explain the sensitivity slider to the user
-  const getSensitivityLabel = (val: number) => {
-    if (val < 1.5) return "High (Alerts on minor changes)";
-    if (val <= 2.5) return "Balanced (Recommended)";
-    return "Low (Only critical spikes/drops)";
+  const getTempLabel = (val: number) => {
+    if (val === 0.0) return "Strictly Deterministic (Math/SQL focus)";
+    if (val <= 0.4) return "Balanced (Good for Summaries)";
+    return "Creative (Brainstorming/Drafting)";
   };
+
+  const datasets = availableAssets.filter(a => a.type === 'dataset');
+  const documents = availableAssets.filter(a => a.type === 'document');
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8 py-4 px-2">
+    <form onSubmit={handleSubmit} className="space-y-8 bg-white border border-gray-200 rounded-2xl p-6 md:p-8 shadow-sm max-w-4xl mx-auto">
+      
+      <div className="border-b border-gray-100 pb-5">
+        <h2 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+          <div className="p-2 bg-blue-100 rounded-xl">
+            <Bot className="w-6 h-6 text-blue-600" />
+          </div>
+          Create AI Copilot
+        </h2>
+        <p className="text-sm text-gray-500 mt-2 font-medium">
+          Deploy a specialized AI agent with custom instructions and restricted access to specific data sources.
+        </p>
+      </div>
       
       {/* SECTION 1: Identity */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 border-b pb-2">
-          <Bot className="h-5 w-5 text-primary" />
-          <h3 className="text-sm font-semibold tracking-tight uppercase text-muted-foreground">Agent Identity</h3>
+      <div className="space-y-5">
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="h-5 w-5 text-purple-500" />
+          <h3 className="text-sm font-bold tracking-wider uppercase text-gray-400">1. Persona</h3>
         </div>
         
-        <div className="space-y-2">
-          <Label htmlFor="name">Agent Name</Label>
-          <Input 
-            id="name" 
-            placeholder="e.g., EU Revenue Watchdog" 
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={isLoading}
-            required 
-            className="bg-background"
-          />
-        </div>
-      </div>
-
-      {/* SECTION 2: Data Target */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 border-b pb-2">
-          <Database className="h-5 w-5 text-blue-500" />
-          <h3 className="text-sm font-semibold tracking-tight uppercase text-muted-foreground">Data Target</h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div className="space-y-2">
-            <Label htmlFor="dataset">Source Dataset</Label>
-            <Select required value={datasetId} onValueChange={setDatasetId} disabled={isLoading}>
-              <SelectTrigger className="bg-background">
-                <SelectValue placeholder="Select dataset" />
-              </SelectTrigger>
-              <SelectContent>
-                {/* In a real app, map over actual fetched datasets */}
-                <SelectItem value="ds_stripe_prod">Stripe Transactions (Prod)</SelectItem>
-                <SelectItem value="ds_app_events">App Analytics (Events)</SelectItem>
-                <SelectItem value="ds_postgres_users">Postgres User DB</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="metric">Metric to Monitor</Label>
+            <Label htmlFor="name" className="text-gray-700 font-semibold">Agent Name</Label>
             <Input 
-              id="metric" 
-              placeholder="e.g., amount, mrr, duration" 
-              value={metricColumn}
-              onChange={(e) => setMetricColumn(e.target.value)}
+              id="name" 
+              placeholder="e.g., Financial Controller Bot" 
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               disabled={isLoading}
               required 
-              className="bg-background font-mono text-sm"
+              className="bg-gray-50 border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl py-5"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="desc" className="text-gray-700 font-semibold">Short Description</Label>
+            <Input 
+              id="desc" 
+              placeholder="e.g., Answers questions about Q3 revenue." 
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={isLoading}
+              required 
+              className="bg-gray-50 border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl py-5"
             />
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="time_col">Time Column <span className="text-muted-foreground font-normal">(for chronological sorting)</span></Label>
-          <Input 
-            id="time_col" 
-            placeholder="e.g., created_at, timestamp" 
-            value={timeColumn}
-            onChange={(e) => setTimeColumn(e.target.value)}
+          <Label htmlFor="instructions" className="text-gray-700 font-semibold">Custom Instructions (System Prompt)</Label>
+          <Textarea 
+            id="instructions" 
+            placeholder="e.g., You are an expert financial analyst. Only answer using the provided Stripe data. Never guess numbers." 
+            value={roleDescription}
+            onChange={(e) => setRoleDescription(e.target.value)}
             disabled={isLoading}
             required 
-            className="bg-background font-mono text-sm"
+            rows={3}
+            className="bg-gray-50 border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl resize-none"
           />
         </div>
       </div>
 
-      {/* SECTION 3: Orchestration Rules */}
-      <div className="space-y-6">
-        <div className="flex items-center gap-2 border-b pb-2">
-          <Activity className="h-5 w-5 text-emerald-500" />
-          <h3 className="text-sm font-semibold tracking-tight uppercase text-muted-foreground">Detection Rules</h3>
+      {/* SECTION 2: Knowledge Base Access */}
+      <div className="space-y-5 pt-4 border-t border-gray-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-emerald-500" />
+            <h3 className="text-sm font-bold tracking-wider uppercase text-gray-400">2. Knowledge Access</h3>
+          </div>
+          <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
+            Tenant Isolated
+          </span>
         </div>
 
-        {/* Sensitivity Slider */}
-        <div className="space-y-4 bg-muted/30 p-4 rounded-lg border border-border">
-          <div className="flex justify-between items-end">
-            <Label className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-muted-foreground" />
-              Anomaly Sensitivity (Z-Score)
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* Structured Datasets */}
+          <div className="space-y-3">
+            <Label className="flex items-center gap-2 text-gray-700 font-semibold">
+              <Database className="w-4 h-4 text-blue-500" /> Structured Datasets
             </Label>
-            <span className="text-xs font-medium bg-background px-2 py-1 rounded border">
-              {getSensitivityLabel(sensitivity[0])}
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-2 space-y-1 max-h-[180px] overflow-y-auto custom-scrollbar">
+              {datasets.length === 0 && <p className="text-xs text-gray-400 p-2 italic">No datasets available.</p>}
+              {datasets.map(ds => (
+                <div 
+                  key={ds.id}
+                  onClick={() => toggleDataset(ds.id)}
+                  className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${
+                    selectedDatasets.includes(ds.id) 
+                      ? 'bg-blue-50 border-blue-200 text-blue-900' 
+                      : 'bg-white border-transparent hover:border-gray-200 text-gray-600'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded flex items-center justify-center border ${selectedDatasets.includes(ds.id) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                    {selectedDatasets.includes(ds.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </div>
+                  <span className="text-sm font-medium truncate">{ds.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Unstructured Documents */}
+          <div className="space-y-3">
+            <Label className="flex items-center gap-2 text-gray-700 font-semibold">
+              <FileText className="w-4 h-4 text-purple-500" /> Unstructured Documents
+            </Label>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-2 space-y-1 max-h-[180px] overflow-y-auto custom-scrollbar">
+              {documents.length === 0 && <p className="text-xs text-gray-400 p-2 italic">No documents available.</p>}
+              {documents.map(doc => (
+                <div 
+                  key={doc.id}
+                  onClick={() => toggleDocument(doc.id)}
+                  className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${
+                    selectedDocuments.includes(doc.id) 
+                      ? 'bg-purple-50 border-purple-200 text-purple-900' 
+                      : 'bg-white border-transparent hover:border-gray-200 text-gray-600'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded flex items-center justify-center border ${selectedDocuments.includes(doc.id) ? 'bg-purple-600 border-purple-600' : 'border-gray-300'}`}>
+                    {selectedDocuments.includes(doc.id) && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </div>
+                  <span className="text-sm font-medium truncate">{doc.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* SECTION 3: Engine Behavior */}
+      <div className="space-y-5 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-2">
+          <Settings2 className="h-5 w-5 text-gray-500" />
+          <h3 className="text-sm font-bold tracking-wider uppercase text-gray-400">3. Engine Settings</h3>
+        </div>
+
+        <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 space-y-4">
+          <div className="flex justify-between items-end">
+            <Label className="font-semibold text-gray-700">Model Temperature</Label>
+            <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-1 rounded-md">
+              {getTempLabel(temperature[0])}
             </span>
           </div>
           
           <Slider
-            value={sensitivity}
-            onValueChange={setSensitivity}
-            max={4.0}
-            min={1.0}
+            value={temperature}
+            onValueChange={setTemperature}
+            max={1.0}
+            min={0.0}
             step={0.1}
             disabled={isLoading}
             className="py-2"
           />
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Lower thresholds catch smaller deviations (more alerts). Higher thresholds require massive spikes/drops to trigger the RAG diagnostic pipeline (fewer, higher-signal alerts).
+          <p className="text-xs text-gray-500 font-medium leading-relaxed">
+            Keep temperature at 0.0 for agents generating SQL or retrieving strict facts from PDFs. Increase it for agents writing emails or brainstorming.
           </p>
-        </div>
-
-        {/* Schedule Selector */}
-        <div className="space-y-2">
-          <Label htmlFor="schedule" className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-muted-foreground" />
-            Evaluation Schedule
-          </Label>
-          <Select required value={schedule} onValueChange={setSchedule} disabled={isLoading}>
-            <SelectTrigger className="bg-background">
-              <SelectValue placeholder="Select cron schedule" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="*/15 * * * *">Every 15 Minutes (High Priority)</SelectItem>
-              <SelectItem value="0 * * * *">Hourly (Standard)</SelectItem>
-              <SelectItem value="0 0 * * *">Daily at Midnight (Reporting)</SelectItem>
-              <SelectItem value="0 0 * * 1">Weekly on Monday</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        
-        {/* Supervisor Note */}
-        <div className="flex items-center justify-between p-3 border rounded-md bg-primary/5 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Cpu className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium tracking-tight">Supervisor Engine</span>
-          </div>
-          <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider bg-primary/10 text-primary">
-            Math + LLM
-          </Badge>
         </div>
       </div>
 
       {/* Action Footer */}
-      <div className="pt-4 flex items-center justify-end border-t mt-6">
-        <Button type="submit" disabled={isLoading || !datasetId || !metricColumn} className="w-full gap-2 font-medium group h-12">
+      <div className="pt-6 border-t border-gray-100">
+        <Button 
+          type="submit" 
+          disabled={isLoading || !name || !roleDescription || (selectedDatasets.length === 0 && selectedDocuments.length === 0)} 
+          className="w-full gap-2 font-semibold text-[15px] group h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm hover:shadow-blue-500/20 transition-all"
+        >
           {isLoading ? (
             "Provisioning Agent..."
           ) : (
             <>
               <Sparkles className="h-5 w-5 fill-current group-hover:animate-pulse" />
-              Deploy Autonomous Agent
+              Deploy Specialized Copilot
             </>
           )}
         </Button>
+        {(selectedDatasets.length === 0 && selectedDocuments.length === 0) && (
+          <p className="text-center text-xs text-red-500 font-medium mt-3">
+            Please select at least one data source or document for the agent to access.
+          </p>
+        )}
       </div>
     </form>
   );

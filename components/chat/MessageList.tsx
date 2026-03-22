@@ -2,172 +2,79 @@
 "use client";
 
 import React, { useEffect, useRef } from "react";
-import { Message, Attachment } from "@/types/chat";
+import { Message } from "@/types/chat";
+import { MessageBubble } from "@/components/MessageBubble"; // Ensure path matches your structure
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { 
-  Bot, 
-  User, 
-  FileSpreadsheet, 
-  Paperclip, 
-  CheckCircle2, 
-  Loader2,
-  Activity
-} from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FileText, Sparkles, TrendingUp } from "lucide-react";
 
-// -----------------------------------------------------------------------------
-// Type Definitions
-// -----------------------------------------------------------------------------
 interface MessageListProps {
   messages: Message[];
-  isLoading?: boolean;
-  /**
-   * Phase 4.2: Granular Streaming UX
-   * An array of status strings emitted by the Orchestrator's SSE pipeline.
-   * e.g., ["🔍 Consulting vector semantic memory...", "🚀 Executing parallel scans..."]
-   */
-  streamingSteps?: string[]; 
+  onSuggestionClick: (text: string) => void;
 }
 
-// -----------------------------------------------------------------------------
-// Component
-// -----------------------------------------------------------------------------
-export function MessageList({ messages, isLoading = false, streamingSteps = [] }: MessageListProps) {
+export function MessageList({ messages, onSuggestionClick }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to the bottom when new messages arrive or loading state changes
+  // Auto-scroll to the bottom when new messages arrive or stream updates
   useEffect(() => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isLoading, streamingSteps]);
+  }, [messages]);
 
   return (
-    <ScrollArea className="flex-1 w-full p-4 bg-slate-950">
-      <div className="space-y-6 max-w-4xl mx-auto pb-4">
-        {messages.map((msg, index) => (
-          <div
-            key={msg.id || index}
-            className={cn(
-              "flex w-full gap-4",
-              msg.role === "user" ? "flex-row-reverse" : "flex-row"
-            )}
-          >
-            {/* Avatar Profile */}
-            <Avatar className={cn(
-              "h-8 w-8 flex-shrink-0 border",
-              msg.role === "user" 
-                ? "bg-blue-600 border-blue-500" 
-                : "bg-slate-900 border-slate-700"
-            )}>
-              <AvatarFallback className="bg-transparent text-white">
-                {msg.role === "user" ? <User size={15} /> : <Bot size={15} className="text-emerald-400" />}
-              </AvatarFallback>
-            </Avatar>
-
-            {/* Message Bubble Container */}
-            <div
-              className={cn(
-                "flex flex-col max-w-[85%] rounded-2xl px-5 py-4 space-y-3 shadow-sm",
-                msg.role === "user"
-                  ? "bg-blue-600 text-white rounded-tr-sm"
-                  : "bg-[#0B1120] text-slate-200 rounded-tl-sm border border-slate-800 shadow-xl"
-              )}
-            >
-              {/* Message Text Content */}
-              {msg.content && (
-                <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
-                  {msg.content}
-                </div>
-              )}
-
-              {/* Attachments Payload */}
-              {msg.attachments && msg.attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-800/50">
-                  {msg.attachments.map((file: Attachment, idx: number) => (
-                    <div
-                      key={file.id || idx}
-                      className={cn(
-                        "flex items-center gap-2 p-2 rounded-lg text-xs border transition-colors",
-                        msg.role === "user" 
-                          ? "bg-blue-700/50 border-blue-500 hover:bg-blue-700"
-                          : "bg-slate-900 border-slate-700 hover:bg-slate-800"
-                      )}
-                    >
-                      {/* Smart icon mapping based on file type */}
-                      {file.file?.name?.match(/\.(csv|xlsx?|parquet)$/i) ? (
-                        <FileSpreadsheet size={14} className={msg.role === "user" ? "text-blue-200" : "text-emerald-400"} />
-                      ) : (
-                        <Paperclip size={14} className="text-slate-400" />
-                      )}
-                      <span className="truncate max-w-[150px] font-medium">
-                        {file.file?.name || "Dataset"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+    <ScrollArea className="flex-1 w-full bg-gray-50/30">
+      <div className="max-w-4xl mx-auto p-4 md:p-6 pb-8 w-full">
+        
+        {/* --- EMPTY / WELCOME STATE --- */}
+        {messages.length === 0 ? (
+          <div className="h-[65vh] flex flex-col items-center justify-center text-gray-400 space-y-6 animate-in fade-in zoom-in-95 duration-700 px-4">
+            
+            <div className="w-14 h-14 bg-blue-100/80 rounded-2xl flex items-center justify-center text-blue-600 shadow-sm mb-2 border border-blue-200/50">
+              <Sparkles size={28} />
             </div>
-          </div>
-        ))}
+            
+            <div className="text-center space-y-3">
+              <h2 className="text-2xl font-bold text-gray-800 tracking-tight">Hybrid AI Copilot</h2>
+              <p className="text-[15px] font-medium text-gray-500 max-w-md mx-auto leading-relaxed">
+                Upload CSVs, Parquet files, or PDFs, and ask complex analytical questions across your structured and unstructured data.
+              </p>
+            </div>
 
-        {/* Phase 4.2: Psychological Speed Loading Indicator */}
-        {isLoading && (
-          <div className="flex w-full gap-4 flex-row">
-            <Avatar className="h-8 w-8 bg-slate-900 border border-slate-700 flex-shrink-0">
-              <AvatarFallback className="bg-transparent text-emerald-400">
-                <Bot size={15} />
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col min-w-[300px] max-w-[80%] rounded-2xl rounded-tl-sm px-5 py-4 bg-[#0B1120] text-slate-200 border border-slate-800 shadow-xl">
+            <div className="flex flex-col gap-3 w-full max-w-lg mt-8">
+              <button 
+                onClick={() => onSuggestionClick("Show me revenue trends for the last 30 days")} 
+                className="group bg-white hover:bg-gray-50 text-left p-4 rounded-2xl shadow-sm border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all flex items-center gap-4 text-gray-700"
+              >
+                <div className="p-2.5 bg-emerald-100/80 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform">
+                  <TrendingUp size={20} />
+                </div>
+                <span className="font-medium text-[15px]">"Show me revenue trends for the last 30 days"</span>
+              </button>
               
-              {/* If we have granular streaming steps from the Orchestrator, show the sleek terminal log */}
-              {streamingSteps && streamingSteps.length > 0 ? (
-                <div className="flex flex-col gap-3 font-mono text-[12px]">
-                  <div className="flex items-center gap-2 pb-2 mb-1 border-b border-slate-800/60 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
-                    <Activity size={12} className="text-emerald-500 animate-pulse" />
-                    Execution Pipeline
-                  </div>
-                  
-                  {streamingSteps.map((step, idx) => {
-                    const isLast = idx === streamingSteps.length - 1;
-                    return (
-                      <div 
-                        key={idx} 
-                        className={cn(
-                          "flex items-start gap-3 transition-all duration-300", 
-                          isLast ? "text-emerald-400 scale-100 opacity-100" : "text-slate-500 scale-95 opacity-60"
-                        )}
-                      >
-                        <div className="mt-[2px] shrink-0">
-                          {isLast ? (
-                            <Loader2 size={14} className="animate-spin text-emerald-400" />
-                          ) : (
-                            <CheckCircle2 size={14} className="text-slate-600" />
-                          )}
-                        </div>
-                        <span className={cn(isLast && "animate-pulse font-medium")}>
-                          {step}
-                        </span>
-                      </div>
-                    );
-                  })}
+              <button 
+                onClick={() => onSuggestionClick("Summarize the main policies in my uploaded PDF")} 
+                className="group bg-white hover:bg-gray-50 text-left p-4 rounded-2xl shadow-sm border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all flex items-center gap-4 text-gray-700"
+              >
+                <div className="p-2.5 bg-purple-100/80 text-purple-600 rounded-xl group-hover:scale-110 transition-transform">
+                  <FileText size={20} />
                 </div>
-              ) : (
-                /* Fallback generic bouncing dots before the first SSE packet arrives */
-                <div className="flex space-x-1.5 items-center h-5 px-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce"></div>
-                </div>
-              )}
+                <span className="font-medium text-[15px]">"Summarize the main policies in my uploaded PDF"</span>
+              </button>
             </div>
+            
+          </div>
+        ) : (
+          /* --- MESSAGE THREAD --- */
+          <div className="space-y-2">
+            {messages.map((msg) => (
+              <MessageBubble key={msg.id} message={msg} />
+            ))}
           </div>
         )}
-        
+
         {/* Invisible anchor to control auto-scrolling */}
-        <div ref={bottomRef} className="h-4" />
+        <div ref={bottomRef} className="h-4 w-full" />
       </div>
     </ScrollArea>
   );
