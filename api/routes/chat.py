@@ -1,235 +1,324 @@
-# api/routes/chat.py
+# api/services/orchestrator.py
 import logging
+import time
 import json
-from typing import Optional, Any, List, Dict
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+import asyncio
+import polars as pl
+
+from typing import Dict, Any, List, AsyncGenerator, Optional
 from sqlalchemy.orm import Session
 
-# Core Security & Database
-from api.auth import verify_tenant, TenantContext
-from api.database import get_db
-from models import Dataset
-
-# Refactored Services (Clean Singleton Pattern)
-from api.services.query_planner import QueryPlanner
+# Core Modular Services
+from api.services.query_planner import QueryPlanner, QueryPlan
 from api.services.nl2sql_generator import NL2SQLGenerator
-from api.services.compute_engine import compute_engine, DatasetMetadata, ComputeLocation
-from api.services.insight_orchestrator import InsightOrchestrator
-from api.services.narrative_service import narrative_service
-from api.services.orchestrator import AnalyticalOrchestrator
+from api.services.compute_engine import ComputeEngine, DatasetMetadata
+from api.services.insight_orchestrator import InsightOrchestrator, InsightPayload
 from api.services.diagnostic_service import DiagnosticService
-from api.services.subscription_manager import subscription_manager
+from api.services.narrative_service import NarrativeService
 from api.services.semantic_router import SemanticRouter
+from api.services.duckdb_validator import DuckDBValidator
+
+# Infrastructure Singletons
+from api.services.cache_manager import cache_manager
 from api.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
-# ------------------------------------------------------------------
-# Service Layer Initialization
-# ------------------------------------------------------------------
-
-planner = QueryPlanner()
-generator = NL2SQLGenerator()
-insight_engine = InsightOrchestrator()
-llm_client = LLMClient()
-
-diagnostic_service = DiagnosticService(
-    compute=compute_engine
-)
-
-orchestrator = AnalyticalOrchestrator(
-    planner=planner,
-    generator=generator,
-    compute_engine=compute_engine,
-    insight_engine=insight_engine,
-    diagnostic_service=diagnostic_service,
-    narrative_service=narrative_service
-)
-
-# ------------------------------------------------------------------
-# Request / Response Contracts
-# ------------------------------------------------------------------
-
-class HistoryMessage(BaseModel):
-    role: str
-    content: str
-
-class OrchestrateRequest(BaseModel):
-    prompt: str = Field(..., description="User's natural language query or conversational message.")
-    active_dataset_ids: Optional[List[str]] = Field(default_factory=list, description="Dataset UUIDs to include.")
-    history: Optional[List[HistoryMessage]] = Field(default_factory=list)
-    context_id: Optional[str] = Field(default=None, description="Optional link to a specific anomaly or alert.")
-
-# ------------------------------------------------------------------
-# Main Copilot Endpoint (Dual-Mode Streaming)
-# ------------------------------------------------------------------
-
-@router.post("/orchestrate")
-async def orchestrate_chat(
-    request: OrchestrateRequest,
-    context: TenantContext = Depends(verify_tenant),
-    db: Session = Depends(get_db)
-):
+class AnalyticalOrchestrator:
     """
-    Intelligent Dual-Mode Copilot Pipeline.
-    
-    Routes user queries based on semantic intent:
-    1. Conversational / Educational -> Standard RAG Streaming
-    2. Analytical / Data Query -> Vectorized SQL Pipeline Streaming
+    DataOmen Analytical Intelligence Pipeline
+
+    Methodology Adherence:
+    ----------------------
+    1. Modular Strategy: Services are injected, allowing easy swaps (e.g., DuckDB to ClickHouse).
+    2. Hybrid Performance: Orchestration is OOP; computation uses stateless, vectorized Polars.
+    3. Security by Design: Strict tenant isolation and SQL injection validation.
     """
-    tenant_id = context.tenant_id
-    logger.info(f"[{tenant_id}] Copilot session initiated for: '{request.prompt[:80]}...'")
 
-    # 1. QUOTA & SUBSCRIPTION ENFORCEMENT
-    try:
-        has_access = subscription_manager.verify_access_and_reserve_credits(
-            db=db,
-            tenant_id=tenant_id
-        )
-        if not has_access:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail="Monthly query limit reached. Please upgrade for more insights."
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[{tenant_id}] Subscription check failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Resource management error.")
-
-    # 2. SEMANTIC ROUTING (Contextual RAG)
-    # Instantiate router with tenant context to keep token boundaries tight
-    router = SemanticRouter(tenant_id=tenant_id)
-    route_decision = await router.route_query(request.prompt)
-
-    # ------------------------------------------------------------------
-    # PATH A: Conversational Assistant (Educational / General Inquiry)
-    # ------------------------------------------------------------------
-    if route_decision.destination == "CONVERSATIONAL":
-        logger.info(f"[{tenant_id}] Routing to Conversational Pipeline.")
+    def __init__(
+        self,
+        planner: QueryPlanner,
+        generator: NL2SQLGenerator,
+        compute_engine: ComputeEngine,
+        insight_engine: InsightOrchestrator,
+        diagnostic_service: DiagnosticService,
+        narrative_service: NarrativeService,
+        router: SemanticRouter,
+        llm_client: LLMClient = LLMClient() # Injected for better testability and modularity
+    ):
+        self.planner = planner
+        self.generator = generator
+        self.compute_engine = compute_engine
+        self.insight_engine = insight_engine
+        self.diagnostic_service = diagnostic_service
+        self.narrative_service = narrative_service
+        self.router = router
+        self.llm_client = llm_client
         
-        async def generate_conversational_stream():
-            # Build contextually aware system prompt without exposing raw data
-            system_prompt = f"""
-            You are DataOmen AI, an expert business analyst and friendly assistant.
-            You are helping a non-technical founder understand data concepts, business metrics, or navigating the platform.
-            
-            Current Context: The user is asking a general question, not requesting a specific chart from their database.
-            Instruction: Be concise, encouraging, and avoid overly technical jargon.
-            """
-            
-            # Yield an initial status update for the UI
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Thinking...'})}\n\n"
-            
+        self.validator = DuckDBValidator()
+        
+        # Enterprise boundary: Prevent runaway analytical queries from hanging the pipeline
+        self.COMPUTE_TIMEOUT_SECONDS = 45.0
+
+    # ------------------------------------------------------------
+    # PUBLIC ENTRYPOINT
+    # ------------------------------------------------------------
+
+    async def run_full_pipeline(
+        self,
+        db: Session,
+        tenant_id: str,
+        prompt: str,
+        context_id: Optional[str] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Executes the time-bounded, vectorized analytical pipeline.
+        Yields standard Server-Sent Events (SSE) packets.
+        """
+        start_time = time.time()
+
+        try:
+            yield self._packet("status", "🔍 Checking semantic memory...")
+
+            # -------------------------------------------------------
+            # STAGE 0 — Prompt Embedding (Contextual Context)
+            # -------------------------------------------------------
+            prompt_embedding = None
             try:
-                # Stream the text response using the singleton LLM client
-                async for chunk in llm_client.stream_response(
-                    prompt=request.prompt,
-                    system_instructions=system_prompt,
-                    history=[h.dict() for h in request.history[-5:]] # Keep history tight
-                ):
-                    yield f"data: {json.dumps({'type': 'narrative_chunk', 'content': chunk})}\n\n"
-                
-                # Signal completion
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                
+                # Utilizing the LLM Client for embedding generation
+                prompt_embedding = await self.llm_client.embed(prompt)
             except Exception as e:
-                logger.error(f"[{tenant_id}] Conversational Streaming Error: {str(e)}")
-                yield f"data: {json.dumps({'type': 'error', 'message': 'I encountered an error while thinking.'})}\n\n"
+                logger.warning(f"[{tenant_id}] Embedding failure, bypassing semantic cache: {e}")
 
-        return StreamingResponse(
-            generate_conversational_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-                "Content-Type": "text/event-stream"
+            # -------------------------------------------------------
+            # STAGE 1 — Vector Semantic Cache (Performance Layer)
+            # -------------------------------------------------------
+            if prompt_embedding:
+                cached = await cache_manager.get_cached_insight(
+                    tenant_id=tenant_id,
+                    dataset_id="multi_dataset",
+                    prompt=prompt,
+                    prompt_embedding=prompt_embedding
+                )
+
+                if cached:
+                    cached["execution_time_ms"] = round((time.time() - start_time) * 1000, 2)
+                    yield self._packet("cache_hit", cached)
+                    return
+
+            # -------------------------------------------------------
+            # STAGE 2 — Semantic Dataset Routing (Contextual RAG)
+            # -------------------------------------------------------
+            yield self._packet("status", "🧠 Routing datasets via semantic index...")
+
+            routed_datasets = await self.router.route_datasets(
+                db=db,
+                tenant_id=tenant_id,
+                prompt=prompt,
+                embedding=prompt_embedding
+            )
+
+            if not routed_datasets:
+                yield self._packet("error", "No relevant datasets were found for this query.")
+                return
+
+            dataset_meta = [DatasetMetadata.from_model(d) for d in routed_datasets]
+            full_schema = {str(d.id): d.schema_definition for d in routed_datasets}
+
+            # -------------------------------------------------------
+            # STAGE 3 — Query Planning
+            # -------------------------------------------------------
+            yield self._packet("status", "🧠 Architecting query strategy...")
+
+            plan: QueryPlan = await self.planner.generate_plan(
+                prompt=prompt,
+                full_schema=full_schema,
+                tenant_id=tenant_id
+            )
+
+            yield self._packet("plan", plan.model_dump())
+
+            if not plan.is_achievable:
+                yield self._packet("error", plan.missing_data_reason)
+                return
+
+            # -------------------------------------------------------
+            # STAGE 4 — Secure SQL Generation
+            # -------------------------------------------------------
+            yield self._packet("status", f"⚡ Generating optimized SQL across {len(dataset_meta)} datasets...")
+
+            target_engine = dataset_meta[0].location.value
+
+            sql_query, chart_spec = await self.generator.generate_sql(
+                plan=plan,
+                full_schema=full_schema,
+                datasets=dataset_meta,
+                target_engine=target_engine,
+                tenant_id=tenant_id
+            )
+
+            # Strict Security: SQL injection and syntax validation
+            self.validator.validate_sql(sql_query)
+            yield self._packet("sql", sql_query)
+
+            # -------------------------------------------------------
+            # STAGE 5 — Time-Bounded Parallel Compute Execution
+            # -------------------------------------------------------
+            yield self._packet("status", "🚀 Executing vectorized compute engine...")
+
+            compute_tasks = [
+                asyncio.wait_for(
+                    self.compute_engine.execute_query_async(sql_query, dataset, tenant_id),
+                    timeout=self.COMPUTE_TIMEOUT_SECONDS
+                )
+                for dataset in dataset_meta
+            ]
+
+            # gather with return_exceptions ensures one failure doesn't silently kill the loop
+            results = await asyncio.gather(*compute_tasks, return_exceptions=True)
+
+            combined_data: List[Dict[str, Any]] = []
+            total_rows = 0
+
+            for i, result in enumerate(results):
+                if isinstance(result, asyncio.TimeoutError):
+                    logger.error(f"[{tenant_id}] Compute timeout for dataset: {dataset_meta[i].dataset_id}")
+                    raise Exception(f"Query execution timed out for dataset {dataset_meta[i].dataset_id}")
+                elif isinstance(result, Exception):
+                    logger.error(f"[{tenant_id}] Compute failed for dataset: {dataset_meta[i].dataset_id} - {str(result)}")
+                    raise result
+
+                if result and result.data:
+                    combined_data.extend(result.data)
+                    total_rows += result.row_count
+
+            if not combined_data:
+                yield self._packet("data", {"type": "empty", "message": "No rows matched the query filters."})
+                return
+
+            # -------------------------------------------------------
+            # STAGE 6 — Vectorized Insight Extraction (Polars)
+            # -------------------------------------------------------
+            yield self._packet("status", "📊 Extracting statistical insights...")
+
+            # Zero-copy Polars ingestion for high-performance C-level operations
+            # Prefer Polars over basic Python loops for mathematical precision and speed
+            df = pl.DataFrame(combined_data)
+
+            insights: InsightPayload = self.insight_engine.analyze_dataframe(
+                df,
+                plan,
+                tenant_id
+            )
+
+            yield self._packet("insights", insights.model_dump())
+
+            # -------------------------------------------------------
+            # STAGE 7 — Root Cause Diagnostics
+            # -------------------------------------------------------
+            if insights.anomalies:
+                # Investigating the primary anomaly using linear algebra concepts in the engine
+                anomaly = insights.anomalies[0]
+                yield self._packet("status", f"🕵️ Investigating anomaly in {anomaly.column}...")
+
+                diagnostic = await self.diagnostic_service.investigate_anomaly(
+                    anomaly=anomaly,
+                    datasets=dataset_meta,
+                    full_schema=full_schema,
+                    tenant_id=tenant_id
+                )
+
+                if diagnostic:
+                    yield self._packet("diagnostics", diagnostic.model_dump())
+
+            # -------------------------------------------------------
+            # STAGE 8 — Executive Narrative Generation
+            # -------------------------------------------------------
+            yield self._packet("status", "📝 Synthesizing executive narrative...")
+
+            narrative = await self.narrative_service.generate_executive_summary(
+                payload=insights,
+                plan=plan,
+                chart_spec=chart_spec,
+                tenant_id=tenant_id
+            )
+
+            yield self._packet("narrative", narrative.model_dump())
+
+            # -------------------------------------------------------
+            # FINAL RESULT DELIVERY
+            # -------------------------------------------------------
+            execution_payload = {
+                "type": "chart" if chart_spec else "table",
+                "data": combined_data,
+                "chart_spec": chart_spec,
+                "sql_used": sql_query,
+                "row_count": total_rows,
+                "execution_time_ms": round((time.time() - start_time) * 1000, 2)
             }
+
+            yield self._packet("data", execution_payload)
+
+            # -------------------------------------------------------
+            # ASYNC VECTOR CACHE WRITE (Fire-and-Forget)
+            # -------------------------------------------------------
+            if prompt_embedding:
+                self._trigger_background_cache(
+                    tenant_id=tenant_id,
+                    prompt=prompt,
+                    prompt_embedding=prompt_embedding,
+                    sql_query=sql_query,
+                    chart_spec=chart_spec,
+                    insights=insights,
+                    narrative=narrative.model_dump()
+                )
+
+        except Exception as e:
+            logger.error(f"[{tenant_id}] Pipeline failure: {str(e)}", exc_info=True)
+            yield self._packet("error", "The analytical engine encountered an internal failure.")
+
+    # ------------------------------------------------------------
+    # UTILITY METHODS
+    # ------------------------------------------------------------
+    
+    @staticmethod
+    def _packet(p_type: str, content: Any) -> str:
+        """Serializes data for standard Server-Sent Events (SSE) stream output."""
+        try:
+            payload = json.dumps({"type": p_type, "content": content}, default=str)
+            return f"data: {payload}\n\n"
+        except Exception as e:
+            logger.error(f"Serialization error in orchestrator: {str(e)}")
+            return f"data: {json.dumps({'type': 'error', 'content': 'Data serialization error'})}\n\n"
+
+    def _trigger_background_cache(
+        self, 
+        tenant_id: str, 
+        prompt: str, 
+        prompt_embedding: List[float], 
+        sql_query: str, 
+        chart_spec: Optional[Dict[str, Any]], 
+        insights: InsightPayload, 
+        narrative: Dict[str, Any]
+    ) -> None:
+        """Safely executes the cache write in the background without blocking the request loop."""
+        def _cache_error_handler(task: asyncio.Task):
+            try:
+                task.result()
+            except Exception as ex:
+                logger.error(f"[{tenant_id}] Failed to write to vector cache: {ex}")
+
+        cache_task = asyncio.create_task(
+            cache_manager.set_cached_insight(
+                tenant_id=tenant_id,
+                dataset_id="multi_dataset",
+                prompt=prompt,
+                prompt_embedding=prompt_embedding,
+                sql_query=sql_query,
+                chart_spec=chart_spec,
+                insight_payload=insights,
+                narrative=narrative
+            )
         )
-
-    # ------------------------------------------------------------------
-    # PATH B: Analytical Pipeline (Vectorized Compute Engine)
-    # ------------------------------------------------------------------
-    logger.info(f"[{tenant_id}] Routing to Analytical Compute Engine.")
-
-    if not request.active_dataset_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This question requires data analysis. Please select at least one dataset."
-        )
-
-    # Securely retrieve only authorized datasets
-    datasets = db.query(Dataset).filter(
-        Dataset.id.in_(request.active_dataset_ids),
-        Dataset.tenant_id == tenant_id
-    ).all()
-
-    if not datasets:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="One or more datasets not found or access denied."
-        )
-
-    # SCHEMA CONTEXT PREPARATION 
-    # Only pass the schema metadata specifically requested by the semantic router
-    full_schema: Dict[str, Dict[str, str]] = {}
-    file_uris: List[str] = []
-
-    for ds in datasets:
-        if ds.schema_metadata:
-            # Token Efficiency: The Semantic Router could pre-filter columns here
-            table_name = f"dataset_{str(ds.id).replace('-', '_')}"
-            full_schema[table_name] = ds.schema_metadata
-        if ds.file_url:
-            file_uris.append(ds.file_url)
-
-    # COMPUTE METADATA RESOLUTION
-    target_dataset_meta = DatasetMetadata(
-        dataset_id=str(datasets[0].id),
-        tenant_id=tenant_id,
-        location=ComputeLocation.LOCAL_DATA_LAKE,
-        size_bytes=sum(ds.file_size_bytes or 0 for ds in datasets),
-        file_uris=file_uris
-    )
-
-    try:
-        pipeline_generator = orchestrator.run_full_pipeline(
-            prompt=request.prompt,
-            dataset=target_dataset_meta,
-            tenant_id=tenant_id,
-            full_schema=full_schema,
-            context_id=request.context_id 
-        )
-
-        return StreamingResponse(
-            pipeline_generator,
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no", 
-                "Content-Type": "text/event-stream"
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"[{tenant_id}] Pipeline Orchestration Crash: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="The analytical brain encountered an error."
-        )
-
-# ------------------------------------------------------------------
-# Deprecated Endpoints
-# ------------------------------------------------------------------
-@router.post("/sync", include_in_schema=False)
-async def process_chat_sync():
-    raise HTTPException(
-        status_code=status.HTTP_426_UPGRADE_REQUIRED,
-        detail="Upgrade Required. Use /api/chat/orchestrate."
-    )
+        cache_task.add_done_callback(_cache_error_handler)

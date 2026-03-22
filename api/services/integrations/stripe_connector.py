@@ -1,7 +1,7 @@
 """
 ARCLI.TECH - SaaS Integration Module
 Connector: Stripe (Financial Analytics)
-Strategy: Async Chunking, Zero-ETL Vectorization, & Security by Design
+Strategy: Async Chunking, Incremental Sync, Zero-ETL Vectorization, Security by Design
 """
 
 import os
@@ -10,7 +10,7 @@ import hmac
 import hashlib
 import logging
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
 import aiohttp
@@ -20,282 +20,297 @@ from api.services.integrations.base_integration import BaseIntegration, Integrat
 
 logger = logging.getLogger(__name__)
 
+
+# -------------------------------------------------------------------------
+# Exceptions
+# -------------------------------------------------------------------------
+
 class StripeRateLimitError(Exception):
-    """Custom exception to trigger Tenacity backoff specifically for HTTP 429s."""
     pass
 
+
 class StripeConnector(BaseIntegration):
-    """
-    High-throughput asynchronous connector for the Stripe API.
-    Handles strict OAuth consent, cursor pagination for historical data, 
-    webhook signature verification, and dynamic DuckDB schema enforcement.
-    """
-    
-    # Security by Design: Instructs the downstream DataSanitizer to cryptographically hash these fields
+
     PII_COLUMNS = ["email", "phone", "name", "customer_email", "receipt_email"]
 
-    def __init__(self, tenant_id: str, credentials: Optional[Dict[str, Any]] = None):
-        """
-        Initializes the connector securely, mapping credentials from the Vault 
-        into the parent BaseIntegration config.
-        """
+    SUPPORTED_STREAMS = ["charges", "customers", "subscriptions"]
+
+    # -------------------------------------------------------------------------
+    # Init
+    # -------------------------------------------------------------------------
+
+    def __init__(
+        self,
+        tenant_id: str,
+        credentials: Optional[Dict[str, Any]] = None,
+        session: Optional[aiohttp.ClientSession] = None,
+    ):
         config = IntegrationConfig(
-            tenant_id=tenant_id, 
-            integration_name="stripe", 
-            credentials=credentials or {}
+            tenant_id=tenant_id,
+            integration_name="stripe",
+            credentials=credentials or {},
         )
         super().__init__(config)
-        
+
         self.api_base = "https://api.stripe.com/v1"
         self.client_token = self._initialize_client()
 
+        # Reusable session (performance optimization)
+        self._external_session = session
+
     def _initialize_client(self) -> str:
-        """
-        Extract the Stripe API key or OAuth access token from the isolated tenant credentials.
-        """
-        token = self.config.credentials.get("access_token") or self.config.credentials.get("api_key", "")
+        token = (
+            self.config.credentials.get("access_token")
+            or self.config.credentials.get("api_key", "")
+        )
         if not token:
-            logger.warning(f"[{self.tenant_id}] Stripe integration initialized without a valid token.")
+            logger.warning(f"[{self.tenant_id}] Stripe initialized without token.")
         return token
 
     # -------------------------------------------------------------------------
-    # Schema & Contextual RAG Definitions
+    # Session Management
+    # -------------------------------------------------------------------------
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._external_session:
+            return self._external_session
+
+        headers = {
+            "Authorization": f"Bearer {self.client_token}",
+            "Stripe-Version": "2023-10-16",
+        }
+
+        return aiohttp.ClientSession(headers=headers)
+
+    # -------------------------------------------------------------------------
+    # Schema
     # -------------------------------------------------------------------------
 
     async def fetch_schema(self) -> Dict[str, Any]:
-        """
-        The Schema Contract for the SyncEngine.
-        Defines the expected flattened JSON structure for core Stripe objects so the 
-        DuckDB Validator can enforce strict Parquet typing.
-        """
         return {
             "charges": {
                 "id": "VARCHAR",
-                "object": "VARCHAR",
-                "amount": "DOUBLE",           # Stored as DOUBLE for native mathematical precision
-                "amount_captured": "DOUBLE",
-                "amount_refunded": "DOUBLE",
-                "balance_transaction": "VARCHAR",
-                "calculated_statement_descriptor": "VARCHAR",
-                "captured": "BOOLEAN",
-                "created": "BIGINT",
+                "amount": "BIGINT",  # FIXED: no floating point
+                "amount_refunded": "BIGINT",
                 "currency": "VARCHAR",
                 "customer": "VARCHAR",
-                "description": "VARCHAR",
-                "invoice": "VARCHAR",
+                "created": "BIGINT",
+                "status": "VARCHAR",
                 "paid": "BOOLEAN",
-                "payment_method": "VARCHAR",
                 "receipt_email": "VARCHAR",
-                "status": "VARCHAR"
             },
             "subscriptions": {
                 "id": "VARCHAR",
-                "object": "VARCHAR",
-                "cancel_at_period_end": "BOOLEAN",
-                "canceled_at": "BIGINT",
-                "collection_method": "VARCHAR",
-                "created": "BIGINT",
-                "current_period_end": "BIGINT",
-                "current_period_start": "BIGINT",
                 "customer": "VARCHAR",
                 "status": "VARCHAR",
-                "plan_amount": "DOUBLE",      # Assumes nested 'plan.amount' was flattened by normalizer
-                "plan_interval": "VARCHAR"
+                "created": "BIGINT",
+                "current_period_start": "BIGINT",
+                "current_period_end": "BIGINT",
+                "plan_amount": "BIGINT",
+                "plan_interval": "VARCHAR",
             },
             "customers": {
                 "id": "VARCHAR",
-                "object": "VARCHAR",
-                "balance": "DOUBLE",
-                "created": "BIGINT",
-                "currency": "VARCHAR",
-                "default_source": "VARCHAR",
-                "delinquent": "BOOLEAN",
                 "email": "VARCHAR",
                 "name": "VARCHAR",
-                "phone": "VARCHAR"
-            }
+                "phone": "VARCHAR",
+                "created": "BIGINT",
+            },
         }
 
+    # -------------------------------------------------------------------------
+    # Semantic Views
+    # -------------------------------------------------------------------------
+
     def get_semantic_views(self) -> Dict[str, str]:
-        """
-        Contextual RAG Optimization: The 'Secret Sauce' Pre-Built Analytical Views.
-        These DuckDB views are injected into the semantic router so the LLM 
-        understands exactly how to query Stripe data reliably without hallucinating logic.
-        """
         return {
             "vw_stripe_revenue": """
                 SELECT 
-                    time_bucket(INTERVAL '1 day', to_timestamp(created)) as date,
-                    sum(amount) / 100.0 as gross_revenue,
-                    sum(amount_refunded) / 100.0 as refunded_revenue,
-                    (sum(amount) - sum(amount_refunded)) / 100.0 as net_revenue,
-                    currency
+                    date_trunc('day', to_timestamp(created)) as date,
+                    SUM(amount) / 100.0 as gross_revenue,
+                    SUM(amount_refunded) / 100.0 as refunded,
+                    (SUM(amount) - SUM(amount_refunded)) / 100.0 as net
                 FROM stripe_charges
                 WHERE paid = true AND status = 'succeeded'
-                GROUP BY 1, currency
+                GROUP BY 1
                 ORDER BY 1 DESC
             """,
             "vw_stripe_mrr": """
                 SELECT 
-                    time_bucket(INTERVAL '1 month', to_timestamp(created)) as month,
-                    -- Note: The JSON normalizer flattens nested fields. 'plan.amount' becomes 'plan_amount'
-                    sum(plan_amount) / 100.0 as mrr
+                    date_trunc('month', to_timestamp(created)) as month,
+                    SUM(plan_amount) / 100.0 as mrr
                 FROM stripe_subscriptions
                 WHERE status IN ('active', 'past_due')
                 GROUP BY 1
-                ORDER BY 1 DESC
-            """
+            """,
         }
 
     # -------------------------------------------------------------------------
-    # Authentication & Security
+    # OAuth
     # -------------------------------------------------------------------------
 
     def get_oauth_url(self, redirect_uri: str) -> str:
-        """Generate the Stripe OAuth URL for standard connect with read-only scopes."""
         client_id = os.environ.get("STRIPE_CLIENT_ID", "")
-        # read_only scope ensures least-privilege access for data pipelining
-        return f"https://connect.stripe.com/oauth/authorize?response_type=code&client_id={client_id}&scope=read_only&redirect_uri={redirect_uri}"
+        return (
+            f"https://connect.stripe.com/oauth/authorize"
+            f"?response_type=code&client_id={client_id}"
+            f"&scope=read_only&redirect_uri={redirect_uri}"
+        )
 
     async def exchange_oauth_token(self, code: str) -> Dict[str, Any]:
-        """Exchange the authorization code for Stripe access tokens."""
         async with aiohttp.ClientSession() as session:
             payload = {
                 "grant_type": "authorization_code",
                 "client_id": os.environ.get("STRIPE_CLIENT_ID", ""),
                 "client_secret": os.environ.get("STRIPE_SECRET_KEY", ""),
-                "code": code
+                "code": code,
             }
-            async with session.post("https://connect.stripe.com/oauth/token", data=payload) as resp:
+            async with session.post(
+                "https://connect.stripe.com/oauth/token", data=payload
+            ) as resp:
                 resp.raise_for_status()
                 return await resp.json()
 
+    # -------------------------------------------------------------------------
+    # Webhook Security
+    # -------------------------------------------------------------------------
+
     async def verify_webhook_signature(self, payload: str, signature_header: str) -> bool:
-        """
-        The Push Pipeline Security (Webhooks).
-        Cryptographically verify the Stripe payload to prevent impersonation at the Edge.
-        """
-        endpoint_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-        if not endpoint_secret:
-            logger.error("STRIPE_WEBHOOK_SECRET is not configured. Rejecting webhook.")
+        secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+        if not secret:
             return False
 
         try:
-            # Parse the signature header safely: "t=timestamp,v1=signature"
-            sig_parts = dict(part.split("=") for part in signature_header.split(",") if "=" in part)
-            timestamp = sig_parts.get("t")
-            v1_sig = sig_parts.get("v1")
+            parts = dict(p.split("=") for p in signature_header.split(","))
+            timestamp = parts.get("t")
+            signature = parts.get("v1")
 
-            if not timestamp or not v1_sig:
+            if not timestamp or not signature:
                 return False
 
-            # Prevent replay attacks (reject payloads older than 5 minutes)
             if time.time() - int(timestamp) > 300:
-                logger.warning(f"[{self.tenant_id}] Stripe webhook rejected: Payload too old (replay attack risk).")
                 return False
 
             signed_payload = f"{timestamp}.{payload}"
-            
+
             mac = hmac.new(
-                endpoint_secret.encode('utf-8'),
-                signed_payload.encode('utf-8'),
-                hashlib.sha256
+                secret.encode(),
+                signed_payload.encode(),
+                hashlib.sha256,
             )
-            expected_sig = mac.hexdigest()
 
-            return hmac.compare_digest(expected_sig, v1_sig)
-        except Exception as e:
-            logger.error(f"[{self.tenant_id}] Webhook signature verification failed: {str(e)}")
-            return False
+            expected = mac.hexdigest()
+            return hmac.compare_digest(expected, signature)
 
-    async def test_connection(self) -> bool:
-        """Fast validation to ensure credentials haven't been revoked."""
-        if not self.client_token:
-            return False
-        headers = {"Authorization": f"Bearer {self.client_token}", "Stripe-Version": "2023-10-16"}
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                # Fetch a single charge just to verify auth
-                async with session.get(f"{self.api_base}/charges?limit=1") as resp:
-                    return resp.status == 200
         except Exception:
             return False
 
     # -------------------------------------------------------------------------
-    # Core Data Ingestion (Execution Layer)
+    # Connection Test
+    # -------------------------------------------------------------------------
+
+    async def test_connection(self) -> bool:
+        if not self.client_token:
+            return False
+
+        session = await self._get_session()
+
+        try:
+            async with session.get(f"{self.api_base}/charges?limit=1") as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    # -------------------------------------------------------------------------
+    # HTTP Layer
     # -------------------------------------------------------------------------
 
     @retry(
-        retry=retry_if_exception_type((StripeRateLimitError, aiohttp.ServerDisconnectedError, aiohttp.ClientError)),
-        wait=wait_exponential(multiplier=2, min=2, max=60), 
-        stop=stop_after_attempt(5)
+        retry=retry_if_exception_type(
+            (StripeRateLimitError, aiohttp.ClientError)
+        ),
+        wait=wait_exponential(min=2, max=60),
+        stop=stop_after_attempt(5),
     )
-    async def _fetch_page(self, session: aiohttp.ClientSession, url: str) -> Dict[str, Any]:
-        """Centralized HTTP execution with robust exponential backoff for network resilience."""
+    async def _fetch_page(self, session: aiohttp.ClientSession, url: str):
         async with session.get(url) as resp:
             if resp.status == 429:
-                logger.warning(f"[{self.tenant_id}] Stripe API rate limit hit. Tenacity backing off...")
-                raise StripeRateLimitError("Rate limit exceeded")
+                raise StripeRateLimitError()
             resp.raise_for_status()
             return await resp.json()
 
-    async def sync_historical(self, stream_name: str, start_timestamp: str) -> AsyncGenerator[List[Dict[str, Any]], None]:
-        """
-        The Pull Pipeline (Polling).
-        Yields raw JSON batches to the Polars Normalizer using async Stripe pagination.
-        Ensures OOM safety by never holding the entire dataset in RAM.
-        """
+    # -------------------------------------------------------------------------
+    # Checkpoint Helpers
+    # -------------------------------------------------------------------------
+
+    def _build_query(self, limit: int, start_ts: Optional[int]):
+        query = f"?limit={limit}"
+        if start_ts:
+            query += f"&created[gte]={start_ts}"
+        return query
+
+    # -------------------------------------------------------------------------
+    # Core Sync (Incremental + Streaming)
+    # -------------------------------------------------------------------------
+
+    async def sync_stream(
+        self,
+        stream_name: str,
+        start_timestamp: Optional[str] = None,
+        checkpoint: Optional[str] = None,
+    ) -> AsyncGenerator[List[Dict[str, Any]], None]:
+
+        assert stream_name in self.SUPPORTED_STREAMS
+
+        limit = 100
         has_more = True
-        starting_after = None
-        limit = 100  # Stripe's maximum allowed limit per page
-        total_fetched = 0
+        starting_after = checkpoint
 
-        headers = {
-            "Authorization": f"Bearer {self.client_token}",
-            "Stripe-Version": "2023-10-16"
-        }
-
-        # Convert ISO start_timestamp to UNIX for Stripe API filtering
-        unix_start = 0
+        start_ts = None
         if start_timestamp:
             try:
-                # Normalize Z to +00:00 for strict ISO 8601 parsing
-                dt = datetime.fromisoformat(start_timestamp.replace('Z', '+00:00'))
-                unix_start = int(dt.timestamp())
-            except ValueError:
-                logger.warning(f"[{self.tenant_id}] Invalid start_timestamp format. Defaulting to pull all historical data.")
+                dt = datetime.fromisoformat(start_timestamp.replace("Z", "+00:00"))
+                start_ts = int(dt.timestamp())
+            except Exception:
+                pass
 
-        base_query = f"?limit={limit}"
-        if unix_start > 0:
-            base_query += f"&created[gte]={unix_start}"
+        session = await self._get_session()
+        base_query = self._build_query(limit, start_ts)
 
-        logger.info(f"[{self.tenant_id}] Starting Stripe ingestion for stream: {stream_name}")
+        total = 0
 
-        # Use a single connection pool across the entire pagination loop
-        async with aiohttp.ClientSession(headers=headers) as session:
-            while has_more:
-                url = f"{self.api_base}/{stream_name}{base_query}"
-                if starting_after:
-                    url += f"&starting_after={starting_after}"
-                
-                try:
-                    data = await self._fetch_page(session, url)
-                except Exception as e:
-                    logger.error(f"[{self.tenant_id}] Fatal error fetching page from {stream_name}: {str(e)}")
-                    raise
+        while has_more:
+            url = f"{self.api_base}/{stream_name}{base_query}"
 
-                items = data.get("data", [])
-                if not items:
-                    break
-                    
-                total_fetched += len(items)
-                logger.debug(f"[{self.tenant_id}] Fetched {len(items)} records (Total: {total_fetched}) from {stream_name}")
+            if starting_after:
+                url += f"&starting_after={starting_after}"
 
-                # Yield the batch to the SyncEngine to be vectorized and saved as Parquet immediately
-                yield items
-                
-                has_more = data.get("has_more", False)
-                if has_more:
-                    starting_after = items[-1]["id"]
-                    
-        logger.info(f"✅ [{self.tenant_id}] Completed Stripe ingestion for {stream_name}. Total records: {total_fetched}")
+            data = await self._fetch_page(session, url)
+
+            items = data.get("data", [])
+            if not items:
+                break
+
+            total += len(items)
+
+            yield items
+
+            has_more = data.get("has_more", False)
+            if has_more:
+                starting_after = items[-1]["id"]
+
+        logger.info(f"[{self.tenant_id}] Synced {stream_name}: {total} records")
+
+    # -------------------------------------------------------------------------
+    # Parallel Sync (Multi-stream)
+    # -------------------------------------------------------------------------
+
+    async def sync_all_streams(
+        self,
+        start_timestamp: Optional[str] = None,
+    ):
+        tasks = [
+            self.sync_stream(stream, start_timestamp)
+            for stream in self.SUPPORTED_STREAMS
+        ]
+        return await asyncio.gather(*tasks)

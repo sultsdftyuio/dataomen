@@ -1,3 +1,4 @@
+// components/chat/ChatLayout.tsx
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
@@ -36,6 +37,7 @@ interface ChatLayoutProps {
 // Markdown-lite renderer (bold/inline-code only, avoids heavy deps)
 // -----------------------------------------------------------------------------
 function SimpleMarkdown({ text }: { text: string }) {
+  if (!text) return null;
   // Split on bold (**text**) and inline code (`text`)
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   return (
@@ -64,8 +66,9 @@ function SimpleMarkdown({ text }: { text: string }) {
 // Step / Thinking Pill (like Julius AI's "Used Python" steps)
 // -----------------------------------------------------------------------------
 function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
+  if (!label) return null;
   return (
-    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 shadow-sm">
+    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 shadow-sm animate-in fade-in slide-in-from-bottom-2">
       {done ? (
         <svg className="w-3 h-3 text-emerald-500" viewBox="0 0 12 12" fill="none">
           <circle cx="6" cy="6" r="5.5" stroke="currentColor" strokeWidth="1" />
@@ -150,7 +153,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   };
 
   // ---------------------------------------------------------------------------
-  // Orchestration
+  // Orchestration (SSE Streaming Integration)
   // ---------------------------------------------------------------------------
   const handleSendMessage = async (text: string, files: File[] = []) => {
     const userMsg: RichMessage = {
@@ -160,9 +163,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       files,
       timestamp: new Date(),
     };
+    
     setMessages((prev) => [...prev, userMsg]);
     setIsProcessing(true);
     setCompletedSteps([]);
+    setProgressStatus("");
 
     try {
       let newIds: string[] = [];
@@ -173,12 +178,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         setActiveDatasetIds((prev) => [...new Set([...prev, ...newIds])]);
       }
 
-      setProgressStatus("Analyzing request…");
       const currentIds = [...new Set([...activeDatasetIds, ...newIds])];
-      const history = messages.slice(-8).map((m) => ({ role: m.role, content: m.content }));
+      const history = messages.slice(-5).map((m) => ({ role: m.role, content: m.content || "" }));
 
-      setCompletedSteps((prev) => [...prev, "Analyzing request…"]);
-      setProgressStatus("Running analytical engine…");
+      // Initialize an empty assistant message to stream into
+      const assistantMsgId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        { id: assistantMsgId, role: "assistant", content: "", timestamp: new Date() },
+      ]);
 
       const res = await fetch("/api/chat/orchestrate", {
         method: "POST",
@@ -190,26 +198,89 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           history,
         }),
       });
-      if (!res.ok) throw new Error("The analytical engine encountered an error.");
 
-      setCompletedSteps((prev) => [...prev, "Running analytical engine…"]);
-      setProgressStatus("Rendering results…");
-      const payload: ExecutionPayload = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { id: (Date.now() + 1).toString(), role: "assistant", payload, timestamp: new Date() },
-      ]);
+      if (!res.ok || !res.body) throw new Error("The analytical engine encountered an error.");
+
+      // Stream Reader Implementation
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let doneReading = false;
+      let streamedContent = "";
+
+      while (!doneReading) {
+        const { value, done } = await reader.read();
+        if (done) {
+          doneReading = true;
+          break;
+        }
+
+        const chunkString = decoder.decode(value, { stream: true });
+        const lines = chunkString.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.replace("data: ", "").trim();
+            if (!dataStr) continue;
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              const { type, content, message } = parsed;
+
+              switch (type) {
+                case "status":
+                  setProgressStatus((currentStatus) => {
+                    if (currentStatus && !completedSteps.includes(currentStatus)) {
+                      setCompletedSteps((prev) => [...prev, currentStatus]);
+                    }
+                    return content || message; // Handle both payload shapes
+                  });
+                  break;
+                case "narrative_chunk":
+                  streamedContent += (content || message || "");
+                  setMessages((prev) => 
+                    prev.map((m) => m.id === assistantMsgId ? { ...m, content: streamedContent } : m)
+                  );
+                  break;
+                case "data":
+                case "cache_hit":
+                  setMessages((prev) => 
+                    prev.map((m) => m.id === assistantMsgId ? { ...m, payload: content } : m)
+                  );
+                  break;
+                case "error":
+                  toast({ title: "Error", description: content || message, variant: "destructive" });
+                  setMessages((prev) => 
+                    prev.map((m) => m.id === assistantMsgId ? { ...m, content: streamedContent + `\n\n**Error:** ${content || message}` } : m)
+                  );
+                  break;
+                case "done":
+                  doneReading = true;
+                  break;
+              }
+            } catch (e) {
+              console.error("Failed to parse SSE chunk:", dataStr);
+            }
+          }
+        }
+      }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: `**Error:** ${err.message || "An unexpected error occurred."}`,
-          timestamp: new Date(),
-        },
-      ]);
+      setMessages((prev) => {
+        // If it failed before stream started, push a new error msg
+        const hasAssistant = prev[prev.length - 1].role === "assistant";
+        if (hasAssistant) {
+           return prev.map((m, i) => i === prev.length -1 ? {...m, content: `**Error:** ${err.message}`} : m);
+        }
+        return [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: `**Error:** ${err.message || "An unexpected error occurred."}`,
+            timestamp: new Date(),
+          },
+        ]
+      });
     } finally {
       setIsProcessing(false);
       setProgressStatus("");
@@ -377,19 +448,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           padding: 12px 16px;
           border-bottom: 1px solid var(--chat-border);
           background: var(--chat-surface);
-        }
-
-        .step-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 10px;
-          border-radius: 99px;
-          border: 1px solid var(--chat-border);
-          background: var(--chat-bg);
-          font-size: 12px;
-          color: var(--chat-muted);
-          box-shadow: var(--chat-shadow);
         }
 
         .dataset-badge {
@@ -657,12 +715,28 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                     {/* Content */}
                     <div style={{ flex: 1, minWidth: 0 }}>
+                      
+                      {/* Streaming Status Pills */}
+                      {isProcessing && idx === messages.length - 1 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, paddingTop: 4 }}>
+                          {completedSteps.map((step) => (
+                            <ThinkingStep key={step} label={step} done />
+                          ))}
+                          {progressStatus && !completedSteps.includes(progressStatus) && (
+                            <ThinkingStep label={progressStatus} done={false} />
+                          )}
+                        </div>
+                      )}
+
                       {/* Text content */}
                       {msg.content && (
                         <div className="assistant-text">
                           {msg.content.split("\n").map((line, i) => (
                             <p key={i} style={{ margin: 0, marginBottom: i < msg.content!.split("\n").length - 1 ? 8 : 0 }}>
                               <SimpleMarkdown text={line} />
+                              {isProcessing && idx === messages.length - 1 && i === msg.content!.split("\n").length - 1 && (
+                                <span className="cursor-blink" />
+                              )}
                             </p>
                           ))}
                         </div>
@@ -671,7 +745,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                       {/* Chart / Data Payload */}
                       {msg.payload && (
                         <div
-                          className="chart-card"
+                          className="chart-card animate-in fade-in slide-in-from-bottom-4"
                           style={{ marginTop: msg.content ? 16 : 0, width: "100%" }}
                         >
                           {/* Chart header bar */}
@@ -703,7 +777,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                         style={{
                           display: "flex", alignItems: "center", justifyContent: "space-between",
                           marginTop: 10,
-                          opacity: hoveredMsgId === msg.id ? 1 : 0,
+                          opacity: hoveredMsgId === msg.id && !isProcessing ? 1 : 0,
                           transition: "opacity 0.15s",
                         }}
                       >
@@ -734,36 +808,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 )}
               </div>
             ))}
-
-            {/* ── Processing State ── */}
-            {isProcessing && (
-              <div
-                className="msg-enter"
-                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
-              >
-                <div className="agent-avatar" style={{ marginTop: 2 }}>
-                  <Zap style={{ width: 13, height: 13, color: "#fff" }} />
-                </div>
-                <div style={{ paddingTop: 4 }}>
-                  {/* Completed steps + current active step rendered as ThinkingStep pills */}
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-                    {completedSteps.map((step) => (
-                      <ThinkingStep key={step} label={step} done />
-                    ))}
-                    {progressStatus && !completedSteps.includes(progressStatus) && (
-                      <ThinkingStep label={progressStatus} done={false} />
-                    )}
-                  </div>
-
-                  {/* Skeleton preview lines */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div className="skeleton" style={{ height: 13, width: "72%" }} />
-                    <div className="skeleton" style={{ height: 13, width: "52%" }} />
-                    <div className="skeleton" style={{ height: 13, width: "62%" }} />
-                  </div>
-                </div>
-              </div>
-            )}
 
             <div ref={scrollRef} />
           </div>

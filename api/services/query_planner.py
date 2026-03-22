@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 # Core Infrastructure
-from api.services.llm_client import llm_client
+from api.services.llm_client import LLMClient, llm_client as default_llm
 from models import Dataset, Agent
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,15 @@ class QueryPlanner:
     2. Contextual RAG: Injects hardcoded SaaS views to prevent LLM hallucination.
     3. DuckDB Dialect Prep: Configures the AI to think in high-performance analytical SQL.
     4. Modular Execution: Logic extracted into pure functional helpers for testability.
+    5. Dependency Injection: Uses injected LLM clients to prevent global state bleeding.
     """
+
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        """
+        Adheres to Modular Strategy by accepting dependencies rather than 
+        relying on global singletons.
+        """
+        self.llm_client = llm_client or default_llm
 
     async def plan_execution(self, db: Session, tenant_id: str, agent: Agent, natural_query: str) -> QueryPlan:
         """
@@ -73,9 +81,9 @@ class QueryPlanner:
         # 3. Prompt Generation
         system_prompt = self._build_system_prompt(agent, context_payload)
 
-        # 4. LLM Execution (Function Calling)
+        # 4. LLM Execution (Function Calling via Injected Client)
         try:
-            plan = await llm_client.generate_structured(
+            plan = await self.llm_client.generate_structured(
                 system_prompt=system_prompt,
                 prompt=f"USER QUESTION: {natural_query}\nGenerate the optimal QueryPlan.",
                 response_model=QueryPlan,

@@ -23,7 +23,9 @@ import sqlglot
 from sqlglot import exp
 from pydantic import BaseModel, Field, ValidationError
 
-from api.services.llm_client import llm_client
+# Import the class type, not just the singleton instance, so __init__ can
+# enforce a concrete type annotation on the injected dependency.
+from api.services.llm_client import LLMClient, llm_client as _default_llm_client
 from api.services.query_planner import QueryPlan
 from models import Agent
 
@@ -128,7 +130,20 @@ class NL2SQLGenerator:
     * Join path validation — FK/PK convention check, parquet-path-safe
     * Vega-Lite validation — mark type + SQL-alias alignment; explicit null fallback
     * Correction loop      — Pydantic ValidationError feeds back into correct_sql
+
+    Dependency Injection
+    --------------------
+    ``llm_client`` is injected at construction time so that callers (e.g. the
+    AnalyticalOrchestrator) can supply dialect-specific or mocked clients without
+    patching module-level globals.  When no client is provided the module-level
+    default is used, preserving backward-compatibility for ad-hoc instantiation.
     """
+
+    def __init__(self, llm_client: Optional[LLMClient] = None) -> None:
+        # Fall back to the module-level singleton only when no client is
+        # explicitly injected — keeps the default path unchanged while
+        # enabling per-request or per-dialect client overrides.
+        self._llm_client: LLMClient = llm_client if llm_client is not None else _default_llm_client
 
     # -----------------------------------------------------------------------
     # Prompt Construction
@@ -619,8 +634,12 @@ CHARTING RULES (Vega-Lite):
         Raises on any failure so the caller decides the retry strategy.
         This consolidates the identical try-block that previously existed in
         both ``generate_sql`` and ``correct_sql``.
+
+        Uses ``self._llm_client`` so that an injected client (e.g. a
+        dialect-specific or mock instance) is honoured rather than always
+        hitting the module-level default.
         """
-        result: NL2SQLOutput = await llm_client.generate_structured(
+        result: NL2SQLOutput = await self._llm_client.generate_structured(
             system_prompt=system_prompt,
             prompt=user_message,
             history=[],
@@ -786,9 +805,3 @@ TASK:
                 f"Unable to self-correct the query after {target_engine.upper()} "
                 f"error: {error_msg}"
             ) from exc
-
-
-# ---------------------------------------------------------------------------
-# Global Singleton
-# ---------------------------------------------------------------------------
-sql_generator = NL2SQLGenerator()

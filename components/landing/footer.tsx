@@ -97,12 +97,22 @@ export default function Footer() {
   const groupedPages = useMemo(() => {
     const grouped: GroupedSeoPages = {};
 
-    Object.entries(seoPages).forEach(([slug, data]) => {
-      const type = data.type || 'resources'; // Fallback
+    // Safety fallback: Ensure seoPages exists
+    Object.entries(seoPages || {}).forEach(([slug, data]) => {
+      // Safety fallback: Skip completely undefined entries
+      if (!data) return; 
+      
+      // FIX: Cast to an interface to satisfy TypeScript's strictness over mixed types 
+      // (e.g., SEOPageData vs TemplateBlueprint)
+      const pageData = data as { title?: string; type?: string };
+
+      const type = pageData.type || 'resources';
       if (!grouped[type]) grouped[type] = [];
 
-      // Clean up title logic (e.g., "Best AI | Arcli" -> "Best AI")
-      const cleanTitle = data.title.split('|')[0].trim();
+      // FIX: Add safety check for undefined titles to prevent Vercel SSG build crash
+      const rawTitle = pageData.title || 'Arcli Resource';
+      const cleanTitle = rawTitle.split('|')[0].trim();
+      
       grouped[type].push({ slug, title: cleanTitle });
     });
 
