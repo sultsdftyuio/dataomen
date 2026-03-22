@@ -1,106 +1,136 @@
+// lib/seo/index.tsx
 import React from 'react';
 
-// Master Type Imports from our specialized silos
-import { coreFeatures } from './core-features';
-import { textToSqlFeatures } from './text-to-sql';
-import { fileAnalysis } from './file-analysis';
-import { databaseIntegrations } from './databaseIntegrations';
-import { saasIntegrations } from './saas-integrations';
-import { competitorComparisons } from './competitorComparisons';
-import { howToGuides } from './guides';
-import { dashboardTemplates, TemplateBlueprint } from './templates';
+// Import Split Silos - Part 1
+import { coreFeaturesPart1 } from './core-features-1';
+import { textToSqlFeaturesPart1 } from './text-to-sql-1';
+import { fileAnalysisPart1 } from './file-analysis-1';
+import { databaseIntegrationsPart1 } from './database-integrations-1';
+import { saasIntegrationsPart1 } from './saas-integrations-1';
+import { competitorComparisonsPart1 } from './competitor-comparisons-1';
+import { howToGuidesPart1 } from './guides-1';
+import { dashboardTemplatesPart1, TemplateBlueprint } from './templates-1';
+
+// Import Split Silos - Part 2
+import { coreFeaturesPart2 } from './core-features-2';
+import { textToSqlFeaturesPart2 } from './text-to-sql-2';
+import { fileAnalysisPart2 } from './file-analysis-2';
+import { databaseIntegrationsPart2 } from './database-integrations-2';
+import { saasIntegrationsPart2 } from './saas-integrations-2';
+import { competitorComparisonsPart2 } from './competitor-comparisons-2';
+import { howToGuidesPart2 } from './guides-2';
+import { dashboardTemplatesPart2 } from './templates-2';
+
+/**
+ * High-Performance Merging Utility
+ * Merges split SEO modules while maintaining the original object structure.
+ */
+const allCoreFeatures = { ...coreFeaturesPart1, ...coreFeaturesPart2 };
+const allTextToSql = { ...textToSqlFeaturesPart1, ...textToSqlFeaturesPart2 };
+const allFileAnalysis = { ...fileAnalysisPart1, ...fileAnalysisPart2 };
+const allDatabaseIntegrations = { ...databaseIntegrationsPart1, ...databaseIntegrationsPart2 };
+const allSaasIntegrations = { ...saasIntegrationsPart1, ...saasIntegrationsPart2 };
+const allCompetitorComparisons = { ...competitorComparisonsPart1, ...competitorComparisonsPart2 };
+const allHowToGuides = { ...howToGuidesPart1, ...howToGuidesPart2 };
+const allDashboardTemplates = { ...dashboardTemplatesPart1, ...dashboardTemplatesPart2 };
 
 // --- 1. The Polymorphic Registry System ---
 
 /**
- * Since each SEO silo now has a unique architectural schema (UI design),
- * we define a union type. This fixes the "property missing" errors 
- * and enables Type-Safe component rendering based on the 'type' field.
+ * SEOPageData Union Type
+ * Designed to handle the structural variations between Features, Integrations, 
+ * Comparisons, and Blueprints. Enables exhaustive type-checking in the UI layer.
  */
 export type SEOPageData = 
-  | typeof coreFeatures[keyof typeof coreFeatures]
-  | typeof textToSqlFeatures[keyof typeof textToSqlFeatures]
-  | typeof fileAnalysis[keyof typeof fileAnalysis]
-  | typeof databaseIntegrations[keyof typeof databaseIntegrations]
-  | typeof saasIntegrations[keyof typeof saasIntegrations]
-  | typeof competitorComparisons[keyof typeof competitorComparisons]
-  | typeof howToGuides[keyof typeof howToGuides]
-  | TemplateBlueprint; // Explicitly uses the TemplateBlueprint from templates.tsx
+  | typeof allCoreFeatures[keyof typeof allCoreFeatures]
+  | typeof allTextToSql[keyof typeof allTextToSql]
+  | typeof allFileAnalysis[keyof typeof allFileAnalysis]
+  | typeof allDatabaseIntegrations[keyof typeof allDatabaseIntegrations]
+  | typeof allSaasIntegrations[keyof typeof allSaasIntegrations]
+  | typeof allCompetitorComparisons[keyof typeof allCompetitorComparisons]
+  | typeof allHowToGuides[keyof typeof allHowToGuides]
+  | TemplateBlueprint;
 
 // --- 2. Data Aggregation (The Registry) ---
 
 /**
- * Main Registry lookup.
- * Uses 'any' for the record value only during the merge to prevent 
- * deep-nested inheritance conflicts, but casts back to our Union 
- * for safe consumption in the app.
+ * Global SEO Registry
+ * Optimized for O(1) lookups during Next.js dynamic routing.
  */
 export const seoPages: Record<string, SEOPageData> = {
-  ...coreFeatures,
-  ...textToSqlFeatures,
-  ...fileAnalysis,
-  ...databaseIntegrations,
-  ...saasIntegrations,
-  ...competitorComparisons,
-  ...howToGuides,
-  ...dashboardTemplates
+  ...allCoreFeatures,
+  ...allTextToSql,
+  ...allFileAnalysis,
+  ...allDatabaseIntegrations,
+  ...allSaasIntegrations,
+  ...allCompetitorComparisons,
+  ...allHowToGuides,
+  ...allDashboardTemplates
 } as Record<string, SEOPageData>;
 
 /**
- * Silo-Based Registry.
- * Used for generating the /sitemap.xml and category-specific navigations.
+ * Categorized Registry
+ * Powers the /sitemap.xml generation and vertical-specific navigation components.
  */
 export const seoPagesByCategory = {
-  coreFeatures,
-  textToSqlFeatures,
-  fileAnalysis,
-  databaseIntegrations,
-  saasIntegrations,
-  competitorComparisons,
-  howToGuides,
-  dashboardTemplates
+  coreFeatures: allCoreFeatures,
+  textToSqlFeatures: allTextToSql,
+  fileAnalysis: allFileAnalysis,
+  databaseIntegrations: allDatabaseIntegrations,
+  saasIntegrations: allSaasIntegrations,
+  competitorComparisons: allCompetitorComparisons,
+  howToGuides: allHowToGuides,
+  dashboardTemplates: allDashboardTemplates
 } as const;
 
 export type SEOCategory = keyof typeof seoPagesByCategory;
 
-// --- 3. High-Performance Selectors ---
+// --- 3. Engineering Excellence Selectors ---
 
 /**
- * Retrieve metadata for a specific slug.
- * The calling component should check 'page.type' to decide which UI layout to use.
+ * Retrieves full metadata for a specific slug.
+ * The consuming page component should switch layouts based on page.type.
  */
 export const getPage = (slug: string): SEOPageData | undefined => {
   return seoPages[slug];
 };
 
 /**
- * Returns all slugs for Next.js Dynamic Routes (generateStaticParams).
+ * Returns all unique slugs for Next.js generateStaticParams().
  */
 export const getAllSlugs = (): string[] => {
   return Object.keys(seoPages);
 };
 
 /**
- * Type-Guard Utility.
- * Helps the frontend identify which specific design blueprint is being used.
+ * Type-Guard: Template Identifier
+ * Isolates TemplateBlueprint logic from standard SEO page structures.
  */
 export function isTemplatePage(page: SEOPageData): page is TemplateBlueprint {
   return page.type === 'template';
 }
 
 /**
- * Retrieves all pages belonging to a specific programmatic silo.
+ * Retrieves all pages belonging to a specific architectural silo.
  */
 export const getPagesByCategory = (category: SEOCategory) => {
   return seoPagesByCategory[category];
 };
 
 /**
- * Utility for SEO Internal Linking.
- * Suggests related pages within the same architectural silo to boost domain authority.
+ * Internal Linking Optimizer
+ * Returns full page data for a list of slugs, used to build "Related Articles"
+ * or "Recommended Blueprints" sections to boost domain authority.
  */
 export const getRelatedPages = (slugs: string[]): SEOPageData[] => {
   return slugs
     .map(slug => seoPages[slug])
     .filter((page): page is SEOPageData => !!page);
 };
+
+/**
+ * Contact/Support Meta
+ * Hardcoded for Arcli domain integrity.
+ */
+export const ARCLI_SUPPORT_EMAIL = 'support@arcli.tech';
+export const ARCLI_DOMAIN = 'arcli.tech';
