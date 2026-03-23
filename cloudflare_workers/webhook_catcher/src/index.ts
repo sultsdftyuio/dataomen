@@ -1,11 +1,22 @@
-// cloudflare_workers/webhook_catcher/src/index.ts
+/**
+ * ARCLI.TECH - Managed Edge Ingestion Router
+ * Component: Cloudflare Worker (Webhooks + Telemetry)
+ * Strategy: Phase 3 (Top-of-Funnel Visibility & Zero-ETL Consolidation)
+ * * HOW IT WORKS FOR THE FOUNDER:
+ * They drop this single line into their Next.js layout.tsx or HTML <head>:
+ * <script defer data-tenant="YOUR_TENANT_ID" src="https://edge.arcli.tech/script.js"></script>
+ * * The worker dynamically serves a tiny (0-dependency) tracking script, catches
+ * the resulting POST requests, enriches them with Cloudflare Geo-IP data, 
+ * and routes them directly to the Python SyncEngine queue.
+ */
 
-import type { Queue, MessageBatch, ExecutionContext, R2Bucket } from '@cloudflare/workers-types';
+// FIX: Imported Request as CFRequest from workers-types
+import type { Queue, MessageBatch, ExecutionContext, R2Bucket, Request as CFRequest } from '@cloudflare/workers-types';
 
 export interface Env {
   // Bindings
   INGESTION_QUEUE: Queue<any>;
-  DLQ_BUCKET: R2Bucket; // Phase 8.2: Zero-Data-Loss Fallback Storage
+  DLQ_BUCKET: R2Bucket; 
   
   // Edge Auth Secrets
   STRIPE_WEBHOOK_SECRET: string;
@@ -14,8 +25,14 @@ export interface Env {
   
   // Backend Routing
   CORE_API_URL: string;
-  INTERNAL_ROUTING_SECRET: string; // Maps to Python's x_internal_secret
+  INTERNAL_ROUTING_SECRET: string;
 }
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
 
 // -----------------------------------------------------------------------------
 // Cryptographic Edge Verification Methods (Sub-ms Web Crypto API)
@@ -34,7 +51,6 @@ async function verifyStripeSignature(payload: string, signatureHeader: string | 
     const v1Sig = sigParts['v1'];
     if (!timestamp || !v1Sig) return false;
 
-    // Prevent Replay Attacks (Reject payloads older than 5 minutes)
     const currentTimestamp = Math.floor(Date.now() / 1000);
     if (currentTimestamp - parseInt(timestamp, 10) > 300) return false;
 
@@ -58,23 +74,11 @@ async function verifyShopifySignature(payload: string, signatureHeader: string |
     const key = await crypto.subtle.importKey(
       'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
     );
-    // Shopify uses Base64 encoded HMAC
     const signatureBytes = Uint8Array.from(atob(signatureHeader), c => c.charCodeAt(0));
     return await crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(payload));
   } catch (error) {
     return false;
   }
-}
-
-function verifySalesforceSignature(signatureHeader: string | null, secret: string): boolean {
-  if (!signatureHeader || !secret) return false;
-  // Constant time comparison for tokens to prevent timing attacks at the edge
-  if (signatureHeader.length !== secret.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < signatureHeader.length; ++i) {
-    mismatch |= (signatureHeader.charCodeAt(i) ^ secret.charCodeAt(i));
-  }
-  return mismatch === 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -83,90 +87,162 @@ function verifySalesforceSignature(signatureHeader: string | null, secret: strin
 
 export default {
   /**
-   * Phase 7.3: Main Edge Handler (The Producer)
-   * Receives webhooks, verifies them geographically close to the source, and queues them.
+   * Main Edge Handler (The Producer)
    */
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
-
+  // FIX: Applied CFRequest type here
+  async fetch(request: CFRequest, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    // 0. Handle CORS Preflight for Telemetry scripts injected on remote domains
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { headers: CORS_HEADERS });
+    }
+
     const pathParts = url.pathname.split('/').filter(Boolean);
 
-    // Route format: /webhooks/<provider>/<tenant_id>
-    if (pathParts.length !== 3 || pathParts[0] !== 'webhooks') {
-      return new Response('Not Found', { status: 404 });
-    }
-
-    const provider = pathParts[1].toLowerCase();
-    const tenantId = pathParts[2];
-
-    try {
-      const rawBody = await request.text();
-      let isAuthentic = false;
-
-      // 1. Dynamic Provider Authentication Matrix
-      if (provider === 'stripe') {
-        isAuthentic = await verifyStripeSignature(rawBody, request.headers.get('Stripe-Signature'), env.STRIPE_WEBHOOK_SECRET);
-      } else if (provider === 'shopify') {
-        isAuthentic = await verifyShopifySignature(rawBody, request.headers.get('X-Shopify-Hmac-Sha256'), env.SHOPIFY_WEBHOOK_SECRET);
-      } else if (provider === 'salesforce') {
-        isAuthentic = verifySalesforceSignature(request.headers.get('X-Salesforce-Token'), env.SALESFORCE_WEBHOOK_SECRET);
-      } else {
-        return new Response('Unsupported Provider Integration', { status: 400 });
-      }
-
-      if (!isAuthentic) {
-        console.warn(`🚨 Unauthorized ${provider} webhook attempt for tenant: ${tenantId}`);
-        return new Response('Unauthorized: Invalid Cryptographic Signature', { status: 401 });
-      }
-
-      // 2. Queue Envelopment (Safe Parsing & Topic Extraction)
-      let parsedPayload: any;
-      try {
-        parsedPayload = JSON.parse(rawBody);
-      } catch (e) {
-        parsedPayload = { raw_text: rawBody }; 
-      }
-
-      // Dynamically extract the event topic based on the provider's standard
-      let eventTopic = 'unknown';
-      if (provider === 'shopify') {
-        eventTopic = request.headers.get('X-Shopify-Topic') || 'unknown';
-      } else if (provider === 'stripe') {
-        eventTopic = parsedPayload.type || 'unknown';
-      } else if (provider === 'salesforce') {
-        eventTopic = request.headers.get('X-Salesforce-Event-Type') || 'record_change';
-      }
-
-      const queueMessage = {
-        tenant_id: tenantId,
-        provider: provider,
-        stream_name: eventTopic, // Maps to `stream_name` in the SyncEngine
-        received_at: new Date().toISOString(),
-        payload: parsedPayload,
-      };
-
-      // 3. Drop into Cloudflare Queue (Decouples Edge from Backend I/O)
-      await env.INGESTION_QUEUE.send(queueMessage);
-
-      // 4. Sub-10ms Acknowledgment to the SaaS provider
-      return new Response(JSON.stringify({ received: true, queued: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
+    // -------------------------------------------------------------------------
+    // PHASE 3: Dynamic Script Delivery (The Arcli JS Snippet)
+    // -------------------------------------------------------------------------
+    if (request.method === 'GET' && pathParts[0] === 'script.js') {
+      const trackerScript = `
+        (function(){
+          const t = document.currentScript.getAttribute('data-tenant');
+          if(!t) { console.error('DataFast: Missing data-tenant attribute'); return; }
+          const endpoint = new URL('/telemetry/' + t, document.currentScript.src).href;
+          
+          const sendEvent = () => {
+            fetch(endpoint, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                path: window.location.pathname,
+                url: window.location.href,
+                referrer: document.referrer,
+                title: document.title,
+                utm_source: new URLSearchParams(window.location.search).get('utm_source'),
+                utm_medium: new URLSearchParams(window.location.search).get('utm_medium'),
+                utm_campaign: new URLSearchParams(window.location.search).get('utm_campaign'),
+                screen_width: window.innerWidth
+              }),
+              keepalive: true
+            }).catch(()=>{});
+          };
+          
+          sendEvent(); // Fire on initial load
+          
+          // SPA Support: Fire on Next.js / React Router navigation
+          let lastUrl = location.href;
+          new MutationObserver(() => {
+            const url = location.href;
+            if (url !== lastUrl) {
+              lastUrl = url;
+              sendEvent();
+            }
+          }).observe(document, {subtree: true, childList: true});
+        })();
+      `;
+      return new Response(trackerScript, {
+        headers: {
+          'Content-Type': 'application/javascript',
+          'Cache-Control': 'public, max-age=86400',
+          ...CORS_HEADERS
+        }
       });
-
-    } catch (error) {
-      console.error(`Edge routing error for tenant ${tenantId}:`, error);
-      return new Response('Internal Edge Error', { status: 500 });
     }
+
+    // -------------------------------------------------------------------------
+    // PHASE 3: Lightweight Telemetry Ingestion (Pageviews)
+    // -------------------------------------------------------------------------
+    if (request.method === 'POST' && pathParts[0] === 'telemetry') {
+      const tenantId = pathParts[1];
+      if (!tenantId) return new Response('Missing Tenant ID', { status: 400, headers: CORS_HEADERS });
+
+      try {
+        const payload = await request.json() as Record<string, any>;
+        
+        // Enrich payload with Cloudflare Edge properties (Privacy-friendly Geo-IP)
+        const enrichedPayload = {
+          ...payload,
+          country: request.cf?.country || 'Unknown',
+          city: request.cf?.city || 'Unknown',
+          device_type: request.headers.get('user-agent')?.includes('Mobi') ? 'Mobile' : 'Desktop'
+        };
+
+        const queueMessage = {
+          tenant_id: tenantId,
+          provider: 'arcli_telemetry',
+          stream_name: 'pageviews',
+          received_at: new Date().toISOString(),
+          payload: enrichedPayload,
+        };
+
+        await env.INGESTION_QUEUE.send(queueMessage);
+
+        return new Response(JSON.stringify({ queued: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+        });
+      } catch (error) {
+        return new Response('Invalid Telemetry Payload', { status: 400, headers: CORS_HEADERS });
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // PHASE 1: SaaS Webhook Ingestion (Stripe, Supabase, etc.)
+    // -------------------------------------------------------------------------
+    if (request.method === 'POST' && pathParts[0] === 'webhooks') {
+      if (pathParts.length !== 3) return new Response('Not Found', { status: 404 });
+      
+      const provider = pathParts[1].toLowerCase();
+      const tenantId = pathParts[2];
+
+      try {
+        const rawBody = await request.text();
+        let isAuthentic = false;
+
+        // Verify webhooks
+        if (provider === 'stripe') {
+          isAuthentic = await verifyStripeSignature(rawBody, request.headers.get('Stripe-Signature'), env.STRIPE_WEBHOOK_SECRET);
+        } else if (provider === 'shopify') {
+          isAuthentic = await verifyShopifySignature(rawBody, request.headers.get('X-Shopify-Hmac-Sha256'), env.SHOPIFY_WEBHOOK_SECRET);
+        } else {
+          return new Response('Unsupported Provider', { status: 400 });
+        }
+
+        if (!isAuthentic) return new Response('Unauthorized', { status: 401 });
+
+        let parsedPayload: any;
+        try { parsedPayload = JSON.parse(rawBody); } catch (e) { parsedPayload = { raw_text: rawBody }; }
+
+        let eventTopic = 'unknown';
+        if (provider === 'shopify') eventTopic = request.headers.get('X-Shopify-Topic') || 'unknown';
+        else if (provider === 'stripe') eventTopic = parsedPayload.type || 'unknown';
+
+        const queueMessage = {
+          tenant_id: tenantId,
+          provider: provider,
+          stream_name: eventTopic,
+          received_at: new Date().toISOString(),
+          payload: parsedPayload,
+        };
+
+        await env.INGESTION_QUEUE.send(queueMessage);
+
+        return new Response(JSON.stringify({ received: true, queued: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      } catch (error) {
+        return new Response('Internal Edge Error', { status: 500 });
+      }
+    }
+
+    return new Response('Not Found', { status: 404, headers: CORS_HEADERS });
   },
 
   /**
-   * Phase 8.2: Event-Driven Consumer & DLQ Routing
-   * Batches queue messages, pushes to Python backend, and uses R2 as a safety net.
+   * Event-Driven Consumer & DLQ Routing
+   * Pushes batches to Python backend, and uses R2 as a safety net.
    */
   async queue(batch: MessageBatch<any>, env: Env, ctx: ExecutionContext): Promise<void> {
-    // 1. Group messages by tenant AND provider AND stream to optimize vectorized backend inserts
+    // Group messages by tenant, provider, AND stream to optimize vectorized backend inserts
     const batches: Record<string, any[]> = {};
 
     for (const message of batch.messages) {
@@ -177,7 +253,6 @@ export default {
       batches[key].push({ payload, received_at });
     }
 
-    // 2. Push batched arrays to Python backend
     for (const [routeKey, events] of Object.entries(batches)) {
       const [tenantId, provider, streamName] = routeKey.split('|');
       
@@ -186,7 +261,6 @@ export default {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            // CRITICAL: Matches the x_internal_secret parameter in api/services/sync_engine.py
             'x-internal-secret': env.INTERNAL_ROUTING_SECRET 
           },
           body: JSON.stringify({
@@ -196,30 +270,20 @@ export default {
           })
         });
 
-        if (!response.ok) {
-          throw new Error(`Backend rejected payload: HTTP ${response.status} - ${response.statusText}`);
-        }
-
-        console.log(`✅ Synced ${events.length} ${streamName} events for ${tenantId} via ${provider}`);
+        if (!response.ok) throw new Error(`Backend rejected payload: HTTP ${response.status}`);
         
-        // Acknowledge all messages in this batch slice so they are permanently removed from the queue
         batch.messages
           .filter(m => m.body.tenant_id === tenantId && m.body.provider === provider && m.body.stream_name === streamName)
           .forEach(m => m.ack());
 
       } catch (error) {
-        // -------------------------------------------------------------------------
-        // Phase 8.2: The Dead Letter Queue (DLQ) Fallback
-        // If the Render compute node is down, deploying, or rate-limited, we DO NOT 
-        // let the message loop infinitely or disappear. We save it to Cloudflare R2.
-        // -------------------------------------------------------------------------
+        // Dead Letter Queue Fallback to R2
         const errorMsg = error instanceof Error ? error.message : 'Unknown network error';
         console.error(`❌ Backend unreachable for ${tenantId}. Routing to DLQ. Error: ${errorMsg}`);
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const dlqKey = `dlq/${tenantId}/${provider}/${streamName}/${timestamp}_${crypto.randomUUID()}.json`;
 
-        // Write the failed batch to R2. The Python WatchdogService can be scheduled to sweep and replay this folder.
         await env.DLQ_BUCKET.put(dlqKey, JSON.stringify({
           error: errorMsg,
           failed_at: new Date().toISOString(),
@@ -228,8 +292,6 @@ export default {
           events: events
         }));
 
-        // Because we successfully secured the data in our Data Lake (R2), we ACK the message
-        // so it leaves the active Queue. This prevents "poison pills" from clogging the pipeline.
         batch.messages
           .filter(m => m.body.tenant_id === tenantId && m.body.provider === provider && m.body.stream_name === streamName)
           .forEach(m => m.ack());

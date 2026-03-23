@@ -1,24 +1,22 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   Database,
-  HardDrive,
-  FileSpreadsheet,
-  RefreshCw,
   ArrowRight,
   CheckCircle2,
   Loader2,
   ChevronLeft,
   ShieldCheck,
-  Snowflake,
   Search,
   Lock,
   ShoppingBag,
-  Cloud,
   ExternalLink,
-  CreditCard, // Added for Stripe
-  Binary      // Added for DuckDB
+  CreditCard,
+  Zap,        // For Vercel
+  Droplet,    // For Lemon Squeezy
+  Server,     // For Render/Railway
+  Box         // For Supabase
 } from 'lucide-react'
 
 import {
@@ -34,13 +32,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { createClient } from '@/utils/supabase/client' // Added for auth-aware triggering
+import { createClient } from '@/utils/supabase/client' 
 
 // -----------------------------------------------------------------------------
 // Type Safety & Configuration
 // -----------------------------------------------------------------------------
-type IntegrationType = 'postgres' | 'snowflake' | 'stripe' | 's3' | 'duckdb' | 'shopify' | 'salesforce'
-type AuthParadigm = 'credentials' | 'oauth' | 'file'
+type IntegrationType = 'supabase' | 'vercel' | 'railway' | 'render' | 'stripe' | 'lemonsqueezy' | 'postgres' | 'shopify'
+type AuthParadigm = 'credentials' | 'oauth' | 'uri'
 
 interface SelectOption {
   label: string;
@@ -50,16 +48,16 @@ interface SelectOption {
 interface IntegrationField {
   name: string;
   label: string;
-  type: 'text' | 'password' | 'file' | 'select';
+  type: 'text' | 'password' | 'select';
   placeholder?: string;
   helperText?: string;
-  options?: SelectOption[]; // For dynamic dropdowns
+  options?: SelectOption[]; 
 }
 
 interface IntegrationConfig {
   id: IntegrationType;
   name: string;
-  category: 'Database' | 'SaaS API' | 'Data Lake' | 'Local';
+  category: 'Database' | 'Payment Provider' | 'E-commerce';
   authType: AuthParadigm;
   description: string;
   icon: React.ElementType;
@@ -69,45 +67,16 @@ interface IntegrationConfig {
 }
 
 // -----------------------------------------------------------------------------
-// Modular Integration Catalog
+// Phase 1: The "Indie Stack" Integration Catalog
+// Frictionless URI & OAuth connections for solo founders.
 // -----------------------------------------------------------------------------
 const INTEGRATIONS: IntegrationConfig[] = [
   {
-    id: 'snowflake',
-    name: 'Snowflake',
-    category: 'Database',
-    authType: 'credentials',
-    description: 'Connect your enterprise cloud data warehouse natively.',
-    icon: Snowflake,
-    color: 'text-sky-400',
-    isPopular: true,
-    fields: [
-      { name: 'account', label: 'Account Identifier', type: 'text', placeholder: 'xy12345.us-east-1' },
-      { name: 'warehouse', label: 'Warehouse', type: 'text', placeholder: 'COMPUTE_WH' },
-      { name: 'database', label: 'Database', type: 'text', placeholder: 'ANALYTICS_DB' },
-      { name: 'user', label: 'Username', type: 'text', placeholder: 'dataomen_role' },
-      { name: 'password', label: 'Password', type: 'password', placeholder: '••••••••' },
-    ]
-  },
-  {
-    id: 'shopify',
-    name: 'Shopify',
-    category: 'SaaS API',
-    authType: 'oauth',
-    description: 'Sync high-frequency e-commerce orders and customers.',
-    icon: ShoppingBag,
-    color: 'text-green-500',
-    isPopular: true,
-    fields: [
-      { name: 'shop_url', label: 'Shop Domain', type: 'text', placeholder: 'my-store.myshopify.com', helperText: 'Enter your exact myshopify.com domain to initiate the secure OAuth flow.' },
-    ]
-  },
-  {
     id: 'stripe',
     name: 'Stripe',
-    category: 'SaaS API',
+    category: 'Payment Provider',
     authType: 'credentials',
-    description: 'Sync subscription revenue, customers, and payment events.',
+    description: '1-click connect for MRR, churn, and subscription RAG dashboards.',
     icon: CreditCard,
     color: 'text-indigo-500',
     isPopular: true,
@@ -117,80 +86,109 @@ const INTEGRATIONS: IntegrationConfig[] = [
         label: 'Restricted API Key',
         type: 'password',
         placeholder: 'rk_live_...',
-        helperText: 'Create a restricted key in Stripe with read-only access to Customers, Subscriptions, and Invoices.'
+        helperText: 'Create a restricted key in Stripe with read-only access to Customers and Subscriptions.'
       },
     ]
   },
   {
-    id: 'salesforce',
-    name: 'Salesforce',
-    category: 'SaaS API',
-    authType: 'oauth',
-    description: 'Map dynamic custom CRM objects and pipelines.',
-    icon: Cloud,
+    id: 'supabase',
+    name: 'Supabase',
+    category: 'Database',
+    authType: 'uri',
+    description: 'Instantly connect your production Supabase PostgreSQL database.',
+    icon: Box,
+    color: 'text-emerald-500',
+    isPopular: true,
+    fields: [
+      { 
+        name: 'connection_string', 
+        label: 'Connection String (URI)', 
+        type: 'password', 
+        placeholder: 'postgresql://postgres.[ref]:[password]@aws-0-region.pooler.supabase.com:6543/postgres',
+        helperText: 'Paste your direct or pooled connection string from Supabase Database settings.' 
+      },
+    ]
+  },
+  {
+    id: 'vercel',
+    name: 'Vercel Postgres',
+    category: 'Database',
+    authType: 'uri',
+    description: 'Sync users and events directly from your Vercel-hosted DB.',
+    icon: Zap,
+    color: 'text-slate-900 dark:text-slate-100',
+    isPopular: true,
+    fields: [
+      { 
+        name: 'connection_string', 
+        label: 'POSTGRES_URL', 
+        type: 'password', 
+        placeholder: 'postgres://default:***@ep-mute-***.us-east-1.aws.neon.tech:5432/verceldb',
+        helperText: 'Copy the POSTGRES_URL from your Vercel project storage settings.' 
+      },
+    ]
+  },
+  {
+    id: 'lemonsqueezy',
+    name: 'Lemon Squeezy',
+    category: 'Payment Provider',
+    authType: 'credentials',
+    description: 'Sync software sales, licenses, and affiliate data.',
+    icon: Droplet,
+    color: 'text-purple-500',
+    fields: [
+      { 
+        name: 'api_key', 
+        label: 'API Key', 
+        type: 'password', 
+        placeholder: 'eyJ0eXAiOiJKV1QiLCJhbG...',
+        helperText: 'Generate an API key from your Lemon Squeezy Settings > API.' 
+      },
+    ]
+  },
+  {
+    id: 'railway',
+    name: 'Railway / Render',
+    category: 'Database',
+    authType: 'uri',
+    description: 'Connect standard managed PostgreSQL databases instantly.',
+    icon: Server,
     color: 'text-blue-500',
     fields: [
-      {
-        name: 'environment',
-        label: 'Environment',
-        type: 'select',
-        options: [
-          { label: 'Production (login.salesforce.com)', value: 'login' },
-          { label: 'Sandbox (test.salesforce.com)', value: 'test' }
-        ],
-        helperText: 'Select the target environment for the Connected App.'
+      { 
+        name: 'connection_string', 
+        label: 'External Database URL', 
+        type: 'password', 
+        placeholder: 'postgresql://user:pass@host:port/db',
+        helperText: 'Paste your full external database URL. Ensure Arcli IPs are allowed.' 
       },
     ]
   },
   {
-    id: 'postgres',
-    name: 'PostgreSQL',
-    category: 'Database',
-    authType: 'credentials',
-    description: 'Connect your production or analytical replica.',
-    icon: Database,
-    color: 'text-blue-600',
+    id: 'shopify',
+    name: 'Shopify',
+    category: 'E-commerce',
+    authType: 'oauth',
+    description: 'Sync high-frequency e-commerce orders and customers.',
+    icon: ShoppingBag,
+    color: 'text-green-500',
     fields: [
-      { name: 'host', label: 'Host', type: 'text', placeholder: 'db.example.com' },
-      { name: 'port', label: 'Port', type: 'text', placeholder: '5432' },
-      { name: 'database', label: 'Database Name', type: 'text', placeholder: 'production_db' },
-      { name: 'user', label: 'Username', type: 'text', placeholder: 'readonly_user', helperText: 'We strongly recommend creating a dedicated read-only user.' },
-      { name: 'password', label: 'Password', type: 'password', placeholder: '••••••••' },
-    ]
-  },
-  {
-    id: 's3',
-    name: 'S3 Parquet',
-    category: 'Data Lake',
-    authType: 'credentials',
-    description: 'Attach an AWS S3 bucket for vectorized querying.',
-    icon: HardDrive,
-    color: 'text-amber-500',
-    fields: [
-      { name: 'bucketUrl', label: 'S3 URI', type: 'text', placeholder: 's3://my-company-data/' },
-      { name: 'accessKey', label: 'Access Key ID', type: 'text', placeholder: 'AKIA...' },
-      { name: 'secretKey', label: 'Secret Access Key', type: 'password', placeholder: '••••••••' },
-    ]
-  },
-  {
-    id: 'duckdb',
-    name: 'DuckDB',
-    category: 'Local',
-    authType: 'credentials',
-    description: 'Connect to an in-process analytical engine for local file querying.',
-    icon: Binary,
-    color: 'text-yellow-600',
-    fields: [
-      { name: 'database_path', label: 'Database Path', type: 'text', placeholder: 'local_storage.db', helperText: 'Provide the path to your .db or .duckdb file relative to the ingestion mount.' },
+      { 
+        name: 'shop_url', 
+        label: 'Shop Domain', 
+        type: 'text', 
+        placeholder: 'my-store.myshopify.com', 
+        helperText: 'Enter your exact myshopify.com domain to initiate the secure OAuth flow.' 
+      },
     ]
   }
 ]
 
 const CONNECTION_PHASES = [
-  "Initiating secure handshake...",
-  "Verifying credentials...",
-  "Scanning schema metadata...",
-  "Encrypting vault storage...",
+  "Initiating secure zero-ETL handshake...",
+  "Verifying read-only access...",
+  "Auto-mapping standard schema tables...",
+  "Seeding Starter Dashboards...",
   "Finalizing connection..."
 ]
 
@@ -231,7 +229,6 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
 
   const handleSelectIntegration = (integration: IntegrationConfig) => {
     setSelectedIntegration(integration)
-    // Pre-fill default selects
     const defaults: Record<string, string> = {}
     integration.fields.forEach(f => {
       if (f.type === 'select' && f.options?.length) {
@@ -254,34 +251,28 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
     // Route: OAuth App flow
     if (selectedIntegration.authType === 'oauth') {
       setIsRedirecting(true)
-      // Simulate API call to get the OAuth URL, then redirecting the browser window
       await new Promise(resolve => setTimeout(resolve, 1500))
       // In production: window.location.href = data.oauthUrl;
       setStep(3)
       return;
     }
 
-    // Route: Direct Database / Credential flow
+    // Route: Direct Database / URI flow
     setIsConnecting(true)
-    
-    // In production, this call would save credentials and return a new dataset_id
-    // const response = await fetch('/api/integrations/connect', { ... });
-    // const { dataset_id } = await response.json();
 
+    // Simulate Backend Sync, Auto-Schema Mapping, and Starter Pack Dashboard generation
     for (let i = 0; i < CONNECTION_PHASES.length; i++) {
       setConnectionPhase(i)
-      await new Promise(resolve => setTimeout(resolve, 600)) // 600ms per phase
+      await new Promise(resolve => setTimeout(resolve, 700)) 
     }
 
-    // NEW: TRIGGER INITIAL HISTORICAL SYNC
-    // Immediately after the credentials are saved, we call the SyncEngine to start pulling data.
+    // Trigger Initial Historical Sync
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session) {
-        // Here we trigger the sync for the newly created integration dataset.
-        // For simulation, we use a placeholder ID, but in production, this uses the ID from the connect response.
+        // Trigger the SyncEngine to pull historical data and auto-seed Golden Metrics
         await fetch(`/api/ingest/trigger/initial_sync_job`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${session.access_token}` }
@@ -292,7 +283,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
     }
 
     setIsConnecting(false)
-    setStep(3) // Move to Success step
+    setStep(3) 
   }
 
   const filteredIntegrations = INTEGRATIONS.filter(int =>
@@ -308,14 +299,14 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
         {step === 1 && (
           <div className="flex flex-col h-[600px] animate-in fade-in slide-in-from-right-4 duration-300">
             <DialogHeader className="p-6 pb-4 border-b">
-              <DialogTitle className="text-2xl font-bold">Connect Data Source</DialogTitle>
+              <DialogTitle className="text-2xl font-bold tracking-tight">Connect Your Stack</DialogTitle>
               <DialogDescription className="mt-1">
-                Select a database, API, or data lake to sync into your analytical workspace.
+                Link your database or payment provider. We'll automatically map the schema and generate your dashboards. No ELT required.
               </DialogDescription>
               <div className="relative mt-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search integrations (e.g., Snowflake, Shopify, Stripe)..."
+                  placeholder="Search Supabase, Stripe, Vercel..."
                   className="pl-9 bg-muted/30"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -333,7 +324,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
                   >
                     {integration.isPopular && (
                       <div className="absolute top-3 right-3">
-                        <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-none">Popular</Badge>
+                        <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary border-none font-semibold">1-Click Setup</Badge>
                       </div>
                     )}
                     <div className="flex items-start gap-4">
@@ -361,12 +352,12 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
 
             <div className="p-4 border-t bg-background flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <Lock className="h-3 w-3" />
-              Your data never leaves your infrastructure. We only sync structural metadata.
+              Credentials are encrypted with AES-256 via Vault. We use secure read-only queries.
             </div>
           </div>
         )}
 
-        {/* Step 2: Configure Credentials or OAuth */}
+        {/* Step 2: Configure URI or OAuth */}
         {step === 2 && selectedIntegration && (
           <form onSubmit={handleConnect} className="flex flex-col h-[600px] animate-in fade-in slide-in-from-right-4 duration-300">
             <DialogHeader className="p-6 pb-4 border-b bg-muted/10">
@@ -385,13 +376,13 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
                   <selectedIntegration.icon className="h-5 w-5" />
                 </div>
                 <DialogTitle className="text-xl font-bold">
-                  {selectedIntegration.authType === 'oauth' ? `Authenticate ${selectedIntegration.name}` : `Configure ${selectedIntegration.name}`}
+                  {selectedIntegration.authType === 'oauth' ? `Authenticate ${selectedIntegration.name}` : `Connect ${selectedIntegration.name}`}
                 </DialogTitle>
               </div>
               <DialogDescription className="pl-11">
                 {selectedIntegration.authType === 'oauth'
                   ? "You will be redirected securely to grant authorization."
-                  : "Enter your connection details. All credentials are encrypted in Vault prior to storage."}
+                  : "Paste your connection details below. DataFast handles the rest in seconds."}
               </DialogDescription>
             </DialogHeader>
 
@@ -424,14 +415,14 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
                         type={field.type}
                         placeholder={field.placeholder}
                         required
-                        className="bg-background border-border focus-visible:ring-primary/50"
+                        className="bg-background border-border focus-visible:ring-primary/50 font-mono text-sm"
                         onChange={handleFieldChange}
                         disabled={isConnecting || isRedirecting}
                       />
                     )}
 
                     {field.helperText && (
-                      <p className="text-[11px] text-muted-foreground mt-1">
+                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
                         {field.helperText}
                       </p>
                     )}
@@ -443,7 +434,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
             <DialogFooter className="p-6 border-t bg-background flex-col sm:flex-row gap-4 items-center justify-between">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                <span>AES-256 Encryption at rest</span>
+                <span>Encrypted at rest</span>
               </div>
 
               <div className="flex gap-2 w-full sm:w-auto">
@@ -474,7 +465,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
                       </div>
                     ) : (
                       <>
-                        Test & Save Connection
+                        Test & Connect
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </>
                     )}
@@ -485,7 +476,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
           </form>
         )}
 
-        {/* Step 3: Success State */}
+        {/* Step 3: Success State & Auto-Seeding Message */}
         {step === 3 && (
           <div className="h-[600px] p-10 flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-300">
             <div className="relative mb-6">
@@ -495,10 +486,17 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
               </div>
             </div>
 
-            <h2 className="text-2xl font-bold mb-3 tracking-tight">Connection Established</h2>
-            <p className="text-muted-foreground mb-8 max-w-md leading-relaxed">
-              Your <strong className="text-foreground">{selectedIntegration?.name}</strong> source has been securely verified. The <strong>SyncEngine</strong> has initiated a background historical pull.
-            </p>
+            <h2 className="text-2xl font-bold mb-3 tracking-tight">Data Connected Successfully!</h2>
+            <div className="bg-muted/50 border border-border rounded-xl p-4 mb-8 max-w-sm w-full">
+              <ul className="text-sm text-left space-y-3">
+                <li className="flex items-center gap-2 text-foreground font-medium">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Pre-tagging Semantic RAG Layer...
+                </li>
+                <li className="flex items-center gap-2 text-foreground font-medium">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Generating Starter Dashboards...
+                </li>
+              </ul>
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
               <Button
@@ -518,7 +516,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Integrat
                   handleClose();
                 }}
               >
-                Go to Sync Dashboard
+                View Your Dashboard
               </Button>
             </div>
           </div>

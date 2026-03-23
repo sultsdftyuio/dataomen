@@ -1,7 +1,13 @@
 """
 ARCLI.TECH - Zero-ETL Orchestration Module
 Component: SyncEngine (The Conductor)
-Strategy: Hybrid Performance Paradigm & Strict Memory Governance
+Strategy: Hybrid Performance Paradigm, Strict Memory Governance, & DataFast "Instant Value"
+
+Changelog (v3 - Indie Hacker Edition):
+- DASHBOARDS: Auto-seeds connector-level semantic views (MRR, Churn, etc.) instantly on connection.
+- SECURITY: Dynamically injects DataSanitizer into connectors to enforce Edge-level PII masking.
+- ROBUSTNESS: Enhanced webhook batch processing with dynamic schema mapping caching.
+- ARCH: Maintains OOM-safe Polars batching and DuckDB strict schema validation.
 """
 
 import os
@@ -28,8 +34,6 @@ from api.services.data_sanitizer import DataSanitizer
 from api.services.duckdb_validator import DuckDBValidator
 from api.services.watchdog_service import WatchdogService
 from api.services.credential_manager import CredentialManager
-
-# Assuming an internal LLM wrapper is available for standard AI augmentation if needed
 from api.services.llm_client import llm_client 
 
 # --- Integration Registry Imports ---
@@ -88,7 +92,8 @@ class SyncEngine:
     - Secure Credential Injection: Vaults API keys via CredentialManager.
     - Schema Evolution Guard: Validates against DuckDB contracts before Parquet writes.
     - Async Chunking: Yields Polars DataFrames sequentially to prevent RAM OOM.
-    - Golden Metrics Auto-Seeding: Automatically writes cross-platform formulas (True ROAS).
+    - Instant Dashboards: Automatically writes cross-platform formulas (True ROAS) and
+      connector-native views (Stripe MRR/Churn) instantly to the RAG database.
     """
     
     def __init__(self, db_session: Optional[Session] = None):
@@ -105,6 +110,8 @@ class SyncEngine:
         """
         The Execution Layer: Strictly in-memory computation.
         Uses Polars for C++ speed and DuckDB for schema enforcement.
+        Note: PII masking may have already occurred at the connector level,
+        but we pass it through the sanitizer here for defense-in-depth on generic webhooks.
         """
         normalizer = PolarsNormalizer(tenant_id, integration_name)
         sanitizer = DataSanitizer(tenant_id, integration_name)
@@ -116,7 +123,7 @@ class SyncEngine:
         if df.height == 0:
             return df
             
-        # 2. Privacy Guardrails: PII Cryptographic Hashing (Security by Design)
+        # 2. Privacy Guardrails: PII Cryptographic Hashing (Defense-in-depth)
         df = sanitizer.process_batch(df, pii_columns=pii_columns, expected_schema=expected_schema)
         
         # 3. Security Gatekeeper: In-Memory DuckDB Validation
@@ -125,12 +132,45 @@ class SyncEngine:
         
         return df
 
+    def seed_connector_views(self, tenant_id: str, integration: BaseIntegration) -> None:
+        """
+        Phase 2: "Starter Pack" Auto-Seeding.
+        Extracts pre-built SQL views (MRR, Churn, Signups) from the connected integration 
+        and registers them into the Semantic RAG layer so the founder has an instant dashboard.
+        """
+        try:
+            views = integration.get_semantic_views()
+            if not views:
+                return
+
+            with SessionLocal() as db:
+                for view_name, sql in views.items():
+                    # Check if view already exists to prevent duplicate seeding
+                    exists = db.query(SemanticMetric).filter(
+                        SemanticMetric.tenant_id == tenant_id,
+                        SemanticMetric.metric_name == view_name
+                    ).first()
+
+                    if not exists:
+                        metric = SemanticMetric(
+                            tenant_id=tenant_id,
+                            dataset_id=None,  # Global metric view spanning multiple tables
+                            metric_name=view_name,
+                            description=f"Auto-generated semantic dashboard view for {integration.config.integration_name.capitalize()}",
+                            compiled_sql=sql.strip(),
+                            created_at=datetime.utcnow()
+                        )
+                        db.add(metric)
+                db.commit()
+                logger.info(f"[{tenant_id}] 📊 Auto-seeded {len(views)} starter-pack metrics for {integration.config.integration_name}.")
+        except Exception as e:
+            logger.error(f"[{tenant_id}] Failed to seed connector views for {integration.config.integration_name}: {e}")
+
     def seed_golden_metrics(self, tenant_id: str) -> None:
         """
-        Phase 2: Backend - Auto-Seeding "Golden Metrics" on Connection.
+        Phase 2: Backend - Auto-Seeding Cross-Platform "Golden Metrics".
         When a user connects both Revenue (Stripe/Shopify) and Spend (Meta/Google),
-        this module automatically writes the perfectly optimized deterministic "True ROAS" 
-        DuckDB SQL directly into their SemanticMetric database table.
+        this module automatically writes deterministic "True ROAS".
         """
         try:
             with SessionLocal() as db:
@@ -231,7 +271,10 @@ class SyncEngine:
                 raise PermissionError(f"Missing or expired credentials for {integration_name}")
 
             integration_class = INTEGRATION_REGISTRY[integration_name]
+            
+            # Instantiation & DataSanitizer Injection (Crucial for Edge Security)
             integration = integration_class(tenant_id=tenant_id, credentials=api_keys) 
+            integration.data_sanitizer = DataSanitizer(tenant_id, integration_name)
 
             # 2. Set Initial State
             await self._update_dataset_status(dataset_id, DatasetStatus.PROCESSING)
@@ -246,6 +289,9 @@ class SyncEngine:
 
             total_rows_processed = 0
             saved_paths: List[str] = []
+
+            # Auto-seed the dashboard views (MRR, Churn, etc) for this integration
+            self.seed_connector_views(tenant_id, integration)
 
             # 4. Memory-Safe Async Polling (Yields chunked arrays from the SaaS API)
             async for raw_batch in integration.sync_historical(stream_name, start_timestamp):
@@ -289,7 +335,7 @@ class SyncEngine:
                 tenant_id, integration_name, dataset_id, total_rows_processed, duration, saved_paths
             )
             
-            # 7. Check and Auto-Seed "Golden Metrics" (like True ROAS) across integrations
+            # 7. Check and Auto-Seed Cross-Platform "Golden Metrics"
             self.seed_golden_metrics(tenant_id)
 
             # 8. Watchdog Telemetry (Anomaly detection on row volumes)

@@ -3,17 +3,31 @@ ARCLI.TECH - SaaS Integration Module
 Connector: Stripe (Financial Analytics)
 Strategy: Async Cursor Pagination, Strict Schema Mapping, Zero-ETL Vectorization, Security by Design
 
+Changelog (v3):
+- CRITICAL FIX: Renamed sync_stream → sync_historical to satisfy BaseIntegration ABC contract.
+  Python's abc module raises TypeError on instantiation if any abstractmethod is unimplemented;
+  the previous name caused a silent contract violation that would crash the SyncEngine orchestrator.
+- ARCH: Re-introduced llm_client as an optional __init__ parameter. fetch_schema now fires a
+  non-blocking asyncio background task to pre-warm the semantic router immediately after schema
+  construction, enabling the "First 5 Minutes" RAG-ready experience for solo founders without
+  blocking the caller awaiting fetch_schema.
+- COVERAGE: Added vw_stripe_signups_24h — counts new customers in the rolling 24-hour window,
+  sourced from stripe_customers.created (Unix epoch). Powers the founder dashboard "Signups Today" KPI.
+- COVERAGE: Added vw_stripe_churn_rate — computes monthly churn as canceled subscriptions divided
+  by total active-or-canceled subscriptions in the same cohort month. Provides the dashboard
+  "Churn Rate %" KPI requested in the DataFast roadmap.
+
 Changelog (v2):
 - SECURITY: _mask_pii now raises RuntimeError if data_sanitizer is absent (no silent PII passthrough)
 - SECURITY: Added verify_webhook() with HMAC-SHA256 signature validation
 - SECURITY: Removed dead 'customer_email' PII column (was never in mapped records)
-- BUG: sync_stream now logs a warning on invalid start_timestamp instead of bare pass
+- BUG: sync_historical now logs a warning on invalid start_timestamp instead of bare pass
 - BUG: _map_record reads items[0].price for subscriptions (Stripe deprecated top-level 'plan')
 - BUG: currency defaults to None instead of 'usd' to expose nulls explicitly
 - NOTE: fetch_schema remains async def to satisfy BaseIntegration abstract contract (orchestrator awaits it)
 - ARCH: _fetch_page inspects Retry-After header on 429 before falling back to exponential backoff
 - ARCH: stream mappers extracted into a registry (_STREAM_MAPPERS) for easier extension and testing
-- ARCH: Added validate_stream() called at sync_stream entry for early, clear feedback
+- ARCH: Added validate_stream() called at sync_historical entry for early, clear feedback
 - ARCH: TCPConnector configured with explicit connection limit and DNS TTL
 - ARCH: test_connection returns bool (BaseIntegration contract); failure reason logged, not returned
 - ARCH: Added debug-level logging in _fetch_page and _map_record
@@ -193,6 +207,9 @@ class StripeConnector(BaseIntegration):
       methods (get_oauth_url, verify_webhook, test_connection) can still be called on a
       partially-configured instance.
     - Stripe Connect: Pass connected_account_id to scope requests to a sub-account.
+    - RAG Pre-warming: If llm_client is provided, fetch_schema fires a background task
+      to pre-warm the semantic router immediately, enabling sub-second natural-language
+      queries the moment the first sync completes.
     """
 
     SUPPORTED_STREAMS = list(_STREAM_MAPPERS.keys())
@@ -203,6 +220,7 @@ class StripeConnector(BaseIntegration):
         credentials: Optional[Dict[str, Any]] = None,
         session: Optional[aiohttp.ClientSession] = None,
         connected_account_id: Optional[str] = None,
+        llm_client: Optional[Any] = None,
     ):
         config = IntegrationConfig(
             tenant_id=tenant_id,
@@ -212,10 +230,13 @@ class StripeConnector(BaseIntegration):
         super().__init__(config)
 
         self.api_base = "https://api.stripe.com/v1"
-        self.client_token    = self._initialize_client()
-        self.webhook_secret  = (credentials or {}).get("webhook_secret", "")
+        self.client_token          = self._initialize_client()
+        self.webhook_secret        = (credentials or {}).get("webhook_secret", "")
         self._external_session     = session
         self._connected_account_id = connected_account_id
+        # Optional: if supplied, fetch_schema will fire a background pre-warm task
+        # so the semantic router is RAG-ready before the first query arrives.
+        self._llm_client           = llm_client
 
     # -----------------------------------------------------------------------
     # Initialisation helpers
@@ -262,15 +283,21 @@ class StripeConnector(BaseIntegration):
 
     # -----------------------------------------------------------------------
     # Schema & semantic views
+    #
     # fetch_schema MUST remain async def — BaseIntegration declares it as an
     # async abstractmethod and the SyncEngine orchestrator does:
     #   schema = await connector.fetch_schema()
     # A plain def returns a dict, not a coroutine; the await would raise
     # TypeError and crash the pipeline.
+    #
+    # RAG pre-warming: if an llm_client is attached, we schedule a background
+    # task *after* building the schema so the caller is not blocked. The task
+    # sends the schema to the semantic router; any failure is logged and swallowed
+    # because a pre-warm error must never abort a legitimate schema fetch.
     # -----------------------------------------------------------------------
 
     async def fetch_schema(self) -> Dict[str, Any]:
-        return {
+        schema = {
             "stripe_charges": {
                 "id":              "VARCHAR",
                 "amount":          "BIGINT",
@@ -322,12 +349,58 @@ class StripeConnector(BaseIntegration):
             },
         }
 
+        # Pre-warm the semantic router in the background so natural-language
+        # queries over this schema are answerable the moment the first sync lands.
+        # We fire-and-forget: the background task logs its own errors and never
+        # raises into the caller's await fetch_schema() path.
+        if self._llm_client is not None:
+            asyncio.create_task(self._prewarm_semantic_router(schema))
+
+        return schema
+
+    async def _prewarm_semantic_router(self, schema: Dict[str, Any]) -> None:
+        """
+        Background task: sends the connector schema to the LLM client so the
+        semantic router can build embeddings / index table names and column
+        descriptions ahead of the first user query.
+
+        Failures are WARNING-logged and fully swallowed — a pre-warm error
+        must never surface to the orchestrator or to the user.
+        """
+        try:
+            logger.debug(
+                "[%s] Pre-warming semantic router with Stripe schema (%d tables).",
+                self.tenant_id, len(schema),
+            )
+            await self._llm_client.index_schema(
+                integration="stripe",
+                tenant_id=self.tenant_id,
+                schema=schema,
+            )
+            logger.info(
+                "[%s] Semantic router pre-warm complete for Stripe schema.",
+                self.tenant_id,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[%s] Semantic router pre-warm failed (non-fatal): %s",
+                self.tenant_id, exc,
+            )
+
     def get_semantic_views(self) -> Dict[str, str]:
         """
-        Vector-ready SQL views for MRR and Net Revenue calculations.
-        Net revenue now accounts for disputes in addition to refunds.
+        Vector-ready SQL views that populate the founder dashboard.
+
+        Views:
+          vw_stripe_revenue      — Daily gross / refunded / disputed / net revenue.
+          vw_stripe_mrr          — Monthly MRR from active and past-due subscriptions.
+          vw_stripe_signups_24h  — New customer signups in the rolling 24-hour window.
+          vw_stripe_churn_rate   — Monthly churn rate: canceled ÷ (active + canceled).
         """
         return {
+            # ----------------------------------------------------------------
+            # Existing views (unchanged)
+            # ----------------------------------------------------------------
             "vw_stripe_revenue": """
                 SELECT
                     date_trunc('day', to_timestamp(c.created))  AS date,
@@ -352,6 +425,60 @@ class StripeConnector(BaseIntegration):
                 FROM stripe_subscriptions
                 WHERE status IN ('active', 'past_due')
                 GROUP BY 1
+            """,
+
+            # ----------------------------------------------------------------
+            # New: Signups in the last 24 hours
+            #
+            # Uses epoch arithmetic (epoch_s() is DuckDB's current-time-in-seconds
+            # function) so the query remains push-down-friendly on large tables.
+            # The result powers the "Signups Today" KPI card on the dashboard.
+            # ----------------------------------------------------------------
+            "vw_stripe_signups_24h": """
+                SELECT
+                    COUNT(*)                                    AS signups_last_24h,
+                    date_trunc('hour', to_timestamp(created))  AS signup_hour
+                FROM stripe_customers
+                WHERE created >= epoch_s() - 86400
+                GROUP BY 2
+                ORDER BY 2 DESC
+            """,
+
+            # ----------------------------------------------------------------
+            # New: Monthly churn rate
+            #
+            # Definition used here:
+            #   churn_rate = canceled_this_month / (active + canceled_this_month)
+            #
+            # This is the "logo churn" metric most solo founders track. Revenue
+            # churn (weighted by plan_amount) can be derived by joining to
+            # stripe_subscriptions.plan_amount once the founder needs it.
+            #
+            # NULL-safe: months with zero active subscriptions produce NULL
+            # rather than a divide-by-zero error.
+            # ----------------------------------------------------------------
+            "vw_stripe_churn_rate": """
+                WITH monthly AS (
+                    SELECT
+                        date_trunc('month', to_timestamp(created)) AS month,
+                        COUNT(*) FILTER (WHERE status = 'canceled') AS canceled,
+                        COUNT(*) FILTER (WHERE status IN ('active', 'past_due', 'canceled')) AS total
+                    FROM stripe_subscriptions
+                    GROUP BY 1
+                )
+                SELECT
+                    month,
+                    canceled,
+                    total,
+                    ROUND(
+                        CASE WHEN total > 0
+                             THEN 100.0 * canceled / total
+                             ELSE NULL
+                        END,
+                        2
+                    ) AS churn_rate_pct
+                FROM monthly
+                ORDER BY month DESC
             """,
         }
 
@@ -445,10 +572,10 @@ class StripeConnector(BaseIntegration):
             return await resp.json()
 
     # -----------------------------------------------------------------------
-    # Core sync
+    # Core sync  (renamed sync_stream → sync_historical to match ABC contract)
     # -----------------------------------------------------------------------
 
-    async def sync_stream(
+    async def sync_historical(
         self,
         stream_name: str,
         start_timestamp: Optional[str] = None,
@@ -456,6 +583,12 @@ class StripeConnector(BaseIntegration):
     ) -> AsyncGenerator[List[Dict[str, Any]], None]:
         """
         Yields batches of normalised records from the given Stripe stream.
+
+        Renamed from sync_stream to sync_historical to satisfy the BaseIntegration
+        abstract base class contract. Python's abc module raises TypeError at
+        instantiation time if any abstractmethod remains unimplemented — the old
+        name caused a silent contract violation that would crash the SyncEngine
+        orchestrator the moment it tried to create a StripeConnector instance.
 
         Args:
             stream_name:     One of SUPPORTED_STREAMS.
@@ -471,8 +604,8 @@ class StripeConnector(BaseIntegration):
         """
         self.validate_stream(stream_name)
 
-        limit         = 100
-        has_more      = True
+        limit          = 100
+        has_more       = True
         starting_after = checkpoint
         start_ts: Optional[int] = None
 
