@@ -1,11 +1,10 @@
 // lib/seo/core-features-2.tsx
 import React from 'react';
-import { FileText, FileSpreadsheet } from 'lucide-react';
+import { FileText, FileSpreadsheet, LayoutTemplate } from 'lucide-react';
 
 /**
- * CoreFeatures Schema - V2 "Business Outcome" Edition
- * This schema is specifically designed to hit 500+ lines of high-authority 
- * content while remaining accessible to non-technical executive buyers.
+ * CoreFeatures Schema - Executive & SEO Optimized Edition
+ * Enforces scannability, pain-centric messaging, competitive positioning, and high-value SEO hooks.
  */
 export type SEOPageData = {
   type: 'feature';
@@ -15,32 +14,45 @@ export type SEOPageData = {
   h1: string;
   subtitle: string;
   icon: React.ReactElement;
+  idealFor: string[];
   businessValueMetrics: {
     label: string;
     value: string;
     description: string;
   }[];
   capabilities: {
-    name: string;
+    name: string; // Pain-Centric
     benefit: string;
-    nonTechExplanation: string;
+    executiveExplanation: string;
   }[];
-  technicalGuardrails: {
-    concern: string;
-    arcliSolution: string;
+  competitiveAdvantage: {
+    legacyTool: string;
+    limitation: string;
+    arcliAdvantage: string;
+  }[];
+  trustAndSecurity: {
+    principle: string; // Engineered, sharp
+    howWeDeliver: string;
   }[];
   onboardingExperience: {
     phase: string;
     userAction: string;
-    aiResponse: string;
+    outcome: string;
   }[];
   analyticalScenarios: {
     title: string;
-    complexity: 'Basic' | 'Advanced' | 'Strategic';
-    prompt: string;
-    logicApplied: string;
-    resultInsight: string;
+    complexity: 'Basic' | 'Advanced';
+    businessQuestion: string;
+    businessOutcome: string;
     sqlSnippet?: string;
+  }[];
+  seoExamples: {
+    keyword: string;
+    description: string;
+  }[];
+  visualHooks: {
+    type: 'diagram' | 'workflow' | 'comparison-table';
+    description: string;
   }[];
   faqs: { q: string; a: string }[];
   relatedSlugs: string[];
@@ -49,118 +61,260 @@ export type SEOPageData = {
 export const coreFeaturesPart2: Record<string, SEOPageData> = {
   'ai-narrative-insights': {
     type: 'feature',
-    title: 'Automated AI Narrative Reporting & Summaries | Arcli',
-    description: 'Transform complex data charts into written executive summaries. Arcli uses generative AI to "read" your data and write the story behind the numbers.',
-    metaKeywords: ['AI Reporting', 'Data Storytelling', 'Automated Summaries', 'Executive Narrative', 'Root Cause Analysis AI'],
-    h1: 'The Story Behind Your Data',
-    subtitle: 'Stop staring at complex charts wondering what changed. Arcli translates your metrics into plain-English executive summaries that anyone can understand.',
+    title: 'Automated Executive Reporting & AI Summaries | Arcli',
+    description: 'Stop wasting hours writing weekly performance updates. Arcli automatically translates complex data into plain-English executive summaries in seconds.',
+    metaKeywords: [
+      'Automated Executive Reporting', 
+      'Data Storytelling', 
+      'AI BI Summaries', 
+      'Automated Board Reports', 
+      'Root Cause Analysis AI'
+    ],
+    h1: 'Stop Wasting Mondays Writing Reports',
+    subtitle: 'Arcli replaces manual reporting by automatically translating your data into plain-English executive summaries that your entire team can understand and act upon instantly.',
     icon: <FileText className="w-12 h-12 text-emerald-500 mb-6" />,
+    idealFor: ['Sales Managers', 'VP of Operations', 'Chief of Staff'],
     businessValueMetrics: [
-      { label: 'Reporting Overhead', value: '-80%', description: 'Reduces the time managers spend writing "Weekly Updates" from hours to seconds.' },
-      { label: 'Data Literacy', value: 'High', description: 'Ensures even non-analytical team members understand exactly why a metric moved.' },
-      { label: 'Actionable Insights', value: 'Direct', description: 'Move from "What happened?" to "What should we do?" instantly.' }
+      { label: 'Reporting Overhead', value: 'Eliminated', description: 'Reduces the hours spent manually drafting "Weekly Performance Updates" down to zero.' },
+      { label: 'Cross-Team Alignment', value: '100%', description: 'Ensures non-analytical team members immediately understand exactly why a metric moved.' },
+      { label: 'Actionable Clarity', value: 'Instant', description: 'Moves the conversation from "What happened?" directly to "What should we do about it?"' }
     ],
     capabilities: [
       { 
-        name: 'Automated Written Summaries', 
-        benefit: 'Clear communication.', 
-        nonTechExplanation: 'Arcli looks at a chart and writes a paragraph explaining the most important takeaways.' 
+        name: 'Automate the Weekly Update', 
+        benefit: 'Clear communication without the manual effort.', 
+        executiveExplanation: 'The platform reviews your live charts and generates a concise, boardroom-ready paragraph explaining the most important takeaways and overall trajectory. Perfect for copying directly into Slack.' 
       },
       { 
-        name: 'Contextual Root Cause', 
-        benefit: 'Solving problems faster.', 
-        nonTechExplanation: 'If revenue is down, Arcli analyzes the data to tell you exactly which region or product caused the dip.' 
+        name: 'Instant Root Cause Analysis', 
+        benefit: 'Stop guessing why numbers dropped.', 
+        executiveExplanation: 'If top-line revenue dips, the system dynamically analyzes underlying segments to tell you exactly which region, product line, or sales rep caused it. Pair this with [Predictive Analytics](/predictive-ai-analytics) for complete visibility.' 
       },
       { 
-        name: 'Cross-Department Translation', 
-        benefit: 'Alignment.', 
-        nonTechExplanation: 'Arcli can rewrite the same data insight for a technical engineer or a non-technical CEO.' 
+        name: 'Dynamic Audience Translation', 
+        benefit: 'Tailored messaging for different stakeholders.', 
+        executiveExplanation: 'Generate a highly technical summary of a server log for engineering, and instantly rewrite that exact same data point into a financial impact summary for the CFO.' 
       }
     ],
-    technicalGuardrails: [
-      { concern: 'Can I trust the written summary?', arcliSolution: 'Our "Source-Link" feature ensures every sentence in a narrative is hyperlinked to the specific data point that supports it.' },
-      { concern: 'Will it miss small details?', arcliSolution: 'The Narrative engine is programmatically tuned to look for statistical significance. It focuses on the moves that actually matter to your business.' }
+    competitiveAdvantage: [
+      {
+        legacyTool: 'Manual Reporting (Word / PPT / Email)',
+        limitation: 'Managers spend hours every week downloading CSVs, creating charts, and typing out subjective summaries of what happened.',
+        arcliAdvantage: 'Reports are generated instantly based on mathematically verified data, removing human error and freeing up your leadership’s time.'
+      }
+    ],
+    trustAndSecurity: [
+      { 
+        principle: 'Deterministic Narrative Engine (No Fabricated Numbers)', 
+        howWeDeliver: 'Our engine is architecturally blocked from "hallucinating." It operates purely as a translation layer, reading the hard math returned by your database and converting it to text.' 
+      },
+      { 
+        principle: 'Verifiable Source-Linking', 
+        howWeDeliver: 'Every metric mentioned in a written summary acts as a hyperlink. Clicking the number instantly reveals the underlying data table and SQL logic used to generate it.' 
+      }
     ],
     onboardingExperience: [
-      { phase: 'Analyze', userAction: 'Open a dashboard or query result.', aiResponse: 'The "Write Summary" button appears.' },
-      { phase: 'Draft', userAction: 'Click "Summarize".', aiResponse: 'Arcli drafts a 3-bullet executive brief based on the chart trends.' },
-      { phase: 'Publish', userAction: 'Share to Slack.', aiResponse: 'Your team gets the chart AND the explanation in one message.' }
+      { phase: 'Analyze', userAction: 'View any dashboard or chart in your workspace.', outcome: 'The system monitors the data for statistical significance.' },
+      { phase: 'Draft', userAction: 'Click "Generate Executive Summary".', outcome: 'Within seconds, a clear, three-bullet brief is drafted.' },
+      { phase: 'Distribute', userAction: 'Automatically schedule delivery.', outcome: 'Leadership receives the automated briefing in Slack every Monday.' }
     ],
     analyticalScenarios: [
       {
-        title: 'Weekly Board Briefing',
-        complexity: 'Strategic',
-        prompt: 'Summarize our performance this week and highlight the top 3 drivers of growth.',
-        logicApplied: 'Analyzes multiple KPI trends and performs a contribution analysis across segments.',
-        resultInsight: 'Wrote a summary highlighting that "Referral Traffic" was the primary driver, allowing the team to double down on that channel.',
+        title: 'Weekly Sales Performance Briefing',
+        complexity: 'Basic',
+        businessQuestion: 'Summarize our closed-won revenue for this week compared to last week.',
+        businessOutcome: 'Replaces the manual Monday morning routine. The system autonomously writes: "Revenue increased 12% to $145k, primarily driven by a surge in Enterprise renewals in EMEA."',
+        sqlSnippet: `SELECT region, SUM(amount) AS revenue FROM opportunities WHERE status = 'Closed Won' AND close_date >= CURRENT_DATE - 7 GROUP BY 1 ORDER BY 2 DESC;`
+      },
+      {
+        title: 'Churn Anomaly Root Cause',
+        complexity: 'Advanced',
+        businessQuestion: 'Explain the sudden spike in user cancellations yesterday.',
+        businessOutcome: 'Rather than simply reporting the spike, the narrative isolates the variable: "Cancellations spiked 40%. 85% of these originated from Legacy Basic Tier users who experienced the billing migration error."',
       }
     ],
-    faqs: [
-      { q: 'Can I change the tone of the summaries?', a: 'Yes. You can instruct Arcli to be "Direct and Technical" or "High-Level and Strategic" depending on who you are sharing with.' },
-      { q: 'Does it support multiple languages?', a: 'Yes. Arcli can summarize your data in over 20 languages, making it perfect for global teams.' }
+    seoExamples: [
+      { keyword: 'Automated executive summary template', description: 'See how Arcli automatically generates perfect executive summaries from raw data.' },
+      { keyword: 'Root cause analysis automated', description: 'Automatically drill down into the "why" behind data anomalies without writing complex grouping SQL.' }
     ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence']
+    visualHooks: [
+      { type: 'comparison-table', description: 'Before: A manager staring at a blank email draft next to a messy Excel file. After: A perfectly formatted, AI-generated Slack message summarizing the week.' }
+    ],
+    faqs: [
+      { q: 'Will the AI miss small but important details?', a: 'The narrative engine is programmatically tuned using statistical variance thresholds. It inherently ignores background noise and focuses exclusively on the mathematical outliers that actually impact your business.' },
+      { q: 'Is our data fed into a public LLM to write these stories?', a: 'No. We utilize secure, private inference architectures. Your data is processed entirely within an isolated environment and never trains external models.' }
+    ],
+    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'slack-teams-data-bot']
   },
 
   'ai-excel-analysis': {
     type: 'feature',
-    title: 'AI Spreadsheet Analysis & Massive Scale | Arcli',
-    description: 'Break through the limits of traditional spreadsheets. Use Arcli to analyze, join, and clean millions of rows of Excel and CSV data via chat.',
-    metaKeywords: ['AI Excel Analysis', 'Analyze CSV with AI', 'Excel Alternative', 'Big Data Spreadsheet', 'CSV Joiner AI'],
-    h1: 'Spreadsheet Intelligence, Reimagined',
-    subtitle: 'Upload your largest Excel or CSV files and analyze them without the lag. No VLOOKUPs, no broken macros—just conversation.',
+    title: 'Analyze Large CSV & Excel Files with AI | Arcli',
+    description: 'Excel breaks at 1 million rows. Arcli doesn\'t. Upload massive CSV files and join them instantly using conversational AI—entirely within your browser.',
+    metaKeywords: [
+      'Excel Alternative', 
+      'Analyze Large CSV', 
+      'Join CSV files without SQL', 
+      'Excel Row Limit Workaround', 
+      'Big Data Spreadsheet'
+    ],
+    h1: 'Excel Breaks. This Doesn’t.',
+    subtitle: 'Upload massive Excel or CSV files and analyze them without freezing your computer. No complex VLOOKUPs, no broken macros—just plain English conversation.',
     icon: <FileSpreadsheet className="w-12 h-12 text-green-600 mb-6" />,
+    idealFor: ['Data Analysts', 'RevOps Professionals', 'Performance Marketers'],
     businessValueMetrics: [
-      { label: 'Data Processing Limit', value: '10M+ Rows', description: 'Analyze datasets that would crash or freeze standard spreadsheet software.' },
-      { label: 'Logical Accuracy', value: 'High', description: 'Replaces brittle, easily-broken cell formulas with robust, traceable SQL logic.' },
-      { label: 'Privacy & Security', value: 'Local-First', description: 'Data is processed in your browser memory using WebAssembly; it never lives on our servers.' }
+      { label: 'Data Processing Limit', value: '10M+ Rows', description: 'Analyze massive datasets that would instantly crash or freeze standard desktop spreadsheet software.' },
+      { label: 'Data Cleansing Speed', value: 'Instant', description: 'Replaces brittle, easily-broken manual cell formulas with robust, auto-generated data logic.' },
+      { label: 'Privacy & Security', value: 'Local-First', description: 'Your sensitive files are processed directly in your browser\'s memory; raw row data never rests on our servers.' }
     ],
     capabilities: [
       { 
+        name: 'Bypass the 1M Row Limit', 
+        benefit: 'Enterprise speed without enterprise infrastructure.', 
+        executiveExplanation: 'We utilize a specialized WebAssembly (WASM) analytical engine that runs entirely inside your web browser (no upload required). Filter and aggregate multi-gigabyte files with zero latency.' 
+      },
+      { 
         name: 'Conversational File Joins', 
-        benefit: 'Connect disparate data.', 
-        nonTechExplanation: 'Want to compare your "Marketing Spend" file with your "Internal Sales" CSV? Just tell Arcli to "Join them by Email" and it’s done.' 
+        benefit: 'Connect disparate data silos instantly.', 
+        executiveExplanation: 'Need to compare a "Marketing Spend" CSV with your "Internal Sales" Excel file? Upload both and tell the platform to "Join them by Email." Say goodbye to #REF! and broken VLOOKUPs.' 
       },
       { 
-        name: 'High-Performance WASM Engine', 
-        benefit: 'Speed at Scale.', 
-        nonTechExplanation: 'We use a specialized data engine (DuckDB) that runs directly in your browser, making 5-million-row files feel instant.' 
-      },
-      { 
-        name: 'Automated Data Cleansing', 
-        benefit: 'Better data quality.', 
-        nonTechExplanation: 'Arcli automatically identifies duplicates, fixes broken zip codes, and standardizes date formats without manual editing.' 
+        name: 'Instant Data Cleansing', 
+        benefit: 'Ensures your numbers are actually reliable.', 
+        executiveExplanation: 'The platform autonomously identifies duplicate rows, standardizes broken date formats, and flags missing values before you run your analysis, saving hours of manual formatting.' 
       }
     ],
-    technicalGuardrails: [
-      { concern: 'Is my confidential file uploaded to a server?', arcliSolution: 'We prioritize "Local Compute." Your files are processed using WebAssembly (WASM) on your own machine. We don\'t store your raw row data unless you explicitly save it to a workspace.' },
-      { concern: 'Will shifting columns break my reports?', arcliSolution: 'No. Unlike Excel, Arcli looks at "Column Names," not "Cell Locations." If you add a new column in the middle of your file, your analysis stays perfect.' }
+    competitiveAdvantage: [
+      {
+        legacyTool: 'Microsoft Excel / Google Sheets',
+        limitation: 'Strict row limits (1M for Excel, less for Sheets). Heavy VLOOKUPs freeze the application, and files must be manually scrubbed.',
+        arcliAdvantage: 'Handles 10M+ rows effortlessly. Joins and aggregations are handled via compiled browser-side SQL, not brittle cell references.'
+      }
+    ],
+    trustAndSecurity: [
+      { 
+        principle: '100% Local Browser Processing (WASM)', 
+        howWeDeliver: 'When you drop a file, it does not go to a central cloud server. It is loaded into a secure WebAssembly sandbox on your local machine. Raw row data never touches our servers.' 
+      },
+      { 
+        principle: 'Ephemeral Memory State', 
+        howWeDeliver: 'Once you close your browser tab, the uploaded file data is completely wiped from local memory. Total privacy for sensitive HR or financial files.' 
+      }
     ],
     onboardingExperience: [
-      { phase: 'Ingest', userAction: 'Drag and drop 3 separate CSV files.', aiResponse: 'Arcli indexes all files and shows you a combined relational map.' },
-      { phase: 'Cross-Query', userAction: 'Type: "Which customers appear in all 3 files?"', aiResponse: 'The system performs a 3-way inner join and returns the list.' },
-      { phase: 'Export', userAction: 'Click "Download Cleaned File".', aiResponse: 'Your data is returned to you in a perfectly formatted, filtered CSV.' }
+      { phase: 'Ingest', userAction: 'Drag and drop massive CSVs directly into the browser.', outcome: 'The local engine instantly indexes the data without waiting for network uploads.' },
+      { phase: 'Cross-Query', userAction: 'Ask: "Which customers appear in both exports?"', outcome: 'The system authors the exact logic to merge the files perfectly.' },
+      { phase: 'Export', userAction: 'Click "Download Cleaned Dataset".', outcome: 'The merged, filtered data is saved back to your computer.' }
     ],
     analyticalScenarios: [
       {
         title: 'Enterprise Inventory Reconciliation',
         complexity: 'Advanced',
-        prompt: 'Compare our "Warehouse_Export.csv" with our "Shopify_Orders.csv" and show me items that were sold but are still in the warehouse.',
-        logicApplied: 'Performs a complex "Left-Anti-Join" between two large disparate datasets.',
-        resultInsight: 'Identified $14,000 worth of missing inventory that had been mislabeled in the warehouse system.',
-      },
-      {
-        title: 'Massive Log Analysis',
-        complexity: 'Strategic',
-        prompt: 'Analyze this 2GB server log. Group by error type and show me the peak times for the "Timeout" error.',
-        logicApplied: 'Uses DuckDB to scan a multi-gigabyte file without loading it into system memory, grouping by time buckets.',
-        resultInsight: 'Isolated a recurring infrastructure spike at 3:00 AM every Tuesday.',
+        businessQuestion: 'Compare our physical Warehouse export with our Shopify digital export. Show me all items that Shopify says were sold, but are still in the warehouse file.',
+        businessOutcome: 'Identifies mislabeled inventory and fulfillment errors immediately, protecting the company\'s bottom line and customer satisfaction.',
       }
     ],
-    faqs: [
-      { q: 'Does this replace Excel entirely?', a: 'Excel is great for data entry. Arcli is for "Data Discovery." Use Excel to collect your numbers, then upload them to Arcli to actually find the insights hidden inside them.' },
-      { q: 'What file formats do you support?', a: 'We support .csv, .xlsx, .parquet, and .json files of almost any size.' }
+    seoExamples: [
+      { keyword: 'How to analyze large CSV files', description: 'Arcli uses browser-based DuckDB WASM to process gigabyte-scale CSVs without crashing.' },
+      { keyword: 'Excel row limit workaround', description: 'Bypass the 1,048,576 row limit in Excel by querying your files conversationally.' },
+      { keyword: 'Join multiple CSV files without SQL', description: 'Upload two CSVs and let Arcli\'s AI join them on common keys instantly.' }
     ],
-    relatedSlugs: ['ai-data-analysis', 'analyze-csv-with-ai', 'how-to-build-dashboard-from-csv']
+    visualHooks: [
+      { type: 'workflow', description: 'A visual showing a 5GB CSV file bypassing the "Cloud" entirely and going straight into the "Browser Sandbox" for immediate analysis.' }
+    ],
+    faqs: [
+      { q: 'Does this replace Microsoft Excel entirely?', a: 'No. Excel is excellent for manual data entry. Arcli is built for Data Discovery at Scale. You use Excel to collect numbers, and Arcli to analyze them when they become too large.' },
+      { q: 'What happens if my CSV file is larger than 1GB?', a: 'Because the platform runs a specialized columnar database locally inside your browser, it can seamlessly process multi-gigabyte files that would instantly crash traditional software.' },
+      { q: 'Are my highly confidential files uploaded to your servers?', a: 'No. The file processing happens purely on your local machine using WebAssembly. Only the column headers and your text prompt hit our AI—never the raw rows.' }
+    ],
+    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence']
+  },
+
+  'embedded-analytics-api': {
+    type: 'feature',
+    title: 'Embedded Analytics API & White-Label BI | Arcli',
+    description: 'Turn your application’s data into a revenue-generating feature. Embed white-labeled conversational AI analytics directly into your SaaS in under 48 hours.',
+    metaKeywords: [
+      'Embedded Analytics', 
+      'White Label BI', 
+      'Customer Facing Analytics', 
+      'SaaS Analytics API', 
+      'Embeddable Dashboards'
+    ],
+    h1: 'Turn Your Data Into a Revenue Feature',
+    subtitle: 'Stop wasting engineering sprints building custom dashboards for demanding clients. Drop Arcli’s secure, white-labeled AI directly into your SaaS and let your users query their own data.',
+    icon: <LayoutTemplate className="w-12 h-12 text-indigo-500 mb-6" />,
+    idealFor: ['SaaS Founders', 'Product Managers', 'CTOs'],
+    businessValueMetrics: [
+      { label: 'Engineering Bandwidth', value: 'Protected', description: 'Stops your developers from wasting time building one-off custom reporting features.' },
+      { label: 'New Revenue Streams', value: 'Unlocked', description: 'Package conversational analytics as a premium add-on tier to increase your ARPU.' },
+      { label: 'Integration Speed', value: '< 48 Hours', description: 'Drop a secure iframe or API snippet into your React/Vue frontend and go live immediately.' }
+    ],
+    capabilities: [
+      { 
+        name: 'Kill Custom Report Requests', 
+        benefit: 'Empower users with self-serve answers.', 
+        executiveExplanation: 'Instead of forcing customers to export static CSVs or submit support tickets, they can simply type "Show me my top performing campaigns this week" directly inside your application.' 
+      },
+      { 
+        name: 'Unlock Premium Pricing Tiers', 
+        benefit: 'Monetize your platform’s data exhaust.', 
+        executiveExplanation: 'Use our embedded analytics as a gate for your Enterprise tier. Proving the ROI of your software visually directly reduces churn and increases contract value.' 
+      },
+      { 
+        name: 'Seamless White-Labeling', 
+        benefit: 'Matches your brand perfectly.', 
+        executiveExplanation: 'Your customers will never know Arcli is powering the experience. The conversational UI seamlessly inherits your custom fonts, colors, and CSS variables.' 
+      }
+    ],
+    competitiveAdvantage: [
+      {
+        legacyTool: 'Legacy Embedded BI (Sisense / Looker)',
+        limitation: 'Costs $50k+ upfront, requires months of rigid data modeling, and only provides static, unchangeable dashboards to your users.',
+        arcliAdvantage: 'Deploys in days, connects to your existing database, and gives your users the freedom to ask ad-hoc questions conversationally.'
+      },
+      {
+        legacyTool: 'Building it In-House',
+        limitation: 'Diverts your core engineering team for months to build charting libraries and maintain infrastructure.',
+        arcliAdvantage: 'Zero maintenance overhead. Drop in a secure snippet and get world-class AI analytics instantly.'
+      }
+    ],
+    trustAndSecurity: [
+      { 
+        principle: 'Strict Row-Level Security (RLS) Pass-Through', 
+        howWeDeliver: 'Our embedding architecture relies on secure JSON Web Tokens (JWTs). When Customer A asks a question, the platform cryptographically locks the query to Customer A’s Tenant ID. Total isolation.' 
+      },
+      { 
+        principle: 'No Duplicate Data Silos', 
+        howWeDeliver: 'We query your existing multi-tenant database dynamically. You do not need to sync, copy, or maintain a secondary data warehouse just to serve customer-facing analytics.' 
+      }
+    ],
+    onboardingExperience: [
+      { phase: 'Configure', userAction: 'Define authorized metrics and styling in the Arcli Portal.', outcome: 'A custom-tailored environment is generated.' },
+      { phase: 'Embed', userAction: 'Paste the provided snippet into your app, passing the active user’s Tenant ID.', outcome: 'The interface renders seamlessly within your layout.' },
+      { phase: 'Monetize', userAction: 'Upsell the feature to your enterprise user base.', outcome: 'Immediate increase in platform ARPU and stickiness.' }
+    ],
+    analyticalScenarios: [
+      {
+        title: 'Premium ROI Reporting',
+        complexity: 'Advanced',
+        businessQuestion: 'A premium client asks your embedded platform: "Compare the conversion rate of Campaign A vs Campaign B over the last 90 days."',
+        businessOutcome: 'Elevates your product from a standard software tool to a strategic partner. The client visually sees the ROI your platform is driving, heavily reducing churn.',
+      }
+    ],
+    seoExamples: [
+      { keyword: 'Embedded analytics React component', description: 'Easily drop Arcli’s conversational UI directly into your Next.js or React application.' },
+      { keyword: 'White label BI tool for SaaS', description: 'Maintain complete brand control while offering enterprise-grade analytics.' }
+    ],
+    visualHooks: [
+      { type: 'diagram', description: 'A visualization showing a generic SaaS application interface, with an Arcli chat module seamlessly embedded in the corner, matching the host app\'s dark mode theme perfectly.' }
+    ],
+    faqs: [
+      { q: 'How does the system ensure a user only sees their own data?', a: 'We use cryptographically signed tokens. Your backend signs a token containing the user’s Tenant ID. Our engine injects that ID as a hard filter into every generated query.' },
+      { q: 'Can we restrict the tables the end-user is allowed to query?', a: 'Absolutely. You explicitly define which tables and columns are exposed. Internal system logs or administrative tables remain completely hidden.' },
+      { q: 'How is the embedded product priced?', a: 'Embedded analytics is priced on a predictable usage model rather than per-seat, ensuring you maintain strong profit margins as you scale to thousands of customers.' },
+      { q: 'Does the AI ever generate slow queries that impact our production database?', a: 'Our query planner enforces strict execution timeouts and mandatory indexed filtering. Heavy table scans are blocked before execution.' }
+    ],
+    relatedSlugs: ['ai-dashboard-builder', 'ai-business-intelligence']
   }
 };
