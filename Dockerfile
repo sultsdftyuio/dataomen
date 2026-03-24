@@ -7,6 +7,7 @@ FROM python:3.11-slim-bookworm
 # ------------------------------------------------------------------------------
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH="/app" \
     # We enforce OS-level constraints here as a fallback to your Python logic
     POLARS_MAX_THREADS=4 \
     DUCKDB_NUM_THREADS=4 \
@@ -49,7 +50,3 @@ EXPOSE 8080
 # NOTE: If you are using this single Dockerfile for BOTH your Web API and 
 # your Worker in DigitalOcean, it is safer to leave this as the API command:
 CMD ["python", "main.py"]
-
-# (Your DigitalOcean Worker component will automatically ignore the line above 
-# because we explicitly pasted the Celery command into the "Run Command" 
-# override box in the DigitalOcean dashboard earlier!)
