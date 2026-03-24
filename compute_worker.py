@@ -1,3 +1,5 @@
+# compute_worker.py
+
 import os
 import sys
 
@@ -72,6 +74,17 @@ celery_app.conf.update(
         "run_autonomous_insight_scans":      {"queue": "cron"},
     },
     task_default_queue="analytics",
+
+    # ── Serverless Redis Cost Optimizations (Upstash / Vercel KV) ────────────
+    broker_pool_limit=1,                  # Prevent idle connection hoarding
+    broker_connection_timeout=5.0,        # Fail fast on cloud partitions
+    worker_send_task_events=False,        # Disable redundant pub/sub traffic
+    task_send_sent_event=False,           # Disable redundant pub/sub traffic
+    result_expires=3600,                  # Clean up results after 1 hr to save Storage
+    broker_transport_options={
+        'visibility_timeout': 3600,       # Reduce polling frequency on unacked tasks
+        'socket_keepalive': True,
+    },
 
     # ── Worker Hygiene ───────────────────────────────────────────────────────
     worker_prefetch_multiplier=1,         # Fair distribution: no node hogs heavy jobs
@@ -351,7 +364,7 @@ def execute_heavy_analytical_pipeline(
         ))
 
         # =====================================================================
-        # NEW: 2.5 SEMANTIC LAYER INJECTION
+        # 2.5 SEMANTIC LAYER INJECTION
         # Intercept the AI's raw SQL and inject any pre-approved business metrics
         # =====================================================================
         self.update_state(
@@ -533,12 +546,16 @@ if __name__ == "__main__":
     -Q specifies the queues.
     -B runs the beat scheduler (cron) in the same process to save infrastructure costs.
     """
-    logger.info("Initializing Containerized Compute Worker Daemon across all priority queues...")
+    logger.info("Initializing Containerized Compute Worker Daemon with Upstash Serverless Guardrails...")
     celery_app.worker_main(
         argv=[
             "worker",
             "--loglevel=info",
             "-Q", "analytics,ingestion,cron",
             "-B",
+            # CRITICAL: THESE FLAGS STOP CELERY FROM SPAMMING REDIS READS/WRITES
+            "--without-gossip",    # Stops workers from constantly checking on each other
+            "--without-mingle",    # Stops workers from trying to sync clocks on startup
+            "--without-heartbeat"  # Stops offline/online broadcast events
         ]
     )
