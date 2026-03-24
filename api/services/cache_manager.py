@@ -31,7 +31,8 @@ class CacheManager:
 
     def __init__(self):
         # Initialize connection to Vercel KV / Upstash Redis securely via environment variables
-        redis_url = os.getenv("KV_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
+        # Updated Line 23 in api/services/cache_manager.py
+        redis_url = os.getenv("REDIS_URL") or os.getenv("KV_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
         
         self.DEFAULT_TTL_SECONDS = 60 * 60 * 24  # 24 hours
         
