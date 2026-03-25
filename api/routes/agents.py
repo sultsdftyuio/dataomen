@@ -11,16 +11,16 @@ from pydantic import BaseModel
 
 # Core Database & Models
 from api.database import get_db
-from models import Agent, Dataset
+from models import Agent
 
-# Standardized API Contracts (Phase 4: Modular Schema Integration)
+# Standardized API Contracts (Phase 8: Multi-Dataset Integration)
 from api.models.agent import AgentCreate, AgentRuleCreate, AgentResponse
 
 # Core Security & SaaS Identity
 from api.auth import verify_tenant, TenantContext
 
 # Core Services
-from api.services.agent_service import agent_service
+from api.services.agent_service import agent_service, AgentCreatePayload
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +33,14 @@ router = APIRouter(prefix="/api/agents", tags=["Agents"])
 class AgentUpdate(BaseModel):
     """
     Payload for partial updates to an existing agent's configuration.
-    Uses Optional fields to support localized PATCH operations.
+    Uses Optional fields to support localized PATCH operations across all Phase 8 fields.
     """
     name: Optional[str] = None
+    description: Optional[str] = None
     role_description: Optional[str] = None
+    dataset_ids: Optional[List[str]] = None
+    document_ids: Optional[List[str]] = None
+    temperature: Optional[float] = None
     cron_schedule: Optional[str] = None
     sensitivity_threshold: Optional[float] = None
     is_active: Optional[bool] = None
@@ -52,38 +56,31 @@ async def create_chat_agent(
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new AI Agent dedicated to interactive RAG-based exploration.
-    Security by Design: Automatically binds the agent to the authenticated tenant_id.
+    Creates a new Specialized AI Copilot for interactive exploration.
+    Delegates creation to the Agent Service to ensure strict multi-dataset ownership validation.
     """
-    logger.info(f"[{context.tenant_id}] Creating Chat Agent: {payload.name}")
+    logger.info(f"[{context.tenant_id}] Deploying Specialized Agent: {payload.name}")
     
-    # 1. Verify Dataset Ownership (Physical Jailing)
-    dataset = db.query(Dataset).filter(
-        Dataset.id == payload.dataset_id,
-        Dataset.tenant_id == context.tenant_id
-    ).first()
-    
-    if not dataset:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found or access denied.")
-
     try:
-        # 2. Instantiate Base Agent (No cron or metrics needed for a standard Chat Agent)
-        new_agent = Agent(
-            tenant_id=context.tenant_id,
-            dataset_id=payload.dataset_id,
+        # Convert the incoming REST payload into the Service Layer payload
+        service_payload = AgentCreatePayload(
             name=payload.name,
-            is_active=True
+            description=payload.description or "",
+            role_description=payload.role_description or "",
+            dataset_ids=payload.dataset_ids,
+            document_ids=payload.document_ids,
+            temperature=payload.temperature
         )
-        db.add(new_agent)
-        db.commit()
-        db.refresh(new_agent)
         
-        return new_agent
+        # The agent_service handles validating that the user actually owns these datasets/docs
+        return agent_service.create_agent(db, context.tenant_id, service_payload)
         
-    except SQLAlchemyError as e:
-        db.rollback()
-        logger.error(f"[{context.tenant_id}] DB Error creating chat agent: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create agent.")
+    except ValueError as ve:
+        logger.warning(f"[{context.tenant_id}] Validation Error: {str(ve)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        logger.error(f"[{context.tenant_id}] Deployment Error creating agent: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to deploy agent.")
 
 @router.post("/monitor", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_monitoring_agent(
@@ -110,7 +107,9 @@ async def list_agents(
     db: Session = Depends(get_db)
 ):
     """Retrieves all active agents specifically for the authenticated tenant."""
-    return agent_service.list_agents(db, context.tenant_id)
+    # If `agent_service.list_agents` doesn't exist yet, we can fall back to standard SQLAlchemy:
+    agents = db.query(Agent).filter(Agent.tenant_id == context.tenant_id).all()
+    return agents
 
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(

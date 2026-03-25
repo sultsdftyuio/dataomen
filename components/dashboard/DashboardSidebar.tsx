@@ -10,10 +10,7 @@ import {
   Settings, 
   CreditCard, 
   Bot,
-  Search,
-  TrendingUp,
-  Target,
-  Users
+  Search
 } from "lucide-react"
 
 // Universal Brand Logo Integration
@@ -40,29 +37,6 @@ const navItems = [
   { name: "Datasets", href: "/datasets", icon: Database },
   { name: "Agents", href: "/agents", icon: Bot },
   { name: "Investigate", href: "/investigate", icon: Search },
-]
-
-// Phase 4: Golden Metrics Quick Triggers
-// Deep-links into the AI chat or investigation engine with a pre-optimized prompt
-const goldenMetrics = [
-  { 
-    name: "True ROAS", 
-    href: "/chat?prompt=Calculate+my+True+ROAS+across+Meta+and+Stripe+for+the+last+30+days", 
-    icon: Target,
-    color: "text-amber-500"
-  },
-  { 
-    name: "Blended CAC", 
-    href: "/chat?prompt=What+is+my+Blended+CAC+this+quarter", 
-    icon: Users,
-    color: "text-blue-500"
-  },
-  { 
-    name: "Predictive LTV", 
-    href: "/chat?prompt=Show+me+predictive+LTV+by+customer+cohort", 
-    icon: TrendingUp,
-    color: "text-emerald-500"
-  },
 ]
 
 const footerItems = [
@@ -120,31 +94,6 @@ export function DashboardSidebar() {
                   </SidebarMenuItem>
                 )
               })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Phase 4: Golden Metrics Injection */}
-        <SidebarGroup className="mt-4">
-          <SidebarGroupLabel className={state === "collapsed" ? "sr-only" : "px-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2"}>
-            Golden Metrics
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {goldenMetrics.map((item) => (
-                <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton 
-                    asChild 
-                    tooltip={item.name}
-                    className="transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 group"
-                  >
-                    <Link href={item.href} className="flex items-center gap-3">
-                      <item.icon className={`h-4 w-4 shrink-0 ${item.color} group-hover:scale-110 transition-transform`} />
-                      {state === "expanded" && <span className="font-medium text-slate-700 dark:text-slate-300">{item.name}</span>}
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -15,20 +15,22 @@ class AgentBase(BaseModel):
     Encapsulates core identity and multi-tenant status.
     """
     name: str = Field(..., min_length=1, max_length=100, description="The display name of the agent.")
+    description: Optional[str] = Field(None, description="A short summary of its capabilities.")
     role_description: Optional[str] = Field(None, description="Detailed instruction set or role-play context for the LLM.")
     is_active: bool = Field(True, description="Indicates if the agent is currently enabled for processing or chat.")
+    temperature: float = Field(0.0, ge=0.0, le=1.0, description="0.0 for strict math/SQL, higher for creative writing.")
 
 # ==========================================
-# TYPE A: INTERACTIVE CHAT AGENTS
+# TYPE A: SPECIALIZED COPILOT (Interactive)
 # ==========================================
 
 class AgentCreate(AgentBase):
     """
-    Payload for creating an Interactive Exploration Agent.
-    Designed for RAG-based chat across one or more datasets.
+    Updated payload mapping to the Phase 8 frontend.
+    Supports multiple structured and unstructured memory boundaries.
     """
-    dataset_id: UUID = Field(..., description="The primary dataset ID this agent is tethered to.")
-    system_prompt: Optional[str] = Field(None, description="Overrides the default system instructions for specialized reasoning.")
+    dataset_ids: List[str] = Field(default_factory=list, description="UUIDs of allowed structured data connections.")
+    document_ids: List[str] = Field(default_factory=list, description="UUIDs of allowed unstructured data (Vector RAG).")
 
 # ==========================================
 # TYPE B: AUTONOMOUS MONITORING AGENTS
@@ -61,7 +63,10 @@ class AgentResponse(AgentBase):
 
     id: UUID = Field(default_factory=uuid4)
     tenant_id: str = Field(..., description="Multi-tenant owner ID (Supabase Auth UID).")
-    dataset_id: UUID = Field(..., description="The tethered dataset ID.")
+    
+    # Updated to support Multiple Data Boundaries (Phase 8)
+    dataset_ids: List[str] = Field(default_factory=list, description="List of tethered dataset IDs.")
+    document_ids: List[str] = Field(default_factory=list, description="List of tethered document IDs.")
     
     # Autonomous Metadata (Optional depending on agent type)
     cron_schedule: Optional[str] = None

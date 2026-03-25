@@ -9,7 +9,6 @@ const BACKEND_URL = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
 
 /**
  * Protocol: Analytical Stream Event
- * Upgraded for Phase 8: Hybrid Engine (Structured Math + Unstructured Document RAG)
  */
 interface StreamPacket {
   type: 
@@ -19,11 +18,13 @@ interface StreamPacket {
     | "error" 
     | "job_queued" 
     | "predictive_insights"
-    | "plan"          // Hybrid query plan
-    | "sql"           // Generated DuckDB SQL
-    | "insights"      // Polars mathematical insights
-    | "diagnostics"   // Root cause anomalies
-    | "narrative"     // LLM synthesized text (from DB or PDFs)
+    | "plan"          
+    | "sql"           
+    | "insights"      
+    | "diagnostics"   
+    | "narrative"     
+    | "narrative_chunk"
+    | "done"
     | "cache_hit";
   content?: string | any;
   job_id?: string;
@@ -57,12 +58,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Extracted Hybrid Pipeline Configurations
     const { 
       agent_id, 
       prompt, 
-      active_dataset_ids,    // Structured Parquet Assets
-      active_document_ids,   // Unstructured PDF/Text Assets (NEW)
+      active_dataset_ids,    
+      active_document_ids,   
       history,
       predictive_config, 
       ab_test_config     
@@ -72,30 +72,67 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Analytical prompt is required." }, { status: 400 });
     }
 
-    // 3. Resilient Streaming with Cold Start Polling
+    // ============================================================================
+    // 3. EDGE-LEVEL SEMANTIC INTERCEPTION (Fast-Path)
+    // Avoids waking up the heavy Python/DuckDB engine for basic greetings.
+    // ============================================================================
+    const normalizedPrompt = prompt.trim().toLowerCase();
+    const isBasicGreeting = /^(hi|hello|hey|yo|greetings|howdy|good (morning|afternoon|evening)|how are you\??|help|what can you do\??|who are you\??)$/i.test(normalizedPrompt);
+
+    if (isBasicGreeting) {
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          const send = (packet: StreamPacket) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(packet)}\n\n`));
+          
+          send({ type: "status", content: "Connected to Copilot." });
+          await new Promise(r => setTimeout(r, 300)); // Simulate natural typing latency
+          
+          const reply = active_dataset_ids?.length > 0 
+            ? "Hello! I see you have some data connected. What would you like to know about it? You can ask things like 'Show me the revenue trend' or 'Are there any anomalies?'"
+            : "Hello! I'm your DataOmen Copilot. To get started, please connect or select a dataset, then ask me a question about your metrics!";
+          
+          // Stream words naturally to mimic the LLM pipeline
+          const words = reply.split(" ");
+          for (const word of words) {
+            send({ type: "narrative_chunk", content: word + " " });
+            await new Promise(r => setTimeout(r, 25)); 
+          }
+          
+          send({ type: "done", content: "Complete" });
+          controller.close();
+        }
+      });
+
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+      });
+    }
+
+    // ============================================================================
+    // 4. HEAVY ANALYTICAL PIPELINE (Cold-Start Resilient Polling)
+    // ============================================================================
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         const decoder = new TextDecoder();
 
-        // Helper to push formatted SSE packets to the client safely
         const sendPacket = (packet: StreamPacket) => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(packet)}\n\n`));
           } catch (e) {
-            console.error("[Orchestrator] Failed to enqueue packet (client disconnected):", e);
+            console.error("[Orchestrator] Failed to enqueue packet:", e);
           }
         };
 
         // YIELD IMMEDIATELY: Prevents Vercel Edge Runtime from dropping the connection
-        sendPacket({ type: "status", content: "Establishing secure connection to Hybrid Engine..." });
+        sendPacket({ type: "status", content: "Connecting to your analytical workspace..." });
 
         let backendResponse: Response | null = null;
         let retries = 0;
-        const MAX_RETRIES = 8; // Max ~40 seconds of polling
+        const MAX_RETRIES = 12; // Increased to 60 seconds to comfortably handle Render/Heroku cold starts
         const RETRY_DELAY_MS = 5000; 
 
-        // Active Polling Loop for Render Cold Starts & Network Drops
         while (retries < MAX_RETRIES) {
           try {
             backendResponse = await fetch(`${BACKEND_URL}/api/chat/orchestrate`, {
@@ -110,7 +147,7 @@ export async function POST(req: NextRequest) {
                 agent_id: agent_id || "default-router",
                 prompt,
                 active_dataset_ids: active_dataset_ids || [],
-                active_document_ids: active_document_ids || [], // Pass RAG context to Python
+                active_document_ids: active_document_ids || [],
                 history: history || [],
                 predictive_config, 
                 ab_test_config,    
@@ -119,48 +156,42 @@ export async function POST(req: NextRequest) {
             });
 
             if (backendResponse.ok) {
-              break; // Backend is awake and accepted the request
+              break; 
             } else if (backendResponse.status >= 500) {
               throw new Error(`Backend starting up (HTTP ${backendResponse.status})`);
             } else {
               const errData = await backendResponse.text().catch(() => "Unknown error");
-              sendPacket({ type: "error", content: `Analytical Engine Error: ${errData}` });
+              sendPacket({ type: "error", content: `Analysis Error: ${errData}` });
               controller.close();
               return;
             }
           } catch (err: any) {
-            // Catches "Network connection lost" and other fetch-level socket drops
-            console.warn(`[Orchestrator] Backend network issue. Retry ${retries + 1}/${MAX_RETRIES}. Error:`, err.message);
             retries++;
             
             if (retries >= MAX_RETRIES) {
               sendPacket({ 
                 type: "error", 
-                content: "The Analytical Engine timed out during startup. Please try again." 
+                content: "The analytical engine took too long to wake up. Please try your request again." 
               });
               controller.close();
               return;
             }
 
-            // Emit contextual status updates to the UI
+            // Non-technical, reassuring status updates for the founder UX
             if (retries === 1) {
-              sendPacket({ 
-                type: "status", 
-                content: "Waking up the Hybrid Compute Engine (this can take ~30 seconds)..." 
-              });
-            } else if (retries === 4) {
-              sendPacket({ 
-                type: "status", 
-                content: "Engine is booting up memory and loading context pipelines..." 
-              });
+              sendPacket({ type: "status", content: "Warming up your data environment..." });
+            } else if (retries === 3) {
+              sendPacket({ type: "status", content: "Allocating memory for your datasets..." });
+            } else if (retries === 6) {
+              sendPacket({ type: "status", content: "Almost ready! Finalizing engine connection..." });
+            } else if (retries === 9) {
+              sendPacket({ type: "status", content: "Engine boot taking slightly longer than usual. Hold tight..." });
             }
 
-            // Await delay before next poll
             await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
           }
         }
 
-        // 4. Transform Stream from Awake Backend
         if (!backendResponse || !backendResponse.body) {
           sendPacket({ type: "error", content: "Failed to connect to the Analytical Engine." });
           controller.close();
@@ -173,17 +204,12 @@ export async function POST(req: NextRequest) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            // Stream chunks directly to the UI
-            // Python backend emits exact `data: {"type": "...", "content": "..."}\n\n` formats
             const chunk = decoder.decode(value, { stream: true });
             controller.enqueue(encoder.encode(chunk));
           }
         } catch (err) {
           console.error("[Orchestrator] Stream Interrupted:", err);
-          sendPacket({ 
-            type: "error", 
-            content: "The data stream was interrupted during computation." 
-          });
+          sendPacket({ type: "error", content: "The data stream was interrupted during computation." });
         } finally {
           reader.releaseLock();
           controller.close();
@@ -191,24 +217,19 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 5. Return the Response with proper SSE headers IMMEDIATELY
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
-        "X-Accel-Buffering": "no", // Prevent Vercel/Cloudflare from buffering the stream
+        "X-Accel-Buffering": "no", 
       },
     });
 
   } catch (error: any) {
     console.error("[Orchestrator] Fatal Route Error:", error);
     return NextResponse.json(
-      { 
-        type: "error", 
-        message: "A critical error occurred in the orchestration layer.",
-        ...(process.env.NODE_ENV === "development" && { details: error.message })
-      },
+      { type: "error", message: "A critical error occurred in the orchestration layer." },
       { status: 500 }
     );
   }

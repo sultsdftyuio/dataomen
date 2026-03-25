@@ -220,14 +220,22 @@ class SemanticMetric(Base, TenantAwareMixin):
 # AGENTS & AUTONOMOUS INSIGHTS
 # ==========================================
 class Agent(Base, TenantAwareMixin):
-    """AI Assistant & Autonomous Background Worker assigned to a specific dataset."""
+    """AI Assistant & Autonomous Background Worker assigned to specific memory boundaries."""
     __tablename__ = "agents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False)
     
+    # Legacy Fallback (Nullable to support multi-dataset structures)
+    dataset_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), nullable=True)
+    
+    # --- Phase 8: Multi-Boundary Memory Arrays ---
+    dataset_ids: Mapped[Optional[List[str]]] = mapped_column(JSONB, default=list)
+    document_ids: Mapped[Optional[List[str]]] = mapped_column(JSONB, default=list)
+
     name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     role_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    temperature: Mapped[float] = mapped_column(Float, default=0.0)
 
     # --- Autonomous Monitoring Fields ---
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -239,7 +247,7 @@ class Agent(Base, TenantAwareMixin):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="agents")
+    dataset: Mapped[Optional["Dataset"]] = relationship("Dataset", back_populates="agents")
     queries: Mapped[List["QueryHistory"]] = relationship("QueryHistory", back_populates="agent", cascade="all, delete-orphan")
     knowledge: Mapped[List["AgentKnowledge"]] = relationship("AgentKnowledge", back_populates="agent", cascade="all, delete-orphan")
     insights: Mapped[List["Insight"]] = relationship("Insight", back_populates="agent")

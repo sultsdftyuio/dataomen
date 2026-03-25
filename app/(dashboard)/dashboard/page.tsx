@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/page.tsx
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
@@ -154,7 +155,9 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
 // -----------------------------------------------------------------------------
 export default function DashboardOverviewPage() {
   const router = useRouter();
-  const supabase = createClient();
+  
+  // FIX 1: Memoize Supabase Client to prevent multiple instances & memory leaks on re-renders
+  const supabase = useMemo(() => createClient(), []);
   
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
   const [chartData, setChartData] = useState<TimeSeriesDataPoint[]>([]);
@@ -177,7 +180,9 @@ export default function DashboardOverviewPage() {
       setIsAdmin(role === 'admin');
 
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/workspace/metrics', {
+      
+      // FIX 2: Point to the correct physical routing architecture
+      const response = await fetch('/api/chat/orchestrate/workspace/metrics', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

@@ -1,309 +1,310 @@
+// app/(dashboard)/settings/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { 
+  User, 
+  Lock, 
+  Bell, 
+  Key, 
   ShieldCheck, 
-  HardDrive, 
-  CreditCard, 
-  Save,
-  Server,
-  Building2,
-  Key,
-  Lock,
-  Activity,
-  Zap
+  CheckCircle2, 
+  AlertCircle,
+  Copy,
+  RefreshCw,
+  Laptop
 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardFooter, 
-  CardHeader, 
-  CardTitle 
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { createClient } from "@/utils/supabase/client";
+import { toast } from "@/components/ui/use-toast";
+
+type SettingsTab = "profile" | "security" | "notifications" | "developer";
 
 export default function SettingsPage() {
   const supabase = createClient();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [orgData, setOrgData] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const { register, handleSubmit, setValue } = useForm({
-    defaultValues: {
-      byos_endpoint: "",
-      byos_bucket: "",
-      byos_access_key: "",
-    }
-  });
+  // User State
+  const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+
+  // Notification Preferences State
+  const [notifyAnomalies, setNotifyAnomalies] = useState(true);
+  const [notifyWeekly, setNotifyWeekly] = useState(true);
+  
+  // Developer State
+  const [apiKey, setApiKey] = useState("do_live_xxxxxxxxxxxxxxxxxxxxxxxxxx");
 
   useEffect(() => {
-    async function fetchSettings() {
-      setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Fetch organization and settings
-      const { data: org } = await supabase
-        .from("organizations")
-        .select(`
-          *,
-          settings:tenant_settings(*)
-        `)
-        .single();
-
-      if (org) {
-        setOrgData(org);
-        if (org.settings) {
-          setValue("byos_endpoint", org.settings.byos_endpoint || "");
-          setValue("byos_bucket", org.settings.byos_bucket || "");
+    async function loadProfile() {
+      setIsLoading(true);
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (user) {
+          setEmail(user.email || "");
+          setFullName(user.user_metadata?.full_name || "");
         }
+      } catch (error) {
+        console.error("Failed to load user:", error);
+      } finally {
+        setIsLoading(false);
       }
-      setLoading(false);
     }
-    fetchSettings();
-  }, [supabase, setValue]);
+    loadProfile();
+  }, [supabase.auth]);
 
-  const onSaveSettings = async (data: any) => {
-    if (subscriptionTier !== "ENTERPRISE") return; // Security check
-
-    setSaving(true);
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from("tenant_settings")
-        .update({
-          byos_endpoint: data.byos_endpoint,
-          byos_bucket: data.byos_bucket,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("tenant_id", orgData.id);
-
+      const { error } = await supabase.auth.updateUser({
+        data: { full_name: fullName }
+      });
       if (error) throw error;
-      toast.success("Enterprise infrastructure settings synchronized.");
-    } catch (err: any) {
-      toast.error(`Failed to update settings: ${err.message}`);
+      toast({ title: "Profile updated", description: "Your personal information has been saved." });
+    } catch (error: any) {
+      toast({ title: "Update failed", description: error.message, variant: "destructive" });
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  // ── Derived Data Logic ──
-  const subscriptionTier = orgData?.subscription_tier?.toUpperCase() || "FREE";
-  
-  let storageProvider = "Supabase S3 (Standard)";
-  let storageBadgeColor = "bg-slate-100 text-slate-700 border-slate-200";
-  
-  if (subscriptionTier === "PRO") {
-    storageProvider = "Cloudflare R2 (High Performance)";
-    storageBadgeColor = "bg-blue-50 text-blue-700 border-blue-200";
-  } else if (subscriptionTier === "ENTERPRISE") {
-    storageProvider = "Bring Your Own Storage (BYOS)";
-    storageBadgeColor = "bg-purple-50 text-purple-700 border-purple-200";
-  }
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copied to clipboard", description: "API key copied securely." });
+  };
 
-  const storageUsagePercent = orgData 
-    ? Math.min((orgData.current_storage_mb / orgData.max_storage_mb) * 100, 100) 
-    : 0;
+  const TABS = [
+    { id: "profile", label: "Personal Info", icon: User },
+    { id: "security", label: "Security", icon: Lock },
+    { id: "notifications", label: "AI Alerts", icon: Bell },
+    { id: "developer", label: "Developer", icon: Key },
+  ] as const;
 
-  const queryUsagePercent = orgData 
-    ? Math.min((orgData.current_month_queries / orgData.monthly_query_limit) * 100, 100)
-    : 0;
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex-1 space-y-6 p-8 pt-10 max-w-6xl mx-auto w-full">
-        <Skeleton className="h-10 w-64 mb-8" />
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-          <div className="col-span-3 space-y-6">
-            <Skeleton className="h-[300px] w-full rounded-2xl" />
-            <Skeleton className="h-[300px] w-full rounded-2xl" />
-          </div>
-          <div className="col-span-4 space-y-6">
-            <Skeleton className="h-[400px] w-full rounded-2xl" />
-          </div>
+      <div className="flex flex-col gap-8 h-full p-6 animate-in fade-in">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+        <div className="flex flex-col md:flex-row gap-8">
+          <Skeleton className="w-full md:w-64 h-[300px] rounded-xl" />
+          <Skeleton className="flex-1 h-[500px] rounded-xl" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full container mx-auto p-6 md:p-10 max-w-7xl animate-in fade-in duration-500">
+    <div className="flex flex-col gap-8 h-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       
-      {/* ── HEADER ── */}
-      <div className="flex flex-col gap-2 mb-8 border-b border-border pb-6">
-        <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Workspace Settings</h1>
-        <p className="text-muted-foreground text-base">
-          Manage your organization profile, view usage guardrails, and configure infrastructure.
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Manage your personal preferences, security, and developer integrations.
         </p>
       </div>
 
-      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-7">
+      <div className="flex flex-col md:flex-row gap-8 items-start">
         
-        {/* ── LEFT COLUMN: IDENTITY & USAGE ── */}
-        <div className="col-span-3 space-y-8">
+        {/* Settings Navigation Sidebar */}
+        <aside className="w-full md:w-64 shrink-0 space-y-1">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                  isActive 
+                    ? "bg-primary text-primary-foreground shadow-sm" 
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${isActive ? "text-primary-foreground" : "text-muted-foreground"}`} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </aside>
+
+        {/* Settings Content Area */}
+        <div className="flex-1 w-full space-y-6">
           
-          <Card className="rounded-2xl border-border shadow-sm overflow-hidden">
-            <CardHeader className="bg-muted/20 border-b border-border pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Building2 className="h-5 w-5 text-primary" />
-                Organization Profile
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5 pt-6">
-              <div className="space-y-2">
-                <Label className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Workspace Name</Label>
-                <Input value={orgData?.name || "My Organization"} disabled className="bg-muted/50 font-medium" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Workspace ID</Label>
-                <div className="flex gap-2">
-                  <Input value={orgData?.id || "org_xyz123"} disabled className="bg-muted/50 font-mono text-xs" />
-                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => toast.success("ID Copied")}>
-                    <Key className="h-4 w-4 text-muted-foreground" />
-                  </Button>
+          {/* --- PROFILE TAB --- */}
+          {activeTab === "profile" && (
+            <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
+              <CardHeader>
+                <CardTitle>Personal Information</CardTitle>
+                <CardDescription>Update your name and email address.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input 
+                    id="fullName" 
+                    placeholder="John Doe" 
+                    value={fullName} 
+                    onChange={(e) => setFullName(e.target.value)} 
+                    className="max-w-md bg-background"
+                  />
                 </div>
-              </div>
-              <div className="pt-2">
-                <Label className="text-muted-foreground text-xs font-bold uppercase tracking-wider mb-2 block">Current Plan</Label>
-                <div className="flex items-center justify-between border border-border rounded-xl p-3 bg-background">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <CreditCard className="h-4 w-4 text-primary" />
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input 
+                    id="email" 
+                    type="email" 
+                    value={email} 
+                    disabled 
+                    className="max-w-md bg-muted/50 text-muted-foreground cursor-not-allowed"
+                  />
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1">
+                    <ShieldCheck className="h-3 w-3" /> Email is managed by your identity provider.
+                  </p>
+                </div>
+              </CardContent>
+              <CardFooter className="border-t bg-muted/20 px-6 py-4">
+                <Button 
+                  onClick={handleSaveProfile} 
+                  disabled={isSaving}
+                  className="shadow-sm transition-transform active:scale-95"
+                >
+                  {isSaving && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Changes
+                </Button>
+              </CardFooter>
+            </Card>
+          )}
+
+          {/* --- SECURITY TAB --- */}
+          {activeTab === "security" && (
+            <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
+              <CardHeader>
+                <CardTitle>Security</CardTitle>
+                <CardDescription>Manage your password and authentication settings.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4 max-w-md">
+                  <div className="space-y-2">
+                    <Label htmlFor="current-password">Current Password</Label>
+                    <Input id="current-password" type="password" className="bg-background" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-password">New Password</Label>
+                    <Input id="new-password" type="password" className="bg-background" />
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter className="border-t bg-muted/20 px-6 py-4 flex justify-between items-center">
+                <p className="text-xs text-muted-foreground">You will be logged out of other devices.</p>
+                <Button variant="default">Update Password</Button>
+              </CardFooter>
+            </Card>
+          )}
+
+          {/* --- NOTIFICATIONS TAB --- */}
+          {activeTab === "notifications" && (
+            <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
+              <CardHeader>
+                <CardTitle>AI Alert Preferences</CardTitle>
+                <CardDescription>Control how the autonomous engine contacts you.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between p-4 border rounded-xl bg-background/50">
+                  <div className="space-y-0.5 max-w-[70%]">
+                    <Label className="text-sm font-bold flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-rose-500" />
+                      Critical Anomalies
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                      Receive immediate emails when the AI engine detects high-impact metric drops or spikes (e.g., sudden churn).
+                    </p>
+                  </div>
+                  <Switch 
+                    checked={notifyAnomalies} 
+                    onCheckedChange={setNotifyAnomalies} 
+                  />
+                </div>
+
+                <div className="flex items-center justify-between p-4 border rounded-xl bg-background/50">
+                  <div className="space-y-0.5 max-w-[70%]">
+                    <Label className="text-sm font-bold flex items-center gap-2">
+                      <Laptop className="h-4 w-4 text-blue-500" />
+                      Weekly Executive Digest
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                      A summarized narrative report of your entire workspace sent every Monday morning.
+                    </p>
+                  </div>
+                  <Switch 
+                    checked={notifyWeekly} 
+                    onCheckedChange={setNotifyWeekly} 
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* --- DEVELOPER TAB --- */}
+          {activeTab === "developer" && (
+            <div className="space-y-6">
+              <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
+                <CardHeader>
+                  <CardTitle>API Keys</CardTitle>
+                  <CardDescription>Use these keys to authenticate via the external API and push datasets programmatically.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="p-4 bg-muted/30 border border-muted rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-bold text-sm text-foreground">Production Key</Label>
+                      <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Active</span>
                     </div>
-                    <span className="font-bold tracking-tight">{subscriptionTier} TIER</span>
-                  </div>
-                  {subscriptionTier === "FREE" && (
-                    <Button size="sm" variant="secondary" className="h-7 text-xs bg-primary/10 text-primary hover:bg-primary/20">Upgrade</Button>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl border-border shadow-sm overflow-hidden">
-            <CardHeader className="bg-muted/20 border-b border-border pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Activity className="h-5 w-5 text-primary" />
-                Usage Guardrails
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-6">
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground">Storage Utilization</span>
-                    <span className="text-xs text-muted-foreground">Vector embeddings & uploaded files</span>
-                  </div>
-                  <span className="text-sm font-mono font-medium">{orgData?.current_storage_mb?.toFixed(1) || 0} / {orgData?.max_storage_mb || 500} MB</span>
-                </div>
-                <Progress value={storageUsagePercent} className="h-2 bg-muted" />
-              </div>
-              
-              <Separator className="bg-border" />
-              
-              <div className="space-y-3">
-                <div className="flex justify-between items-end">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground">Analytical Queries</span>
-                    <span className="text-xs text-muted-foreground">Monthly LLM-to-SQL executions</span>
-                  </div>
-                  <span className="text-sm font-mono font-medium">{orgData?.current_month_queries || 0} / {orgData?.monthly_query_limit || 1000}</span>
-                </div>
-                <Progress value={queryUsagePercent} className={`h-2 bg-muted ${queryUsagePercent > 80 ? '[&>div]:bg-amber-500' : ''}`} />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* ── RIGHT COLUMN: INFRASTRUCTURE & ADVANCED ── */}
-        <div className="col-span-4 space-y-8">
-          
-          <Card className="rounded-2xl border-border shadow-sm overflow-hidden flex flex-col h-full">
-            <CardHeader className="bg-muted/20 border-b border-border pb-4">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Server className="h-5 w-5 text-primary" />
-                Data Infrastructure
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                Your compute and storage routing is automatically optimized based on your subscription tier.
-              </CardDescription>
-            </CardHeader>
-            
-            <div className="flex-1 p-6 space-y-8">
-              
-              {/* Dynamic Badge Display */}
-              <div className="space-y-3">
-                <Label className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Active Storage Backend</Label>
-                <div className={`flex items-center gap-3 p-4 rounded-xl border ${storageBadgeColor} bg-opacity-50`}>
-                  <HardDrive className="h-5 w-5 shrink-0" />
-                  <div className="flex flex-col">
-                    <span className="font-semibold text-sm">{storageProvider}</span>
-                    <span className="text-xs opacity-80 mt-0.5">Assigned via {subscriptionTier} subscription</span>
-                  </div>
-                  <div className="ml-auto">
-                    <Badge variant="outline" className="bg-background/50 backdrop-blur-sm">Active</Badge>
-                  </div>
-                </div>
-              </div>
-
-              <Separator className="bg-border" />
-
-              {/* Conditional Enterprise BYOS Form */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <Label className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Bring Your Own Storage (BYOS)</Label>
-                  {subscriptionTier !== "ENTERPRISE" && (
-                    <Badge variant="secondary" className="text-[10px] uppercase tracking-widest"><Lock className="w-3 h-3 mr-1" /> Enterprise</Badge>
-                  )}
-                </div>
-
-                {subscriptionTier === "ENTERPRISE" ? (
-                  <form onSubmit={handleSubmit(onSaveSettings)} className="space-y-5 animate-in fade-in">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs">S3 Endpoint URL</Label>
-                        <Input {...register("byos_endpoint")} placeholder="https://s3.amazonaws.com/..." className="bg-muted/30" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs">Bucket Name</Label>
-                        <Input {...register("byos_bucket")} placeholder="my-analytics-data" className="bg-muted/30" />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label className="text-xs">Access Key ID</Label>
-                      <Input type="password" placeholder="••••••••••••••••••••••••" className="bg-muted/30 font-mono" />
-                    </div>
-                    <div className="pt-2 flex justify-end">
-                      <Button type="submit" disabled={saving} className="rounded-full px-6">
-                        {saving ? "Syncing Config..." : "Save Infrastructure Settings"}
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        readOnly 
+                        value={apiKey} 
+                        type="password"
+                        className="font-mono text-xs bg-background" 
+                      />
+                      <Button variant="outline" size="icon" onClick={() => copyToClipboard(apiKey)} className="shrink-0">
+                        <Copy className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </div>
-                  </form>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-8 border border-dashed border-border rounded-xl bg-muted/10 text-center">
-                    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-3">
-                      <Zap className="w-6 h-6 text-muted-foreground" />
-                    </div>
-                    <h4 className="font-semibold text-foreground text-sm">Enterprise Data Control</h4>
-                    <p className="text-xs text-muted-foreground mt-1 mb-4 max-w-sm">
-                      Upgrade to Enterprise to route all analytical datasets to your own AWS S3 or Cloudflare R2 buckets for strict data governance.
+                    <p className="text-[11px] text-muted-foreground">
+                      Last used: 2 hours ago from <span className="font-mono text-foreground">192.168.1.1</span>
                     </p>
-                    <Button variant="outline" className="h-8 text-xs bg-background shadow-sm">Contact Sales</Button>
                   </div>
-                )}
-              </div>
+                </CardContent>
+                <CardFooter className="border-t bg-muted/20 px-6 py-4">
+                  <Button variant="destructive" size="sm" className="bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white border-0 shadow-none">
+                    Revoke & Roll Key
+                  </Button>
+                </CardFooter>
+              </Card>
+
+              <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md border-dashed">
+                <CardContent className="p-6 text-center space-y-2">
+                  <div className="mx-auto w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center mb-3">
+                    <CheckCircle2 className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <h3 className="font-bold text-sm">Need a webhook?</h3>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                    DataOmen supports outbound webhooks for real-time alerts. Setup is available in the specific Agent configuration.
+                  </p>
+                </CardContent>
+              </Card>
             </div>
-          </Card>
+          )}
 
         </div>
       </div>

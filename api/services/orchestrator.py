@@ -23,6 +23,9 @@ from api.services.duckdb_validator import DuckDBValidator
 from api.services.cache_manager import cache_manager
 from api.services.llm_client import LLMClient
 
+# Database Models
+from models import Agent, Dataset
+
 logger = logging.getLogger(__name__)
 
 class AnalyticalOrchestrator:
@@ -33,7 +36,7 @@ class AnalyticalOrchestrator:
     ----------------------
     1. Modular Strategy: Services are injected, allowing easy swaps (e.g., DuckDB to ClickHouse).
     2. Hybrid Performance: Orchestration is OOP; computation uses stateless, vectorized Polars.
-    3. Security by Design: Strict tenant isolation and SQL injection validation.
+    3. Security by Design: Strict tenant isolation and LLM boundary enforcement.
     """
 
     def __init__(
@@ -45,7 +48,7 @@ class AnalyticalOrchestrator:
         diagnostic_service: DiagnosticService,
         narrative_service: NarrativeService,
         router: SemanticRouter,
-        llm_client: LLMClient = LLMClient() # Injected for better testability and modularity
+        llm_client: LLMClient = LLMClient() # Injected for better testability
     ):
         self.planner = planner
         self.generator = generator
@@ -70,7 +73,10 @@ class AnalyticalOrchestrator:
         db: Session,
         tenant_id: str,
         prompt: str,
-        context_id: Optional[str] = None
+        agent_id: Optional[str] = None,
+        active_dataset_ids: Optional[List[str]] = None,
+        active_document_ids: Optional[List[str]] = None,
+        history: Optional[List[Dict[str, str]]] = None
     ) -> AsyncGenerator[str, None]:
         """
         Executes the time-bounded, vectorized analytical pipeline.
@@ -79,22 +85,39 @@ class AnalyticalOrchestrator:
         start_time = time.time()
 
         try:
-            yield self._packet("status", "🔍 Checking semantic memory...")
+            yield self._packet("status", "🔍 Establishing memory boundaries...")
 
             # -------------------------------------------------------
-            # STAGE 0 — Prompt Embedding (Contextual Context)
+            # STAGE 0 — Persona & Security Validation
+            # -------------------------------------------------------
+            persona_instructions = None
+            allowed_datasets = set(active_dataset_ids or [])
+
+            # If an Agent Copilot is specified, enforce its strict boundaries
+            if agent_id and agent_id != "default-router":
+                agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == tenant_id).first()
+                if agent:
+                    persona_instructions = agent.role_description
+                    if agent.dataset_ids:
+                        allowed_datasets.update(agent.dataset_ids)
+
+            if not allowed_datasets:
+                yield self._packet("error", "No data sources selected. Please configure memory boundaries to proceed.")
+                return
+
+            allowed_datasets_list = list(allowed_datasets)
+
+            # -------------------------------------------------------
+            # STAGE 1 — Prompt Embedding & Cache Check
             # -------------------------------------------------------
             prompt_embedding = None
             try:
-                # Utilizing the LLM Client for embedding generation
-                prompt_embedding = await self.llm_client.embed(prompt)
+                # Compile history into the prompt embedding context if it exists
+                context_prompt = f"{history[-1]['content']} | {prompt}" if history else prompt
+                prompt_embedding = await self.llm_client.embed(context_prompt)
             except Exception as e:
                 logger.warning(f"[{tenant_id}] Embedding failure, bypassing semantic cache: {e}")
 
-            # -------------------------------------------------------
-            # STAGE 1 — Vector Semantic Cache (Performance Layer)
-            # -------------------------------------------------------
-            # Checking cache BEFORE routing saves expensive LLM and Database calls
             cached = await cache_manager.get_cached_insight(
                 tenant_id=tenant_id,
                 dataset_id="multi_dataset",
@@ -109,17 +132,19 @@ class AnalyticalOrchestrator:
             # -------------------------------------------------------
             # STAGE 2 — Semantic Dataset Routing (Contextual RAG)
             # -------------------------------------------------------
-            yield self._packet("status", "🧠 Routing datasets via semantic index...")
+            yield self._packet("status", "🧠 Routing requested dimensions to secure datasets...")
 
+            # Force the router to ONLY search within the allowed Memory Boundaries
             routed_datasets = await self.router.route_datasets(
                 db=db,
                 tenant_id=tenant_id,
                 prompt=prompt,
-                embedding=prompt_embedding
+                embedding=prompt_embedding,
+                allowed_dataset_ids=allowed_datasets_list
             )
 
             if not routed_datasets:
-                yield self._packet("error", "No relevant datasets were found for this query.")
+                yield self._packet("error", "No relevant data could be matched within the active memory boundaries.")
                 return
 
             dataset_meta = [DatasetMetadata.from_model(d) for d in routed_datasets]
@@ -133,7 +158,8 @@ class AnalyticalOrchestrator:
             plan: QueryPlan = await self.planner.generate_plan(
                 prompt=prompt,
                 full_schema=full_schema,
-                tenant_id=tenant_id
+                tenant_id=tenant_id,
+                history=history # Inject conversational history for follow-ups
             )
 
             yield self._packet("plan", plan.model_dump())
@@ -145,7 +171,7 @@ class AnalyticalOrchestrator:
             # -------------------------------------------------------
             # STAGE 4 — Secure SQL Generation
             # -------------------------------------------------------
-            yield self._packet("status", f"⚡ Generating optimized SQL across {len(dataset_meta)} datasets...")
+            yield self._packet("status", f"⚡ Generating optimized SQL across {len(dataset_meta)} boundary datasets...")
 
             target_engine = dataset_meta[0].location.value
 
@@ -174,7 +200,6 @@ class AnalyticalOrchestrator:
                 for dataset in dataset_meta
             ]
 
-            # gather with return_exceptions ensures one failure doesn't silently kill the loop
             results = await asyncio.gather(*compute_tasks, return_exceptions=True)
 
             combined_data: List[Dict[str, Any]] = []
@@ -183,7 +208,7 @@ class AnalyticalOrchestrator:
             for i, result in enumerate(results):
                 if isinstance(result, asyncio.TimeoutError):
                     logger.error(f"[{tenant_id}] Compute timeout for dataset: {dataset_meta[i].dataset_id}")
-                    raise Exception(f"Query execution timed out for dataset {dataset_meta[i].dataset_id}")
+                    raise Exception(f"Execution timed out for memory boundary {dataset_meta[i].dataset_id}.")
                 elif isinstance(result, Exception):
                     logger.error(f"[{tenant_id}] Compute failed for dataset: {dataset_meta[i].dataset_id} - {str(result)}")
                     raise result
@@ -193,7 +218,7 @@ class AnalyticalOrchestrator:
                     total_rows += result.row_count
 
             if not combined_data:
-                yield self._packet("data", {"type": "empty", "message": "No rows matched the query filters."})
+                yield self._packet("data", {"type": "empty", "message": "No rows matched the analytical filters."})
                 return
 
             # -------------------------------------------------------
@@ -216,9 +241,8 @@ class AnalyticalOrchestrator:
             # STAGE 7 — Root Cause Diagnostics
             # -------------------------------------------------------
             if insights.anomalies:
-                # Investigating the primary anomaly using linear algebra concepts in the engine
                 anomaly = insights.anomalies[0]
-                yield self._packet("status", f"🕵️ Investigating anomaly in {anomaly.column}...")
+                yield self._packet("status", f"🕵️ Investigating data anomaly in {anomaly.column}...")
 
                 diagnostic = await self.diagnostic_service.investigate_anomaly(
                     anomaly=anomaly,
@@ -239,7 +263,8 @@ class AnalyticalOrchestrator:
                 payload=insights,
                 plan=plan,
                 chart_spec=chart_spec,
-                tenant_id=tenant_id
+                tenant_id=tenant_id,
+                system_prompt=persona_instructions # Enforces Agent Persona Directives
             )
 
             yield self._packet("narrative", narrative.model_dump())
@@ -272,7 +297,7 @@ class AnalyticalOrchestrator:
 
         except Exception as e:
             logger.error(f"[{tenant_id}] Pipeline failure: {str(e)}", exc_info=True)
-            yield self._packet("error", "The analytical engine encountered an internal failure.")
+            yield self._packet("error", str(e) if "timed out" in str(e) else "The analytical engine encountered an internal failure.")
 
     # ------------------------------------------------------------
     # UTILITY METHODS

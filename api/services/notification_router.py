@@ -1,3 +1,4 @@
+# api/services/notification_router.py
 import os
 import uuid
 import logging
@@ -5,7 +6,7 @@ import asyncio
 import httpx
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -37,10 +38,6 @@ class SlackNotifier(BaseNotifier):
         self.webhook_url = self._fetch_tenant_slack_webhook()
 
     def _fetch_tenant_slack_webhook(self) -> Optional[str]:
-        """
-        Security by Design: Retrieve the Webhook URL for this specific tenant_id.
-        This runs synchronously but is called from within a thread-pool by the Router.
-        """
         try:
             query = text("""
                 SELECT slack_webhook_url 
@@ -48,30 +45,21 @@ class SlackNotifier(BaseNotifier):
                 WHERE tenant_id = :tenant_id
             """)
             result = self.db.execute(query, {"tenant_id": self.tenant_id}).fetchone()
-            
             return result[0] if result and result[0] else None
-            
         except SQLAlchemyError as e:
             logger.error(f"[{self.tenant_id}] Failed to fetch Slack config: {e}")
             return None
 
     async def send_alert(self, tenant_name: str, agent_name: str, insight_summary: str, deep_link: str) -> bool:
-        """Sends a Slack message using the upgraded Block Kit UI."""
         if not self.webhook_url:
-            logger.debug(f"[{self.tenant_id}] No active Slack integration found. Skipping payload.")
             return False
 
-        # Professional SaaS Alert Payload
         slack_payload = {
             "text": f"🚨 Data Anomaly Detected by {agent_name}",
             "blocks": [
                 {
                     "type": "header",
-                    "text": {
-                        "type": "plain_text",
-                        "text": f"🚨 Anomaly Alert: {agent_name}",
-                        "emoji": True
-                    }
+                    "text": {"type": "plain_text", "text": f"🚨 Anomaly Alert: {agent_name}", "emoji": True}
                 },
                 {
                     "type": "section",
@@ -82,21 +70,14 @@ class SlackNotifier(BaseNotifier):
                 },
                 {
                     "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*AI Root-Cause Analysis:*\n{insight_summary}"
-                    }
+                    "text": {"type": "mrkdwn", "text": f"*AI Root-Cause Analysis:*\n{insight_summary}"}
                 },
                 {
                     "type": "actions",
                     "elements": [
                         {
                             "type": "button",
-                            "text": {
-                                "type": "plain_text",
-                                "text": "🔍 Investigate in Dashboard",
-                                "emoji": True
-                            },
+                            "text": {"type": "plain_text", "text": "🔍 Investigate in Dashboard", "emoji": True},
                             "url": deep_link,
                             "style": "primary"
                         }
@@ -106,16 +87,90 @@ class SlackNotifier(BaseNotifier):
         }
 
         try:
-            # High-performance async HTTP request with strict timeouts
             async with httpx.AsyncClient() as client:
                 res = await client.post(self.webhook_url, json=slack_payload, timeout=5.0)
                 res.raise_for_status()
-                
             logger.info(f"✅ [{self.tenant_id}] Slack alert dispatched successfully.")
             return True
-            
         except httpx.HTTPError as e:
             logger.error(f"❌ [{self.tenant_id}] Slack network/API failure: {e}")
+            return False
+
+class EmailNotifier(BaseNotifier):
+    """
+    Implementation of Email alerts using Resend.
+    Sends beautifully formatted HTML emails containing the AI Narrative.
+    """
+    def __init__(self, db: Session, tenant_id: str):
+        self.db = db
+        self.tenant_id = tenant_id
+        self.resend_api_key = os.getenv("RESEND_API_KEY")
+        self.sender_email = os.getenv("RESEND_FROM_EMAIL", "alerts@arcli.tech")
+        self.recipient_email = self._fetch_tenant_email()
+
+    def _fetch_tenant_email(self) -> Optional[str]:
+        """
+        Security by Design: Resolves the appropriate email to alert for this tenant.
+        Falls back to the user ID if they are a solo tenant without an organization.
+        """
+        try:
+            query = text("""
+                SELECT email 
+                FROM users 
+                WHERE organization_id = :tenant_id OR id = :tenant_id
+                LIMIT 1
+            """)
+            result = self.db.execute(query, {"tenant_id": self.tenant_id}).fetchone()
+            return result[0] if result and result[0] else None
+        except SQLAlchemyError as e:
+            logger.error(f"[{self.tenant_id}] Failed to fetch User Email config: {e}")
+            return None
+
+    async def send_alert(self, tenant_name: str, agent_name: str, insight_summary: str, deep_link: str) -> bool:
+        if not self.resend_api_key or not self.recipient_email:
+            logger.debug(f"[{self.tenant_id}] Missing Resend API Key or Recipient Email. Skipping email.")
+            return False
+
+        # Professional HTML SaaS Template
+        html_content = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-w-2xl mx-auto p-6 bg-white border rounded-lg shadow-sm">
+            <h2 style="color: #0f172a; margin-bottom: 8px;">🚨 Anomaly Detected: {agent_name}</h2>
+            <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">Workspace: <strong>{tenant_name}</strong> | Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC</p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                <h3 style="color: #334155; font-size: 14px; margin-top: 0; text-transform: uppercase; letter-spacing: 0.05em;">AI Root-Cause Analysis</h3>
+                <p style="color: #1e293b; line-height: 1.6; margin-bottom: 0;">{insight_summary.replace(chr(10), '<br>')}</p>
+            </div>
+            
+            <a href="{deep_link}" style="display: inline-block; background-color: #2563eb; color: white; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 500; font-size: 14px;">🔍 Investigate in Dashboard</a>
+            
+            <p style="color: #94a3b8; font-size: 12px; margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                You are receiving this because you enabled Critical Anomalies in your DataOmen notification settings.<br>
+                <a href="{os.getenv('FRONTEND_BASE_URL', 'https://arcli.tech')}/settings" style="color: #64748b;">Manage Notification Preferences</a>
+            </p>
+        </div>
+        """
+
+        payload = {
+            "from": f"DataOmen Alerts <{self.sender_email}>",
+            "to": [self.recipient_email],
+            "subject": f"🚨 Action Required: Anomaly detected by {agent_name}",
+            "html": html_content
+        }
+
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={"Authorization": f"Bearer {self.resend_api_key}"},
+                    json=payload,
+                    timeout=5.0
+                )
+                res.raise_for_status()
+            logger.info(f"✅ [{self.tenant_id}] Email alert dispatched successfully to {self.recipient_email}.")
+            return True
+        except httpx.HTTPError as e:
+            logger.error(f"❌ [{self.tenant_id}] Resend API failure: {e}")
             return False
 
 # ---------------------------------------------------------
@@ -145,16 +200,12 @@ class NotificationRouter:
             now = datetime.now(timezone.utc)
             
             # 1. Intelligent Throttling (Volatility Guard)
-            # Check when the last alert was sent for this specific agent & tenant
             throttle_query = text("""
                 SELECT created_at FROM anomaly_logs 
                 WHERE tenant_id = :tenant_id AND agent_name = :agent_name 
                 ORDER BY created_at DESC LIMIT 1
             """)
-            last_alert = db.execute(throttle_query, {
-                "tenant_id": tenant_id, 
-                "agent_name": agent_name
-            }).fetchone()
+            last_alert = db.execute(throttle_query, {"tenant_id": tenant_id, "agent_name": agent_name}).fetchone()
 
             if last_alert and last_alert[0]:
                 last_time = last_alert[0].replace(tzinfo=timezone.utc) if last_alert[0].tzinfo is None else last_alert[0]
@@ -170,11 +221,7 @@ class NotificationRouter:
                 VALUES (:id, :tenant_id, :agent_name, :summary, :now)
             """)
             db.execute(insert_query, {
-                "id": anomaly_id,
-                "tenant_id": tenant_id,
-                "agent_name": agent_name,
-                "summary": insight_summary,
-                "now": now
+                "id": anomaly_id, "tenant_id": tenant_id, "agent_name": agent_name, "summary": insight_summary, "now": now
             })
 
             # 3. Fetch Tenant Name for UI context
@@ -184,13 +231,14 @@ class NotificationRouter:
 
             db.commit()
             
-            # 4. Initialize Notifiers within the DB context to fetch webhooks safely
+            # 4. Initialize Notifiers within the DB context to fetch configs safely
             slack_notifier = SlackNotifier(db=db, tenant_id=tenant_id)
+            email_notifier = EmailNotifier(db=db, tenant_id=tenant_id)
             
             return {
                 "anomaly_id": anomaly_id,
                 "tenant_name": tenant_name,
-                "slack_notifier": slack_notifier
+                "notifiers": [slack_notifier, email_notifier]
             }
 
         except Exception as e:
@@ -203,14 +251,11 @@ class NotificationRouter:
     async def dispatch_alert(self, tenant_id: str, agent_name: str, insight_summary: str) -> Optional[str]:
         """
         Main entry point for agent notifications. 
-        Asynchronously persists the incident and routes to active channels.
+        Asynchronously persists the incident and routes to active channels concurrently.
         """
         # 1. Offload blocking DB checks & writes to a thread pool
         db_context = await asyncio.to_thread(
-            self._sync_db_operations, 
-            tenant_id, 
-            agent_name, 
-            insight_summary
+            self._sync_db_operations, tenant_id, agent_name, insight_summary
         )
 
         # Alert was suppressed by cooldown or failed DB insertion
@@ -219,23 +264,28 @@ class NotificationRouter:
 
         anomaly_id = db_context["anomaly_id"]
         tenant_name = db_context["tenant_name"]
-        slack: SlackNotifier = db_context["slack_notifier"]
+        notifiers: List[BaseNotifier] = db_context["notifiers"]
 
         # 2. Construct Deep Link for the Frontend
-        deep_link = f"{self.frontend_base_url}/dashboard/investigate/{anomaly_id}"
+        deep_link = f"{self.frontend_base_url}/investigate/{anomaly_id}"
 
-        # 3. Multi-Channel Async Routing (Fire & Forget)
-        # Using create_task so the API response isn't delayed by third-party webhook latency
-        asyncio.create_task(
-            slack.send_alert(
-                tenant_name=tenant_name,
-                agent_name=agent_name,
-                insight_summary=insight_summary,
-                deep_link=deep_link
-            )
-        )
+        # 3. Multi-Channel Async Routing (Fire & Forget concurrently)
+        # Using asyncio.gather inside a background task ensures we hit Slack and Email in parallel
+        async def run_notifiers():
+            tasks = [
+                notifier.send_alert(
+                    tenant_name=tenant_name,
+                    agent_name=agent_name,
+                    insight_summary=insight_summary,
+                    deep_link=deep_link
+                )
+                for notifier in notifiers
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        logger.debug(f"[{tenant_id}] Alert {anomaly_id} queued for background dispatch.")
+        asyncio.create_task(run_notifiers())
+
+        logger.debug(f"[{tenant_id}] Alert {anomaly_id} queued for multi-channel background dispatch.")
         return anomaly_id
 
 # Export singleton instance
