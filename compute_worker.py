@@ -20,6 +20,31 @@ import psutil
 from typing import Dict, Any, Optional
 
 # ------------------------------------------------------------------------------
+# THE SERVERLESS REDIS "GHOST COST" FIX (Kombu Monkey Patch)
+# ------------------------------------------------------------------------------
+# Celery hardcodes a 1-second polling timeout (BRPOP) which generates 86,400 
+# commands per day on Serverless Redis (Upstash/Vercel KV), racking up costs.
+# We intercept the redis-py client and rewrite the timeout to 30 seconds.
+# This cuts idle background billing by 96.6% while maintaining 0ms task latency.
+import redis.client
+_orig_execute_command = redis.client.Redis.execute_command
+
+def _serverless_execute_command(self, *args, **kwargs):
+    if args and args[0] == 'BRPOP':
+        args_list = list(args)
+        try:
+            # Kombu passes the timeout as the last argument (usually 1 or 1.0)
+            if type(args_list[-1]) in (int, float, str) and float(args_list[-1]) <= 1.0:
+                args_list[-1] = 30 # Hold the connection open longer, reducing billable pings
+        except ValueError:
+            pass
+        return _orig_execute_command(self, *args_list, **kwargs)
+    return _orig_execute_command(self, *args, **kwargs)
+
+redis.client.Redis.execute_command = _serverless_execute_command
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
 # C-Level Thread Guardrails — MUST be set before any native library is imported.
 # Polars and DuckDB default to consuming ALL available CPU cores. When Celery
 # forks multiple worker processes, this causes CPU thrashing and OOM. We clamp
@@ -84,6 +109,7 @@ celery_app.conf.update(
     broker_transport_options={
         'visibility_timeout': 3600,       # Reduce polling frequency on unacked tasks
         'socket_keepalive': True,
+        'socket_timeout': 60,             # MUST be higher than our patched 30s BRPOP timeout
     },
 
     # ── Worker Hygiene ───────────────────────────────────────────────────────
