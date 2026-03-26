@@ -1,62 +1,83 @@
-"use client";
+import { Metadata } from 'next';
+import Navbar from '@/components/landing/navbar';
+import BlueprintHero from '@/components/landing/blueprint-hero';
+import TrustedBy from '@/components/landing/trusted-by';
+import HowItWorks from '@/components/landing/how-it-works';
+import AiAgents from '@/components/landing/Aiagents';
+import IntegrationsAndSecurity from '@/components/landing/Integrationsandsecurity';
+import ModularPipeline from '@/components/landing/modular-pipeline';
+import DeepDiveFeatures from '@/components/landing/Deepdivefeatures';
+import BrutalistCta from '@/components/landing/brutalist-cta';
+import Footer from '@/components/landing/footer';
 
-import React from "react";
-import "../styles/globals.css";
+// 1. Aggressive Root Metadata to Reclaim Brand Search Intent
+export const metadata: Metadata = {
+  title: 'Arcli Analytics | Connect Your Data. Let AI Agents Uncover Insights.',
+  description: 'Stop building static dashboards. Connect your databases, SaaS tools, and data warehouses to Arcli. Our autonomous AI agents analyze your data 24/7 to deliver instant insights, detect anomalies, and answer complex questions natively.',
+  keywords: [
+    'Arcli Analytics',
+    'AI Data Agents',
+    'Autonomous Data Analysis',
+    'Connect Database to AI',
+    'AI Business Intelligence',
+    'Automated Insights',
+    'Data Analytics SaaS'
+  ],
+  openGraph: {
+    title: 'Arcli | Autonomous AI Data Agents',
+    description: 'Connect your data pipelines. Let our AI agents drive the analysis.',
+    url: 'https://www.arcli.tech',
+    siteName: 'Arcli Analytics',
+    type: 'website',
+  },
+  alternates: {
+    canonical: 'https://www.arcli.tech',
+  }
+};
 
-import { Navbar } from "@/components/landing/navbar";
-import { Hero } from "@/components/landing/hero";
-import { HowItWorks } from "@/components/landing/how-it-works";
-import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import { AIAgents } from "@/components/landing/Aiagents";
-import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
-import { FAQ } from "@/components/landing/faq";
-import { CTA } from "@/components/landing/cta";
-import Footer from "@/components/landing/footer";
-
-/**
- * Arcli Landing Page
- *
- * Component structure (optimized for high-velocity conversion and SEO discovery):
- * Navbar                 <- Multi-tenant isolated navigation
- * Hero                   <- High-impact value proposition + conversion anchor
- * HowItWorks             <- 3-step high-level pipeline flow
- * DeepDiveFeatures       <- Technical architecture deep-dive
- * AIAgents               <- Autonomous "Arc" supervisor pipeline logic
- * IntegrationsAndSecurity<- Enterprise-grade trust & secure hybrid connectivity
- * FAQ                    <- Objection handling + semantic context expansion
- * CTA                    <- High-velocity conversion final push
- * SeoLinkSilo            <- Internal linking strategy (crawler discovery & siloing)
- * Footer                 <- Global directory and legal
- */
-export default function Page() {
+export default function HomePage() {
   return (
-    <main className="bg-neutral-950 text-slate-50 antialiased selection:bg-blue-500/30">
+    <div className="min-h-screen bg-background flex flex-col font-sans selection:bg-primary/20">
       <Navbar />
       
-      {/* Compositional Layering: 
-          We utilize a relative container with decorative background gradients 
-          that reinforce the "Arc & Axis" brand concept without impacting 
-          Cumulative Layout Shift (CLS).
-      */}
-      <div className="relative overflow-hidden">
-        {/* Architectural Background Cues */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-30 z-0">
-          <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-900/10 blur-[120px]" />
-          <div className="absolute bottom-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-900/10 blur-[100px]" />
-        </div>
+      <main className="flex-1 flex flex-col w-full overflow-hidden">
+        {/* Hero section re-focused on the core value proposition: 
+          Connecting data & autonomous AI insights 
+        */}
+        <BlueprintHero 
+          badgeText="The Next Evolution of Analytics"
+          headline="Connect your data. Let AI agents uncover the insights."
+          subheadline="Ditch the static dashboards. Securely connect your data sources to Arcli and deploy autonomous AI agents that proactively find anomalies, answer questions, and monitor your business metrics in real-time."
+          ctaText="Deploy Your First Agent"
+        />
 
-        {/* Semantic Content Stack */}
-        <section className="relative z-10">
-          <Hero />
-          <HowItWorks />
-          <DeepDiveFeatures />
-          <AIAgents />
-          <IntegrationsAndSecurity />
-          <FAQ />
-          <CTA />
-        </section>
-      </div>
+        {/* Social Proof */}
+        <TrustedBy />
+
+        {/* Core Product Loop: Ingest -> AI Process -> Output */}
+        <HowItWorks />
+
+        {/* Highlighting the AI Brains */}
+        <AiAgents />
+
+        {/* Highlighting the Data Connection Architecture */}
+        <IntegrationsAndSecurity />
+
+        {/* The underlying engine architecture */}
+        <ModularPipeline />
+
+        {/* Detailed capabilities */}
+        <DeepDiveFeatures />
+
+        {/* Final Conversion Point */}
+        <BrutalistCta 
+          headline="Ready to let AI do the heavy lifting?"
+          subheadline="Connect your first database in seconds. Your AI agent is waiting to analyze it."
+          buttonText="Start Analyzing for Free"
+        />
+      </main>
+
       <Footer />
-    </main>
+    </div>
   );
 }
