@@ -20,35 +20,35 @@ import psutil
 from typing import Dict, Any, Optional
 
 # ------------------------------------------------------------------------------
-# THE SERVERLESS REDIS "GHOST COST" FIX (Kombu Monkey Patch)
+# THE SERVERLESS REDIS "GHOST COST" FIX (Aggressive Kombu Monkey Patch)
 # ------------------------------------------------------------------------------
-# Celery hardcodes a 1-second polling timeout (BRPOP) which generates 86,400 
-# commands per day on Serverless Redis (Upstash/Vercel KV), racking up costs.
-# We intercept the redis-py client and rewrite the timeout to 30 seconds.
-# This cuts idle background billing by 96.6% while maintaining 0ms task latency.
+# Upstash/Vercel KV charges per command. Kombu's default 1-second BRPOP timeout 
+# generates ~86,400 billable commands per day per queue.
+# We intercept the base Redis client to stretch this to 30 seconds.
 import redis.client
 _orig_execute_command = redis.client.Redis.execute_command
 
 def _serverless_execute_command(self, *args, **kwargs):
-    if args and args[0] == 'BRPOP':
+    if args and isinstance(args[0], str) and args[0].upper() == 'BRPOP':
         args_list = list(args)
         try:
-            # Kombu passes the timeout as the last argument (usually 1 or 1.0)
-            if type(args_list[-1]) in (int, float, str) and float(args_list[-1]) <= 1.0:
-                args_list[-1] = 30 # Hold the connection open longer, reducing billable pings
-        except ValueError:
+            # Kombu passes the timeout as the last argument
+            if float(args_list[-1]) <= 1.0:
+                args_list[-1] = 30 # Hold the connection open longer, dropping billable pings by 96%
+        except (ValueError, TypeError, IndexError):
             pass
         return _orig_execute_command(self, *args_list, **kwargs)
     return _orig_execute_command(self, *args, **kwargs)
 
 redis.client.Redis.execute_command = _serverless_execute_command
+
+# Also patch StrictRedis if the environment's Kombu version aliases it
+if hasattr(redis.client, 'StrictRedis'):
+    redis.client.StrictRedis.execute_command = _serverless_execute_command
 # ------------------------------------------------------------------------------
 
 # ------------------------------------------------------------------------------
 # C-Level Thread Guardrails — MUST be set before any native library is imported.
-# Polars and DuckDB default to consuming ALL available CPU cores. When Celery
-# forks multiple worker processes, this causes CPU thrashing and OOM. We clamp
-# them to a safe ceiling here, at the OS level, before the engines initialise.
 # ------------------------------------------------------------------------------
 _CPU_THREAD_LIMIT = str(min(4, os.cpu_count() or 2))
 os.environ.setdefault("POLARS_MAX_THREADS", _CPU_THREAD_LIMIT)
@@ -71,7 +71,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ComputeWorker")
 
-# Deployment Context: Upstash Redis (Serverless) → DigitalOcean Managed → Local fallback
 redis_url = (
     os.getenv("KV_URL")
     or os.getenv("UPSTASH_REDIS_REST_URL")
@@ -88,11 +87,10 @@ celery_app.conf.update(
     result_serializer="json",
 
     # ── Timeouts ─────────────────────────────────────────────────────────────
-    task_time_limit=600,        # 10 m hard kill for runaway tasks
-    task_soft_time_limit=570,   # 9.5 m graceful signal before hard kill
+    task_time_limit=600,        
+    task_soft_time_limit=570,   
 
     # ── Queue Routing (Priority Lanes) ───────────────────────────────────────
-    # Heavy ingestion jobs never block sub-second analytics queries.
     task_routes={
         "process_ingestion_dataset":         {"queue": "ingestion"},
         "execute_heavy_analytical_pipeline": {"queue": "analytics"},
@@ -100,23 +98,26 @@ celery_app.conf.update(
     },
     task_default_queue="analytics",
 
-    # ── Serverless Redis Cost Optimizations (Upstash / Vercel KV) ────────────
-    broker_pool_limit=1,                  # Prevent idle connection hoarding
-    broker_connection_timeout=5.0,        # Fail fast on cloud partitions
-    worker_send_task_events=False,        # Disable redundant pub/sub traffic
-    task_send_sent_event=False,           # Disable redundant pub/sub traffic
-    result_expires=3600,                  # Clean up results after 1 hr to save Storage
+    # ── Aggressive Serverless Redis Cost Optimizations ───────────────────────
+    worker_enable_remote_control=False,   # <--- CRITICAL: Disables the 'pidbox' Pub/Sub polling (Saves ~100k commands/day)
+    worker_send_task_events=False,        # <--- CRITICAL: Disables Celery Event broadcasting
+    task_send_sent_event=False,           
+    broker_pool_limit=1,                  
+    broker_connection_timeout=5.0,        
+    result_expires=600,                   # <--- Clean up results after 10 mins (Saves storage space vs 1hr)
+    beat_max_loop_interval=300,           # <--- Stops Celery Beat from hyper-polling the clock
     broker_transport_options={
-        'visibility_timeout': 3600,       # Reduce polling frequency on unacked tasks
+        'visibility_timeout': 3600,       
         'socket_keepalive': True,
-        'socket_timeout': 60,             # MUST be higher than our patched 30s BRPOP timeout
+        'socket_timeout': 60,             # MUST be higher than our patched 30s BRPOP
+        'health_check_interval': 120,     # <--- Stops frequent PING commands while idle
     },
 
     # ── Worker Hygiene ───────────────────────────────────────────────────────
-    worker_prefetch_multiplier=1,         # Fair distribution: no node hogs heavy jobs
-    task_acks_late=True,                  # Ack only after successful execution
-    worker_max_tasks_per_child=50,        # Recycle child after 50 tasks (leak prevention)
-    worker_max_memory_per_child=400_000,  # Hard kill child if it exceeds 400 MB RSS
+    worker_prefetch_multiplier=1,         
+    task_acks_late=True,                  
+    worker_max_tasks_per_child=50,        
+    worker_max_memory_per_child=400_000,  
 )
 
 # ------------------------------------------------------------------------------
@@ -132,9 +133,6 @@ celery_app.conf.beat_schedule = {
 
 # ------------------------------------------------------------------------------
 # Database Prefork Safety
-# Celery forks child processes from the parent. Any SQLAlchemy connection pool
-# inherited across the fork boundary becomes corrupted. We dispose of the engine 
-# on each child's first breath so every process builds its own clean pool.
 # ------------------------------------------------------------------------------
 @worker_process_init.connect
 def reset_db_connection_pool(**kwargs: Any) -> None:
@@ -152,18 +150,9 @@ def reset_db_connection_pool(**kwargs: Any) -> None:
 # ------------------------------------------------------------------------------
 
 def _run_async(coro: Any) -> Any:
-    """
-    Hybrid Performance Bridge: executes async IO-bound services inside
-    synchronous Celery worker threads without a persistent event loop.
-    """
     return asyncio.run(coro)
 
-
 def _check_memory_pressure(task: Any, threshold: float = 85.0) -> None:
-    """
-    Proactive OOM Prevention: if RAM utilisation exceeds the threshold,
-    yield the task back to the queue so a less-pressured node can handle it.
-    """
     mem = psutil.virtual_memory()
     if mem.percent > threshold:
         logger.warning(
@@ -175,16 +164,10 @@ def _check_memory_pressure(task: Any, threshold: float = 85.0) -> None:
 
 # ------------------------------------------------------------------------------
 # Lazy-Loaded Service Accessors & AI Dependency Injection
-#
-# Heavy analytical services are imported and instantiated on first call,
-# caching them in _singletons for the lifetime of that child process only.
-# This strictly adheres to the Orchestration methodology by injecting the 
-# llm_client instance post-fork to prevent async event loop corruption.
 # ------------------------------------------------------------------------------
 _singletons: Dict[str, Any] = {}
 
 def _get_service(key: str, factory: Any) -> Any:
-    """Generic lazy singleton: import & instantiate once per child process."""
     if key not in _singletons:
         _singletons[key] = factory()
     return _singletons[key]
@@ -216,9 +199,7 @@ def _insight_engine() -> Any:
 
 # ------------------------------------------------------------------------------
 # Task 1: Zero-ETL Ingestion & Vectorisation
-# Queue: ingestion  (isolated so 10-minute jobs never block analytics queries)
 # ------------------------------------------------------------------------------
-
 @celery_app.task(
     bind=True,
     name="process_ingestion_dataset",
@@ -226,11 +207,6 @@ def _insight_engine() -> Any:
     queue="ingestion",
 )
 def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Two ingestion paths:
-      A) Local file upload  → DuckDB Parquet vectorisation & schema profiling.
-      B) SaaS / Warehouse   → Zero-ETL historical multi-stream pull via SyncEngine.
-    """
     _check_memory_pressure(self)
     logger.info(f"[{tenant_id}] ⚡ Starting ingestion for Dataset: {dataset_id}")
     start_time = time.perf_counter()
@@ -256,7 +232,6 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
             dataset.status = DatasetStatus.PROCESSING
             db.commit()
 
-            # ── Path A: Local File → Parquet Vectorisation ───────────────────
             if not dataset.integration_name:
                 self.update_state(
                     state="PROGRESS",
@@ -273,7 +248,6 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
                     "vectorized_at": time.time(),
                 }
 
-            # ── Path B: Zero-ETL Warehouse / SaaS Historical Pull ────────────
             else:
                 self.update_state(
                     state="PROGRESS",
@@ -298,7 +272,6 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
                     ),
                 ))
 
-            # ── Mark Success & Bust Cache ────────────────────────────────────
             dataset.status = DatasetStatus.READY
             db.commit()
             _run_async(cache_manager.invalidate_dataset_cache(tenant_id, dataset_id))
@@ -333,9 +306,7 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
 
 # ------------------------------------------------------------------------------
 # Task 2: Heavy BI Analytical Pipeline
-# Queue: analytics  (isolated from long-running ingestion jobs)
 # ------------------------------------------------------------------------------
-
 @celery_app.task(
     bind=True,
     name="execute_heavy_analytical_pipeline",
@@ -350,9 +321,6 @@ def execute_heavy_analytical_pipeline(
     dataset_dict: Dict[str, Any],
     full_schema: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    End-to-end BI analytics pipeline for queries requiring warehouse aggregations.
-    """
     _check_memory_pressure(self)
     logger.info(f"[{tenant_id}] 🧠 Orchestrating Heavy BI Pipeline: {job_id}")
 
@@ -366,7 +334,6 @@ def execute_heavy_analytical_pipeline(
     try:
         dataset = DatasetMetadata(**dataset_dict)
 
-        # 1. AI Planning ──────────────────────────────────────────────────────
         self.update_state(
             state="PROGRESS",
             meta={"status": "AI Lead Engineer architecting query plan..."},
@@ -376,7 +343,6 @@ def execute_heavy_analytical_pipeline(
         if not plan.is_achievable:
             return {"status": "error", "message": plan.missing_data_reason}
 
-        # 2. SQL Compilation ──────────────────────────────────────────────────
         self.update_state(
             state="PROGRESS",
             meta={"status": "Compiling optimised SQL..."},
@@ -389,10 +355,6 @@ def execute_heavy_analytical_pipeline(
             prompt=prompt,
         ))
 
-        # =====================================================================
-        # 2.5 SEMANTIC LAYER INJECTION
-        # Intercept the AI's raw SQL and inject any pre-approved business metrics
-        # =====================================================================
         self.update_state(
             state="PROGRESS",
             meta={"status": "Applying strict semantic governance..."},
@@ -407,9 +369,7 @@ def execute_heavy_analytical_pipeline(
                 dataset_id=dataset.dataset_id,
                 raw_execution_sql=sql_query
             )
-        # =====================================================================
 
-        # 3. Vectorised Compute Execution ─────────────────────────────────────
         self.update_state(
             state="PROGRESS",
             meta={"status": "Executing warehouse scan..."},
@@ -421,7 +381,6 @@ def execute_heavy_analytical_pipeline(
             query=sql_query,
         ))
 
-        # 4. Statistical Insight Extraction ───────────────────────────────────
         self.update_state(
             state="PROGRESS",
             meta={"status": "Running mathematical insight gauntlet..."},
@@ -434,21 +393,18 @@ def execute_heavy_analytical_pipeline(
         df = None
         gc.collect()
 
-        # 5. Executive Narrative Synthesis ────────────────────────────────────
         self.update_state(
             state="PROGRESS",
             meta={"status": "Synthesising executive summary..."},
         )
-        # Injecting LLM dependency dynamically for the narrative orchestrator 
         narrative_obj = _run_async(narrative_service.generate_executive_summary(
             payload=insights,
             plan=plan,
             chart_spec=chart_spec,
             tenant_id=tenant_id,
-            llm_client=llm_client  # Dependency Injection
+            llm_client=llm_client  # Dependency Injection 
         ))
 
-        # 6. Cache Commit — unblocks frontend polling ──────────────────────────
         _run_async(cache_manager.set_cached_insight(
             tenant_id=tenant_id,
             dataset_id=dataset.dataset_id,
@@ -482,19 +438,14 @@ def execute_heavy_analytical_pipeline(
 
 
 # ------------------------------------------------------------------------------
-# Task 3: Autonomous Watchdog (Scheduled AI Data Analyst)
-# Queue: cron  (never competes with user-facing workloads)
+# Task 3: Autonomous Watchdog
 # ------------------------------------------------------------------------------
-
 @celery_app.task(
     bind=True,
     name="run_autonomous_insight_scans",
     queue="cron",
 )
 def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
-    """
-    Celery Beat Cron Job — fires at the top of every hour.
-    """
     logger.info("🤖 Starting Global Autonomous Insight Scan...")
 
     from api.database import SessionLocal
@@ -503,14 +454,11 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
     from api.services.llm_client import llm_client
 
     with SessionLocal() as db:
-        # Dependency Injection for watchdog
         watchdog = WatchdogService(db_client=db, llm_client=llm_client)
 
-        # 1. System Health & Staleness Audit ──────────────────────────────────
         logger.info("Running pipeline health and dataset staleness audits...")
         _run_async(watchdog.detect_stale_datasets())
 
-        # 2. Per-Agent Anomaly Detection ──────────────────────────────────────
         active_agents = db.query(Agent).filter(Agent.is_active == True).all()
 
         if not active_agents:
@@ -524,10 +472,7 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
                 continue
 
             try:
-                logger.info(
-                    f"Triggering Watchdog for Agent: {agent.id} "
-                    f"(Tenant: {agent.tenant_id})"
-                )
+                logger.info(f"Triggering Watchdog for Agent: {agent.id} (Tenant: {agent.tenant_id})")
                 insight = _run_async(watchdog.execute_autonomous_agent(
                     agent_id=str(agent.id),
                     tenant_id=agent.tenant_id,
@@ -539,22 +484,13 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
 
                 if insight:
                     insights_found += 1
-                    logger.info(
-                        f"💡 High-impact insight for {agent.tenant_id}! "
-                        f"Impact Score: {insight.impact_score}"
-                    )
+                    logger.info(f"💡 High-impact insight for {agent.tenant_id}! Impact Score: {insight.impact_score}")
 
             except Exception as e:
-                logger.error(
-                    f"Agent {agent.id} (Tenant: {agent.tenant_id}) failed: {e}"
-                )
+                logger.error(f"Agent {agent.id} (Tenant: {agent.tenant_id}) failed: {e}")
                 continue
 
-    logger.info(
-        f"✅ Global Scan complete. "
-        f"Agents scanned: {len(active_agents)}, "
-        f"Insights generated: {insights_found}."
-    )
+    logger.info(f"✅ Global Scan complete. Agents: {len(active_agents)}, Insights: {insights_found}.")
     gc.collect()
     return {
         "status": "success",
@@ -567,11 +503,6 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
 # Execution Block for DigitalOcean App Platform / Docker Container
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    """
-    Ensure all queues are actively listened to.
-    -Q specifies the queues.
-    -B runs the beat scheduler (cron) in the same process to save infrastructure costs.
-    """
     logger.info("Initializing Containerized Compute Worker Daemon with Upstash Serverless Guardrails...")
     celery_app.worker_main(
         argv=[
@@ -580,8 +511,8 @@ if __name__ == "__main__":
             "-Q", "analytics,ingestion,cron",
             "-B",
             # CRITICAL: THESE FLAGS STOP CELERY FROM SPAMMING REDIS READS/WRITES
-            "--without-gossip",    # Stops workers from constantly checking on each other
-            "--without-mingle",    # Stops workers from trying to sync clocks on startup
-            "--without-heartbeat"  # Stops offline/online broadcast events
+            "--without-gossip",    
+            "--without-mingle",    
+            "--without-heartbeat"  
         ]
     )
