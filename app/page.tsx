@@ -58,7 +58,7 @@ export default function HomePage() {
         <HowItWorks />
 
         {/* Highlighting the AI Brains */}
-        <AiAgents />
+        <AIAgents />
 
         {/* Highlighting the Data Connection Architecture */}
         <IntegrationsAndSecurity />
@@ -70,7 +70,7 @@ export default function HomePage() {
         <DeepDiveFeatures />
 
         {/* Final Conversion Point */}
-        <BrutalistCta 
+        <BrutalistCTA 
           headline="Ready to let AI do the heavy lifting?"
           subheadline="Connect your first database in seconds. Your AI agent is waiting to analyze it."
           buttonText="Start Analyzing for Free"
