@@ -1,13 +1,13 @@
 import { Metadata } from 'next';
-import Navbar from '@/components/landing/navbar';
-import BlueprintHero from '@/components/landing/blueprint-hero';
-import TrustedBy from '@/components/landing/trusted-by';
-import HowItWorks from '@/components/landing/how-it-works';
-import AiAgents from '@/components/landing/Aiagents';
-import IntegrationsAndSecurity from '@/components/landing/Integrationsandsecurity';
+import { Navbar } from '@/components/landing/navbar';
+import { BlueprintHero } from '@/components/landing/blueprint-hero';
+import { TrustedBy } from '@/components/landing/trusted-by';
+import { HowItWorks } from '@/components/landing/how-it-works';
+import { AIAgents } from '@/components/landing/Aiagents';
+import { IntegrationsAndSecurity } from '@/components/landing/Integrationsandsecurity';
 import ModularPipeline from '@/components/landing/modular-pipeline';
-import DeepDiveFeatures from '@/components/landing/Deepdivefeatures';
-import BrutalistCta from '@/components/landing/brutalist-cta';
+import { DeepDiveFeatures} from '@/components/landing/Deepdivefeatures';
+import { BrutalistCTA } from '@/components/landing/brutalist-cta';
 import Footer from '@/components/landing/footer';
 
 // 1. Aggressive Root Metadata to Reclaim Brand Search Intent
