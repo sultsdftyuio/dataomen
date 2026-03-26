@@ -1,261 +1,200 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
+import React from "react";
 import { 
   Database, 
   Sparkles, 
-  Cpu, 
-  Terminal, 
+  Bot, 
   CheckCircle2, 
-  Code2, 
-  LineChart,
-  AlertTriangle,
-  ChevronRight
-} from 'lucide-react';
-
-interface WorkStep {
-  id: string;
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  iconBg: string;
-  iconBorder: string;
-  activeBorder: string;
-  activeBg: string;
-}
-
-const steps: WorkStep[] = [
-  {
-    id: "01",
-    title: "Connect Infrastructure",
-    description: "Connect your live database or warehouse in seconds. Arcli instantly maps your schema, types, and relationships for analysis.",
-    icon: <Database className="w-6 h-6 text-blue-600" />,
-    iconBg: "bg-blue-50",
-    iconBorder: "border-blue-100",
-    activeBorder: "border-blue-600",
-    activeBg: "bg-blue-50/50"
-  },
-  {
-    id: "02",
-    title: "Contextual RAG Querying",
-    description: "Ask business questions in plain English. The engine synthesizes your schema to write perfectly optimized SQL instantly.",
-    icon: <Sparkles className="w-6 h-6 text-orange-600" />,
-    iconBg: "bg-orange-50",
-    iconBorder: "border-orange-100",
-    activeBorder: "border-orange-500",
-    activeBg: "bg-orange-50/50"
-  },
-  {
-    id: "03",
-    title: "Deploy Autonomous Agents",
-    description: "Turn queries into proactive watchdogs. AI agents monitor metrics 24/7, detecting hidden anomalies before they hit the bottom line.",
-    icon: <Cpu className="w-6 h-6 text-rose-600" />,
-    iconBg: "bg-rose-50",
-    iconBorder: "border-rose-100",
-    activeBorder: "border-rose-500",
-    activeBg: "bg-rose-50/50"
-  }
-];
+  ChevronRight, 
+  Activity, 
+  AlertTriangle 
+} from "lucide-react";
+import { C } from "@/lib/tokens";
+import { useVisible } from "@/hooks/useVisible";
 
 export function HowItWorks() {
-  const [activeStep, setActiveStep] = useState(0);
-  const [isHovered, setIsHovered] = useState(false);
-
-  // Auto-play mechanism
-  useEffect(() => {
-    if (isHovered) return;
-    const interval = setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % steps.length);
-    }, 6000);
-    return () => clearInterval(interval);
-  }, [isHovered]);
-
-  const renderVisualizer = () => {
-    switch (activeStep) {
-      case 0: // Connect
-        return (
-          <div className="w-full h-full bg-slate-950 rounded-2xl p-6 font-mono text-sm flex flex-col animate-in fade-in slide-in-from-right-8 duration-500 shadow-xl border border-slate-800">
-            <div className="flex gap-2 mb-6 border-b border-slate-800 pb-4">
-              <div className="w-3 h-3 rounded-full bg-rose-500"></div>
-              <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-            </div>
-            
-            <div className="space-y-4 text-slate-300 overflow-hidden flex-1">
-              <div className="flex items-center gap-2">
-                <ChevronRight className="w-4 h-4 text-blue-500" />
-                <p><span className="text-blue-400 font-semibold">arcli</span> connect --source postgresql_prod</p>
-              </div>
-              <p className="text-slate-500 pl-6">Initiating secure read-only tunnel...</p>
-              <p className="flex items-center gap-2 text-emerald-400 pl-6">
-                <CheckCircle2 className="w-4 h-4" /> Connection established.
-              </p>
-              <p className="text-slate-500 pl-6">Extracting schema topologies...</p>
-              <div className="pl-6 border-l border-slate-800 ml-8 space-y-2 py-2">
-                <p>Found table: <span className="text-blue-300 font-medium">core_transactions</span> <span className="text-slate-500">(1.2M rows)</span></p>
-                <p>Found table: <span className="text-blue-300 font-medium">users</span> <span className="text-slate-500">(84K rows)</span></p>
-                <p>Found table: <span className="text-blue-300 font-medium">subscriptions</span> <span className="text-slate-500">(12K rows)</span></p>
-              </div>
-              <p className="flex items-center gap-2 text-blue-400 font-semibold mt-6 pl-6">
-                <Sparkles className="w-4 h-4" /> Vector mapping complete. Ready for analysis.
-              </p>
-            </div>
-          </div>
-        );
-      case 1: // Query
-        return (
-          <div className="w-full h-full bg-slate-50 rounded-2xl border border-slate-200 flex flex-col animate-in fade-in slide-in-from-right-8 duration-500 relative z-10 overflow-hidden shadow-sm">
-            <div className="p-5 border-b border-slate-200 bg-white flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center flex-shrink-0 shadow-sm border border-orange-200">
-                <span className="font-bold text-sm">US</span>
-              </div>
-              <p className="font-medium text-slate-700 text-sm">"Show me MRR growth over the last 4 months grouped by tier."</p>
-            </div>
-            <div className="p-5 flex-1 flex flex-col gap-4 bg-slate-50/50">
-              <div className="bg-slate-900 rounded-xl p-4 text-xs font-mono text-slate-300 border border-slate-800 overflow-x-auto shadow-inner">
-                <span className="text-orange-400">SELECT</span> date_trunc(<span className="text-emerald-400">'month'</span>, created_at), tier, <span className="text-orange-400">SUM</span>(amount)<br/>
-                <span className="text-orange-400">FROM</span> subscriptions <span className="text-orange-400">WHERE</span> status = <span className="text-emerald-400">'active'</span><br/>
-                <span className="text-orange-400">GROUP BY</span> 1, 2 <span className="text-orange-400">ORDER BY</span> 1 <span className="text-orange-400">DESC</span>;
-              </div>
-              <div className="flex-1 rounded-xl border border-slate-200 bg-white p-6 flex items-end gap-3 justify-center relative shadow-sm">
-                <div className="absolute top-4 left-4 flex items-center gap-2 text-xs font-semibold text-slate-500">
-                  <LineChart className="w-4 h-4" /> MRR Growth
-                </div>
-                {[30, 45, 60, 85].map((h, i) => (
-                  <div key={i} className="w-12 md:w-16 bg-slate-100 rounded-t-md relative group transition-all" style={{ height: `${h}%` }}>
-                    <div className="absolute bottom-0 left-0 w-full h-full bg-gradient-to-t from-orange-500 to-orange-400 rounded-t-md opacity-90 transition-opacity hover:opacity-100" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-      case 2: // Agents
-        return (
-          <div className="w-full h-full bg-slate-950 rounded-2xl border border-slate-800 p-6 shadow-xl animate-in fade-in slide-in-from-right-8 duration-500 text-white flex flex-col">
-             <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="relative flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
-                  </div>
-                  <span className="font-semibold text-sm text-slate-200">Watchdog Active</span>
-                </div>
-                <div className="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 font-mono text-xs font-medium border border-emerald-500/20">
-                  SYSTEM NOMINAL
-                </div>
-             </div>
-             
-             <div className="space-y-4 flex-1">
-                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 flex gap-4 transition-opacity hover:bg-slate-900">
-                  <Code2 className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
-                  <div>
-                    <h4 className="font-semibold text-sm text-slate-300">Routine Check: Daily Active Users</h4>
-                    <p className="text-xs font-mono text-slate-500 mt-1">Variance: +1.2% (Within normal thresholds)</p>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-4 flex gap-4 relative overflow-hidden shadow-[0_0_15px_rgba(244,63,94,0.1)]">
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500" />
-                  <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-                  <div className="w-full">
-                    <h4 className="font-semibold text-sm text-rose-400 mb-1">Anomaly Detected: API Error Rate</h4>
-                    <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                      Gateway 502 errors spiked by 400% in the last 5 minutes. Highly correlated with recent deployment <code className="bg-rose-950 px-1 rounded text-rose-300">v2.4.1</code>.
-                    </p>
-                    <button className="w-full sm:w-auto px-4 py-2 rounded-lg bg-rose-500/10 text-rose-400 font-semibold text-xs border border-rose-500/20 hover:bg-rose-500 hover:text-white transition-all">
-                      View Diagnosis
-                    </button>
-                  </div>
-                </div>
-             </div>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
+  const [ref1, vis1] = useVisible(0.1);
+  const [ref2, vis2] = useVisible(0.1);
+  const [ref3, vis3] = useVisible(0.1);
 
   return (
-    <section 
-      className="bg-white py-24 lg:py-32 relative overflow-hidden border-t border-slate-200"
-      aria-labelledby="how-it-works-heading"
-    >
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-40 z-0">
-        <div className="absolute top-[10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-100 blur-[120px]" />
-        <div className="absolute bottom-[10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-orange-50 blur-[100px]" />
-      </div>
+    <section id="how-it-works" style={{ padding: "140px 24px", background: C.offWhite, borderTop: `1px solid ${C.rule}` }}>
+      <div style={{ maxWidth: 1240, margin: "0 auto" }}>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        
-        <div className="mb-16 md:mb-20 text-center md:text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-600 font-semibold text-xs uppercase tracking-wider mb-6">
-            <Terminal className="w-4 h-4" />
-            Pipeline Architecture
+        {/* ── Header ── */}
+        <div style={{ textAlign: "center", marginBottom: 100 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
+            PIPELINE ARCHITECTURE
           </div>
-          <h2 
-            id="how-it-works-heading"
-            className="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight max-w-2xl"
-          >
-            From Raw Data to <span className="text-blue-600">Autonomous Action.</span>
+          <h2 className="pfd" style={{ fontSize: 48, color: C.navy, marginBottom: 24, lineHeight: 1.1 }}>
+            From Raw Data to <span style={{ color: C.blue }}>Autonomous Action.</span>
           </h2>
+          <p style={{ color: C.muted, fontSize: 18, lineHeight: 1.6, maxWidth: 640, margin: "0 auto" }}>
+            A modular, unified engine designed to seamlessly bridge the gap between your raw database and proactive business intelligence.
+          </p>
         </div>
 
-        <div 
-          className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16 items-center"
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-        >
-          <div className="lg:col-span-5 flex flex-col gap-4">
-            {steps.map((step, index) => {
-              const isActive = activeStep === index;
-              return (
-                <button
-                  key={step.id}
-                  onClick={() => setActiveStep(index)}
-                  className={`text-left p-6 rounded-3xl border transition-all duration-300 relative group ${
-                    isActive 
-                      ? `${step.activeBorder} ${step.activeBg} shadow-sm ring-1 ring-black/5` 
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md hover:shadow-slate-200/50'
-                  }`}
-                >
-                  <div className="flex items-start gap-5 relative z-10">
-                    <div 
-                      className={`mt-1 flex-shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center transition-colors duration-300 ${
-                        isActive ? `${step.iconBg} ${step.iconBorder} border shadow-sm` : 'bg-slate-50 border border-slate-100 text-slate-400 group-hover:bg-slate-100'
-                      }`}
-                    >
-                      {step.icon}
-                    </div>
-                    <div>
-                      <h3 className={`text-xl font-bold tracking-tight mb-2 ${isActive ? 'text-slate-900' : 'text-slate-700 group-hover:text-slate-900'}`}>
-                        {step.title}
-                      </h3>
-                      <p className={`text-sm md:text-base leading-relaxed ${isActive ? 'text-slate-700' : 'text-slate-500'}`}>
-                        {step.description}
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+        {/* ── Step 1: Connect Infrastructure ── */}
+        <div className="grid-2" style={{ marginBottom: 160 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
+          <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
+              <Database size={18} color={C.blue} /> STEP 01
+            </div>
+            <h2 className="pfd" style={{ fontSize: 40, color: C.navy, marginBottom: 24, lineHeight: 1.1 }}>
+              Connect Infrastructure
+            </h2>
+            <p style={{ color: C.muted, fontSize: 18, lineHeight: 1.6, marginBottom: 32 }}>
+              Connect your live database or warehouse in seconds. Arcli instantly maps your schema, types, and relationships, building a comprehensive vector topology for analysis without moving your data.
+            </p>
+            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 16 }}>
+              {["Secure read-only connections", "Automatic schema inference", "Instant vector mapping"].map((item, i) => (
+                <li key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 16, fontWeight: 600, color: C.navy }}>
+                  <CheckCircle2 size={20} color={C.blue} /> {item}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <div className="lg:col-span-7 h-[500px] w-full relative">
-             <div className="absolute inset-0 bg-white rounded-3xl border border-slate-200 p-2 md:p-3 shadow-xl shadow-slate-200/50 flex flex-col transition-all duration-500">
-                <div className="flex justify-between items-center pb-3 pt-2 px-4 border-b border-slate-100 mb-3">
-                  <span className="font-semibold text-xs uppercase tracking-wider text-slate-400">
-                    System Viewport
-                  </span>
-                  <span className="font-semibold text-xs text-slate-400 bg-slate-50 px-2 py-1 rounded-md">
-                    Step {activeStep + 1} of 3
-                  </span>
-                </div>
+          <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 2, background: C.offWhite, padding: 40, borderRadius: 24, border: `1px solid ${C.rule}`, position: "relative" }}>
+            <div className="jbm" style={{ background: "#1E1E1E", color: "#D4D4D4", padding: 24, borderRadius: 12, fontSize: 13, boxShadow: "0 20px 40px rgba(0,0,0,0.2)", lineHeight: 1.8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#FF5F56" }} />
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#FFBD2E" }} />
+                <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#27C93F" }} />
+              </div>
+              <div style={{ color: "#CE9178", marginBottom: 8 }}>
+                <span style={{ color: "#858585", marginRight: 8 }}>$</span> 
+                arcli connect --source postgresql_prod
+              </div>
+              <div style={{ color: "#858585", marginBottom: 8 }}>Initiating secure read-only tunnel...</div>
+              <div style={{ color: "#4EC9B0", fontWeight: "bold", marginBottom: 8 }}>✓ Connection established.</div>
+              <div style={{ color: "#858585", marginBottom: 8 }}>Extracting schema topologies...</div>
+              <div style={{ paddingLeft: 16, borderLeft: "2px solid #569CD6", marginBottom: 16 }}>
+                <div>Found table: <span style={{ color: "#569CD6" }}>core_transactions</span> <span style={{ color: "#858585" }}>(1.2M rows)</span></div>
+                <div>Found table: <span style={{ color: "#569CD6" }}>users</span> <span style={{ color: "#858585" }}>(84K rows)</span></div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", color: "#CE9178", fontWeight: "bold" }}>
+                <ChevronRight size={16} style={{ marginRight: 4 }} />
+                Ready for analysis.
+              </div>
+            </div>
+            {/* Decorative background block */}
+            <div style={{ position: "absolute", top: -10, right: -10, left: 30, bottom: 30, background: C.blueLight, borderRadius: 24, zIndex: -1, opacity: 0.5 }} />
+          </div>
+        </div>
+
+        {/* ── Step 2: Contextual RAG Querying ── */}
+        <div className="grid-2" style={{ marginBottom: 160 }} ref={ref2 as React.RefObject<HTMLDivElement>}>
+          <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 2 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
+              <Sparkles size={18} color={C.blue} /> STEP 02
+            </div>
+            <h2 className="pfd" style={{ fontSize: 40, color: C.navy, marginBottom: 24, lineHeight: 1.1 }}>
+              Contextual RAG Querying
+            </h2>
+            <p style={{ color: C.muted, fontSize: 18, lineHeight: 1.6, marginBottom: 32 }}>
+              Ask complex business questions in plain English. The engine synthesizes your specific schema context to write perfectly optimized SQL instantly, rendering the answer as data or beautiful visualizations.
+            </p>
+            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 16 }}>
+              {["Plain English to optimized SQL", "Context-aware semantic routing", "Dynamic visualization mapping"].map((item, i) => (
+                <li key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 16, fontWeight: 600, color: C.navy }}>
+                  <CheckCircle2 size={20} color={C.blue} /> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 1, position: "relative" }}>
+             <div style={{ background: "#fff", borderRadius: 24, padding: 32, border: `1px solid ${C.rule}`, boxShadow: "0 30px 60px rgba(10,22,40,0.05)", position: "relative", zIndex: 2 }}>
                 
-                <div className="flex-1 relative overflow-hidden rounded-2xl">
-                  {renderVisualizer()}
+                {/* User Input Bubble */}
+                <div style={{ background: C.offWhite, border: `1px solid ${C.rule}`, borderRadius: 12, padding: "16px 20px", marginBottom: 24, display: "flex", gap: 12, alignItems: "center" }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(59,154,232,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800 }}>US</span>
+                  </div>
+                  <div style={{ fontWeight: 600, color: C.navy, fontSize: 15 }}>
+                    "Show MRR growth over the last 4 months."
+                  </div>
+                </div>
+
+                {/* SQL Code Block */}
+                <div className="jbm" style={{ background: "#1E1E1E", color: "#D4D4D4", padding: 16, borderRadius: 12, fontSize: 12, marginBottom: 24, lineHeight: 1.6 }}>
+                  <span style={{ color: "#569CD6" }}>SELECT</span> date_trunc(<span style={{ color: "#CE9178" }}>'month'</span>, created_at), <span style={{ color: "#569CD6" }}>SUM</span>(amount)<br />
+                  <span style={{ color: "#569CD6" }}>FROM</span> subscriptions <span style={{ color: "#569CD6" }}>WHERE</span> status = <span style={{ color: "#CE9178" }}>'active'</span><br />
+                  <span style={{ color: "#569CD6" }}>GROUP BY</span> 1 <span style={{ color: "#569CD6" }}>ORDER BY</span> 1 <span style={{ color: "#569CD6" }}>DESC</span>;
+                </div>
+
+                {/* Chart Visualization */}
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", height: 100, padding: "0 16px" }}>
+                  {[30, 45, 60, 85].map((h, i) => (
+                    <div key={i} style={{ flex: 1, background: C.blue, height: `${h}%`, borderRadius: "6px 6px 0 0", opacity: 0.8 }} />
+                  ))}
                 </div>
              </div>
+             {/* Decorative background block */}
+             <div style={{ position: "absolute", top: 20, left: -20, right: 20, bottom: -20, background: C.offWhite, border: `1px solid ${C.rule}`, borderRadius: 24, zIndex: 1 }} />
+          </div>
+        </div>
+
+        {/* ── Step 3: Deploy Autonomous Agents ── */}
+        <div className="grid-2" ref={ref3 as React.RefObject<HTMLDivElement>}>
+          <div className={`fu ${vis3 ? "vis" : ""}`} style={{ order: 1 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 700, fontSize: 14, marginBottom: 16 }}>
+              <Bot size={18} color={C.red} /> STEP 03
+            </div>
+            <h2 className="pfd" style={{ fontSize: 40, color: C.navy, marginBottom: 24, lineHeight: 1.1 }}>
+              Deploy Autonomous Agents
+            </h2>
+            <p style={{ color: C.muted, fontSize: 18, lineHeight: 1.6, marginBottom: 32 }}>
+              Turn powerful queries into proactive watchdogs. AI agents continuously monitor your metrics 24/7, employing linear algebra and statistical variance to detect hidden anomalies before they hit the bottom line.
+            </p>
+            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 16 }}>
+              {["24/7 Continuous metric monitoring", "Statistical variance & EMA detection", "Instant root-cause diagnosis alerts"].map((item, i) => (
+                <li key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 16, fontWeight: 600, color: C.navy }}>
+                  <CheckCircle2 size={20} color={C.blue} /> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className={`fu ${vis3 ? "vis" : ""}`} style={{ order: 2, position: "relative" }}>
+            <div style={{ background: C.navy, borderRadius: 24, padding: 40, position: "relative", zIndex: 2, color: "#fff", boxShadow: "0 30px 60px rgba(10,22,40,0.2)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32, paddingBottom: 16, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div className="pulse-indicator pulse-red" />
+                  <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.05em" }}>WATCHDOG ACTIVE</span>
+                </div>
+                <div className="jbm" style={{ padding: "4px 8px", background: "rgba(39, 201, 63, 0.1)", color: C.green, borderRadius: 6, fontSize: 11, fontWeight: "bold" }}>
+                  SYSTEM NOMINAL
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Nominal Log */}
+                <div style={{ display: "flex", gap: 16, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 12, padding: 20 }}>
+                  <Activity size={20} color={C.faint} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <h5 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Routine Check: Daily Active Users</h5>
+                    <p className="jbm" style={{ fontSize: 12, color: C.faint }}>Variance: +1.2% (Within normal thresholds)</p>
+                  </div>
+                </div>
+
+                {/* Anomaly Log */}
+                <div style={{ display: "flex", gap: 16, background: "rgba(255,59,48,0.1)", border: `1px solid ${C.red}`, borderRadius: 12, padding: 20, position: "relative", overflow: "hidden" }}>
+                  <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: C.red }} />
+                  <AlertTriangle size={20} color={C.red} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <h5 style={{ fontSize: 15, fontWeight: 700, color: C.redPale, marginBottom: 8 }}>Anomaly Detected: API Error Rate</h5>
+                    <p style={{ fontSize: 14, color: "#fff", opacity: 0.8, lineHeight: 1.5 }}>
+                      Gateway 502 errors spiked by 400% in the last 5 minutes. Highly correlated with recent deployment <code className="jbm" style={{ background: "rgba(0,0,0,0.3)", padding: "2px 6px", borderRadius: 4, color: C.redPale, fontSize: 12 }}>v2.4.1</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Decorative background block */}
+            <div style={{ position: "absolute", top: -20, left: -20, right: 20, bottom: 20, background: C.red, borderRadius: 24, zIndex: 1, opacity: 0.08 }} />
           </div>
         </div>
 

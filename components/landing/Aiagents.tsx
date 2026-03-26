@@ -7,38 +7,38 @@ import { useVisible } from "@/hooks/useVisible";
 const pipelineSteps = [
   {
     id: "01",
-    name: "Real-Time Monitoring",
-    role: "Anomaly Detector",
+    name: "24/7 Monitoring",
+    role: "Spot problems instantly",
     icon: <Activity size={20} color={C.blueLight} />,
-    desc: "Vectorized algorithms monitor your business metrics 24/7, catching revenue drops or abnormal usage spikes in milliseconds.",
+    desc: "Want to know the second your revenue drops or signups stall? We watch your numbers around the clock and flag issues before they become disasters.",
   },
   {
     id: "02",
-    name: "Contextual Analysis",
-    role: "Memory Engine",
+    name: "Smart Filtering",
+    role: "No more false alarms",
     icon: <Database size={20} color={C.blueLight} />,
-    desc: "Cross-references historical data to instantly determine if a fluctuation is a normal seasonal trend or a critical new issue.",
+    desc: "Tired of getting panic alerts for a normal weekend dip in traffic? We learn your natural business cycles so we only bother you when something is actually wrong.",
   },
   {
     id: "03",
-    name: "Automated Root-Cause",
-    role: "AI Data Analyst",
+    name: "Root Cause AI",
+    role: "Find out exactly why",
     icon: <Search size={20} color={C.blueLight} />,
-    desc: "Autonomously writes and executes SQL to drill into your schema, pinpointing the exact region, product, or user segment driving the change.",
+    desc: "Looking for the reason your sales suddenly dipped? Our AI automatically digs through your databases to find the exact product, region, or bug causing the issue.",
   },
   {
     id: "04",
-    name: "Predictive Impact",
-    role: "Forecaster",
+    name: "Revenue Forecasting",
+    role: "Know what it costs",
     icon: <LineChart size={20} color={C.blueLight} />,
-    desc: "Applies machine learning models to project exactly how this anomaly will impact your KPIs and bottom line over the next 7 days.",
+    desc: "Wondering if a minor drop is worth fixing right now? We calculate exactly how much money an issue will cost your business over the next week if left alone.",
   },
   {
     id: "05",
-    name: "Smart Notifications",
-    role: "Dispatcher",
+    name: "Plain-English Alerts",
+    role: "Get clear answers",
     icon: <Bell size={20} color={C.blueLight} />,
-    desc: "Pushes a plain-English, executive summary to Slack or your webhook, complete with a 1-click link to a pre-built investigation dashboard.",
+    desc: "Hate trying to decode complicated charts? Get a simple, easy-to-read summary sent straight to your Slack or email with exact steps on what to do next.",
   },
 ];
 
@@ -74,13 +74,13 @@ export function AIAgents() {
             marginBottom: 24, color: C.blueLight, border: "1px solid rgba(59,154,232,0.3)",
           }}>
             <Workflow size={16} />
-            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em" }}>THE SUPERVISOR ARCHITECTURE</span>
+            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em" }}>HOW IT WORKS</span>
           </div>
           <h2 className="pfd" style={{ fontSize: 48, color: "#fff", marginBottom: 24, lineHeight: 1.1 }}>
-            Don't just query your data.<br />Hire an AI team to watch it.
+            Stop hunting for data.<br />Let the answers come to you.
           </h2>
           <p style={{ color: C.faint, fontSize: 18, maxWidth: 650, margin: "0 auto", lineHeight: 1.6 }}>
-            Unlike standard BI dashboards that require you to actively hunt for problems, DataOmen uses a multi-agent orchestration pattern to proactively detect, diagnose, and predict outcomes for you.
+            Tired of staring at dashboards trying to figure out what went wrong? Tell Arcli what you care about, and our AI team will watch it, figure out why it changes, and tell you exactly how to fix it.
           </p>
         </div>
 
