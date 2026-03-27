@@ -7,38 +7,38 @@ import { useVisible } from "@/hooks/useVisible";
 const pipelineSteps = [
   {
     id: "01",
-    name: "24/7 Monitoring",
-    role: "Spot problems instantly",
+    name: "Autonomous Sentinel",
+    role: "Anomaly Detector",
     icon: <Activity size={20} color={C.blueLight} />,
-    desc: "Want to know the second your revenue drops or signups stall? We watch your numbers around the clock and flag issues before they become disasters.",
+    desc: "Multi-dimensional ML models evaluate your metrics streams 24/7, identifying complex anomalies and hidden pattern shifts in milliseconds—far beyond simple threshold alerts.",
   },
   {
     id: "02",
-    name: "Smart Filtering",
-    role: "No more false alarms",
+    name: "Semantic Memory",
+    role: "Context Engine",
     icon: <Database size={20} color={C.blueLight} />,
-    desc: "Tired of getting panic alerts for a normal weekend dip in traffic? We learn your natural business cycles so we only bother you when something is actually wrong.",
+    desc: "Leverages Long-Term Memory (LTM) and RAG to deeply understand your unique business cycles, instantly distinguishing between normal seasonality and critical incidents.",
   },
   {
     id: "03",
-    name: "Root Cause AI",
-    role: "Find out exactly why",
+    name: "Recursive Diagnostics",
+    role: "Root-Cause Analyst",
     icon: <Search size={20} color={C.blueLight} />,
-    desc: "Looking for the reason your sales suddenly dipped? Our AI automatically digs through your databases to find the exact product, region, or bug causing the issue.",
+    desc: "Deploys an autonomous swarm to recursively write SQL, execute queries, and traverse your database schema, pinpointing the exact micro-segment or product driving the variance.",
   },
   {
     id: "04",
-    name: "Revenue Forecasting",
-    role: "Know what it costs",
+    name: "Scenario Forecasting",
+    role: "Predictive Modeler",
     icon: <LineChart size={20} color={C.blueLight} />,
-    desc: "Wondering if a minor drop is worth fixing right now? We calculate exactly how much money an issue will cost your business over the next week if left alone.",
+    desc: "Executes real-time simulations to project the compounding impact on your KPIs and bottom line, generating predictive trajectories for the next 7 to 30 days.",
   },
   {
     id: "05",
-    name: "Plain-English Alerts",
-    role: "Get clear answers",
+    name: "Actionable Intelligence",
+    role: "Dispatcher",
     icon: <Bell size={20} color={C.blueLight} />,
-    desc: "Hate trying to decode complicated charts? Get a simple, easy-to-read summary sent straight to your Slack or email with exact steps on what to do next.",
+    desc: "Delivers a boardroom-ready, plain-English brief directly to Slack or Teams, complete with auto-generated visualization boards and immediate mitigation recommendations.",
   },
 ];
 
@@ -74,13 +74,13 @@ export function AIAgents() {
             marginBottom: 24, color: C.blueLight, border: "1px solid rgba(59,154,232,0.3)",
           }}>
             <Workflow size={16} />
-            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em" }}>HOW IT WORKS</span>
+            <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.05em" }}>THE SUPERVISOR ARCHITECTURE</span>
           </div>
           <h2 className="pfd" style={{ fontSize: 48, color: "#fff", marginBottom: 24, lineHeight: 1.1 }}>
-            Stop hunting for data.<br />Let the answers come to you.
+            Don't just query your data.<br />Hire an AI team to watch it.
           </h2>
           <p style={{ color: C.faint, fontSize: 18, maxWidth: 650, margin: "0 auto", lineHeight: 1.6 }}>
-            Tired of staring at dashboards trying to figure out what went wrong? Tell Arcli what you care about, and our AI team will watch it, figure out why it changes, and tell you exactly how to fix it.
+            Unlike standard BI dashboards that require you to actively hunt for problems, Arcli uses an advanced multi-agent orchestration pattern to proactively detect, diagnose, and predict outcomes for you.
           </p>
         </div>
 
