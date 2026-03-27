@@ -21,6 +21,9 @@ import { competitorComparisonsPart2 } from './competitor-comparisons-2';
 import { howToGuidesPart2 } from './guides-2';
 import { dashboardTemplatesPart2 } from './templates-2';
 
+// Import Growth Campaigns
+import { shopifySeoPages } from './shopify-campaign';
+
 /**
  * High-Performance Merging Utility
  * Merges split SEO modules while maintaining the original object structure.
@@ -39,7 +42,7 @@ const allDashboardTemplates = { ...dashboardTemplatesPart1, ...dashboardTemplate
 /**
  * SEOPageData Union Type
  * Designed to handle the structural variations between Features, Integrations, 
- * Comparisons, and Blueprints. Enables exhaustive type-checking in the UI layer.
+ * Comparisons, Dashboards, and Vertical Campaigns. Enables exhaustive type-checking in the UI layer.
  */
 export type SEOPageData = 
   | typeof allCoreFeatures[keyof typeof allCoreFeatures]
@@ -49,6 +52,7 @@ export type SEOPageData =
   | typeof allSaasIntegrations[keyof typeof allSaasIntegrations]
   | typeof allCompetitorComparisons[keyof typeof allCompetitorComparisons]
   | typeof allHowToGuides[keyof typeof allHowToGuides]
+  | typeof shopifySeoPages[keyof typeof shopifySeoPages] // <-- Injected Shopify Typings
   | TemplateBlueprint;
 
 // --- 2. Data Aggregation (The Registry) ---
@@ -65,7 +69,8 @@ export const seoPages: Record<string, SEOPageData> = {
   ...allSaasIntegrations,
   ...allCompetitorComparisons,
   ...allHowToGuides,
-  ...allDashboardTemplates
+  ...allDashboardTemplates,
+  ...shopifySeoPages // <-- Injected Shopify Pages into the Global Routing Registry
 } as Record<string, SEOPageData>;
 
 /**
@@ -80,7 +85,8 @@ export const seoPagesByCategory = {
   saasIntegrations: allSaasIntegrations,
   competitorComparisons: allCompetitorComparisons,
   howToGuides: allHowToGuides,
-  dashboardTemplates: allDashboardTemplates
+  dashboardTemplates: allDashboardTemplates,
+  shopifyCampaign: shopifySeoPages // <-- Injected for categorical lookups and link silos
 } as const;
 
 export type SEOCategory = keyof typeof seoPagesByCategory;
@@ -107,6 +113,7 @@ export const getAllSlugs = (): string[] => {
  * Isolates TemplateBlueprint logic from standard SEO page structures.
  */
 export function isTemplatePage(page: SEOPageData): page is TemplateBlueprint {
+  // @ts-ignore - gracefully handles properties that might not exist on all union members
   return page.type === 'template';
 }
 

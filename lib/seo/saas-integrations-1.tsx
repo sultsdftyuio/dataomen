@@ -1,12 +1,11 @@
-// lib/seo/saas-integrations-1.tsx
 import React from 'react';
 import { Cloud, ShoppingCart } from 'lucide-react';
 
 /**
  * SEOPageData Interface
  * Upgraded to the "Application Intelligence Blueprint" schema. 
- * Now includes structured payload blocks for Interactive AI Demos, 
- * Audience Segmentation (Personas), and strict CTA hierarchies.
+ * Standardized keys (pipelinePhases, workflowUpgrade, competitiveAdvantage) 
+ * to plug perfectly into the Omni-Renderer (page.tsx).
  */
 export interface SEOPageData {
   type: 'integration';
@@ -20,7 +19,7 @@ export interface SEOPageData {
   stepByStep?: string[];
   features: string[];
   
-  // NEW: Interactive Demo Payload
+  // Interactive Demo Payload
   demoPipeline?: {
     userPrompt: string;
     aiInsight: string;
@@ -28,7 +27,7 @@ export interface SEOPageData {
     chartMetric: string;
   };
 
-  // NEW: Audience Segmentation
+  // Audience Segmentation
   targetPersonas?: {
     role: string;
     iconType: 'exec' | 'ops' | 'data';
@@ -36,30 +35,38 @@ export interface SEOPageData {
     capabilities: string[];
   }[];
 
-  // NEW: CTA Hierarchy
+  // CTA Hierarchy
   ctaHierarchy?: {
     primary: { text: string; href: string };
     secondary: { text: string; href: string };
   };
 
-  extractionLifecycle: {
-    phase1: { name: string; description: string };
-    phase2: { name: string; description: string };
-    phase3: { name: string; description: string };
-  };
+  // Standardized to match Omni-Renderer
+  pipelinePhases: {
+    phase: string;
+    description: string;
+    outcome?: string;
+  }[];
+  
   domainSpecificCapabilities: {
     handlingQuirks: string[];
     aiAdvantage: string;
   };
-  bypassingNativeLimits: {
-    legacyLimitations: string[];
-    arcliAcceleration: string[];
+  
+  // Standardized to match Omni-Renderer
+  workflowUpgrade: {
+    legacyBottleneck: string[];
+    arcliAutomation: string[];
   };
-  comparisonTable?: {
-    feature: string;
-    legacy: string;
-    arcli: string;
+  
+  // Standardized to match Omni-Renderer
+  competitiveAdvantage?: {
+    category: string;
+    legacyTool: string;
+    limitation: string;
+    arcliAdvantage: string;
   }[];
+  
   analyticalScenarios: {
     level: 'Basic' | 'Intermediate' | 'Advanced' | 'Strategic';
     title: string;
@@ -68,16 +75,19 @@ export interface SEOPageData {
     exampleSql: string;
     businessOutcome: string;
   }[];
+  
   businessValueAndROI: {
     metric: string;
     impact: string;
     timeframe: string;
   }[];
+  
   faqs: {
-    persona: 'CEO' | 'Data Engineer' | 'CISO' | 'RevOps' | 'E-commerce Director';
+    persona?: 'CEO' | 'Data Engineer' | 'CISO' | 'RevOps' | 'E-commerce Director';
     q: string;
     a: string;
   }[];
+  
   relatedSlugs: string[];
 }
 
@@ -91,7 +101,6 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
     icon: <Cloud className="w-12 h-12 text-sky-500 mb-6" />,
     schemaMarkup: 'HowTo',
     
-    // Powered Interactive Demo
     demoPipeline: {
       userPrompt: "Why did our Enterprise win rate drop last quarter?",
       aiInsight: "Enterprise win rates dropped by 8.4% in Q3. The primary bottleneck was a 22-day increase in the 'Legal Review' stage for accounts sourced via Outbound Sales.",
@@ -99,7 +108,6 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       chartMetric: "-8.4% Q/Q"
     },
 
-    // Powered Audience Segmentation
     targetPersonas: [
       {
         role: 'For Founders & CROs',
@@ -121,7 +129,6 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       }
     ],
 
-    // Strong CTA Hierarchy
     ctaHierarchy: {
       primary: { text: 'Start Analyzing Free', href: '/register' },
       secondary: { text: 'View Architecture', href: '#how-it-works' }
@@ -140,20 +147,22 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       'Automated Custom Field Detection',
       'Sub-Second In-Browser Charting'
     ],
-    extractionLifecycle: {
-      phase1: {
-        name: 'The Zero-Copy Pipeline',
+    
+    pipelinePhases: [
+      {
+        phase: '1. The Zero-Copy Pipeline',
         description: 'Authorize Arcli using enterprise-grade Salesforce OAuth 2.0 protocols. We strictly enforce read-only access scopes.'
       },
-      phase2: {
-        name: 'Automated Metadata Ingestion',
+      {
+        phase: '2. Automated Metadata Ingestion',
         description: 'Our Semantic Router automatically scans and indexes your complex schema, including custom objects and polymorphic fields.'
       },
-      phase3: {
-        name: 'Conversational Sub-Second Compute',
+      {
+        phase: '3. Conversational Compute',
         description: 'By bypassing traditional REST bottlenecks and compiling queries into optimized SQL over Parquet formats, operations execute in sub-seconds.'
       }
-    },
+    ],
+    
     domainSpecificCapabilities: {
       handlingQuirks: [
         'Native recognition and mapping of custom fields (e.g., `industry__c`).',
@@ -161,20 +170,23 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       ],
       aiAdvantage: 'Arcli’s semantic router embeds your unique Salesforce terminology (like specific deal stages) into the AI context, preventing hallucinations.'
     },
-    bypassingNativeLimits: {
-      legacyLimitations: [
+    
+    workflowUpgrade: {
+      legacyBottleneck: [
         'Native Salesforce report builders require clicking through 5+ menus just to group by a secondary dimension.',
         'Exporting data to Excel breaks version control and introduces human error.'
       ],
-      arcliAcceleration: [
+      arcliAutomation: [
         'Generates complex, multi-object analytical logic instantly via conversational prompts.',
         'Seamlessly joins Salesforce pipeline data with external billing databases.'
       ]
     },
-    comparisonTable: [
-      { feature: 'Cross-object queries', legacy: 'Limited (Requires Custom Report Types)', arcli: 'Unlimited (Automated Semantic Joins)' },
-      { feature: 'Query Execution Speed', legacy: 'Slow (API Constrained)', arcli: 'Instant (Columnar Execution)' }
+    
+    competitiveAdvantage: [
+      { category: 'Data Blending', legacyTool: 'Salesforce Native Reports', limitation: 'Limited (Requires Custom Report Types)', arcliAdvantage: 'Unlimited (Automated Semantic Joins)' },
+      { category: 'Query Execution Speed', legacyTool: 'Standard API Pulls', limitation: 'Slow (API Constrained)', arcliAdvantage: 'Instant (Columnar Execution)' }
     ],
+    
     analyticalScenarios: [
       {
         level: 'Intermediate',
@@ -185,11 +197,11 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
         businessOutcome: 'Reveals that Healthcare deals require an average of 142 days to close, enabling more accurate quarterly forecasting.'
       }
     ],
+    
     businessValueAndROI: [
       { metric: 'Data Engineering Hours Saved', impact: 'Reduce SFDC report-building ticket queues by 85%.', timeframe: 'Immediate (Day 1)' }
     ],
     
-    // Trimmed FAQs down to the absolute most important 3
     faqs: [
       {
         persona: 'CEO',
@@ -219,7 +231,6 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
     icon: <ShoppingCart className="w-12 h-12 text-emerald-500 mb-6" />,
     schemaMarkup: 'HowTo',
     
-    // Powered Interactive Demo
     demoPipeline: {
       userPrompt: "Which influencer discount code actually drove the highest net profit last month?",
       aiInsight: "While 'SUMMER25' drove the highest gross revenue, 'TECHREVIEW10' resulted in 42% higher Net Profit because it was applied primarily to high-margin hardware SKUs.",
@@ -227,7 +238,6 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       chartMetric: "+42% Net Margin"
     },
 
-    // Powered Audience Segmentation
     targetPersonas: [
       {
         role: 'For E-com Founders',
@@ -249,7 +259,6 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       }
     ],
 
-    // Strong CTA Hierarchy
     ctaHierarchy: {
       primary: { text: 'Connect Shopify Free', href: '/register' },
       secondary: { text: 'See Live Demo', href: '#interactive-demo' }
@@ -268,20 +277,22 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       'True Net Margin & COGS Calculation',
       'Nested JSON Unpacking'
     ],
-    extractionLifecycle: {
-      phase1: {
-        name: 'The API Synchronization Timeline',
+    
+    pipelinePhases: [
+      {
+        phase: '1. API Synchronization',
         description: 'Connect your Shopify store via our secure integration portal using strictly scoped read-only access.'
       },
-      phase2: {
-        name: 'Automated Payload Normalization',
+      {
+        phase: '2. Automated Payload Normalization',
         description: 'Shopify order data is notoriously nested. Arcli automatically cleans and flattens complex JSON arrays into optimized columnar structures.'
       },
-      phase3: {
-        name: 'Conversational Extraction',
+      {
+        phase: '3. Conversational Extraction',
         description: 'Data is instantly available for querying via plain English prompts, executing in sub-seconds via DuckDB.'
       }
-    },
+    ],
+    
     domainSpecificCapabilities: {
       handlingQuirks: [
         'Natively extracts and aggregates deeply nested JSON arrays commonly found in modern E-commerce APIs.',
@@ -289,20 +300,23 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
       ],
       aiAdvantage: 'The AI is specifically trained on E-commerce relational models, attributing proportional discounts down to the individual SKU level.'
     },
-    bypassingNativeLimits: {
-      legacyLimitations: [
+    
+    workflowUpgrade: {
+      legacyBottleneck: [
         'Native Shopify dashboards over-index on Gross Revenue, ignoring variable COGS and return rates.',
         'Calculating LTV across specific customer segments is notoriously difficult in the native UI.'
       ],
-      arcliAcceleration: [
+      arcliAutomation: [
         'Generates mathematically precise Net Margin and COGS reporting instantly via natural language.',
         'Allows for cross-platform data blending (e.g., joining Shopify revenue with Meta Ads spend).'
       ]
     },
-    comparisonTable: [
-      { feature: 'Profitability Metrics', legacy: 'Gross Revenue Focus', arcli: 'True Net Profit & COGS mapping' },
-      { feature: 'Inventory Forecasting', legacy: 'Manual (Excel exports)', arcli: 'Predictive Velocity Analytics' }
+    
+    competitiveAdvantage: [
+      { category: 'Profitability Metrics', legacyTool: 'Native Dashboards', limitation: 'Gross Revenue Focus', arcliAdvantage: 'True Net Profit & COGS mapping' },
+      { category: 'Inventory Forecasting', legacyTool: 'Manual Spreadsheets', limitation: 'Manual (Excel exports)', arcliAdvantage: 'Predictive Velocity Analytics' }
     ],
+    
     analyticalScenarios: [
       {
         level: 'Strategic',
@@ -313,11 +327,11 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
         businessOutcome: 'Prevents catastrophic stockouts during high-demand periods by enabling proactive reordering based on mathematical reality.'
       }
     ],
+    
     businessValueAndROI: [
       { metric: 'Net Margin Visibility', impact: 'Identify and eliminate unprofitable discount strategies, instantly improving net margins by 5-15%.', timeframe: 'First 30 Days' }
     ],
     
-    // Trimmed FAQs down to 3
     faqs: [
       {
         persona: 'CEO',

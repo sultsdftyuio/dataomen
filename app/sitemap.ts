@@ -4,16 +4,16 @@ import { seoPages } from '@/lib/seo/index';
 
 /**
  * Arcli Global Sitemap Generator
- * * Execution Paradigm: Functional and stateless. We programmatically combine 
+ * Execution Paradigm: Functional and stateless. We programmatically combine 
  * static core routes with our dynamic, outcome-driven SEO landing pages.
- * Search engines use this to map the semantic context of arcli.tech.
+ * Search engines use this to map the semantic context and crawl budget of arcli.tech.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-  // Core Domain Configuration
-  const baseUrl = 'https://arcli.tech';
+  // Core Domain Configuration (Always use www. to enforce canonical parity)
+  const baseUrl = 'https://www.arcli.tech';
   const currentDate = new Date();
 
-  // 1. Static Core Routes (High Priority)
+  // 1. Static Core Routes (Highest Priority)
   // These represent the primary conversion funnel and platform architecture.
   const coreRoutes: MetadataRoute.Sitemap = [
     {
@@ -21,6 +21,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: currentDate,
       changeFrequency: 'always',
       priority: 1.0,
+    },
+    {
+      url: `${baseUrl}/analyze-shopify-data`, // The Primary Shopify Pillar Page
+      lastModified: currentDate,
+      changeFrequency: 'weekly',
+      priority: 0.9,
     },
     {
       url: `${baseUrl}/platform`,
@@ -35,9 +41,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
-      url: `${baseUrl}/integrations`, // The Hub Page we just built
+      url: `${baseUrl}/integrations`, // The Integrations Hub Page
       lastModified: currentDate,
       changeFrequency: 'weekly',
+      priority: 0.8,
+    },
+    {
+      url: `${baseUrl}/chat/demo`, // Interactive Demo Flow
+      lastModified: currentDate,
+      changeFrequency: 'monthly',
       priority: 0.8,
     },
     {
@@ -54,17 +66,20 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
   ];
 
-  // 2. Dynamic SEO Routes (Mid Priority)
-  // Vectorized mapping of our semantic content silos. This ensures long-tail 
-  // search discovery without penalizing the DOM of our application UI.
+  // 2. Dynamic SEO Routes (High Priority Growth Engine)
+  // Vectorized mapping of our semantic content silos. Because we export the Shopify
+  // campaign from our central SEO registry, this automatically captures and maps 
+  // all Programmatic SEO endpoints without penalizing the DOM of our application UI.
+  // We assign a 0.9 priority to signal to Google that these are high-value entry points.
   const dynamicSeoRoutes: MetadataRoute.Sitemap = Object.keys(seoPages).map((slug) => ({
     url: `${baseUrl}/${slug}`,
     lastModified: currentDate,
-    changeFrequency: 'monthly',
-    priority: 0.7,
+    changeFrequency: 'weekly',
+    priority: 0.9, 
   }));
 
   // 3. Legal & Compliance Routes (Low Priority)
+  // We aggressively downrank these so Google doesn't waste its crawl budget here.
   const legalRoutes: MetadataRoute.Sitemap = [
     {
       url: `${baseUrl}/privacy`,
@@ -79,10 +94,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.3,
     },
     {
+      url: `${baseUrl}/cookies`,
+      lastModified: currentDate,
+      changeFrequency: 'yearly',
+      priority: 0.3,
+    },
+    {
       url: `${baseUrl}/security`,
       lastModified: currentDate,
       changeFrequency: 'yearly',
-      priority: 0.4, // Slightly higher for enterprise trust signals
+      priority: 0.4, // Slightly higher for B2B/Enterprise trust signals
     },
   ];
 

@@ -1,4 +1,3 @@
-// lib/seo/core-features-1.tsx
 import React from 'react';
 import { Sparkles, LineChart, BarChart3, TrendingUp, MessageSquare } from 'lucide-react';
 
@@ -139,7 +138,8 @@ export const coreFeaturesPart1: Record<string, SEOPageData> = {
       { q: 'Is my data used to train your AI models?', a: 'Absolutely not. Your proprietary data never leaves your secure perimeter and is strictly excluded from any global model training.' },
       { q: 'What happens if the platform misunderstands a question?', a: 'Every generated chart includes a transparent, plain-English summary of the exact mathematical steps taken. You can verify the logic instantly.' }
     ],
-    relatedSlugs: ['ai-business-intelligence', 'ai-dashboard-builder', 'predictive-ai-analytics']
+    // INJECTED SHOPIFY PAGES FOR INTERNAL LINKING SILO
+    relatedSlugs: ['ai-business-intelligence', 'ai-dashboard-builder', 'predictive-ai-analytics', 'shopify-cohort-analysis', 'increase-shopify-aov']
   },
 
   'ai-business-intelligence': {
@@ -214,7 +214,7 @@ export const coreFeaturesPart1: Record<string, SEOPageData> = {
       { q: 'How do you ensure metric consistency across departments?', a: 'Through a Semantic Governance layer. A data leader defines a term once. If Marketing and Finance both ask for "Revenue," the AI uses the exact same underlying SQL block.' },
       { q: 'Can we restrict access to specific departments?', a: 'Yes. You can create isolated workspaces mapped to specific database roles, ensuring users only query data they are authorized to see.' }
     ],
-    relatedSlugs: ['ai-data-analysis', 'ai-dashboard-builder', 'slack-teams-data-bot']
+    relatedSlugs: ['ai-data-analysis', 'ai-dashboard-builder', 'slack-teams-data-bot', 'shopify-custom-reports']
   },
 
   'ai-dashboard-builder': {
@@ -371,7 +371,7 @@ export const coreFeaturesPart1: Record<string, SEOPageData> = {
       { q: 'Can I export the forecasted numbers into our financial models?', a: 'Yes. Any predictive chart can be exported as raw CSV data, allowing your finance team to import the projected baseline directly into their primary planning software.' },
       { q: 'Is our forecasting data sent to external AI providers?', a: 'No. The mathematical calculations for forecasting are executed within the secure boundary of your own data warehouse.' }
     ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'slack-teams-data-bot']
+    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'slack-teams-data-bot', 'shopify-inventory-forecasting']
   },
 
   'slack-teams-data-bot': {
