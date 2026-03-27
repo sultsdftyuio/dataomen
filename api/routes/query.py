@@ -85,6 +85,12 @@ class PersistentQueryRequest(BaseModel):
     ab_test_config: Optional[ABTestConfig] = None
     predictive_config: Optional[PredictiveConfig] = None
 
+
+class ExecuteSQLRequest(BaseModel):
+    sql: str
+    dataset_ids: Optional[List[str]] = None
+
+
 # ------------------------------------------------------------
 # SECURITY UTILITIES
 # ------------------------------------------------------------
@@ -537,3 +543,56 @@ async def execute_persistent_query(
             )
 
         raise HTTPException(status_code=500, detail=f"Analytical Engine Exception: {str(e)}")
+
+# ------------------------------------------------------------
+# FAST-PATH QUERY (Dashboard / Raw SQL path)
+# ------------------------------------------------------------
+
+@router.post("/execute")
+async def execute_raw_sql(
+    request: ExecuteSQLRequest,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(verify_tenant),
+) -> Dict[str, Any]:
+    """
+    The Fast-Path execution route. 
+    Bypasses the LLM and runs pre-compiled Dashboard SQL directly against DuckDB.
+    """
+    start_time = time.perf_counter()
+    
+    # 1. Security Gatekeeper: Ensure no destructive SQL
+    validate_sql(request.sql)
+    sql_query = enforce_result_limit(request.sql)
+    
+    # 2. Gather Datasets to mount (if any)
+    datasets = []
+    if request.dataset_ids:
+        datasets = db.query(Dataset).filter(
+            Dataset.id.in_(request.dataset_ids),
+            Dataset.tenant_id == tenant.tenant_id
+        ).all()
+    else:
+        # If it's a global metric (like True ROAS), mount all active datasets for this tenant
+        datasets = db.query(Dataset).filter(
+            Dataset.tenant_id == tenant.tenant_id
+        ).all()
+
+    try:
+        # 3. Direct Vectorized Execution
+        results = await compute_engine.execute_read_only(
+            db=db,
+            tenant_id=tenant.tenant_id,
+            datasets=datasets,
+            query=sql_query,
+        )
+        
+        return {
+            "status": "success",
+            "execution_mode": "sync",
+            "data": results,
+            "execution_time_ms": round((time.perf_counter() - start_time) * 1000, 2),
+        }
+        
+    except Exception as e:
+        logger.error(f"[{tenant.tenant_id}] Fast-Path SQL Execution Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

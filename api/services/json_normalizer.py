@@ -138,7 +138,7 @@ class PolarsNormalizer:
         """
         expressions = []
         
-        for col, dtype in lf.schema.items():
+        for col, dtype in lf.collect_schema().items():
             
             # A. Neutralize pure Null or dynamic Object columns (crashes Parquet writers)
             if dtype == pl.Null or dtype == pl.Object:

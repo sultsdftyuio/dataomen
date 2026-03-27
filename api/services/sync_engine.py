@@ -1,9 +1,13 @@
+# api/services/sync_engine.py
+
 """
 ARCLI.TECH - Zero-ETL Orchestration Module
 Component: SyncEngine (The Conductor)
 Strategy: Hybrid Performance Paradigm, Strict Memory Governance, & DataFast "Instant Value"
 
-Changelog (v3 - Indie Hacker Edition):
+Changelog (v3.1 - Observability Edition):
+- OBSERVABILITY: Native integration with NotificationRouter.
+- ALERTING: Auto-dispatches Slack/Email alerts for DLQ (Dead Letter Queue) spikes and fatal sync crashes.
 - DASHBOARDS: Auto-seeds connector-level semantic views (MRR, Churn, etc.) instantly on connection.
 - SECURITY: Dynamically injects DataSanitizer into connectors to enforce Edge-level PII masking.
 - ROBUSTNESS: Enhanced webhook batch processing with dynamic schema mapping caching.
@@ -35,6 +39,7 @@ from api.services.duckdb_validator import DuckDBValidator
 from api.services.watchdog_service import WatchdogService
 from api.services.credential_manager import CredentialManager
 from api.services.llm_client import llm_client 
+from api.services.notification_router import notification_router  # Added Observability Router
 
 # --- Integration Registry Imports ---
 from api.services.integrations.base_integration import BaseIntegration
@@ -115,7 +120,6 @@ class SyncEngine:
         """
         normalizer = PolarsNormalizer(tenant_id, integration_name)
         sanitizer = DataSanitizer(tenant_id, integration_name)
-        validator = DuckDBValidator(tenant_id, integration_name)
 
         # 1. Computation Layer: JSON -> Polars DataFrame Vectorization
         df = normalizer.normalize_batch(raw_batch)
@@ -127,8 +131,9 @@ class SyncEngine:
         df = sanitizer.process_batch(df, pii_columns=pii_columns, expected_schema=expected_schema)
         
         # 3. Security Gatekeeper: In-Memory DuckDB Validation
-        # Raises an exception if the dataframe violates the connector's schema contract
-        validator.validate_batch(df, expected_schema)
+        # Uses Context Manager to ensure zero-copy memory safety
+        with DuckDBValidator(tenant_id, integration_name) as validator:
+            validator.validate_batch(df, expected_schema)
         
         return df
 
@@ -335,6 +340,22 @@ class SyncEngine:
                 tenant_id, integration_name, dataset_id, total_rows_processed, duration, saved_paths
             )
             
+            # --- OBSERVABILITY: Post-Sync DLQ Auditing ---
+            metrics = getattr(integration, "sync_metrics", {})
+            dlq_count = metrics.get("dlq_events", 0)
+            
+            if dlq_count > 0:
+                warning_summary = (
+                    f"The Sync Engine detected **{dlq_count} malformed API objects** during the `{integration_name}` extraction. "
+                    f"These records violated the strict schema guards and were safely routed to the Dead Letter Queue (DLQ) "
+                    f"to protect your analytical tables from corruption. No action is immediately required, but you may want to review your API payloads."
+                )
+                await notification_router.dispatch_alert(
+                    tenant_id=tenant_id,
+                    agent_name=f"{integration_name.capitalize()} Schema Gatekeeper",
+                    insight_summary=warning_summary
+                )
+
             # 7. Check and Auto-Seed Cross-Platform "Golden Metrics"
             self.seed_golden_metrics(tenant_id)
 
@@ -354,6 +375,19 @@ class SyncEngine:
         except Exception as e:
             logger.error(f"❌ [{tenant_id}] Sync Failed for {dataset_id}: {str(e)}", exc_info=True)
             await self._update_dataset_status(dataset_id, DatasetStatus.FAILED, error_msg=str(e))
+            
+            # --- OBSERVABILITY: Catastrophic Crash Alert ---
+            crash_summary = (
+                f"The extraction pipeline for `{integration_name}` suffered a fatal crash during execution. "
+                f"**Error Details:** `{str(e)}`.\n\n"
+                f"The system has safely rolled back the active transaction and marked the dataset as FAILED. "
+                f"Please verify your API credentials and ensure the source system is not experiencing downtime."
+            )
+            await notification_router.dispatch_alert(
+                tenant_id=tenant_id,
+                agent_name=f"{integration_name.capitalize()} Sync Watchdog",
+                insight_summary=crash_summary
+            )
 
 
     # --- Metadata Helpers ---

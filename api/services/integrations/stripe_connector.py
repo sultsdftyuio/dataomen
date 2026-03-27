@@ -3,9 +3,30 @@ ARCLI.TECH - SaaS Integration Module
 Connector: Stripe (Financial Analytics)
 Strategy: Async Cursor Pagination, Strict Schema Mapping, Zero-ETL Vectorization, Security by Design
 
+Changelog (v6):
+- CRITICAL FIX #1: Tenacity before_sleep binding — retry moved out of decorator;
+  applied dynamically in _fetch_page_with_backpressure so `self` is always bound.
+- CRITICAL FIX #2: Concurrent shard memory bomb — replaced single gather+accumulate
+  with asyncio.as_completed streaming; batches yielded as shards complete.
+- CRITICAL FIX #3: Adaptive window was computed but never used — now applied to
+  ceil_ts and shard window size.
+- CRITICAL FIX #4: Events API duplication/ordering — added 60-second rewind window
+  and dual checkpoint (last_event_id + created_ts) to guard against late arrivals.
+- CRITICAL FIX #5: HTTP requests now carry aiohttp.ClientTimeout(total=30) to
+  prevent hanging sockets and stalled workers.
+- IMPROVEMENT #6: Deterministic sampling via hash(id) % 100 — reproducible datasets.
+- IMPROVEMENT #7: BoundedSet (LRU-evicting ordered dict) replaces unbounded set for
+  dedup to prevent OOM on large syncs.
+- IMPROVEMENT #8: Adaptive concurrency — _adapt_concurrency() adjusts semaphore
+  limit based on retry rate and p95 latency after every page.
+- IMPROVEMENT #9: Stripe field expansion — subscriptions use
+  ?expand[]=data.items.data.price to reduce round-trips and simplify mapping.
+- IMPROVEMENT #10: updated_ts field added to mutable objects (subscriptions,
+  invoices, customers); _synced_at epoch added to every record for idempotency.
+
 Changelog (v5):
-- CRITICAL FIX: True concurrent shard fetching - gather ALL shards in parallel, not sequential
-- CRITICAL FIX: Checkpoint now uses max(created) instead of last_record to prevent drift
+- CRITICAL FIX: True concurrent shard fetching - gather ALL shards in parallel
+- CRITICAL FIX: Checkpoint now uses max(created) instead of last_record
 - CRITICAL FIX: Retry callback properly wired to _on_retry for accurate metrics
 - CRITICAL FIX: Added deduplication within batch to handle concurrent shard overlaps
 - CRITICAL FIX: Added semaphore-based backpressure for proactive rate control
@@ -16,16 +37,6 @@ Changelog (v5):
 - FEATURE: Adaptive window sizing based on data volume
 - FEATURE: Sampling mode for huge tenants
 - SECURITY: Enhanced PII handling with fallback masking
-
-Changelog (v4):
-- CRITICAL FIX: True incremental sync via rolling window (created[gte] = now - 7 days)
-- CRITICAL FIX: Structured checkpoint {last_id, created_ts, stream, version}
-- CRITICAL FIX: SyncBatch envelope for UPSERT/dedup
-- CRITICAL FIX: DLQ (_send_to_dlq) added
-- PERF: Concurrent page fetching via asyncio.gather
-- PERF: max_pages guard (default 10 000)
-- OBSERVABILITY: SyncMetrics with p50/p95 latency
-- SECURITY: Stripe-Version from config/env
 """
 
 import hmac
@@ -36,6 +47,7 @@ import contextlib
 import os
 import time
 import random
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import (
@@ -58,7 +70,6 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
     RetryCallState,
-    before_sleep,
 )
 
 from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
@@ -77,6 +88,20 @@ _DEFAULT_INCREMENTAL_WINDOW_SECS: int = int(
 
 _MAX_PAGES_DEFAULT: int = 10_000
 
+# FIX #5: Default timeout applied to every outbound HTTP request.
+_HTTP_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+# FIX #7: Max IDs held in memory for deduplication before LRU eviction.
+_DEDUP_MAX_SIZE: int = int(os.environ.get("STRIPE_DEDUP_MAX_SIZE", "200000"))
+
+# FIX #8: Concurrency adaptation thresholds.
+_CONCURRENCY_RETRY_HIGH: float = 0.10   # retry rate above this → back off
+_CONCURRENCY_RETRY_LOW:  float = 0.02   # retry rate below this → speed up
+_CONCURRENCY_P95_HIGH:   float = 5_000  # ms — back off when p95 is this slow
+_CONCURRENCY_P95_LOW:    float = 1_000  # ms — safe to speed up below this
+_CONCURRENCY_MIN:        int   = 1
+_CONCURRENCY_MAX:        int   = 10
+
 # Stream priorities for differentiated sync scheduling (lower = higher priority)
 STREAM_PRIORITY: Dict[str, int] = {
     "charges": 1,
@@ -86,11 +111,15 @@ STREAM_PRIORITY: Dict[str, int] = {
     "disputes": 2,
 }
 
-# PII strict mode - if False, uses fallback masking instead of hard fail
+# PII strict mode — if False, uses fallback masking instead of hard fail.
 STRICT_PII: bool = os.environ.get("STRIPE_STRICT_PII", "false").lower() == "true"
 
-# Default concurrent request limit for backpressure
+# Default concurrent request limit for backpressure.
 DEFAULT_SEMAPHORE_LIMIT: int = int(os.environ.get("STRIPE_SEMAPHORE_LIMIT", "5"))
+
+# FIX #4: Rewind window (seconds) for Events API to handle late arrivals.
+_EVENTS_REWIND_SECS: int = int(os.environ.get("STRIPE_EVENTS_REWIND_SECS", "60"))
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -107,6 +136,37 @@ class StripeAuthError(Exception):
 
 class StripePIISanitizerMissing(RuntimeError):
     """Raised when PII masking is attempted without a data_sanitizer attached."""
+
+
+# ---------------------------------------------------------------------------
+# FIX #7: Bounded dedup set — LRU-evicting, safe for long-running syncs.
+# ---------------------------------------------------------------------------
+
+
+class BoundedSet:
+    """
+    An ordered set that evicts the oldest entry when it exceeds `maxsize`.
+    Thread-safe for single-threaded asyncio usage (no explicit lock needed).
+    """
+
+    def __init__(self, maxsize: int = _DEDUP_MAX_SIZE) -> None:
+        self._data: "OrderedDict[str, None]" = OrderedDict()
+        self._maxsize = maxsize
+
+    def __contains__(self, item: str) -> bool:
+        return item in self._data
+
+    def add(self, item: str) -> None:
+        if item in self._data:
+            # Refresh position so it is not evicted early.
+            self._data.move_to_end(item)
+            return
+        if len(self._data) >= self._maxsize:
+            self._data.popitem(last=False)  # Evict oldest.
+        self._data[item] = None
+
+    def __len__(self) -> int:
+        return len(self._data)
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +221,7 @@ class SyncMetrics:
     pages_fetched: int = 0
     dlq_count: int = 0
     retry_count: int = 0
-    deduped_count: int = 0  # Track deduplicated records
+    deduped_count: int = 0
     started_at: float = field(default_factory=time.monotonic)
     _latencies_ms: List[float] = field(default_factory=list, repr=False)
 
@@ -190,6 +250,9 @@ class SyncMetrics:
         elapsed = self.elapsed_secs()
         return round(self.rows_synced / elapsed, 1) if elapsed > 0 else 0.0
 
+    def retry_rate(self) -> float:
+        return self.retry_count / max(self.pages_fetched, 1)
+
     def to_log_dict(self) -> Dict[str, Any]:
         return {
             "stream": self.stream,
@@ -209,6 +272,9 @@ class SyncMetrics:
 # Stream mapper registry
 # ---------------------------------------------------------------------------
 
+def _now_epoch() -> int:
+    return int(datetime.now(tz=timezone.utc).timestamp())
+
 
 def _map_charge(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -221,12 +287,19 @@ def _map_charge(raw: Dict[str, Any]) -> Dict[str, Any]:
         "status": raw.get("status"),
         "paid": raw.get("paid", False),
         "receipt_email": raw.get("receipt_email"),
+        # FIX #10: synced_at for idempotency tracking.
+        "_synced_at": _now_epoch(),
     }
 
 
 def _map_subscription(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    FIX #9: Stripe expansion (?expand[]=data.items.data.price) means the price
+    object is already fully hydrated — no fallback chain required.
+    """
     items_data = raw.get("items", {}).get("data", [])
     price_obj = items_data[0].get("price", {}) if items_data else {}
+    # Retain plan fallback for tenants on legacy plans.
     plan_obj = items_data[0].get("plan", {}) if items_data else {}
     legacy_plan = raw.get("plan", {})
     resolved = price_obj or plan_obj or legacy_plan
@@ -236,12 +309,15 @@ def _map_subscription(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": raw.get("id"),
         "created": raw.get("created", 0),
+        # FIX #10: Track last mutation time for subscriptions (mutable object).
+        "updated_ts": int(raw.get("updated") or raw.get("created") or 0),
         "customer": raw.get("customer") if isinstance(raw.get("customer"), str) else None,
         "status": raw.get("status"),
         "current_period_start": raw.get("current_period_start", 0),
         "current_period_end": raw.get("current_period_end", 0),
         "plan_amount": int(amount or 0),
         "plan_interval": interval,
+        "_synced_at": _now_epoch(),
     }
 
 
@@ -249,9 +325,12 @@ def _map_customer(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": raw.get("id"),
         "created": raw.get("created", 0),
+        # FIX #10: customers are mutable (email / name / phone can change).
+        "updated_ts": int(raw.get("updated") or raw.get("created") or 0),
         "email": raw.get("email"),
         "name": raw.get("name"),
         "phone": raw.get("phone"),
+        "_synced_at": _now_epoch(),
     }
 
 
@@ -259,6 +338,8 @@ def _map_invoice(raw: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": raw.get("id"),
         "created": raw.get("created", 0),
+        # FIX #10: invoices transition through multiple statuses.
+        "updated_ts": int(raw.get("updated") or raw.get("created") or 0),
         "customer": raw.get("customer") if isinstance(raw.get("customer"), str) else None,
         "subscription": raw.get("subscription"),
         "status": raw.get("status"),
@@ -267,6 +348,7 @@ def _map_invoice(raw: Dict[str, Any]) -> Dict[str, Any]:
         "currency": raw.get("currency") or "unknown",
         "period_start": raw.get("period_start", 0),
         "period_end": raw.get("period_end", 0),
+        "_synced_at": _now_epoch(),
     }
 
 
@@ -282,6 +364,7 @@ def _map_dispute(raw: Dict[str, Any]) -> Dict[str, Any]:
         "currency": raw.get("currency") or "unknown",
         "reason": raw.get("reason"),
         "status": raw.get("status"),
+        "_synced_at": _now_epoch(),
     }
 
 
@@ -295,19 +378,20 @@ def _map_event(raw: Dict[str, Any]) -> Dict[str, Any]:
         "api_version": raw.get("api_version"),
         "object_id": data_obj.get("id"),
         "object_type": data_obj.get("object"),
-        # Store full event data for replay
         "_event_data": raw,
+        "_synced_at": _now_epoch(),
     }
 
 
-# Maps stream_name → (mapper_fn, pii_fields)
-_STREAM_MAPPERS: Dict[str, tuple[Callable, List[str]]] = {
-    "charges": (_map_charge, ["receipt_email"]),
-    "subscriptions": (_map_subscription, []),
-    "customers": (_map_customer, ["email", "phone", "name"]),
-    "invoices": (_map_invoice, []),
-    "disputes": (_map_dispute, []),
-    "events": (_map_event, []),
+# Maps stream_name → (mapper_fn, pii_fields, expand_params)
+# FIX #9: expand_params injected per stream to reduce API round-trips.
+_STREAM_MAPPERS: Dict[str, Tuple[Callable, List[str], str]] = {
+    "charges":       (_map_charge,       ["receipt_email"],          ""),
+    "subscriptions": (_map_subscription, [],                         "expand[]=data.items.data.price"),
+    "customers":     (_map_customer,     ["email", "phone", "name"], ""),
+    "invoices":      (_map_invoice,      [],                         ""),
+    "disputes":      (_map_dispute,      [],                         ""),
+    "events":        (_map_event,        [],                         ""),
 }
 
 
@@ -318,17 +402,22 @@ _STREAM_MAPPERS: Dict[str, tuple[Callable, List[str]]] = {
 
 class StripeConnector(BaseIntegration):
     """
-    Phase 9 (v5): Stripe Zero-ETL Connector with Full CDC Support.
+    Phase 9 (v6): Stripe Zero-ETL Connector with Full CDC Support.
 
     Key guarantees
     --------------
-    - **True concurrent fetching**: ALL shards gathered in parallel via single gather()
-    - **Drift-safe checkpoints**: Uses max(created) timestamp, not last_record
-    - **Deduplication**: Within-batch dedup protection for concurrent shards
-    - **Backpressure**: Semaphore-based proactive rate limiting
-    - **Event-driven CDC**: Full /v1/events support with event_id checkpointing
-    - **Adaptive windows**: Dynamic window sizing based on data volume
-    - **Sampling mode**: Configurable sampling for huge tenants
+    - **Correct retry binding**: Retry decorator applied dynamically so the
+      before_sleep callback is always bound to the live instance.
+    - **Streaming shard merge**: as_completed replaces gather+accumulate;
+      batches are yielded as each shard lands — no OOM risk.
+    - **Adaptive window used**: calculated window_secs applied to ceil_ts.
+    - **Events rewind**: 60-second lookback guards against late Stripe events.
+    - **HTTP timeout**: every request carries ClientTimeout(total=30).
+    - **Deterministic sampling**: hash(id)-based — reproducible across runs.
+    - **Bounded dedup**: LRU-evicting BoundedSet prevents unbounded memory.
+    - **Adaptive concurrency**: semaphore limit self-tunes on retry rate / p95.
+    - **Field expansion**: subscriptions expand price objects server-side.
+    - **updated_ts**: mutable objects carry last-mutation epoch for UPSERT.
     """
 
     SUPPORTED_STREAMS = list(_STREAM_MAPPERS.keys())
@@ -346,14 +435,17 @@ class StripeConnector(BaseIntegration):
         semaphore_limit: int = DEFAULT_SEMAPHORE_LIMIT,
         sampling_rate: Optional[float] = None,
         adaptive_window: bool = False,
+        adaptive_concurrency: bool = True,
     ):
         """
         Parameters
         ----------
-        concurrent_shards: Number of time-window shards to fetch in parallel.
-        semaphore_limit: Max concurrent API requests (backpressure control).
-        sampling_rate: If set (0-1), randomly sample records at this rate.
-        adaptive_window: If True, dynamically adjust window size based on volume.
+        concurrent_shards:    Number of time-window shards fetched in parallel.
+        semaphore_limit:      Initial max concurrent requests (auto-tuned if
+                              adaptive_concurrency=True).
+        sampling_rate:        If set (0–1), deterministically sample records.
+        adaptive_window:      Dynamically adjust window size based on priority.
+        adaptive_concurrency: Auto-tune semaphore limit from retry / latency.
         """
         config = IntegrationConfig(
             tenant_id=tenant_id,
@@ -371,12 +463,18 @@ class StripeConnector(BaseIntegration):
         self._incremental_window_secs = incremental_window_secs
         self._max_pages = max_pages
         self._concurrent_shards = max(1, concurrent_shards)
+        self._semaphore_limit = semaphore_limit
         self._semaphore = asyncio.Semaphore(semaphore_limit)
         self._sampling_rate = sampling_rate
         self._adaptive_window = adaptive_window
+        self._adaptive_concurrency = adaptive_concurrency
 
-        # Active metrics reference for retry callback
+        # Active metrics reference for dynamic retry callback (FIX #1).
         self._active_metrics: Optional[SyncMetrics] = None
+
+    # -----------------------------------------------------------------------
+    # Initialisation helpers
+    # -----------------------------------------------------------------------
 
     def _initialize_client(self) -> str:
         token = (
@@ -427,16 +525,19 @@ class StripeConnector(BaseIntegration):
                 "status": "VARCHAR",
                 "paid": "BOOLEAN",
                 "receipt_email": "VARCHAR",
+                "_synced_at": "BIGINT",
             },
             "stripe_subscriptions": {
                 "id": "VARCHAR",
                 "customer": "VARCHAR",
                 "status": "VARCHAR",
                 "created": "BIGINT",
+                "updated_ts": "BIGINT",
                 "current_period_start": "BIGINT",
                 "current_period_end": "BIGINT",
                 "plan_amount": "BIGINT",
                 "plan_interval": "VARCHAR",
+                "_synced_at": "BIGINT",
             },
             "stripe_customers": {
                 "id": "VARCHAR",
@@ -444,6 +545,8 @@ class StripeConnector(BaseIntegration):
                 "name": "VARCHAR",
                 "phone": "VARCHAR",
                 "created": "BIGINT",
+                "updated_ts": "BIGINT",
+                "_synced_at": "BIGINT",
             },
             "stripe_invoices": {
                 "id": "VARCHAR",
@@ -456,6 +559,8 @@ class StripeConnector(BaseIntegration):
                 "period_start": "BIGINT",
                 "period_end": "BIGINT",
                 "created": "BIGINT",
+                "updated_ts": "BIGINT",
+                "_synced_at": "BIGINT",
             },
             "stripe_disputes": {
                 "id": "VARCHAR",
@@ -465,6 +570,7 @@ class StripeConnector(BaseIntegration):
                 "reason": "VARCHAR",
                 "status": "VARCHAR",
                 "created": "BIGINT",
+                "_synced_at": "BIGINT",
             },
             "stripe_events": {
                 "id": "VARCHAR",
@@ -473,6 +579,7 @@ class StripeConnector(BaseIntegration):
                 "api_version": "VARCHAR",
                 "object_id": "VARCHAR",
                 "object_type": "VARCHAR",
+                "_synced_at": "BIGINT",
             },
         }
 
@@ -493,7 +600,9 @@ class StripeConnector(BaseIntegration):
             )
             logger.info("[%s] Semantic router pre-warm complete.", self.tenant_id)
         except Exception as exc:
-            logger.warning("[%s] Semantic router pre-warm failed (non-fatal): %s", self.tenant_id, exc)
+            logger.warning(
+                "[%s] Semantic router pre-warm failed (non-fatal): %s", self.tenant_id, exc
+            )
 
     def get_semantic_views(self) -> Dict[str, str]:
         return {
@@ -597,13 +706,39 @@ class StripeConnector(BaseIntegration):
             return False
 
     # -----------------------------------------------------------------------
-    # Network layer with backpressure
+    # FIX #1: Correct retry binding — applied dynamically, not as a class-level
+    # decorator. before_sleep closure captures `self` at call time so
+    # self._active_metrics is always the live object.
     # -----------------------------------------------------------------------
 
-    def _on_retry(self, retry_state: RetryCallState) -> None:
-        """Tenacity before-sleep callback — increments the metrics retry counter."""
-        if self._active_metrics is not None:
-            self._active_metrics.retry_count += 1
+    def _make_retry_decorator(self) -> Callable:
+        """
+        Returns a fully bound tenacity retry decorator.
+        Created per-call so before_sleep always closes over the current `self`.
+        """
+        def _before_sleep_callback(retry_state: RetryCallState) -> None:
+            if self._active_metrics is not None:
+                self._active_metrics.retry_count += 1
+            wait = getattr(retry_state.next_action, "sleep", None)
+            logger.warning(
+                "[%s] Retrying after error (attempt %d): %s — waiting %.1fs",
+                self.tenant_id,
+                retry_state.attempt_number,
+                retry_state.outcome.exception() if retry_state.outcome else "unknown",
+                wait or 0,
+            )
+
+        return retry(
+            retry=retry_if_exception_type((StripeRateLimitError, aiohttp.ClientError)),
+            wait=wait_exponential(min=2, max=60),
+            stop=stop_after_attempt(5),
+            before_sleep=_before_sleep_callback,
+            reraise=True,
+        )
+
+    # -----------------------------------------------------------------------
+    # Network layer — backpressure + FIX #5 timeout + FIX #1 retry binding
+    # -----------------------------------------------------------------------
 
     async def _fetch_page_with_backpressure(
         self,
@@ -611,26 +746,36 @@ class StripeConnector(BaseIntegration):
         url: str,
         metrics: Optional[SyncMetrics] = None,
     ) -> Dict[str, Any]:
-        """Fetch page with semaphore-based backpressure control."""
+        """
+        Acquires semaphore slot (backpressure), then applies a dynamically
+        bound retry decorator (FIX #1) around the raw HTTP call.
+        Adapts concurrency after every successful page (FIX #8).
+        """
         async with self._semaphore:
-            return await self._fetch_page(session, url, metrics)
+            retrying_fetch = self._make_retry_decorator()(self._fetch_page_inner)
+            result = await retrying_fetch(session, url, metrics)
 
-    @retry(
-        retry=retry_if_exception_type((StripeRateLimitError, aiohttp.ClientError)),
-        wait=wait_exponential(min=2, max=60),
-        stop=stop_after_attempt(5),
-        before_sleep=_on_retry,  # Properly wired retry callback
-    )
-    async def _fetch_page(
+        # FIX #8: Tune concurrency after we release the semaphore slot.
+        if metrics and self._adaptive_concurrency:
+            self._adapt_concurrency(metrics)
+
+        return result
+
+    async def _fetch_page_inner(
         self,
         session: aiohttp.ClientSession,
         url: str,
         metrics: Optional[SyncMetrics] = None,
     ) -> Dict[str, Any]:
+        """
+        Raw HTTP GET. FIX #5: ClientTimeout(total=30) prevents hanging sockets.
+        Raises StripeRateLimitError / StripeAuthError for tenacity to handle.
+        """
         logger.debug("[%s] GET %s", self.tenant_id, url)
         t0 = time.monotonic()
 
-        async with session.get(url) as resp:
+        # FIX #5: Explicit timeout on every request.
+        async with session.get(url, timeout=_HTTP_TIMEOUT) as resp:
             elapsed_ms = (time.monotonic() - t0) * 1000
             if metrics:
                 metrics.record_latency(elapsed_ms)
@@ -641,7 +786,8 @@ class StripeConnector(BaseIntegration):
                 if retry_after:
                     wait_secs = float(retry_after)
                     logger.warning(
-                        "[%s] Rate limit hit. Honouring Retry-After: %.1fs", self.tenant_id, wait_secs
+                        "[%s] Rate limit hit. Honouring Retry-After: %.1fs",
+                        self.tenant_id, wait_secs,
                     )
                     await asyncio.sleep(wait_secs)
                 raise StripeRateLimitError("Stripe API rate limit exceeded.")
@@ -655,6 +801,41 @@ class StripeConnector(BaseIntegration):
             return await resp.json()
 
     # -----------------------------------------------------------------------
+    # FIX #8: Adaptive concurrency control
+    # -----------------------------------------------------------------------
+
+    def _adapt_concurrency(self, metrics: SyncMetrics) -> None:
+        """
+        Self-tunes self._semaphore based on observed retry rate and p95 latency.
+        Called after every page so the connector backs off quickly when throttled
+        and speeds up when headroom allows.
+        Requires at least 10 pages of data before acting to avoid early jitter.
+        """
+        if metrics.pages_fetched < 10:
+            return
+
+        retry_rate = metrics.retry_rate()
+        p95 = metrics.p95_latency_ms or 0.0
+
+        high_pressure = retry_rate > _CONCURRENCY_RETRY_HIGH or p95 > _CONCURRENCY_P95_HIGH
+        low_pressure  = retry_rate < _CONCURRENCY_RETRY_LOW  and (p95 == 0 or p95 < _CONCURRENCY_P95_LOW)
+
+        if high_pressure:
+            new_limit = max(_CONCURRENCY_MIN, self._semaphore_limit - 1)
+        elif low_pressure:
+            new_limit = min(_CONCURRENCY_MAX, self._semaphore_limit + 1)
+        else:
+            return
+
+        if new_limit != self._semaphore_limit:
+            self._semaphore_limit = new_limit
+            self._semaphore = asyncio.Semaphore(new_limit)
+            logger.info(
+                "[%s] Concurrency adapted: limit=%d (retry_rate=%.2f p95=%.0fms)",
+                self.tenant_id, new_limit, retry_rate, p95,
+            )
+
+    # -----------------------------------------------------------------------
     # DLQ
     # -----------------------------------------------------------------------
 
@@ -665,10 +846,8 @@ class StripeConnector(BaseIntegration):
         exc: Exception,
         metrics: Optional[SyncMetrics] = None,
     ) -> None:
-        """Quarantines a poison record instead of aborting the sync."""
         if metrics:
             metrics.dlq_count += 1
-
         logger.error(
             "[%s] DLQ | stream=%s id=%s error=%s raw_keys=%s",
             self.tenant_id,
@@ -679,7 +858,7 @@ class StripeConnector(BaseIntegration):
         )
 
     # -----------------------------------------------------------------------
-    # Core sync — incremental with rolling window + concurrent shards
+    # Core sync entry point
     # -----------------------------------------------------------------------
 
     async def sync_historical(
@@ -694,9 +873,8 @@ class StripeConnector(BaseIntegration):
         self.validate_stream(stream_name)
 
         metrics = SyncMetrics(stream=stream_name)
-        self._active_metrics = metrics  # For retry callback
+        self._active_metrics = metrics
 
-        # Resolve the effective lower-bound timestamp
         now_ts = int(datetime.now(tz=timezone.utc).timestamp())
         floor_ts = now_ts - self._incremental_window_secs
 
@@ -713,28 +891,34 @@ class StripeConnector(BaseIntegration):
                     self.tenant_id, start_timestamp,
                 )
 
-        resume_id: Optional[str] = (checkpoint or {}).get("last_id") if not start_timestamp else None
+        resume_id: Optional[str] = (
+            (checkpoint or {}).get("last_id") if not start_timestamp else None
+        )
 
-        mapper_fn, pii_fields = _STREAM_MAPPERS[stream_name]
+        mapper_fn, pii_fields, expand_params = _STREAM_MAPPERS[stream_name]
 
-        # Adaptive window sizing
-        window_secs = self._incremental_window_secs
+        # FIX #3: Apply adaptive window to ceil_ts, not just compute it.
+        ceil_ts = now_ts
         if self._adaptive_window:
             window_secs = self._calculate_adaptive_window(stream_name, floor_ts, now_ts)
+            ceil_ts = floor_ts + window_secs
+            logger.debug(
+                "[%s] Adaptive window for '%s': floor=%d ceil=%d (window=%ds)",
+                self.tenant_id, stream_name, floor_ts, ceil_ts, window_secs,
+            )
 
-        # Choose fetch strategy
         if self._concurrent_shards > 1:
             async for batch in self._sync_concurrent(
-                stream_name, floor_ts, now_ts, mapper_fn, pii_fields, metrics
+                stream_name, floor_ts, ceil_ts, mapper_fn, pii_fields, expand_params, metrics
             ):
                 yield batch
         else:
             async for batch in self._sync_serial(
-                stream_name, floor_ts, resume_id, mapper_fn, pii_fields, metrics
+                stream_name, floor_ts, resume_id, mapper_fn, pii_fields, expand_params, metrics
             ):
                 yield batch
 
-        # Final structured metrics log
+        self.sync_metrics = metrics.to_log_dict()  # Expose to notification router.
         logger.info(
             "✅ [%s] Stripe sync complete | %s",
             self.tenant_id,
@@ -745,20 +929,22 @@ class StripeConnector(BaseIntegration):
     def _calculate_adaptive_window(
         self, stream_name: str, floor_ts: int, ceil_ts: int
     ) -> int:
-        """Calculate adaptive window size based on stream priority and volume."""
+        """
+        FIX #3: Returns effective window size in seconds based on stream priority.
+        High-priority streams get smaller windows (fresher data, more frequent runs).
+        """
         priority = STREAM_PRIORITY.get(stream_name, 2)
         base_window = ceil_ts - floor_ts
 
-        # High priority streams get smaller windows for fresher data
         if priority == 1:
-            return min(base_window, 24 * 3600)  # 1 day max
+            return min(base_window, 24 * 3600)        # ≤ 1 day
         elif priority == 2:
-            return min(base_window, 7 * 24 * 3600)  # 7 days max
+            return min(base_window, 7 * 24 * 3600)    # ≤ 7 days
         else:
-            return min(base_window, 30 * 24 * 3600)  # 30 days max
+            return min(base_window, 30 * 24 * 3600)   # ≤ 30 days
 
     # -----------------------------------------------------------------------
-    # Serial pagination (default, safe for all tenant sizes)
+    # Serial pagination
     # -----------------------------------------------------------------------
 
     async def _sync_serial(
@@ -768,6 +954,7 @@ class StripeConnector(BaseIntegration):
         resume_id: Optional[str],
         mapper_fn: Callable,
         pii_fields: List[str],
+        expand_params: str,
         metrics: SyncMetrics,
     ) -> AsyncGenerator[SyncBatch, None]:
         limit = 100
@@ -784,11 +971,13 @@ class StripeConnector(BaseIntegration):
                     )
                     break
 
-                # Use time-based pagination only (safer than cursor + time filter)
                 url = (
                     f"{self.api_base}/{stream_name}"
                     f"?limit={limit}&created[gte]={floor_ts}"
                 )
+                # FIX #9: Append server-side expansion params when available.
+                if expand_params:
+                    url += f"&{expand_params}"
                 if starting_after:
                     url += f"&starting_after={starting_after}"
 
@@ -817,7 +1006,8 @@ class StripeConnector(BaseIntegration):
                     starting_after = items[-1].get("id")
 
     # -----------------------------------------------------------------------
-    # Concurrent shard fetching (TRUE parallel - all shards gathered at once)
+    # FIX #2: Concurrent shard fetching — streaming via as_completed.
+    # Shards are yielded as they complete; memory is never accumulated.
     # -----------------------------------------------------------------------
 
     async def _sync_concurrent(
@@ -827,14 +1017,17 @@ class StripeConnector(BaseIntegration):
         ceil_ts: int,
         mapper_fn: Callable,
         pii_fields: List[str],
+        expand_params: str,
         metrics: SyncMetrics,
     ) -> AsyncGenerator[SyncBatch, None]:
         """
-        Splits [floor_ts, ceil_ts] into concurrent_shards equal windows
-        and gathers ALL shards in parallel. This is TRUE concurrency.
+        FIX #2: Splits [floor_ts, ceil_ts] into concurrent_shards windows and
+        processes shards with asyncio.as_completed so batches stream out as
+        each shard lands — no full accumulation in memory.
+
+        FIX #7: Cross-shard dedup via BoundedSet (LRU-evicting, memory-safe).
         """
         window = (ceil_ts - floor_ts) / self._concurrent_shards
-
         shard_ranges = [
             (
                 floor_ts + int(i * window),
@@ -843,52 +1036,46 @@ class StripeConnector(BaseIntegration):
             for i in range(self._concurrent_shards)
         ]
 
+        # Global bounded dedup set shared across all shards.
+        global_seen: BoundedSet = BoundedSet()
+
         async with self._get_session() as session:
-            # CRITICAL FIX: Create ALL tasks upfront and gather them together
             tasks = [
-                self._fetch_shard_page(
-                    session, stream_name, shard_floor, shard_ceil,
-                    mapper_fn, pii_fields, metrics,
+                asyncio.ensure_future(
+                    self._fetch_shard_page(
+                        session, stream_name, shard_floor, shard_ceil,
+                        mapper_fn, pii_fields, expand_params, metrics,
+                    )
                 )
                 for (shard_floor, shard_ceil) in shard_ranges
             ]
 
-            # CRITICAL FIX: Single gather for ALL shards = true parallelism
-            shard_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Process results and deduplicate across shards
-            all_records: List[Dict[str, Any]] = []
-            seen_ids: Set[str] = set()
-
-            for i, result in enumerate(shard_results):
-                shard_floor, shard_ceil = shard_ranges[i]
-
-                if isinstance(result, Exception):
-                    logger.error(
-                        "[%s] Shard [%d-%d] failed: %s",
-                        self.tenant_id, shard_floor, shard_ceil, result,
-                    )
+            for coro in asyncio.as_completed(tasks):
+                try:
+                    shard_result: List[Tuple[List[Dict[str, Any]], Dict[str, Any]]] = await coro
+                except Exception as exc:
+                    logger.error("[%s] Shard failed: %s", self.tenant_id, exc)
                     continue
 
-                for batch, _ in result:
+                for batch, max_record in shard_result:
+                    # Cross-shard dedup using BoundedSet.
+                    clean_batch = []
                     for record in batch:
                         record_id = record.get("id")
-                        if record_id and record_id not in seen_ids:
-                            seen_ids.add(record_id)
-                            all_records.append(record)
+                        if record_id and record_id not in global_seen:
+                            global_seen.add(record_id)
+                            clean_batch.append(record)
                         elif record_id:
                             metrics.deduped_count += 1
 
-            # Yield combined batch with max timestamp checkpoint
-            if all_records:
-                max_record = max(all_records, key=lambda r: r.get("created", 0))
-                metrics.rows_synced += len(all_records)
-                yield SyncBatch(
-                    records=all_records,
-                    primary_key="id",
-                    source_stream=stream_name,
-                    checkpoint=_make_checkpoint(max_record, stream_name),
-                )
+                    if clean_batch:
+                        metrics.rows_synced += len(clean_batch)
+                        yield SyncBatch(
+                            records=clean_batch,
+                            primary_key="id",
+                            source_stream=stream_name,
+                            checkpoint=_make_checkpoint(max_record, stream_name),
+                        )
 
     async def _fetch_shard_page(
         self,
@@ -898,12 +1085,13 @@ class StripeConnector(BaseIntegration):
         ceil_ts: int,
         mapper_fn: Callable,
         pii_fields: List[str],
+        expand_params: str,
         metrics: SyncMetrics,
     ) -> List[Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
-        """Fetches all pages for a single time shard."""
-        results = []
+        """Fetches and maps all pages within a single time-window shard."""
+        results: List[Tuple[List[Dict[str, Any]], Dict[str, Any]]] = []
         has_more = True
-        after = None
+        after: Optional[str] = None
         page_count = 0
         limit = 100
 
@@ -915,11 +1103,13 @@ class StripeConnector(BaseIntegration):
                 )
                 break
 
-            # Use time window only (safer than cursor + time filter combination)
             url = (
                 f"{self.api_base}/{stream_name}"
                 f"?limit={limit}&created[gte]={floor_ts}&created[lte]={ceil_ts}"
             )
+            # FIX #9: Server-side expansion.
+            if expand_params:
+                url += f"&{expand_params}"
             if after:
                 url += f"&starting_after={after}"
 
@@ -955,16 +1145,18 @@ class StripeConnector(BaseIntegration):
         metrics: SyncMetrics,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
-        Maps raw Stripe objects with dedup and sampling.
+        Maps raw Stripe objects, applies within-page dedup and sampling.
         Returns (clean_batch, max_created_record).
         """
         batch: List[Dict[str, Any]] = []
-        seen_ids: Set[str] = set()  # Within-batch dedup
+        seen_ids: Set[str] = set()  # Within-page dedup only (bounded by page size).
 
         for raw in items:
-            # Sampling mode for huge tenants
+            # FIX #6: Deterministic sampling — same record always in or always out.
             if self._sampling_rate is not None:
-                if random.random() > self._sampling_rate:
+                record_id = raw.get("id", "")
+                bucket = int(hashlib.md5(record_id.encode()).hexdigest(), 16) % 100
+                if bucket >= int(self._sampling_rate * 100):
                     continue
 
             mapped = self._map_record_safe(raw, stream_name, mapper_fn, metrics)
@@ -978,7 +1170,6 @@ class StripeConnector(BaseIntegration):
 
         if batch:
             batch = self._mask_pii(batch, pii_fields)
-            # CRITICAL FIX: Use max created timestamp for checkpoint (prevents drift)
             max_record = max(batch, key=lambda r: r.get("created", 0))
         else:
             max_record = {}
@@ -992,7 +1183,6 @@ class StripeConnector(BaseIntegration):
         mapper_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
         metrics: Optional[SyncMetrics] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Maps a single raw object. On failure, sends to DLQ."""
         try:
             mapped = mapper_fn(raw)
             logger.debug("[%s] Mapped record id=%s", self.tenant_id, mapped.get("id"))
@@ -1006,7 +1196,6 @@ class StripeConnector(BaseIntegration):
         batch: List[Dict[str, Any]],
         pii_fields: List[str],
     ) -> List[Dict[str, Any]]:
-        """Mask PII fields with fallback mode if sanitizer is missing."""
         if not pii_fields:
             return batch
 
@@ -1018,19 +1207,16 @@ class StripeConnector(BaseIntegration):
                     f"[{self.tenant_id}] data_sanitizer is None but PII masking was requested "
                     f"for fields: {pii_fields}. Attach a sanitizer before syncing."
                 )
-            else:
-                # Fallback masking: hash the values instead of failing
-                logger.warning(
-                    "[%s] data_sanitizer missing — using fallback hash masking for fields: %s",
-                    self.tenant_id, pii_fields
-                )
-                for row in batch:
-                    for col in pii_fields:
-                        if col in row and row[col]:
-                            # Simple hash-based fallback masking
-                            value = str(row[col])
-                            row[col] = f"***{hashlib.sha256(value.encode()).hexdigest()[:8]}***"
-                return batch
+            logger.warning(
+                "[%s] data_sanitizer missing — using fallback hash masking for fields: %s",
+                self.tenant_id, pii_fields,
+            )
+            for row in batch:
+                for col in pii_fields:
+                    if col in row and row[col]:
+                        value = str(row[col])
+                        row[col] = f"***{hashlib.sha256(value.encode()).hexdigest()[:8]}***"
+            return batch
 
         for row in batch:
             for col in pii_fields:
@@ -1040,33 +1226,53 @@ class StripeConnector(BaseIntegration):
         return batch
 
     # -----------------------------------------------------------------------
-    # Event-driven CDC (Events API)
+    # FIX #4: Event-driven CDC — dual checkpoint + 60-second rewind.
     # -----------------------------------------------------------------------
 
     async def sync_events(
         self,
         event_types: Optional[List[str]] = None,
-        start_checkpoint: Optional[str] = None,
+        start_checkpoint: Optional[SyncCheckpoint] = None,
         limit: int = 100,
     ) -> AsyncGenerator[SyncBatch, None]:
         """
         Poll /v1/events for true CDC (Change Data Capture).
 
+        FIX #4: Stripe events are not strictly ordered and can arrive late.
+        We maintain a dual checkpoint (last_event_id + last_created_ts) and
+        apply a _EVENTS_REWIND_SECS lookback so late arrivals are not missed.
+
         Parameters
         ----------
-        event_types: Filter by event types (e.g., ['charge.succeeded', 'invoice.paid'])
-        start_checkpoint: Starting event ID for replay
-        limit: Events per page (max 100)
+        event_types:       Filter by event type (e.g., ['charge.succeeded']).
+        start_checkpoint:  SyncCheckpoint from the previous run.
+        limit:             Events per page (max 100).
         """
         metrics = SyncMetrics(stream="events")
         self._active_metrics = metrics
 
+        # FIX #4: Rewind by _EVENTS_REWIND_SECS to catch late-arriving events.
+        last_created_ts: Optional[int] = None
+        starting_after: Optional[str] = None
+
+        if start_checkpoint:
+            last_created_ts = start_checkpoint.get("created_ts")
+            starting_after = start_checkpoint.get("last_id") or None
+
+        # BoundedSet protects against re-processing during the rewind window.
+        event_seen: BoundedSet = BoundedSet()
+
         has_more = True
-        starting_after = start_checkpoint
 
         async with self._get_session() as session:
             while has_more:
                 url = f"{self.api_base}/events?limit={limit}"
+
+                # FIX #4: Apply rewind window using created[gte] instead of
+                # relying purely on cursor order (which Stripe does not guarantee).
+                if last_created_ts is not None:
+                    rewind_ts = max(0, last_created_ts - _EVENTS_REWIND_SECS)
+                    url += f"&created[gte]={rewind_ts}"
 
                 if event_types:
                     for et in event_types:
@@ -1076,25 +1282,38 @@ class StripeConnector(BaseIntegration):
                     url += f"&starting_after={starting_after}"
 
                 data = await self._fetch_page_with_backpressure(session, url, metrics)
-                events = data.get("data", [])
+                raw_events = data.get("data", [])
 
-                if not events:
+                if not raw_events:
                     break
 
-                # Map events
                 batch: List[Dict[str, Any]] = []
-                for raw_event in events:
+                max_created: int = 0
+                last_event_id: str = ""
+
+                for raw_event in raw_events:
+                    event_id = raw_event.get("id", "")
+
+                    # FIX #4: Skip events already seen in this run (rewind overlap).
+                    if event_id in event_seen:
+                        metrics.deduped_count += 1
+                        continue
+                    event_seen.add(event_id)
+
                     mapped = self._map_record_safe(raw_event, "events", _map_event, metrics)
                     if mapped:
                         batch.append(mapped)
+                        evt_ts = int(raw_event.get("created", 0))
+                        if evt_ts > max_created:
+                            max_created = evt_ts
+                            last_event_id = event_id
 
                 if batch:
                     metrics.rows_synced += len(batch)
-                    # Use last event ID as checkpoint
-                    last_event = events[-1]
+                    # FIX #4: Dual checkpoint — both event ID and created timestamp.
                     checkpoint = SyncCheckpoint(
-                        last_id=last_event.get("id", ""),
-                        created_ts=last_event.get("created", 0),
+                        last_id=last_event_id,
+                        created_ts=max_created,
                         stream="events",
                         version="v1",
                     )
@@ -1104,10 +1323,12 @@ class StripeConnector(BaseIntegration):
                         source_stream="events",
                         checkpoint=checkpoint,
                     )
+                    # Advance last_created_ts for the next page's rewind window.
+                    last_created_ts = max(last_created_ts or 0, max_created)
 
                 has_more = data.get("has_more", False)
-                if has_more and events:
-                    starting_after = events[-1].get("id")
+                if has_more and raw_events:
+                    starting_after = raw_events[-1].get("id")
 
         logger.info(
             "✅ [%s] Stripe events sync complete | %s",
@@ -1127,7 +1348,9 @@ class StripeConnector(BaseIntegration):
                 data = await self._fetch_page_with_backpressure(session, url)
                 return _map_event(data)
             except Exception as exc:
-                logger.error("[%s] Failed to replay event %s: %s", self.tenant_id, event_id, exc)
+                logger.error(
+                    "[%s] Failed to replay event %s: %s", self.tenant_id, event_id, exc
+                )
                 return None
 
     # -----------------------------------------------------------------------
@@ -1141,18 +1364,10 @@ class StripeConnector(BaseIntegration):
 
         try:
             async with self._get_session() as session:
-                async with session.get(f"{self.api_base}/charges?limit=1") as resp:
-                    if resp.status == 200:
-                        return True
-                    if resp.status == 401:
-                        logger.warning(
-                            "[%s] test_connection: 401 — invalid credentials.", self.tenant_id
-                        )
-                        return False
-                    logger.warning(
-                        "[%s] test_connection: unexpected HTTP %d.", self.tenant_id, resp.status
-                    )
-                    return False
+                # FIX #5: Timeout applies here too (via _fetch_page_with_backpressure).
+                url = f"{self.api_base}/charges?limit=1"
+                await self._fetch_page_with_backpressure(session, url)
+                return True
 
         except StripeAuthError:
             logger.warning("[%s] test_connection: StripeAuthError.", self.tenant_id)
