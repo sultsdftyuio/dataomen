@@ -10,7 +10,7 @@ import polars as pl
 
 # Infrastructure Imports
 from api.services.query_planner import QueryPlan
-from api.services.llm_client import LLMClient
+from api.services.llm_client import LLMClient, llm_client as default_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +33,23 @@ class TrendInsight(BaseModel):
     percentage_change: float
     volatility: float = Field(..., description="Stability of the trend (lower is more predictable)")
 
+class CustomerSegment(BaseModel):
+    segment_name: str = Field(..., description="e.g., 'VIP', 'At-Risk', 'New'")
+    customer_count: int
+    average_ltv: float
+    recommended_action: str = Field(..., description="Tactical action like 'Send Win-back Email'")
+
+class VelocityAlert(BaseModel):
+    product_identifier: str
+    current_stock: float
+    daily_burn_rate: float
+    days_to_stockout: int
+    urgency: str = Field(..., description="'High', 'Medium', 'Low'")
+
 class StrategicAdvice(BaseModel):
     summary: str = Field(..., description="A 1-sentence executive summary.")
     root_cause_hypothesis: str = Field(..., description="The 'Why' based on drivers and correlations.")
-    recommended_action: str = Field(..., description="The 'What next' (e.g., 'Check Germany marketing spend').")
+    recommended_action: str = Field(..., description="The 'What next' addressing anomalies, VIPs, or stockouts.")
     confidence_score: float = Field(..., description="Based on mathematical signal strength.")
 
 class InsightPayload(BaseModel):
@@ -48,12 +61,17 @@ class InsightPayload(BaseModel):
     intent_analyzed: str
     trends: List[TrendInsight] = Field(default_factory=list)
     anomalies: List[AnomalyInsight] = Field(default_factory=list)
-    correlations: Dict[str, List[str]] = Field(default_factory=dict) # Metric -> Highly correlated peers
+    correlations: Dict[str, List[str]] = Field(default_factory=dict)
     summary_stats: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     primary_driver: Optional[str] = None
     
+    # Advanced Business Intelligence Layers
+    customer_segments: Optional[List[CustomerSegment]] = Field(default=None)
+    velocity_alerts: Optional[List[VelocityAlert]] = Field(default=None)
+    
     # Phase 4: The Strategic Layer
     strategic_narrative: Optional[StrategicAdvice] = None
+
 
 # -------------------------------------------------------------------------
 # The Autonomous Insight Engine
@@ -65,21 +83,21 @@ class InsightOrchestrator:
     
     Methodology Adherence:
     ----------------------
-    1. Modular Strategy: Uses dependency injection for LLM clients.
-    2. Hybrid Performance: Computation relies entirely on Vectorized Polars/NumPy for C-level speed.
-    3. Mathematical Precision: Temporal data anomaly detection utilizes Exponential Moving Averages (EMA) 
-       and rolling std deviation rather than naive static averages, ensuring sensitivity to seasonality.
+    1. Hybrid Performance: Computation relies entirely on Vectorized Polars/NumPy for C-level speed.
+    2. Dynamic Context: Automatically triggers RFM or Velocity analysis based on schema heuristics.
+    3. Contextual RAG: LLM only receives pre-calculated mathematical facts to prevent hallucination.
     """
 
-    def __init__(self, llm_client: LLMClient = LLMClient()):
-        self.llm_client = llm_client
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        self.llm_client = llm_client or default_llm_client
         self.ANOMALY_Z_SCORE_THRESHOLD = 2.0 
         self.STRONG_CORRELATION_THRESHOLD = 0.7
 
     async def analyze_and_synthesize(self, df: pl.DataFrame, plan: QueryPlan, tenant_id: str) -> InsightPayload:
         """
         The Master GAUNTLET. 
-        Calculates mathematical vectors first, then uses LLM to synthesize strategy.
+        Calculates mathematical vectors, runs business frameworks (RFM/Velocity), 
+        then uses LLM to synthesize strategy.
         """
         logger.info(f"[{tenant_id}] Executing Full Insight gauntlet for intent: '{plan.intent}'")
 
@@ -93,25 +111,27 @@ class InsightOrchestrator:
             and not c.lower().endswith('_id') and c.lower() != 'id'
         ]
         
-        # Identify Time Column for Trend/Seasonality Analysis
+        # Identify Temporal and Identity Columns
         time_col = self._detect_time_column(df)
+        identity_col = self._detect_identity_column(df)
         
         # 2. Vectorized Math Layer (Polars/NumPy)
-        # We find correlations first to use them as "Drivers" for anomalies
         raw_corrs = self._find_correlations(df, numeric_cols)
-        
         trends = self._calculate_trends(df, numeric_cols, time_col) if time_col else []
-        anomalies = self._detect_anomalies(df, numeric_cols, time_col or df.columns[0], time_col)
+        anomalies = self._detect_anomalies(df, numeric_cols, identity_col or df.columns[0], time_col)
         summary_stats = self._calculate_summary_stats(df, numeric_cols)
 
-        # Determine the "Primary Driver" (Metric with the most significant percentage trend)
+        # 3. Domain-Specific Business Logic (The Arcli Solutions)
+        customer_segments = self._run_rfm_analysis(df, time_col, identity_col, numeric_cols)
+        velocity_alerts = self._run_velocity_analysis(df, time_col, identity_col, numeric_cols)
+
         primary_driver = max(trends, key=lambda x: abs(x.percentage_change)).column if trends else None
 
         # Link Drivers to Anomalies
         for anomaly in anomalies:
             anomaly.potential_drivers = raw_corrs.get(anomaly.column, [])
 
-        # 3. Create the Base Mathematical Payload
+        # 4. Create the Base Mathematical Payload
         payload = InsightPayload(
             row_count=len(df),
             intent_analyzed=plan.intent,
@@ -119,12 +139,13 @@ class InsightOrchestrator:
             anomalies=anomalies,
             correlations=raw_corrs,
             summary_stats=summary_stats,
-            primary_driver=primary_driver
+            primary_driver=primary_driver,
+            customer_segments=customer_segments,
+            velocity_alerts=velocity_alerts
         )
 
-        # 4. Phase 4: Strategic Synthesis
-        # Only invoke the AI summarization if there are statistically significant findings
-        if trends or anomalies:
+        # 5. Phase 4: Strategic Synthesis
+        if trends or anomalies or customer_segments or velocity_alerts:
             payload.strategic_narrative = await self._generate_strategic_narrative(payload, tenant_id)
 
         return payload
@@ -135,25 +156,26 @@ class InsightOrchestrator:
 
     async def _generate_strategic_narrative(self, payload: InsightPayload, tenant_id: str) -> StrategicAdvice:
         """
-        Uses Contextual RAG to turn vector math into strategy.
-        Passes a pruned 'Mathematical Fact Sheet' to prevent token bloat and hallucination.
+        Uses Contextual RAG to turn vector math into actionable strategy.
         """
         fact_sheet = {
             "intent": payload.intent_analyzed,
             "primary_driver": payload.primary_driver,
             "significant_trends": [t.model_dump() for t in payload.trends if abs(t.percentage_change) > 5],
             "top_anomalies": [a.model_dump() for a in payload.anomalies[:3]],
-            "correlations": payload.correlations
+            "vip_and_churn_segments": [s.model_dump() for s in (payload.customer_segments or [])],
+            "critical_stockouts": [v.model_dump() for v in (payload.velocity_alerts or []) if v.urgency == 'High']
         }
 
         system_prompt = """
-        You are a Senior Strategic Business Analyst. Your job is to interpret deterministic mathematical data findings.
-        You will be provided with a JSON 'fact sheet' of statistical trends, anomalies, and correlations.
+        You are Arcli, an elite Strategic Business AI. Your job is to interpret deterministic mathematical data.
+        You will be provided with a JSON 'fact sheet' containing trends, anomalies, VIP customer segments, and stockout risks.
         
         RULES:
         1. DO NOT HALLUCINATE. Only mention metrics explicitly present in the fact sheet.
-        2. BE PRECISE. If an anomaly has a correlated driver, explicitly explain the linked relationship.
-        3. BE ACTIONABLE. Recommend a logical, data-driven next step for a business leader.
+        2. ADDRESS THE BUSINESS PAIN: If VIPs or At-Risk customers are present, tell the user exactly what to do (e.g. 'Send a win-back campaign to the 45 At-Risk customers').
+        3. ADDRESS INVENTORY: If stockout risks are high, identify the specific product and advise immediate restock.
+        4. BE ACTIONABLE. Recommend a logical, data-driven next step.
         """
 
         user_prompt = f"Analyze these findings and provide strategic advice: {json.dumps(fact_sheet)}"
@@ -163,31 +185,120 @@ class InsightOrchestrator:
                 system_prompt=system_prompt,
                 prompt=user_prompt,
                 response_model=StrategicAdvice,
-                temperature=0.0 # Strict deterministic analysis
+                temperature=0.0
             )
             return advice
         except Exception as e:
             logger.error(f"[{tenant_id}] Strategic synthesis failed: {e}")
             return StrategicAdvice(
                 summary="Analysis complete but strategic summary failed to generate.",
-                root_cause_hypothesis="Unknown correlation mapping.",
+                root_cause_hypothesis="Insufficient or malformed data context.",
                 recommended_action="Review raw statistical trends manually.",
                 confidence_score=0.0
             )
+
+    # ==========================================
+    # DOMAIN SPECIFIC FRAMEWORKS
+    # ==========================================
+
+    def _run_rfm_analysis(self, df: pl.DataFrame, time_col: Optional[str], id_col: Optional[str], num_cols: List[str]) -> Optional[List[CustomerSegment]]:
+        """
+        Automatically solves: "I don't know who my best customers are."
+        Executes Vectorized Recency, Frequency, Monetary (RFM) segmentation if customer data is detected.
+        """
+        if not time_col or not id_col or 'customer' not in id_col.lower():
+            return None
+            
+        revenue_col = next((c for c in num_cols if any(k in c.lower() for k in ['amount', 'revenue', 'price', 'total'])), None)
+        if not revenue_col:
+            return None
+
+        # Vectorized RFM calculation
+        max_date = df[time_col].max()
+        rfm = df.group_by(id_col).agg([
+            (max_date - pl.col(time_col).max()).dt.total_days().alias('Recency'),
+            pl.col(time_col).count().alias('Frequency'),
+            pl.col(revenue_col).sum().alias('Monetary')
+        ])
+
+        # Simple heuristic segmentation using Quantiles for performance
+        r_median = rfm['Recency'].median()
+        f_median = rfm['Frequency'].median()
+        
+        vip_mask = (pl.col('Recency') <= r_median) & (pl.col('Frequency') > f_median)
+        risk_mask = (pl.col('Recency') > r_median) & (pl.col('Frequency') > f_median)
+
+        vips = rfm.filter(vip_mask)
+        at_risk = rfm.filter(risk_mask)
+
+        segments = []
+        if len(vips) > 0:
+            segments.append(CustomerSegment(
+                segment_name="VIP",
+                customer_count=len(vips),
+                average_ltv=round(vips['Monetary'].mean(), 2),
+                recommended_action="Invite to loyalty program; prioritize support routing."
+            ))
+        if len(at_risk) > 0:
+            segments.append(CustomerSegment(
+                segment_name="At-Risk (Churn Warning)",
+                customer_count=len(at_risk),
+                average_ltv=round(at_risk['Monetary'].mean(), 2),
+                recommended_action="Deploy immediate automated win-back email campaign with incentive."
+            ))
+
+        return segments
+
+    def _run_velocity_analysis(self, df: pl.DataFrame, time_col: Optional[str], id_col: Optional[str], num_cols: List[str]) -> Optional[List[VelocityAlert]]:
+        """
+        Automatically solves: "I keep running out of my best sellers."
+        Calculates daily burn rate and stockout runway.
+        """
+        if not id_col or ('product' not in id_col.lower() and 'sku' not in id_col.lower()):
+            return None
+            
+        qty_col = next((c for c in num_cols if any(k in c.lower() for k in ['qty', 'quantity', 'sold', 'sales'])), None)
+        stock_col = next((c for c in num_cols if any(k in c.lower() for k in ['stock', 'inventory', 'on_hand'])), None)
+        
+        if not qty_col or not stock_col or not time_col:
+            return None
+
+        # Sort temporally to calculate burn rates correctly
+        df_sorted = df.sort(time_col)
+        
+        # Calculate daily velocity (last 7 days average) via vectorization
+        velocity = df_sorted.group_by(id_col).agg([
+            pl.col(qty_col).tail(7).mean().alias('daily_burn'),
+            pl.col(stock_col).last().alias('current_stock')
+        ]).filter(pl.col('daily_burn') > 0)
+
+        velocity = velocity.with_columns(
+            (pl.col('current_stock') / pl.col('daily_burn')).cast(pl.Int32).alias('days_to_stockout')
+        )
+
+        alerts = []
+        for row in velocity.filter(pl.col('days_to_stockout') <= 14).to_dicts():
+            alerts.append(VelocityAlert(
+                product_identifier=str(row[id_col]),
+                current_stock=round(row['current_stock'], 2),
+                daily_burn_rate=round(row['daily_burn'], 2),
+                days_to_stockout=row['days_to_stockout'],
+                urgency="High" if row['days_to_stockout'] <= 3 else "Medium"
+            ))
+
+        return sorted(alerts, key=lambda x: x.days_to_stockout)
 
     # ==========================================
     # MATHEMATICAL MODULES (POLARS/NUMPY)
     # ==========================================
 
     def _calculate_summary_stats(self, df: pl.DataFrame, cols: List[str]) -> Dict[str, Dict[str, float]]:
-        """Vectorized aggregation for base statistics."""
         if not cols: return {}
         exprs = []
         for c in cols:
             exprs.extend([
                 pl.col(c).mean().alias(f"{c}_avg"),
-                pl.col(c).std().alias(f"{c}_std"),
-                pl.col(c).max().alias(f"{c}_max")
+                pl.col(c).std().alias(f"{c}_std")
             ])
         res = df.select(exprs).to_dicts()[0]
         
@@ -199,92 +310,58 @@ class InsightOrchestrator:
         }
 
     def _detect_anomalies(self, df: pl.DataFrame, cols: List[str], id_col: str, time_col: Optional[str]) -> List[AnomalyInsight]:
-        """
-        Detects statistical anomalies.
-        Upgraded to use Exponential Moving Average (EMA) and rolling variance for temporal data 
-        to ensure sensitivity to business seasonality, avoiding naive static averages.
-        """
         anomalies = []
-        
         if time_col and df.height >= 5:
-            # Temporal Seasonality-Aware Logic
             df_sorted = df.sort(time_col)
             span = min(7, df_sorted.height - 1)
             alpha = 2 / (span + 1)
             
             for c in cols:
-                # Calculate EMA and dynamic rolling standard deviation in Polars C-core
                 df_c = df_sorted.select([
                     id_col, 
                     c,
                     pl.col(c).ewm_mean(alpha=alpha).alias("ema"),
                     pl.col(c).rolling_std(window_size=span).fill_null(strategy="backward").alias("rolling_std")
                 ])
-                
-                # Dynamic Z-Score (Distance from Moving Average)
-                z_expr = pl.when(pl.col("rolling_std") > 0) \
-                           .then((pl.col(c) - pl.col("ema")) / pl.col("rolling_std")) \
-                           .otherwise(0).alias("z")
-                           
+                z_expr = pl.when(pl.col("rolling_std") > 0).then((pl.col(c) - pl.col("ema")) / pl.col("rolling_std")).otherwise(0).alias("z")
                 outliers = df_c.with_columns(z_expr).filter(pl.col("z").abs() > self.ANOMALY_Z_SCORE_THRESHOLD)
                 
                 for row in outliers.to_dicts():
                     anomalies.append(AnomalyInsight(
-                        column=c, 
-                        row_identifier=str(row[id_col]), 
-                        value=round(row[c], 2),
-                        z_score=round(abs(row["z"]), 2), 
-                        is_positive=row["z"] > 0
+                        column=c, row_identifier=str(row[id_col]), value=round(row[c], 2), z_score=round(abs(row["z"]), 2), is_positive=row["z"] > 0
                     ))
         else:
-            # Fallback for cross-sectional or small dataset logic (Static Distribution)
             for c in cols:
                 mean, std = df[c].mean(), df[c].std()
                 if not std or std == 0: continue
-                
                 z_scores = ((df[c] - mean) / std).fill_null(0)
                 mask = z_scores.abs() > self.ANOMALY_Z_SCORE_THRESHOLD
-                
                 outliers = df.filter(mask).with_columns(z=z_scores.filter(mask))
                 for row in outliers.to_dicts():
                     anomalies.append(AnomalyInsight(
-                        column=c, 
-                        row_identifier=str(row[id_col]), 
-                        value=round(row[c], 2),
-                        z_score=round(abs(row["z"]), 2), 
-                        is_positive=row["z"] > 0
+                        column=c, row_identifier=str(row[id_col]), value=round(row[c], 2), z_score=round(abs(row["z"]), 2), is_positive=row["z"] > 0
                     ))
-                    
         return sorted(anomalies, key=lambda x: x.z_score, reverse=True)
 
     def _calculate_trends(self, df: pl.DataFrame, cols: List[str], time_col: str) -> List[TrendInsight]:
-        """Calculates trajectory slopes using NumPy polynomial fitting (Linear Algebra)."""
         trends = []
         sorted_df = df.sort(time_col)
         for c in cols:
             y = sorted_df[c].drop_nulls().to_numpy()
             if len(y) < 3: continue
-            
-            # OLS Regression for vector slope
             slope, _ = np.polyfit(np.arange(len(y)), y, 1)
             pct = ((y[-1] - y[0]) / (y[0] or 1)) * 100
-            
             trends.append(TrendInsight(
-                column=c, 
-                slope=slope, 
-                percentage_change=round(pct, 2),
+                column=c, slope=slope, percentage_change=round(pct, 2),
                 direction="increasing" if slope > 0.05 else "decreasing" if slope < -0.05 else "flat",
                 volatility=round(np.std(y) / (np.mean(y) or 1), 3)
             ))
         return trends
 
     def _find_correlations(self, df: pl.DataFrame, cols: List[str]) -> Dict[str, List[str]]:
-        """Identifies highly correlated business metrics to establish root cause drivers."""
         if len(cols) < 2: return {}
-        # Utilizing Polars native correlation matrix
         corr_matrix = df.select(cols).corr().to_dicts()
         mapping = {c: [] for c in cols}
-        
         for i, col_a in enumerate(cols):
             for j, col_b in enumerate(cols):
                 if i == j: continue
@@ -294,12 +371,13 @@ class InsightOrchestrator:
         return mapping
 
     def _detect_time_column(self, df: pl.DataFrame) -> Optional[str]:
-        """Auto-detects temporal axes for sorting and regression vectors."""
         temporal = [c for c in df.columns if df.schema[c] in [pl.Datetime, pl.Date, pl.Time]]
         if temporal: return temporal[0]
-        
-        # Heuristic fallback for uncast string dates
         for c in df.columns:
-            if any(k in c.lower() for k in ["date", "month", "year", "time", "day"]):
-                return c
+            if any(k in c.lower() for k in ["date", "month", "year", "time", "day"]): return c
+        return None
+
+    def _detect_identity_column(self, df: pl.DataFrame) -> Optional[str]:
+        for c in df.columns:
+            if c.lower() == 'id' or c.lower().endswith('_id'): return c
         return None
