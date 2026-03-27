@@ -23,37 +23,45 @@ class CacheManager:
     Enterprise Scale & Resilient Caching Layer.
     
     Features:
-    - Redis Backed with Connection Pooling
+    - Feature-Flagged Redis functionality (Cost-saving mode for early stages)
     - Circuit Breaker Pattern for Graceful Degradation
     - LRU Local Memory Fallback (Prevents OOM Memory Leaks)
     - Strict Tenant Isolation via namespacing
     """
 
     def __init__(self):
+        # EXPLICIT TOGGLE: Set USE_REDIS="true" in env to enable distributed caching.
+        # Defaults to False to save connections/costs while user base is small.
+        self.use_redis = os.getenv("USE_REDIS", "false").lower() in ("true", "1", "t", "yes")
+        
         # Initialize connection to Vercel KV / Upstash Redis securely via environment variables
-        # Updated Line 23 in api/services/cache_manager.py
         redis_url = os.getenv("REDIS_URL") or os.getenv("KV_URL") or os.getenv("UPSTASH_REDIS_REST_URL")
         
         self.DEFAULT_TTL_SECONDS = 60 * 60 * 24  # 24 hours
         
-        # Local LRU Fallback (Max 1000 items to prevent memory leaks)
+        # Local LRU Fallback (Max 1000 items to prevent memory leaks in the ASGI worker)
         self._local_cache = LRUCache(maxsize=1000)
         
         # Circuit Breaker state
         self._circuit_open = False
         self._circuit_recovery_time = 0
-        self._CIRCUIT_COOLDOWN = 60 # wait 60 seconds before retrying Redis
+        self._CIRCUIT_COOLDOWN = 60  # wait 60 seconds before retrying Redis
         
-        self.enabled = bool(redis_url)
+        self.enabled = self.use_redis and bool(redis_url)
+        
         if not self.enabled:
-            logger.warning("No Redis URL found. Operating purely on Local LRU Cache.")
+            if not self.use_redis:
+                logger.info("CACHE_MANAGER: Redis is explicitly disabled via USE_REDIS flag. Operating purely on Local LRU Cache.")
+            else:
+                logger.warning("CACHE_MANAGER: USE_REDIS is true, but no Redis URL found. Falling back to Local LRU Cache.")
             self.redis = None
         else:
+            logger.info("CACHE_MANAGER: Initializing Distributed Redis Cache...")
             self.redis = redis.from_url(
                 redis_url, 
                 encoding="utf-8", 
                 decode_responses=True,
-                socket_timeout=1.5, # Aggressive timeout to prevent API blocking
+                socket_timeout=1.5,  # Aggressive timeout to prevent API blocking
                 socket_connect_timeout=1.5
             )
 
@@ -88,11 +96,11 @@ class CacheManager:
     async def get_cached_insight(self, tenant_id: str, dataset_id: str, prompt: str) -> Optional[Dict[str, Any]]:
         """
         Action 4.1: Retrieve the entire execution pipeline in O(1) time.
-        Falls back to local LRU if Redis is down.
+        Falls back to local LRU if Redis is down or disabled.
         """
         key = self._generate_cache_key(tenant_id, dataset_id, prompt)
         
-        # 1. Try Redis first (if healthy)
+        # 1. Try Redis first (if enabled and healthy)
         if self._is_redis_healthy():
             try:
                 cached_data = await self.redis.get(key)
@@ -126,7 +134,8 @@ class CacheManager:
         narrative: Dict[str, Any]
     ) -> None:
         """
-        Stores pipeline results in Redis, shadowing to the local LRU Cache.
+        Stores pipeline results. Defaults to Local LRU Cache, 
+        shadowing to Redis only if it is enabled and healthy.
         """
         key = self._generate_cache_key(tenant_id, dataset_id, prompt)
         
@@ -138,13 +147,13 @@ class CacheManager:
             "is_cached": True
         }
         
-        # 1. Always write to Local LRU Cache
+        # 1. Always write to Local LRU Cache (Fastest retrieval for the active worker)
         self._local_cache[key] = {
             "expires_at": time.time() + self.DEFAULT_TTL_SECONDS,
             "data": cache_payload
         }
         
-        # 2. Write to Distributed Redis (if healthy)
+        # 2. Write to Distributed Redis (if enabled and healthy)
         if self._is_redis_healthy():
             try:
                 await self.redis.setex(
@@ -168,13 +177,14 @@ class CacheManager:
             del self._local_cache[k]
         keys_deleted += len(keys_to_remove)
 
-        # 2. Clear Redis
+        # 2. Clear Redis (if enabled)
         if self._is_redis_healthy():
             try:
                 cursor = '0'
                 redis_keys_to_delete = []
                 
                 while cursor != 0:
+                    # using count=100 prevents blocking the event loop on huge datasets
                     cursor, keys = await self.redis.scan(cursor=cursor, match=pattern, count=100)
                     redis_keys_to_delete.extend(keys)
                     
