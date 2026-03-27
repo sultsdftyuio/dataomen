@@ -23,8 +23,8 @@ export default function Footer() {
           
           <div className="lg:col-span-2">
             <Link href="/" className="inline-flex items-center gap-2 text-gray-900 mb-6 group">
-              <Logo className="w-8 h-8 group-hover:scale-105 transition-transform" />
-              <span className="text-2xl font-bold tracking-tight">Arcli.</span>
+              {/* Removed the text span since the Logo already contains "Arcli" */}
+              <Logo className="h-8 w-auto group-hover:scale-105 transition-transform" />
             </Link>
             <p className="text-gray-600 mb-8 max-w-md leading-relaxed">
               The AI data analyst for modern teams. Stop writing SQL and wrestling with Excel. 
