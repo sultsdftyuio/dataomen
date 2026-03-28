@@ -182,7 +182,7 @@ export default function RegisterPage() {
             </Button>
 
             <div className="pt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium" style={{ color: C.muted }}>
-              <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> 14-day free trial</span>
+              <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> 3-day free trial</span>
               <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> No credit card required</span>
             </div>
           </form>

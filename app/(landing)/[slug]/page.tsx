@@ -14,7 +14,8 @@ import {
   Zap,
   Terminal,
   XCircle,
-  Users
+  Users,
+  Compass
 } from 'lucide-react';
 import {
   Accordion,
@@ -22,8 +23,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Logo } from '@/components/ui/logo';
-import { Navbar } from '@/components/landing/navbar'; // <-- Injected Navbar Import
+
+// Global Layout Components
+import { Navbar } from '@/components/landing/navbar';
+import Footer from '@/components/landing/footer';
 
 // Modular Registry & Type Imports
 import { 
@@ -34,7 +37,6 @@ import {
 } from '@/lib/seo/index';
 
 const BASE_URL = 'https://www.arcli.tech';
-const SUPPORT_EMAIL = 'support@arcli.tech';
 
 interface PageProps { 
   params: Promise<{ slug: string; }>; 
@@ -74,23 +76,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-// Brand Logo seamlessly injected into the global SEO breadcrumbs
-const BlueprintBreadcrumbs = ({ title, type }: { title: string; type: string }) => (
-  <nav className="max-w-7xl mx-auto px-6 pt-24 md:pt-32 mb-8 lg:px-8 text-sm text-zinc-500 font-medium">
-    <ol className="inline-flex items-center space-x-2">
-      <li>
-        <Link href="/" className="hover:opacity-80 transition-opacity flex items-center">
-          <Logo className="h-5 w-auto" />
-        </Link>
-      </li>
-      <li><ChevronRight className="w-4 h-4 text-zinc-300" /></li>
-      <li className="capitalize">{type.replace('-', ' ')}</li>
-      <li><ChevronRight className="w-4 h-4 text-zinc-300" /></li>
-      <li className="text-zinc-900 font-bold truncate max-w-[200px] sm:max-w-none">{title}</li>
-    </ol>
-  </nav>
-);
-
 const SectionHeading = ({ children, id }: { children: React.ReactNode; id?: string }) => (
   <h2 id={id} className="text-3xl font-extrabold text-zinc-900 mb-8 border-b border-zinc-100 pb-4 scroll-mt-28">
     {children}
@@ -110,7 +95,6 @@ export default async function DynamicSEOPage({ params }: PageProps) {
   const h1 = isTemplate ? p.hero.h1 : (p.h1 || p.heroTitle || p.title);
   const subtitle = isTemplate ? p.hero.subtitle : (p.subtitle || p.heroDescription || p.description);
   const icon = isTemplate ? p.hero.icon : (p.icon || <Layers className="w-6 h-6 text-blue-500" />);
-  const pageType = p.type || p.heroSubtitle || 'Feature';
   
   // Array Normalization & Fallbacks
   const cta = p.ctaHierarchy || { primary: { text: 'Start analyzing', href: '/register' }};
@@ -140,14 +124,13 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
   return (
     <>
-      {/* 0. Global Navigation */}
+      {/* GLOBAL NAVIGATION */}
       <Navbar />
 
       <main className="min-h-screen bg-white selection:bg-blue-100">
-        <BlueprintBreadcrumbs title={h1} type={pageType} />
 
-        {/* 1. Hero Section */}
-        <section className="relative pb-24 bg-white">
+        {/* 1. Hero Section (Added pt-24 md:pt-32 to compensate for removed breadcrumbs) */}
+        <section className="relative pt-24 md:pt-32 pb-24 bg-white">
           <div className="max-w-5xl mx-auto px-6 text-center lg:px-8">
             <div className="flex justify-center mb-8 drop-shadow-sm">{icon}</div>
             <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 text-zinc-900 text-balance">
@@ -476,25 +459,46 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Internal Silo Routing */}
+              {/* Rich Interactive Cards for Related Links */}
               {related.length > 0 && (
-                <div className="p-8 rounded-3xl border border-zinc-200 bg-zinc-50/50">
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 mb-6">Related Modules</h3>
-                  <div className="grid gap-3">
+                <div className="p-8 rounded-3xl border border-zinc-200 bg-zinc-50/50 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+                  
+                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 mb-6 flex items-center gap-2">
+                    <Compass className="w-4 h-4 text-zinc-400" />
+                    Explore More
+                  </h3>
+                  
+                  <div className="grid gap-4">
                     {related.map((relatedSlug: string) => {
                       const relatedData = getPage(relatedSlug) as any;
                       if (!relatedData) return null;
+                      
                       const relatedTitle = relatedData.h1 || relatedData.heroTitle || relatedData.title || relatedSlug;
+                      const relatedDescription = relatedData.description || relatedData.subtitle;
+                      
                       return (
                         <Link 
                           key={relatedSlug}
                           href={`/${relatedSlug}`}
-                          className="group flex items-center justify-between p-4 rounded-xl border border-zinc-200 bg-white hover:border-blue-600 hover:shadow-md transition-all"
+                          className="group relative flex flex-col p-5 rounded-2xl border border-zinc-200 bg-white hover:border-blue-300 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden"
                         >
-                          <span className="text-sm font-bold text-zinc-700 group-hover:text-blue-600 truncate mr-4">
-                            {relatedTitle}
-                          </span>
-                          <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-blue-600 transition-colors shrink-0" />
+                          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 transform -translate-x-full group-hover:translate-x-0 transition-transform duration-300"></div>
+                          
+                          <div className="flex items-start justify-between mb-2">
+                            <span className="text-sm font-bold text-zinc-900 group-hover:text-blue-700 transition-colors line-clamp-2 pr-4 leading-snug">
+                              {relatedTitle}
+                            </span>
+                            <div className="w-6 h-6 rounded-full bg-zinc-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors shrink-0">
+                              <ArrowRight className="w-3 h-3 text-zinc-400 group-hover:text-blue-600 transition-colors" />
+                            </div>
+                          </div>
+                          
+                          {relatedDescription && (
+                            <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed group-hover:text-zinc-600 transition-colors">
+                              {relatedDescription}
+                            </p>
+                          )}
                         </Link>
                       );
                     })}
@@ -507,6 +511,9 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
         </section>
       </main>
+
+      {/* GLOBAL FOOTER */}
+      <Footer />
     </>
   );
 }

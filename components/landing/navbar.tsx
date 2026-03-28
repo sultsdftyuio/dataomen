@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { User } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { Logo } from "@/components/ui/logo";
 
 /**
  * Navbar Component
- * * Provides the primary navigation interface for Arcli.
+ * Provides the primary navigation interface for Arcli.
  * Incorporates a scroll-sensitive transition for the "nav-scrolled" state
  * and integrates the Product-Led Growth (PLG) CTA strategy.
  */
@@ -20,11 +21,12 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  // UPDATED: Absolute root anchors (/#...) to enable cross-page navigation
   const navLinks = [
-    { name: "Platform", href: "#platform" },
-    { name: "Agents", href: "#agents" },
-    { name: "Pricing", href: "#pricing" },
-    { name: "Security", href: "#security" },
+    { name: "Platform", href: "/#platform" },
+    { name: "Agents", href: "/#agents" },
+    { name: "Pricing", href: "/#pricing" },
+    { name: "Security", href: "/#security" },
     { name: "Docs", href: "/docs" }
   ];
 
@@ -52,19 +54,19 @@ export function Navbar() {
         alignItems: "center", 
         justifyContent: "space-between"
       }}>
-        {/* Logo Section */}
-        <div 
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        {/* Logo Section - UPDATED: Replaced window.scrollTo with Next.js Link for cross-page routing */}
+        <Link 
+          href="/"
           className="transition-transform hover:scale-105"
-          style={{ display: "flex", alignItems: "center", cursor: "pointer" }}
+          style={{ display: "flex", alignItems: "center", cursor: "pointer", textDecoration: "none" }}
         >
           <Logo className="h-8 w-auto" />
-        </div>
+        </Link>
 
         {/* Navigation Links */}
         <div className="hide-mobile" style={{ display: "flex", gap: 32 }}>
           {navLinks.map(n => (
-            <a
+            <Link
               key={n.name}
               href={n.href}
               style={{ 
@@ -79,14 +81,14 @@ export function Navbar() {
               onMouseOut={e  => (e.currentTarget.style.color = scrolled ? C.navy : C.muted)}
             >
               {n.name}
-            </a>
+            </Link>
           ))}
         </div>
 
         {/* Action CTAs */}
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           
-          <a 
+          <Link 
             href="/login" 
             className="hide-mobile" 
             style={{ 
@@ -101,9 +103,9 @@ export function Navbar() {
             }}
           >
             <User size={16} /> Log In
-          </a>
+          </Link>
 
-          <a 
+          <Link 
             href="/register" 
             className="btn-navy" 
             style={{ 
@@ -111,11 +113,13 @@ export function Navbar() {
               fontSize: 14, 
               fontWeight: 800, 
               borderRadius: 10,
-              boxShadow: scrolled ? "0 4px 12px rgba(10, 22, 40, 0.2)" : "none"
+              boxShadow: scrolled ? "0 4px 12px rgba(10, 22, 40, 0.2)" : "none",
+              textDecoration: "none",
+              color: "white"
             }}
           >
             Start Free Trial
-          </a>
+          </Link>
         </div>
       </div>
     </nav>
