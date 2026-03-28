@@ -7,7 +7,6 @@ import {
   ArrowRight, 
   ChevronRight, 
   Check,
-  Cpu,
   Database,
   Layers,
   ShieldCheck,
@@ -15,7 +14,9 @@ import {
   Terminal,
   XCircle,
   Users,
-  Compass
+  Compass,
+  CheckCircle2,
+  MessageSquare
 } from 'lucide-react';
 import {
   Accordion,
@@ -77,7 +78,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 const SectionHeading = ({ children, id }: { children: React.ReactNode; id?: string }) => (
-  <h2 id={id} className="text-3xl font-extrabold text-zinc-900 mb-8 border-b border-zinc-100 pb-4 scroll-mt-28">
+  <h2 id={id} className="text-3xl md:text-4xl font-extrabold text-[#0a1628] mb-8 tracking-tight scroll-mt-28">
     {children}
   </h2>
 );
@@ -94,10 +95,10 @@ export default async function DynamicSEOPage({ params }: PageProps) {
   
   const h1 = isTemplate ? p.hero.h1 : (p.h1 || p.heroTitle || p.title);
   const subtitle = isTemplate ? p.hero.subtitle : (p.subtitle || p.heroDescription || p.description);
-  const icon = isTemplate ? p.hero.icon : (p.icon || <Layers className="w-6 h-6 text-blue-500" />);
+  const icon = isTemplate ? p.hero.icon : (p.icon || <Layers className="w-6 h-6 text-blue-600" />);
   
   // Array Normalization & Fallbacks
-  const cta = p.ctaHierarchy || { primary: { text: 'Start analyzing', href: '/register' }};
+  const cta = p.ctaHierarchy || { primary: { text: 'Start Free Trial', href: '/register' }};
   const demo = p.demoPipeline;
   const personas = p.targetPersonas || [];
   const matrix = p.evaluationMatrix || p.competitiveAdvantage || [];
@@ -124,77 +125,95 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
   return (
     <>
-      {/* GLOBAL NAVIGATION */}
       <Navbar />
 
-      <main className="min-h-screen bg-white selection:bg-blue-100">
+      {/* Main Wrapper matching the White & Navy aesthetic */}
+      <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-hidden relative">
+        
+        {/* Soft Architectural Background Cues */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-40 z-0">
+          <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-100 blur-[120px]" />
+          <div className="absolute bottom-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-50 blur-[100px]" />
+        </div>
 
-        {/* 1. Hero Section (Added pt-24 md:pt-32 to compensate for removed breadcrumbs) */}
-        <section className="relative pt-24 md:pt-32 pb-24 bg-white">
-          <div className="max-w-5xl mx-auto px-6 text-center lg:px-8">
-            <div className="flex justify-center mb-8 drop-shadow-sm">{icon}</div>
-            <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-8 text-zinc-900 text-balance">
+        {/* 1. Hero Section */}
+        <section className="relative pt-32 pb-24 md:pt-40 md:pb-32 z-10 bg-[#fafafa]/50">
+          <div className="max-w-5xl mx-auto px-6 text-center lg:px-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 ease-out">
+            
+            {/* Eyebrow badge matching hero.tsx */}
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-8">
+              {icon}
+              <span className="capitalize text-[#0a1628] text-sm font-bold tracking-wide">{p.type || 'Platform Feature'}</span>
+            </div>
+            
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tighter mb-8 text-[#0a1628] text-balance leading-tight">
               {h1}
             </h1>
-            <p className="text-xl md:text-2xl text-zinc-600 leading-snug max-w-3xl mx-auto mb-12 font-medium text-balance">
+            
+            <p className="text-xl md:text-2xl text-slate-500 max-w-3xl mx-auto mb-12 font-medium text-balance leading-relaxed">
               {subtitle}
             </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+            
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link 
                 href={cta.primary.href} 
-                className="group inline-flex h-14 items-center justify-center rounded-xl bg-blue-600 px-10 text-lg font-bold text-white transition-all hover:bg-blue-700 hover:scale-[1.02] active:scale-95 shadow-xl shadow-blue-500/20"
+                className="w-full sm:w-auto px-10 py-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-[0_4px_14px_rgba(37,99,235,0.25)] hover:-translate-y-0.5 duration-300 text-lg"
               >
                 {cta.primary.text}
-                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
               {cta.secondary && (
                 <Link 
                   href={cta.secondary.href} 
-                  className="group inline-flex h-14 items-center justify-center rounded-xl bg-zinc-50 border border-zinc-200 px-10 text-lg font-bold text-zinc-900 transition-all hover:bg-zinc-100"
+                  className="w-full sm:w-auto px-10 py-4 bg-white text-[#0a1628] border border-slate-200 rounded-xl font-bold hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center text-lg shadow-sm"
                 >
                   {cta.secondary.text}
                 </Link>
               )}
             </div>
+            <p className="mt-6 text-sm text-slate-400 font-semibold">
+              14-day free trial · No credit card · Setup in 5 minutes
+            </p>
           </div>
         </section>
 
-        {/* 2. Interactive Demo Pipeline (New Enterprise Feature) */}
+        {/* 2. Interactive Demo Pipeline */}
         {demo && (
-          <section id="interactive-demo" className="max-w-5xl mx-auto px-6 lg:px-8 pb-24">
-            <div className="bg-zinc-950 rounded-3xl p-2 md:p-4 shadow-2xl overflow-hidden border border-zinc-800">
-              <div className="bg-zinc-900 rounded-2xl overflow-hidden">
-                <div className="flex items-center px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
+          <section id="interactive-demo" className="max-w-5xl mx-auto px-6 lg:px-8 pb-32 z-10 relative">
+            {/* The terminal window remains dark for strong visual contrast, but sits on a white background */}
+            <div className="bg-slate-900 rounded-3xl p-2 md:p-4 shadow-2xl shadow-blue-900/10 overflow-hidden border border-slate-800">
+              <div className="bg-slate-950 rounded-2xl overflow-hidden border border-slate-800/50">
+                <div className="flex items-center px-6 py-4 border-b border-slate-800 bg-slate-900/80">
                   <div className="flex gap-2 mr-4">
-                    <div className="w-3 h-3 rounded-full bg-rose-500"></div>
-                    <div className="w-3 h-3 rounded-full bg-amber-500"></div>
-                    <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                    <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                    <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                    <div className="w-3 h-3 rounded-full bg-slate-700"></div>
                   </div>
-                  <div className="text-xs font-mono text-zinc-500 flex items-center gap-2">
-                    <Terminal className="w-4 h-4" /> AI Execution Pipeline
+                  <div className="text-xs font-bold tracking-widest text-slate-400 uppercase flex items-center gap-2">
+                    <Terminal className="w-4 h-4" /> Live AI Execution
                   </div>
                 </div>
-                <div className="p-6 md:p-10 space-y-8">
+                <div className="p-6 md:p-12 flex flex-col gap-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/10 to-transparent">
                   {/* User Prompt */}
                   <div className="flex gap-4 items-start">
-                    <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center shrink-0">
-                      <span className="text-blue-400 font-bold text-xs">YOU</span>
+                    <div className="w-10 h-10 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center shrink-0">
+                      <span className="text-blue-400 font-bold text-sm">YOU</span>
                     </div>
-                    <div className="text-lg md:text-xl text-zinc-200 font-medium">"{demo.userPrompt}"</div>
+                    <div className="text-xl md:text-2xl text-slate-200 font-medium leading-relaxed">"{demo.userPrompt}"</div>
                   </div>
                   {/* AI Processing / SQL */}
-                  <div className="pl-12 space-y-4">
-                    <div className="p-4 bg-zinc-950 rounded-xl border border-zinc-800 font-mono text-sm text-emerald-400 overflow-x-auto">
+                  <div className="pl-14 space-y-6">
+                    <div className="p-5 bg-black/50 rounded-2xl border border-slate-800 font-mono text-sm text-sky-400 overflow-x-auto shadow-inner">
                       {demo.generatedSql}
                     </div>
                     {/* AI Insight & Metric */}
-                    <div className="flex flex-col md:flex-row gap-6 p-6 bg-blue-900/10 border border-blue-900/30 rounded-xl items-center md:items-start">
-                      <div className="flex-1 text-zinc-300 leading-relaxed">
+                    <div className="flex flex-col md:flex-row gap-6 p-6 bg-blue-900/20 border border-blue-800/30 rounded-2xl items-center md:items-start">
+                      <div className="flex-1 text-slate-300 leading-relaxed font-medium text-lg">
                         {demo.aiInsight}
                       </div>
-                      <div className="shrink-0 text-center px-6 py-4 bg-blue-600 rounded-lg shadow-lg shadow-blue-900/20">
-                        <div className="text-2xl font-black text-white">{demo.chartMetric}</div>
-                        <div className="text-[10px] text-blue-200 uppercase tracking-widest mt-1 font-bold">Key Insight</div>
+                      <div className="shrink-0 text-center px-8 py-5 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl shadow-[0_0_30px_rgba(37,99,235,0.2)] border border-blue-500/50">
+                        <div className="text-3xl font-black text-white">{demo.chartMetric}</div>
+                        <div className="text-xs text-blue-200 uppercase tracking-widest mt-2 font-bold">Key Insight</div>
                       </div>
                     </div>
                   </div>
@@ -204,57 +223,66 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           </section>
         )}
 
-        {/* 3. Target Personas (New Enterprise Feature) */}
+        {/* 3. Target Personas */}
         {personas.length > 0 && (
-          <section className="max-w-7xl mx-auto px-6 lg:px-8 pb-32">
-            <SectionHeading>Built for Data-Driven Teams</SectionHeading>
-            <div className="grid md:grid-cols-3 gap-6">
-              {personas.map((persona: any, i: number) => (
-                <div key={i} className="p-8 rounded-3xl border border-zinc-200 bg-zinc-50 hover:bg-white hover:shadow-xl transition-all">
-                  <Users className="w-8 h-8 text-blue-600 mb-6" />
-                  <h3 className="text-xl font-bold text-zinc-900 mb-3">{persona.role}</h3>
-                  <p className="text-zinc-600 text-sm leading-relaxed mb-6">{persona.description}</p>
-                  <ul className="space-y-2">
-                    {persona.capabilities.map((cap: string, j: number) => (
-                      <li key={j} className="flex items-center text-xs font-bold text-zinc-900">
-                        <Check className="w-4 h-4 text-emerald-500 mr-2" /> {cap}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+          <section className="bg-[#fafafa] border-y border-slate-100 py-24 relative z-10">
+            <div className="max-w-7xl mx-auto px-6 lg:px-8">
+              <div className="text-center max-w-3xl mx-auto mb-16">
+                <SectionHeading>Built for Data-Driven Teams</SectionHeading>
+                <p className="text-xl text-slate-500 font-medium">Empower every role in your organization to make decisions backed by verifiable data.</p>
+              </div>
+              <div className="grid md:grid-cols-3 gap-8">
+                {personas.map((persona: any, i: number) => (
+                  <div key={i} className="bg-white border border-slate-200 rounded-3xl p-8 hover:shadow-xl hover:shadow-blue-900/5 hover:border-blue-200 transition-all duration-300 group">
+                    <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-blue-100 transition-all duration-300">
+                      <Users className="w-7 h-7 text-blue-600" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-[#0a1628] mb-3">{persona.role}</h3>
+                    <p className="text-slate-500 text-lg font-medium leading-relaxed mb-8">{persona.description}</p>
+                    <ul className="space-y-3 pt-6 border-t border-slate-100">
+                      {persona.capabilities.map((cap: string, j: number) => (
+                        <li key={j} className="flex items-start text-sm font-bold text-slate-700">
+                          <CheckCircle2 className="w-5 h-5 text-blue-500 mr-3 shrink-0" /> 
+                          <span className="mt-0.5">{cap}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         )}
 
         {/* Main Content Grid */}
-        <section className="max-w-7xl mx-auto px-6 lg:px-8 pb-32 grid lg:grid-cols-12 gap-16">
+        <section className="max-w-7xl mx-auto px-6 lg:px-8 py-32 grid lg:grid-cols-12 gap-16 relative z-10">
           
           {/* Left Column: Logic & Depth */}
-          <div className="lg:col-span-8 space-y-24">
+          <div className="lg:col-span-8 space-y-28">
 
             {/* Legacy vs Arcli Matrix */}
             {matrix.length > 0 && (
               <div>
-                <SectionHeading>Performance Matrix</SectionHeading>
+                <SectionHeading>The Arcli Advantage</SectionHeading>
                 <div className="grid gap-6">
                   {matrix.map((item: any, i: number) => {
                     const category = item.category || item.legacyTool;
                     const legacy = item.competitorApproach || item.limitation;
                     return (
-                      <div key={i} className="p-8 rounded-2xl border border-zinc-200 bg-zinc-50/50">
-                        <h3 className="text-lg font-bold text-zinc-900 mb-4 flex items-center gap-2">
-                          <Zap className="w-5 h-5 text-amber-500" />
+                      <div key={i} className="p-8 rounded-3xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow">
+                        <h3 className="text-xl font-bold text-[#0a1628] mb-6 flex items-center gap-3">
+                          <Zap className="w-6 h-6 text-blue-500 fill-blue-500" />
                           {category}
                         </h3>
                         <div className="grid md:grid-cols-2 gap-8">
-                          <div>
-                            <div className="text-xs font-bold text-zinc-400 uppercase mb-2 tracking-widest">Legacy Approach</div>
-                            <p className="text-zinc-600 text-sm leading-relaxed">{legacy}</p>
+                          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100">
+                            <div className="text-xs font-extrabold text-slate-400 uppercase mb-3 tracking-widest">The Old Way</div>
+                            <p className="text-slate-600 leading-relaxed font-medium">{legacy}</p>
                           </div>
-                          <div className="bg-white p-4 rounded-xl border border-blue-100">
-                            <div className="text-xs font-bold text-blue-500 uppercase mb-2 tracking-widest">Arcli Advantage</div>
-                            <p className="text-zinc-900 text-sm leading-relaxed font-medium">{item.arcliAdvantage}</p>
+                          <div className="p-5 rounded-2xl bg-blue-50 border border-blue-100 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full blur-2xl pointer-events-none"></div>
+                            <div className="text-xs font-extrabold text-blue-600 uppercase mb-3 tracking-widest relative z-10">With Arcli</div>
+                            <p className="text-[#0a1628] leading-relaxed font-bold relative z-10">{item.arcliAdvantage}</p>
                           </div>
                         </div>
                       </div>
@@ -264,27 +292,27 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Workflow Upgrade (New Enterprise Feature) */}
+            {/* Workflow Upgrade */}
             {workflow && (
               <div>
                 <SectionHeading>Workflow Transformation</SectionHeading>
                 <div className="grid sm:grid-cols-2 gap-8">
                   <div className="space-y-4">
-                    <div className="text-sm font-bold text-rose-500 uppercase tracking-widest flex items-center gap-2">
-                      <XCircle className="w-4 h-4" /> The Bottleneck
+                    <div className="text-xs font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-6">
+                      <XCircle className="w-4 h-4 text-slate-400" /> The Bottleneck
                     </div>
                     {workflow.legacyBottleneck.map((str: string, i: number) => (
-                      <div key={i} className="p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-900 text-sm leading-relaxed">
+                      <div key={i} className="p-5 rounded-2xl bg-slate-50 border border-slate-100 text-slate-600 font-medium leading-relaxed">
                         {str}
                       </div>
                     ))}
                   </div>
                   <div className="space-y-4">
-                    <div className="text-sm font-bold text-emerald-600 uppercase tracking-widest flex items-center gap-2">
-                      <Check className="w-4 h-4" /> The Arcli Automation
+                    <div className="text-xs font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-2 mb-6">
+                      <Zap className="w-4 h-4 fill-blue-600" /> Arcli Automation
                     </div>
                     {workflow.arcliAutomation.map((str: string, i: number) => (
-                      <div key={i} className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-900 text-sm leading-relaxed">
+                      <div key={i} className="p-5 rounded-2xl bg-blue-50 border border-blue-100 text-[#0a1628] font-bold leading-relaxed">
                         {str}
                       </div>
                     ))}
@@ -297,54 +325,31 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             {steps.length > 0 && (
               <div>
                 <SectionHeading id="how-it-works">Execution Workflow</SectionHeading>
-                <div className="grid gap-4">
+                <div className="grid gap-6">
                   {steps.map((step: any, i: number) => {
                     const stepTitle = step.name || step.phase;
                     const stepText = step.text || step.action || step.description || (step.userAction ? `${step.userAction} ${step.outcome}` : null);
                     
                     return (
-                      <div key={i} className="flex gap-6 group">
-                        <div className="flex flex-col items-center">
-                          <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center text-sm font-bold text-zinc-900 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">
+                      <div key={i} className="flex gap-8 group">
+                        <div className="flex flex-col items-center pt-1">
+                          <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 shadow-sm flex items-center justify-center text-lg font-bold text-slate-400 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 group-hover:shadow-md transition-all duration-300">
                             {i + 1}
                           </div>
-                          {i < steps.length - 1 && <div className="w-px h-full bg-zinc-100 my-2" />}
+                          {i < steps.length - 1 && <div className="w-px h-full bg-slate-200 my-3 group-hover:bg-blue-200 transition-colors" />}
                         </div>
-                        <div className="pb-10">
-                          <h4 className="text-xl font-bold text-zinc-900 mb-2">{stepTitle}</h4>
-                          <p className="text-zinc-600 leading-relaxed max-w-2xl">{stepText}</p>
+                        <div className="pb-12 pt-2">
+                          <h4 className="text-2xl font-bold text-[#0a1628] mb-3">{stepTitle}</h4>
+                          <p className="text-slate-500 text-lg font-medium leading-relaxed max-w-2xl">{stepText}</p>
                           {step.outcome && !step.userAction && (
-                            <div className="mt-3 text-sm font-medium text-emerald-600 bg-emerald-50 inline-block px-3 py-1 rounded-md">
-                              Outcome: {step.outcome}
+                            <div className="mt-4 text-sm font-bold text-blue-700 bg-blue-50 border border-blue-100 inline-flex items-center gap-2 px-4 py-2 rounded-xl">
+                              <CheckCircle2 className="w-4 h-4" /> {step.outcome}
                             </div>
                           )}
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            )}
-
-            {/* Processing Architecture */}
-            {architecture && (
-              <div className="bg-zinc-950 rounded-3xl p-10 text-white overflow-hidden relative group">
-                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <Database className="w-32 h-32" />
-                </div>
-                <h3 className="text-xl font-bold mb-8 flex items-center gap-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                  Orchestration Architecture
-                </h3>
-                <div className="grid sm:grid-cols-3 gap-10">
-                  {Object.entries(architecture).map(([key, value]) => (
-                    <div key={key}>
-                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">
-                        {key.replace(/([A-Z])/g, ' $1')}
-                      </div>
-                      <div className="text-zinc-100 font-semibold text-sm leading-relaxed">{value as string}</div>
-                    </div>
-                  ))}
                 </div>
               </div>
             )}
@@ -358,21 +363,22 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                     const ucTitle = item.title || item.vertical;
                     const ucDesc = item.description || item.application || item.businessOutcome;
                     return (
-                      <div key={i} className="p-6 rounded-2xl border border-zinc-100 bg-zinc-50/30 hover:bg-white hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/5 transition-all">
-                        <div className="flex justify-between items-start mb-3">
-                          <h4 className="font-bold text-zinc-900 flex items-center gap-2">
-                            <ShieldCheck className="w-5 h-5 text-blue-600" />
-                            {ucTitle}
-                          </h4>
+                      <div key={i} className="p-8 rounded-3xl border border-slate-200 bg-white hover:border-blue-200 hover:shadow-xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all duration-300">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
+                            <ShieldCheck className="w-6 h-6 text-blue-600" />
+                          </div>
                           {item.complexity && (
-                            <span className="text-[10px] uppercase font-bold tracking-wider bg-zinc-200 text-zinc-600 px-2 py-1 rounded">
+                            <span className="text-[10px] uppercase font-extrabold tracking-wider bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg">
                               {item.complexity}
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-zinc-600 leading-relaxed">{ucDesc}</p>
+                        <h4 className="font-bold text-xl text-[#0a1628] mb-3">{ucTitle}</h4>
+                        <p className="text-slate-500 font-medium leading-relaxed">{ucDesc}</p>
                         {item.businessQuestion && (
-                          <div className="mt-4 p-3 bg-zinc-100 rounded-lg text-xs font-mono text-zinc-700 italic border border-zinc-200">
+                          <div className="mt-6 p-4 bg-slate-50 rounded-2xl text-sm font-bold text-slate-700 border border-slate-100 flex items-start gap-3">
+                            <MessageSquare className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
                             "{item.businessQuestion}"
                           </div>
                         )}
@@ -383,18 +389,26 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Engineered Trust */}
-            {p.trustAndSecurity && (
-              <div>
-                <SectionHeading>Engineered Trust</SectionHeading>
-                <div className="grid gap-4">
-                  {p.trustAndSecurity.map((trust: any, i: number) => (
-                    <div key={i} className="flex flex-col sm:flex-row gap-4 p-6 bg-zinc-950 text-white rounded-2xl">
-                      <Database className="w-8 h-8 text-blue-500 shrink-0" />
-                      <div>
-                        <h4 className="font-bold text-lg mb-2">{trust.principle}</h4>
-                        <p className="text-zinc-400 text-sm leading-relaxed">{trust.howWeDeliver}</p>
+            {/* Processing Architecture */}
+            {architecture && (
+              <div className="bg-[#0a1628] rounded-3xl p-12 text-white overflow-hidden relative group shadow-2xl">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors duration-700"></div>
+                <div className="absolute bottom-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity duration-700">
+                  <Database className="w-64 h-64" />
+                </div>
+                
+                <h3 className="text-2xl font-extrabold mb-10 flex items-center gap-4 relative z-10 text-white">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(59,130,246,0.8)]" />
+                  Orchestration Architecture
+                </h3>
+                
+                <div className="grid sm:grid-cols-3 gap-12 relative z-10">
+                  {Object.entries(architecture).map(([key, value]) => (
+                    <div key={key}>
+                      <div className="text-xs font-extrabold uppercase tracking-[0.2em] text-slate-400 mb-4">
+                        {key.replace(/([A-Z])/g, ' $1')}
                       </div>
+                      <div className="text-white font-bold text-lg leading-relaxed">{value as string}</div>
                     </div>
                   ))}
                 </div>
@@ -405,18 +419,21 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             {faqs.length > 0 && (
               <div>
                 <SectionHeading id="faq">Governance & Support</SectionHeading>
-                <Accordion type="single" collapsible className="w-full">
+                <div className="space-y-4">
                   {faqs.map((faq: any, i: number) => (
-                    <AccordionItem key={i} value={`faq-${i}`} className="border-zinc-200">
-                      <AccordionTrigger className="text-left py-6 text-lg font-bold text-zinc-900 hover:text-blue-600 transition-colors">
+                    <details key={i} className="group bg-white border border-slate-200 rounded-2xl overflow-hidden [&_summary::-webkit-details-marker]:hidden hover:border-slate-300 transition-colors shadow-sm">
+                      <summary className="flex items-center justify-between cursor-pointer p-6 font-bold text-[#0a1628] text-lg hover:bg-slate-50 transition-colors focus:outline-none">
                         {faq.q}
-                      </AccordionTrigger>
-                      <AccordionContent className="text-zinc-600 text-base leading-relaxed pb-8">
+                        <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-slate-50 p-2 rounded-full text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-600">
+                          <ChevronRight className="w-5 h-5 rotate-90" />
+                        </span>
+                      </summary>
+                      <div className="p-6 pt-0 text-slate-500 text-lg leading-relaxed font-medium bg-white border-t border-slate-100">
                         {faq.a}
-                      </AccordionContent>
-                    </AccordionItem>
+                      </div>
+                    </details>
                   ))}
-                </Accordion>
+                </div>
               </div>
             )}
 
@@ -428,23 +445,25 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               
               {/* Core Capabilities */}
               {rawFeatures.length > 0 && (
-                <div className="p-8 rounded-3xl border border-zinc-200 bg-white shadow-xl shadow-zinc-200/50">
-                  <h3 className="text-lg font-black text-zinc-900 mb-8 uppercase tracking-widest flex items-center gap-3">
+                <div className="p-8 rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50">
+                  <h3 className="text-lg font-black text-[#0a1628] mb-8 uppercase tracking-widest flex items-center gap-3">
                     <Layers className="w-5 h-5 text-blue-600"/>
                     Core Capabilities
                   </h3>
-                  <ul className="space-y-5 mb-10">
+                  <ul className="space-y-6 mb-10">
                     {rawFeatures.map((feature: any, i: number) => {
                       const isObject = typeof feature === 'object' && feature !== null;
                       const fTitle = isObject ? (feature.title || feature.name) : feature;
                       const fDesc = isObject ? (feature.description || feature.executiveExplanation) : null;
 
                       return (
-                        <li key={i} className="flex items-start text-sm text-zinc-600 leading-snug">
-                          <Check className="w-4 h-4 text-blue-600 mr-4 shrink-0 mt-0.5" />
+                        <li key={i} className="flex items-start text-sm leading-snug">
+                          <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center mr-4 shrink-0">
+                            <Check className="w-4 h-4 text-blue-600" />
+                          </div>
                           <div>
-                            <span className="font-medium text-zinc-900 capitalize">{fTitle}</span>
-                            {fDesc && <p className="text-zinc-500 mt-1">{fDesc}</p>}
+                            <span className="font-bold text-[#0a1628] text-base capitalize">{fTitle}</span>
+                            {fDesc && <p className="text-slate-500 mt-2 font-medium leading-relaxed">{fDesc}</p>}
                           </div>
                         </li>
                       );
@@ -452,7 +471,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                   </ul>
                   <Link 
                     href={cta.primary.href} 
-                    className="flex w-full h-12 items-center justify-center rounded-xl bg-zinc-900 text-sm font-bold text-white transition-all hover:bg-zinc-800 hover:scale-[1.01] active:scale-95"
+                    className="flex w-full h-14 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold text-white transition-all hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-600/20 hover:-translate-y-0.5 duration-300"
                   >
                     {cta.primary.text}
                   </Link>
@@ -461,11 +480,11 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
               {/* Rich Interactive Cards for Related Links */}
               {related.length > 0 && (
-                <div className="p-8 rounded-3xl border border-zinc-200 bg-zinc-50/50 relative overflow-hidden">
+                <div className="p-8 rounded-3xl border border-slate-200 bg-[#fafafa] relative overflow-hidden">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
                   
-                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400 mb-6 flex items-center gap-2">
-                    <Compass className="w-4 h-4 text-zinc-400" />
+                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-6 flex items-center gap-2">
+                    <Compass className="w-4 h-4 text-slate-400" />
                     Explore More
                   </h3>
                   
@@ -481,21 +500,21 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                         <Link 
                           key={relatedSlug}
                           href={`/${relatedSlug}`}
-                          className="group relative flex flex-col p-5 rounded-2xl border border-zinc-200 bg-white hover:border-blue-300 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden"
+                          className="group relative flex flex-col p-5 rounded-2xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden"
                         >
                           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 transform -translate-x-full group-hover:translate-x-0 transition-transform duration-300"></div>
                           
                           <div className="flex items-start justify-between mb-2">
-                            <span className="text-sm font-bold text-zinc-900 group-hover:text-blue-700 transition-colors line-clamp-2 pr-4 leading-snug">
+                            <span className="text-sm font-bold text-[#0a1628] group-hover:text-blue-700 transition-colors line-clamp-2 pr-4 leading-snug">
                               {relatedTitle}
                             </span>
-                            <div className="w-6 h-6 rounded-full bg-zinc-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors shrink-0">
-                              <ArrowRight className="w-3 h-3 text-zinc-400 group-hover:text-blue-600 transition-colors" />
+                            <div className="w-6 h-6 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-blue-50 transition-colors shrink-0">
+                              <ArrowRight className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition-colors" />
                             </div>
                           </div>
                           
                           {relatedDescription && (
-                            <p className="text-xs text-zinc-500 line-clamp-2 leading-relaxed group-hover:text-zinc-600 transition-colors">
+                            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed font-medium group-hover:text-slate-600 transition-colors">
                               {relatedDescription}
                             </p>
                           )}

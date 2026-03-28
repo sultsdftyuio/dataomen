@@ -1,6 +1,9 @@
+# api/routes/datasets.py
+
 import logging
+import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -28,7 +31,7 @@ router = APIRouter(prefix="/api/datasets", tags=["Datasets"])
 
 class DatasetCreate(BaseModel):
     name: str = Field(..., description="A friendly name for the dataset.")
-    integration_name: Optional[str] = Field(None, description="The SaaS provider (e.g., 'stripe', 'shopify'). Null if file upload.")
+    integration_name: Optional[str] = Field(None, description="The SaaS provider (e.g., 'stripe'). Null if file upload.")
     stream_name: Optional[str] = Field(None, description="The specific table/stream to sync (e.g., 'invoices').")
     file_path: Optional[str] = Field(None, description="The R2/S3 object key if this is a direct file upload.")
 
@@ -75,6 +78,58 @@ async def _cleanup_dataset_resources(tenant_id: str, dataset_id: str, file_path:
 # API Routes
 # -----------------------------------------------------------------------------
 
+@router.post("/upload", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
+async def upload_dataset(
+    name: str = Form(..., description="A friendly name for the dataset."),
+    file: UploadFile = File(..., description="The CSV/JSON file being uploaded."),
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Handles direct file uploads (multipart/form-data).
+    Uploads the file securely to Cloud Storage (R2/S3) and dispatches the background worker.
+    """
+    tenant_id = context.tenant_id
+    logger.info(f"[{tenant_id}] Uploading new file dataset: {name}")
+
+    try:
+        # 1. Security by Design: Generate a secure, tenant-isolated storage path
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'raw'
+        file_path = f"tenants/{tenant_id}/datasets/{uuid.uuid4()}.{file_extension}"
+
+        # 2. Read and Upload to Object Storage (Modular Strategy)
+        # Assuming storage_manager has a method to handle raw bytes or file streams.
+        file_bytes = await file.read()
+        storage_manager.upload_bytes(file_bytes, file_path)
+
+        # 3. Create the Database Record (Starts in PENDING state)
+        new_dataset = Dataset(
+            tenant_id=tenant_id,
+            name=name,
+            status=DatasetStatus.PENDING,
+            integration_name=None, # Explicitly null for file uploads
+            file_path=file_path,
+            schema_metadata={"original_filename": file.filename}
+        )
+        
+        db.add(new_dataset)
+        db.commit()
+        db.refresh(new_dataset)
+
+        # 4. Phase 6 Integration: Dispatch the Celery Task
+        dataset_id_str = str(new_dataset.id)
+        process_ingestion_dataset.delay(dataset_id_str, tenant_id)
+
+        logger.info(f"[{tenant_id}] Dispatched Celery Ingestion Task for File Dataset {dataset_id_str}")
+
+        return new_dataset
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[{tenant_id}] File upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to upload and process file.")
+
+
 @router.post("/", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
 async def create_dataset(
     request: DatasetCreate,
@@ -82,10 +137,10 @@ async def create_dataset(
     db: Session = Depends(get_db)
 ):
     """
-    Registers a new dataset (SaaS or File) and INSTANTLY dispatches the background worker.
+    Registers a new SaaS integration dataset and INSTANTLY dispatches the background worker.
     """
     tenant_id = context.tenant_id
-    logger.info(f"[{tenant_id}] Creating new dataset: {request.name}")
+    logger.info(f"[{tenant_id}] Creating new SaaS dataset: {request.name}")
 
     # Validation: Ensure they provided either an integration or a file, not neither
     if not request.integration_name and not request.file_path:
@@ -112,10 +167,7 @@ async def create_dataset(
         db.refresh(new_dataset)
 
         # 2. PHASE 6 INTEGRATION: Dispatch the Celery Background Task
-        # We pass the ID as a string. Celery will pick this up instantly.
         dataset_id_str = str(new_dataset.id)
-        
-        # .delay() is the Celery mechanism to push to the Redis broker asynchronously
         process_ingestion_dataset.delay(dataset_id_str, tenant_id)
 
         logger.info(f"[{tenant_id}] Dispatched Celery Ingestion Task for Dataset {dataset_id_str}")
