@@ -38,23 +38,21 @@ import {
 const BASE_URL = 'https://www.arcli.tech';
 
 // ----------------------------------------------------------------------
-// 1. STRICT TYPE DEFINITIONS (Zero 'any' Policy)
+// 1. STRICT TYPE DEFINITIONS (Next.js 15 Async Params)
 // ----------------------------------------------------------------------
 interface PageProps { 
-  params: { slug: string }; 
+  params: Promise<{ slug: string }>; 
 }
 
 type CTA = { text: string; href: string };
 type CoreCapability = { title: string; description: string };
 
-// Sub-schemas to eliminate implicit 'any' in arrays
 type RawFeature = string | { title?: string; name?: string; description?: string; executiveExplanation?: string };
 type RawStep = { name?: string; phase?: string; text?: string; action?: string; description?: string; userAction?: string; outcome?: string };
 type RawUseCase = { title?: string; vertical?: string; description?: string; application?: string; businessOutcome?: string; businessQuestion?: string; complexity?: string };
 type RawMatrix = { category?: string; legacyTool?: string; competitorApproach?: string; limitation?: string; arcliAdvantage: string };
 type RawPersona = { role: string; description: string; capabilities: string[] };
 
-// Base Shared Properties
 type RawBasePage = {
   title?: string;
   description?: string;
@@ -87,7 +85,6 @@ type RawBasePage = {
   dateModified?: string;
 };
 
-// Discriminated Union for Safe Destructuring
 export type RawTemplatePage = RawBasePage & {
   type: 'template';
   hero: { h1: string; subtitle: string; icon?: React.ReactNode };
@@ -103,7 +100,6 @@ export type RawStandardPage = RawBasePage & {
 
 export type RawPage = RawTemplatePage | RawStandardPage;
 
-// The Final output schema for the UI
 export interface NormalizedPage {
   slug: string;
   type: string;
@@ -122,35 +118,38 @@ export interface NormalizedPage {
 }
 
 // ----------------------------------------------------------------------
-// 2. MODULAR NORMALIZATION LAYER (Single Responsibility Principle)
+// 2. MODULAR NORMALIZATION LAYER (With strict inner casting)
 // ----------------------------------------------------------------------
-
-// Type Guard: Safely narrows to RawTemplatePage
-const isTemplatePage = (page: RawPage): page is RawTemplatePage => {
-  return 'hero' in page && page.hero !== undefined;
+const normalizeSEO = (p: RawPage): NormalizedPage['seo'] => {
+  const tp = p as RawTemplatePage;
+  const sp = p as RawStandardPage;
+  return {
+    title: p.title || p.metadata?.title || 'Arcli Platform',
+    description: p.description || p.metadata?.description || '',
+    h1: p.type === 'template' ? tp.hero.h1 : (sp.h1 || sp.heroTitle || p.title || 'Arcli'),
+    datePublished: p.datePublished || '2024-01-01T08:00:00Z',
+    dateModified: p.dateModified || new Date().toISOString(),
+  };
 };
 
-const normalizeSEO = (p: RawPage): NormalizedPage['seo'] => ({
-  title: p.title || p.metadata?.title || 'Arcli Platform',
-  description: p.description || p.metadata?.description || '',
-  h1: isTemplatePage(p) ? p.hero.h1 : (p.h1 || p.heroTitle || p.title || 'Arcli'),
-  datePublished: p.datePublished || '2024-01-01T08:00:00Z',
-  dateModified: p.dateModified || new Date().toISOString(),
-});
-
-const normalizeHero = (p: RawPage): NormalizedPage['hero'] => ({
-  subtitle: isTemplatePage(p) ? p.hero.subtitle : (p.subtitle || p.heroDescription || p.description || ''),
-  icon: isTemplatePage(p) && p.hero.icon ? p.hero.icon : (p.icon || <Layers className="w-6 h-6 text-blue-600" />),
-  cta: p.ctaHierarchy || { primary: { text: 'Start Free Trial', href: '/register' } },
-});
+const normalizeHero = (p: RawPage): NormalizedPage['hero'] => {
+  const tp = p as RawTemplatePage;
+  const sp = p as RawStandardPage;
+  return {
+    subtitle: p.type === 'template' ? tp.hero.subtitle : (sp.subtitle || sp.heroDescription || p.description || ''),
+    icon: p.type === 'template' && tp.hero?.icon ? tp.hero.icon : (p.icon || <Layers className="w-6 h-6 text-blue-600" />),
+    cta: p.ctaHierarchy || { primary: { text: 'Start Free Trial', href: '/register' } },
+  };
+};
 
 const normalizeFeatures = (p: RawPage): CoreCapability[] => {
   const baseFeatures = p.features || p.performanceMetrics || p.capabilities || [];
   const mapped = baseFeatures.map((f) => {
-    const isObj = typeof f === 'object' && f !== null;
+    // Type narrowing for primitive vs object
+    if (typeof f === 'string') return { title: f, description: '' };
     return {
-      title: isObj ? (f.title || f.name || '') : f,
-      description: isObj ? (f.description || f.executiveExplanation || '') : ''
+      title: f.title || f.name || '',
+      description: f.description || f.executiveExplanation || ''
     };
   });
 
@@ -200,7 +199,7 @@ export const getNormalizedPage = cache((slug: string): NormalizedPage | null => 
 
   return {
     slug,
-    type: isTemplatePage(rawPage) ? 'template' : (rawPage.type || 'standard'),
+    type: rawPage.type === 'template' ? 'template' : (rawPage.type || 'standard'),
     seo: normalizeSEO(rawPage),
     hero: normalizeHero(rawPage),
     demo: rawPage.demoPipeline,
@@ -225,7 +224,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = params;
+  const { slug } = await params; 
   const data = getNormalizedPage(slug);
   
   if (!data) return { title: 'Not Found | Arcli' };
@@ -262,15 +261,14 @@ const SectionHeading = ({ children, id }: { children: React.ReactNode; id?: stri
 // ----------------------------------------------------------------------
 // 6. MAIN PAGE COMPONENT
 // ----------------------------------------------------------------------
-export default function DynamicSEOPage({ params }: PageProps) {
-  const { slug } = params;
-  const data = getNormalizedPage(slug);
+export default async function DynamicSEOPage({ params }: PageProps) {
+  const { slug } = await params;
+  const data = getNormalizedPage(slug); 
   
   if (!data) notFound();
 
   const ogImageUrl = `${BASE_URL}/api/og?title=${encodeURIComponent(data.seo.h1)}&type=${encodeURIComponent(data.type)}`;
 
-  // Enhanced Structured Data Injection
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'TechArticle',
@@ -638,14 +636,16 @@ export default function DynamicSEOPage({ params }: PageProps) {
                       const rawRelated = getPage(relatedSlug) as unknown as RawPage;
                       if (!rawRelated) return null;
                       
-                      const isRelTemplate = isTemplatePage(rawRelated);
-                      const relatedTitle = isRelTemplate 
-                        ? rawRelated.hero.h1 
-                        : (rawRelated.h1 || rawRelated.title || relatedSlug);
+                      const tp = rawRelated as RawTemplatePage;
+                      const sp = rawRelated as RawStandardPage;
+                      
+                      const relatedTitle = rawRelated.type === 'template' 
+                        ? tp.hero.h1 
+                        : (sp.h1 || sp.heroTitle || rawRelated.title || relatedSlug);
                         
-                      const relatedDesc = isRelTemplate 
-                        ? rawRelated.hero.subtitle 
-                        : (rawRelated.description || rawRelated.subtitle);
+                      const relatedDesc = rawRelated.type === 'template' 
+                        ? tp.hero.subtitle 
+                        : (sp.subtitle || sp.heroDescription || rawRelated.description);
                       
                       return (
                         <Link 
