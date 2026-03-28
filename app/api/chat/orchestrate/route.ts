@@ -14,14 +14,17 @@ export const dynamic = "force-dynamic";
 
 const BACKEND_URL = process.env.BACKEND_API_URL || "https://api.arcli.tech";
 
-// 1. STRICT INTERNAL SECURITY GUARD
-const INTERNAL_SERVICE_KEY = process.env.INTERNAL_SERVICE_KEY;
-if (!INTERNAL_SERVICE_KEY) {
-  throw new Error("CRITICAL STARTUP FAILURE: Missing INTERNAL_SERVICE_KEY. Aborting to prevent unauthenticated billing calls.");
-}
-
 // Initialize Upstash Redis
+// Redis.fromEnv() is safe at the top level because it evaluates lazily when a command is actually run.
 const redis = Redis.fromEnv();
+
+// ---------------------------------------------------------------------------
+// Context Typing for Edge Runtime
+// ---------------------------------------------------------------------------
+interface EdgeRouteContext {
+  params?: Record<string, string | string[]>;
+  waitUntil?: (promise: Promise<any>) => void;
+}
 
 // ---------------------------------------------------------------------------
 // Utility: Redis Timeout Wrapper (Strictly Typed)
@@ -60,7 +63,10 @@ const PayloadSchema = z.object({
   agent_id: z.string().optional(),
   active_dataset_ids: z.array(z.string().uuid("Invalid Dataset ID.")).max(10).optional().default([]),
   active_document_ids: z.array(z.string().uuid("Invalid Document ID.")).max(20).optional().default([]),
-  history: z.array(z.any()).max(20).optional().default([]), 
+  history: z.array(z.object({
+    role: z.enum(["user", "assistant", "system", "data"]),
+    content: z.any()
+  })).max(20).optional().default([]), 
   predictive_config: z.any().optional(),
   ab_test_config: z.any().optional(),
 });
@@ -68,7 +74,7 @@ const PayloadSchema = z.object({
 // ---------------------------------------------------------------------------
 // Multi-Tenant Lossless Cache Fingerprinting
 // ---------------------------------------------------------------------------
-async function generateCacheKey(payload: any, tenant_id: string): Promise<string> {
+async function generateCacheKey(payload: z.infer<typeof PayloadSchema>, tenant_id: string): Promise<string> {
   const safeConfigHash = (obj: any) => obj ? JSON.stringify(obj, Object.keys(obj).sort()) : "null";
   
   const stablePayload = {
@@ -87,7 +93,7 @@ async function generateCacheKey(payload: any, tenant_id: string): Promise<string
   return `cache:query:${hashArray.map(b => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export async function POST(req: NextRequest, context: any) {
+export async function POST(req: NextRequest, context: EdgeRouteContext) {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
   let tenant_id = "anonymous";
@@ -98,7 +104,35 @@ export async function POST(req: NextRequest, context: any) {
     console[level](JSON.stringify({ timestamp: new Date().toISOString(), level, requestId, tenant_id, event, ...data }));
   };
 
+  // Centralized Concurrency Cleanup Helper
+  const releaseConcurrency = async (tenantId: string) => {
+    if (!shouldDecrementConcurrency) return;
+    try {
+      await Promise.allSettled([
+        withTimeout<number>(redis.decr("concurrency:backend:active")).catch(() => 0),
+        withTimeout<number>(redis.decr(`concurrency:tenant:${tenantId}:active`)).catch(() => 0)
+      ]);
+    } catch (e) {
+      log("error", "failed_to_release_concurrency", { error: String(e) });
+    } finally {
+      shouldDecrementConcurrency = false; // Prevent double-decrementing
+    }
+  };
+
   try {
+    // ---------------------------------------------------------------------------
+    // 1. STRICT INTERNAL SECURITY GUARD
+    // Prevents Next.js static build execution from crashing while preserving runtime security.
+    // ---------------------------------------------------------------------------
+    const INTERNAL_SERVICE_KEY = process.env.INTERNAL_SERVICE_KEY;
+    if (!INTERNAL_SERVICE_KEY) {
+      log("error", "critical_startup_failure", { error: "Missing INTERNAL_SERVICE_KEY" });
+      return NextResponse.json(
+        { type: "error", message: "Critical configuration error. Aborting to prevent unauthenticated billing calls. Please contact support@arcli.tech." },
+        { status: 500, headers: { "X-Request-ID": requestId } }
+      );
+    }
+
     // ---------------------------------------------------------------------------
     // 2. Global Circuit Breaker (Half-Open Native Pattern)
     // ---------------------------------------------------------------------------
@@ -107,14 +141,14 @@ export async function POST(req: NextRequest, context: any) {
       log("warn", "global_circuit_breaker_active_fast_reject");
       return NextResponse.json(
         { type: "error", message: "Cluster is at capacity. Please try again in 30 seconds or contact support@arcli.tech." },
-        { status: 503, headers: { "Retry-After": "30" } }
+        { status: 503, headers: { "Retry-After": "30", "X-Request-ID": requestId } }
       );
     }
 
     // Header Payload Shedding
     const contentLength = req.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > 25000) { 
-      return NextResponse.json({ type: "error", message: "Payload too large." }, { status: 413 });
+      return NextResponse.json({ type: "error", message: "Payload too large." }, { status: 413, headers: { "X-Request-ID": requestId } });
     }
 
     // ---------------------------------------------------------------------------
@@ -133,11 +167,11 @@ export async function POST(req: NextRequest, context: any) {
 
     if (authResult.status === "rejected") {
       log("warn", "unauthorized_access_attempt");
-      return NextResponse.json({ type: "error", message: "Unauthorized: Session expired or invalid." }, { status: 401 });
+      return NextResponse.json({ type: "error", message: "Unauthorized: Session expired or invalid." }, { status: 401, headers: { "X-Request-ID": requestId } });
     }
     if (bodyResult.status === "rejected") {
       log("warn", "malformed_json_payload");
-      return NextResponse.json({ type: "error", message: "Invalid JSON payload sent to orchestration layer." }, { status: 400 });
+      return NextResponse.json({ type: "error", message: "Invalid JSON payload sent to orchestration layer." }, { status: 400, headers: { "X-Request-ID": requestId } });
     }
 
     const { user, session } = authResult.value;
@@ -145,15 +179,16 @@ export async function POST(req: NextRequest, context: any) {
 
     tenant_id = user.app_metadata?.tenant_id || user.id;
     const access_token = session.access_token;
+    const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
 
     // Deep Shedding
     if (JSON.stringify(rawBody).length > 25000) {
-      return NextResponse.json({ type: "error", message: "Payload body too large." }, { status: 413 });
+      return NextResponse.json({ type: "error", message: "Payload body too large." }, { status: 413, headers: { "X-Request-ID": requestId } });
     }
 
     const validationResult = PayloadSchema.safeParse(rawBody);
     if (!validationResult.success) {
-      return NextResponse.json({ type: "error", message: "Invalid schema.", details: validationResult.error.errors }, { status: 400 });
+      return NextResponse.json({ type: "error", message: "Invalid schema.", details: validationResult.error.errors }, { status: 400, headers: { "X-Request-ID": requestId } });
     }
 
     const parsedPayload = validationResult.data;
@@ -190,11 +225,11 @@ export async function POST(req: NextRequest, context: any) {
           controller.close();
         }
       });
-      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" } });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Request-ID": requestId } });
     }
 
     if (active_dataset_ids.length === 0 && active_document_ids.length === 0) {
-       return NextResponse.json({ type: "error", message: "Please select at least one dataset or document to analyze." }, { status: 400 });
+       return NextResponse.json({ type: "error", message: "Please select at least one dataset or document to analyze." }, { status: 400, headers: { "X-Request-ID": requestId } });
     }
 
     // ---------------------------------------------------------------------------
@@ -228,7 +263,7 @@ export async function POST(req: NextRequest, context: any) {
           }
         }
       });
-      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Request-ID": requestId } });
     }
 
     // ---------------------------------------------------------------------------
@@ -241,23 +276,18 @@ export async function POST(req: NextRequest, context: any) {
     
     shouldDecrementConcurrency = true; 
     
-    await Promise.all([
+    await Promise.allSettled([
       withTimeout<number>(redis.expire("concurrency:backend:active", 120)).catch((): number => 0),
       withTimeout<number>(redis.expire(`concurrency:tenant:${tenant_id}:active`, 120)).catch((): number => 0)
     ]);
 
     if (activeGlobalReqs > 50 || activeTenantReqs > 10) {
       log("warn", "concurrency_limit_exceeded_rollback", { activeGlobalReqs, activeTenantReqs });
-      
-      await Promise.all([
-        withTimeout<number>(redis.decr("concurrency:backend:active")).catch((): number => 0),
-        withTimeout<number>(redis.decr(`concurrency:tenant:${tenant_id}:active`)).catch((): number => 0)
-      ]);
-      shouldDecrementConcurrency = false;
+      await releaseConcurrency(tenant_id);
       
       return NextResponse.json(
         { type: "error", message: "Capacity reached for this workspace. Please wait a moment and try again." },
-        { status: 503, headers: { "Retry-After": "10" } }
+        { status: 503, headers: { "Retry-After": "10", "X-Request-ID": requestId } }
       );
     }
 
@@ -274,6 +304,7 @@ export async function POST(req: NextRequest, context: any) {
         const sendPacket = (packet: StreamPacket) => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(packet)}\n\n`));
+            // Cache exclusively functional packets, omitting ephemeral status
             if (packet.type !== "status" && packet.type !== "error") {
                lossLessCacheBuffer.push(packet); 
             }
@@ -311,6 +342,8 @@ export async function POST(req: NextRequest, context: any) {
                 "Authorization": `Bearer ${access_token}`,
                 "X-Tenant-ID": tenant_id,
                 "X-Request-ID": requestId,
+                "X-Forwarded-For": clientIp,
+                "Connection": "keep-alive" // Optimize long-lived TCP connections
               },
               body: JSON.stringify({
                 tenant_id, agent_id: agent_id || "default-router", prompt,
@@ -353,6 +386,7 @@ export async function POST(req: NextRequest, context: any) {
 
             if (retries === 3) sendPacket({ type: "diagnostics", content: { status: "cold_start_detected", retries } });
 
+            // Exponential backoff with jitter
             const baseDelay = Math.min(5000 * (2 ** (retries - 1)), 15000);
             const delayMs = baseDelay + (baseDelay * 0.3 * Math.random());
             
@@ -398,6 +432,7 @@ export async function POST(req: NextRequest, context: any) {
               let jsonStr = rawChunk;
               const dataIdx = jsonStr.indexOf("data:");
               if (dataIdx !== -1) {
+                  // Normalize parsing regardless of space after 'data:'
                   jsonStr = jsonStr.substring(dataIdx + 5).trim();
               }
               
@@ -437,13 +472,8 @@ export async function POST(req: NextRequest, context: any) {
             context.waitUntil(
               (async () => {
                 try {
-                  // A. Guaranteed Cleanup of Concurrency Trackers
-                  if (shouldDecrementConcurrency) {
-                    await Promise.all([
-                      withTimeout<number>(redis.decr("concurrency:backend:active")).catch((): number => 0),
-                      withTimeout<number>(redis.decr(`concurrency:tenant:${tenant_id}:active`)).catch((): number => 0)
-                    ]);
-                  }
+                  // A. Guaranteed Cleanup of Concurrency Trackers using our helper
+                  await releaseConcurrency(tenant_id);
 
                   // B. Hardened Lossless Stream Caching (Capped at 150KB to prevent Memory Blowouts)
                   const cachePayloadStr = JSON.stringify(lossLessCacheBuffer);
@@ -475,6 +505,9 @@ export async function POST(req: NextRequest, context: any) {
                 }
               })()
             );
+          } else {
+             // Fallback cleanup if waitUntil is not supported/provided
+             await releaseConcurrency(tenant_id);
           }
         }
       },
@@ -485,7 +518,8 @@ export async function POST(req: NextRequest, context: any) {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
-        "X-Accel-Buffering": "no"
+        "X-Accel-Buffering": "no",
+        "X-Request-ID": requestId // Empower frontend debugging
       },
     });
 
@@ -493,18 +527,15 @@ export async function POST(req: NextRequest, context: any) {
     log("error", "fatal_route_error", { error: String(error) });
     
     // Absolute Last Resort Concurrency Cleanup
-    if (context?.waitUntil && shouldDecrementConcurrency) {
-       context.waitUntil(
-         Promise.all([
-           withTimeout<number>(redis.decr("concurrency:backend:active")).catch((): number => 0),
-           withTimeout<number>(redis.decr(`concurrency:tenant:${tenant_id}:active`)).catch((): number => 0)
-         ])
-       );
+    if (context?.waitUntil) {
+       context.waitUntil(releaseConcurrency(tenant_id));
+    } else {
+       await releaseConcurrency(tenant_id);
     }
 
     return NextResponse.json(
       { type: "error", message: "A critical error occurred in the orchestration gateway. Contact support@arcli.tech." }, 
-      { status: 500 }
+      { status: 500, headers: { "X-Request-ID": requestId } }
     );
   }
 }
