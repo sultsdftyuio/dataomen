@@ -1,9 +1,5 @@
 // app/api/chat/orchestrate/route.ts
 
-// ============================================================================
-// CRITICAL FIX: Run `npm install @upstash/redis` to resolve the module error.
-// ============================================================================
-
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { z } from "zod";
@@ -14,12 +10,11 @@ export const dynamic = "force-dynamic";
 
 const BACKEND_URL = process.env.BACKEND_API_URL || "https://api.arcli.tech";
 
-// Initialize Upstash Redis
-// Redis.fromEnv() is safe at the top level because it evaluates lazily when a command is actually run.
+// Initialize Upstash Redis (Lazy evaluation for Edge compatibility)
 const redis = Redis.fromEnv();
 
 // ---------------------------------------------------------------------------
-// Context Typing for Edge Runtime
+// Context Typing for Edge Runtime (App Router)
 // ---------------------------------------------------------------------------
 interface EdgeRouteContext {
   params?: Record<string, string | string[]>;
@@ -56,7 +51,7 @@ type StreamPacket =
   | { type: "cache_hit"; content: any };
 
 // ---------------------------------------------------------------------------
-// Strict Gateway Schema
+// Strict Gateway Schema (Frontend -> Next.js)
 // ---------------------------------------------------------------------------
 const PayloadSchema = z.object({
   prompt: z.string().min(1, "Prompt cannot be empty.").max(3000, "Prompt exceeds maximum allowed length."),
@@ -93,7 +88,7 @@ async function generateCacheKey(payload: z.infer<typeof PayloadSchema>, tenant_i
   return `cache:query:${hashArray.map(b => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export async function POST(req: NextRequest, context: EdgeRouteContext) {
+export async function POST(req: NextRequest, context: any) {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
   let tenant_id = "anonymous";
@@ -120,22 +115,17 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
   };
 
   try {
-    // ---------------------------------------------------------------------------
     // 1. STRICT INTERNAL SECURITY GUARD
-    // Prevents Next.js static build execution from crashing while preserving runtime security.
-    // ---------------------------------------------------------------------------
     const INTERNAL_SERVICE_KEY = process.env.INTERNAL_SERVICE_KEY;
     if (!INTERNAL_SERVICE_KEY) {
       log("error", "critical_startup_failure", { error: "Missing INTERNAL_SERVICE_KEY" });
       return NextResponse.json(
-        { type: "error", message: "Critical configuration error. Aborting to prevent unauthenticated billing calls. Please contact support@arcli.tech." },
+        { type: "error", message: "Critical configuration error. Aborting to prevent unauthenticated calls. Please contact support@arcli.tech." },
         { status: 500, headers: { "X-Request-ID": requestId } }
       );
     }
 
-    // ---------------------------------------------------------------------------
     // 2. Global Circuit Breaker (Half-Open Native Pattern)
-    // ---------------------------------------------------------------------------
     const isTripped: string | null = await withTimeout<string | null>(redis.get("cb:global_tripped")).catch((): null => null);
     if (isTripped) {
       log("warn", "global_circuit_breaker_active_fast_reject");
@@ -151,9 +141,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
       return NextResponse.json({ type: "error", message: "Payload too large." }, { status: 413, headers: { "X-Request-ID": requestId } });
     }
 
-    // ---------------------------------------------------------------------------
     // 3. Parallel Preflight (Auth & Parsing)
-    // ---------------------------------------------------------------------------
     const [authResult, bodyResult] = await Promise.allSettled([
       (async () => {
         const supabase = await createClient();
@@ -181,11 +169,6 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
     const access_token = session.access_token;
     const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
 
-    // Deep Shedding
-    if (JSON.stringify(rawBody).length > 25000) {
-      return NextResponse.json({ type: "error", message: "Payload body too large." }, { status: 413, headers: { "X-Request-ID": requestId } });
-    }
-
     const validationResult = PayloadSchema.safeParse(rawBody);
     if (!validationResult.success) {
       return NextResponse.json({ type: "error", message: "Invalid schema.", details: validationResult.error.errors }, { status: 400, headers: { "X-Request-ID": requestId } });
@@ -194,9 +177,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
     const parsedPayload = validationResult.data;
     const { agent_id, prompt, active_dataset_ids, active_document_ids, history, predictive_config, ab_test_config } = parsedPayload;
 
-    // ---------------------------------------------------------------------------
-    // 4. Semantic Interception (Edge Fast-Path)
-    // ---------------------------------------------------------------------------
+    // 4. Semantic Interception (Edge Fast-Path for Greetings)
     const normalizedPrompt = prompt.trim().toLowerCase();
     const isBasicGreeting = /^(hi|hello|hey|yo|greetings|howdy)\b/i.test(normalizedPrompt) || 
                             /^(how are you\??|help|what can you do\??|who are you\??)$/i.test(normalizedPrompt);
@@ -213,7 +194,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
           
           const reply = (active_dataset_ids.length > 0 || active_document_ids.length > 0)
             ? "Hello! I see you have some data connected. What would you like to know about it?"
-            : "Hello! I'm your DataOmen Copilot. To get started, please connect a dataset!";
+            : "Hello! I'm your DataOmen Copilot. To get started, please connect a dataset or activate an agent!";
           
           const words = reply.split(" ");
           for (const word of words) {
@@ -228,13 +209,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
       return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Request-ID": requestId } });
     }
 
-    if (active_dataset_ids.length === 0 && active_document_ids.length === 0) {
-       return NextResponse.json({ type: "error", message: "Please select at least one dataset or document to analyze." }, { status: 400, headers: { "X-Request-ID": requestId } });
-    }
-
-    // ---------------------------------------------------------------------------
     // 5. Lossless Semantic Stream Replay Caching
-    // ---------------------------------------------------------------------------
     const cacheKey = await generateCacheKey(parsedPayload, tenant_id);
     const cachedResultStr: string | null = await withTimeout<string | null>(redis.get(cacheKey)).catch((): null => null);
     
@@ -266,9 +241,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
       return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Request-ID": requestId } });
     }
 
-    // ---------------------------------------------------------------------------
     // 6. Global + Tenant Concurrency Guard (FAIL-CLOSED)
-    // ---------------------------------------------------------------------------
     const [activeGlobalReqs, activeTenantReqs]: [number, number] = await Promise.all([
       withTimeout<number>(redis.incr("concurrency:backend:active")).catch((): number => 9999),
       withTimeout<number>(redis.incr(`concurrency:tenant:${tenant_id}:active`)).catch((): number => 9999)
@@ -291,9 +264,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
       );
     }
 
-    // ============================================================================
     // 7. HEAVY PIPELINE (Gateway Orchestrator & Polling)
-    // ============================================================================
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
@@ -304,7 +275,6 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
         const sendPacket = (packet: StreamPacket) => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(packet)}\n\n`));
-            // Cache exclusively functional packets, omitting ephemeral status
             if (packet.type !== "status" && packet.type !== "error") {
                lossLessCacheBuffer.push(packet); 
             }
@@ -312,8 +282,6 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
             log("error", "enqueue_failed", { error: String(e) });
           }
         };
-
-        sendPacket({ type: "status", content: "Connecting to your analytical workspace..." });
 
         let backendResponse: Response | null = null;
         let retries = 0;
@@ -323,7 +291,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
         const globalTimeout = setTimeout(() => {
           log("error", "global_pipeline_timeout_exceeded");
           combinedController.abort();
-        }, 120000); 
+        }, 120000); // 120s Hard Timeout
         
         const abortHandler = () => combinedController.abort();
         req.signal.addEventListener("abort", abortHandler);
@@ -335,6 +303,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
           }
 
           try {
+            // Send request exactly mapped to Python Orchestrator schema requirements
             backendResponse = await fetch(`${BACKEND_URL}/api/chat/orchestrate`, {
               method: "POST",
               headers: {
@@ -343,12 +312,15 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
                 "X-Tenant-ID": tenant_id,
                 "X-Request-ID": requestId,
                 "X-Forwarded-For": clientIp,
-                "Connection": "keep-alive" // Optimize long-lived TCP connections
+                "Connection": "keep-alive"
               },
               body: JSON.stringify({
-                tenant_id, agent_id: agent_id || "default-router", prompt,
-                active_dataset_ids, active_document_ids, history,
-                predictive_config, ab_test_config, stream: true, 
+                prompt,
+                agent_id: agent_id || null, // Explicitly pass agent_id for Persona constraints
+                active_dataset_ids,         // Required for Semantic Router target boundaries
+                active_document_ids,
+                history,                    // Enables multi-turn memory
+                stream: true, 
               }),
               signal: combinedController.signal,
             });
@@ -421,33 +393,31 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
             }
 
             buffer += decoder.decode(value, { stream: true });
-            let boundary;
             
-            // 8. Robust SSE Parsing
+            // 8. Robust JSON Line Parsing (Ignores internal newlines inside strings)
+            let boundary;
             while ((boundary = buffer.indexOf("\n\n")) !== -1) {
               const rawChunk = buffer.slice(0, boundary).trim();
               buffer = buffer.slice(boundary + 2);
               if (!rawChunk) continue;
 
               let jsonStr = rawChunk;
-              const dataIdx = jsonStr.indexOf("data:");
-              if (dataIdx !== -1) {
-                  // Normalize parsing regardless of space after 'data:'
-                  jsonStr = jsonStr.substring(dataIdx + 5).trim();
+              if (jsonStr.startsWith("data:")) {
+                jsonStr = jsonStr.substring(5).trim();
               }
               
               try {
                 const parsed = JSON.parse(jsonStr) as StreamPacket;
-                
                 if (parsed.type === "done" && parsed.usage?.tokens) {
                   actualTokens = parsed.usage.tokens;
                 } else if (parsed.type === "narrative_chunk") {
                   rawByteCount += jsonStr.length; 
                 }
                 sendPacket(parsed); 
-
               } catch (parseErr) {
-                log("warn", "sse_parse_failure_normalized", { chunk_preview: rawChunk.substring(0, 50) });
+                // If it fails to parse, it might be a split packet. Push back to buffer and wait for next read.
+                buffer = rawChunk + "\n\n" + buffer; 
+                break;
               }
             }
           }
@@ -468,46 +438,44 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
           const latency = Date.now() - startTime;
           log("info", "orchestration_closed", { latency, tokens: finalTokens });
 
+          // Non-blocking cleanup execution
+          const cleanupTask = async () => {
+            try {
+              await releaseConcurrency(tenant_id);
+
+              const cachePayloadStr = JSON.stringify(lossLessCacheBuffer);
+              if (lossLessCacheBuffer.length > 3 && latency < 60000 && cachePayloadStr.length < 150000) {
+                 await withTimeout<string | null>(redis.setex(cacheKey, 300, cachePayloadStr)).catch((): null => null);
+              }
+
+              if (finalTokens > 0) {
+                await withTimeout<Response>(
+                  fetch(`${BACKEND_URL}/api/internal/billing/deduct`, {
+                    method: "POST",
+                    headers: { 
+                      "Content-Type": "application/json",
+                      "Authorization": `Bearer ${INTERNAL_SERVICE_KEY}` 
+                    },
+                    body: JSON.stringify({ 
+                      tenant_id, request_id: requestId, 
+                      tokens_estimated: finalTokens, feature: "analytical_chat" 
+                    })
+                  }), 5000
+                ).catch(e => {
+                  log("error", "billing_hook_failed", { error: String(e) });
+                  return new Response(); 
+                });
+              }
+            } catch (e) {
+              log("error", "async_cleanup_tasks_failed", { error: String(e) });
+            }
+          };
+
+          // Use Vercel's Edge waitUntil if available, otherwise fire-and-forget
           if (context?.waitUntil) {
-            context.waitUntil(
-              (async () => {
-                try {
-                  // A. Guaranteed Cleanup of Concurrency Trackers using our helper
-                  await releaseConcurrency(tenant_id);
-
-                  // B. Hardened Lossless Stream Caching (Capped at 150KB to prevent Memory Blowouts)
-                  const cachePayloadStr = JSON.stringify(lossLessCacheBuffer);
-                  if (lossLessCacheBuffer.length > 3 && latency < 60000 && cachePayloadStr.length < 150000) {
-                     await withTimeout<string | null>(redis.setex(cacheKey, 300, cachePayloadStr)).catch((): null => null);
-                  }
-
-                  // C. Protected Async Billing Hook with Timeout & Internal Auth
-                  if (finalTokens > 0) {
-                    await withTimeout<Response>(
-                      fetch(`${BACKEND_URL}/api/internal/billing/deduct`, {
-                        method: "POST",
-                        headers: { 
-                          "Content-Type": "application/json",
-                          "Authorization": `Bearer ${INTERNAL_SERVICE_KEY}` 
-                        },
-                        body: JSON.stringify({ 
-                          tenant_id, request_id: requestId, 
-                          tokens_estimated: finalTokens, feature: "analytical_chat" 
-                        })
-                      }), 5000 // 5-second hard timeout on billing request
-                    ).catch(e => {
-                      log("error", "billing_hook_failed", { error: String(e) });
-                      return new Response(); // Satisfy TypeScript Response type
-                    });
-                  }
-                } catch (e) {
-                  log("error", "async_cleanup_tasks_failed", { error: String(e) });
-                }
-              })()
-            );
+            context.waitUntil(cleanupTask());
           } else {
-             // Fallback cleanup if waitUntil is not supported/provided
-             await releaseConcurrency(tenant_id);
+            cleanupTask();
           }
         }
       },
@@ -519,7 +487,7 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
-        "X-Request-ID": requestId // Empower frontend debugging
+        "X-Request-ID": requestId
       },
     });
 
@@ -527,10 +495,9 @@ export async function POST(req: NextRequest, context: EdgeRouteContext) {
     log("error", "fatal_route_error", { error: String(error) });
     
     // Absolute Last Resort Concurrency Cleanup
+    const emergencyCleanup = releaseConcurrency(tenant_id);
     if (context?.waitUntil) {
-       context.waitUntil(releaseConcurrency(tenant_id));
-    } else {
-       await releaseConcurrency(tenant_id);
+       context.waitUntil(emergencyCleanup);
     }
 
     return NextResponse.json(

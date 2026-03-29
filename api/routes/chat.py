@@ -65,8 +65,9 @@ class HistoryMessage(BaseModel):
 
 class OrchestrateRequest(BaseModel):
     prompt: str = Field(..., description="User's natural language query or conversational message.")
-    active_dataset_ids: Optional[List[str]] = Field(default_factory=list, description="Dataset UUIDs to include.")
-    history: Optional[List[HistoryMessage]] = Field(default_factory=list)
+    agent_id: Optional[str] = Field(default=None, description="UUID of the specific AI Agent handling the query.")
+    active_dataset_ids: Optional[List[str]] = Field(default_factory=list, description="Dataset UUIDs to include (e.g., Shopify Data).")
+    history: Optional[List[HistoryMessage]] = Field(default_factory=list, description="Recent conversation context.")
     context_id: Optional[str] = Field(default=None, description="Optional link to a specific anomaly or alert.")
 
 # ------------------------------------------------------------------
@@ -84,10 +85,10 @@ async def orchestrate_chat(
     
     Routes user queries based on semantic intent:
     1. Conversational / Educational -> Standard RAG Streaming
-    2. Analytical / Data Query -> Vectorized SQL Pipeline Streaming
+    2. Analytical / Data Query -> Vectorized SQL Pipeline Streaming via DuckDB
     """
     tenant_id = context.tenant_id
-    logger.info(f"[{tenant_id}] Copilot session initiated for: '{request.prompt[:80]}...'")
+    logger.info(f"[{tenant_id}] Copilot session initiated for: '{request.prompt[:80]}...' | Agent: {request.agent_id}")
 
     # 1. QUOTA & SUBSCRIPTION ENFORCEMENT
     try:
@@ -111,13 +112,7 @@ async def orchestrate_chat(
     route_decision = await semantic_router.route_query(request.prompt)
 
     # ------------------------------------------------------------------
-    # PATH A: Conversational Assistant (Educational / General Inquiry)
-    # ------------------------------------------------------------------
-    if route_decision.destination == "CONVERSATIONAL":
-        logger.info(f"[{tenant_id}] Routing to Conversational Pipeline.")
-        
-        async def generate_conversational_stream():
-            # Build contextually aware system prompt without exposing raw data
+    # PATH A: Conversational Assistant (Educational /# Build contextually aware system prompt
             system_prompt = """
             You are DataOmen AI, an expert business analyst and friendly assistant.
             You are helping a non-technical founder understand data concepts, business metrics, or navigating the platform.
@@ -125,6 +120,17 @@ async def orchestrate_chat(
             Current Context: The user is asking a general question, not requesting a specific chart from their database.
             Instruction: Be concise, encouraging, and avoid overly technical jargon.
             """
+
+            # Enforce Specialized Agent Persona if one is active
+            if request.agent_id:
+                from models import Agent
+                agent = db.query(Agent).filter(
+                    Agent.id == request.agent_id, 
+                    Agent.tenant_id == tenant_id
+                ).first()
+                
+                if agent and agent.role_description:
+                    system_prompt = agent.role_description
             
             # Yield an initial status update for the UI
             yield f"data: {json.dumps({'type': 'status', 'content': 'Thinking...'})}\n\n"
@@ -161,20 +167,24 @@ async def orchestrate_chat(
     # ------------------------------------------------------------------
     logger.info(f"[{tenant_id}] Routing to Analytical Compute Engine.")
 
-    if not request.active_dataset_ids:
+    # Only enforce dataset selection if there isn't a pre-configured Agent
+    # (Agents have their own hardcoded Memory Boundaries / dataset_ids)
+    if not request.active_dataset_ids and not request.agent_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This question requires data analysis. Please select at least one dataset."
+            detail="This question requires data analysis. Please select at least one dataset or activate an Agent."
         )
 
     try:
         # Pass control completely over to the Orchestrator
-        # The Orchestrator will handle the DB calls, Schema Fetching, SQL generation, and Polars Compute.
+        # FIX: The Orchestrator now correctly receives the agent_id, datasets, and conversational history
         pipeline_generator = orchestrator.run_full_pipeline(
             db=db,
             tenant_id=tenant_id,
             prompt=request.prompt,
-            context_id=request.context_id 
+            agent_id=request.agent_id,                                # Connects to Persona/RAG boundaries
+            active_dataset_ids=request.active_dataset_ids,            # Passes user's active Shopify data selection
+            history=[h.model_dump() for h in request.history[-10:]]   # Passes history for multi-turn SQL queries
         )
 
         return StreamingResponse(
