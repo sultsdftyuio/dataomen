@@ -27,7 +27,6 @@ export interface RichMessage {
   files?: File[];
   payload?: ExecutionPayload;
   timestamp: Date;
-  // Chain-of-thought fields from the new AnalyticalOrchestrator
   plan?: any;
   sql?: string;
   insights?: any;
@@ -40,7 +39,7 @@ interface ChatLayoutProps {
 }
 
 // -----------------------------------------------------------------------------
-// Markdown-lite renderer (bold/inline-code only, avoids heavy deps)
+// Markdown-lite renderer
 // -----------------------------------------------------------------------------
 function SimpleMarkdown({ text }: { text: string }) {
   if (!text) return null;
@@ -90,7 +89,7 @@ function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
 }
 
 // -----------------------------------------------------------------------------
-// Chain-of-Thought Panel — collapsible reasoning drawer
+// Chain-of-Thought Panel
 // -----------------------------------------------------------------------------
 function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   plan?: any;
@@ -112,7 +111,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
         background: "var(--chat-surface)",
       }}
     >
-      {/* Toggle header */}
       <button
         onClick={() => setOpen((o) => !o)}
         style={{
@@ -145,7 +143,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
         />
       </button>
 
-      {/* Expandable body */}
       {open && (
         <div
           style={{
@@ -157,7 +154,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
           }}
           className="animate-in fade-in slide-in-from-top-1"
         >
-          {/* Plan */}
           {plan && (
             <ReasoningBlock
               icon={<FlaskConical style={{ width: 12, height: 12 }} />}
@@ -166,8 +162,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
               mono={false}
             />
           )}
-
-          {/* SQL */}
           {sql && (
             <ReasoningBlock
               icon={<Code2 style={{ width: 12, height: 12 }} />}
@@ -176,8 +170,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
               mono
             />
           )}
-
-          {/* Insights */}
           {insights && (
             <ReasoningBlock
               icon={<Sparkles style={{ width: 12, height: 12 }} />}
@@ -186,8 +178,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
               mono={false}
             />
           )}
-
-          {/* Diagnostics */}
           {diagnostics && (
             <ReasoningBlock
               icon={<Activity style={{ width: 12, height: 12 }} />}
@@ -268,7 +258,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const [progressStatus, setProgressStatus] = useState("");
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [activeDatasetIds, setActiveDatasetIds] = useState<string[]>([]);
-  const [activeDocumentIds, setActiveDocumentIds] = useState<string[]>([]); // NEW: for Qdrant RAG
+  const [activeDocumentIds, setActiveDocumentIds] = useState<string[]>([]);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -330,7 +320,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     setProgressStatus("");
 
     try {
-      // 1. Process uploads and route to correct state arrays
       let currentDatasetIds = [...activeDatasetIds];
       let currentDocumentIds = [...activeDocumentIds];
 
@@ -352,14 +341,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         .slice(-5)
         .map((m) => ({ role: m.role, content: m.content || "" }));
 
-      // Initialize empty assistant message to stream into
       const assistantMsgId = (Date.now() + 1).toString();
       setMessages((prev) => [
         ...prev,
         { id: assistantMsgId, role: "assistant", content: "", timestamp: new Date() },
       ]);
 
-      // 2. Pass BOTH id arrays to the orchestrator
       const res = await fetch("/api/chat/orchestrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -367,14 +354,13 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           agent_id: agentId,
           prompt: text,
           active_dataset_ids: currentDatasetIds,
-          active_document_ids: currentDocumentIds, // NEW: required for Qdrant RAG
+          active_document_ids: currentDocumentIds,
           history,
         }),
       });
 
       if (!res.ok || !res.body) throw new Error("The analytical engine encountered an error.");
 
-      // Stream Reader
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let doneReading = false;
@@ -382,10 +368,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       while (!doneReading) {
         const { value, done } = await reader.read();
-        if (done) {
-          doneReading = true;
-          break;
-        }
+        if (done) { doneReading = true; break; }
 
         const chunkString = decoder.decode(value, { stream: true });
         const lines = chunkString.split("\n");
@@ -399,7 +382,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               const parsed = JSON.parse(dataStr);
               const { type, content, message } = parsed;
 
-              // 3. Handle the new richer SSE packet types
               switch (type) {
                 case "status":
                   setProgressStatus((currentStatus) => {
@@ -410,7 +392,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   });
                   break;
 
-                // NEW: chain-of-thought packets from the AnalyticalOrchestrator
                 case "plan":
                 case "sql":
                 case "insights":
@@ -424,7 +405,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                 case "narrative":
                 case "narrative_chunk":
-                  // "narrative" from the new backend; "narrative_chunk" from old — handle both
                   streamedContent += content?.executive_summary || content || message || "";
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -440,7 +420,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                       m.id === assistantMsgId ? { ...m, payload: content } : m
                     )
                   );
-                  doneReading = true; // data packet signals end of stream
+                  doneReading = true;
                   break;
 
                 case "error":
@@ -519,11 +499,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     },
   ];
 
-  const totalSources = activeDatasetIds.length + activeDocumentIds.length;
-
   return (
     <div
-      className="flex flex-col h-full w-full relative overflow-hidden"
+      className="chat-root flex flex-col h-full w-full relative overflow-hidden"
       style={{
         fontFamily: "'DM Sans', 'Geist', system-ui, sans-serif",
         backgroundColor: "var(--chat-bg, #ffffff)",
@@ -565,11 +543,13 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           }
         }
 
+        /* ── Scrollbar ── */
         .chat-scroll-area { overflow-y: auto; scroll-behavior: smooth; }
         .chat-scroll-area::-webkit-scrollbar { width: 4px; }
         .chat-scroll-area::-webkit-scrollbar-track { background: transparent; }
         .chat-scroll-area::-webkit-scrollbar-thumb { background: var(--chat-border); border-radius: 99px; }
 
+        /* ── Animations ── */
         @keyframes fadeSlideUp {
           from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -600,6 +580,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           animation: blink 1s step-end infinite;
         }
 
+        /* ── Suggestion cards ── */
         .suggestion-card {
           background: var(--chat-bg);
           border: 1px solid var(--chat-border);
@@ -620,6 +601,10 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           transform: translateY(-1px);
         }
 
+        /* ── Action buttons ─────────────────────────────────────────────────
+           Desktop: 28×28 px.  Mobile (≤768px): 40×40 px for HIG-compliant
+           touch targets (minimum 44pt recommended; 40px is a close fit).
+        ── */
         .action-btn {
           width: 28px; height: 28px;
           border-radius: 6px;
@@ -628,9 +613,20 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           border: none; cursor: pointer;
           color: var(--chat-muted);
           transition: background 0.12s, color 0.12s;
+          /* Prevents the button from shrinking below its declared size */
+          flex-shrink: 0;
         }
         .action-btn:hover { background: var(--chat-surface-2); color: var(--chat-fg); }
 
+        @media (max-width: 768px) {
+          .action-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+          }
+        }
+
+        /* ── Chart card ── */
         .chart-card {
           border: 1px solid var(--chat-border);
           border-radius: 14px;
@@ -648,6 +644,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           background: var(--chat-surface);
         }
 
+        /* ── Badges ── */
         .dataset-badge {
           display: inline-flex; align-items: center; gap: 5px;
           padding: 3px 9px; border-radius: 99px;
@@ -655,6 +652,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           border: 1px solid rgba(16, 185, 129, 0.2);
           font-size: 11px; font-weight: 600;
           color: #059669; letter-spacing: 0.03em; text-transform: uppercase;
+          /* Prevent badge from wrapping */
+          white-space: nowrap;
         }
 
         .doc-badge {
@@ -664,8 +663,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           border: 1px solid rgba(99, 102, 241, 0.2);
           font-size: 11px; font-weight: 600;
           color: #6366f1; letter-spacing: 0.03em; text-transform: uppercase;
+          white-space: nowrap;
         }
 
+        /* On narrow screens hide the badge label text; keep the count + dot */
+        @media (max-width: 480px) {
+          .badge-text { display: none; }
+        }
+
+        /* ── Top bar ── */
         .top-bar {
           height: 52px;
           border-bottom: 1px solid var(--chat-border);
@@ -674,15 +680,32 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           padding: 0 20px;
           position: sticky; top: 0; z-index: 20;
           flex-shrink: 0;
+          /* Never let content overflow into two rows */
+          overflow: hidden;
         }
 
+        /* ── Input footer ────────────────────────────────────────────────────
+           env(safe-area-inset-bottom) ensures the input area is never hidden
+           behind the iPhone home indicator / gesture bar.
+        ── */
         .input-footer {
           border-top: 1px solid var(--chat-border);
           background: var(--chat-bg);
-          padding: 16px 20px 20px;
+          padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
           flex-shrink: 0;
         }
 
+        /* ── iOS auto-zoom prevention ────────────────────────────────────────
+           iOS Safari zooms in when an input has font-size < 16px.
+           Force 16px on all inputs/textareas inside this component.
+        ── */
+        .chat-root input,
+        .chat-root textarea,
+        .chat-root select {
+          font-size: 16px !important;
+        }
+
+        /* ── User bubble ── */
         .user-bubble {
           background: var(--chat-user-bubble);
           border-radius: 18px 18px 4px 18px;
@@ -694,6 +717,35 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           word-break: break-word;
         }
 
+        /* ── User message max-width ──────────────────────────────────────────
+           72% on desktop → 90% on mobile to use available space properly.
+        ── */
+        .user-msg-wrap {
+          max-width: 72%;
+        }
+        @media (max-width: 768px) {
+          .user-msg-wrap {
+            max-width: 90%;
+          }
+        }
+
+        /* ── Suggestion grid ─────────────────────────────────────────────────
+           2 columns on desktop → 1 column on mobile so cards don't squeeze.
+        ── */
+        .suggestion-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px;
+          width: 100%;
+          max-width: 520px;
+        }
+        @media (max-width: 480px) {
+          .suggestion-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        /* ── File chip ── */
         .file-chip {
           display: flex; align-items: center; gap: 10px;
           background: var(--chat-bg);
@@ -713,6 +765,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           background: rgba(99, 102, 241, 0.08);
         }
 
+        /* ── Assistant text ── */
         .assistant-text {
           font-size: 14.5px;
           line-height: 1.75;
@@ -721,6 +774,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         .assistant-text p { margin: 0 0 10px; }
         .assistant-text p:last-child { margin-bottom: 0; }
 
+        /* ── Agent avatar ── */
         .agent-avatar {
           width: 28px; height: 28px;
           border-radius: 8px;
@@ -733,8 +787,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Top Bar ── */}
       <div className="top-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="agent-avatar">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
+          <div className="agent-avatar" style={{ flexShrink: 0 }}>
             <Zap style={{ width: 14, height: 14, color: "#fff" }} />
           </div>
           <button
@@ -743,6 +797,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               background: "none", border: "none", cursor: "pointer",
               fontFamily: "inherit", fontSize: 14, fontWeight: 600,
               color: "var(--chat-fg)", padding: "4px 6px", borderRadius: 6,
+              flexShrink: 0,
             }}
           >
             {agentName}
@@ -757,25 +812,34 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 background: "#10b981", display: "inline-block",
                 boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
                 animation: "blink 2s step-end infinite",
+                flexShrink: 0,
               }} />
-              {activeDatasetIds.length} dataset{activeDatasetIds.length > 1 ? "s" : ""}
+              {activeDatasetIds.length}
+              {/* Label hidden on very narrow screens via .badge-text */}
+              <span className="badge-text">
+                &nbsp;dataset{activeDatasetIds.length > 1 ? "s" : ""}
+              </span>
             </div>
           )}
 
-          {/* Document badge — NEW */}
+          {/* Document badge */}
           {activeDocumentIds.length > 0 && (
             <div className="doc-badge">
               <span style={{
                 width: 6, height: 6, borderRadius: "50%",
                 background: "#6366f1", display: "inline-block",
                 boxShadow: "0 0 0 2px rgba(99,102,241,0.3)",
+                flexShrink: 0,
               }} />
-              {activeDocumentIds.length} doc{activeDocumentIds.length > 1 ? "s" : ""}
+              {activeDocumentIds.length}
+              <span className="badge-text">
+                &nbsp;doc{activeDocumentIds.length > 1 ? "s" : ""}
+              </span>
             </div>
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
           <button className="action-btn" title="New chat">
             <Plus style={{ width: 15, height: 15 }} />
           </button>
@@ -836,13 +900,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 Ask a question, upload a file, or pick a task below to get started.
               </p>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, 1fr)",
-                  gap: 10, width: "100%", maxWidth: 520,
-                }}
-              >
+              {/* Responsive suggestion grid (2-col → 1-col on mobile) */}
+              <div className="suggestion-grid">
                 {SUGGESTIONS.map((s, i) => (
                   <button
                     key={i}
@@ -916,7 +975,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                     )}
 
                     {msg.content && (
-                      <div style={{ maxWidth: "72%" }}>
+                      /* Responsive max-width: 72% desktop → 90% mobile */
+                      <div className="user-msg-wrap">
                         <div className="user-bubble">{msg.content}</div>
                         <div style={{ fontSize: 11, color: "var(--chat-muted)", marginTop: 4, textAlign: "right" }}>
                           {formatTime(msg.timestamp)}
@@ -960,7 +1020,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                         </div>
                       )}
 
-                      {/* Chain-of-thought Reasoning Panel — NEW */}
+                      {/* Chain-of-thought Reasoning Panel */}
                       {(msg.plan || msg.sql || msg.insights || msg.diagnostics) && (
                         <ReasoningPanel
                           plan={msg.plan}

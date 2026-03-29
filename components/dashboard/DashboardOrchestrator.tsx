@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
+import { WasmEngine } from "@/lib/analytics/wasm-engine";
 
 // ============================================================================
 // 1. STRICT TYPE DEFINITIONS (Mapped to Python Backend Models)
@@ -85,6 +86,8 @@ type PayloadType = "table" | "chart" | "text" | "error" | "ml_result";
 interface ExecutionPayload {
   type: PayloadType;
   data: any[];
+  url?: string;           // NEW: Pre-signed URL from R2
+  file_type?: string;     // NEW: "parquet"
   sql_used?: string;
   chart_spec?: any;
   row_count: number;
@@ -928,6 +931,44 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ msg }) => {
   const [viewMode, setViewMode] = useState<"chart" | "table">("chart");
   const resolvedSql = msg.payload?.sql_used ?? msg.sqlUsed;
 
+  // --- NEW: WASM Engine States ---
+  const [wasmData, setWasmData] = useState<any[] | null>(null);
+  const [isWasmLoading, setIsWasmLoading] = useState(false);
+  const [wasmError, setWasmError] = useState<string | null>(null);
+
+  // --- NEW: Client-Side Engine Lifecycle ---
+  useEffect(() => {
+    const fetchWasmData = async () => {
+      // Only run if the backend returned a Parquet URL
+      if (msg.payload?.url && msg.payload?.file_type === "parquet") {
+        setIsWasmLoading(true);
+        try {
+          await WasmEngine.initialize();
+          
+          // Generate a safe, unique table name for this specific message's dataset
+          const tableName = `result_${msg.id.replace(/[^a-zA-Z0-9]/g, '')}`;
+          
+          // Mount the R2 Parquet file into the browser's memory
+          await WasmEngine.mountParquetFromUrl(tableName, msg.payload.url);
+          
+          // Execute local SQL to extract the Arrow table and convert to JSON for React components
+          const arrowTable = await WasmEngine.executeQuery(`SELECT * FROM ${tableName}`);
+          setWasmData(WasmEngine.arrowToJson(arrowTable));
+          
+        } catch (err: any) {
+          console.error("WASM Render Error:", err);
+          setWasmError(err.message || "Failed to process local parquet file.");
+        } finally {
+          setIsWasmLoading(false);
+        }
+      }
+    };
+    fetchWasmData();
+  }, [msg.payload?.url, msg.payload?.file_type, msg.id]);
+
+  // Determine source of truth for the chart (Local WASM data vs Legacy Backend JSON)
+  const displayData = wasmData || msg.payload?.data;
+
   return (
     <div className={cn("flex flex-col w-full min-w-0 max-w-[90%]", msg.role === "user" ? "items-end" : "items-start")}>
       {msg.role === "user" && msg.content && (
@@ -984,13 +1025,33 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ msg }) => {
             {msg.payload && (
               <div className="mt-6 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm">
                 <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />
-                {viewMode === "chart" ? (
-                  <div className="w-full bg-slate-50 border border-slate-100 rounded-xl p-4 min-h-[300px]">
-                    <DynamicChartFactory payload={msg.payload} anomalies={msg.insights?.anomalies} />
+                
+                {/* WASM Processing UI */}
+                {isWasmLoading ? (
+                  <div className="w-full flex flex-col items-center justify-center min-h-[300px] bg-slate-50 border border-slate-100 rounded-xl">
+                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+                    <p className="text-sm font-semibold text-slate-700">Local Engine Active</p>
+                    <p className="text-[12px] text-slate-500 mt-1">Downloading & Vectorizing Parquet File...</p>
                   </div>
-                ) : (
-                  <PaginatedTable data={msg.payload.data} />
-                )}
+                ) : wasmError ? (
+                  <div className="w-full flex items-center justify-center min-h-[300px] bg-rose-50 border border-rose-100 rounded-xl text-rose-600 text-sm">
+                    <AlertCircle className="w-5 h-5 mr-2" />
+                    {wasmError}
+                  </div>
+                ) : displayData ? (
+                  /* Main Data Render */
+                  viewMode === "chart" ? (
+                    <div className="w-full bg-slate-50 border border-slate-100 rounded-xl p-4 min-h-[300px]">
+                      {/* Override payload data with the locally computed WASM data */}
+                      <DynamicChartFactory 
+                        payload={{ ...msg.payload, data: displayData }} 
+                        anomalies={msg.insights?.anomalies} 
+                      />
+                    </div>
+                  ) : (
+                    <PaginatedTable data={displayData} />
+                  )
+                ) : null}
               </div>
             )}
             {resolvedSql && msg.isComplete && <SQLDisclosure sql={resolvedSql} />}
