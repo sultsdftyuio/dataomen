@@ -218,61 +218,111 @@ export const getNormalizedPage = cache((slug: string): NormalizedPage | null => 
   }
 });
 
-// Reusable Section Heading for standardized typography
-const SectionHeading = ({ children, id, subtitle }: { children: React.ReactNode; id?: string; subtitle?: string }) => (
-  <div className="text-center max-w-3xl mx-auto mb-16 md:mb-20 scroll-mt-28" id={id}>
-    <h2 className="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight mb-6 leading-tight">
-      {children}
-    </h2>
-    {subtitle && <p className="text-xl text-slate-600 font-medium leading-relaxed">{subtitle}</p>}
-  </div>
+// ----------------------------------------------------------------------
+// SCROLL ANIMATION INJECTOR
+// ----------------------------------------------------------------------
+const ScrollRevealScript = () => (
+  <script dangerouslySetInnerHTML={{ __html: `
+    if (typeof window !== 'undefined') {
+      const initReveal = () => {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('opacity-100', 'translate-y-0');
+              entry.target.classList.remove('opacity-0', 'translate-y-8');
+              observer.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.1 });
+        
+        document.querySelectorAll('.reveal-on-scroll:not(.observed)').forEach(el => {
+          el.classList.add('observed');
+          observer.observe(el);
+        });
+      };
+      
+      // Run immediately
+      setTimeout(initReveal, 100);
+      
+      // Hook into Next.js soft navigation
+      const pushState = history.pushState;
+      history.pushState = function() {
+        pushState.apply(this, arguments);
+        setTimeout(initReveal, 500);
+      };
+    }
+  `}} />
 );
 
 // ----------------------------------------------------------------------
 // PAGE SECTIONS
 // ----------------------------------------------------------------------
 
+// Reusable Section Heading for standardized elegant typography
+const SectionHeading = ({ children, id, subtitle }: { children: React.ReactNode; id?: string; subtitle?: string }) => (
+  <div className="text-center max-w-4xl mx-auto mb-16 md:mb-20 scroll-mt-28 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 ease-out" id={id}>
+    <h2 
+      className="pfd" 
+      style={{ fontSize: 'clamp(36px, 5vw, 56px)', color: '#0f172a', lineHeight: 1.05, letterSpacing: "-0.04em", fontWeight: 800, marginBottom: '24px' }}
+    >
+      {children}
+    </h2>
+    {subtitle && <p style={{ fontSize: 20, color: '#475569', lineHeight: 1.6, maxWidth: 620, margin: '0 auto' }}>{subtitle}</p>}
+  </div>
+);
+
+
 const Hero = ({ data }: { data: NormalizedPage }) => (
-  <section className="relative pt-32 pb-20 md:pt-40 md:pb-32 overflow-hidden">
-    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-blue-50/50 rounded-full blur-3xl -z-10 pointer-events-none"></div>
-    <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent_0%,white_100%)] -z-10 pointer-events-none"></div>
+  <section className="relative pt-32 pb-20 md:pt-40 md:pb-32 overflow-hidden dot-grid" style={{ backgroundColor: '#fafafa' }}>
+    <div style={{ position: "absolute", top: "10%", left: "5%", width: 400, height: 400, background: "#dbeafe", borderRadius: "50%", filter: "blur(100px)", opacity: 0.6, zIndex: 0 }} />
+    <div style={{ position: "absolute", top: "30%", right: "-5%", width: 500, height: 500, background: "#eff6ff", borderRadius: "50%", filter: "blur(120px)", opacity: 0.8, zIndex: 0 }} />
     
-    <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
-      <div className="text-center max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000 ease-out">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white text-blue-700 text-sm font-semibold border border-blue-100 shadow-[0_0_15px_rgba(59,130,246,0.15)]">
-          <div className="text-blue-600 flex items-center justify-center">
-            {React.isValidElement(data.hero.icon) 
-              ? React.cloneElement(data.hero.icon as React.ReactElement<{ className?: string }>, { className: "w-4 h-4 shrink-0 fill-blue-500" }) 
-              : data.hero.icon}
-          </div>
-          <span className="capitalize">{data.type} Definition</span>
+    <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl relative z-10">
+      <div className="text-center max-w-5xl mx-auto reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 ease-out">
+        
+        {/* Elegant Eyebrow */}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          background: "#fff", border: `1px solid #e2e8f0`,
+          padding: "6px 16px", borderRadius: 30, marginBottom: 32,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.03)"
+        }}>
+          <Sparkles size={14} color="#2563eb" className="animate-pulse" />
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            {data.type} Definition
+          </span>
         </div>
         
-        <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tighter text-balance leading-[1.1] text-slate-900">
+        {/* The Premium Typographic Treatment */}
+        <h1
+          className="pfd hero-text"
+          style={{ fontSize: 'clamp(46px, 6vw, 76px)', color: '#0f172a', lineHeight: 1.05, letterSpacing: "-0.04em", maxWidth: 900, margin: "0 auto 24px", fontWeight: 800 }}
+        >
           {data.seo.h1}
         </h1>
         
-        <p className="text-base md:text-xl lg:text-2xl text-slate-600 max-w-3xl mx-auto leading-relaxed text-balance font-medium">
+        <p style={{ fontSize: 20, color: '#475569', lineHeight: 1.6, maxWidth: 680, margin: "0 auto 48px" }}>
           {data.hero.subtitle}
         </p>
         
-        <div className="flex flex-col items-center justify-center pt-6 gap-4">
+        <div className="flex flex-col items-center justify-center pt-2 gap-4">
           <Link 
             href={data.hero.cta.primary.href} 
-            className="w-full sm:w-auto px-10 py-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(15,23,42,0.15)] hover:shadow-[0_0_40px_rgba(15,23,42,0.25)] hover:-translate-y-0.5 duration-300 text-lg"
+            className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:shadow-[0_12px_24px_rgba(37,99,235,0.35)] hover:-translate-y-0.5"
+            style={{ padding: "18px 44px", fontSize: 16, fontWeight: 700, borderRadius: 8 }}
           >
             {data.hero.cta.primary.text}
-            <ArrowRight className="w-5 h-5" />
+            <ArrowRight size={18} />
           </Link>
           
-          <div className="flex items-center gap-4 mt-4 text-sm font-medium text-slate-500">
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+          <div className="flex items-center gap-4 mt-4 text-sm font-semibold text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-blue-600" />
               14-day free trial
             </div>
             <span className="w-1 h-1 rounded-full bg-slate-300"></span>
-            <div className="flex items-center gap-1">
-              <ShieldCheck className="w-4 h-4 text-emerald-500" /> 
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-blue-600" /> 
               No credit card required
             </div>
           </div>
@@ -285,12 +335,12 @@ const Hero = ({ data }: { data: NormalizedPage }) => (
 const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
   if (!demo) return null;
   return (
-    <section id="interactive-demo" className="pb-24 md:pb-32 px-4 sm:px-6 lg:px-8">
+    <section id="interactive-demo" className="pb-24 md:pb-32 px-4 sm:px-6 lg:px-8 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 ease-out delay-200">
       <div className="container mx-auto max-w-5xl relative">
         <div className="absolute -top-10 -right-10 w-72 h-72 bg-sky-200/30 rounded-full blur-3xl -z-10"></div>
         <div className="absolute -bottom-10 -left-10 w-72 h-72 bg-blue-200/30 rounded-full blur-3xl -z-10"></div>
         
-        <div className="rounded-3xl border border-slate-200/80 bg-white/50 p-2 md:p-4 shadow-2xl shadow-blue-900/10 relative overflow-hidden backdrop-blur-xl">
+        <div className="rounded-3xl border border-slate-200/80 bg-white/50 p-2 md:p-4 shadow-[0_20px_60px_rgba(15,23,42,0.08)] relative overflow-hidden backdrop-blur-xl">
           <div className="rounded-2xl overflow-hidden border border-slate-200/80 bg-white shadow-sm flex flex-col h-full">
             
             {/* Header */}
@@ -300,8 +350,8 @@ const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
                 <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
                 <div className="w-3 h-3 rounded-full bg-slate-200 border border-slate-300"></div>
               </div>
-              <div className="mx-auto flex items-center justify-center bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm text-xs font-semibold text-slate-600 gap-2 min-w-[200px]">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+              <div className="mx-auto flex items-center justify-center bg-white px-3 py-1.5 rounded-md border border-slate-200 shadow-sm text-xs font-bold text-slate-600 gap-2 min-w-[200px]">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse shadow-[0_0_8px_rgba(37,99,235,0.8)]"></span>
                 Live Engine Execution
               </div>
               <div className="w-10"></div>
@@ -312,10 +362,10 @@ const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
               
               {/* User Prompt */}
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 border border-slate-200 shadow-sm">
-                  <span className="text-slate-600 font-bold text-sm">US</span>
+                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0 border border-blue-100 shadow-sm">
+                  <span className="text-blue-600 font-bold text-sm">US</span>
                 </div>
-                <div className="bg-white rounded-3xl rounded-tl-sm px-6 py-5 text-slate-800 border border-slate-200 shadow-sm max-w-xl text-lg font-medium">
+                <div className="bg-white rounded-3xl rounded-tl-sm px-6 py-5 text-[#0f172a] border border-slate-200 shadow-sm max-w-xl text-lg font-bold">
                   "{demo.userPrompt}"
                 </div>
               </div>
@@ -324,9 +374,9 @@ const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
               <div className="pl-14 space-y-8">
                 
                 {/* SQL Output */}
-                <div className="p-4 md:p-6 bg-slate-900 rounded-2xl border border-slate-800 font-mono text-xs md:text-sm text-blue-300 overflow-x-auto shadow-xl max-w-3xl">
+                <div className="p-4 md:p-6 bg-[#0f172a] rounded-2xl border border-slate-800 font-mono text-xs md:text-sm text-blue-300 overflow-x-auto shadow-xl max-w-3xl">
                   <div className="flex gap-4 mb-3 border-b border-slate-700 pb-3">
-                    <div className="text-slate-500 font-bold">SQL_GENERATED</div>
+                    <div className="text-slate-400 font-bold uppercase tracking-wider">SQL_GENERATED</div>
                   </div>
                   <div className="whitespace-pre-wrap leading-relaxed text-slate-300">
                     {demo.generatedSql}
@@ -339,7 +389,7 @@ const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
                     <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-widest">
                       <Zap className="w-4 h-4 fill-blue-600" /> Insight Extraction
                     </div>
-                    <div className="text-slate-800 text-lg leading-relaxed font-medium">
+                    <div className="text-[#0f172a] text-lg leading-relaxed font-bold">
                       {demo.aiInsight}
                     </div>
                   </div>
@@ -368,11 +418,11 @@ const Personas = ({ personas }: { personas: NormalizedPage['personas'] }) => {
         </SectionHeading>
         <div className="grid md:grid-cols-3 gap-8">
           {personas.map((persona, i) => (
-            <div key={i} className="bg-white border border-slate-200 rounded-3xl p-8 hover:shadow-2xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all duration-300 group flex flex-col h-full">
+            <div key={i} className="bg-white border border-slate-200 rounded-3xl p-8 hover:shadow-2xl hover:shadow-blue-900/5 hover:-translate-y-1 transition-all duration-500 group flex flex-col h-full reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
               <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-blue-100 transition-all duration-300">
                 <Users className="w-7 h-7 text-blue-600" />
               </div>
-              <h3 className="text-2xl font-extrabold text-slate-900 mb-4 tracking-tight">{persona.role}</h3>
+              <h3 className="text-[24px] font-bold text-[#0f172a] mb-4 tracking-[-0.02em]">{persona.role}</h3>
               <p className="text-slate-600 text-lg font-medium leading-relaxed mb-8 flex-grow">
                 {persona.description}
               </p>
@@ -401,15 +451,15 @@ const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
           The Competitive Edge
         </SectionHeading>
         
-        <div className="grid gap-12">
+        <div className="grid gap-8">
           {matrix.map((item, i) => (
-            <div key={i} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300">
+            <div key={i} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500 reveal-on-scroll opacity-0 translate-y-8">
               {/* Header */}
               <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-4">
                 <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center border border-blue-200 shrink-0">
                   <Zap className="w-5 h-5 text-blue-600 fill-blue-600" />
                 </div>
-                <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight">{item.category}</h3>
+                <h3 className="text-[24px] font-bold text-[#0f172a] tracking-[-0.02em]">{item.category}</h3>
               </div>
 
               {/* Body */}
@@ -429,7 +479,7 @@ const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
                     <CheckCircle2 className="w-5 h-5 text-blue-600" />
                     <span className="text-xs font-extrabold uppercase tracking-widest text-blue-600">Arcli Advantage</span>
                   </div>
-                  <p className="text-slate-900 text-lg font-bold leading-relaxed">{item.arcliAdvantage}</p>
+                  <p className="text-[#0f172a] text-lg font-bold leading-relaxed">{item.arcliAdvantage}</p>
                 </div>
               </div>
             </div>
@@ -448,14 +498,14 @@ const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workflow'] })
         <SectionHeading subtitle="Arcli eliminates manual intervention from your data lifecycle, moving compute directly to the storage layer.">
           Infrastructure Transformation
         </SectionHeading>
-        <div className="grid md:grid-cols-2 gap-8">
+        <div className="grid md:grid-cols-2 gap-8 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000">
           {/* Legacy */}
           <div className="bg-white rounded-3xl p-8 md:p-10 border border-slate-200 relative overflow-hidden group hover:shadow-lg transition-shadow">
              <div className="flex items-center gap-4 mb-8">
                <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center border border-slate-200 shadow-sm shrink-0">
                  <XCircle className="w-6 h-6 text-slate-400" />
                </div>
-               <h3 className="text-2xl font-extrabold text-slate-900">Structural Bottleneck</h3>
+               <h3 className="text-[24px] font-bold text-[#0f172a] tracking-[-0.02em]">Structural Bottleneck</h3>
              </div>
              <div className="space-y-4 relative z-10">
                {workflow.legacyBottleneck.map((str, i) => (
@@ -467,13 +517,13 @@ const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workflow'] })
           </div>
 
           {/* Arcli */}
-          <div className="bg-slate-900 rounded-3xl p-8 md:p-10 border border-slate-800 relative overflow-hidden group shadow-xl">
+          <div className="bg-[#0f172a] rounded-3xl p-8 md:p-10 border border-slate-800 relative overflow-hidden group shadow-[0_20px_40px_rgba(15,23,42,0.15)]">
              <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
              <div className="flex items-center gap-4 mb-8 relative z-10">
                <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)] shrink-0">
                  <Zap className="w-6 h-6 text-white fill-white" />
                </div>
-               <h3 className="text-2xl font-extrabold text-white">Autonomous Execution</h3>
+               <h3 className="text-[24px] font-bold text-white tracking-[-0.02em]">Autonomous Execution</h3>
              </div>
              <div className="space-y-4 relative z-10">
                {workflow.arcliAutomation.map((str, i) => (
@@ -506,7 +556,7 @@ const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
               : 'bg-blue-100 text-blue-700 border-blue-200';
             
             return (
-              <div key={i} className="bg-white rounded-3xl border border-slate-200 p-8 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 flex flex-col h-full">
+              <div key={i} className="bg-white rounded-3xl border border-slate-200 p-8 hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500 flex flex-col h-full reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
                 <div className="flex justify-between items-start mb-6">
                   <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
                     <ShieldCheck className="w-7 h-7 text-slate-700" />
@@ -518,11 +568,11 @@ const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
                   )}
                 </div>
                 
-                <h4 className="font-extrabold text-2xl text-slate-900 mb-4">{item.title}</h4>
+                <h4 className="font-bold text-[24px] tracking-[-0.02em] text-[#0f172a] mb-4">{item.title}</h4>
                 <p className="text-slate-600 text-lg font-medium leading-relaxed mb-8 flex-grow">{item.description}</p>
                 
                 {item.businessQuestion && (
-                  <div className="bg-slate-900 rounded-2xl p-6 mt-auto">
+                  <div className="bg-[#0f172a] rounded-2xl p-6 mt-auto">
                     <div className="text-[10px] font-extrabold uppercase tracking-widest text-blue-400 mb-2 flex items-center gap-2">
                       <Sparkles className="w-3 h-3" /> Natural Language
                     </div>
@@ -543,31 +593,52 @@ const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
 const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
   if (steps.length === 0) return null;
   return (
-    <section className="py-24 bg-slate-50 border-b border-slate-200">
+    <section className="py-24 bg-slate-50 border-t border-b border-slate-200">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
         <SectionHeading subtitle="Our engine handles the complexity of data movement while you focus on high-level decision logic.">
           Implementation Pipeline
         </SectionHeading>
         
-        <div className="relative pl-6 md:pl-0">
+        <div className="relative pl-12 md:pl-0">
+          {/* Hairline Precision Timeline */}
           <div className="absolute left-[38px] md:left-1/2 md:-ml-px top-0 bottom-0 w-px bg-slate-200"></div>
           
-          <div className="space-y-12">
+          {/* Increased Vertical Breathing */}
+          <div className="space-y-16 md:space-y-20">
             {steps.map((step, i) => (
-              <div key={i} className={`relative flex flex-col md:flex-row items-start md:items-center justify-between gap-8 md:gap-12 ${i % 2 === 0 ? 'md:flex-row-reverse' : ''}`}>
+              <div 
+                key={i} 
+                // Removed Alternating Layout -> md:flex-row (always aligned)
+                className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-8 md:gap-12 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-700" 
+                style={{ transitionDelay: `${i * 150}ms` }}
+              >
                 <div className="hidden md:block w-1/2"></div>
                 
-                <div className="absolute left-[-24px] md:left-1/2 md:-ml-6 w-12 h-12 rounded-full bg-white border-4 border-slate-100 flex items-center justify-center text-lg font-extrabold text-slate-400 z-10 shadow-sm">
-                  {i + 1}
+                {/* Minimal System Dot Indicator */}
+                <div className="absolute left-[-20px] md:left-1/2 md:-ml-2.5 w-5 h-5 rounded-full bg-white border border-slate-300 z-10 flex items-center justify-center">
+                   <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
                 </div>
                 
-                <div className={`w-full md:w-1/2 bg-white rounded-3xl border border-slate-200 p-8 shadow-sm hover:border-blue-200 transition-colors ${i % 2 === 0 ? 'md:text-left' : 'md:text-right'}`}>
-                  <h4 className="text-2xl font-bold text-slate-900 mb-3">{step.title}</h4>
-                  <p className="text-slate-600 text-lg leading-relaxed font-medium">{step.description}</p>
+                {/* Glass without showing it's glass + Hover intelligence */}
+                <div className="w-full md:w-1/2 bg-white border border-slate-200 rounded-2xl p-8 shadow-[0_2px_20px_rgba(15,23,42,0.04)] hover:shadow-[0_8px_30px_rgba(15,23,42,0.06)] hover:border-slate-300 hover:-translate-y-[1px] transition-all duration-300 relative overflow-hidden">
                   
+                  {/* Micro Detail engineered line */}
+                  <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+                  
+                  {/* Typography Hierarchy Fix */}
+                  <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
+                    {step.title}
+                  </div>
+                  
+                  <h4 className="text-[20px] font-semibold text-slate-900 leading-snug mb-3">
+                    {step.description}
+                  </h4>
+                  
+                  {/* Subtle validation outcome */}
                   {step.outcome && (
-                    <div className={`mt-6 inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-sm font-bold`}>
-                      <CheckCircle2 className="w-4 h-4" /> {step.outcome}
+                    <div className="mt-5 text-sm text-slate-500 font-medium flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      {step.outcome}
                     </div>
                   )}
                 </div>
@@ -591,11 +662,11 @@ const Features = ({ features }: { features: NormalizedPage['features'] }) => {
         
         <div className="grid md:grid-cols-3 gap-8">
           {features.map((feature, i) => (
-            <div key={i} className="bg-white border border-slate-200 rounded-3xl p-8 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-900/5 transition-all duration-300 group">
+            <div key={i} className="bg-white border border-slate-200 rounded-3xl p-8 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-900/5 transition-all duration-500 group reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
               <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-blue-100 transition-all duration-300">
                 <Layers className="w-6 h-6 text-blue-600" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-3">{feature.title}</h3>
+              <h3 className="text-[22px] tracking-[-0.02em] font-bold text-[#0f172a] mb-3">{feature.title}</h3>
               {feature.description && (
                 <p className="text-slate-600 leading-relaxed font-medium">
                   {feature.description}
@@ -612,33 +683,33 @@ const Features = ({ features }: { features: NormalizedPage['features'] }) => {
 const Architecture = ({ architecture }: { architecture: NormalizedPage['architecture'] }) => {
   if (!architecture || Object.keys(architecture).length === 0) return null;
   return (
-    <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/30 via-slate-900 to-slate-950"></div>
+    <section className="py-24 bg-[#0f172a] text-white relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-blue-900/30 via-[#0f172a] to-slate-950"></div>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000">
           <div>
             <div className="flex items-center gap-3 mb-4">
               <Cpu className="w-6 h-6 text-blue-400" />
               <span className="text-sm font-extrabold uppercase tracking-widest text-blue-400">System Specification</span>
             </div>
-            <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">Enterprise Architecture</h2>
+            <h2 className="pfd text-[clamp(36px,5vw,56px)] font-extrabold tracking-[-0.04em] leading-[1.05]">Enterprise Architecture</h2>
           </div>
         </div>
         
         <div className="grid md:grid-cols-3 gap-8 mb-16">
-          {Object.entries(architecture).map(([key, value]) => (
-            <div key={key} className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 p-8 rounded-3xl hover:border-blue-500/50 transition-colors">
+          {Object.entries(architecture).map(([key, value], i) => (
+            <div key={key} className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 p-8 rounded-3xl hover:border-blue-500/50 transition-colors reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
               <h4 className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">
                 {key.replace(/([A-Z])/g, ' $1')}
               </h4>
-              <p className="text-xl font-bold text-white leading-relaxed">
+              <p className="text-[22px] font-bold text-white leading-relaxed tracking-[-0.01em]">
                 {value as string}
               </p>
             </div>
           ))}
         </div>
 
-        <div className="pt-10 border-t border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="pt-10 border-t border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-6 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 delay-300">
            <div className="flex items-center gap-3 text-slate-300 font-medium text-lg">
              <Globe className="w-5 h-5 text-blue-500" /> Multi-Region
            </div>
@@ -660,17 +731,17 @@ const Architecture = ({ architecture }: { architecture: NormalizedPage['architec
 const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: NormalizedPage['hero']['cta'] }) => {
   if (slugs.length === 0) return null;
   return (
-    <section className="py-24 bg-slate-900 relative overflow-hidden border-t border-slate-800">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/40 via-slate-900 to-slate-950"></div>
+    <section className="py-24 bg-[#0f172a] relative overflow-hidden border-t border-slate-800">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/40 via-[#0f172a] to-slate-950"></div>
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4 tracking-tight">Explore Deep Dives</h2>
-          <p className="text-xl text-blue-100/80 font-medium max-w-2xl mx-auto">Discover specific architectural setups and orchestration patterns.</p>
+        <div className="text-center mb-16 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000">
+          <h2 className="pfd text-[clamp(36px,5vw,56px)] font-extrabold text-white mb-4 tracking-[-0.04em] leading-[1.05]">Explore Deep Dives</h2>
+          <p className="text-[20px] text-blue-100/80 font-medium max-w-2xl mx-auto">Discover specific architectural setups and orchestration patterns.</p>
         </div>
         
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {slugs.map((relatedSlug) => {
+          {slugs.map((relatedSlug, i) => {
             const rawRelated = getPageCached(relatedSlug) as any;
             if (!rawRelated) return null;
             
@@ -682,9 +753,10 @@ const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Normalized
               <Link 
                 key={relatedSlug}
                 href={`/${relatedSlug}`}
-                className="bg-slate-800/50 backdrop-blur-md p-6 rounded-2xl border border-slate-700 hover:bg-slate-800 hover:border-blue-500/50 transition-all group flex flex-col justify-between h-full"
+                className="bg-slate-800/50 backdrop-blur-md p-6 rounded-2xl border border-slate-700 hover:bg-slate-800 hover:border-blue-500/50 transition-all group flex flex-col justify-between h-full reveal-on-scroll opacity-0 translate-y-8"
+                style={{ transitionDelay: `${i * 100}ms` }}
               >
-                <h3 className="text-lg font-bold text-white mb-4 group-hover:text-blue-400 transition-colors">
+                <h3 className="text-xl font-bold text-white mb-4 group-hover:text-blue-400 transition-colors tracking-[-0.01em]">
                   {relatedTitle}
                 </h3>
                 <div className="flex items-center justify-between mt-auto">
@@ -696,10 +768,11 @@ const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Normalized
           })}
         </div>
         
-        <div className="flex justify-center">
+        <div className="flex justify-center reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 delay-200">
           <Link 
             href={heroCta.primary.href} 
-            className="px-10 py-5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-500 transition-all shadow-[0_0_30px_rgba(37,99,235,0.3)] text-lg flex items-center gap-2"
+            className="flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-[0_8px_20px_rgba(37,99,235,0.25)] hover:shadow-[0_12px_24px_rgba(37,99,235,0.35)] hover:-translate-y-0.5"
+            style={{ padding: "18px 44px", fontSize: 16, fontWeight: 700, borderRadius: 8 }}
           >
             {heroCta.primary.text} <ArrowRight className="w-5 h-5" />
           </Link>
@@ -709,7 +782,6 @@ const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Normalized
   );
 };
 
-// 100% Server-side CSS-driven Accordion for optimal performance & SEO
 const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
   if (faqs.length === 0) return null;
   return (
@@ -721,8 +793,8 @@ const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
         
         <div className="space-y-4">
           {faqs.map((faq, i) => (
-            <details key={i} className="group bg-white border border-slate-200 rounded-2xl overflow-hidden [&_summary::-webkit-details-marker]:hidden">
-              <summary className="flex items-center justify-between cursor-pointer p-6 font-bold text-slate-900 text-lg hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset">
+            <details key={i} className="group bg-white border border-slate-200 rounded-2xl overflow-hidden [&_summary::-webkit-details-marker]:hidden reveal-on-scroll opacity-0 translate-y-8 transition-all duration-500" style={{ transitionDelay: `${i * 100}ms` }}>
+              <summary className="flex items-center justify-between cursor-pointer p-6 font-bold text-[#0f172a] text-[20px] hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset tracking-[-0.01em]">
                 {faq.q}
                 <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-slate-100 p-2 rounded-full text-slate-500 group-hover:bg-blue-50 group-hover:text-blue-600">
                   <ChevronDown className="w-5 h-5" />
@@ -805,8 +877,11 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(techArticleSchema) }} />
       {faqSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />}
+      
+      {/* Scroll Reveal Injector (Runs natively on client) */}
+      <ScrollRevealScript />
 
-      <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-blue-100 selection:text-blue-900">
+      <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden">
         <Hero data={data} />
         <Demo demo={data.demo} />
         <Personas personas={data.personas} />
