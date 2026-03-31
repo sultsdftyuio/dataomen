@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import { useToast } from "@/components/ui/use-toast"; // Assuming standard shadcn path
+import { useToast } from "@/components/ui/use-toast";
 import { 
   Bot, 
   Database, 
@@ -33,54 +33,30 @@ export interface AgentCreatePayload {
   name: string;
   description: string;
   role_description: string; 
-  dataset_ids: string[];    
-  document_ids: string[];   
+  // Phase 1 Update: Strict singular payload fields
+  dataset_id?: string | null;    
+  document_id?: string | null;   
   temperature: number;      
 }
 
-export interface MockAsset {
+export interface Asset {
   id: string;
   name: string;
   type: 'dataset' | 'document';
   sourceType?: string; 
-  isConnected: boolean; // NEW: Enforces actual connection status
+  isConnected: boolean; 
 }
 
 interface CreateAgentFormProps {
   onSubmit: (payload: AgentCreatePayload) => Promise<void>;
   isLoading?: boolean;
-  availableAssets?: MockAsset[]; 
+  availableAssets?: Asset[]; 
 }
-
-// Mocking the real backend state. 
-// In production, `isConnected` would be determined by checking if the tenant has active credentials in your DB.
-const ACTUAL_INTEGRATIONS: MockAsset[] = [
-  // Warehouses
-  { id: 'ds_snowflake', name: 'Snowflake DW', type: 'dataset', sourceType: 'Snowflake', isConnected: true },
-  { id: 'ds_bigquery', name: 'Google BigQuery', type: 'dataset', sourceType: 'BigQuery', isConnected: false },
-  { id: 'ds_redshift', name: 'AWS Redshift', type: 'dataset', sourceType: 'Redshift', isConnected: false },
-  
-  // E-commerce & Payments
-  { id: 'ds_stripe_prod', name: 'Stripe Billing', type: 'dataset', sourceType: 'Stripe', isConnected: true },
-  { id: 'ds_shopify', name: 'Shopify Store', type: 'dataset', sourceType: 'Shopify', isConnected: false },
-  
-  // CRM & Support
-  { id: 'ds_hubspot_crm', name: 'HubSpot CRM', type: 'dataset', sourceType: 'HubSpot', isConnected: false },
-  { id: 'ds_salesforce', name: 'Salesforce', type: 'dataset', sourceType: 'Salesforce', isConnected: false },
-  { id: 'ds_zendesk', name: 'Zendesk Tickets', type: 'dataset', sourceType: 'Zendesk', isConnected: false },
-  
-  // Marketing & Ads
-  { id: 'ds_google_ads', name: 'Google Ads', type: 'dataset', sourceType: 'Google Ads', isConnected: false },
-  { id: 'ds_meta_ads', name: 'Meta Ads', type: 'dataset', sourceType: 'Meta Ads', isConnected: false },
-  
-  // Internal/Files
-  { id: 'ds_app_telemetry', name: 'App Telemetry', type: 'dataset', sourceType: 'Parquet', isConnected: true },
-];
 
 export function CreateAgentForm({ 
   onSubmit, 
   isLoading = false,
-  availableAssets = ACTUAL_INTEGRATIONS 
+  availableAssets = [] // Defaults to empty, hydrated by parent from live DB
 }: CreateAgentFormProps) {
   
   const { toast } = useToast();
@@ -92,42 +68,39 @@ export function CreateAgentForm({
   // 2. Instructions
   const [roleDescription, setRoleDescription] = useState("");
 
-  // 3. Knowledge Base
-  const [selectedDatasets, setSelectedDatasets] = useState<string[]>([]);
-  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  // 3. Knowledge Base (Strict 1-to-1 Mutually Exclusive Selection)
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
 
   // 4. Engine Behavior
   const [temperature, setTemperature] = useState<number[]>([0.0]); 
 
-  // Updated toggle logic: Enforce connection check before allowing selection
-  const toggleDataset = (ds: MockAsset) => {
-    if (!ds.isConnected) {
+  // Phase 1 Mutually Exclusive Selection Logic
+  const handleSelectAsset = (asset: Asset) => {
+    if (!asset.isConnected) {
       toast({
         title: "Integration Not Connected",
-        description: `Please connect your ${ds.sourceType} workspace in the Datasets tab before giving this agent access to it.`,
+        description: `Please connect your ${asset.sourceType} workspace in the Datasets tab before giving this agent access to it.`,
         variant: "destructive"
       });
       return;
     }
 
-    setSelectedDatasets(prev => 
-      prev.includes(ds.id) ? prev.filter(x => x !== ds.id) : [...prev, ds.id]
-    );
-  };
-
-  const toggleDocument = (doc: MockAsset) => {
-    if (!doc.isConnected) {
-      toast({
-        title: "Document Not Processed",
-        description: `This document is not fully embedded yet. Please wait or re-upload.`,
-        variant: "destructive"
-      });
-      return;
+    if (asset.type === 'dataset') {
+      if (selectedDatasetId === asset.id) {
+        setSelectedDatasetId(null); // Toggle off if already selected
+      } else {
+        setSelectedDatasetId(asset.id);
+        setSelectedDocumentId(null); // Enforce 1-to-1 across categories
+      }
+    } else {
+      if (selectedDocumentId === asset.id) {
+        setSelectedDocumentId(null);
+      } else {
+        setSelectedDocumentId(asset.id);
+        setSelectedDatasetId(null); // Enforce 1-to-1 across categories
+      }
     }
-
-    setSelectedDocuments(prev => 
-      prev.includes(doc.id) ? prev.filter(x => x !== doc.id) : [...prev, doc.id]
-    );
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -137,19 +110,19 @@ export function CreateAgentForm({
       name,
       description,
       role_description: roleDescription,
-      dataset_ids: selectedDatasets,
-      document_ids: selectedDocuments,
+      dataset_id: selectedDatasetId,
+      document_id: selectedDocumentId,
       temperature: temperature[0],
     };
 
     await onSubmit(payload);
 
-    // Reset
+    // Reset Form
     setName("");
     setDescription("");
     setRoleDescription("");
-    setSelectedDatasets([]);
-    setSelectedDocuments([]);
+    setSelectedDatasetId(null);
+    setSelectedDocumentId(null);
     setTemperature([0.0]);
   };
 
@@ -241,15 +214,15 @@ export function CreateAgentForm({
         </div>
       </div>
 
-      {/* SECTION 2: Memory Boundaries */}
+      {/* SECTION 2: Memory Boundaries (Strict 1-to-1) */}
       <div className="space-y-6 pt-2">
         <div className="flex items-center justify-between border-b border-gray-100 pb-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-500" />
-            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-900">Memory Boundaries</h3>
+            <ShieldCheck className="h-5 w-5 text-blue-600" />
+            <h3 className="text-sm font-bold tracking-widest uppercase text-gray-900">Data Memory Boundary</h3>
           </div>
-          <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full border border-emerald-200 uppercase tracking-wider">
-            Tenant Isolated
+          <span className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200 uppercase tracking-wider">
+            Strict 1-to-1 Isolation
           </span>
         </div>
 
@@ -258,20 +231,20 @@ export function CreateAgentForm({
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <Label className="text-gray-500 font-semibold text-xs uppercase tracking-wider">
-                Active Integrations & Warehouses
+                Live Data Connectors
               </Label>
-              <span className="text-xs text-gray-400 font-medium">Select multiple active sources to enable cross-platform insights.</span>
+              <span className="text-xs text-gray-400 font-medium">Select a single active source to prevent cross-schema hallucinations.</span>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
               {datasets.map(ds => {
-                const isSelected = selectedDatasets.includes(ds.id);
+                const isSelected = selectedDatasetId === ds.id;
                 const isConnected = ds.isConnected;
                 
                 return (
                   <div 
                     key={ds.id}
-                    onClick={() => toggleDataset(ds)}
+                    onClick={() => handleSelectAsset(ds)}
                     className={`relative p-4 rounded-2xl border-2 transition-all duration-200 flex flex-col gap-3 group 
                       ${!isConnected ? 'opacity-60 bg-gray-50 border-gray-100 cursor-not-allowed hover:opacity-80' : 'cursor-pointer'}
                       ${isSelected ? 'border-blue-600 bg-blue-50/50 shadow-md shadow-blue-500/10' : ''}
@@ -319,7 +292,7 @@ export function CreateAgentForm({
           </div>
         )}
 
-        {/* Unstructured Documents Grid - Hidden if empty */}
+        {/* Unstructured Documents Grid */}
         {documents.length > 0 && (
           <div className="space-y-3 pt-4">
             <Label className="text-gray-500 font-semibold text-xs uppercase tracking-wider">
@@ -327,14 +300,14 @@ export function CreateAgentForm({
             </Label>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {documents.map(doc => {
-                const isSelected = selectedDocuments.includes(doc.id);
+                const isSelected = selectedDocumentId === doc.id;
                 return (
                   <div 
                     key={doc.id}
-                    onClick={() => toggleDocument(doc)}
+                    onClick={() => handleSelectAsset(doc)}
                     className={`relative p-4 rounded-2xl border-2 cursor-pointer transition-all duration-200 flex flex-col gap-3 group ${
                       isSelected 
-                        ? 'border-purple-600 bg-purple-50/50 shadow-md shadow-purple-500/10' 
+                        ? 'border-blue-600 bg-blue-50/50 shadow-md shadow-blue-500/10' 
                         : 'border-gray-100 bg-white hover:border-gray-300 hover:shadow-sm'
                     }`}
                   >
@@ -343,16 +316,16 @@ export function CreateAgentForm({
                         {getSourceIcon(doc.sourceType)}
                       </div>
                       <div className={`w-5 h-5 rounded-full flex items-center justify-center border-2 transition-colors ${
-                        isSelected ? 'bg-purple-600 border-purple-600' : 'border-gray-200'
+                        isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-200'
                       }`}>
                         {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                       </div>
                     </div>
                     <div>
-                      <h4 className={`font-bold text-sm truncate ${isSelected ? 'text-purple-950' : 'text-gray-900'}`}>
+                      <h4 className={`font-bold text-sm truncate ${isSelected ? 'text-blue-950' : 'text-gray-900'}`}>
                         {doc.name}
                       </h4>
-                      <p className={`text-xs font-medium mt-0.5 ${isSelected ? 'text-purple-600' : 'text-gray-500'}`}>
+                      <p className={`text-xs font-medium mt-0.5 ${isSelected ? 'text-blue-600' : 'text-gray-500'}`}>
                         {doc.sourceType || 'Document'}
                       </p>
                     </div>
@@ -398,7 +371,7 @@ export function CreateAgentForm({
       <div className="pt-8 border-t border-gray-100">
         <Button 
           type="submit" 
-          disabled={isLoading || !name || !roleDescription || (selectedDatasets.length === 0 && selectedDocuments.length === 0)} 
+          disabled={isLoading || !name || !roleDescription || (!selectedDatasetId && !selectedDocumentId)} 
           className="w-full gap-2 font-bold text-base group h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl shadow-lg shadow-blue-500/25 transition-all disabled:opacity-50"
         >
           {isLoading ? (
@@ -410,9 +383,9 @@ export function CreateAgentForm({
             </>
           )}
         </Button>
-        {(selectedDatasets.length === 0 && selectedDocuments.length === 0) && (
-          <p className="text-center text-sm text-red-500 font-bold mt-4 bg-red-50 py-2 rounded-xl">
-            ⚠️ Please select at least one connected data memory boundary to continue.
+        {(!selectedDatasetId && !selectedDocumentId) && (
+          <p className="text-center text-sm text-red-500 font-bold mt-4 bg-red-50 py-2 rounded-xl border border-red-100">
+            ⚠️ Please select exactly one data memory boundary (Dataset or Document) to continue.
           </p>
         )}
       </div>

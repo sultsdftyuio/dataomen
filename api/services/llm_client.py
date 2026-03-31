@@ -3,7 +3,7 @@
 import os
 import logging
 import asyncio
-from typing import Optional, Dict, Any, List, TypeVar, Type
+from typing import Optional, Dict, Any, List, TypeVar, Type, AsyncGenerator
 from pydantic import BaseModel
 from openai import AsyncOpenAI, RateLimitError, APIConnectionError, APIError
 
@@ -87,6 +87,45 @@ class LLMClient:
             return response.choices[0].message.parsed
             
         return await self._execute_with_retries(_call)
+
+    async def stream_text(
+        self,
+        system_prompt: str,
+        prompt: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        temperature: float = 0.0
+    ) -> AsyncGenerator[str, None]:
+        """
+        Phase 3 Addition: Server-Sent Events (SSE) Streaming Generator.
+        Streams text tokens back to the frontend in real-time as they are synthesized.
+        """
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": prompt})
+
+        async def _init_stream():
+            return await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                stream=True
+            )
+
+        try:
+            # Use retry block just for the initial socket connection handshake
+            stream = await self._execute_with_retries(_init_stream)
+            
+            # Once connected, consume the stream progressively
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+                    
+        except Exception as e:
+            logger.error(f"Streaming token pipeline crashed mid-flight: {e}")
+            yield f"\n\n[Warning: AI response interrupted due to network loss.]"
+
 
     # --- Vector Embeddings (For Semantic Pruning & RAG) ---
 

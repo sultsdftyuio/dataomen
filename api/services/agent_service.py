@@ -3,7 +3,7 @@
 import logging
 import asyncio
 import json
-from typing import List, Dict, Any, Optional
+from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,19 +25,19 @@ from api.services.compute_engine import compute_engine
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------------
-# Phase 8: Specialized Copilot API Boundaries
+# Phase 1: Specialized Copilot API Boundaries (1-to-1 Constraint)
 # -------------------------------------------------------------------------
 
 class AgentCreatePayload(BaseModel):
     """
     The exact schema matching our React frontend's CreateAgentForm.
-    Replaces the legacy 'watchdog' schema with a robust Persona builder.
+    Phase 1 Update: Strictly enforces a 1-to-1 connector limit.
     """
     name: str = Field(..., description="The display name of the Agent.")
     description: str = Field(..., description="A short summary of its capabilities.")
     role_description: str = Field(..., description="The system prompt / explicit instructions for the AI.")
-    dataset_ids: List[str] = Field(default_factory=list, description="UUIDs of allowed structured data (DuckDB).")
-    document_ids: List[str] = Field(default_factory=list, description="UUIDs of allowed unstructured data (Qdrant).")
+    dataset_id: Optional[str] = Field(None, description="UUID of the single allowed structured data connection.")
+    document_id: Optional[str] = Field(None, description="UUID of the single allowed unstructured data (Vector RAG).")
     temperature: float = Field(0.0, ge=0.0, le=1.0, description="0.0 for strict math/SQL, higher for creative writing.")
 
 
@@ -54,10 +54,10 @@ class SynthesizedReport(BaseModel):
 
 class AgentService:
     """
-    Phase 8: Enterprise Specialized Agent Service.
+    Enterprise Specialized Agent Service.
     
     Responsibilities:
-    1. Provisioning new isolated AI Copilots with specific RAG/SQL access.
+    1. Provisioning new isolated AI Copilots with strict 1-to-1 RAG/SQL access.
     2. Retrieving Agent profiles for the Chat Orchestrator / Query Planner.
     3. (Legacy) Managing background autonomous anomaly detection tasks.
     """
@@ -68,24 +68,28 @@ class AgentService:
     def create_agent(self, db: Session, tenant_id: str, payload: AgentCreatePayload) -> Agent:
         """
         Provisions a new highly-specialized AI Copilot.
-        Strictly validates that the requested datasets/documents belong to the tenant.
+        Strictly validates that the requested dataset/document belongs to the tenant.
+        Enforces Mutual Exclusivity (only one data source allowed).
         """
         logger.info(f"[{tenant_id}] Provisioning new specialized agent: {payload.name}")
         
         try:
-            # 1. Strict Security Validation: Ensure no cross-tenant ID injection
-            if payload.dataset_ids or payload.document_ids:
-                all_requested_ids = payload.dataset_ids + payload.document_ids
-                valid_assets = db.query(Dataset.id).filter(
-                    Dataset.id.in_(all_requested_ids),
+            # 1. 1-to-1 Constraint & Security Validation
+            if payload.dataset_id and payload.document_id:
+                raise ValueError("An agent can only map to ONE data source (dataset or document), not both.")
+            
+            source_id = payload.dataset_id or payload.document_id
+            
+            if source_id:
+                # Ensure no cross-tenant ID injection
+                valid_asset = db.query(Dataset.id).filter(
+                    Dataset.id == source_id,
                     Dataset.tenant_id == tenant_id
-                ).all()
+                ).first()
                 
-                valid_ids = {str(asset.id) for asset in valid_assets}
-                
-                # Filter out any malicious or missing UUIDs
-                payload.dataset_ids = [did for did in payload.dataset_ids if did in valid_ids]
-                payload.document_ids = [did for did in payload.document_ids if did in valid_ids]
+                if not valid_asset:
+                    logger.warning(f"[{tenant_id}] Unauthorized or missing asset requested: {source_id}")
+                    raise ValueError(f"Data source {source_id} not found or unauthorized.")
 
             # 2. Database Insertion
             new_agent = Agent(
@@ -94,9 +98,9 @@ class AgentService:
                 description=payload.description,
                 role_description=payload.role_description,
                 
-                # Assuming your Agent SQLAlchemy model has JSON/ARRAY columns for these
-                dataset_ids=payload.dataset_ids,
-                document_ids=payload.document_ids,
+                # Phase 1: Singular direct mapping
+                dataset_id=payload.dataset_id,
+                document_id=payload.document_id,
                 temperature=payload.temperature,
                 is_active=True
             )
@@ -105,7 +109,7 @@ class AgentService:
             db.commit()
             db.refresh(new_agent)
             
-            logger.info(f"✅ [{tenant_id}] Agent {new_agent.id} successfully deployed.")
+            logger.info(f"✅ [{tenant_id}] Agent {new_agent.id} successfully deployed with strict 1-to-1 isolation.")
             return new_agent
             
         except SQLAlchemyError as e:

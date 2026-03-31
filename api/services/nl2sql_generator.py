@@ -1444,6 +1444,7 @@ CHARTING RULES (Vega-Lite):
         history: Optional[List[Dict[str, Any]]] = None,
         fk_map: Optional[Dict[str, str]] = None,
         strict_joins: bool = False,
+        schema_context: Optional[Dict[str, Any]] = None, # <--- ADD THIS LINE
     ) -> Tuple[str, Optional[Dict[str, Any]], CompilationTrace]:
         """
         Primary entry-point with caching. [FIX-V4-10]

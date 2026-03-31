@@ -7,14 +7,19 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 # Core Database & Models
 from api.database import get_db
-from models import Agent
+from models import Agent, InvestigationRecord
 
-# Standardized API Contracts (Phase 8: Multi-Dataset Integration)
-from api.models.agent import AgentCreate, AgentRuleCreate, AgentResponse
+# Standardized API Contracts (Phase 1: 1-to-1 Constraint & Memory)
+from api.models.agent import (
+    AgentCreate, 
+    AgentRuleCreate, 
+    AgentResponse, 
+    InvestigationRecordResponse
+)
 
 # Core Security & SaaS Identity
 from api.auth import verify_tenant, TenantContext
@@ -33,20 +38,30 @@ router = APIRouter(prefix="/api/agents", tags=["Agents"])
 class AgentUpdate(BaseModel):
     """
     Payload for partial updates to an existing agent's configuration.
-    Uses Optional fields to support localized PATCH operations across all Phase 8 fields.
+    Phase 1 Update: Replaced array payloads with singular IDs.
     """
     name: Optional[str] = None
     description: Optional[str] = None
     role_description: Optional[str] = None
-    dataset_ids: Optional[List[str]] = None
-    document_ids: Optional[List[str]] = None
+    
+    # 1-to-1 strict boundaries
+    dataset_id: Optional[UUID] = None
+    document_id: Optional[UUID] = None
+    
     temperature: Optional[float] = None
     cron_schedule: Optional[str] = None
     sensitivity_threshold: Optional[float] = None
     is_active: Optional[bool] = None
 
+    @model_validator(mode='after')
+    def check_mutually_exclusive_sources(self) -> 'AgentUpdate':
+        """Ensure users cannot patch an agent into a multi-schema state."""
+        if self.dataset_id and self.document_id:
+            raise ValueError("Strict 1-to-1 isolation enforced: An agent can only map to ONE data source.")
+        return self
+
 # ------------------------------------------------------------------------------
-# Routes: Agent Management (CRUD)
+# Routes: Agent Management (CRUD & Memory)
 # ------------------------------------------------------------------------------
 
 @router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
@@ -57,7 +72,7 @@ async def create_chat_agent(
 ):
     """
     Creates a new Specialized AI Copilot for interactive exploration.
-    Delegates creation to the Agent Service to ensure strict multi-dataset ownership validation.
+    Delegates creation to the Agent Service to ensure strict 1-to-1 ownership validation.
     """
     logger.info(f"[{context.tenant_id}] Deploying Specialized Agent: {payload.name}")
     
@@ -67,12 +82,13 @@ async def create_chat_agent(
             name=payload.name,
             description=payload.description or "",
             role_description=payload.role_description or "",
-            dataset_ids=payload.dataset_ids,
-            document_ids=payload.document_ids,
+            # Phase 1: Casting the strict singular UUIDs to strings for the service layer
+            dataset_id=str(payload.dataset_id) if payload.dataset_id else None,
+            document_id=str(payload.document_id) if payload.document_id else None,
             temperature=payload.temperature
         )
         
-        # The agent_service handles validating that the user actually owns these datasets/docs
+        # The agent_service handles validating that the user actually owns this dataset/doc
         return agent_service.create_agent(db, context.tenant_id, service_payload)
         
     except ValueError as ve:
@@ -81,6 +97,36 @@ async def create_chat_agent(
     except Exception as e:
         logger.error(f"[{context.tenant_id}] Deployment Error creating agent: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to deploy agent.")
+
+
+@router.get("/{agent_id}/memory", response_model=List[InvestigationRecordResponse])
+async def get_agent_memory(
+    agent_id: UUID,
+    context: TenantContext = Depends(verify_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Phase 1: The Memory Endpoint.
+    Constructs the real pipeline for fetching past anomaly investigations from Postgres.
+    Replaces the frontend void/simulation.
+    """
+    # 1. Verify Agent Ownership
+    agent = db.query(Agent).filter(
+        Agent.id == agent_id, 
+        Agent.tenant_id == context.tenant_id
+    ).first()
+    
+    if not agent:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
+        
+    # 2. Retrieve chronological deep memory timeline
+    records = db.query(InvestigationRecord).filter(
+        InvestigationRecord.agent_id == agent_id,
+        InvestigationRecord.tenant_id == context.tenant_id
+    ).order_by(InvestigationRecord.created_at.desc()).all()
+    
+    return records
+
 
 @router.post("/monitor", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 async def create_monitoring_agent(
@@ -107,7 +153,6 @@ async def list_agents(
     db: Session = Depends(get_db)
 ):
     """Retrieves all active agents specifically for the authenticated tenant."""
-    # If `agent_service.list_agents` doesn't exist yet, we can fall back to standard SQLAlchemy:
     agents = db.query(Agent).filter(Agent.tenant_id == context.tenant_id).all()
     return agents
 
@@ -185,4 +230,8 @@ async def trigger_agent_heartbeat(
     Scans for agents due for execution and dispatches them to background workers.
     """
     logger.info("SYSTEM: Autonomous Heartbeat Triggered.")
-    return await agent_service.check_and_dispatch_agents(db, background_tasks)
+    
+    # Safely executing the checking mechanism if implemented in agent_service
+    if hasattr(agent_service, 'check_and_dispatch_agents'):
+        return await agent_service.check_and_dispatch_agents(db, background_tasks)
+    return {"status": "Heartbeat registered. Queue worker missing or running externally."}
