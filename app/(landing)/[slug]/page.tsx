@@ -219,46 +219,13 @@ export const getNormalizedPage = cache((slug: string): NormalizedPage | null => 
   }
 });
 
-// ----------------------------------------------------------------------
-// SCROLL ANIMATION INJECTOR
-// ----------------------------------------------------------------------
-const ScrollRevealScript = () => (
-  <script dangerouslySetInnerHTML={{ __html: `
-    if (typeof window !== 'undefined') {
-      const initReveal = () => {
-        const observer = new IntersectionObserver((entries) => {
-          entries.forEach(entry => {
-            if (entry.isIntersecting) {
-              entry.target.classList.add('opacity-100', 'translate-y-0');
-              entry.target.classList.remove('opacity-0', 'translate-y-8');
-              observer.unobserve(entry.target);
-            }
-          });
-        }, { threshold: 0.1 });
-        
-        document.querySelectorAll('.reveal-on-scroll:not(.observed)').forEach(el => {
-          el.classList.add('observed');
-          observer.observe(el);
-        });
-      };
-      
-      setTimeout(initReveal, 100);
-      
-      const pushState = history.pushState;
-      history.pushState = function() {
-        pushState.apply(this, arguments);
-        setTimeout(initReveal, 500);
-      };
-    }
-  `}} />
-);
 
 // ----------------------------------------------------------------------
 // PAGE SECTIONS
 // ----------------------------------------------------------------------
 
 const SectionHeading = ({ children, id, subtitle }: { children: React.ReactNode; id?: string; subtitle?: string }) => (
-  <div className="text-center max-w-4xl mx-auto mb-20 scroll-mt-28 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 ease-out" id={id}>
+  <div className="text-center max-w-4xl mx-auto mb-20 scroll-mt-28" id={id}>
     <h2 
       className="pfd text-[#020617] tracking-[-0.035em] font-extrabold" 
       style={{ fontSize: 'clamp(36px, 5vw, 56px)', lineHeight: 1.05, marginBottom: '24px' }}
@@ -276,7 +243,7 @@ const Hero = ({ data }: { data: NormalizedPage }) => (
     <div style={{ position: "absolute", top: "30%", right: "-5%", width: 500, height: 500, background: "#eff6ff", borderRadius: "50%", filter: "blur(120px)", opacity: 0.8, zIndex: 0 }} />
     
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl relative z-10">
-      <div className="text-center max-w-5xl mx-auto reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 ease-out">
+      <div className="text-center max-w-5xl mx-auto">
         
         {/* Elegant Eyebrow - Glassy & Refined */}
         <div style={{
@@ -333,7 +300,7 @@ const Hero = ({ data }: { data: NormalizedPage }) => (
 const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
   if (!demo) return null;
   return (
-    <section id="interactive-demo" className="pb-32 bg-gradient-to-b from-[#f8fafc] to-white px-4 sm:px-6 lg:px-8 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 ease-out delay-200">
+    <section id="interactive-demo" className="pb-32 bg-gradient-to-b from-[#f8fafc] to-white px-4 sm:px-6 lg:px-8">
       <div className="container mx-auto max-w-5xl relative">
         <div className="absolute -top-10 -right-10 w-72 h-72 bg-sky-200/30 rounded-full blur-3xl -z-10"></div>
         <div className="absolute -bottom-10 -left-10 w-72 h-72 bg-blue-200/30 rounded-full blur-3xl -z-10"></div>
@@ -417,8 +384,7 @@ const Personas = ({ personas }: { personas: NormalizedPage['personas'] }) => {
         </SectionHeading>
         <div className="grid md:grid-cols-3 gap-8">
           {personas.map((persona, i) => (
-            <div key={i} className="bg-transparent border border-slate-200/40 hover:bg-white/40 hover:backdrop-blur-md rounded-2xl p-10 md:p-12 transition-all duration-500 group flex flex-col h-full reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
-              {/* Invisible Card Layering */}
+            <div key={i} className="bg-transparent border border-slate-200/40 hover:bg-white/40 hover:backdrop-blur-md rounded-2xl p-10 md:p-12 transition-all duration-500 group flex flex-col h-full">
               <div className="w-14 h-14 bg-white/60 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 border border-slate-200/40 group-hover:bg-slate-50 transition-all duration-300">
                 <Users className="w-7 h-7 text-[#020617]" />
               </div>
@@ -453,7 +419,7 @@ const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
         
         <div className="grid gap-8">
           {matrix.map((item, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-slate-200/40 shadow-[0_4px_20px_rgba(2,6,23,0.02)] hover:shadow-[0_20px_50px_rgba(2,6,23,0.06)] overflow-hidden transition-all duration-500 reveal-on-scroll opacity-0 translate-y-8">
+            <div key={i} className="bg-white rounded-2xl border border-slate-200/40 shadow-[0_4px_20px_rgba(2,6,23,0.02)] hover:shadow-[0_20px_50px_rgba(2,6,23,0.06)] overflow-hidden transition-all duration-500">
               {/* Header */}
               <div className="px-10 py-6 border-b border-slate-100 bg-white/40 backdrop-blur-sm flex items-center gap-4">
                 <div className="w-10 h-10 bg-white/60 rounded-xl flex items-center justify-center border border-slate-200/40 shrink-0">
@@ -498,7 +464,7 @@ const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workflow'] })
         <SectionHeading subtitle="Arcli eliminates manual intervention from your data lifecycle, moving compute directly to the storage layer.">
           Infrastructure Transformation
         </SectionHeading>
-        <div className="grid md:grid-cols-2 gap-8 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000">
+        <div className="grid md:grid-cols-2 gap-8">
           {/* Legacy - Invisible Glass Layer */}
           <div className="bg-transparent rounded-2xl p-10 md:p-12 border border-slate-200/40 relative overflow-hidden transition-shadow hover:bg-slate-50/50">
              <div className="flex items-center gap-4 mb-8">
@@ -556,7 +522,7 @@ const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
               : 'bg-transparent text-slate-500 border-slate-200';
             
             return (
-              <div key={i} className="bg-transparent rounded-2xl border border-slate-200/40 hover:bg-white/40 hover:backdrop-blur-md p-10 md:p-12 transition-all duration-500 flex flex-col h-full reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
+              <div key={i} className="bg-transparent rounded-2xl border border-slate-200/40 hover:bg-white/40 hover:backdrop-blur-md p-10 md:p-12 transition-all duration-500 flex flex-col h-full">
                 <div className="flex justify-between items-start mb-6">
                   <div className="w-14 h-14 bg-white/60 backdrop-blur-md rounded-2xl flex items-center justify-center border border-slate-200/40">
                     <ShieldCheck className="w-7 h-7 text-[#020617]" />
@@ -606,8 +572,7 @@ const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
             {steps.map((step, i) => (
               <div 
                 key={i} 
-                className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-8 md:gap-12 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-700" 
-                style={{ transitionDelay: `${i * 150}ms` }}
+                className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-8 md:gap-12 transition-all duration-700" 
               >
                 <div className="hidden md:block w-1/2"></div>
                 
@@ -653,7 +618,7 @@ const Features = ({ features }: { features: NormalizedPage['features'] }) => {
         
         <div className="grid md:grid-cols-3 gap-8">
           {features.map((feature, i) => (
-            <div key={i} className="bg-transparent border border-slate-200/40 rounded-2xl p-10 md:p-12 hover:bg-white/60 hover:backdrop-blur-md transition-all duration-500 group reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
+            <div key={i} className="bg-transparent border border-slate-200/40 rounded-2xl p-10 md:p-12 hover:bg-white/60 hover:backdrop-blur-md transition-all duration-500 group">
               <div className="w-12 h-12 bg-white/60 backdrop-blur-md rounded-xl flex items-center justify-center mb-6 border border-slate-200/40 group-hover:scale-110 transition-all duration-300">
                 <Layers className="w-6 h-6 text-[#020617]" />
               </div>
@@ -677,7 +642,7 @@ const Architecture = ({ architecture }: { architecture: NormalizedPage['architec
     <section className="py-32 bg-gradient-to-b from-[#020617] via-[#0b1220] to-[#020617] text-white relative overflow-hidden">
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-blue-500/10 blur-[120px] pointer-events-none"></div>
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-20 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-20">
           <div>
             <div className="flex items-center gap-3 mb-4">
               <Cpu className="w-6 h-6 text-slate-400" />
@@ -689,7 +654,7 @@ const Architecture = ({ architecture }: { architecture: NormalizedPage['architec
         
         <div className="grid md:grid-cols-3 gap-8 mb-16">
           {Object.entries(architecture).map(([key, value], i) => (
-            <div key={key} className="bg-white/5 backdrop-blur-sm border border-white/10 p-10 md:p-12 rounded-2xl hover:bg-white/10 transition-colors reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
+            <div key={key} className="bg-white/5 backdrop-blur-sm border border-white/10 p-10 md:p-12 rounded-2xl hover:bg-white/10 transition-colors">
               <h4 className="text-xs font-extrabold uppercase tracking-widest text-slate-400 mb-3">
                 {key.replace(/([A-Z])/g, ' $1')}
               </h4>
@@ -700,7 +665,7 @@ const Architecture = ({ architecture }: { architecture: NormalizedPage['architec
           ))}
         </div>
 
-        <div className="pt-10 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-6 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 delay-300">
+        <div className="pt-10 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-6">
            <div className="flex items-center gap-3 text-slate-300 font-medium text-lg">
              <Globe className="w-5 h-5 text-slate-500" /> Multi-Region
            </div>
@@ -726,7 +691,7 @@ const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Normalized
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-500/5 rounded-full blur-[120px] pointer-events-none"></div>
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <div className="text-center mb-20 reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000">
+        <div className="text-center mb-20">
           <h2 className="pfd text-[clamp(36px,5vw,56px)] font-extrabold text-white mb-4 tracking-[-0.04em] leading-[1.05]">Explore Deep Dives</h2>
           <p className="text-[20px] text-slate-400 font-medium max-w-2xl mx-auto">Discover specific architectural setups and orchestration patterns.</p>
         </div>
@@ -744,8 +709,7 @@ const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Normalized
               <Link 
                 key={relatedSlug}
                 href={`/${relatedSlug}`}
-                className="bg-white/5 backdrop-blur-md p-10 md:p-12 rounded-2xl border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all group flex flex-col justify-between h-full reveal-on-scroll opacity-0 translate-y-8"
-                style={{ transitionDelay: `${i * 100}ms` }}
+                className="bg-white/5 backdrop-blur-md p-10 md:p-12 rounded-2xl border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all group flex flex-col justify-between h-full"
               >
                 <h3 className="text-xl font-bold text-white mb-4 transition-colors tracking-[-0.01em]">
                   {relatedTitle}
@@ -759,7 +723,7 @@ const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Normalized
           })}
         </div>
         
-        <div className="flex justify-center reveal-on-scroll opacity-0 translate-y-8 transition-all duration-1000 delay-200">
+        <div className="flex justify-center">
           <Link 
             href={heroCta.primary.href} 
             className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#2563eb] to-[#1d4ed8] text-white ring-1 ring-blue-400/20 shadow-[0_10px_25px_rgba(37,99,235,0.35)] hover:shadow-[0_15px_35px_rgba(37,99,235,0.45)] transition-all duration-300"
@@ -784,7 +748,7 @@ const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
         
         <div className="space-y-4">
           {faqs.map((faq, i) => (
-            <details key={i} className="group bg-transparent border border-slate-200/40 rounded-2xl overflow-hidden [&_summary::-webkit-details-marker]:hidden reveal-on-scroll opacity-0 translate-y-8 transition-all duration-500" style={{ transitionDelay: `${i * 100}ms` }}>
+            <details key={i} className="group bg-transparent border border-slate-200/40 rounded-2xl overflow-hidden [&_summary::-webkit-details-marker]:hidden transition-all duration-500">
               <summary className="flex items-center justify-between cursor-pointer p-8 md:p-10 font-bold text-[#020617] text-[20px] hover:bg-white/40 hover:backdrop-blur-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#020617] focus-visible:ring-inset tracking-[-0.01em]">
                 {faq.q}
                 <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-white/60 backdrop-blur-md border border-slate-200/40 p-2 rounded-full text-slate-500 group-hover:bg-[#020617] group-hover:text-white">
@@ -868,9 +832,6 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(techArticleSchema) }} />
       {faqSchema && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />}
-      
-      {/* Scroll Reveal Injector (Runs natively on client) */}
-      <ScrollRevealScript />
 
       <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-[#020617] selection:text-white overflow-x-hidden">
         <Hero data={data} />
