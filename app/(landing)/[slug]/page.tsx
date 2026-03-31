@@ -417,8 +417,8 @@ const Personas = ({ personas }: { personas: NormalizedPage['personas'] }) => {
         </SectionHeading>
         <div className="grid md:grid-cols-3 gap-8">
           {personas.map((persona, i) => (
-            {/* Invisible Card Layering */}
             <div key={i} className="bg-transparent border border-slate-200/40 hover:bg-white/40 hover:backdrop-blur-md rounded-2xl p-10 md:p-12 transition-all duration-500 group flex flex-col h-full reveal-on-scroll opacity-0 translate-y-8" style={{ transitionDelay: `${i * 100}ms` }}>
+              {/* Invisible Card Layering */}
               <div className="w-14 h-14 bg-white/60 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 border border-slate-200/40 group-hover:bg-slate-50 transition-all duration-300">
                 <Users className="w-7 h-7 text-[#020617]" />
               </div>
