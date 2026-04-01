@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 # Core Infrastructure
 from api.database import get_db
 from api.auth import verify_tenant, TenantContext
-from models import Agent, Dataset
+from models import Agent, Dataset, QueryHistory  # Added QueryHistory for telemetry
 
 # The Intelligence & Execution Layers
 from api.services.llm_client import llm_client
@@ -64,13 +64,14 @@ async def ask_data_agent(
 
     async def event_generator():
         start_time = time.perf_counter()
+        safe_sql = None  # Initialize safely for fallback error logging
         
         try:
             # -------------------------------------------------------------------
             # Step 1: Strict Semantic Routing (The 1-to-1 Constraint)
             # -------------------------------------------------------------------
             yield f"data: {json.dumps({'type': 'status', 'message': 'Loading secure memory boundary...'})}\n\n"
-            await asyncio.sleep(0.1) # Micro-pause for UI fluidity
+            await asyncio.sleep(0.05) # Micro-pause for UI fluidity
             
             if not agent.dataset_id:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'This agent has no configured memory boundary. Please assign a dataset.'})}\n\n"
@@ -108,7 +109,6 @@ async def ask_data_agent(
             
             execution_context = await query_planner.get_duckdb_execution_context(db, plan)
             
-            # ADD THE ", _" RIGHT HERE 👇
             safe_sql, safe_chart, _ = await sql_generator.generate_sql(
                 plan=plan,
                 execution_context=execution_context,
@@ -134,7 +134,7 @@ async def ask_data_agent(
             )
 
             if execution_result.get("status") == "error":
-                yield f"data: {json.dumps({'type': 'error', 'message': f'Execution failed: {execution_result.get('error')}'})}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Execution failed: {execution_result.get("error")}'})}\n\n"
                 return
 
             # Push the heavy analytical data payload to the frontend for Vega-Lite rendering
@@ -154,6 +154,9 @@ async def ask_data_agent(
             
             # We cap the data preview sent to the LLM to prevent token bloat (DuckDB already did the heavy math)
             data_preview = execution_result['data'][:20]
+            if len(execution_result['data']) > 20:
+                data_preview.append({"_note": f"... and {len(execution_result['data']) - 20} more rows."})
+                
             user_prompt = f"Question: {request.message}\nData Result: {json.dumps(data_preview)}"
 
             # Stream the actual text tokens chunk by chunk directly from the LLM via SSE
@@ -161,16 +164,57 @@ async def ask_data_agent(
                 # We yield each chunk immediately so the UI typing effect works perfectly
                 yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
-            # Finalize the stream
+            # -------------------------------------------------------------------
+            # Step 6: Telemetry & Billing
+            # -------------------------------------------------------------------
             total_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            
+            try:
+                query_log = QueryHistory(
+                    agent_id=agent.id,
+                    tenant_id=tenant_id,
+                    natural_query=request.message,
+                    generated_sql=safe_sql,
+                    execution_time_ms=total_time_ms,
+                    was_successful=True
+                )
+                db.add(query_log)
+                db.commit()
+            except Exception as db_err:
+                logger.error(f"[{tenant_id}] Failed to save query telemetry: {db_err}")
+
+            # Finalize the stream
             yield f"data: {json.dumps({'type': 'done', 'execution_time_ms': total_time_ms})}\n\n"
 
         except Exception as e:
             logger.error(f"🚨 [{tenant_id}] Critical failure in streaming pipeline: {str(e)}", exc_info=True)
+            
+            # Log the failure for telemetry so we can debug broken queries
+            total_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            try:
+                error_log = QueryHistory(
+                    agent_id=agent.id,
+                    tenant_id=tenant_id,
+                    natural_query=request.message,
+                    generated_sql=safe_sql,
+                    execution_time_ms=total_time_ms,
+                    was_successful=False,
+                    error_message=str(e)
+                )
+                db.add(error_log)
+                db.commit()
+            except Exception as db_err:
+                logger.error(f"[{tenant_id}] Failed to save error telemetry: {db_err}")
+
             yield f"data: {json.dumps({'type': 'error', 'message': 'An unexpected critical error occurred while processing the request.'})}\n\n"
 
-    # Return the SSE Streaming Response
+    # Return the SSE Streaming Response with explicit headers to prevent Proxy Buffering
     return StreamingResponse(
         event_generator(), 
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disables buffering in Nginx/Cloudflare
+        }
     )
