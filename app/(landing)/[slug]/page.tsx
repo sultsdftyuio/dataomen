@@ -11,20 +11,23 @@ import Footer from '@/components/landing/footer';
 import { getNormalizedPage } from '@/lib/seo/parser';
 import { getAllSlugs } from '@/lib/seo/index';
 
-// UI Blocks (We will create this file next!)
+// UI Blocks (Split into 2 files for maintainability)
 import {
   Hero,
   Demo,
   Personas,
   Matrix,
   WorkflowSection,
-  UseCases,
+  UseCases
+} from '@/components/landing/seo-blocks-1';
+
+import {
   Steps,
   Features,
   Architecture,
   RelatedLinks,
   FAQs
-} from '@/components/landing/seo-blocks';
+} from '@/components/landing/seo-blocks-2';
 
 const BASE_URL = 'https://www.arcli.tech';
 
