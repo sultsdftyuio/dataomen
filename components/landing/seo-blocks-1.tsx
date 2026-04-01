@@ -1,7 +1,6 @@
-// components/landing/seo-blocks-1.tsx
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   ArrowRight, 
@@ -11,7 +10,12 @@ import {
   Users,
   CheckCircle2,
   Code2,
-  Sparkles
+  Sparkles,
+  Terminal, 
+  Database, 
+  LayoutTemplate, 
+  BarChart3, 
+  LineChart
 } from 'lucide-react';
 
 import { NormalizedPage } from '@/lib/seo/parser';
@@ -26,7 +30,7 @@ export const SectionHeading = ({ children, id, subtitle, monoLabel, align = 'cen
 
   return (
     <div 
-      ref={ref}
+      ref={ref as React.RefObject<HTMLDivElement>}
       className={`max-w-4xl mb-20 scroll-mt-28 relative z-10 transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'} ${align === 'center' ? 'text-center mx-auto' : 'text-left'}`} 
       id={id}
     >
@@ -64,7 +68,7 @@ export const Hero = ({ data }: { data: NormalizedPage }) => {
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl relative z-10">
         <div 
-          ref={ref} 
+          ref={ref as React.RefObject<HTMLDivElement>} 
           className={`text-center max-w-4xl mx-auto transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
         >
           <div className="inline-flex items-center gap-2 bg-white border border-slate-200 shadow-sm px-4 py-1.5 rounded-full mb-8">
@@ -112,7 +116,7 @@ export const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
     <section id="interactive-demo" className="pb-32 bg-slate-50 relative pt-10 px-4 sm:px-6 lg:px-8 border-t border-slate-200/50">
       <div className="container mx-auto max-w-5xl relative z-10">
         <div 
-          ref={ref} 
+          ref={ref as React.RefObject<HTMLDivElement>} 
           className={`rounded-2xl bg-white border border-slate-200 shadow-[0_20px_60px_-15px_rgba(2,6,23,0.1)] overflow-hidden flex flex-col relative z-10 group transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-16'}`}
         >
           <div className="h-12 border-b border-slate-100 flex items-center px-6 gap-4 bg-slate-50">
@@ -180,7 +184,7 @@ export const Personas = ({ personas }: { personas: NormalizedPage['personas'] })
           Engineered for Roles
         </SectionHeading>
         
-        <div ref={ref} className="grid md:grid-cols-3 gap-8 md:gap-6 pt-12 pb-16">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-8 md:gap-6 pt-12 pb-16">
           {personas.map((persona, i) => (
             <div 
               key={i} 
@@ -228,7 +232,7 @@ export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
           The Competitive Edge
         </SectionHeading>
         
-        <div ref={ref} className="grid gap-6">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid gap-6">
           {matrix.map((item, i) => (
             <div 
               key={i} 
@@ -267,59 +271,177 @@ export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
   );
 };
 
+// ----------------------------------------------------------------------
+// EXECUTION PIPELINE (TELEMETRY VIEW)
+// Replaces the original WorkflowSection
+// ----------------------------------------------------------------------
+
+const PIPELINE_STEPS = [
+  {
+    id: "describe",
+    label: "PHASE_01 // DESCRIBE",
+    title: "State your goal",
+    description: 'Input "Track our new product launch metrics." The system automatically selects relevant tables.',
+    icon: Terminal,
+  },
+  {
+    id: "generate",
+    label: "PHASE_02 // GENERATE",
+    title: "AI renders the layout",
+    description: "The engine bypasses SQL compilation entirely, rendering a multi-chart dashboard instantly.",
+    icon: LayoutTemplate,
+  },
+  {
+    id: "refine",
+    label: "PHASE_03 // REFINE",
+    title: "Instant iteration",
+    description: "Ask to tweak a specific chart. The UI updates instantly to reflect your new filters or formatting.",
+    icon: Sparkles,
+  },
+];
+
 export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workflow'] }) => {
   const [ref, vis] = useVisible(0.2);
+  const [activeStep, setActiveStep] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    if (isHovered) return;
+    const interval = setInterval(() => {
+      setActiveStep((prev) => (prev + 1) % PIPELINE_STEPS.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isHovered]);
 
   if (!workflow) return null;
   return (
-    <section className="py-24 bg-white relative">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
+    <section className="py-24 bg-white relative border-y border-slate-200/50 overflow-hidden">
+      <div className="absolute inset-0 z-0 opacity-[0.03] bg-[radial-gradient(#0B1221_1px,transparent_1px)] [background-size:24px_24px]" />
+
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
+        
         <SectionHeading 
-          monoLabel="// INFRA_TRANSFORMATION"
-          subtitle="Arcli eliminates manual intervention from your data lifecycle, moving compute directly to the storage layer."
+          monoLabel="// EXECUTION_PIPELINE"
+          subtitle="Our engine handles the complexity of data movement while you focus on high-level decision logic."
         >
-          Infrastructure Transformation
+          Implementation Pipeline
         </SectionHeading>
-        <div ref={ref} className="grid md:grid-cols-2 gap-8">
-          
-          <div className={`bg-slate-50 rounded-2xl p-10 border border-slate-200 relative overflow-hidden transition-all duration-1000 transform ${vis ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-12'}`}>
-             <div className="flex items-center gap-4 mb-8">
-               <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center border border-slate-200 shadow-sm shrink-0">
-                 <XCircle className="w-6 h-6 text-slate-400" />
-               </div>
-               <h3 className="text-2xl font-bold text-[#0B1221] tracking-tight">Structural Bottleneck</h3>
-             </div>
-             <div className="space-y-3 relative z-10">
-               {workflow.legacyBottleneck.map((str, i) => (
-                 <div key={i} className="p-4 bg-white rounded-lg border border-slate-200 text-slate-500 text-[16px] font-medium leading-relaxed shadow-sm">
-                   {str}
-                 </div>
-               ))}
-             </div>
+
+        <div 
+          ref={ref as React.RefObject<HTMLDivElement>} 
+          className={`grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16 items-center pt-8 transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+        >
+          {/* LEFT PANE: The Logic Log */}
+          <div className="lg:col-span-5 flex flex-col gap-4">
+            {PIPELINE_STEPS.map((step, index) => {
+              const isActive = activeStep === index;
+              const StepIcon = step.icon;
+              
+              return (
+                <div
+                  key={step.id}
+                  onMouseEnter={() => { setActiveStep(index); setIsHovered(true); }}
+                  onMouseLeave={() => setIsHovered(false)}
+                  className={`relative p-6 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                    isActive 
+                      ? "bg-white border-slate-200 shadow-[0_20px_40px_-15px_rgba(11,18,33,0.08)] scale-[1.02]" 
+                      : "bg-transparent border-transparent hover:bg-slate-50 opacity-60 hover:opacity-100"
+                  }`}
+                >
+                  {isActive && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-12 bg-[#2563eb] rounded-r-md" />
+                  )}
+                  
+                  <div className="flex items-start gap-4">
+                    <div className={`p-2.5 rounded-xl mt-1 shrink-0 ${isActive ? "bg-blue-50 text-[#2563eb] border border-blue-100" : "bg-slate-100 text-slate-400"}`}>
+                      <StepIcon size={20} />
+                    </div>
+                    <div>
+                      <div className={`font-mono text-[10px] font-bold tracking-[0.2em] mb-2 uppercase ${isActive ? "text-[#2563eb]" : "text-slate-400"}`}>
+                        {step.label}
+                      </div>
+                      <h3 className={`text-xl font-bold mb-2 tracking-tight ${isActive ? "text-[#0B1221]" : "text-slate-600"}`}>
+                        {step.title}
+                      </h3>
+                      <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                        {step.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          <div className={`bg-[#0B1221] rounded-2xl p-10 relative overflow-hidden shadow-[0_20px_50px_-15px_rgba(11,18,33,0.5)] transition-all duration-1000 delay-200 transform ${vis ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-12'}`}>
-             <div className="absolute top-0 right-0 w-64 h-64 bg-[#2563eb]/20 blur-[80px] pointer-events-none"></div>
-             <div className="absolute inset-0 border border-white/10 rounded-2xl"></div>
-             <div className="flex items-center gap-4 mb-8 relative z-10">
-               <div className="w-12 h-12 rounded-xl bg-[#2563eb] flex items-center justify-center shrink-0 shadow-[0_0_20px_rgba(37,99,235,0.4)]">
-                 <Zap className="w-6 h-6 text-white" />
-               </div>
-               <h3 className="text-2xl font-bold text-white tracking-tight">Autonomous Execution</h3>
-             </div>
-             <div className="space-y-3 relative z-10">
-               {workflow.arcliAutomation.map((str, i) => (
-                 <div key={i} className="p-4 bg-white/5 rounded-lg border border-white/10 text-slate-200 text-[16px] font-medium leading-relaxed backdrop-blur-sm">
-                   {str}
-                 </div>
-               ))}
-             </div>
+          {/* RIGHT PANE: The Live Sandbox */}
+          <div className="lg:col-span-7 relative h-[480px] w-full bg-white rounded-3xl border border-slate-200 shadow-[0_30px_60px_-20px_rgba(11,18,33,0.12)] overflow-hidden flex flex-col">
+            
+            <div className="h-12 border-b border-slate-100 bg-slate-50 flex items-center px-6 justify-between">
+              <div className="flex gap-2">
+                <div className="w-3 h-3 rounded-full bg-slate-300 border border-slate-400/30" />
+                <div className="w-3 h-3 rounded-full bg-slate-300 border border-slate-400/30" />
+                <div className="w-3 h-3 rounded-full bg-slate-300 border border-slate-400/30" />
+              </div>
+              <div className="font-mono text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                engine_runtime_v2
+              </div>
+            </div>
+
+            <div className="flex-1 relative bg-slate-50/50">
+              {/* STATE 1 */}
+              <div className={`absolute inset-0 p-8 flex items-center justify-center transition-opacity duration-500 ${activeStep === 0 ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}>
+                <div className="w-full max-w-md bg-white border border-slate-200 shadow-sm rounded-xl p-5 flex items-center gap-4">
+                  <Terminal size={20} className="text-[#2563eb]" />
+                  <span className="text-[#0B1221] font-bold text-base font-mono flex items-center">
+                    Track our new product launch metrics...
+                    <span className="inline-block w-2 h-4 bg-[#2563eb] ml-1 animate-pulse" />
+                  </span>
+                </div>
+              </div>
+
+              {/* STATE 2 */}
+              <div className={`absolute inset-0 p-8 flex flex-col gap-6 transition-opacity duration-500 ${activeStep === 1 ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}>
+                <div className="h-10 w-1/3 bg-slate-200/50 rounded-lg animate-pulse" />
+                <div className="flex-1 grid grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden">
+                    <BarChart3 size={40} className="text-slate-200" />
+                    <div className="absolute bottom-0 left-0 w-full h-1 bg-[#2563eb] animate-[pulse-glow_2s_infinite]" />
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center">
+                    <LineChart size={40} className="text-slate-200" />
+                  </div>
+                </div>
+              </div>
+
+              {/* STATE 3 */}
+              <div className={`absolute inset-0 p-8 flex flex-col gap-6 transition-opacity duration-500 ${activeStep === 2 ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}>
+                 <div className="absolute top-6 right-6 bg-[#0B1221] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg z-20 flex items-center gap-2 font-mono">
+                  <Sparkles size={14} className="text-[#60a5fa]" />
+                  "Filter to US region"
+                </div>
+
+                <div className="h-10 w-1/3 bg-slate-200/50 rounded-lg" />
+                <div className="flex-1 grid grid-cols-2 gap-6">
+                  <div className="bg-blue-50/50 rounded-xl border-2 border-[#2563eb]/20 flex items-center justify-center relative shadow-inner">
+                    <div className="absolute bottom-6 left-6 flex gap-2 items-end h-24 w-32">
+                       <div className="w-6 bg-[#2563eb]/40 h-[40%] rounded-t-md transition-all duration-500 delay-100"></div>
+                       <div className="w-6 bg-[#2563eb]/60 h-[70%] rounded-t-md transition-all duration-500 delay-200"></div>
+                       <div className="w-6 bg-[#2563eb] h-[90%] rounded-t-md shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all duration-500 delay-300"></div>
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center opacity-40">
+                    <LineChart size={40} className="text-slate-200" />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </section>
   );
 };
+
 export const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
   const [ref, vis] = useVisible(0.1);
 
@@ -334,7 +456,7 @@ export const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] })
           Strategic Deployment
         </SectionHeading>
         
-        <div ref={ref} className="grid md:grid-cols-2 gap-6">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 gap-6">
           {useCases.map((item, i) => {
             const isAdvanced = item.complexity?.toLowerCase().includes('advanced') || item.complexity?.toLowerCase().includes('strategic');
             return (
