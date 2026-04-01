@@ -365,4 +365,4 @@ class QueryHistory(Base, TenantAwareMixin):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
-    agent: Mapped["Agent"] = relationship("Agent", back_populates="queries")a
+    agent: Mapped["Agent"] = relationship("Agent", back_populates="queries")
