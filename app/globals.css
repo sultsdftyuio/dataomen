@@ -1,11 +1,11 @@
 /* sultsdftyuio/dataomen/dataomen-50b529d28c3746da8dcd82a98af1b05bbba5d50b/app/globals.css */
 
-/* ── Fonts & Frameworks ──────────────────────────────── */
+/* ── 1. Fonts & Frameworks ────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-/* ── Design System Variables (High-Performance SaaS) ─── */
+/* ── 2. Design System Variables (The SaaS Backbone) ──── */
 :root {
   /* Structural Navy Backbone */
   --navy-900: #050B14;
@@ -13,23 +13,23 @@
   --navy-700: #112240;
   --navy-muted: #1A2C4D;
 
-  /* Intelligent Accent System (Responsive, not decorative) */
+  /* Intelligent Accent System */
   --blue-primary: #1B6EBF;
   --blue-hover: #2580D4;
   --blue-subtle: rgba(27, 110, 191, 0.08);
 
-  /* Refined Light Foundation (Tonal layers, not flat white) */
+  /* Refined Light Foundation (Tonal Layers) */
   --surface-100: #FFFFFF;
   --surface-200: #F8FAFC;
   --surface-300: #F1F5F9;
   --surface-border: rgba(10, 22, 40, 0.08);
   --surface-border-faint: rgba(10, 22, 40, 0.04);
 
-  /* Core Layout Mapping */
+  /* Global Layout Mapping */
   --background: var(--surface-200);
   --foreground: var(--navy-800);
 
-  /* Component Variable Mapping */
+  /* Component Tokens */
   --card: var(--surface-100);
   --card-foreground: var(--navy-800);
   --popover: var(--surface-100);
@@ -49,9 +49,57 @@
   --ring: var(--blue-primary);
   
   --radius: 0.75rem;
+
+  /* Dashboard Sidebar System */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #1E293B;
+  --sidebar-primary: #1B6EBF;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F1F5F9;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: #E2E8F0;
+  --sidebar-ring: #94A3B8;
+
+  /* Analytical Data Visualization Palette */
+  --chart-1: oklch(0.45 0.18 260);
+  --chart-2: oklch(0.55 0.15 290);
+  --chart-3: oklch(0.5 0.12 230);
+  --chart-4: oklch(0.6 0.18 270);
+  --chart-5: oklch(0.4 0.15 250);
 }
 
-/* ── Base Layer & Architectural Background ───────────── */
+/* ── 3. Tailwind v4 Theme Mapping ────────────────────── */
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-serif: 'Playfair Display', serif;
+
+  /* Color Utility Registration */
+  --color-navy-900: var(--navy-900);
+  --color-navy-800: var(--navy-800);
+  --color-navy-700: var(--navy-700);
+  --color-blue-primary: var(--blue-primary);
+  --color-blue-hover: var(--blue-hover);
+  --color-surface-100: var(--surface-100);
+  --color-surface-200: var(--surface-200);
+  --color-surface-300: var(--surface-300);
+
+  /* Structural Utility Mapping */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+
+  /* Chart Mapping */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+/* ── 4. Base Layer & Architectural Background ─────────── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -75,15 +123,11 @@
     min-height: 100vh;
   }
 
-  /* 1. The Navy-to-White SaaS Blend */
+  /* VISION: The Navy-to-White SaaS Blend */
   body::before {
     content: "";
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1100px;
-    /* Soft, deep gradient transitioning into the light foundation */
+    top: 0; left: 0; right: 0; height: 1100px;
     background: linear-gradient(
       180deg, 
       var(--navy-800) 0%, 
@@ -95,7 +139,7 @@
     pointer-events: none;
   }
 
-  /* 2. The Engineered Structural Grid */
+  /* STRUCTURE: The Engineered Grid */
   body::after {
     content: "";
     position: absolute;
@@ -106,12 +150,10 @@
     background-size: 40px 40px;
     z-index: -1;
     pointer-events: none;
-    /* Fades the grid slightly at the absolute top so it doesn't clash with the deep navy */
     -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,1) 400px);
     mask-image: linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,1) 400px);
   }
 
-  /* Clean, authoritative typography */
   h1, h2, h3, h4, h5, h6 {
     @apply tracking-tight;
     color: var(--foreground);
@@ -119,19 +161,12 @@
   }
 }
 
-/* ── Global System Overrides (Forces the new vision) ─── */
-/* Strip legacy flat backgrounds from existing containers */
+/* ── 5. Global Overrides (Vision Enforcement) ─────────── */
 main, .bg-white, .bg-neutral-950, .dot-grid, .blueprint-grid {
   background: transparent !important;
 }
 
-/* Intelligent Text Contrast for the Navy Header Region */
-/* Automatically inverts text colors in the top sections to perfectly contrast the Navy */
-main > section:first-of-type,
-main > div > section:first-of-type {
-  background: transparent !important;
-}
-
+/* Intelligent Header Contrast */
 main > section:first-of-type .hero-text,
 main > div > section:first-of-type .hero-text,
 main > section:first-of-type h1,
@@ -141,20 +176,16 @@ main > div > section:first-of-type h1 {
 }
 
 main > section:first-of-type .hero-text span,
-main > div > section:first-of-type .hero-text span,
-main > section:first-of-type h1 span,
-main > div > section:first-of-type h1 span {
-  color: #60A5FA !important; /* Luminous, crisp blue accent */
+main > section:first-of-type h1 span {
+  color: #60A5FA !important;
 }
 
-main > section:first-of-type p,
-main > div > section:first-of-type p {
-  color: #94A3B8 !important; /* Muted slate for readability on dark backgrounds */
+main > section:first-of-type p {
+  color: #94A3B8 !important;
 }
 
-/* ── Layered Surfaces & Components ───────────────────── */
-/* Replacing flat floating cards with engineered depth */
-.surface-card, .card, [class*="bg-white"] {
+/* ── 6. Layered Surfaces & Components ─────────────────── */
+.surface-card, .card {
   background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.7) 100%) !important;
   backdrop-filter: blur(16px);
   border: 1px solid var(--surface-border-faint) !important;
@@ -174,107 +205,81 @@ main > div > section:first-of-type p {
   transform: translateY(-2px);
 }
 
-/* Faint separators instead of hard borders */
-hr, .separator, [class*="border-gray-200"], [class*="border-slate-200"] {
+hr, .separator {
   border-color: var(--surface-border-faint) !important;
 }
 
-/* ── Buttons (Engineered Motion & Soft Gradients) ────── */
+/* ── 7. Buttons (Engineered Motion) ───────────────────── */
 .btn-navy {
-  background: var(--navy-800);
   background: linear-gradient(180deg, var(--navy-700) 0%, var(--navy-800) 100%);
-  color: #fff;
-  font-weight: 600;
-  font-size: 15px;
+  @apply text-white font-bold text-[15px] rounded-lg cursor-pointer inline-flex items-center justify-center gap-2 transition-all duration-200 px-6 py-3;
   border: 1px solid var(--navy-900);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0,0,0,0.1);
-  border-radius: var(--radius);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 24px;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.btn-navy:hover {
-  background: linear-gradient(180deg, var(--navy-800) 0%, var(--navy-900) 100%);
-  transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 6px 16px rgba(10, 22, 40, 0.2);
 }
 
 .btn-blue {
-  background: var(--blue-primary);
   background: linear-gradient(180deg, #2580D4 0%, #1B6EBF 100%);
-  color: #fff;
-  font-weight: 600;
-  font-size: 15px;
+  @apply text-white font-bold text-[15px] rounded-lg cursor-pointer inline-flex items-center justify-center gap-2 transition-all duration-200 px-6 py-3;
   border: 1px solid #14589C;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 4px rgba(27, 110, 191, 0.15);
-  border-radius: var(--radius);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 24px;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.btn-blue:hover {
-  background: linear-gradient(180deg, #2B8DE8 0%, #1E79D1 100%);
-  transform: translateY(-1px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 8px 20px rgba(27, 110, 191, 0.25);
 }
 
-/* ── Utilities & Layout ──────────────────────────────── */
+.btn-ghost {
+  @apply bg-transparent text-navy-800 font-semibold text-[15px] border-[1.5px] border-[#C8D9E8] rounded-lg cursor-pointer inline-flex items-center justify-center gap-2 transition-all duration-200 px-6 py-3;
+}
+.btn-ghost:hover {
+  border-color: var(--blue-primary);
+  background: #EBF4FD;
+  color: var(--blue-primary);
+}
+
+/* ── 8. Utilities & Textures ──────────────────────────── */
 .pfd { font-family: 'Playfair Display', serif; }
 .jbm { font-family: 'JetBrains Mono', monospace; }
 
+.dot-grid {
+  background-image: radial-gradient(#C8D9E8 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.blueprint-grid {
+  background-image: linear-gradient(#DDE8F2 1px, transparent 1px), linear-gradient(90deg, #DDE8F2 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
 .nav-scrolled {
-  background: rgba(248, 250, 252, 0.85) !important; /* Matches surface-200 */
+  background: rgba(248, 250, 252, 0.85) !important;
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--surface-border-faint) !important;
   box-shadow: 0 4px 24px -4px rgba(10, 22, 40, 0.04);
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  box-shadow: 0 8px 32px rgba(10, 22, 40, 0.05);
+.grid-2 { @apply grid grid-cols-2 gap-20 items-center; }
+.grid-3 { @apply grid grid-cols-3 gap-6; }
+.bento-grid { @apply grid grid-cols-[2fr_1fr] gap-6; }
+
+@media (max-width: 992px) {
+  .grid-2, .bento-grid { @apply grid-cols-1 gap-10; }
+  .grid-3 { @apply grid-cols-1; }
+  .hero-text { font-size: clamp(40px, 8vw, 56px) !important; }
 }
 
-/* ── Animations ──────────────────────────────────────── */
-@keyframes float1 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-@keyframes float2 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(12px); }
-}
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(27, 110, 191, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(27, 110, 191, 0); }
-}
+/* ── 9. Animations ────────────────────────────────────── */
+@keyframes float1 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes float2 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(12px); } }
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(27, 110, 191, 0.4); } 50% { box-shadow: 0 0 0 8px rgba(27, 110, 191, 0); } }
+@keyframes grid-fade { 0% { opacity: 0.03; } 50% { opacity: 0.06; } 100% { opacity: 0.03; } }
 
 .anim-float-1 { animation: float1 6s ease-in-out infinite; }
 .anim-float-2 { animation: float2 7s ease-in-out infinite reverse; }
 
 .pulse-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+  @apply w-2 h-2 rounded-full;
   background: var(--blue-primary);
   animation: pulse-glow 2s infinite;
 }
 
 .fu {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: all 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  @apply opacity-0 translate-y-[30px];
+  transition: all 0.8s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.fu.vis {
-  opacity: 1;
-  transform: translateY(0);
-}
+.fu.vis { @apply opacity-100 translate-y-0; }
