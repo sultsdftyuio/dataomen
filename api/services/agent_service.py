@@ -1,9 +1,11 @@
 # api/services/agent_service.py
 
 import logging
-import asyncio
 import json
+import os
+import asyncio
 from typing import Optional
+import httpx
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,11 +18,6 @@ from api.services.tenant_security_provider import tenant_security
 
 # Core Intelligence Ecosystem
 from api.services.llm_client import llm_client
-from api.services.anomaly_detector import AnomalyDetector
-from api.services.diagnostic_service import diagnostic_service     
-from api.services.notification_router import notification_router   
-from api.services.agent_memory import agent_memory                 
-from api.services.compute_engine import compute_engine             
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +56,8 @@ class AgentService:
     Responsibilities:
     1. Provisioning new isolated AI Copilots with strict 1-to-1 RAG/SQL access.
     2. Retrieving Agent profiles for the Chat Orchestrator / Query Planner.
-    3. (Legacy) Managing background autonomous anomaly detection tasks.
+    3. (Phase 4) Offloading background autonomous anomaly detection to Edge Webhooks.
     """
-    
-    def __init__(self) -> None:
-        self.anomaly_detector = AnomalyDetector()
 
     def create_agent(self, db: Session, tenant_id: str, payload: AgentCreatePayload) -> Agent:
         """
@@ -129,97 +123,61 @@ class AgentService:
         ).first()
 
     # -------------------------------------------------------------------------
-    # Legacy Autonomous Background Tasks (Supervisor Swarm)
+    # Phase 4: Decoupled Worker Webhooks
     # -------------------------------------------------------------------------
-    # Kept intact to ensure no breaking changes to your background workers
 
     async def _execute_autonomous_pipeline(self, db_session: Session, **kwargs) -> None:
-        """The Supervisor Loop: Orchestrates sub-agents and synthesizes final intelligence."""
-        tenant_id = kwargs["tenant_id"]
-        metric = kwargs["metric"]
-        agent_id = kwargs["agent_id"]
-        
-        anomaly_result = await asyncio.to_thread(
-            self.anomaly_detector.detect_anomaly,
-            tenant_id=tenant_id, dataset_id=kwargs["dataset_id"],
-            metric_col=metric, time_col=kwargs["time_col"], threshold=kwargs["threshold"]
-        )
-
-        if not anomaly_result:
-            return
-
-        try:
-            agent = db_session.query(Agent).filter(Agent.id == agent_id).first()
-            
-            trend = await agent_memory.evaluate_trend(
-                db=db_session, tenant_id=tenant_id, agent_name=agent.name,
-                metric=metric, current_anomaly=anomaly_result
-            )
-
-            diagnostic_summary = await diagnostic_service.analyze(
-                tenant_id=tenant_id, dataset_id=kwargs["dataset_id"],
-                metric=metric, anomaly_context=anomaly_result
-            )
-
-            forecast = await self._get_ml_forecast(tenant_id, kwargs["dataset_id"], metric, kwargs["time_col"])
-
-            final_report = await self._synthesize_intelligence(
-                agent_name=agent.name, metric=metric,
-                trend_ctx=getattr(trend, 'memory_context', 'No memory context.'),
-                diag_ctx=diagnostic_summary,
-                forecast_ctx=forecast
-            )
-
-            await notification_router.dispatch_alert(
-                tenant_id=tenant_id,
-                agent_name=agent.name,
-                insight_summary=f"**{final_report.headline}**\n\n{final_report.executive_summary}\n\n**Action:** {final_report.recommended_action}"
-            )
-
-            agent.last_anomaly_detected_at = datetime.now(timezone.utc)
-            db_session.commit()
-
-        except Exception as e:
-            db_session.rollback()
-            logger.error(f"Supervisor pipeline crash for agent {agent_id}: {e}")
-
-    async def _synthesize_intelligence(self, **ctx) -> SynthesizedReport:
-        system_prompt = (
-            "You are the Executive Supervisor for an autonomous analytical swarm. "
-            "Synthesize raw inputs from sub-agents (Memory, Diagnostic, Forecasting) "
-            "into a single, high-signal report for a business user."
-        )
-        
-        user_prompt = f"""
-        AGENT: {ctx['agent_name']}
-        METRIC: {ctx['metric']}
-        
-        SUB-AGENT INPUTS:
-        - TEMPORAL MEMORY: {ctx['trend_ctx']}
-        - ROOT CAUSE DIAGNOSIS: {ctx['diag_ctx']}
-        - PREDICTIVE FORECAST: {ctx['forecast_ctx']}
-        
-        TASK:
-        Generate a structured executive report. Be specific, actionable, and professional.
         """
+        Phase 4: Industrial-Grade Execution
+        Instead of running fragile background tasks in FastAPI's event loop, we 
+        serialize the pipeline parameters and dispatch them securely to our 
+        Cloudflare Edge Worker (or async queue). The worker handles the heavy ML 
+        vectorization and synthesis independently.
+        """
+        tenant_id = kwargs.get("tenant_id")
+        agent_id  = kwargs.get("agent_id")
+        
+        logger.info(f"[{tenant_id}] Offloading autonomous pipeline for Agent {agent_id} to Edge Queue.")
 
-        return await llm_client.generate_structured(
-            system_prompt=system_prompt,
-            prompt=user_prompt,
-            response_model=SynthesizedReport,
-            temperature=0.2 
-        )
+        # Configuration injected via environment variables
+        edge_worker_url = os.environ.get("EDGE_WORKER_URL", "https://edge.arcli.tech")
+        internal_secret = os.environ.get("INTERNAL_ROUTING_SECRET", "local-dev-secret")
 
-    async def _get_ml_forecast(self, tenant_id: str, dataset_id: str, metric: str, time_col: str) -> str:
+        payload = {
+            "tenant_id":  tenant_id,
+            "agent_id":   agent_id,
+            "dataset_id": kwargs.get("dataset_id"),
+            "metric":     kwargs.get("metric"),
+            "time_col":   kwargs.get("time_col"),
+            "threshold":  kwargs.get("threshold", 2.5),
+            "action":     "trigger_ml_anomaly_pipeline"
+        }
+
         try:
-            forecast = await compute_engine.execute_ml_pipeline(
-                tenant_id=tenant_id, dataset_ids=[dataset_id],
-                prompt=f"Project {metric} for the next 7 periods based on current trend.",
-                schemas=[]
-            )
-            return forecast.get('summary', 'Insufficient historical data for a forecast.')
-        except Exception:
-            return "Predictive modeling currently unavailable."
+            # Fire and forget HTTP dispatch (Sub-50ms return)
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{edge_worker_url}/webhooks/internal/ml-dispatch",
+                    json=payload,
+                    headers={
+                        "x-internal-secret": internal_secret,
+                        "Content-Type": "application/json"
+                    },
+                    timeout=5.0
+                )
+                
+            if response.status_code >= 400:
+                logger.error(
+                    f"[{tenant_id}] Edge Worker rejected dispatch. Status: {response.status_code}. "
+                    f"Response: {response.text}"
+                )
+            else:
+                logger.info(f"[{tenant_id}] ML Pipeline successfully queued on the Edge.")
+                
+        except httpx.RequestError as exc:
+            logger.critical(f"[{tenant_id}] Failed to reach Edge Worker for ML dispatch: {exc}")
+        except Exception as e:
+            logger.error(f"[{tenant_id}] Unexpected error offloading pipeline: {e}")
 
 # Singleton Export
 agent_service = AgentService()
