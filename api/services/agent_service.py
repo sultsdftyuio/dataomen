@@ -56,7 +56,7 @@ class AgentService:
     Responsibilities:
     1. Provisioning new isolated AI Copilots with strict 1-to-1 RAG/SQL access.
     2. Retrieving Agent profiles for the Chat Orchestrator / Query Planner.
-    3. (Phase 4) Offloading background autonomous anomaly detection to Edge Webhooks.
+    3. (Phase 4) Orchestrating background autonomous anomaly detection via Edge Webhooks.
     """
 
     def create_agent(self, db: Session, tenant_id: str, payload: AgentCreatePayload) -> Agent:
@@ -123,14 +123,58 @@ class AgentService:
         ).first()
 
     # -------------------------------------------------------------------------
-    # Phase 4: Decoupled Worker Webhooks
+    # Phase 4: Decoupled Worker Webhooks & Orchestration
     # -------------------------------------------------------------------------
 
-    async def _execute_autonomous_pipeline(self, db_session: Session, **kwargs) -> None:
+    async def check_and_dispatch_agents(self, db: Session, background_tasks) -> dict:
+        """
+        The heartbeat scanner. Finds active autonomous agents and offloads
+        their ML pipelines to the Edge Worker webhook queue.
+        """
+        logger.info("Scanning for active monitoring agents to dispatch...")
+        try:
+            # Find all active agents configured for autonomous monitoring
+            # (Identified by having a metric_column assigned - phase 5 extension)
+            monitoring_agents = db.query(Agent).filter(
+                Agent.is_active == True,
+                # Safe fallback if metric_column isn't strictly defined yet
+                Agent.dataset_id.isnot(None) 
+            ).all()
+
+            dispatched_count = 0
+            for agent in monitoring_agents:
+                # Update last run timestamp immediately to prevent race conditions
+                agent.last_run_at = datetime.now(timezone.utc)
+                db.commit()
+
+                # Dispatch asynchronously without blocking the heartbeat response
+                # Note: FastAPI background_tasks expects a function, then args/kwargs
+                background_tasks.add_task(
+                    self._execute_autonomous_pipeline,
+                    tenant_id=agent.tenant_id,
+                    agent_id=str(agent.id),
+                    dataset_id=str(agent.dataset_id) if agent.dataset_id else None,
+                    metric=getattr(agent, "metric_column", "id"), # Safe attribute getter
+                    time_col=getattr(agent, "time_column", "created_at"),
+                    threshold=getattr(agent, "sensitivity_threshold", 2.5)
+                )
+                dispatched_count += 1
+
+            logger.info(f"Dispatched {dispatched_count} agents to Edge Webhooks.")
+            return {"status": "success", "dispatched": dispatched_count}
+            
+        except SQLAlchemyError as e:
+            db.rollback()
+            logger.error(f"Database error during agent dispatch: {e}")
+            return {"status": "error", "message": "Failed to fetch agents for dispatch."}
+        except Exception as e:
+            logger.error(f"Unexpected error during heartbeat dispatch: {e}")
+            return {"status": "error", "message": str(e)}
+
+    async def _execute_autonomous_pipeline(self, **kwargs) -> None:
         """
         Phase 4: Industrial-Grade Execution
-        Instead of running fragile background tasks in FastAPI's event loop, we 
-        serialize the pipeline parameters and dispatch them securely to our 
+        Serializes pipeline parameters and dispatches them securely to our 
         Cloudflare Edge Worker (or async queue). The worker handles the heavy ML 
         vectorization and synthesis independently.
         """

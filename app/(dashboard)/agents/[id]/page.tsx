@@ -15,7 +15,10 @@ import {
   MessageSquare,
   FileText,
   Settings,
-  CheckCircle2
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Save
 } from 'lucide-react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
@@ -24,6 +27,11 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Slider } from "@/components/ui/slider"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/components/ui/use-toast"
 import { createClient } from '@/utils/supabase/client'
 
 // -----------------------------------------------------------------------------
@@ -34,6 +42,9 @@ interface AgentDetails {
   name: string;
   role: string;
   description: string;
+  role_description?: string;
+  temperature?: number;
+  schedule?: string;
   status: 'online' | 'analyzing' | 'offline';
   created_at: string;
   datasets_monitored: string[];
@@ -119,36 +130,54 @@ const InvestigationCard = ({ record }: { record: InvestigationRecord }) => {
 export default function AgentMemoryPage() {
   const params = useParams();
   const router = useRouter();
+  const { toast } = useToast();
   const agentId = params.id as string;
 
   const [agent, setAgent] = useState<AgentDetails | null>(null);
   const [investigations, setInvestigations] = useState<InvestigationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Phase 5: Settings State Mutation
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [temperature, setTemperature] = useState<number[]>([0.0]);
+  const [roleDescription, setRoleDescription] = useState("");
+  const [schedule, setSchedule] = useState("hourly");
 
   // ---------------------------------------------------------------------------
-  // Data Orchestration
+  // Phase 4: Data Orchestration (Real Backend Wiring)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const fetchAgentData = async () => {
       setIsLoading(true);
+      setError(null);
       try {
         const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
         
+        if (!session) throw new Error("Unauthorized. Please log in.");
+
         const response = await fetch(`/api/agents/${agentId}/memory`, {
-          headers: { 'Authorization': `Bearer ${session?.access_token}` }
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
 
         if (!response.ok) {
-          throw new Error("API not ready, falling back to simulation.");
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || "Failed to load agent memory from core engine.");
         }
 
         const data = await response.json();
         setAgent(data.agent);
-        setInvestigations(data.investigations);
-      } catch (err) {
-        console.warn("Falling back to simulated Agent Memory data.");
-        simulateBackendData();
+        setInvestigations(data.investigations || []);
+
+        // Hydrate Phase 5 Settings State
+        setTemperature([data.agent.temperature ?? 0.0]);
+        setRoleDescription(data.agent.role_description || data.agent.description || "");
+        setSchedule(data.agent.schedule || "hourly");
+
+      } catch (err: any) {
+        console.error("Agent memory hydration failed:", err);
+        setError(err.message || "An unexpected error occurred while fetching agent memory.");
       } finally {
         setIsLoading(false);
       }
@@ -157,43 +186,49 @@ export default function AgentMemoryPage() {
     fetchAgentData();
   }, [agentId]);
 
-  const simulateBackendData = () => {
-    setTimeout(() => {
-      setAgent({
-        id: agentId,
-        name: 'Stripe Revenue Watchdog',
-        role: 'Financial Analyst',
-        description: 'Autonomously monitors MRR, Churn velocity, and failed payment rates across EU and NA regions. Applies Exponential Moving Average (EMA) to filter weekend noise.',
-        status: 'online',
-        created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 45).toISOString(),
-        datasets_monitored: ['stripe_subscriptions_prod', 'stripe_invoices_ytd'],
-        metrics: {
-          anomaliesFound: 14,
-          queriesExecuted: 8430,
-          uptime: '99.9%',
-        }
-      });
-      setInvestigations([
-        {
-          id: 'inv_1',
-          timestamp: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-          metric: 'MRR (EU Region)',
-          variance_pct: -12.4,
-          status: 'investigating',
-          ai_narrative: 'Detected a sharp 12.4% drop in EU MRR starting at 08:00 UTC. Analyzing the underlying cohorts reveals that 85% of the churned revenue originates from the "Pro Tier" annual renewals failing due to expired credit cards (SCA mandate impact). Recommending immediate review of Dunning workflows for EU clients.',
-          underlying_sql: "SELECT\n  date_trunc('hour', created_at) as cohort,\n  sum(mrr_amount) as total_mrr,\n  reason\nFROM stripe_subscriptions_prod\nWHERE status = 'canceled'\n  AND region = 'EU'\nGROUP BY 1, 3\nORDER BY 1 DESC;"
+  // ---------------------------------------------------------------------------
+  // Phase 5: Patching the Backend
+  // ---------------------------------------------------------------------------
+  const handleSaveSettings = async () => {
+    setIsUpdating(true);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) throw new Error("Unauthorized.");
+
+      const response = await fetch(`/api/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}` 
         },
-        {
-          id: 'inv_2',
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-          metric: 'New Upgrades (NA)',
-          variance_pct: 22.8,
-          status: 'resolved',
-          ai_narrative: 'Observed a highly positive variance (+22.8%) in North American upgrades. Cross-referencing with product logs indicates this correlates strongly with the release of the "Advanced Export" feature. Most upgrades occurred within 15 minutes of users hitting the export paywall.',
-          underlying_sql: "SELECT\n  user_id,\n  upgrade_tier,\n  timestamp\nFROM stripe_invoices_ytd\nWHERE upgrade_tier = 'Premium'\n  AND region = 'NA'\n  AND timestamp >= current_date - interval '3 days';"
-        }
-      ]);
-    }, 800);
+        body: JSON.stringify({
+          role_description: roleDescription,
+          temperature: temperature[0],
+          schedule: schedule
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || "Failed to patch agent settings.");
+      }
+
+      toast({
+        title: "Configuration Saved",
+        description: "Agent directives and parameters have been updated successfully.",
+      });
+
+    } catch (err: any) {
+      toast({
+        title: "Update Failed",
+        description: err.message,
+        variant: "destructive"
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -201,7 +236,7 @@ export default function AgentMemoryPage() {
   // ---------------------------------------------------------------------------
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-6 animate-in fade-in duration-500 h-full">
+      <div className="flex flex-col gap-6 animate-in fade-in duration-500 h-full max-w-7xl mx-auto w-full">
         <div className="flex justify-between items-start">
           <Skeleton className="h-12 w-1/3" />
           <Skeleton className="h-10 w-24" />
@@ -210,6 +245,21 @@ export default function AgentMemoryPage() {
           <Skeleton className="h-[200px] w-full" />
           <Skeleton className="md:col-span-2 h-[600px] w-full" />
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-4 animate-in fade-in duration-500 max-w-7xl mx-auto w-full">
+        <div className="p-4 rounded-full bg-destructive/10 text-destructive">
+          <AlertCircle className="h-8 w-8" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground">Failed to load agent memory</h2>
+        <p className="text-sm text-muted-foreground max-w-md text-center">{error}</p>
+        <Button variant="outline" onClick={() => router.push('/dashboard')} className="mt-4">
+          Return to Dashboard
+        </Button>
       </div>
     );
   }
@@ -343,6 +393,7 @@ export default function AgentMemoryPage() {
               )}
             </TabsContent>
 
+            {/* Phase 5: State Mutation & Settings */}
             <TabsContent value="settings">
               <Card>
                 <CardHeader>
@@ -350,15 +401,63 @@ export default function AgentMemoryPage() {
                     <Settings className="h-5 w-5 text-muted-foreground" />
                     Agent Directives
                   </CardTitle>
-                  <CardDescription>Adjust the sensitivity and instructions for this autonomous agent.</CardDescription>
+                  <CardDescription>Adjust the sensitivity and core instructions for this autonomous agent.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="p-4 bg-muted/20 border rounded-lg text-sm text-muted-foreground text-center">
-                    Settings configuration module goes here (Sensitivity sliders, cron schedules, Slack webhook mappings).
+                <CardContent className="space-y-6">
+                  
+                  <div className="space-y-3">
+                    <Label htmlFor="directives" className="font-semibold text-foreground">System Prompts & Directives</Label>
+                    <Textarea 
+                      id="directives"
+                      value={roleDescription}
+                      onChange={(e) => setRoleDescription(e.target.value)}
+                      placeholder="e.g. You are an expert data analyst. Cross-reference Shopify sales with Meta Ad spend..."
+                      className="min-h-[120px] bg-muted/20"
+                    />
                   </div>
+
+                  <div className="space-y-4 pt-2">
+                    <div className="flex justify-between items-center">
+                      <Label className="font-semibold text-foreground">Analytical Sensitivity (Temperature)</Label>
+                      <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{temperature[0]}</span>
+                    </div>
+                    <Slider
+                      value={temperature}
+                      onValueChange={setTemperature}
+                      max={1.0}
+                      min={0.0}
+                      step={0.1}
+                      className="py-2"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Lower values (0.0 - 0.2) result in strict, deterministic logic. Higher values allow more creative narrative synthesis.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    <Label className="font-semibold text-foreground">Execution Schedule</Label>
+                    <Select value={schedule} onValueChange={setSchedule}>
+                      <SelectTrigger className="w-full sm:w-[280px] bg-muted/20">
+                        <SelectValue placeholder="Select a schedule" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hourly">Hourly (High Priority Monitoring)</SelectItem>
+                        <SelectItem value="daily">Daily (EOD Digest)</SelectItem>
+                        <SelectItem value="weekly">Weekly (Long-term Reporting)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                 </CardContent>
+                <CardFooter className="bg-muted/10 border-t py-4 flex justify-end">
+                  <Button onClick={handleSaveSettings} disabled={isUpdating} className="gap-2">
+                    {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {isUpdating ? "Saving..." : "Save Configuration"}
+                  </Button>
+                </CardFooter>
               </Card>
             </TabsContent>
+
           </Tabs>
         </div>
 
