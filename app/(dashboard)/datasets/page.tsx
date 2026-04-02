@@ -72,9 +72,9 @@ import { createClient } from '@/utils/supabase/client'
  * sources (databases/warehouses) AND unstructured document assets.
  *
  * - `is_document`: when true, this record represents an indexed file (PDF, DOCX, etc.)
- *   rather than a live database connection.
+ * rather than a live database connection.
  * - `chunk_count`: for document assets, the number of vector chunks stored in Qdrant.
- *   Displayed in place of `rowCount` when `is_document` is true.
+ * Displayed in place of `rowCount` when `is_document` is true.
  */
 interface Dataset {
   id: string;
@@ -129,7 +129,7 @@ const INTEGRATIONS: ConnectorConfig[] = [
   // Data Warehouses
   { 
     id: "snowflake", name: "Snowflake", category: "Data Warehouses", authType: 'credentials',
-    desc: "Connect your enterprise cloud data warehouse natively.", icon: <Snowflake className="w-6 h-6" />, color: "text-sky-400",
+    desc: "Connect your enterprise cloud data warehouse natively.", icon: <Snowflake className="w-6 h-6" />, color: "text-sky-600 bg-sky-50 border border-sky-100",
     fields: [
       { name: 'account', label: 'Account Identifier', type: 'text', placeholder: 'xy12345.us-east-1' },
       { name: 'warehouse', label: 'Warehouse', type: 'text', placeholder: 'COMPUTE_WH' },
@@ -140,7 +140,7 @@ const INTEGRATIONS: ConnectorConfig[] = [
   },
   { 
     id: "bigquery", name: "BigQuery", category: "Data Warehouses", authType: 'credentials',
-    desc: "Connect your Google BigQuery datasets for instant analysis.", icon: <Cloud className="w-6 h-6" />, color: "text-blue-400",
+    desc: "Connect your Google BigQuery datasets for instant analysis.", icon: <Cloud className="w-6 h-6" />, color: "text-blue-600 bg-blue-50 border border-blue-100",
     fields: [
       { name: 'project_id', label: 'Project ID', type: 'text', placeholder: 'my-gcp-project-123' },
       { name: 'dataset_id', label: 'Dataset ID', type: 'text', placeholder: 'analytics_production' },
@@ -149,7 +149,7 @@ const INTEGRATIONS: ConnectorConfig[] = [
   },
   { 
     id: "redshift", name: "Redshift", category: "Data Warehouses", authType: 'credentials',
-    desc: "Connect your AWS Redshift clusters.", icon: <Layers className="w-6 h-6" />, color: "text-orange-500",
+    desc: "Connect your AWS Redshift clusters.", icon: <Layers className="w-6 h-6" />, color: "text-orange-600 bg-orange-50 border border-orange-100",
     fields: [
       { name: 'host', label: 'Host', type: 'text', placeholder: 'cluster.redshift.amazonaws.com' },
       { name: 'port', label: 'Port', type: 'text', placeholder: '5439' },
@@ -162,7 +162,7 @@ const INTEGRATIONS: ConnectorConfig[] = [
   // Databases
   { 
     id: "postgres", name: "PostgreSQL", category: "Databases", authType: 'credentials',
-    desc: "Connect your Postgres analytical replica.", icon: <Database className="w-6 h-6" />, color: "text-blue-600",
+    desc: "Connect your Postgres analytical replica.", icon: <Database className="w-6 h-6" />, color: "text-blue-600 bg-blue-50 border border-blue-100",
     fields: [
       { name: 'host', label: 'Host', type: 'text', placeholder: 'db.example.com' },
       { name: 'port', label: 'Port', type: 'text', placeholder: '5432' },
@@ -173,7 +173,7 @@ const INTEGRATIONS: ConnectorConfig[] = [
   },
   { 
     id: "duckdb", name: "DuckDB", category: "Databases", authType: 'credentials',
-    desc: "Connect to local or cloud-hosted DuckDB files.", icon: <Binary className="w-6 h-6" />, color: "text-yellow-600",
+    desc: "Connect to local or cloud-hosted DuckDB files.", icon: <Binary className="w-6 h-6" />, color: "text-yellow-600 bg-yellow-50 border border-yellow-100",
     fields: [
       { name: 'database_path', label: 'Database Path', type: 'text', placeholder: 's3://bucket/data.duckdb', helperText: 'Provide the S3 URI or mounted volume path.' },
     ]
@@ -182,35 +182,35 @@ const INTEGRATIONS: ConnectorConfig[] = [
   // SaaS Apps
   { 
     id: "stripe", name: "Stripe", category: "Apps", authType: 'credentials',
-    desc: "Live connection to your billing and subscription data.", icon: <CreditCard className="w-6 h-6" />, color: "text-indigo-500",
+    desc: "Live connection to your billing and subscription data.", icon: <CreditCard className="w-6 h-6" />, color: "text-indigo-600 bg-indigo-50 border border-indigo-100",
     fields: [
       { name: 'api_key', label: 'Restricted API Key', type: 'password', placeholder: 'rk_live_...', helperText: 'Requires read-only access to Customers, Subscriptions, and Invoices.' },
     ]
   },
   { 
     id: "salesforce", name: "Salesforce", category: "Apps", authType: 'oauth',
-    desc: "Analyze your CRM leads, opportunities, and accounts.", icon: <Cloud className="w-6 h-6" />, color: "text-blue-500",
+    desc: "Analyze your CRM leads, opportunities, and accounts.", icon: <Cloud className="w-6 h-6" />, color: "text-blue-600 bg-blue-50 border border-blue-100",
     fields: [
       { name: 'environment', label: 'Environment', type: 'select', options: [{ label: 'Production', value: 'login' }, { label: 'Sandbox', value: 'test' }] },
     ]
   },
   { 
     id: "hubspot", name: "HubSpot", category: "Apps", authType: 'oauth',
-    desc: "Analyze your CRM contacts, deals, and pipelines.", icon: <Box className="w-6 h-6" />, color: "text-orange-600",
+    desc: "Analyze your CRM contacts, deals, and pipelines.", icon: <Box className="w-6 h-6" />, color: "text-orange-600 bg-orange-50 border border-orange-100",
     fields: [
       { name: 'portal_id', label: 'Portal ID (Optional)', type: 'text', placeholder: '12345678' },
     ]
   },
   { 
     id: "shopify", name: "Shopify", category: "Apps", authType: 'oauth',
-    desc: "Live connection to your e-commerce orders and customers.", icon: <ShoppingBag className="w-6 h-6" />, color: "text-green-500",
+    desc: "Live connection to your e-commerce orders and customers.", icon: <ShoppingBag className="w-6 h-6" />, color: "text-emerald-600 bg-emerald-50 border border-emerald-100",
     fields: [
       { name: 'shop_url', label: 'Shop Domain', type: 'text', placeholder: 'my-store.myshopify.com' },
     ]
   },
   { 
     id: "zendesk", name: "Zendesk", category: "Apps", authType: 'credentials',
-    desc: "Analyze your customer support tickets and resolution times.", icon: <Layers className="w-6 h-6" />, color: "text-teal-600",
+    desc: "Analyze your customer support tickets and resolution times.", icon: <Layers className="w-6 h-6" />, color: "text-teal-600 bg-teal-50 border border-teal-100",
     fields: [
       { name: 'subdomain', label: 'Zendesk Subdomain', type: 'text', placeholder: 'company' },
       { name: 'email', label: 'Admin Email', type: 'text', placeholder: 'admin@company.com' },
@@ -219,7 +219,7 @@ const INTEGRATIONS: ConnectorConfig[] = [
   },
   { 
     id: "google_ads", name: "Google Ads", category: "Apps", authType: 'credentials', isNew: true,
-    desc: "Analyze your campaign performance and ad spend.", icon: <Box className="w-6 h-6" />, color: "text-amber-500",
+    desc: "Analyze your campaign performance and ad spend.", icon: <Box className="w-6 h-6" />, color: "text-amber-600 bg-amber-50 border border-amber-100",
     fields: [
       { name: 'developer_token', label: 'Developer Token', type: 'password' },
       { name: 'client_id', label: 'OAuth Client ID', type: 'text' },
@@ -229,14 +229,13 @@ const INTEGRATIONS: ConnectorConfig[] = [
   },
   { 
     id: "meta_ads", name: "Meta Ads", category: "Apps", authType: 'credentials', isNew: true,
-    desc: "Analyze your Facebook and Instagram ad campaigns.", icon: <Box className="w-6 h-6" />, color: "text-blue-600",
+    desc: "Analyze your Facebook and Instagram ad campaigns.", icon: <Box className="w-6 h-6" />, color: "text-blue-600 bg-blue-50 border border-blue-100",
     fields: [
       { name: 'access_token', label: 'System User Access Token', type: 'password' },
       { name: 'ad_account_id', label: 'Ad Account ID', type: 'text', placeholder: 'act_123456789' },
     ]
   },
 ];
-
 // Accepted file MIME types and extensions
 const ACCEPTED_MIME_TYPES = [
   'application/pdf',
@@ -695,7 +694,7 @@ export default function IntegrationsHubPage() {
   };
 
   return (
-    <div className="flex flex-col gap-10 h-full container mx-auto p-6 md:p-10 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex flex-col gap-10 h-full container mx-auto p-6 md:p-10 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#fafafa] min-h-screen">
 
       {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
@@ -880,11 +879,11 @@ export default function IntegrationsHubPage() {
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 border ${
-                activeCategory === category
-                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                  : 'bg-background text-foreground border-border hover:bg-muted'
-              }`}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 border ${
+                 activeCategory === category
+                   ? 'bg-slate-900 text-white border-slate-900 shadow-md'
+                : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50 hover:text-slate-900 shadow-sm'
+             }`}
             >
               {category}
             </button>
@@ -902,7 +901,7 @@ export default function IntegrationsHubPage() {
               <div
                 key={connector.id}
                 onClick={() => handleOpenConfig(connector)}
-                className="group flex flex-col p-5 rounded-2xl border border-border bg-card hover:bg-muted/50 hover:border-primary/40 transition-all cursor-pointer shadow-sm hover:shadow-md h-full relative overflow-hidden"
+                className="group flex flex-col p-6 rounded-2xl border border-gray-200/80 bg-white hover:border-blue-300 hover:shadow-lg hover:shadow-blue-500/5 transition-all cursor-pointer shadow-sm h-full relative overflow-hidden"
               >
                 <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-bl-[100px] -z-0 opacity-0 group-hover:opacity-100 transition-opacity" />
 

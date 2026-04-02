@@ -13,6 +13,7 @@ import {
   Plus, ChevronDown, MoreHorizontal,
   Table2, TrendingUp, Search, Zap,
   ChevronRight, Code2, BrainCircuit, FlaskConical,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,7 @@ interface ChatLayoutProps {
 }
 
 // -----------------------------------------------------------------------------
-// Markdown-lite renderer
+// Markdown-lite renderer (Engineered Typography)
 // -----------------------------------------------------------------------------
 function SimpleMarkdown({ text }: { text: string }) {
   if (!text) return null;
@@ -48,13 +49,13 @@ function SimpleMarkdown({ text }: { text: string }) {
     <>
       {parts.map((part, i) => {
         if (part.startsWith("**") && part.endsWith("**")) {
-          return <strong key={i}>{part.slice(2, -2)}</strong>;
+          return <strong key={i} className="font-extrabold text-slate-900">{part.slice(2, -2)}</strong>;
         }
         if (part.startsWith("`") && part.endsWith("`")) {
           return (
             <code
               key={i}
-              className="px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[13px] font-mono text-rose-500 dark:text-rose-400"
+              className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-gray-200 text-[13px] font-mono font-bold text-rose-600"
             >
               {part.slice(1, -1)}
             </code>
@@ -72,15 +73,16 @@ function SimpleMarkdown({ text }: { text: string }) {
 function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
   if (!label) return null;
   return (
-    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-[12px] font-bold text-slate-500 shadow-sm animate-in fade-in slide-in-from-bottom-2">
       {done ? (
-        <svg className="w-3 h-3 text-emerald-500" viewBox="0 0 12 12" fill="none">
-          <circle cx="6" cy="6" r="5.5" stroke="currentColor" strokeWidth="1" />
-          <path d="M3.5 6l2 2 3-3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <div className="p-0.5 bg-emerald-100 rounded-full">
+          <svg className="w-3 h-3 text-emerald-600" viewBox="0 0 12 12" fill="none">
+            <path d="M3.5 6l2 2 3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
       ) : (
-        <span className="w-3 h-3 flex items-center justify-center">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+        <span className="w-3.5 h-3.5 flex items-center justify-center bg-blue-50 rounded-full">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
         </span>
       )}
       {label}
@@ -89,7 +91,7 @@ function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
 }
 
 // -----------------------------------------------------------------------------
-// Chain-of-Thought Panel
+// Chain-of-Thought Panel (DuckDB Trace)
 // -----------------------------------------------------------------------------
 function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   plan?: any;
@@ -102,85 +104,49 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   if (!hasContent) return null;
 
   return (
-    <div
-      style={{
-        marginTop: 12,
-        border: "1px solid var(--chat-border)",
-        borderRadius: 10,
-        overflow: "hidden",
-        background: "var(--chat-surface)",
-      }}
-    >
+    <div className="mt-4 border border-gray-200/80 rounded-2xl overflow-hidden bg-white shadow-sm transition-all duration-300">
       <button
         onClick={() => setOpen((o) => !o)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          padding: "8px 12px",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          fontFamily: "inherit",
-          fontSize: 12,
-          fontWeight: 600,
-          color: "var(--chat-muted)",
-          letterSpacing: "0.03em",
-          textTransform: "uppercase",
-        }}
+        className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer text-left"
       >
-        <BrainCircuit style={{ width: 13, height: 13 }} />
-        Reasoning
-        <ChevronRight
-          style={{
-            width: 13,
-            height: 13,
-            marginLeft: "auto",
-            transition: "transform 0.2s",
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-          }}
-        />
+        <div className="p-1.5 bg-white border border-gray-200 rounded-lg shadow-sm">
+          <BrainCircuit className="w-4 h-4 text-blue-500" />
+        </div>
+        <span className="font-bold text-xs uppercase tracking-widest text-slate-600">
+          Engine Execution Trace
+        </span>
+        <ChevronRight className={`w-4 h-4 text-slate-400 ml-auto transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
       </button>
 
       {open && (
-        <div
-          style={{
-            padding: "0 12px 12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            borderTop: "1px solid var(--chat-border)",
-          }}
-          className="animate-in fade-in slide-in-from-top-1"
-        >
+        <div className="p-5 flex flex-col gap-5 border-t border-gray-100 bg-white animate-in fade-in slide-in-from-top-1">
           {plan && (
             <ReasoningBlock
-              icon={<FlaskConical style={{ width: 12, height: 12 }} />}
-              label="Plan"
+              icon={<FlaskConical className="w-3.5 h-3.5 text-indigo-500" />}
+              label="Semantic Plan"
               content={typeof plan === "string" ? plan : JSON.stringify(plan, null, 2)}
               mono={false}
             />
           )}
           {sql && (
             <ReasoningBlock
-              icon={<Code2 style={{ width: 12, height: 12 }} />}
-              label="SQL"
+              icon={<Code2 className="w-3.5 h-3.5 text-emerald-500" />}
+              label="Compiled DuckDB SQL"
               content={sql}
               mono
             />
           )}
           {insights && (
             <ReasoningBlock
-              icon={<Sparkles style={{ width: 12, height: 12 }} />}
-              label="Insights"
+              icon={<Sparkles className="w-3.5 h-3.5 text-amber-500" />}
+              label="Statistical Insights"
               content={typeof insights === "string" ? insights : JSON.stringify(insights, null, 2)}
               mono={false}
             />
           )}
           {diagnostics && (
             <ReasoningBlock
-              icon={<Activity style={{ width: 12, height: 12 }} />}
+              icon={<Activity className="w-3.5 h-3.5 text-rose-500" />}
               label="Diagnostics"
               content={typeof diagnostics === "string" ? diagnostics : JSON.stringify(diagnostics, null, 2)}
               mono
@@ -192,53 +158,20 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   );
 }
 
-function ReasoningBlock({
-  icon, label, content, mono,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  content: string;
-  mono: boolean;
-}) {
+function ReasoningBlock({ icon, label, content, mono }: { icon: React.ReactNode; label: string; content: string; mono: boolean; }) {
   return (
-    <div style={{ paddingTop: 10 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          fontSize: 11,
-          fontWeight: 600,
-          color: "var(--chat-muted)",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          marginBottom: 6,
-        }}
-      >
-        {icon}
-        {label}
+    <div>
+      <div className="flex items-center gap-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
+        {icon} {label}
       </div>
-      <pre
-        style={{
-          margin: 0,
-          padding: "10px 12px",
-          borderRadius: 8,
-          background: "var(--chat-surface-2)",
-          fontSize: mono ? 12 : 13,
-          fontFamily: mono ? "'DM Mono', monospace" : "inherit",
-          lineHeight: 1.65,
-          color: "var(--chat-fg)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          overflowX: "auto",
-        }}
-      >
-        {content}
-      </pre>
+      <div className={`rounded-xl overflow-x-auto shadow-inner border ${mono ? 'bg-slate-900 border-slate-800 p-4' : 'bg-slate-50 border-gray-200 p-4'}`}>
+        <code className={`whitespace-pre-wrap break-words block ${mono ? "text-[12px] font-mono text-emerald-400 leading-relaxed" : "text-[13px] font-medium text-slate-700 leading-relaxed"}`}>
+          {content}
+        </code>
+      </div>
     </div>
   );
 }
-
 // -----------------------------------------------------------------------------
 // Timestamp formatter
 // -----------------------------------------------------------------------------
@@ -475,498 +408,125 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const SUGGESTIONS = [
     {
       icon: <FileSpreadsheet className="w-4 h-4" />,
-      color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400",
+      color: "text-emerald-600 bg-emerald-50 border-emerald-100",
       title: "Analyze a dataset",
       prompt: "I want to analyze a dataset",
     },
     {
       icon: <Database className="w-4 h-4" />,
-      color: "text-blue-600 bg-blue-50 dark:bg-blue-500/10 dark:text-blue-400",
+      color: "text-blue-600 bg-blue-50 border-blue-100",
       title: "Query a database",
       prompt: "I want to query a database",
     },
     {
       icon: <TrendingUp className="w-4 h-4" />,
-      color: "text-violet-600 bg-violet-50 dark:bg-violet-500/10 dark:text-violet-400",
+      color: "text-violet-600 bg-violet-50 border-violet-100",
       title: "Forecast trends",
       prompt: "I want to forecast trends and predict future metrics",
     },
     {
       icon: <Search className="w-4 h-4" />,
-      color: "text-rose-600 bg-rose-50 dark:bg-rose-500/10 dark:text-rose-400",
+      color: "text-rose-600 bg-rose-50 border-rose-100",
       title: "Detect anomalies",
       prompt: "I want to detect anomalies in my data",
     },
   ];
 
   return (
-    <div
-      className="chat-root flex flex-col h-full w-full relative overflow-hidden"
-      style={{
-        fontFamily: "'DM Sans', 'Geist', system-ui, sans-serif",
-        backgroundColor: "var(--chat-bg, #ffffff)",
-        color: "var(--chat-fg, #111111)",
-      }}
-    >
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
-
-        :root {
-          --chat-bg: #ffffff;
-          --chat-fg: #111111;
-          --chat-muted: #6b7280;
-          --chat-border: #e5e7eb;
-          --chat-surface: #f9fafb;
-          --chat-surface-2: #f3f4f6;
-          --chat-user-bubble: #f3f4f6;
-          --chat-accent: #2563eb;
-          --chat-accent-light: #eff6ff;
-          --chat-radius: 16px;
-          --chat-radius-sm: 8px;
-          --chat-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-          --chat-shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05);
-        }
-
-        .dark {
-          :root {
-            --chat-bg: #0f0f0f;
-            --chat-fg: #f0f0f0;
-            --chat-muted: #9ca3af;
-            --chat-border: #1f1f1f;
-            --chat-surface: #161616;
-            --chat-surface-2: #1c1c1c;
-            --chat-user-bubble: #1c1c1c;
-            --chat-accent: #3b82f6;
-            --chat-accent-light: rgba(59,130,246,0.08);
-            --chat-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
-            --chat-shadow-md: 0 4px 12px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.4);
-          }
-        }
-
-        /* ── Scrollbar ── */
-        .chat-scroll-area { overflow-y: auto; scroll-behavior: smooth; }
-        .chat-scroll-area::-webkit-scrollbar { width: 4px; }
-        .chat-scroll-area::-webkit-scrollbar-track { background: transparent; }
-        .chat-scroll-area::-webkit-scrollbar-thumb { background: var(--chat-border); border-radius: 99px; }
-
-        /* ── Animations ── */
-        @keyframes fadeSlideUp {
-          from { opacity: 0; transform: translateY(6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .msg-enter { animation: fadeSlideUp 0.22s ease both; }
-
-        @keyframes shimmer {
-          0%   { background-position: -200% 0; }
-          100% { background-position:  200% 0; }
-        }
-        .skeleton {
-          background: linear-gradient(90deg, var(--chat-surface) 25%, var(--chat-surface-2) 50%, var(--chat-surface) 75%);
-          background-size: 200% 100%;
-          animation: shimmer 1.6s infinite;
-          border-radius: 6px;
-        }
-
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0; }
-        }
-        .cursor-blink {
-          display: inline-block;
-          width: 2px; height: 1em;
-          background: var(--chat-fg);
-          vertical-align: text-bottom;
-          margin-left: 1px;
-          animation: blink 1s step-end infinite;
-        }
-
-        /* ── Suggestion cards ── */
-        .suggestion-card {
-          background: var(--chat-bg);
-          border: 1px solid var(--chat-border);
-          border-radius: 12px;
-          padding: 14px 16px;
-          cursor: pointer;
-          transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          text-align: left;
-          width: 100%;
-          font-family: inherit;
-        }
-        .suggestion-card:hover {
-          border-color: var(--chat-accent);
-          box-shadow: 0 0 0 3px var(--chat-accent-light);
-          transform: translateY(-1px);
-        }
-
-        /* ── Action buttons ─────────────────────────────────────────────────
-           Desktop: 28×28 px.  Mobile (≤768px): 40×40 px for HIG-compliant
-           touch targets (minimum 44pt recommended; 40px is a close fit).
-        ── */
-        .action-btn {
-          width: 28px; height: 28px;
-          border-radius: 6px;
-          display: flex; align-items: center; justify-content: center;
-          background: transparent;
-          border: none; cursor: pointer;
-          color: var(--chat-muted);
-          transition: background 0.12s, color 0.12s;
-          /* Prevents the button from shrinking below its declared size */
-          flex-shrink: 0;
-        }
-        .action-btn:hover { background: var(--chat-surface-2); color: var(--chat-fg); }
-
-        @media (max-width: 768px) {
-          .action-btn {
-            width: 40px;
-            height: 40px;
-            border-radius: 8px;
-          }
-        }
-
-        /* ── Chart card ── */
-        .chart-card {
-          border: 1px solid var(--chat-border);
-          border-radius: 14px;
-          overflow: hidden;
-          background: var(--chat-bg);
-          box-shadow: var(--chat-shadow);
-          transition: box-shadow 0.2s;
-        }
-        .chart-card:hover { box-shadow: var(--chat-shadow-md); }
-
-        .chart-header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 16px;
-          border-bottom: 1px solid var(--chat-border);
-          background: var(--chat-surface);
-        }
-
-        /* ── Badges ── */
-        .dataset-badge {
-          display: inline-flex; align-items: center; gap: 5px;
-          padding: 3px 9px; border-radius: 99px;
-          background: rgba(16, 185, 129, 0.08);
-          border: 1px solid rgba(16, 185, 129, 0.2);
-          font-size: 11px; font-weight: 600;
-          color: #059669; letter-spacing: 0.03em; text-transform: uppercase;
-          /* Prevent badge from wrapping */
-          white-space: nowrap;
-        }
-
-        .doc-badge {
-          display: inline-flex; align-items: center; gap: 5px;
-          padding: 3px 9px; border-radius: 99px;
-          background: rgba(99, 102, 241, 0.08);
-          border: 1px solid rgba(99, 102, 241, 0.2);
-          font-size: 11px; font-weight: 600;
-          color: #6366f1; letter-spacing: 0.03em; text-transform: uppercase;
-          white-space: nowrap;
-        }
-
-        /* On narrow screens hide the badge label text; keep the count + dot */
-        @media (max-width: 480px) {
-          .badge-text { display: none; }
-        }
-
-        /* ── Top bar ── */
-        .top-bar {
-          height: 52px;
-          border-bottom: 1px solid var(--chat-border);
-          background: var(--chat-bg);
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 0 20px;
-          position: sticky; top: 0; z-index: 20;
-          flex-shrink: 0;
-          /* Never let content overflow into two rows */
-          overflow: hidden;
-        }
-
-        /* ── Input footer ────────────────────────────────────────────────────
-           env(safe-area-inset-bottom) ensures the input area is never hidden
-           behind the iPhone home indicator / gesture bar.
-        ── */
-        .input-footer {
-          border-top: 1px solid var(--chat-border);
-          background: var(--chat-bg);
-          padding: 16px 20px calc(20px + env(safe-area-inset-bottom, 0px));
-          flex-shrink: 0;
-        }
-
-        /* ── iOS auto-zoom prevention ────────────────────────────────────────
-           iOS Safari zooms in when an input has font-size < 16px.
-           Force 16px on all inputs/textareas inside this component.
-        ── */
-        .chat-root input,
-        .chat-root textarea,
-        .chat-root select {
-          font-size: 16px !important;
-        }
-
-        /* ── User bubble ── */
-        .user-bubble {
-          background: var(--chat-user-bubble);
-          border-radius: 18px 18px 4px 18px;
-          padding: 10px 16px;
-          font-size: 14.5px;
-          line-height: 1.6;
-          color: var(--chat-fg);
-          max-width: 100%;
-          word-break: break-word;
-        }
-
-        /* ── User message max-width ──────────────────────────────────────────
-           72% on desktop → 90% on mobile to use available space properly.
-        ── */
-        .user-msg-wrap {
-          max-width: 72%;
-        }
-        @media (max-width: 768px) {
-          .user-msg-wrap {
-            max-width: 90%;
-          }
-        }
-
-        /* ── Suggestion grid ─────────────────────────────────────────────────
-           2 columns on desktop → 1 column on mobile so cards don't squeeze.
-        ── */
-        .suggestion-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 10px;
-          width: 100%;
-          max-width: 520px;
-        }
-        @media (max-width: 480px) {
-          .suggestion-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        /* ── File chip ── */
-        .file-chip {
-          display: flex; align-items: center; gap: 10px;
-          background: var(--chat-bg);
-          border: 1px solid var(--chat-border);
-          border-radius: 10px;
-          padding: 8px 12px;
-          box-shadow: var(--chat-shadow);
-        }
-        .file-chip-icon {
-          width: 32px; height: 32px;
-          border-radius: 8px;
-          background: rgba(16, 185, 129, 0.08);
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-        .file-chip-icon.doc {
-          background: rgba(99, 102, 241, 0.08);
-        }
-
-        /* ── Assistant text ── */
-        .assistant-text {
-          font-size: 14.5px;
-          line-height: 1.75;
-          color: var(--chat-fg);
-        }
-        .assistant-text p { margin: 0 0 10px; }
-        .assistant-text p:last-child { margin-bottom: 0; }
-
-        /* ── Agent avatar ── */
-        .agent-avatar {
-          width: 28px; height: 28px;
-          border-radius: 8px;
-          background: #111;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-          box-shadow: var(--chat-shadow);
-        }
-      `}</style>
-
+    <div className="flex flex-col h-full w-full relative overflow-hidden bg-[#fafafa] font-sans text-slate-900">
+      
       {/* ── Top Bar ── */}
-      <div className="top-bar">
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, overflow: "hidden" }}>
-          <div className="agent-avatar" style={{ flexShrink: 0 }}>
-            <Zap style={{ width: 14, height: 14, color: "#fff" }} />
+      <div className="flex items-center justify-between h-16 px-6 bg-white border-b border-gray-200/80 sticky top-0 z-20 shrink-0 shadow-sm">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+            <Zap className="w-4 h-4 text-white" />
           </div>
-          <button
-            style={{
-              display: "flex", alignItems: "center", gap: 5,
-              background: "none", border: "none", cursor: "pointer",
-              fontFamily: "inherit", fontSize: 14, fontWeight: 600,
-              color: "var(--chat-fg)", padding: "4px 6px", borderRadius: 6,
-              flexShrink: 0,
-            }}
-          >
+          <button className="flex items-center gap-1.5 font-extrabold text-[15px] text-slate-900 hover:text-blue-600 transition-colors shrink-0 focus:outline-none">
             {agentName}
-            <ChevronDown style={{ width: 14, height: 14, color: "var(--chat-muted)" }} />
+            <ChevronDown className="w-4 h-4 text-slate-400" />
           </button>
 
-          {/* Dataset badge */}
+          {/* Dataset & Doc Badges */}
           {activeDatasetIds.length > 0 && (
-            <div className="dataset-badge">
-              <span style={{
-                width: 6, height: 6, borderRadius: "50%",
-                background: "#10b981", display: "inline-block",
-                boxShadow: "0 0 0 2px rgba(16,185,129,0.3)",
-                animation: "blink 2s step-end infinite",
-                flexShrink: 0,
-              }} />
-              {activeDatasetIds.length}
-              {/* Label hidden on very narrow screens via .badge-text */}
-              <span className="badge-text">
-                &nbsp;dataset{activeDatasetIds.length > 1 ? "s" : ""}
-              </span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-[10px] font-bold text-emerald-700 uppercase tracking-widest ml-3 shrink-0 shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              {activeDatasetIds.length} <span className="hidden sm:inline">Dataset{activeDatasetIds.length > 1 ? "s" : ""}</span>
             </div>
           )}
-
-          {/* Document badge */}
           {activeDocumentIds.length > 0 && (
-            <div className="doc-badge">
-              <span style={{
-                width: 6, height: 6, borderRadius: "50%",
-                background: "#6366f1", display: "inline-block",
-                boxShadow: "0 0 0 2px rgba(99,102,241,0.3)",
-                flexShrink: 0,
-              }} />
-              {activeDocumentIds.length}
-              <span className="badge-text">
-                &nbsp;doc{activeDocumentIds.length > 1 ? "s" : ""}
-              </span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-100 text-[10px] font-bold text-purple-700 uppercase tracking-widest ml-2 shrink-0 shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+              {activeDocumentIds.length} <span className="hidden sm:inline">Doc{activeDocumentIds.length > 1 ? "s" : ""}</span>
             </div>
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-          <button className="action-btn" title="New chat">
-            <Plus style={{ width: 15, height: 15 }} />
-          </button>
-          <button className="action-btn" title="Settings">
-            <Settings2 style={{ width: 15, height: 15 }} />
-          </button>
-          <button className="action-btn" title="More options">
-            <MoreHorizontal style={{ width: 15, height: 15 }} />
-          </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl h-9 w-9 transition-colors"><Plus className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl h-9 w-9 transition-colors"><Settings2 className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl h-9 w-9 transition-colors"><MoreHorizontal className="w-4 h-4" /></Button>
         </div>
       </div>
 
       {/* ── Chat Body ── */}
-      <div className="chat-scroll-area" style={{ flex: 1, overflowY: "auto" }}>
-        <div
-          style={{
-            maxWidth: "100%",
-            margin: "0 auto",
-            padding: messages.length === 0 ? "0 20px" : "28px 20px 0",
-            paddingBottom: 24,
-          }}
-        >
-          {/* ── Empty / Welcome State ── */}
+      <ScrollArea className="flex-1" ref={scrollRef}>
+        <div className="max-w-4xl mx-auto w-full p-6 pb-24">
+          
+          {/* Empty / Welcome State */}
           {messages.length === 0 && (
-            <div
-              className="msg-enter"
-              style={{
-                display: "flex", flexDirection: "column", alignItems: "center",
-                justifyContent: "center", minHeight: "calc(100vh - 220px)",
-                textAlign: "center",
-              }}
-            >
-              <div
-                style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: "#111", display: "flex", alignItems: "center",
-                  justifyContent: "center", marginBottom: 20,
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-                }}
-              >
-                <Zap style={{ width: 24, height: 24, color: "#fff" }} />
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-in fade-in zoom-in-95 duration-500">
+              <div className="w-14 h-14 bg-white border border-gray-200 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
+                <Zap className="w-6 h-6 text-blue-500" />
               </div>
-
-              <h1
-                style={{
-                  fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em",
-                  margin: "0 0 8px", color: "var(--chat-fg)",
-                }}
-              >
+              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">
                 {getGreeting()}
               </h1>
-              <p
-                style={{
-                  fontSize: 15, color: "var(--chat-muted)", maxWidth: 400,
-                  lineHeight: 1.65, margin: "0 0 36px",
-                }}
-              >
+              <p className="text-slate-500 font-medium max-w-md mb-10 leading-relaxed text-[15px]">
                 Ask a question, upload a file, or pick a task below to get started.
               </p>
 
-              {/* Responsive suggestion grid (2-col → 1-col on mobile) */}
-              <div className="suggestion-grid">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
                 {SUGGESTIONS.map((s, i) => (
-                  <button
-                    key={i}
-                    className="suggestion-card"
-                    onClick={() => handleSendMessage(s.prompt)}
-                    style={{ animationDelay: `${i * 60}ms` }}
+                  <button 
+                    key={i} 
+                    onClick={() => handleSendMessage(s.prompt)} 
+                    className="flex items-center gap-4 p-4 bg-white border border-gray-200/80 rounded-2xl hover:border-blue-300 hover:shadow-md transition-all text-left group shadow-sm"
                   >
-                    <div
-                      style={{
-                        width: 32, height: 32, borderRadius: 8,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                      className={s.color.split(" ").slice(1).join(" ")}
-                    >
-                      <span className={s.color.split(" ")[0]}>{s.icon}</span>
+                    <div className={`p-2.5 rounded-xl border shadow-sm group-hover:scale-110 transition-transform ${s.color}`}>
+                      {s.icon}
                     </div>
-                    <span
-                      style={{
-                        fontSize: 13.5, fontWeight: 500, color: "var(--chat-fg)",
-                        lineHeight: 1.3,
-                      }}
-                    >
-                      {s.title}
-                    </span>
+                    <span className="font-bold text-[14px] text-slate-700 group-hover:text-blue-600 transition-colors">{s.title}</span>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* ── Message Thread ── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+          {/* Message Thread */}
+          <div className="flex flex-col gap-8">
             {messages.map((msg, idx) => (
-              <div
-                key={msg.id}
-                className="msg-enter"
-                style={{ animationDelay: `${Math.min(idx * 20, 80)}ms` }}
-                onMouseEnter={() => setHoveredMsgId(msg.id)}
+              <div 
+                key={msg.id} 
+                className="animate-in fade-in slide-in-from-bottom-2 duration-300" 
+                onMouseEnter={() => setHoveredMsgId(msg.id)} 
                 onMouseLeave={() => setHoveredMsgId(null)}
               >
-                {/* ── USER MESSAGE ── */}
+                
+                {/* USER MESSAGE */}
                 {msg.role === "user" && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                  <div className="flex flex-col items-end gap-2">
                     {msg.files && msg.files.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+                      <div className="flex flex-wrap gap-2 justify-end mb-1">
                         {msg.files.map((f, i) => {
                           const isDoc = f.name.match(/\.(pdf|txt|md|docx)$/i) !== null;
                           return (
-                            <div key={i} className="file-chip">
-                              <div className={`file-chip-icon${isDoc ? " doc" : ""}`}>
-                                <FileText
-                                  style={{
-                                    width: 16, height: 16,
-                                    color: isDoc ? "#6366f1" : "#10b981",
-                                  }}
-                                />
+                            <div key={i} className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-2.5 shadow-sm">
+                              <div className={`p-2 rounded-lg border ${isDoc ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                <FileText className="w-4 h-4" />
                               </div>
-                              <div>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--chat-fg)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  {f.name}
-                                </div>
-                                <div style={{ fontSize: 11.5, color: "var(--chat-muted)" }}>
-                                  {(f.size / 1024 / 1024).toFixed(2)} MB · {isDoc ? "Document" : "Dataset"}
-                                </div>
+                              <div className="flex flex-col text-left mr-2">
+                                <span className="text-xs font-bold text-slate-700 max-w-[160px] truncate">{f.name}</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
                               </div>
                             </div>
                           );
@@ -975,10 +535,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                     )}
 
                     {msg.content && (
-                      /* Responsive max-width: 72% desktop → 90% mobile */
-                      <div className="user-msg-wrap">
-                        <div className="user-bubble">{msg.content}</div>
-                        <div style={{ fontSize: 11, color: "var(--chat-muted)", marginTop: 4, textAlign: "right" }}>
+                      <div className="max-w-[90%] sm:max-w-[75%] flex flex-col items-end">
+                        <div className="bg-blue-600 text-white rounded-3xl rounded-br-sm px-5 py-3.5 shadow-sm text-[15px] font-medium leading-relaxed">
+                          {msg.content}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-400 mt-2 uppercase tracking-wider">
                           {formatTime(msg.timestamp)}
                         </div>
                       </div>
@@ -986,17 +547,17 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   </div>
                 )}
 
-                {/* ── ASSISTANT MESSAGE ── */}
+                {/* ASSISTANT MESSAGE */}
                 {msg.role === "assistant" && (
-                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                    <div className="agent-avatar" style={{ marginTop: 2 }}>
-                      <Zap style={{ width: 13, height: 13, color: "#fff" }} />
+                  <div className="flex gap-4 items-start max-w-[95%] sm:max-w-[85%]">
+                    <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0 mt-1">
+                      <Zap className="w-4 h-4 text-white" />
                     </div>
 
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="flex-1 min-w-0">
                       {/* Streaming Status Pills */}
                       {isProcessing && idx === messages.length - 1 && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, paddingTop: 4 }}>
+                        <div className="flex flex-wrap gap-2 mb-4 pt-1">
                           {completedSteps.map((step) => (
                             <ThinkingStep key={step} label={step} done />
                           ))}
@@ -1008,12 +569,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                       {/* Text content */}
                       {msg.content && (
-                        <div className="assistant-text">
+                        <div className="text-[15px] leading-relaxed text-slate-700 space-y-4">
                           {msg.content.split("\n").map((line, i) => (
-                            <p key={i} style={{ margin: 0, marginBottom: i < msg.content!.split("\n").length - 1 ? 8 : 0 }}>
+                            <p key={i}>
                               <SimpleMarkdown text={line} />
                               {isProcessing && idx === messages.length - 1 && i === msg.content!.split("\n").length - 1 && (
-                                <span className="cursor-blink" />
+                                <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse align-middle rounded-full" />
                               )}
                             </p>
                           ))}
@@ -1032,27 +593,24 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                       {/* Chart / Data Payload */}
                       {msg.payload && (
-                        <div
-                          className="chart-card animate-in fade-in slide-in-from-bottom-4"
-                          style={{ marginTop: msg.content ? 16 : 0, width: "100%" }}
-                        >
-                          <div className="chart-header">
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <Table2 style={{ width: 14, height: 14, color: "var(--chat-muted)" }} />
-                              <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--chat-fg)" }}>
+                        <div className="mt-5 bg-white border border-gray-200/80 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+                          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-slate-50/50">
+                            <div className="flex items-center gap-2">
+                              <Table2 className="w-4 h-4 text-slate-400" />
+                              <span className="text-[12px] font-extrabold text-slate-600 uppercase tracking-widest">
                                 Analysis Result
                               </span>
                             </div>
-                            <div style={{ display: "flex", gap: 4 }}>
-                              <button className="action-btn" onClick={() => copyToClipboard(JSON.stringify(msg.payload))}>
-                                <Copy style={{ width: 13, height: 13 }} />
-                              </button>
-                              <button className="action-btn">
-                                <MoreHorizontal style={{ width: 13, height: 13 }} />
-                              </button>
+                            <div className="flex gap-2">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900 rounded-lg" onClick={() => copyToClipboard(JSON.stringify(msg.payload))}>
+                                <Copy className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900 rounded-lg">
+                                <MoreHorizontal className="w-3.5 h-3.5" />
+                              </Button>
                             </div>
                           </div>
-                          <div style={{ padding: 16 }}>
+                          <div className="p-5">
                             <DynamicChartFactory payload={msg.payload} />
                           </div>
                         </div>
@@ -1060,33 +618,24 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                       {/* Timestamp + Action bar */}
                       <div
-                        style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          marginTop: 10,
-                          opacity: hoveredMsgId === msg.id && !isProcessing ? 1 : 0,
-                          transition: "opacity 0.15s",
-                        }}
+                        className={`flex items-center justify-between mt-3 transition-opacity duration-200 ${hoveredMsgId === msg.id && !isProcessing ? 'opacity-100' : 'opacity-0'}`}
                       >
-                        <div style={{ fontSize: 11, color: "var(--chat-muted)" }}>
+                        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                           {formatTime(msg.timestamp)}
                         </div>
-                        <div style={{ display: "flex", gap: 2 }}>
-                          <button
-                            className="action-btn"
-                            onClick={() => copyToClipboard(msg.content || JSON.stringify(msg.payload))}
-                            title="Copy"
-                          >
-                            <Copy style={{ width: 13, height: 13 }} />
-                          </button>
-                          <button className="action-btn" title="Good response">
-                            <ThumbsUp style={{ width: 13, height: 13 }} />
-                          </button>
-                          <button className="action-btn" title="Bad response">
-                            <ThumbsDown style={{ width: 13, height: 13 }} />
-                          </button>
-                          <button className="action-btn" title="Retry">
-                            <RotateCcw style={{ width: 13, height: 13 }} />
-                          </button>
+                        <div className="flex gap-1.5">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg" onClick={() => copyToClipboard(msg.content || JSON.stringify(msg.payload))} title="Copy">
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Good response">
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg" title="Bad response">
+                            <ThumbsDown className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Retry">
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -1094,32 +643,26 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 )}
               </div>
             ))}
-
-            <div ref={scrollRef} />
+            
+            {/* Scroll anchor */}
+            <div ref={scrollRef} className="h-4" />
           </div>
         </div>
-      </div>
+      </ScrollArea>
 
       {/* ── Input Area ── */}
-      <div className="input-footer">
-        <div style={{ maxWidth: "100%", margin: "0 auto" }}>
+      <div className="p-4 bg-white border-t border-gray-200/80 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
+        <div className="max-w-4xl mx-auto">
           <OmniMessageInput
             onSendMessage={handleSendMessage}
             isProcessing={isProcessing}
             progressStatus={progressStatus}
           />
-          <div
-            style={{
-              textAlign: "center", marginTop: 10,
-              fontSize: 11.5, color: "var(--chat-muted)",
-              letterSpacing: "0.01em",
-            }}
-          >
-            Arcli can make mistakes — verify critical outputs.{" "}
-            <a
-              href="mailto:support@arcli.tech"
-              style={{ color: "inherit", textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 2 }}
-            >
+          <div className="text-center mt-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest flex justify-center items-center gap-2">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Arcli can make mistakes — verify critical outputs</span>
+            <span className="text-slate-300">•</span>
+            <a href="mailto:support@arcli.tech" className="hover:text-blue-600 transition-colors">
               Get help
             </a>
           </div>

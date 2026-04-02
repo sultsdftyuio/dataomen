@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/use-toast"
+import { createClient } from "@/utils/supabase/client"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,7 +81,7 @@ interface DatasetAsset {
   status: string;
 }
 
-const THEME_COLORS = ['bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-cyan-500']
+const THEME_COLORS = ['bg-blue-500', 'bg-indigo-500', 'bg-sky-500', 'bg-emerald-500', 'bg-rose-500', 'bg-violet-500']
 
 const getThemeColor = (id: string) => {
   const charCode = id.charCodeAt(id.length - 1) || 0;
@@ -132,6 +133,7 @@ const CATEGORY_ICONS: Record<Category, React.ReactNode> = {
 // -----------------------------------------------------------------------------
 export default function AgentsPage() {
   const { toast } = useToast()
+  const supabase = createClient()
   
   // Real Backend State
   const [agents, setAgents] = useState<UIAgent[]>([])
@@ -153,13 +155,16 @@ export default function AgentsPage() {
 
   const templatesInCategory = useMemo(() => TEMPLATES.filter(t => t.category === activeCategory), [activeCategory]);
 
-  // Phase 2: Live Connector Hydration
+  // Phase 2: Live Connector Hydration with Supabase Auth
   useEffect(() => {
     async function hydrateDashboard() {
       try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: HeadersInit | undefined = session ? { 'Authorization': `Bearer ${session.access_token}` } : undefined
+
         const [agentsRes, datasetsRes] = await Promise.all([
-          fetch('/api/agents'),
-          fetch('/api/datasets')
+          fetch('/api/agents', { headers }),
+          fetch('/api/datasets', { headers })
         ]);
         
         if (agentsRes.ok) setAgents(await agentsRes.json());
@@ -175,7 +180,7 @@ export default function AgentsPage() {
       }
     }
     hydrateDashboard();
-  }, [toast]);
+  }, [supabase.auth, toast]);
 
   const openDeployModal = (template?: Template) => {
     if (template) {
@@ -196,7 +201,7 @@ export default function AgentsPage() {
     setSelectedDatasetId(prev => prev === id ? null : id);
   }
 
-  // Phase 2: Real Deployment Wiring
+  // Phase 2: Real Deployment Wiring with Secure Auth Headers
   const handleDeployAgent = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newName.trim() || !newPrompt.trim() || !selectedDatasetId) return
@@ -204,6 +209,8 @@ export default function AgentsPage() {
     setIsDeploying(true)
     
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
       const payload = {
         name: newName.trim(),
         description: newDescription.trim() || "Custom AI Agent",
@@ -214,7 +221,10 @@ export default function AgentsPage() {
 
       const res = await fetch('/api/agents/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(session && { 'Authorization': `Bearer ${session.access_token}` })
+        },
         body: JSON.stringify(payload)
       })
 
@@ -246,9 +256,13 @@ export default function AgentsPage() {
     setAgents(prev => prev.map(a => a.id === id ? { ...a, is_active: !currentStatus } : a))
     
     try {
+      const { data: { session } } = await supabase.auth.getSession()
       const res = await fetch(`/api/agents/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(session && { 'Authorization': `Bearer ${session.access_token}` })
+        },
         body: JSON.stringify({ is_active: !currentStatus })
       })
       
@@ -266,7 +280,11 @@ export default function AgentsPage() {
     setAgents(prev => prev.filter(a => a.id !== id))
     
     try {
-      const res = await fetch(`/api/agents/${id}`, { method: 'DELETE' })
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/agents/${id}`, { 
+        method: 'DELETE',
+        headers: { ...(session && { 'Authorization': `Bearer ${session.access_token}` }) }
+      })
       if (!res.ok) throw new Error("Failed to delete")
       toast({ title: "Agent Terminated" })
     } catch (err) {
@@ -276,10 +294,10 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-10 h-full container mx-auto p-6 md:p-10 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="flex flex-col gap-10 h-full container mx-auto p-6 md:p-10 max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500 bg-[#fafafa] min-h-screen">
       
       {/* ── HEADER ── */}
-      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-4 pb-4 border-b border-gray-200/60">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">
             Build agents tailored to your team
@@ -290,10 +308,10 @@ export default function AgentsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 cursor-pointer px-3 py-1 text-sm font-bold transition-colors">
+          <Badge variant="secondary" className="bg-blue-50/50 text-blue-700 border-blue-200/60 hover:bg-blue-100 cursor-pointer px-3 py-1.5 text-sm font-bold transition-colors shadow-sm">
             Customize templates with Enterprise
           </Badge>
-          <Button onClick={() => openDeployModal()} className="rounded-full shadow-sm px-6 bg-slate-900 hover:bg-slate-800 text-white font-semibold">
+          <Button onClick={() => openDeployModal()} className="rounded-xl shadow-md px-6 bg-slate-900 hover:bg-slate-800 text-white font-semibold transition-all">
             <Settings2 className="w-4 h-4 mr-2" /> Create Custom
           </Button>
         </div>
@@ -304,37 +322,39 @@ export default function AgentsPage() {
         <h2 className="text-xl font-bold tracking-tight text-slate-900">Your Agents</h2>
         
         {isInitializing ? (
-          <div className="w-full h-32 rounded-2xl border border-gray-200 bg-gray-50 animate-pulse" />
+          <div className="w-full h-32 rounded-2xl border border-gray-200/60 bg-gray-50/50 animate-pulse shadow-sm" />
         ) : agents.length === 0 ? (
-          <div className="w-full border border-dashed border-gray-300 rounded-3xl p-12 flex flex-col items-center justify-center text-center bg-gray-50/50">
-            <div className="w-14 h-14 bg-white border border-gray-200 rounded-full flex items-center justify-center mb-4 shadow-sm">
+          <div className="w-full border border-dashed border-gray-300 rounded-3xl p-12 flex flex-col items-center justify-center text-center bg-white shadow-sm">
+            <div className="w-14 h-14 bg-blue-50 border border-blue-100 rounded-full flex items-center justify-center mb-4 shadow-sm">
               <Bot className="w-7 h-7 text-blue-600" />
             </div>
-            <p className="text-slate-800 font-bold text-lg">Your custom agents will appear here.</p>
-            <p className="text-sm text-slate-500 font-medium mt-1 mb-6 max-w-sm">
+            <p className="text-slate-900 font-extrabold text-lg">Your custom agents will appear here.</p>
+            <p className="text-sm text-slate-500 font-medium mt-1 mb-6 max-w-sm leading-relaxed">
               Create your first specialized agent from the templates below to start unlocking insights.
             </p>
           </div>
         ) : (
-          <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm">
+          <div className="rounded-2xl border border-gray-200/80 bg-white overflow-hidden shadow-sm">
             <Table>
-              <TableHeader className="bg-gray-50/80 border-b border-gray-200">
+              <TableHeader className="bg-slate-50/50 border-b border-gray-200/80">
                 <TableRow className="border-none">
-                  <TableHead className="w-[300px] text-xs font-bold uppercase tracking-widest text-slate-500">Identity</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-slate-500">Status</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-widest text-slate-500">Memory Boundary</TableHead>
-                  <TableHead className="text-right text-xs font-bold uppercase tracking-widest text-slate-500">Manage</TableHead>
+                  <TableHead className="w-[300px] text-[11px] font-bold uppercase tracking-widest text-slate-500 py-4">Identity</TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase tracking-widest text-slate-500 py-4">Status</TableHead>
+                  <TableHead className="text-[11px] font-bold uppercase tracking-widest text-slate-500 py-4">Memory Boundary</TableHead>
+                  <TableHead className="text-right text-[11px] font-bold uppercase tracking-widest text-slate-500 py-4">Manage</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody className="divide-y divide-gray-100">
                 {agents.map((agent) => (
                   <TableRow key={agent.id} className="hover:bg-blue-50/30 transition-colors border-gray-100 group">
-                    <TableCell className="py-4">
+                    <TableCell className="py-4 pl-4">
                       <div className="flex items-start gap-3">
-                        <div className={`mt-1 w-2.5 h-2.5 rounded-full shadow-sm ${getThemeColor(agent.id)}`} />
+                        <div className={`mt-1.5 w-2.5 h-2.5 rounded-full shadow-sm ${getThemeColor(agent.id)}`} />
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-900">{agent.name}</span>
-                          <span className="text-xs font-medium text-slate-500 truncate max-w-[250px] mt-0.5">{agent.description}</span>
+                          <Link href={`/agents/${agent.id}`} className="font-bold text-slate-900 hover:text-blue-600 transition-colors">
+                            {agent.name}
+                          </Link>
+                          <span className="text-xs font-medium text-slate-500 truncate max-w-[280px] mt-0.5">{agent.description}</span>
                         </div>
                       </div>
                     </TableCell>
@@ -346,32 +366,32 @@ export default function AgentsPage() {
                           className="data-[state=checked]:bg-emerald-500 scale-90 shadow-sm"
                         />
                         {agent.is_active ? 
-                          <Badge variant="default" className="bg-emerald-50 text-emerald-700 border-emerald-200 shadow-none font-bold">Active</Badge> : 
-                          <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-gray-200 shadow-none font-bold">Paused</Badge> 
+                          <Badge variant="default" className="bg-emerald-50 text-emerald-700 border-emerald-200 shadow-none font-bold text-[11px]">Active</Badge> : 
+                          <Badge variant="secondary" className="bg-gray-100 text-gray-600 border-gray-200 shadow-none font-bold text-[11px]">Paused</Badge> 
                         }
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <Database className="w-4 h-4 text-blue-500" />
-                        <span className="text-sm font-semibold">
+                      <div className="flex items-center gap-2 text-slate-700 bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg w-fit">
+                        <Database className="w-3.5 h-3.5 text-blue-500" />
+                        <span className="text-xs font-bold">
                           {agent.dataset_id 
                             ? availableDatasets.find(d => d.id === agent.dataset_id)?.name || 'Linked Dataset' 
                             : 'Unrestricted'}
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right pr-4">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900 hover:bg-gray-100">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900 hover:bg-gray-100 rounded-lg">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-[160px] bg-white border-gray-200 rounded-xl shadow-lg">
-                          <DropdownMenuLabel className="text-xs font-bold text-slate-400 uppercase tracking-wider">Controls</DropdownMenuLabel>
+                          <DropdownMenuLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Controls</DropdownMenuLabel>
                           <DropdownMenuSeparator className="bg-gray-100" />
-                          <DropdownMenuItem className="cursor-pointer focus:bg-red-50 text-red-600 font-medium" onClick={() => deleteAgent(agent.id)}>
+                          <DropdownMenuItem className="cursor-pointer focus:bg-red-50 text-red-600 font-medium rounded-lg" onClick={() => deleteAgent(agent.id)}>
                             <Trash2 className="mr-2 h-4 w-4" /> Terminate Agent
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -386,19 +406,19 @@ export default function AgentsPage() {
       </section>
 
       {/* ── SECTION 2: TEMPLATE LIBRARY ── */}
-      <section className="space-y-6">
+      <section className="space-y-6 pt-4 border-t border-gray-200/60">
         <h2 className="text-xl font-bold tracking-tight text-slate-900">Templates</h2>
         
         {/* Category Tabs (Pills) */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2.5">
           {(['Marketing', 'Finance', 'Product', 'Data', 'RevOps', 'More'] as Category[]).map(category => (
             <button
               key={category}
               onClick={() => setActiveCategory(category)}
-              className={`px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 transition-all duration-200 border ${
+              className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all duration-200 border ${
                 activeCategory === category 
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-sm' 
-                  : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50 hover:text-slate-900'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-md' 
+                  : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50 hover:text-slate-900 shadow-sm'
               }`}
             >
               {CATEGORY_ICONS[category]}
@@ -413,13 +433,13 @@ export default function AgentsPage() {
             <div 
               key={template.id} 
               onClick={() => openDeployModal(template)}
-              className="group flex flex-col p-6 rounded-3xl border border-gray-200 bg-white hover:border-blue-300 hover:shadow-md transition-all cursor-pointer shadow-sm"
+              className="group flex flex-col p-6 rounded-2xl border border-gray-200/80 bg-white hover:border-blue-300 hover:shadow-lg hover:shadow-blue-500/5 transition-all cursor-pointer shadow-sm"
             >
               <div className="flex items-center justify-between mb-4">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300 shadow-sm">
+                <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 group-hover:scale-110 group-hover:bg-blue-600 group-hover:border-blue-600 group-hover:text-white transition-all duration-300 shadow-sm">
                   {CATEGORY_ICONS[template.category]}
                 </div>
-                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-8 px-4 rounded-full bg-white border border-gray-200 shadow-sm font-semibold text-slate-700 hover:text-blue-700">
+                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-8 px-4 rounded-xl bg-white border border-gray-200 shadow-sm font-bold text-slate-700 hover:text-blue-700">
                   Use Template
                 </Button>
               </div>
@@ -443,15 +463,15 @@ export default function AgentsPage() {
             </div>
           </div>
 
-          <form onSubmit={handleDeployAgent} className="p-6 space-y-7">
+          <form onSubmit={handleDeployAgent} className="p-6 space-y-7 bg-white">
             <div className="grid grid-cols-2 gap-5">
               <div className="space-y-2.5">
                 <Label htmlFor="name" className="font-bold text-slate-700">Agent Name</Label>
-                <Input id="name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={isDeploying} required className="bg-white border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl shadow-sm" />
+                <Input id="name" value={newName} onChange={(e) => setNewName(e.target.value)} disabled={isDeploying} required className="bg-slate-50 border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl shadow-inner font-medium" />
               </div>
               <div className="space-y-2.5">
                 <Label htmlFor="desc" className="font-bold text-slate-700">Short Description</Label>
-                <Input id="desc" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} disabled={isDeploying} className="bg-white border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl shadow-sm" />
+                <Input id="desc" value={newDescription} onChange={(e) => setNewDescription(e.target.value)} disabled={isDeploying} className="bg-slate-50 border-gray-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl shadow-inner font-medium" />
               </div>
             </div>
 
@@ -460,11 +480,11 @@ export default function AgentsPage() {
                 <Label htmlFor="prompt" className="flex items-center gap-2 font-bold text-slate-700">
                   <SquareTerminal className="w-4 h-4 text-blue-600" /> System Prompt (Directives)
                 </Label>
-                <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider bg-gray-100 text-gray-600">LLM Persona</Badge>
+                <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600">LLM Persona</Badge>
               </div>
               <Textarea 
                 id="prompt" 
-                className="resize-none h-32 text-sm bg-gray-50 border-gray-200 font-medium leading-relaxed focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl shadow-inner"
+                className="resize-none h-32 text-sm bg-slate-50 border-gray-200 font-medium leading-relaxed focus-visible:ring-blue-500/20 focus-visible:border-blue-500 rounded-xl shadow-inner"
                 value={newPrompt}
                 onChange={(e) => setNewPrompt(e.target.value)}
                 disabled={isDeploying}
@@ -484,12 +504,12 @@ export default function AgentsPage() {
               
               <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-1">
                 {availableDatasets.length === 0 ? (
-                  <div className="col-span-2 flex flex-col items-center justify-center p-8 bg-gray-50 rounded-2xl border border-dashed border-gray-300 text-center">
-                    <Database className="w-8 h-8 text-gray-400 mb-3" />
+                  <div className="col-span-2 flex flex-col items-center justify-center p-8 bg-slate-50 rounded-2xl border border-dashed border-gray-300 text-center">
+                    <Database className="w-8 h-8 text-slate-300 mb-3" />
                     <p className="text-base text-slate-900 font-bold">No active integrations found</p>
                     <p className="text-sm text-slate-500 font-medium mb-4 max-w-[250px]">You need to connect a data source before an agent can analyze it.</p>
                     <Link href="/datasets">
-                      <Button variant="outline" size="sm" className="rounded-full font-bold bg-white shadow-sm border-gray-200 hover:bg-gray-50 hover:text-blue-600 group">
+                      <Button variant="outline" size="sm" className="rounded-xl font-bold bg-white shadow-sm border-gray-200 hover:bg-slate-50 hover:text-blue-600 group">
                         Go to Datasets <ArrowRight className="w-3.5 h-3.5 ml-1.5 group-hover:translate-x-0.5 transition-transform" />
                       </Button>
                     </Link>
@@ -522,20 +542,20 @@ export default function AgentsPage() {
               <div className="flex-1">
                 {/* QoL validation warning if fields are filled but dataset is missing */}
                 {!selectedDatasetId && newName.trim() && availableDatasets.length > 0 && (
-                  <span className="text-xs text-red-500 font-bold flex items-center gap-1.5 animate-in fade-in">
+                  <span className="text-xs text-rose-500 font-bold flex items-center gap-1.5 animate-in fade-in">
                     ⚠️ Select a memory boundary to continue
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-3">
-                <Button type="button" variant="ghost" onClick={() => setIsDeployOpen(false)} disabled={isDeploying} className="font-bold text-slate-600 hover:text-slate-900 rounded-full">
+                <Button type="button" variant="ghost" onClick={() => setIsDeployOpen(false)} disabled={isDeploying} className="font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl">
                   Cancel
                 </Button>
                 {/* STRICT 1-TO-1 VALIDATION APPLIED HERE */}
                 <Button 
                   type="submit" 
                   disabled={isDeploying || !newName.trim() || !newPrompt.trim() || !selectedDatasetId} 
-                  className="rounded-full px-8 gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-500/20 disabled:opacity-50"
+                  className="rounded-xl px-8 gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-500/20 disabled:opacity-50 transition-all"
                 >
                   {isDeploying ? <Cpu className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   {isDeploying ? "Deploying..." : "Deploy Agent"}
