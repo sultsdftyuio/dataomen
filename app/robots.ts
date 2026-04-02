@@ -16,7 +16,8 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: '*',
       
       // Allow indexing of all public-facing landing and SEO hub pages
-      allow: '/',
+      // CRITICAL: Explicitly allow static chunks so Googlebot can render the CSS/JS
+      allow: ['/', '/_next/static/'],
       
       // Explicitly block compute-heavy or private routes
       disallow: [
@@ -35,8 +36,9 @@ export default function robots(): MetadataRoute.Robots {
         // to maintain data privacy unless explicitly syndicated
         '/share/',
         
-        // Next.js internal build files
-        '/_next/',
+        // Next.js Internal Endpoints (Saves compute on optimized images and JSON data)
+        '/_next/data/',
+        '/_next/image/',
       ],
     },
     // Point crawlers directly to the semantic map we built earlier

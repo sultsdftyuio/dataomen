@@ -2,12 +2,12 @@
  * ARCLI.TECH - Universal API Client
  * Strategy: Hybrid Performance & Multi-Tenant Security
  * Description: Wrapper around native fetch that automatically injects 
- * Supabase Authorization headers and handles Vercel-to-Render routing.
+ * Supabase Authorization headers and handles Vercel-to-DigitalOcean proxy routing.
  */
 
 import { createBrowserClient } from '@supabase/ssr'
 
-// We use the rewrite path by default so Next.js handles the Vercel->Render proxy
+// We use the rewrite path by default so Next.js handles the Vercel->DigitalOcean proxy
 const API_BASE_URL = '/api/v1'
 
 interface FetchOptions extends RequestInit {
@@ -45,9 +45,21 @@ export class ApiClient {
       headers.set('Authorization', `Bearer ${session.access_token}`)
     }
 
-    // 3. Construct URL (Clean double slashes)
-    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
-    const url = `${API_BASE_URL}${cleanEndpoint}`
+    // 3. Construct URL & Enforce FastAPI Strict Routing
+    // Prevents DigitalOcean Load Balancers from issuing HTTP 307 redirects 
+    // which cause "Mixed Content" blocks in the browser.
+    let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
+    
+    // Split query params to safely append trailing slash to the path sequence
+    const [pathPart, queryPart] = cleanEndpoint.split('?', 2)
+    
+    let securePath = pathPart
+    if (!securePath.endsWith('/')) {
+      securePath += '/'
+    }
+
+    const finalEndpoint = queryPart ? `${securePath}?${queryPart}` : securePath
+    const url = `${API_BASE_URL}${finalEndpoint}`
 
     // 4. Execute Network Call
     const response = await fetch(url, {

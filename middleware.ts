@@ -1,20 +1,27 @@
 /**
- * ARCLI.TECH - Edge Middleware Orchestrator
+ * ARCLI.TECH - Optimized Edge Middleware Orchestrator
  * Deployment Stack: Cloudflare (DNS/Edge) -> Vercel (Next.js) -> Render (FastAPI/Backend)
- * Strategy: Hybrid Performance (Supabase SSR + Next.js Edge Security)
- * * Objective: Prioritize the Chat-First experience as the primary landing zone.
+ * Strategy: Performance-First Auth with System-Route Bypass
+ * Objective: Resolve indexing "unreachable" errors, optimize Edge compute, and prioritize the Chat-First landing zone.
  */
 
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname
+  const { pathname } = request.nextUrl
 
   // 1. Diagnostic Metadata: Capture Vercel Trace ID for Cloudflare/Vercel debugging
   const requestId = request.headers.get('x-vercel-id') || 'local-dev'
 
-  // 2. Initialize a Mutable Response Object
+  // 2. System Route Short-Circuit (Absolute Bypass)
+  // Ensure robots.txt, sitemap.xml, and favicons NEVER hit Supabase logic or risk Edge timeouts
+  const isSystemRoute = ['/robots.txt', '/sitemap.xml', '/favicon.ico'].includes(pathname)
+  if (isSystemRoute) {
+    return NextResponse.next()
+  }
+
+  // 3. Initialize a Mutable Response Object
   // This is required by Supabase to securely set/refresh auth cookies at the Edge
   let supabaseResponse = NextResponse.next({
     request: {
@@ -22,7 +29,7 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  // 3. Modular Strategy: Initialize Supabase Client
+  // 4. Modular Strategy: Initialize Resilient Supabase Client
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,9 +44,7 @@ export async function middleware(request: NextRequest) {
             request.cookies.set(name, value)
           )
           // Update response cookies
-          supabaseResponse = NextResponse.next({
-            request,
-          })
+          supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
@@ -48,13 +53,17 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // 4. Security by Design: Cryptographic User Verification
-  // Always use getUser() on the server/edge, never getSession()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // 5. Security by Design: Cryptographic User Verification with Edge Fallback
+  // try-catch block prevents Edge-level 500s if Supabase is momentarily unreachable
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data?.user
+  } catch (error) {
+    console.error(`[Middleware Auth Error] Trace ID: ${requestId}`, error)
+  }
 
-  // 5. Route Topology & Orchestration Definitions
+  // 6. Route Topology & Orchestration Definitions
   const isAuthRoute = ['/login', '/register', '/forgot-password'].some(route => 
     pathname.startsWith(route)
   )
@@ -77,7 +86,7 @@ export async function middleware(request: NextRequest) {
   const publicApiRoutes = ['/api/webhooks', '/api/health']
   const isPublicApiRoute = publicApiRoutes.some(route => pathname.startsWith(route))
 
-  // 6. Access Control Execution
+  // 7. Access Control Execution
   if (!user) {
     // A. Unauthenticated users attempting to view private UI -> Kick to login
     if (isProtectedView) {
@@ -101,23 +110,23 @@ export async function middleware(request: NextRequest) {
       )
     }
   } else {
-    // C. Authenticated users attempting to view auth pages -> Fast-forward to Chat
+    // C. Authenticated users attempting to view auth pages or landing page -> Fast-forward to Chat
     // We prioritize the high-quality Chat/AI Analyst as the "first thing" users see.
-    if (isAuthRoute) {
+    if (isAuthRoute || pathname === '/') {
       const url = request.nextUrl.clone()
       url.pathname = '/chat'
       return NextResponse.redirect(url)
     }
   }
 
-  // 7. Standardize Security Headers for Cloudflare Compatibility
+  // 8. Standardize Security Headers for Cloudflare Compatibility
   supabaseResponse.headers.set('x-middleware-cache', 'no-cache')
   supabaseResponse.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload')
 
   return supabaseResponse
 }
 
-// 8. Matcher Configuration
+// 9. Refined Matcher Configuration
 export const config = {
   matcher: [
     /*
@@ -126,7 +135,7 @@ export const config = {
      * 2. /_next/image (image optimization API)
      * 3. /favicon.ico, /robots.txt, /sitemap.xml
      * 4. Static assets (svg, png, jpg, etc.)
-     * Executing middleware on these wastes compute and slows down the frontend.
+     * Executing middleware on these wastes compute and blocks web crawlers.
      */
     '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

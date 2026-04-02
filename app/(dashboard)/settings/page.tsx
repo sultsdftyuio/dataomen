@@ -5,18 +5,21 @@ import React, { useState, useEffect } from "react";
 import { 
   User, 
   Lock, 
-  Bell, 
-  Key, 
+  Terminal, 
   ShieldCheck, 
-  CheckCircle2, 
   AlertCircle,
   Copy,
   RefreshCw,
-  Laptop
+  Activity,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  HelpCircle,
+  Check,
+  Mail
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,13 +38,20 @@ export default function SettingsPage() {
   // User State
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
+  const [initialFullName, setInitialFullName] = useState(""); // For change detection
 
   // Notification Preferences State
   const [notifyAnomalies, setNotifyAnomalies] = useState(true);
   const [notifyWeekly, setNotifyWeekly] = useState(true);
   
+  // Security & Developer UI State
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [hasCopiedKey, setHasCopiedKey] = useState(false);
+  
   // Developer State
-  const [apiKey, setApiKey] = useState("do_live_xxxxxxxxxxxxxxxxxxxxxxxxxx");
+  const [apiKey] = useState("do_live_7x89f2a4c1b3e6d5p0m9n8q7w6e5r4t3y2u1i0o");
 
   useEffect(() => {
     async function loadProfile() {
@@ -50,7 +60,9 @@ export default function SettingsPage() {
         const { data: { user }, error } = await supabase.auth.getUser();
         if (user) {
           setEmail(user.email || "");
-          setFullName(user.user_metadata?.full_name || "");
+          const name = user.user_metadata?.full_name || "";
+          setFullName(name);
+          setInitialFullName(name);
         }
       } catch (error) {
         console.error("Failed to load user:", error);
@@ -61,16 +73,28 @@ export default function SettingsPage() {
     loadProfile();
   }, [supabase.auth]);
 
+  const hasProfileChanges = fullName !== initialFullName;
+
   const handleSaveProfile = async () => {
+    if (!hasProfileChanges) return;
+    
     setIsSaving(true);
     try {
       const { error } = await supabase.auth.updateUser({
         data: { full_name: fullName }
       });
       if (error) throw error;
-      toast({ title: "Profile updated", description: "Your personal information has been saved." });
+      setInitialFullName(fullName);
+      toast({ 
+        title: "Configuration Saved", 
+        description: "Your system profile has been updated successfully.",
+      });
     } catch (error: any) {
-      toast({ title: "Update failed", description: error.message, variant: "destructive" });
+      toast({ 
+        title: "Sync Error", 
+        description: error.message, 
+        variant: "destructive" 
+      });
     } finally {
       setIsSaving(false);
     }
@@ -78,235 +102,363 @@ export default function SettingsPage() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast({ title: "Copied to clipboard", description: "API key copied securely." });
+    setHasCopiedKey(true);
+    toast({ 
+      title: "Key Copied", 
+      description: "API token securely copied to clipboard.",
+    });
+    setTimeout(() => setHasCopiedKey(false), 2000);
+  };
+
+  // Helper to get initials for the avatar
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
   };
 
   const TABS = [
-    { id: "profile", label: "Personal Info", icon: User },
-    { id: "security", label: "Security", icon: Lock },
-    { id: "notifications", label: "AI Alerts", icon: Bell },
-    { id: "developer", label: "Developer", icon: Key },
+    { id: "profile", label: "Identity & Profile", icon: User },
+    { id: "security", label: "Access & Security", icon: Lock },
+    { id: "notifications", label: "Engine Alerts", icon: Activity },
+    { id: "developer", label: "API & Webhooks", icon: Terminal },
   ] as const;
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-8 h-full p-6 animate-in fade-in">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-96" />
+      <div className="flex flex-col h-[calc(100vh-8rem)] min-h-[600px] max-w-5xl mx-auto w-full p-6 animate-in fade-in">
+        <div className="space-y-2 mb-8">
+          <Skeleton className="h-8 w-48 rounded-md bg-slate-200" />
+          <Skeleton className="h-4 w-96 rounded-md bg-slate-100" />
         </div>
-        <div className="flex flex-col md:flex-row gap-8">
-          <Skeleton className="w-full md:w-64 h-[300px] rounded-xl" />
-          <Skeleton className="flex-1 h-[500px] rounded-xl" />
-        </div>
+        <Skeleton className="flex-1 w-full rounded-xl bg-slate-50 border border-slate-100" />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-8 h-full max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
+    <div className="flex flex-col h-[calc(100vh-8rem)] min-h-[650px] max-w-5xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Manage your personal preferences, security, and developer integrations.
+      {/* Header section */}
+      <div className="mb-6 px-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">System Preferences</h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Manage workspace configuration, access controls, and integration protocols.
         </p>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-8 items-start">
+      {/* Main Unified Interface Container - Elegant White & Navy Foundation */}
+      <div className="flex flex-col md:flex-row flex-1 bg-white border border-slate-200/80 rounded-xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] overflow-hidden">
         
-        {/* Settings Navigation Sidebar */}
-        <aside className="w-full md:w-64 shrink-0 space-y-1">
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                  isActive 
-                    ? "bg-primary text-primary-foreground shadow-sm" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-              >
-                <Icon className={`h-4 w-4 ${isActive ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                {tab.label}
-              </button>
-            );
-          })}
+        {/* Sidebar Navigation */}
+        <aside className="w-full md:w-64 shrink-0 bg-[#FAFAFA] border-r border-slate-100 flex flex-col justify-between z-10">
+          <div className="p-4 space-y-1">
+            <div className="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-3 px-3">
+              Configuration
+            </div>
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
+                    isActive 
+                      ? "bg-blue-50/60 text-blue-700 font-semibold relative after:absolute after:left-0 after:top-1/2 after:-translate-y-1/2 after:h-1/2 after:w-1 after:bg-blue-600 after:rounded-r-full shadow-sm" 
+                      : "text-slate-600 hover:bg-slate-100/80 hover:text-slate-900"
+                  }`}
+                >
+                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-blue-600" : "text-slate-400"}`} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Support Widget */}
+          <div className="p-4 m-4 rounded-lg bg-slate-50 border border-slate-100 shadow-inner">
+            <div className="flex items-center gap-2 mb-2">
+              <HelpCircle className="h-4 w-4 text-slate-400" />
+              <span className="text-xs font-semibold text-slate-700">Need Assistance?</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed mb-3">
+              Our engineering team is available for architectural support.
+            </p>
+            <a 
+              href="mailto:support@arcli.tech" 
+              className="flex items-center justify-center gap-2 w-full py-1.5 px-2 bg-white border border-slate-200 rounded text-xs font-medium text-slate-700 hover:text-blue-600 hover:border-blue-200 transition-colors shadow-sm"
+            >
+              <Mail className="h-3 w-3" /> support@arcli.tech
+            </a>
+          </div>
         </aside>
 
-        {/* Settings Content Area */}
-        <div className="flex-1 w-full space-y-6">
+        {/* Dynamic Content Area */}
+        <main className="flex-1 flex flex-col relative bg-gradient-to-b from-white to-slate-50/30 overflow-hidden">
           
           {/* --- PROFILE TAB --- */}
           {activeTab === "profile" && (
-            <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
-              <CardHeader>
-                <CardTitle>Personal Information</CardTitle>
-                <CardDescription>Update your name and email address.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+              <div className="px-8 py-6 border-b border-slate-100 bg-white">
+                <h2 className="text-lg font-semibold text-slate-900">Identity & Profile</h2>
+                <p className="text-sm text-slate-500 mt-1">Configure your personal identity within the workspace.</p>
+              </div>
+              
+              <div className="p-8 flex-1 overflow-y-auto space-y-8">
+                
+                {/* Visual Avatar Identifier */}
+                <div className="flex items-center gap-5">
+                  <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white text-lg font-semibold shadow-md ring-4 ring-blue-50/50">
+                    {getInitials(fullName || email)}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">{initialFullName || "System User"}</h3>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">{email}</p>
+                  </div>
+                </div>
+
+                {/* Editable State */}
+                <div className="max-w-md space-y-3">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="fullName" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                      Full Name
+                    </Label>
+                    {hasProfileChanges && <span className="text-[10px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">Unsaved</span>}
+                  </div>
                   <Input 
                     id="fullName" 
-                    placeholder="John Doe" 
+                    placeholder="Enter your name" 
                     value={fullName} 
                     onChange={(e) => setFullName(e.target.value)} 
-                    className="max-w-md bg-background"
+                    className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 transition-all h-10 shadow-sm"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
+                
+                {/* Read-Only State */}
+                <div className="max-w-md space-y-3">
+                  <Label htmlFor="email" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                    Email Address
+                  </Label>
                   <Input 
                     id="email" 
                     type="email" 
                     value={email} 
                     disabled 
-                    className="max-w-md bg-muted/50 text-muted-foreground cursor-not-allowed"
+                    className="bg-slate-50 border-slate-100 text-slate-500 cursor-not-allowed h-10 shadow-inner"
                   />
-                  <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1">
-                    <ShieldCheck className="h-3 w-3" /> Email is managed by your identity provider.
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-2 text-[11px] font-medium text-slate-500">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                    Managed securely via identity provider
+                  </div>
                 </div>
-              </CardContent>
-              <CardFooter className="border-t bg-muted/20 px-6 py-4">
+              </div>
+
+              <div className="px-8 py-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-[11px] font-medium text-slate-500">
+                  Changes apply immediately across the Arcli analytical engine.
+                </p>
                 <Button 
                   onClick={handleSaveProfile} 
-                  disabled={isSaving}
-                  className="shadow-sm transition-transform active:scale-95"
+                  disabled={isSaving || !hasProfileChanges}
+                  className="bg-slate-900 hover:bg-slate-800 text-white shadow-md transition-all active:scale-[0.98] disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none disabled:active:scale-100"
                 >
                   {isSaving && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
-                  Save Changes
+                  Save Identity Configuration
                 </Button>
-              </CardFooter>
-            </Card>
+              </div>
+            </div>
           )}
 
           {/* --- SECURITY TAB --- */}
           {activeTab === "security" && (
-            <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
-              <CardHeader>
-                <CardTitle>Security</CardTitle>
-                <CardDescription>Manage your password and authentication settings.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4 max-w-md">
-                  <div className="space-y-2">
-                    <Label htmlFor="current-password">Current Password</Label>
-                    <Input id="current-password" type="password" className="bg-background" />
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+              <div className="px-8 py-6 border-b border-slate-100 bg-white">
+                <h2 className="text-lg font-semibold text-slate-900">Access & Security</h2>
+                <p className="text-sm text-slate-500 mt-1">Manage cryptographic keys and session parameters.</p>
+              </div>
+              
+              <div className="p-8 flex-1 overflow-y-auto space-y-8">
+                <div className="max-w-md space-y-6">
+                  
+                  {/* Current Password with Visibility Toggle */}
+                  <div className="space-y-3 relative">
+                    <Label htmlFor="current-password" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                      Current Password
+                    </Label>
+                    <div className="relative">
+                      <Input 
+                        id="current-password" 
+                        type={showCurrentPassword ? "text" : "password"} 
+                        className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-10 shadow-sm pr-10" 
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-password">New Password</Label>
-                    <Input id="new-password" type="password" className="bg-background" />
+
+                  {/* New Password with Visibility Toggle */}
+                  <div className="space-y-3 relative">
+                    <Label htmlFor="new-password" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                      New Password
+                    </Label>
+                    <div className="relative">
+                      <Input 
+                        id="new-password" 
+                        type={showNewPassword ? "text" : "password"} 
+                        className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-10 shadow-sm pr-10" 
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
+
                 </div>
-              </CardContent>
-              <CardFooter className="border-t bg-muted/20 px-6 py-4 flex justify-between items-center">
-                <p className="text-xs text-muted-foreground">You will be logged out of other devices.</p>
-                <Button variant="default">Update Password</Button>
-              </CardFooter>
-            </Card>
+              </div>
+
+              <div className="px-8 py-4 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-[11px] font-medium text-slate-500 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
+                  Updating credentials will terminate all active sessions.
+                </p>
+                <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-md transition-all active:scale-[0.98]">
+                  Update Credentials
+                </Button>
+              </div>
+            </div>
           )}
 
           {/* --- NOTIFICATIONS TAB --- */}
           {activeTab === "notifications" && (
-            <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
-              <CardHeader>
-                <CardTitle>AI Alert Preferences</CardTitle>
-                <CardDescription>Control how the autonomous engine contacts you.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between p-4 border rounded-xl bg-background/50">
-                  <div className="space-y-0.5 max-w-[70%]">
-                    <Label className="text-sm font-bold flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-rose-500" />
-                      Critical Anomalies
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+              <div className="px-8 py-6 border-b border-slate-100 bg-white">
+                <h2 className="text-lg font-semibold text-slate-900">Engine Alerts</h2>
+                <p className="text-sm text-slate-500 mt-1">Define routing logic for system-generated insights.</p>
+              </div>
+              
+              <div className="p-8 flex-1 overflow-y-auto space-y-4">
+                
+                {/* Setting Row 1 */}
+                <div className={`flex items-start justify-between p-5 border bg-white rounded-lg transition-all duration-200 ${notifyAnomalies ? 'border-rose-200 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <div className="space-y-1.5 max-w-[80%]">
+                    <Label className="text-sm font-semibold text-slate-900 flex items-center gap-2 cursor-pointer" onClick={() => setNotifyAnomalies(!notifyAnomalies)}>
+                      <AlertCircle className={`h-4 w-4 ${notifyAnomalies ? 'text-rose-500' : 'text-slate-400'}`} />
+                      Critical Anomaly Routing
                     </Label>
-                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-                      Receive immediate emails when the AI engine detects high-impact metric drops or spikes (e.g., sudden churn).
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Dispatch immediate email payloads when the autonomous engine detects high-variance metric shifts (e.g., sudden churn spikes).
                     </p>
                   </div>
-                  <Switch 
-                    checked={notifyAnomalies} 
-                    onCheckedChange={setNotifyAnomalies} 
-                  />
+                  <Switch checked={notifyAnomalies} onCheckedChange={setNotifyAnomalies} className="data-[state=checked]:bg-rose-500" />
                 </div>
 
-                <div className="flex items-center justify-between p-4 border rounded-xl bg-background/50">
-                  <div className="space-y-0.5 max-w-[70%]">
-                    <Label className="text-sm font-bold flex items-center gap-2">
-                      <Laptop className="h-4 w-4 text-blue-500" />
-                      Weekly Executive Digest
+                {/* Setting Row 2 */}
+                <div className={`flex items-start justify-between p-5 border bg-white rounded-lg transition-all duration-200 ${notifyWeekly ? 'border-blue-200 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <div className="space-y-1.5 max-w-[80%]">
+                    <Label className="text-sm font-semibold text-slate-900 flex items-center gap-2 cursor-pointer" onClick={() => setNotifyWeekly(!notifyWeekly)}>
+                      <Activity className={`h-4 w-4 ${notifyWeekly ? 'text-blue-600' : 'text-slate-400'}`} />
+                      Executive Digest Pipeline
                     </Label>
-                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-                      A summarized narrative report of your entire workspace sent every Monday morning.
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Compile and transmit a summarized narrative report of your entire workspace state every Monday at 08:00 UTC.
                     </p>
                   </div>
-                  <Switch 
-                    checked={notifyWeekly} 
-                    onCheckedChange={setNotifyWeekly} 
-                  />
+                  <Switch checked={notifyWeekly} onCheckedChange={setNotifyWeekly} className="data-[state=checked]:bg-blue-600" />
                 </div>
-              </CardContent>
-            </Card>
+
+              </div>
+            </div>
           )}
 
           {/* --- DEVELOPER TAB --- */}
           {activeTab === "developer" && (
-            <div className="space-y-6">
-              <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md">
-                <CardHeader>
-                  <CardTitle>API Keys</CardTitle>
-                  <CardDescription>Use these keys to authenticate via the external API and push datasets programmatically.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="p-4 bg-muted/30 border border-muted rounded-xl space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="font-bold text-sm text-foreground">Production Key</Label>
-                      <span className="text-[10px] font-bold tracking-wider uppercase text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">Active</span>
-                    </div>
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+              <div className="px-8 py-6 border-b border-slate-100 bg-white flex justify-between items-center">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">API & Webhooks</h2>
+                  <p className="text-sm text-slate-500 mt-1">Manage programmatic access and external integrations.</p>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full border border-emerald-200 shadow-sm">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  API Active
+                </div>
+              </div>
+              
+              <div className="p-8 flex-1 overflow-y-auto space-y-8">
+                
+                {/* API Key Block - Strict Monospace typography for tech data */}
+                <div className="space-y-4">
+                  <Label className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                    Production Token
+                  </Label>
+                  <div className="p-5 border border-slate-200 bg-slate-50/80 rounded-lg space-y-4 shadow-inner">
                     <div className="flex items-center gap-2">
-                      <Input 
-                        readOnly 
-                        value={apiKey} 
-                        type="password"
-                        className="font-mono text-xs bg-background" 
-                      />
-                      <Button variant="outline" size="icon" onClick={() => copyToClipboard(apiKey)} className="shrink-0">
-                        <Copy className="h-4 w-4 text-muted-foreground" />
+                      <div className="relative flex-1">
+                        <Input 
+                          readOnly 
+                          value={apiKey} 
+                          type={showApiKey ? "text" : "password"}
+                          className="font-mono text-sm tracking-widest bg-white border-slate-200 text-slate-800 h-11 shadow-sm pr-12 w-full" 
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-600 rounded uppercase tracking-wider transition-colors"
+                        >
+                          {showApiKey ? "Hide" : "Reveal"}
+                        </button>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => copyToClipboard(apiKey)} 
+                        className={`h-11 px-4 border-slate-200 shadow-sm transition-all duration-300 ${hasCopiedKey ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-slate-600 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-200'}`}
+                      >
+                        {hasCopiedKey ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Last used: 2 hours ago from <span className="font-mono text-foreground">192.168.1.1</span>
+                    <div className="flex items-center justify-between text-[11px] font-medium">
+                      <span className="text-slate-500">
+                        Last requested: <span className="text-slate-900 font-mono">14 mins ago</span>
+                      </span>
+                      <span className="text-slate-500">
+                        IP: <span className="text-slate-900 font-mono">192.168.1.1</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex justify-start">
+                    <Button variant="ghost" size="sm" className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 text-xs font-semibold px-3 h-8 transition-colors">
+                      Revoke & Regenerate Key
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Webhook Notice */}
+                <div className="mt-8 p-6 rounded-lg border border-blue-100 bg-gradient-to-r from-blue-50/50 to-transparent flex items-start gap-4">
+                  <div className="h-8 w-8 rounded-full bg-white flex items-center justify-center shrink-0 border border-blue-100 shadow-sm">
+                    <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">Webhook Architecture</h4>
+                    <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                      DataOmen relies on modular webhook pipelines defined at the agent level rather than global settings. To configure an outbound webhook, navigate to the specific Agent's configuration panel in the deployment interface.
                     </p>
                   </div>
-                </CardContent>
-                <CardFooter className="border-t bg-muted/20 px-6 py-4">
-                  <Button variant="destructive" size="sm" className="bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white border-0 shadow-none">
-                    Revoke & Roll Key
-                  </Button>
-                </CardFooter>
-              </Card>
+                </div>
 
-              <Card className="border-border shadow-sm bg-background/50 backdrop-blur-md border-dashed">
-                <CardContent className="p-6 text-center space-y-2">
-                  <div className="mx-auto w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center mb-3">
-                    <CheckCircle2 className="h-5 w-5 text-blue-500" />
-                  </div>
-                  <h3 className="font-bold text-sm">Need a webhook?</h3>
-                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    DataOmen supports outbound webhooks for real-time alerts. Setup is available in the specific Agent configuration.
-                  </p>
-                </CardContent>
-              </Card>
+              </div>
             </div>
           )}
 
-        </div>
+        </main>
       </div>
     </div>
   );

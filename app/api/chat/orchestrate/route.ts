@@ -3,15 +3,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { z } from "zod";
-import { Redis } from "@upstash/redis";
 
 export const runtime = "edge"; // Maximize performance & minimize latency
 export const dynamic = "force-dynamic";
 
 const BACKEND_URL = process.env.BACKEND_API_URL || "https://api.arcli.tech";
-
-// Initialize Upstash Redis (Lazy evaluation for Edge compatibility)
-const redis = Redis.fromEnv();
 
 // ---------------------------------------------------------------------------
 // Context Typing for Edge Runtime (App Router)
@@ -22,7 +18,7 @@ interface EdgeRouteContext {
 }
 
 // ---------------------------------------------------------------------------
-// Utility: Redis Timeout Wrapper (Strictly Typed)
+// Utility: Timeout Wrapper (Strictly Typed)
 // ---------------------------------------------------------------------------
 const withTimeout = async <T>(promise: Promise<T>, ms: number = 300): Promise<T> => {
   let timer: NodeJS.Timeout;
@@ -66,52 +62,13 @@ const PayloadSchema = z.object({
   ab_test_config: z.any().optional(),
 });
 
-// ---------------------------------------------------------------------------
-// Multi-Tenant Lossless Cache Fingerprinting
-// ---------------------------------------------------------------------------
-async function generateCacheKey(payload: z.infer<typeof PayloadSchema>, tenant_id: string): Promise<string> {
-  const safeConfigHash = (obj: any) => obj ? JSON.stringify(obj, Object.keys(obj).sort()) : "null";
-  
-  const stablePayload = {
-    tenant: tenant_id,
-    prompt: payload.prompt.trim().toLowerCase(),
-    datasets: [...payload.active_dataset_ids].sort(),
-    documents: [...payload.active_document_ids].sort(),
-    agent: payload.agent_id || "default",
-    config_pred: safeConfigHash(payload.predictive_config),
-    config_ab: safeConfigHash(payload.ab_test_config),
-  };
-  
-  const data = new TextEncoder().encode(JSON.stringify(stablePayload));
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return `cache:query:${hashArray.map(b => b.toString(16).padStart(2, '0')).join('')}`;
-}
-
 export async function POST(req: NextRequest, context: any) {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
   let tenant_id = "anonymous";
   
-  let shouldDecrementConcurrency = false;
-
   const log = (level: "info" | "warn" | "error", event: string, data: any = {}) => {
     console[level](JSON.stringify({ timestamp: new Date().toISOString(), level, requestId, tenant_id, event, ...data }));
-  };
-
-  // Centralized Concurrency Cleanup Helper
-  const releaseConcurrency = async (tenantId: string) => {
-    if (!shouldDecrementConcurrency) return;
-    try {
-      await Promise.allSettled([
-        withTimeout<number>(redis.decr("concurrency:backend:active")).catch(() => 0),
-        withTimeout<number>(redis.decr(`concurrency:tenant:${tenantId}:active`)).catch(() => 0)
-      ]);
-    } catch (e) {
-      log("error", "failed_to_release_concurrency", { error: String(e) });
-    } finally {
-      shouldDecrementConcurrency = false; // Prevent double-decrementing
-    }
   };
 
   try {
@@ -125,23 +82,13 @@ export async function POST(req: NextRequest, context: any) {
       );
     }
 
-    // 2. Global Circuit Breaker (Half-Open Native Pattern)
-    const isTripped: string | null = await withTimeout<string | null>(redis.get("cb:global_tripped")).catch((): null => null);
-    if (isTripped) {
-      log("warn", "global_circuit_breaker_active_fast_reject");
-      return NextResponse.json(
-        { type: "error", message: "Cluster is at capacity. Please try again in 30 seconds or contact support@arcli.tech." },
-        { status: 503, headers: { "Retry-After": "30", "X-Request-ID": requestId } }
-      );
-    }
-
     // Header Payload Shedding
     const contentLength = req.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > 25000) { 
       return NextResponse.json({ type: "error", message: "Payload too large." }, { status: 413, headers: { "X-Request-ID": requestId } });
     }
 
-    // 3. Parallel Preflight (Auth & Parsing)
+    // 2. Parallel Preflight (Auth & Parsing)
     const [authResult, bodyResult] = await Promise.allSettled([
       (async () => {
         const supabase = await createClient();
@@ -175,9 +122,9 @@ export async function POST(req: NextRequest, context: any) {
     }
 
     const parsedPayload = validationResult.data;
-    const { agent_id, prompt, active_dataset_ids, active_document_ids, history, predictive_config, ab_test_config } = parsedPayload;
+    const { agent_id, prompt, active_dataset_ids, active_document_ids, history } = parsedPayload;
 
-    // 4. Semantic Interception (Edge Fast-Path for Greetings)
+    // 3. Semantic Interception (Edge Fast-Path for Greetings)
     const normalizedPrompt = prompt.trim().toLowerCase();
     const isBasicGreeting = /^(hi|hello|hey|yo|greetings|howdy)\b/i.test(normalizedPrompt) || 
                             /^(how are you\??|help|what can you do\??|who are you\??)$/i.test(normalizedPrompt);
@@ -209,75 +156,16 @@ export async function POST(req: NextRequest, context: any) {
       return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Request-ID": requestId } });
     }
 
-    // 5. Lossless Semantic Stream Replay Caching
-    const cacheKey = await generateCacheKey(parsedPayload, tenant_id);
-    const cachedResultStr: string | null = await withTimeout<string | null>(redis.get(cacheKey)).catch((): null => null);
-    
-    if (cachedResultStr && typeof cachedResultStr === "string") {
-      log("info", "redis_semantic_cache_hit_lossless", { cacheKey });
-      const stream = new ReadableStream({
-        async start(controller) {
-          const encoder = new TextEncoder();
-          const send = (packet: StreamPacket) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(packet)}\n\n`));
-          
-          send({ type: "status", content: "Retrieving cached analysis..." });
-          await new Promise(r => setTimeout(r, 150)); 
-          
-          try {
-            const cachedPackets: StreamPacket[] = JSON.parse(cachedResultStr);
-            for (const packet of cachedPackets) {
-              if (req.signal.aborted) break;
-              send(packet);
-              if (packet.type === "narrative_chunk") await new Promise(r => setTimeout(r, 5)); // Natural pacing
-            }
-          } catch (e) {
-            log("error", "cache_replay_failed", { error: String(e) });
-          } finally {
-            send({ type: "done", content: "Complete", usage: { tokens: 0 } });
-            controller.close();
-          }
-        }
-      });
-      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Request-ID": requestId } });
-    }
-
-    // 6. Global + Tenant Concurrency Guard (FAIL-CLOSED)
-    const [activeGlobalReqs, activeTenantReqs]: [number, number] = await Promise.all([
-      withTimeout<number>(redis.incr("concurrency:backend:active")).catch((): number => 9999),
-      withTimeout<number>(redis.incr(`concurrency:tenant:${tenant_id}:active`)).catch((): number => 9999)
-    ]);
-    
-    shouldDecrementConcurrency = true; 
-    
-    await Promise.allSettled([
-      withTimeout<number>(redis.expire("concurrency:backend:active", 120)).catch((): number => 0),
-      withTimeout<number>(redis.expire(`concurrency:tenant:${tenant_id}:active`, 120)).catch((): number => 0)
-    ]);
-
-    if (activeGlobalReqs > 50 || activeTenantReqs > 10) {
-      log("warn", "concurrency_limit_exceeded_rollback", { activeGlobalReqs, activeTenantReqs });
-      await releaseConcurrency(tenant_id);
-      
-      return NextResponse.json(
-        { type: "error", message: "Capacity reached for this workspace. Please wait a moment and try again." },
-        { status: 503, headers: { "Retry-After": "10", "X-Request-ID": requestId } }
-      );
-    }
-
-    // 7. HEAVY PIPELINE (Gateway Orchestrator & Polling)
+    // 4. HEAVY PIPELINE (Gateway Orchestrator & Polling)
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         let actualTokens = 0; 
         let rawByteCount = 0;
-        const lossLessCacheBuffer: StreamPacket[] = []; 
 
         const sendPacket = (packet: StreamPacket) => {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(packet)}\n\n`));
-            if (packet.type !== "status" && packet.type !== "error") {
-               lossLessCacheBuffer.push(packet); 
-            }
           } catch (e) {
             log("error", "enqueue_failed", { error: String(e) });
           }
@@ -326,16 +214,8 @@ export async function POST(req: NextRequest, context: any) {
             });
 
             if (backendResponse.ok) {
-              await withTimeout<number>(redis.del(`cb:fails:${tenant_id}`)).catch((): number => 0);
               break; 
             } else if (backendResponse.status >= 500) {
-              const fails: number = await withTimeout<number>(redis.incr(`cb:fails:${tenant_id}`)).catch((): number => 0);
-              if (fails === 1) await withTimeout<number>(redis.expire(`cb:fails:${tenant_id}`, 60)).catch((): number => 0);
-              
-              if (fails >= 5) {
-                await withTimeout<string | null>(redis.setex(`cb:tripped:${tenant_id}`, 30, "true")).catch((): null => null); 
-                throw new Error("Tenant Circuit Breaker Tripped (OPEN).");
-              }
               throw new Error(`Backend 5xx (HTTP ${backendResponse.status})`);
             } else {
               const errData = await backendResponse.text().catch(() => "Unknown error");
@@ -394,7 +274,7 @@ export async function POST(req: NextRequest, context: any) {
 
             buffer += decoder.decode(value, { stream: true });
             
-            // 8. Robust JSON Line Parsing (Ignores internal newlines inside strings)
+            // 5. Robust JSON Line Parsing (Ignores internal newlines inside strings)
             let boundary;
             while ((boundary = buffer.indexOf("\n\n")) !== -1) {
               const rawChunk = buffer.slice(0, boundary).trim();
@@ -427,7 +307,7 @@ export async function POST(req: NextRequest, context: any) {
              sendPacket({ type: "error", content: "The data stream was interrupted.", retryable: true });
           }
         } finally {
-          // 9. Memory Leak & Resource Cleanup
+          // 6. Memory Leak & Resource Cleanup
           clearInterval(heartbeatInterval);
           clearTimeout(globalTimeout);
           req.signal.removeEventListener("abort", abortHandler);
@@ -441,13 +321,6 @@ export async function POST(req: NextRequest, context: any) {
           // Non-blocking cleanup execution
           const cleanupTask = async () => {
             try {
-              await releaseConcurrency(tenant_id);
-
-              const cachePayloadStr = JSON.stringify(lossLessCacheBuffer);
-              if (lossLessCacheBuffer.length > 3 && latency < 60000 && cachePayloadStr.length < 150000) {
-                 await withTimeout<string | null>(redis.setex(cacheKey, 300, cachePayloadStr)).catch((): null => null);
-              }
-
               if (finalTokens > 0) {
                 await withTimeout<Response>(
                   fetch(`${BACKEND_URL}/api/internal/billing/deduct`, {
@@ -493,12 +366,6 @@ export async function POST(req: NextRequest, context: any) {
 
   } catch (error: any) {
     log("error", "fatal_route_error", { error: String(error) });
-    
-    // Absolute Last Resort Concurrency Cleanup
-    const emergencyCleanup = releaseConcurrency(tenant_id);
-    if (context?.waitUntil) {
-       context.waitUntil(emergencyCleanup);
-    }
 
     return NextResponse.json(
       { type: "error", message: "A critical error occurred in the orchestration gateway. Contact support@arcli.tech." }, 
