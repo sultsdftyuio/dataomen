@@ -1,9 +1,9 @@
-// components/ingestion/FileUploadZone.tsx
 "use client";
 
 import React, { useCallback, useState } from "react";
 import { UploadCloud, File as FileIcon, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/utils/supabase/client"; // 🚀 Added: Secure local session resolution
 
 // 1. Export the Success Data interface so the Orchestrator can use it
 export interface UploadSuccessData {
@@ -18,7 +18,7 @@ export interface UploadSuccessData {
 // 2. Explicitly define the props the component accepts
 export interface FileUploadZoneProps {
   isEphemeral?: boolean;
-  token?: string; // Optional auth token passed from parent
+  token?: string; // Kept for backwards compatibility, but no longer strictly required
   onUploadSuccess?: (data: UploadSuccessData) => void;
 }
 
@@ -58,7 +58,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       const isUnstructured = fileName.endsWith('.pdf') || fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.docx');
       
       const isValidType = isStructured || isUnstructured;
-      const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB
+      const isValidSize = file.size <= 50 * 1024 * 1024; // 50MB limits
 
       if (!isValidType) {
         toast({ 
@@ -70,7 +70,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       if (!isValidSize) {
         toast({ 
           title: "File too large", 
-          description: `${file.name} exceeds 50MB limit.`, 
+          description: `${file.name} exceeds the 50MB ingestion limit.`, 
           variant: "destructive" 
         });
       }
@@ -113,6 +113,20 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
   const uploadFiles = async () => {
     const pendingFiles = files.filter(f => f.status === 'pending');
     
+    // 🚀 CRITICAL FIX: Autonomously fetch the session token
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const activeToken = token || session?.access_token;
+
+    if (!activeToken) {
+      toast({
+        title: "Authentication Error",
+        description: "Your session has expired. Please log in again.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     for (const fileObj of pendingFiles) {
       setFiles(prev => prev.map(f => 
         f.id === fileObj.id ? { ...f, status: 'uploading', progress: 0 } : f
@@ -122,19 +136,17 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         // 1. Prepare the Payload
         const formData = new FormData();
         formData.append('file', fileObj.file);
-        formData.append('dataset_name', fileObj.file.name);
-        formData.append('mask_pii', 'true'); // Security best practice
+        formData.append('name', fileObj.file.name); // Aligned to datasets.py schema `name` field
 
         // 2. Real Network Request using XHR for Native Progress Events
         const response: any = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           
-          // Adjust this URL to match your FastAPI/Next.js route that calls `ingestion_service.py`
-          xhr.open('POST', '/api/datasets/upload', true);
+          // 🚀 ROUTING FIX: Synchronized with the v1 API prefix
+          xhr.open('POST', '/api/v1/datasets/upload', true);
           
-          if (token) {
-            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-          }
+          // Inject dynamic token
+          xhr.setRequestHeader('Authorization', `Bearer ${activeToken}`);
 
           // Real-time progress tracking
           xhr.upload.onprogress = (event) => {
@@ -158,7 +170,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             }
           };
 
-          xhr.onerror = () => reject(new Error('Network error during upload'));
+          xhr.onerror = () => reject(new Error('Network error during upload connection.'));
           
           // Execute the request
           xhr.send(formData);
@@ -170,14 +182,14 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         ));
         
         toast({
-          title: "Upload complete",
-          description: `${fileObj.file.name} has been processed ${fileObj.isDocument ? 'into semantic vectors' : 'into structured parquet'}.`
+          title: "Upload Complete",
+          description: `${fileObj.file.name} has been processed ${fileObj.isDocument ? 'into semantic vectors' : 'into a structured data frame'}.`
         });
 
         // 4. Pass the actual backend response data to the parent orchestrator
         if (onUploadSuccess) {
-          // Extract the UUID from the storage path (e.g., "qdrant://collection/UUID" or "s3://bucket/UUID")
-          const parsedId = response.storage_path?.split('/').pop() || response.dataset_id;
+          // Fallbacks handle variances between unstructured and structured ingestion return payloads
+          const parsedId = response.storage_path?.split('/').pop() || response.id;
 
           onUploadSuccess({
             datasetId: parsedId,
@@ -198,8 +210,8 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         ));
         
         toast({
-          title: "Upload Failed",
-          description: error.message || `There was an error processing ${fileObj.file.name}.`,
+          title: "Upload Blocked",
+          description: error.message || `The Data Engine refused processing for ${fileObj.file.name}.`,
           variant: "destructive"
         });
       }
@@ -211,19 +223,19 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
       <label 
         className={`cursor-pointer flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg transition-all group relative overflow-hidden ${
           isDragging 
-            ? 'border-indigo-500 bg-indigo-500/10' 
-            : 'bg-zinc-900 border-zinc-800 hover:border-indigo-500 hover:bg-zinc-800/50'
+            ? 'border-blue-500 bg-blue-50/50' 
+            : 'bg-white border-slate-200 hover:border-blue-400 hover:bg-slate-50/50'
         }`}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
         htmlFor="file-upload"
       >
-        <UploadCloud className={`w-12 h-12 mb-4 transition-colors ${isDragging ? 'text-indigo-400' : 'text-zinc-500 group-hover:text-indigo-400'}`} />
-        <p className="text-sm text-zinc-300 font-medium mb-1">
+        <UploadCloud className={`w-12 h-12 mb-4 transition-colors ${isDragging ? 'text-blue-500' : 'text-slate-400 group-hover:text-blue-500'}`} />
+        <p className="text-sm text-slate-700 font-bold mb-1 tracking-tight">
           Drag and drop files here or click to browse
         </p>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-slate-500 mb-4 font-medium">
           Structured (CSV, JSON, Parquet) & Documents (PDF, TXT, MD, DOCX)
         </p>
         
@@ -236,7 +248,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           multiple
         />
         
-        <div className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-medium text-sm transition-colors shadow-sm">
+        <div className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm transition-colors shadow-sm shadow-blue-500/20">
           Select Files
         </div>
       </label>
@@ -246,32 +258,34 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
           {files.map((fileObj) => (
             <div 
               key={fileObj.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-zinc-800 bg-zinc-900/50"
+              className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-white shadow-sm"
             >
-              <div className="flex items-center space-x-3 flex-1 min-w-0">
-                <FileIcon className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+              <div className="flex items-center space-x-4 flex-1 min-w-0">
+                <div className="p-2 bg-blue-50 rounded-lg">
+                  <FileIcon className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-zinc-200 truncate flex items-center gap-2">
+                  <p className="text-sm font-bold text-slate-900 truncate flex items-center gap-2">
                     {fileObj.file.name}
                     {fileObj.isDocument && (
-                      <span className="text-[10px] uppercase tracking-wider bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded">RAG Doc</span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-md">RAG Doc</span>
                     )}
                   </p>
                   <div className="flex items-center space-x-2 mt-1">
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs font-medium text-slate-500">
                       {(fileObj.file.size / 1024 / 1024).toFixed(2)} MB
                     </span>
                     {fileObj.status === 'uploading' && (
                       <>
-                        <span className="text-xs text-zinc-600">•</span>
-                        <span className="text-xs text-indigo-400">{fileObj.progress}%</span>
+                        <span className="text-xs text-slate-300">•</span>
+                        <span className="text-xs font-bold text-blue-600">{fileObj.progress}%</span>
                       </>
                     )}
                   </div>
                   {fileObj.status === 'uploading' && (
-                    <div className="h-1 w-full bg-zinc-800 rounded-full mt-2 overflow-hidden">
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full mt-2.5 overflow-hidden">
                       <div 
-                        className="h-full bg-indigo-500 transition-all duration-300"
+                        className="h-full bg-blue-600 transition-all duration-300 rounded-full"
                         style={{ width: `${fileObj.progress}%` }}
                       />
                     </div>
@@ -281,14 +295,14 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
               
               <div className="flex items-center ml-4 space-x-2">
                 {fileObj.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
-                {fileObj.status === 'error' && <AlertCircle className="w-5 h-5 text-red-500" />}
+                {fileObj.status === 'error' && <AlertCircle className="w-5 h-5 text-rose-500" />}
                 {fileObj.status === 'pending' && (
                   <button 
                     onClick={(e) => {
                       e.preventDefault();
                       removeFile(fileObj.id);
                     }}
-                    className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-200 transition-colors"
+                    className="p-1.5 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -297,11 +311,11 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
             </div>
           ))}
 
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-end pt-4 border-t border-slate-100">
             <button
               onClick={uploadFiles}
               disabled={!files.some(f => f.status === 'pending')}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded font-medium text-sm transition-colors shadow-sm"
+              className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm transition-colors shadow-sm"
             >
               Upload Pending Files
             </button>

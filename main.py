@@ -182,7 +182,7 @@ def register_routes(fastapi_app: FastAPI) -> None:
 register_routes(app)
 
 # ------------------------------------------------------------------------------
-# Entrypoint
+# Entrypoint (main.py)
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
@@ -192,9 +192,18 @@ if __name__ == "__main__":
     is_dev = os.getenv("ENVIRONMENT") == "development"
     
     # CRITICAL CLOUD FIX: Limit to 1 worker on standard cloud containers.
-    # If Uvicorn or Gunicorn spawns multiple workers, the baseline RAM of imports
-    # multiplies, causing an instant OOM on 512MB-1GB instances.
     workers = int(os.getenv("WEB_CONCURRENCY", "1"))
     
     logger.info(f"Starting API server on port {port} with {workers} worker(s)...")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=is_dev, workers=workers)
+    
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=port, 
+        reload=is_dev, 
+        workers=workers,
+        # 🚀 SECURITY & ROUTING UPGRADE: Trust Load Balancer Headers
+        # Tells FastAPI to respect X-Forwarded-Proto: https so 307 redirects don't downgrade to HTTP
+        proxy_headers=True,
+        forwarded_allow_ips="*"
+    )

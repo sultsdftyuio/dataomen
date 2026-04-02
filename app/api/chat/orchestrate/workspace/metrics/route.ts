@@ -1,3 +1,5 @@
+// app/api/chat/orchestrate/workspace/metrics/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
@@ -9,23 +11,25 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    // 1. Authentication & Tenant Isolation
-    // Validate session on the edge to prevent unauthorized data access
+    // 1. Security by Design: Cryptographic Authentication & Tenant Isolation
+    // CRITICAL: We use getUser() instead of getSession() to guarantee the JWT 
+    // is verified against the Supabase Auth server, preventing cookie spoofing.
     const supabase = await createClient();
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (authError || !session) {
+    if (authError || !user) {
       return NextResponse.json(
-        { error: "Unauthorized: Session expired or invalid." }, 
+        { error: "Unauthorized: Token verification failed or expired." }, 
         { status: 401 }
       );
     }
 
-    const tenant_id = session.user.id;
+    // Securely extract the tenant isolation boundary
+    const tenant_id = user.app_metadata?.tenant_id || user.id;
 
-    // 2. Data Aggregation (Currently returning the real "Empty State")
+    // 2. Analytical Data Aggregation (Currently returning the "Empty State")
     // TODO: In the future, replace this payload by fetching real aggregations 
-    // for this specific tenant_id from your Python Engine or Supabase directly.
+    // for this specific tenant_id from your Python Engine (DuckDB/Polars).
     
     const payload = {
       metrics: {
@@ -39,7 +43,7 @@ export async function GET(req: NextRequest) {
       alerts: []
     };
 
-    // 3. Return Clean Data
+    // 3. Return Clean JSON
     return NextResponse.json(payload, { status: 200 });
 
   } catch (error: any) {

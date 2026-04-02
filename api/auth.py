@@ -1,6 +1,7 @@
 # api/auth.py
 
 import os
+import json
 import logging
 import jwt  # Requires: pip install PyJWT
 from typing import Dict, Any, Optional
@@ -16,6 +17,22 @@ from dotenv import load_dotenv
 # ------------------------------------------------------------------------------
 logger = logging.getLogger("DataOmenAuth")
 load_dotenv()
+
+# Security by Design: Enforce M2M Key for Cloudflare & Celery to DigitalOcean comms
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY")
+if not INTERNAL_SERVICE_KEY:
+    # Structured logging matching the exact format for cloud monitoring
+    logger.error(json.dumps({
+        "timestamp": "startup",
+        "level": "error",
+        "tenant_id": "anonymous",
+        "event": "critical_startup_failure",
+        "error": "Missing INTERNAL_SERVICE_KEY",
+        "details": "Machine-to-Machine (M2M) microservice routing will fail without this."
+    }))
+    # Fail-fast in production to trigger container restart alerts
+    if os.getenv("ENVIRONMENT") == "production":
+        raise RuntimeError("INTERNAL_SERVICE_KEY is strictly required in production.")
 
 # Initialize API Router for modular registration
 auth_router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
@@ -71,13 +88,24 @@ def get_supabase_client() -> Client:
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """
-    SaaS Performance Upgrade: Attempts stateless JWT verification first.
-    Local decoding reduces auth latency to <1ms, preventing API rate limits.
+    SaaS Performance Upgrade: M2M Bypass -> Stateless JWT -> Network Verification
     """
     token = credentials.credentials
+
+    # FAST PATH 0: Machine-to-Machine (M2M) Authentication
+    # Permits Cloudflare Workers and Celery Tasks to act as the internal system
+    if INTERNAL_SERVICE_KEY and token == INTERNAL_SERVICE_KEY:
+        return {
+            "sub": "system-worker-0000",
+            "email": "system@arcli.tech",
+            "role": "service_role",
+            "app_metadata": {"tenant_id": "arcli.tech"}
+        }
+
     jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
 
-    # FAST PATH: Stateless Local Verification
+    # FAST PATH 1: Stateless Local Verification
+    # Local decoding reduces auth latency to <1ms, preventing API rate limits.
     if jwt_secret:
         try:
             # Supabase uses HS256 for signing standard JWTs
@@ -125,6 +153,16 @@ def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> T
     
     if not user_id or not email:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed identity profile.")
+
+    # 0. M2M System Bypass
+    if user_id == "system-worker-0000":
+        return TenantContext(
+            user_id=str(user_id),
+            tenant_id=app_metadata.get("tenant_id", "arcli.tech"),
+            email=email,
+            role="admin",
+            app_metadata=app_metadata
+        )
 
     # 1. Zero-Config Organization Routing (Domain Extraction)
     tenant_domain = email.split("@")[1].lower() if "@" in email else "unknown"

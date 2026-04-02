@@ -2,23 +2,37 @@
  * ARCLI.TECH - Universal API Client
  * Strategy: Hybrid Performance & Multi-Tenant Security
  * Description: Wrapper around native fetch that automatically injects 
- * Supabase Authorization headers and handles Vercel-to-DigitalOcean proxy routing.
+ * Supabase Authorization headers and handles Vercel-to-DigitalOcean routing securely.
  */
 
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient } from '@/utils/supabase/client'
 
-// We use the rewrite path by default so Next.js handles the Vercel->DigitalOcean proxy
-const API_BASE_URL = '/api/v1'
+// Security by Design: Resolve base URL and strictly enforce HTTPS for external domains
+// This definitively prevents Browser Mixed Content blocks when communicating with DigitalOcean
+// Load Balancers over direct URLs, while falling back gracefully to the Next.js rewrite proxy.
+const resolveApiUrl = () => {
+  const url = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+  
+  // Force protocol upgrade if an insecure absolute URL leaked into the environment
+  if (url.startsWith('http://') && !url.includes('localhost')) {
+    return url.replace('http://', 'https://');
+  }
+  return url;
+};
+
+const API_BASE_URL = resolveApiUrl();
 
 interface FetchOptions extends RequestInit {
   requireAuth?: boolean;
 }
 
 export class ApiClient {
-  private static supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  // Analytical Efficiency: We utilize a dynamic getter to tap into the globally 
+  // cached singleton instance created in `utils/supabase/client.ts`.
+  // This eradicates the "Multiple GoTrueClient instances detected" warning.
+  private static get supabase() {
+    return createClient();
+  }
 
   /**
    * Core execution method prioritizing functional, stateless operations.
@@ -41,16 +55,16 @@ export class ApiClient {
         throw new Error('Unauthorized: No active session.')
       }
       
-      // Fastapi backend expects standard Bearer token
+      // FastAPI backend expects a standard Bearer token for middleware ingestion
       headers.set('Authorization', `Bearer ${session.access_token}`)
     }
 
     // 3. Construct URL & Enforce FastAPI Strict Routing
     // Prevents DigitalOcean Load Balancers from issuing HTTP 307 redirects 
-    // which cause "Mixed Content" blocks in the browser.
+    // which strip headers and cause CORS/Mixed Content failures.
     let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
     
-    // Split query params to safely append trailing slash to the path sequence
+    // Split query params to safely append trailing slash to the exact path sequence
     const [pathPart, queryPart] = cleanEndpoint.split('?', 2)
     
     let securePath = pathPart
