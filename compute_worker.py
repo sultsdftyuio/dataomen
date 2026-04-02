@@ -2,16 +2,6 @@
 
 import os
 import sys
-
-# ------------------------------------------------------------------------------
-# Absolute Path Resolution for Celery Prefork Workers
-# ------------------------------------------------------------------------------
-# Fixes: "Could not reset DB pool on fork: No module named 'api'"
-# Forces the root directory into the Python path regardless of how the container is launched.
-_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-if _ROOT_DIR not in sys.path:
-    sys.path.insert(0, _ROOT_DIR)
-
 import asyncio
 import logging
 import gc
@@ -20,32 +10,11 @@ import psutil
 from typing import Dict, Any, Optional
 
 # ------------------------------------------------------------------------------
-# THE SERVERLESS REDIS "GHOST COST" FIX (Aggressive Kombu Monkey Patch)
+# Absolute Path Resolution for Celery Prefork Workers
 # ------------------------------------------------------------------------------
-# Upstash/Vercel KV charges per command. Kombu's default 1-second BRPOP timeout 
-# generates ~86,400 billable commands per day per queue.
-# We intercept the base Redis client to stretch this to 30 seconds.
-import redis.client
-_orig_execute_command = redis.client.Redis.execute_command
-
-def _serverless_execute_command(self, *args, **kwargs):
-    if args and isinstance(args[0], str) and args[0].upper() == 'BRPOP':
-        args_list = list(args)
-        try:
-            # Kombu passes the timeout as the last argument
-            if float(args_list[-1]) <= 1.0:
-                args_list[-1] = 30 # Hold the connection open longer, dropping billable pings by 96%
-        except (ValueError, TypeError, IndexError):
-            pass
-        return _orig_execute_command(self, *args_list, **kwargs)
-    return _orig_execute_command(self, *args, **kwargs)
-
-redis.client.Redis.execute_command = _serverless_execute_command
-
-# Also patch StrictRedis if the environment's Kombu version aliases it
-if hasattr(redis.client, 'StrictRedis'):
-    redis.client.StrictRedis.execute_command = _serverless_execute_command
-# ------------------------------------------------------------------------------
+_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _ROOT_DIR not in sys.path:
+    sys.path.insert(0, _ROOT_DIR)
 
 # ------------------------------------------------------------------------------
 # C-Level Thread Guardrails — MUST be set before any native library is imported.
@@ -71,14 +40,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ComputeWorker")
 
-redis_url = (
-    os.getenv("KV_URL")
-    or os.getenv("UPSTASH_REDIS_REST_URL")
-    or os.getenv("REDIS_URL")
-    or "redis://localhost:6379/0"
-)
+# REPLACEMENT: Import DATABASE_URL from our primary infrastructure
+from api.database import DATABASE_URL
 
-celery_app = Celery("compute_worker", broker=redis_url, backend=redis_url)
+# Engineering Excellence: Transform Postgres URL for Celery SQLAlchemy transport
+if not DATABASE_URL:
+    logger.critical("DATABASE_URL is missing. Worker cannot initialize.")
+    sys.exit(1)
+
+# Using 'sqla+postgresql' for the broker and 'db+postgresql' for the results backend
+db_broker_url = DATABASE_URL.replace("postgresql://", "sqla+postgresql://")
+celery_app = Celery("compute_worker", broker=db_broker_url, backend="db+" + DATABASE_URL)
 
 celery_app.conf.update(
     # ── Serialisation ────────────────────────────────────────────────────────
@@ -98,19 +70,10 @@ celery_app.conf.update(
     },
     task_default_queue="analytics",
 
-    # ── Aggressive Serverless Redis Cost Optimizations ───────────────────────
-    worker_enable_remote_control=False,   # <--- CRITICAL: Disables the 'pidbox' Pub/Sub polling (Saves ~100k commands/day)
-    worker_send_task_events=False,        # <--- CRITICAL: Disables Celery Event broadcasting
-    task_send_sent_event=False,           
-    broker_pool_limit=1,                  
-    broker_connection_timeout=5.0,        
-    result_expires=600,                   # <--- Clean up results after 10 mins (Saves storage space vs 1hr)
-    beat_max_loop_interval=300,           # <--- Stops Celery Beat from hyper-polling the clock
+    # ── Modular Strategy: Database Broker Optimizations ──────────────────────
+    # We replace Redis-specific polling with a stable Database polling interval.
     broker_transport_options={
-        'visibility_timeout': 3600,       
-        'socket_keepalive': True,
-        'socket_timeout': 60,             # MUST be higher than our patched 30s BRPOP
-        'health_check_interval': 120,     # <--- Stops frequent PING commands while idle
+        'polling_interval': 5.0, # Check for tasks every 5 seconds to minimize DB load
     },
 
     # ── Worker Hygiene ───────────────────────────────────────────────────────
@@ -503,16 +466,12 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
 # Execution Block for DigitalOcean App Platform / Docker Container
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    logger.info("Initializing Containerized Compute Worker Daemon with Upstash Serverless Guardrails...")
+    logger.info("Initializing Containerized Compute Worker Daemon with Database-Backed Broker...")
     celery_app.worker_main(
         argv=[
             "worker",
             "--loglevel=info",
             "-Q", "analytics,ingestion,cron",
             "-B",
-            # CRITICAL: THESE FLAGS STOP CELERY FROM SPAMMING REDIS READS/WRITES
-            "--without-gossip",    
-            "--without-mingle",    
-            "--without-heartbeat"  
         ]
     )

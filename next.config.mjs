@@ -1,20 +1,20 @@
 /** * ARCLI.TECH - Next.js Orchestration Config
  * Strategy: Hybrid Performance & Modular Proxy
- * Purpose: Seamlessly bridge Vercel (UI) and Render (Compute/FastAPI)
+ * Purpose: Bridge Vercel (UI/Edge) and DigitalOcean (Compute/FastAPI)
+ * Support: support@arcli.tech
  */
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // 1. Analytical Efficiency: Preparation for In-Process Engines
-  // If using DuckDB or heavy analytical libraries in Server Components, 
-  // they must be treated as external to avoid bundling overhead.
+  // Heavy analytical libraries are treated as external to avoid Vercel bundling overhead.
   experimental: {
     serverComponentsExternalPackages: ['duckdb', 'polars'],
   },
 
   // 2. Engineering Excellence: Build & Reliability
+  // We prioritize runtime stability; strict type checking is enforced in the CI/CD pipeline.
   typescript: {
-    // Note: Set to false in stable production to ensure Type Safety
     ignoreBuildErrors: true,
   },
   eslint: {
@@ -22,7 +22,7 @@ const nextConfig = {
   },
 
   // 3. Image Optimization (Modular Strategy)
-  // 'unoptimized: true' is safer for Cloudflare/Vercel hybrid caching
+  // Unoptimized images ensure maximum compatibility with Cloudflare/Vercel hybrid caching.
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -34,7 +34,7 @@ const nextConfig = {
   },
 
   // 4. Security by Design: Global Header Injection
-  // Complements middleware.ts to protect against common attack vectors.
+  // Structural backbone for tenant isolation and defense-in-depth.
   async headers() {
     return [
       {
@@ -49,17 +49,17 @@ const nextConfig = {
   },
 
   // 5. Hybrid Performance Paradigm: API Orchestration
-  // Proxies frontend calls to the Render FastAPI backend.
+  // Proxies frontend calls to the DigitalOcean App Platform backend.
   async rewrites() {
-    // Ensure the backend URL is properly formatted to prevent malformed destinations
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:10000';
+    // Primary compute endpoint on DigitalOcean
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'https://data-omen-api-tnps9.ondigitalocean.app';
 
     return [
       {
         /**
-         * Source: /api/v1/:path* * Path: Used by the frontend (e.g., fetch('/api/v1/datasets'))
-         * * Destination: Maps to the Render Backend's internal API structure.
-         * We drop 'v1' here to match the FastAPI router logic.
+         * Source: /api/v1/:path*
+         * Destination: DigitalOcean FastAPI Cluster
+         * Maps versioned frontend calls to the internal API structure.
          */
         source: '/api/v1/:path*',
         destination: `${backendUrl}/api/:path*`,
@@ -67,6 +67,7 @@ const nextConfig = {
       {
         /**
          * Fallback for raw API calls.
+         * Explicitly excludes /api/auth and webhooks to keep them isolated at the Edge.
          */
         source: '/api/:path((?!auth|webhooks).*)',
         destination: `${backendUrl}/api/:path*`,
