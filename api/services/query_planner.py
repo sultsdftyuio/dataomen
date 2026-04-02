@@ -1,70 +1,93 @@
 """
 ARCLI.TECH - Intelligence Layer
-Component: AI Query Planner (The Brain)
-Strategy: Semantic Routing, Strict 1-to-1 Schema Pruning, Contextual RAG & Golden Metrics
+Component: Omni-Graph Query Planner & Semantic Budget Governor
+Strategy: Semantic Routing, Schema Pruning, Contextual RAG & Semantic Budgeting
 """
 
 import logging
 import json
 import time
+import asyncio
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
-# Core Infrastructure
+# Arcli Core Infrastructure
 from api.services.llm_client import LLMClient, llm_client as default_llm
 from models import Dataset, Agent, SemanticMetric
 
 logger = logging.getLogger(__name__)
 
 # -------------------------------------------------------------------------
-# Data Contracts for Orchestration (Instructor/Pydantic Strictness)
+# DATA CONTRACTS (Phase 3: Omniscient Chat & Budgeting)
 # -------------------------------------------------------------------------
 
 class QueryPlan(BaseModel):
     """
     The Strategic Blueprint for the AI Data Copilot.
-    Phase 3 Update: Strictly enforces 1-to-1 boundary. No cross-joins allowed.
+    Strictly typed for declarative orchestration and guaranteed JSON compliance.
     """
-    intent_summary: str = Field(..., description="A 1-sentence summary of the user's analytical goal.")
-    
+    intent_summary: str = Field(
+        ..., 
+        description="A precise, 1-sentence summary of the user's analytical goal."
+    )
     execution_intent: str = Field(
         ..., 
-        description="MUST BE EXACTLY ONE OF: 'ANALYTICAL' (SQL math/aggregations), 'DOCUMENT_RAG' (PDF/Text summarization), or 'HYBRID'."
+        description="MUST BE EXACTLY ONE OF: 'ANALYTICAL' (SQL math/aggregations), 'DOCUMENT_RAG' (Text extraction), or 'HYBRID'."
     )
     
-    # Ripped out arrays. Single target identifiers only.
-    dataset_id: Optional[str] = Field(None, description="The exact UUID of the structured dataset, if applicable.")
-    document_id: Optional[str] = Field(None, description="The exact UUID of the unstructured document, if applicable.")
+    # Phase 1: Omni-Graph Support
+    target_dataset_ids: List[str] = Field(
+        default_factory=list, 
+        description="List of exact UUIDs of the structured datasets required to fulfill the intent."
+    )
+    document_ids: List[str] = Field(
+        default_factory=list, 
+        description="List of exact UUIDs of unstructured documents, if applicable."
+    )
     
-    recommended_semantic_views: List[str] = Field(default_factory=list, description="Names of pre-computed views (e.g., 'vw_meta_ads_performance').")
-    requested_governed_metrics: List[str] = Field(default_factory=list, description="Names of Governed Metrics (e.g., 'True ROAS') that perfectly match the user intent.")
+    # Phase 3: Semantic Query Layer
+    context_filters: Dict[str, Any] = Field(
+        default_factory=dict, 
+        description="Global filters extracted from context (e.g., {'tier': 'Enterprise', 'date_range': 'last_30_days'})."
+    )
     
+    requested_governed_metrics: List[str] = Field(
+        default_factory=list, 
+        description="Names of Governed Metrics (e.g., 'True ROAS') mapped from the Semantic Catalog."
+    )
     analytical_strategy: str = Field(
         ..., 
-        description="Step-by-step logic the downstream execution engines should follow against the singular schema."
+        description="Step-by-step logic the execution engines should follow. Emphasize vectorization and strict joins."
     )
-    
-    confidence_score: float = Field(..., description="0.0 to 1.0 confidence that this question can be answered with the provided schema.")
-
+    confidence_score: float = Field(
+        ..., 
+        description="0.0 to 1.0 confidence that the provided schema fully answers the query."
+    )
+    is_budget_exceeded: bool = Field(
+        default=False, 
+        description="Flag triggered if the required Omni-Graph join exceeds the Semantic Budget."
+    )
 
 # -------------------------------------------------------------------------
-# The Brain of Isolated Intelligence
+# THE INTELLIGENCE ORCHESTRATOR
 # -------------------------------------------------------------------------
 
 class QueryPlanner:
     """
-    Phase 3: Strict Semantic Router & Strategy Engine.
+    Phase 3: Semantic Router & Strategy Engine.
     
     Engineering Upgrades:
-    1. 1-to-1 Constraint: Removed all cross-dataset hallucination risks.
-    2. Zero-Fetch Context: Relies on the router to inject the authorized schema.
-    3. Golden Metric Awareness: Defers complex math to the AST injector.
+    1. Async Event-Loop Safety: Offloads blocking DB queries to threadpools.
+    2. Zero-Trust Security: Enforces tenant_id isolation on all LLM-generated UUIDs.
+    3. Token Efficiency: Minifies JSON schemas to drastically reduce prompt overhead.
+    4. Safe SQL Hydration: Escapes context filters to prevent DuckDB injection.
     """
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm_client = llm_client or default_llm
+        self.MAX_SCHEMA_TOKENS = 8000  # Token limit to prevent Context Window bloat
 
     async def plan_execution(
         self, 
@@ -72,121 +95,177 @@ class QueryPlanner:
         tenant_id: str, 
         agent: Agent, 
         natural_query: str,
-        schema_context: Dict[str, Any] # Phase 3: The isolated schema injected by the router
+        schema_context: Dict[str, Any]
     ) -> QueryPlan:
         """
-        Analyzes a natural language question against a single, isolated schema 
-        to output a mathematically precise execution plan.
+        Analyzes a natural language question against authorized schemas.
+        Generates a secure, performant routing strategy.
         """
         start_time = time.perf_counter()
-        logger.info(f"🧠 [{tenant_id}] Planning isolated execution for: '{natural_query}'")
+        logger.info(f"🧠 [{tenant_id}] Planning Omni-Graph execution for agent '{agent.id}'")
 
-        # 1. Context Retrieval (Semantic Catalog / Golden Metrics ONLY)
-        # We no longer query for datasets, we use the injected schema!
-        governed_metrics = db.query(SemanticMetric).filter(
-            SemanticMetric.tenant_id == tenant_id,
-            or_(
-                SemanticMetric.dataset_id == agent.dataset_id,
-                SemanticMetric.dataset_id.is_(None)
-            )
-        ).all()
+        # 1. Semantic Budgeting (Token Efficiency)
+        # Use separators=(',', ':') to strip whitespace and minimize token footprint
+        schema_string = json.dumps(schema_context, separators=(',', ':'))
+        
+        # Heuristic token estimation (average English token is ~4 chars)
+        estimated_tokens = len(schema_string) / 4.0 
+        
+        if estimated_tokens > self.MAX_SCHEMA_TOKENS:
+            logger.warning(f"[{tenant_id}] Schema Context too large ({estimated_tokens:.0f} tokens). Enforcing strict pruning.")
+            # Fallback to prevent LLM rejection
+            schema_context = {"error": "Schema truncated due to context limits. Query against core tables only."}
 
-        metrics_context = [
-            {"name": m.metric_name, "description": m.description} 
-            for m in governed_metrics
-        ]
+        # 2. Extract Governed Metrics Safely (Offload sync DB I/O to thread)
+        governed_metrics = await asyncio.to_thread(
+            self._fetch_governed_metrics, db, tenant_id, agent.dataset_id
+        )
+        metrics_context = [{"name": m.metric_name, "description": m.description} for m in governed_metrics]
 
-        # 2. Prompt Generation
+        # 3. LLM Execution via Structured RAG
         system_prompt = self._build_system_prompt(agent, schema_context, metrics_context)
 
-        # 3. LLM Execution
         try:
-            plan = await self.llm_client.generate_structured(
+            plan: QueryPlan = await self.llm_client.generate_structured(
                 system_prompt=system_prompt,
-                prompt=f"USER QUESTION: {natural_query}\nGenerate the optimal strict QueryPlan.",
+                prompt=f"USER INTENT: {natural_query}\nGenerate the optimal execution QueryPlan.",
                 response_model=QueryPlan,
-                temperature=0.0 # Strict deterministic planning
+                temperature=0.0 # Zero entropy for strict technical mapping
             )
             
-            # Re-enforce the 1-to-1 ID from the agent just in case the LLM hallucinates an ID
-            if agent.dataset_id:
-                plan.dataset_id = str(agent.dataset_id)
-            if agent.document_id:
-                plan.document_id = str(agent.document_id)
+            # Enforce multi-tenant dataset bounds securely
+            if agent.dataset_id and str(agent.dataset_id) not in plan.target_dataset_ids:
+                plan.target_dataset_ids.append(str(agent.dataset_id))
             
-            duration = round(time.perf_counter() - start_time, 3)
-            logger.info(f"✅ [{tenant_id}] Plan generated in {duration}s | Intent: {plan.execution_intent} | Confidence: {plan.confidence_score}")
+            # Budget enforcement logic based on planned complexity
+            if len(plan.target_dataset_ids) > 3:
+                plan.is_budget_exceeded = True
+                plan.confidence_score *= 0.8
+                logger.warning(f"[{tenant_id}] Omni-Graph join budget exceeded (>3 datasets). Confidence reduced.")
+
+            duration = time.perf_counter() - start_time
+            logger.info(f"✅ [{tenant_id}] Strategy planned in {duration:.3f}s | Intent: {plan.execution_intent} | Confidence: {plan.confidence_score:.2f}")
             
             return plan
 
         except Exception as e:
             logger.error(f"❌ [{tenant_id}] Query planning failed: {str(e)}", exc_info=True)
+            # In production, we might want to raise an HTTPException here instead of failing silently,
+            # but we preserve the fallback for architectural resilience.
             return self._generate_fallback_plan(agent)
 
-    async def get_duckdb_execution_context(self, db: Session, plan: QueryPlan) -> str:
+    async def get_duckdb_execution_context(
+        self, 
+        db: Session, 
+        tenant_id: str, 
+        plan: QueryPlan
+    ) -> str:
         """
-        Translates the abstract QueryPlan into literal DuckDB syntax instructions
-        for the single authorized dataset.
+        Translates the abstract QueryPlan into physical DuckDB instructions.
+        Crucially enforces Tenant Isolation on LLM-requested datasets.
         """
-        if not plan.dataset_id:
-            return "No valid structured dataset required for this query."
+        if not plan.target_dataset_ids:
+            return "-- No structured datasets targeted for this query execution."
 
-        dataset = db.query(Dataset).filter(Dataset.id == plan.dataset_id).first()
-        if not dataset: 
-            return "Dataset configuration missing or unauthorized."
-        
-        parquet_path = f"read_parquet('{dataset.file_path}/**/*.parquet')"
-        cols = dataset.schema_metadata.get("columns", []) if dataset.schema_metadata else []
-        col_desc = ", ".join([f"{c.get('name')} {c.get('type')}" for c in cols])
-        table_alias = "".join(e for e in dataset.name.lower() if e.isalnum())
-        
-        return (
-            f"-- Dataset: {dataset.integration_name or dataset.name}\n"
-            f"-- Alias to use in FROM clause: {table_alias}\n"
-            f"-- Physical Path: {parquet_path}\n"
-            f"-- Schema: {col_desc}"
+        # Offload DB I/O and enforce Zero-Trust Tenant Boundaries
+        datasets = await asyncio.to_thread(
+            self._fetch_authorized_datasets, db, tenant_id, plan.target_dataset_ids
         )
+        
+        if not datasets: 
+            return "-- Datasets configuration missing or unauthorized."
+        
+        context_blocks = []
+        for ds in datasets:
+            parquet_path = f"read_parquet('{ds.file_path}/**/*.parquet')"
+            cols = ds.schema_metadata.get("columns", []) if ds.schema_metadata else []
+            col_desc = ", ".join([f"{c.get('name')} {c.get('type')}" for c in cols])
+            table_alias = "".join(e for e in ds.name.lower() if e.isalnum())
+            
+            block = (
+                f"-- Dataset: {ds.integration_name or ds.name}\n"
+                f"-- Omni-Graph Alias: {table_alias}\n"
+                f"-- Physical Source: {parquet_path}\n"
+                f"-- Schema Bounds: {col_desc}"
+            )
+            context_blocks.append(block)
+            
+        # Append global context filters with strict SQL escaping
+        if plan.context_filters:
+            safe_filters = []
+            for k, v in plan.context_filters.items():
+                safe_k = "".join(c for c in str(k) if c.isalnum() or c == "_")
+                # Escape single quotes to prevent DuckDB SQL Injection
+                safe_v = str(v).replace("'", "''") 
+                safe_filters.append(f"{safe_k} = '{safe_v}'")
+                
+            filter_str = " AND ".join(safe_filters)
+            context_blocks.append(f"-- GLOBAL STATE FILTERS TO APPLY: {filter_str}")
+        
+        return "\n\n".join(context_blocks)
 
-    # --- Private Helper Methods ---
+    # -------------------------------------------------------------------------
+    # INTERNAL HELPERS (Data Access & Formatting)
+    # -------------------------------------------------------------------------
+
+    def _fetch_governed_metrics(self, db: Session, tenant_id: str, dataset_id: Optional[str]) -> List[SemanticMetric]:
+        """Synchronous method to run inside threadpool."""
+        return db.query(SemanticMetric).filter(
+            SemanticMetric.tenant_id == tenant_id,
+            or_(
+                SemanticMetric.dataset_id == dataset_id,
+                SemanticMetric.dataset_id.is_(None) # Global Omni-Metrics
+            )
+        ).all()
+
+    def _fetch_authorized_datasets(self, db: Session, tenant_id: str, dataset_ids: List[str]) -> List[Dataset]:
+        """
+        Synchronous method to run inside threadpool.
+        CRITICAL: Validates dataset_ids strictly against the tenant_id.
+        """
+        return db.query(Dataset).filter(
+            Dataset.id.in_(dataset_ids),
+            Dataset.tenant_id == tenant_id  # Secures against Cross-Tenant Data Mapping
+        ).all()
 
     def _build_system_prompt(self, agent: Agent, schema_context: Dict[str, Any], metrics_context: List[Dict[str, str]]) -> str:
-        """
-        Constructs the strict directive payload bounded absolutely to one schema.
-        """
+        """Constructs the strictly bounded prompt payload with minified JSON contexts."""
         return f"""
-        You are the Head of AI Data Strategy for a modern analytical engine.
-        Your goal is to classify a user's request and map it to the exact tables, views, or metrics in the provided isolated schema context.
+You are the Arcli Execution Orchestrator.
+Your objective is to map a user's analytical intent to the exact physical tables and governed semantic metrics provided.
         
-        AGENT ROLE & DIRECTIVES: 
-        {agent.role_description}
+AGENT DOMAIN: 
+{agent.role_description}
         
-        AUTHORIZED ISOLATED SCHEMA:
-        {json.dumps(schema_context, indent=2)}
+AUTHORIZED PHYSICAL SCHEMAS:
+{json.dumps(schema_context, separators=(',', ':'))}
 
-        GOVERNED SEMANTIC METRICS (THE GOLDEN CATALOG):
-        {json.dumps(metrics_context, indent=2)}
+GOVERNED SEMANTIC METRICS (THE GOLDEN CATALOG):
+{json.dumps(metrics_context, separators=(',', ':'))}
 
-        CRITICAL ROUTING DIRECTIVES:
-        1. CLASSIFY THE INTENT: 
-           - 'ANALYTICAL' -> Query asks for math, counts, revenue, or trends from the schema.
-           - 'DOCUMENT_RAG' -> Query asks to summarize, explain, or extract themes.
-           
-        2. USE GOVERNED METRICS: If ANALYTICAL intent matches a metric in the Semantic Catalog (e.g., "ROAS"), include its name in `requested_governed_metrics`.
-        
-        3. STRICT DECISIVENESS: You are evaluating against ONE authorized schema. Do not invent columns or tables outside of what is provided.
-        
-        4. QUERY VIABILITY: If the schema does not contain the fields required to answer the question, lower `confidence_score` below 0.4.
-        """
+COMMANDMENTS:
+1. CLASSIFICATION: 
+   - 'ANALYTICAL': Math, revenue, time-series, or multi-source correlations.
+   - 'DOCUMENT_RAG': Explanations, text synthesis.
+2. GOLDEN METRICS OVER RAW SQL: If an intent matches a Semantic Metric (e.g., 'True ROAS'), list it in `requested_governed_metrics`. Do NOT attempt to rewrite the formula. The system will auto-inject it.
+3. GLOBAL FILTERS: Extract overarching constraints (e.g., 'Only show US data') into `context_filters`.
+4. OMNI-GRAPH AWARENESS: If the intent requires joining across multiple schemas provided, list all required dataset IDs.
+5. BOUNDARY ENFORCEMENT: Never invent tables or columns. Drop confidence < 0.4 if the schema cannot fulfill the request.
+"""
 
     def _generate_fallback_plan(self, agent: Agent) -> QueryPlan:
-        """Provides a safe fallback to prevent cascading orchestration failures."""
+        """Graceful degradation to prevent orchestration loops."""
         return QueryPlan(
-            intent_summary="Fallback execution triggered due to contextual resolution error.",
+            intent_summary="Fallback execution triggered due to contextual evaluation failure.",
             execution_intent="ANALYTICAL",
-            dataset_id=str(agent.dataset_id) if agent.dataset_id else None,
-            document_id=str(agent.document_id) if agent.document_id else None,
-            recommended_semantic_views=[],
+            target_dataset_ids=[str(agent.dataset_id)] if agent.dataset_id else [],
+            document_ids=[str(agent.document_id)] if agent.document_id else [],
+            context_filters={},
             requested_governed_metrics=[],
-            analytical_strategy="SELECT * FROM primary_table LIMIT 100",
-            confidence_score=0.1
+            analytical_strategy="SELECT * FROM base_table LIMIT 100",
+            confidence_score=0.1,
+            is_budget_exceeded=False
         )
+
+# Global Singleton Instantiation
+query_planner = QueryPlanner()
