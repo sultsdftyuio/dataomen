@@ -1,0 +1,43 @@
+{
+  "generatedAt": "2026-04-03T23:34:12.533Z",
+  "silos": {
+    "competitor-comparisons": [
+      "./competitor-comparisons-1",
+      "./competitor-comparisons-2"
+    ],
+    "core-features": [
+      "./core-features-1",
+      "./core-features-2"
+    ],
+    "database-integrations": [
+      "./database-integrations-1",
+      "./database-integrations-2"
+    ],
+    "file-analysis": [
+      "./file-analysis-1",
+      "./file-analysis-2"
+    ],
+    "guides": [
+      "./guides-1",
+      "./guides-2"
+    ],
+    "indie-hacker-campaigns": [
+      "./indie-hacker-campaigns"
+    ],
+    "saas-integrations": [
+      "./saas-integrations-1",
+      "./saas-integrations-2"
+    ],
+    "shopify-campaign": [
+      "./shopify-campaign"
+    ],
+    "templates": [
+      "./templates-1",
+      "./templates-2"
+    ],
+    "text-to-sql": [
+      "./text-to-sql-1",
+      "./text-to-sql-2"
+    ]
+  }
+}

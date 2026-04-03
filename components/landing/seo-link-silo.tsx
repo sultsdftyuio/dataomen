@@ -1,56 +1,76 @@
-"use client";
-
-import React, { useMemo } from 'react';
+// components/landing/seo-link-silo.tsx
+import React from 'react';
 import Link from 'next/link';
-// Matches your modular SEO architecture
-import { seoPages } from '@/lib/seo/index';
+
+// Core Registry & Deep-Data Parser
+import { getAllSlugs } from '@/lib/seo/index';
+import { getNormalizedPage } from '@/lib/seo/parser';
 
 /**
- * Interface Definitions
- * Computation (Execution): Strict TypeScript interfaces for self-documenting code.
+ * PHASE 2: Semantic Topic Clusters (The Ontology)
+ * Controlled Determinism: Maps dynamic, flexible page tags into rigid, predictable 
+ * SEO silos to build high-authority topic clusters for search engines.
  */
+const CLUSTER_ONTOLOGY: Record<string, string[]> = {
+  'Security & Governance': ['security', 'soc2', 'encryption', 'compliance', 'governance', 'rbac', 'trust', 'audit'],
+  'Data Integrations': ['integration', 'database', 'warehouse', 'api', 'etl', 'connector', 'pipeline', 'sync'],
+  'AI & Analytics': ['sql', 'ai', 'insights', 'analysis', 'reporting', 'machine-learning', 'text-to-sql', 'visualization'],
+  'Business Outcomes': ['finance', 'marketing', 'sales', 'revops', 'cfo', 'enterprise', 'roi', 'efficiency'],
+  'Engineering Hub': ['performance', 'infrastructure', 'architecture', 'developer', 'latency', 'wasm', 'duckdb']
+};
+
 interface SeoPageLink {
   slug: string;
   title: string;
 }
 
-interface GroupedSeoPages {
-  [key: string]: SeoPageLink[];
-}
-
 /**
- * SeoLinkSilo Component
- * Interaction (Frontend): 100% Functional React component with hooks.
- * * This component acts as a semantic link repository for crawlers and users,
- * improving SEO through automated link siloing.
+ * SeoLinkSilo Component (Upgraded to Server Component)
+ * Orchestrates automated internal linking. Moved away from client-side execution 
+ * to ensure 100% crawler visibility and zero client-side JavaScript cost.
  */
-export function SeoLinkSilo() {
-  /**
-   * Analytical Efficiency: Memoizing the grouping logic to prevent 
-   * unnecessary re-computations during state changes or re-renders.
-   */
-  const groupedPages = useMemo(() => {
-    const grouped: GroupedSeoPages = {};
+export async function SeoLinkSilo() {
+  const slugs = getAllSlugs();
+  
+  // Initialize cluster buckets
+  const clusters: Record<string, SeoPageLink[]> = {};
+  Object.keys(CLUSTER_ONTOLOGY).forEach(key => clusters[key] = []);
+  const fallbackCluster = 'Platform Resources';
+  clusters[fallbackCluster] = [];
 
-    Object.entries(seoPages).forEach(([slug, data]) => {
-      const type = data.type || 'resources'; // Fallback logic
+  // Semantic Intersection Engine
+  slugs.forEach((slug) => {
+    const page = getNormalizedPage(slug);
+    if (!page) return;
+
+    // Mathematical Precision: Clean up title logic. "Best AI Data Analysis | Arcli" -> "Best AI Data Analysis"
+    const cleanTitle = page.seo.title.split('|')[0].trim();
+    let matched = false;
+
+    // Route page into the correct semantic silo based on Tag Intersection
+    for (const [clusterName, keywords] of Object.entries(CLUSTER_ONTOLOGY)) {
+      const hasOverlap = page.tags.some(tag => keywords.includes(tag.toLowerCase()));
       
-      if (!grouped[type]) {
-        grouped[type] = [];
+      if (hasOverlap) {
+        // Determinism: Prevent duplicates. A page belongs to its highest-priority matched silo.
+        clusters[clusterName].push({ slug, title: cleanTitle });
+        matched = true;
+        break; 
       }
+    }
 
-      // Mathematical Precision: Clean up title logic using vector-like split/trim operations.
-      // "Best AI Data Analysis | Arcli" -> "Best AI Data Analysis"
-      const cleanTitle = data.title.split('|')[0].trim();
-      grouped[type].push({ slug, title: cleanTitle });
-    });
+    // Fallback logic for standalone or lightly-tagged pages
+    if (!matched && page.type !== 'campaign' && page.type !== 'template') {
+      clusters[fallbackCluster].push({ slug, title: cleanTitle });
+    }
+  });
 
-    return grouped;
-  }, []);
+  // Prune empty clusters and enforce deterministic alphabetical sorting for UI stability
+  const activeColumns = Object.entries(clusters)
+    .filter(([_, links]) => links.length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
 
-  const columns = useMemo(() => Object.keys(groupedPages).sort(), [groupedPages]);
-
-  if (columns.length === 0) return null;
+  if (activeColumns.length === 0) return null;
 
   return (
     <section className="border-t border-slate-900 bg-slate-50 py-16" aria-labelledby="silo-heading">
@@ -59,27 +79,28 @@ export function SeoLinkSilo() {
         {/* Header Block: Grounded in outcome-driven positioning */}
         <div className="mb-12">
           <h2 id="silo-heading" className="text-2xl font-black uppercase tracking-tight text-slate-900 mb-2">
-            Explore Arcli
+            Explore Topic Clusters
           </h2>
           <p className="text-slate-600 text-sm font-medium max-w-2xl">
-            Discover how our autonomous AI agents adapt to your specific analytical needs, 
-            datasets, and engineering workflows.
+            Navigate our technical documentation, architecture deep-dives, and outcome-driven 
+            blueprints through semantically connected learning paths.
           </p>
         </div>
 
-        {/* Interaction (Frontend): Responsive, semantic grid for crawler accessibility */}
+        {/* Crawler-Optimized Semantic Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-12">
-          {columns.map((type) => (
-            <div key={type} className="flex flex-col space-y-4">
-              <h3 className="text-xs font-black text-slate-900 tracking-widest uppercase border-l-2 border-orange-500 pl-3">
-                {type.endsWith('s') ? type : `${type}s`}
+          {activeColumns.map(([clusterName, links]) => (
+            <div key={clusterName} className="flex flex-col space-y-4">
+              <h3 className="text-xs font-black text-slate-900 tracking-widest uppercase border-l-2 border-[#2563eb] pl-3">
+                {clusterName}
               </h3>
               <ul className="flex flex-col space-y-3">
-                {groupedPages[type].map((page) => (
+                {/* Optional: Cap at top 8 links per column to prevent overwhelming UI */}
+                {links.slice(0, 8).map((page) => (
                   <li key={page.slug}>
                     <Link
                       href={`/${page.slug}`}
-                      className="text-sm text-slate-500 font-medium hover:text-blue-600 transition-colors duration-200 block"
+                      className="text-sm text-slate-500 font-medium hover:text-[#2563eb] transition-colors duration-200 block"
                     >
                       {page.title}
                     </Link>

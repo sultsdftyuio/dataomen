@@ -1,4 +1,3 @@
-// components/landing/seo-blocks-2.tsx
 "use client";
 
 import React from 'react';
@@ -12,22 +11,22 @@ import {
   Workflow,
   BarChart3,
   ChevronDown,
-  Layers
+  Layers,
+  Network
 } from 'lucide-react';
 
-import { NormalizedPage } from '@/lib/seo/parser';
-import { getPage } from '@/lib/seo/index';
+import { NormalizedPage, getNormalizedPage } from '@/lib/seo/parser';
 import { useVisible } from "@/hooks/useVisible";
 import { SectionHeading } from './seo-blocks-1';
 
 // ----------------------------------------------------------------------
-// BOTTOM-OF-FUNNEL BLOCKS
+// BOTTOM-OF-FUNNEL BLOCKS (PHASE 3 UPGRADED)
 // ----------------------------------------------------------------------
 
 export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (steps.length === 0) return null;
+  if (!steps || steps.length === 0) return null;
   return (
     <section className="py-24 bg-white relative">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
@@ -38,7 +37,7 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
           Implementation Pipeline
         </SectionHeading>
         
-        <div ref={ref} className="relative pl-10 md:pl-0">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="relative pl-10 md:pl-0">
           <div className={`absolute left-[29px] md:left-1/2 md:-ml-[1.5px] top-0 bottom-0 w-[3px] bg-slate-100 transition-all duration-1000 ${vis ? 'opacity-100 h-full' : 'opacity-0 h-0'}`}></div>
           
           <div className="space-y-12 md:space-y-16">
@@ -50,7 +49,7 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
               >
                 <div className="hidden md:block w-1/2"></div>
                 
-                <div className="absolute left-[-20px] md:left-1/2 md:-ml-3 w-6 h-6 rounded-full bg-white border-[3px] border-slate-200 group-hover:border-[#2563eb] z-10 flex items-center justify-center transition-colors duration-300">
+                <div className="absolute left-[-20px] md:left-1/2 md:-ml-3 w-6 h-6 rounded-full bg-white border-[3px] border-slate-200 group-hover:border-[#2563eb] z-10 flex items-center justify-center transition-colors duration-300 shadow-sm">
                    <div className="w-2 h-2 bg-transparent group-hover:bg-[#2563eb] rounded-full transition-colors duration-300"></div>
                 </div>
                 
@@ -80,7 +79,7 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
 export const Features = ({ features }: { features: NormalizedPage['features'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (features.length === 0) return null;
+  if (!features || features.length === 0) return null;
   return (
     <section className="py-32 bg-slate-50 relative border-y border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
@@ -104,7 +103,7 @@ export const Features = ({ features }: { features: NormalizedPage['features'] })
             </div>
           </div>
 
-          <div ref={ref} className="w-full md:w-7/12 space-y-8">
+          <div ref={ref as React.RefObject<HTMLDivElement>} className="w-full md:w-7/12 space-y-8">
             {features.map((feature, i) => (
               <div 
                 key={i} 
@@ -156,7 +155,7 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
           </div>
         </div>
         
-        <div ref={ref} className="grid md:grid-cols-3 gap-6 mb-12">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-6 mb-12">
           {Object.entries(architecture).map(([key, value], i) => (
             <div 
               key={key} 
@@ -195,25 +194,25 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
 export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: NormalizedPage['hero']['cta'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (slugs.length === 0) return null;
+  if (!slugs || slugs.length === 0) return null;
   return (
     <section className="py-24 bg-slate-50 relative overflow-hidden border-t border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
         <SectionHeading 
-          monoLabel="// RELATED_MODULES"
-          subtitle="Discover specific architectural setups and orchestration patterns."
+          monoLabel="// SEMANTIC_CLUSTERS"
+          subtitle="Continue exploring semantically connected architectural patterns and documentation."
         >
           Explore Deep Dives
         </SectionHeading>
         
-        <div ref={ref} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
           {slugs.map((relatedSlug, i) => {
-            const rawRelated = getPage(relatedSlug) as any;
-            if (!rawRelated) return null;
+            // SAFE HYDRATION: Upgraded to use getNormalizedPage to avoid raw registry crashes
+            const pageData = getNormalizedPage(relatedSlug);
+            if (!pageData) return null;
             
-            const relatedTitle = rawRelated.type === 'template' 
-              ? rawRelated.hero?.h1 
-              : (rawRelated.h1 || rawRelated.heroTitle || rawRelated.title || relatedSlug);
+            const relatedTitle = pageData.seo.h1 || pageData.seo.title;
+            const linkTag = pageData.tags && pageData.tags[0] ? pageData.tags[0] : pageData.type;
             
             return (
               <Link 
@@ -222,9 +221,17 @@ export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Nor
                 style={{ transitionDelay: `${i * 100}ms` }}
                 className={`bg-white p-8 rounded-xl border border-slate-200 shadow-sm hover:border-[#2563eb]/40 hover:shadow-[0_8px_20px_-6px_rgba(37,99,235,0.15)] transition-all duration-700 group flex flex-col justify-between h-full hover:-translate-y-1 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
               >
-                <h3 className="text-[19px] font-bold text-[#0B1221] mb-6 tracking-tight">
-                  {relatedTitle}
-                </h3>
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Network className="w-4 h-4 text-slate-400" />
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                      {linkTag}
+                    </span>
+                  </div>
+                  <h3 className="text-[19px] font-bold text-[#0B1221] mb-6 tracking-tight line-clamp-2">
+                    {relatedTitle}
+                  </h3>
+                </div>
                 <div className="flex items-center justify-between mt-auto">
                   <span className="font-mono text-[10px] font-bold text-[#2563eb] uppercase tracking-[0.2em]">ACCESS_FILE</span>
                   <ArrowRight className="w-4 h-4 text-[#2563eb] group-hover:translate-x-1 transition-transform" />
@@ -250,7 +257,7 @@ export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Nor
 export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (faqs.length === 0) return null;
+  if (!faqs || faqs.length === 0) return null;
   return (
     <section className="py-24 bg-white border-t border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
@@ -261,7 +268,7 @@ export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
           Expert Insights
         </SectionHeading>
         
-        <div ref={ref} className="space-y-4">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="space-y-4">
           {faqs.map((faq, i) => (
             <details 
               key={i} 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   ArrowRight, 
@@ -15,7 +15,10 @@ import {
   Database, 
   LayoutTemplate, 
   BarChart3, 
-  LineChart
+  LineChart,
+  Calculator,
+  ListFilter,
+  TrendingDown
 } from 'lucide-react';
 
 import { NormalizedPage } from '@/lib/seo/parser';
@@ -55,11 +58,27 @@ export const SectionHeading = ({ children, id, subtitle, monoLabel, align = 'cen
 };
 
 // ----------------------------------------------------------------------
-// TOP-OF-FUNNEL BLOCKS
+// PHASE 3: TOP-OF-FUNNEL BLOCKS (DATA-DRIVEN & HIGH CONVERSION)
 // ----------------------------------------------------------------------
 
 export const Hero = ({ data }: { data: NormalizedPage }) => {
   const [ref, vis] = useVisible(0);
+  
+  // Phase 3: Persona-Driven CTAs
+  // Dynamically adapt the primary CTA based on available persona data to maximize conversion
+  const [activePersonaIndex, setActivePersonaIndex] = useState<number>(0);
+  const activePersona = data.personas?.[activePersonaIndex];
+
+  const getDynamicCta = (role?: string) => {
+    if (!role) return data.hero.cta.primary;
+    const r = role.toLowerCase();
+    if (r.includes('engineer') || r.includes('developer')) return { text: 'View SQL API', href: '/docs/api' };
+    if (r.includes('cfo') || r.includes('finance')) return { text: 'Calculate ROI', href: '#tco-calculator' };
+    if (r.includes('revops') || r.includes('operations')) return { text: 'Explore Integrations', href: '/integrations' };
+    return data.hero.cta.primary;
+  };
+
+  const currentCta = getDynamicCta(activePersona?.role);
 
   return (
     <section className="relative pt-40 pb-32 overflow-hidden bg-slate-50/30">
@@ -86,12 +105,30 @@ export const Hero = ({ data }: { data: NormalizedPage }) => {
             {data.hero.subtitle}
           </p>
           
+          {data.personas && data.personas.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2 mb-8">
+              {data.personas.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => setActivePersonaIndex(i)}
+                  className={`text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-full border transition-all ${
+                    activePersonaIndex === i 
+                      ? 'bg-[#2563eb] text-white border-[#2563eb] shadow-md' 
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-[#2563eb]/50 hover:text-[#0B1221]'
+                  }`}
+                >
+                  I am a {p.role}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-col items-center justify-center gap-4">
             <Link 
-              href={data.hero.cta.primary.href} 
+              href={currentCta.href} 
               className="group relative flex items-center justify-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-8 py-4 rounded-xl text-lg font-bold shadow-[0_8px_24px_-6px_rgba(37,99,235,0.4)] hover:shadow-[0_12px_30px_-6px_rgba(37,99,235,0.6)] transition-all duration-300 transform hover:-translate-y-0.5"
             >
-              {data.hero.cta.primary.text}
+              {currentCta.text}
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
               <div className="absolute inset-0 rounded-xl ring-2 ring-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
             </Link>
@@ -141,6 +178,7 @@ export const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
             </div>
             
             <div className="pl-14 space-y-6 relative z-10">
+              {/* Phase 2/3 SQL Injection: Direct rendering of the dynamically sourced SQL Snippet */}
               <div className={`p-6 bg-[#0B1221] rounded-xl font-mono text-sm text-slate-300 overflow-x-auto shadow-inner max-w-3xl border border-[#1e293b] transition-all duration-700 delay-300 ${vis ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-8'}`}>
                 <div className="flex gap-4 mb-3 border-b border-white/10 pb-3">
                   <div className="text-[#60a5fa] font-bold uppercase tracking-[0.2em] text-[10px]">/// SQL_GENERATED</div>
@@ -171,7 +209,7 @@ export const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
 export const Personas = ({ personas }: { personas: NormalizedPage['personas'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (personas.length === 0) return null;
+  if (!personas || personas.length === 0) return null;
   return (
     <section className="py-32 bg-white relative overflow-hidden">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl h-[600px] bg-slate-50/80 rounded-full blur-[100px] -z-10" />
@@ -220,10 +258,17 @@ export const Personas = ({ personas }: { personas: NormalizedPage['personas'] })
 
 export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
   const [ref, vis] = useVisible(0.1);
+  const [viewMode, setViewMode] = useState<'features' | 'tco'>('features');
+  const [dataEngineers, setDataEngineers] = useState<number>(3);
 
-  if (matrix.length === 0) return null;
+  if (!matrix || matrix.length === 0) return null;
+
+  // Phase 3: Interactive TCO Calculator Logic
+  const legacyTco = useMemo(() => dataEngineers * 140000, [dataEngineers]); 
+  const arcliTco = useMemo(() => 15000 + (dataEngineers * 20000), [dataEngineers]); // Base platform + slight admin overhead
+
   return (
-    <section className="py-24 bg-slate-50 relative border-y border-slate-200/50">
+    <section id="tco-calculator" className="py-24 bg-slate-50 relative border-y border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
         <SectionHeading 
           monoLabel="// COMPETITIVE_ANALYSIS"
@@ -231,40 +276,114 @@ export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
         >
           The Competitive Edge
         </SectionHeading>
-        
-        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid gap-6">
-          {matrix.map((item, i) => (
-            <div 
-              key={i} 
-              style={{ transitionDelay: `${i * 100}ms` }}
-              className={`bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-[#2563eb]/30 transition-all duration-700 overflow-hidden group transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+
+        {/* View Mode Toggle */}
+        <div className="flex justify-center mb-12">
+          <div className="bg-white border border-slate-200 p-1.5 rounded-full inline-flex shadow-sm">
+            <button 
+              onClick={() => setViewMode('features')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all ${viewMode === 'features' ? 'bg-[#0B1221] text-white shadow-md' : 'text-slate-500 hover:text-[#0B1221]'}`}
             >
-              <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
-                <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center border border-slate-200 shrink-0 group-hover:border-[#2563eb]/30 transition-colors">
-                  <Zap className="w-4 h-4 text-[#2563eb]" />
-                </div>
-                <h3 className="text-lg font-bold text-[#0B1221] tracking-tight">{item.category}</h3>
-              </div>
-
-              <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                <div className="p-8 flex flex-col justify-start">
-                  <div className="flex items-center gap-2 mb-3">
-                    <XCircle className="w-4 h-4 text-slate-400" />
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">LEGACY_APPROACH</span>
+              <ListFilter size={16} /> Feature Matrix
+            </button>
+            <button 
+              onClick={() => setViewMode('tco')}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-bold transition-all ${viewMode === 'tco' ? 'bg-[#2563eb] text-white shadow-md' : 'text-slate-500 hover:text-[#0B1221]'}`}
+            >
+              <Calculator size={16} /> Interactive TCO
+            </button>
+          </div>
+        </div>
+        
+        <div ref={ref as React.RefObject<HTMLDivElement>} className={`transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}>
+          {viewMode === 'features' ? (
+            <div className="grid gap-6">
+              {matrix.map((item, i) => (
+                <div 
+                  key={i} 
+                  className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-[#2563eb]/30 transition-all duration-700 overflow-hidden group"
+                >
+                  <div className="px-8 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                    <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center border border-slate-200 shrink-0 group-hover:border-[#2563eb]/30 transition-colors">
+                      <Zap className="w-4 h-4 text-[#2563eb]" />
+                    </div>
+                    <h3 className="text-lg font-bold text-[#0B1221] tracking-tight">{item.category}</h3>
                   </div>
-                  <p className="text-slate-500 text-[17px] font-medium leading-relaxed">{item.legacy}</p>
+
+                  <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                    <div className="p-8 flex flex-col justify-start">
+                      <div className="flex items-center gap-2 mb-3">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">LEGACY_APPROACH</span>
+                      </div>
+                      <p className="text-slate-500 text-[17px] font-medium leading-relaxed">{item.legacy}</p>
+                    </div>
+
+                    <div className="p-8 flex flex-col justify-start bg-blue-50/30">
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle2 className="w-4 h-4 text-[#2563eb]" />
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb]">ARCLI_ADVANTAGE</span>
+                      </div>
+                      <p className="text-[#0B1221] text-[17px] font-bold leading-relaxed">{item.arcliAdvantage}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden p-8 md:p-12">
+              <div className="grid md:grid-cols-2 gap-12 items-center">
+                <div className="space-y-8">
+                  <div>
+                    <h3 className="text-2xl font-black text-[#0B1221] mb-2 tracking-tight">Calculate Your Savings</h3>
+                    <p className="text-slate-500">See how consolidating your stack reduces engineering overhead.</p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-end">
+                      <label className="font-bold text-[#0B1221]">Current Data Engineering Team</label>
+                      <span className="font-mono text-[#2563eb] font-bold text-xl">{dataEngineers} Engineers</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="1" max="20" 
+                      value={dataEngineers} 
+                      onChange={(e) => setDataEngineers(parseInt(e.target.value))}
+                      className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#2563eb]"
+                    />
+                    <p className="text-xs text-slate-400 font-mono">*Assuming $140k fully loaded cost per engineer maintaining legacy ETL.</p>
+                  </div>
                 </div>
 
-                <div className="p-8 flex flex-col justify-start bg-blue-50/30">
-                  <div className="flex items-center gap-2 mb-3">
-                    <CheckCircle2 className="w-4 h-4 text-[#2563eb]" />
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb]">ARCLI_ADVANTAGE</span>
+                <div className="bg-slate-50 rounded-2xl p-8 border border-slate-200 shadow-inner relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-[40px]"></div>
+                  
+                  <div className="space-y-6 relative z-10">
+                    <div className="flex justify-between items-center border-b border-slate-200 pb-4">
+                      <span className="text-slate-500 font-bold uppercase tracking-wider text-xs">Legacy Stack TCO</span>
+                      <span className="text-2xl font-mono font-bold text-[#0B1221]">${legacyTco.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-b border-blue-200 pb-4">
+                      <span className="text-[#2563eb] font-bold uppercase tracking-wider text-xs">Arcli TCO</span>
+                      <span className="text-2xl font-mono font-bold text-[#2563eb]">${arcliTco.toLocaleString()}</span>
+                    </div>
+                    
+                    <div className="pt-4">
+                      <div className="bg-[#0B1221] rounded-xl p-6 text-white flex items-center justify-between">
+                        <div>
+                          <span className="block text-slate-400 text-xs font-bold uppercase tracking-widest mb-1">Annual Savings</span>
+                          <span className="text-4xl font-black text-[#60a5fa] tracking-tighter">
+                            ${(legacyTco - arcliTco).toLocaleString()}
+                          </span>
+                        </div>
+                        <TrendingDown size={40} className="text-[#60a5fa] opacity-50" />
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[#0B1221] text-[17px] font-bold leading-relaxed">{item.arcliAdvantage}</p>
                 </div>
               </div>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </section>
@@ -272,48 +391,41 @@ export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
 };
 
 // ----------------------------------------------------------------------
-// EXECUTION PIPELINE (TELEMETRY VIEW)
-// Replaces the original WorkflowSection
+// PHASE 3: DYNAMIC EXECUTION PIPELINE
+// Replaces hardcoded workflow with data-driven arrays
 // ----------------------------------------------------------------------
-
-const PIPELINE_STEPS = [
-  {
-    id: "describe",
-    label: "PHASE_01 // DESCRIBE",
-    title: "State your goal",
-    description: 'Input "Track our new product launch metrics." The system automatically selects relevant tables.',
-    icon: Terminal,
-  },
-  {
-    id: "generate",
-    label: "PHASE_02 // GENERATE",
-    title: "AI renders the layout",
-    description: "The engine bypasses SQL compilation entirely, rendering a multi-chart dashboard instantly.",
-    icon: LayoutTemplate,
-  },
-  {
-    id: "refine",
-    label: "PHASE_03 // REFINE",
-    title: "Instant iteration",
-    description: "Ask to tweak a specific chart. The UI updates instantly to reflect your new filters or formatting.",
-    icon: Sparkles,
-  },
-];
 
 export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workflow'] }) => {
   const [ref, vis] = useVisible(0.2);
   const [activeStep, setActiveStep] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
 
+  // Safely fallback or map to dynamic workflow logic provided by the Markdown SEO docs
+  const hasWorkflow = workflow && workflow.legacyBottleneck?.length > 0 && workflow.arcliAutomation?.length > 0;
+  
+  // Create deterministic pipeline steps out of the dynamic array
+  const dynamicSteps = useMemo(() => {
+    if (!hasWorkflow) return [];
+    return workflow.arcliAutomation.map((text, i) => ({
+      id: `phase-${i}`,
+      label: `PHASE_0${i+1} // ${i===0 ? 'INGEST' : i===1 ? 'PROCESS' : 'SERVE'}`,
+      title: text.split('.')[0] || `Phase ${i+1}`,
+      description: text,
+      legacyWarning: workflow.legacyBottleneck[i],
+      icon: i === 0 ? Terminal : i === 1 ? LayoutTemplate : Sparkles,
+    }));
+  }, [hasWorkflow, workflow]);
+
   useEffect(() => {
-    if (isHovered) return;
+    if (!hasWorkflow || isHovered) return;
     const interval = setInterval(() => {
-      setActiveStep((prev) => (prev + 1) % PIPELINE_STEPS.length);
+      setActiveStep((prev) => (prev + 1) % dynamicSteps.length);
     }, 4000);
     return () => clearInterval(interval);
-  }, [isHovered]);
+  }, [isHovered, dynamicSteps.length, hasWorkflow]);
 
-  if (!workflow) return null;
+  if (!hasWorkflow || dynamicSteps.length === 0) return null;
+
   return (
     <section className="py-24 bg-white relative border-y border-slate-200/50 overflow-hidden">
       <div className="absolute inset-0 z-0 opacity-[0.03] bg-[radial-gradient(#0B1221_1px,transparent_1px)] [background-size:24px_24px]" />
@@ -322,18 +434,18 @@ export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workfl
         
         <SectionHeading 
           monoLabel="// EXECUTION_PIPELINE"
-          subtitle="Our engine handles the complexity of data movement while you focus on high-level decision logic."
+          subtitle="Our engine automates legacy bottlenecks so you can focus on high-level decision logic."
         >
           Implementation Pipeline
         </SectionHeading>
 
         <div 
           ref={ref as React.RefObject<HTMLDivElement>} 
-          className={`grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16 items-center pt-8 transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+          className={`grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-16 items-start pt-8 transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
         >
           {/* LEFT PANE: The Logic Log */}
           <div className="lg:col-span-5 flex flex-col gap-4">
-            {PIPELINE_STEPS.map((step, index) => {
+            {dynamicSteps.map((step, index) => {
               const isActive = activeStep === index;
               const StepIcon = step.icon;
               
@@ -373,9 +485,8 @@ export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workfl
             })}
           </div>
 
-          {/* RIGHT PANE: The Live Sandbox */}
+          {/* RIGHT PANE: Dynamic Sandbox View based on active step */}
           <div className="lg:col-span-7 relative h-[480px] w-full bg-white rounded-3xl border border-slate-200 shadow-[0_30px_60px_-20px_rgba(11,18,33,0.12)] overflow-hidden flex flex-col">
-            
             <div className="h-12 border-b border-slate-100 bg-slate-50 flex items-center px-6 justify-between">
               <div className="flex gap-2">
                 <div className="w-3 h-3 rounded-full bg-slate-300 border border-slate-400/30" />
@@ -387,53 +498,38 @@ export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workfl
               </div>
             </div>
 
-            <div className="flex-1 relative bg-slate-50/50">
-              {/* STATE 1 */}
-              <div className={`absolute inset-0 p-8 flex items-center justify-center transition-opacity duration-500 ${activeStep === 0 ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}>
-                <div className="w-full max-w-md bg-white border border-slate-200 shadow-sm rounded-xl p-5 flex items-center gap-4">
-                  <Terminal size={20} className="text-[#2563eb]" />
-                  <span className="text-[#0B1221] font-bold text-base font-mono flex items-center">
-                    Track our new product launch metrics...
-                    <span className="inline-block w-2 h-4 bg-[#2563eb] ml-1 animate-pulse" />
-                  </span>
-                </div>
-              </div>
+            <div className="flex-1 relative bg-slate-50/50 p-8 flex flex-col items-center justify-center">
+              {dynamicSteps.map((step, index) => (
+                <div key={`view-${index}`} className={`absolute inset-0 p-8 flex flex-col transition-all duration-700 ${activeStep === index ? "opacity-100 translate-y-0 z-10" : "opacity-0 translate-y-8 z-0 pointer-events-none"}`}>
+                  
+                  {/* Visual indication of solving the legacy bottleneck */}
+                  {step.legacyWarning && (
+                    <div className="mb-6 bg-red-50 border border-red-100 rounded-lg p-4 flex gap-3 shadow-inner">
+                       <XCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                       <div>
+                         <span className="font-bold text-red-900 text-sm block mb-1">Legacy Bottleneck Eliminated:</span>
+                         <span className="text-red-800/80 text-sm">{step.legacyWarning}</span>
+                       </div>
+                    </div>
+                  )}
 
-              {/* STATE 2 */}
-              <div className={`absolute inset-0 p-8 flex flex-col gap-6 transition-opacity duration-500 ${activeStep === 1 ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}>
-                <div className="h-10 w-1/3 bg-slate-200/50 rounded-lg animate-pulse" />
-                <div className="flex-1 grid grid-cols-2 gap-6">
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden">
-                    <BarChart3 size={40} className="text-slate-200" />
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-[#2563eb] animate-[pulse-glow_2s_infinite]" />
-                  </div>
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center">
-                    <LineChart size={40} className="text-slate-200" />
-                  </div>
-                </div>
-              </div>
-
-              {/* STATE 3 */}
-              <div className={`absolute inset-0 p-8 flex flex-col gap-6 transition-opacity duration-500 ${activeStep === 2 ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none"}`}>
-                 <div className="absolute top-6 right-6 bg-[#0B1221] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg z-20 flex items-center gap-2 font-mono">
-                  <Sparkles size={14} className="text-[#60a5fa]" />
-                  "Filter to US region"
-                </div>
-
-                <div className="h-10 w-1/3 bg-slate-200/50 rounded-lg" />
-                <div className="flex-1 grid grid-cols-2 gap-6">
-                  <div className="bg-blue-50/50 rounded-xl border-2 border-[#2563eb]/20 flex items-center justify-center relative shadow-inner">
-                    <div className="absolute bottom-6 left-6 flex gap-2 items-end h-24 w-32">
-                       <div className="w-6 bg-[#2563eb]/40 h-[40%] rounded-t-md transition-all duration-500 delay-100"></div>
-                       <div className="w-6 bg-[#2563eb]/60 h-[70%] rounded-t-md transition-all duration-500 delay-200"></div>
-                       <div className="w-6 bg-[#2563eb] h-[90%] rounded-t-md shadow-[0_0_15px_rgba(37,99,235,0.4)] transition-all duration-500 delay-300"></div>
+                  <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-[#2563eb]/5 blur-[80px] rounded-full"></div>
+                    <div className="text-center p-8 relative z-10">
+                      <div className="w-16 h-16 bg-blue-50 text-[#2563eb] rounded-2xl mx-auto flex items-center justify-center border border-blue-100 shadow-sm mb-6 animate-bounce">
+                        <step.icon size={32} />
+                      </div>
+                      <h4 className="font-bold text-[#0B1221] text-xl mb-3">{step.title}</h4>
+                      <p className="text-slate-500 font-medium">System actively processing routine. Architecture engaged.</p>
+                      <div className="mt-8 flex justify-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#2563eb] animate-pulse"></span>
+                        <span className="w-2 h-2 rounded-full bg-[#2563eb] animate-pulse" style={{animationDelay: '150ms'}}></span>
+                        <span className="w-2 h-2 rounded-full bg-[#2563eb] animate-pulse" style={{animationDelay: '300ms'}}></span>
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-center opacity-40">
-                    <LineChart size={40} className="text-slate-200" />
-                  </div>
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
@@ -445,7 +541,7 @@ export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workfl
 export const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (useCases.length === 0) return null;
+  if (!useCases || useCases.length === 0) return null;
   return (
     <section className="py-24 bg-slate-50 border-y border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
