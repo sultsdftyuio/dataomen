@@ -2,83 +2,139 @@
 'use client';
 
 import React from 'react';
-import { MessageSquareText, BellRing, Presentation, PlugZap } from 'lucide-react';
-
-// Extracted static data to prevent re-allocations
-const FEATURES = [
-  {
-    title: "Plain-English Queries.",
-    description: "Drop the complex SQL and rigid pivot tables. Ask Arcli questions in plain English—like 'Why did Q3 revenue drop?'—and get instant, accurate answers.",
-    icon: <MessageSquareText className="w-6 h-6 text-blue-600" />,
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-100"
-  },
-  {
-    title: "Autonomous AI Watchdogs.",
-    description: "Never miss a critical anomaly. Our AI agents monitor your metrics 24/7, sending instant alerts with root-cause analysis the moment revenue drops or errors spike.",
-    icon: <BellRing className="w-6 h-6 text-rose-600" />,
-    bgColor: "bg-rose-50",
-    borderColor: "border-rose-100"
-  },
-  {
-    title: "Instant Visualizations.",
-    description: "Turn raw data into beautiful, interactive graphs instantly. Export presentation-ready charts directly to your board deck with zero manual formatting.",
-    icon: <Presentation className="w-6 h-6 text-violet-600" />,
-    bgColor: "bg-violet-50",
-    borderColor: "border-violet-100"
-  },
-  {
-    title: "Frictionless Integrations.",
-    description: "Connect your warehouse, database, or favorite SaaS tools like Stripe and Salesforce in seconds. Zero engineering tickets or pipeline configurations required.",
-    icon: <PlugZap className="w-6 h-6 text-emerald-600" />,
-    bgColor: "bg-emerald-50",
-    borderColor: "border-emerald-100"
-  }
-];
+import { 
+  Network, 
+  Activity, 
+  MessageSquare, 
+  ShieldCheck, 
+  FileText,
+  ArrowRight,
+  Sparkles
+} from 'lucide-react';
 
 export function Features() {
   return (
-    <section className="py-24 bg-white relative overflow-hidden border-t border-slate-200">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
+    <section className="py-24 bg-[#F8FAFC] relative overflow-hidden border-t border-slate-200">
+      {/* Subtle Engineering Grid Background */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-[0.03]"
+        style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #0f172a 1px, transparent 0)', backgroundSize: '32px 32px' }}
+      />
+
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl relative z-10">
         
         {/* Header Section */}
-        <div className="text-center mb-16 md:mb-20">
-          <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
-            Stop waiting for the data team.
+        <div className="max-w-3xl mb-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 mb-6">
+            <Sparkles className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-semibold text-blue-900 tracking-tight">The Arcli Engine</span>
+          </div>
+          <h2 className="text-4xl md:text-5xl font-extrabold text-slate-900 mb-6 tracking-tight leading-[1.1]">
+            Enterprise intelligence.<br />
+            <span className="text-slate-400 font-medium">Zero engineering required.</span>
           </h2>
-          <p className="text-slate-600 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-            Deploy an AI data analyst that empowers anyone on your team to find insights, track metrics, and make decisions without writing a single line of SQL.
+          <p className="text-slate-600 text-lg leading-relaxed max-w-2xl">
+            We’ve hidden the complexity of data pipelines, metric governance, and AI orchestration so your team can focus entirely on making decisions.
           </p>
         </div>
 
-        {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-          {FEATURES.map((feat, i) => (
-            <div 
-              key={i} 
-              className="p-8 md:p-10 rounded-3xl bg-white border border-slate-200 hover:shadow-xl hover:shadow-slate-200/50 hover:border-slate-300 transition-all duration-300 group flex flex-col h-full"
-            >
-              <div 
-                className={`w-14 h-14 rounded-2xl ${feat.bgColor} ${feat.borderColor} border flex items-center justify-center mb-6 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300 shadow-sm`}
-                aria-hidden="true"
-              >
-                {feat.icon}
+        {/* Engineered Bento Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 auto-rows-[minmax(240px,auto)]">
+          
+          {/* Phase 1: Omni-Graph (Large Feature) */}
+          <div className="group relative overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 md:col-span-2 lg:col-span-2 p-8 flex flex-col justify-between">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-blue-50 to-transparent opacity-50 rounded-bl-full pointer-events-none" />
+            
+            <div className="mb-8">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-6 text-blue-600">
+                <Network className="w-6 h-6" />
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-4 tracking-tight">
-                {feat.title}
+              <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">
+                Cross-Platform Insights
               </h3>
-              <p className="text-slate-600 leading-relaxed text-base flex-1">
-                {feat.description}
+              <p className="text-slate-600 leading-relaxed text-sm md:text-base max-w-md">
+                Arcli automatically connects the dots across your tools. See how Stripe revenue churn correlates with active Zendesk tickets—instantly, without writing a single pipeline or waiting for data engineers.
               </p>
             </div>
-          ))}
-        </div>
 
-        {/* Trust/No-Code Nudge */}
-        <div className="mt-16 text-center">
-          <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest">
-            Designed for Founders, Marketers, and Operators
-          </p>
+            {/* Simulated UI component inside the bento box */}
+            <div className="mt-auto p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex -space-x-2">
+                <div className="w-8 h-8 rounded-full border-2 border-white bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700">St</div>
+                <div className="w-8 h-8 rounded-full border-2 border-white bg-emerald-100 flex items-center justify-center text-xs font-bold text-emerald-700">Zd</div>
+              </div>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Omni-Graph Active</span>
+            </div>
+          </div>
+
+          {/* Phase 5: Pulse Mode (Tall Feature) */}
+          <div className="group relative overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 md:col-span-1 lg:col-span-1 lg:row-span-2 p-8 flex flex-col">
+            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center mb-6 text-rose-600">
+              <Activity className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">
+              Proactive Pulse Alerts
+            </h3>
+            <p className="text-slate-600 leading-relaxed text-sm mb-8 flex-1">
+              Arcli watches your metrics 24/7. If cart abandonments spike, you receive an instant, intelligent alert complete with root-cause analysis—before you even log in to check.
+            </p>
+            
+            {/* Simulated Alert */}
+            <div className="p-4 rounded-xl border border-rose-100 bg-rose-50/50 relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500" />
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                <span className="text-xs font-bold text-rose-900">Spike Detected</span>
+              </div>
+              <p className="text-xs text-rose-800 font-medium">Cart abandonment up 40% vs. 7-day baseline.</p>
+            </div>
+          </div>
+
+          {/* Phase 4: Click-to-Converse (Medium Feature) */}
+          <div className="group rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 md:col-span-1 lg:col-span-1 p-8">
+            <div className="w-12 h-12 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center mb-6 text-violet-600">
+              <MessageSquare className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">
+              Click to Ask "Why?"
+            </h3>
+            <p className="text-slate-600 leading-relaxed text-sm">
+              See a strange dip in a chart? Don't guess. Just click the anomaly to open a chat instantly scoped to that exact data point. Arcli investigates the underlying cause in seconds.
+            </p>
+          </div>
+
+          {/* Phase 0: Provenance & Trust (Medium Feature) */}
+          <div className="group rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 md:col-span-1 lg:col-span-1 p-8">
+            <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center mb-6 text-slate-700">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">
+              1-Click Metric Trust
+            </h3>
+            <p className="text-slate-600 leading-relaxed text-sm">
+              Never second-guess a number in the boardroom. Click "View Lineage" on any widget to see the exact formula, data source, and logic used to calculate it.
+            </p>
+          </div>
+
+          {/* Phase 2: Narrative Synthesis (Wide Feature) */}
+          <div className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 border border-slate-800 shadow-lg md:col-span-2 lg:col-span-2 p-8 flex flex-col sm:flex-row gap-6 items-start sm:items-center justify-between">
+            <div className="flex-1">
+              <div className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center mb-6 text-white">
+                <FileText className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-3 tracking-tight">
+                Executive Synthesis & Time-Travel
+              </h3>
+              <p className="text-slate-300 leading-relaxed text-sm max-w-sm">
+                Generate a 3-paragraph executive narrative with one click. Share a "Time-Travel" link so your colleagues see the dashboard exactly as it was when the summary was written.
+              </p>
+            </div>
+            
+            <button className="flex-shrink-0 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-5 py-3 rounded-lg font-medium transition-colors text-sm shadow-sm group-hover:shadow-blue-500/25">
+              Generate Brief <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
         </div>
       </div>
     </section>
