@@ -15,12 +15,13 @@ import {
   Network
 } from 'lucide-react';
 
-import { NormalizedPage, getNormalizedPage } from '@/lib/seo/parser';
+// Use 'import type' to ensure no server code (like 'fs') leaks into the client bundle
+import type { NormalizedPage } from '@/lib/seo/parser';
 import { useVisible } from "@/hooks/useVisible";
 import { SectionHeading } from './seo-blocks-1';
 
 // ----------------------------------------------------------------------
-// BOTTOM-OF-FUNNEL BLOCKS (PHASE 3 UPGRADED)
+// BOTTOM-OF-FUNNEL BLOCKS (PHASE 3/4 UPGRADED)
 // ----------------------------------------------------------------------
 
 export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
@@ -191,10 +192,17 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
   );
 };
 
-export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: NormalizedPage['hero']['cta'] }) => {
+export const RelatedLinks = ({ 
+  relatedPages, 
+  heroCta 
+}: { 
+  relatedPages: Array<{ slug: string; title: string; tag: string }>; 
+  heroCta: NormalizedPage['hero']['cta'];
+}) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (!slugs || slugs.length === 0) return null;
+  if (!relatedPages || relatedPages.length === 0) return null;
+  
   return (
     <section className="py-24 bg-slate-50 relative overflow-hidden border-t border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
@@ -206,39 +214,30 @@ export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Nor
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {slugs.map((relatedSlug, i) => {
-            // SAFE HYDRATION: Upgraded to use getNormalizedPage to avoid raw registry crashes
-            const pageData = getNormalizedPage(relatedSlug);
-            if (!pageData) return null;
-            
-            const relatedTitle = pageData.seo.h1 || pageData.seo.title;
-            const linkTag = pageData.tags && pageData.tags[0] ? pageData.tags[0] : pageData.type;
-            
-            return (
-              <Link 
-                key={relatedSlug}
-                href={`/${relatedSlug}`}
-                style={{ transitionDelay: `${i * 100}ms` }}
-                className={`bg-white p-8 rounded-xl border border-slate-200 shadow-sm hover:border-[#2563eb]/40 hover:shadow-[0_8px_20px_-6px_rgba(37,99,235,0.15)] transition-all duration-700 group flex flex-col justify-between h-full hover:-translate-y-1 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-              >
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Network className="w-4 h-4 text-slate-400" />
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400 font-bold">
-                      {linkTag}
-                    </span>
-                  </div>
-                  <h3 className="text-[19px] font-bold text-[#0B1221] mb-6 tracking-tight line-clamp-2">
-                    {relatedTitle}
-                  </h3>
+          {relatedPages.map((page, i) => (
+            <Link 
+              key={page.slug}
+              href={`/${page.slug}`}
+              style={{ transitionDelay: `${i * 100}ms` }}
+              className={`bg-white p-8 rounded-xl border border-slate-200 shadow-sm hover:border-[#2563eb]/40 hover:shadow-[0_8px_20px_-6px_rgba(37,99,235,0.15)] transition-all duration-700 group flex flex-col justify-between h-full hover:-translate-y-1 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+            >
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Network className="w-4 h-4 text-slate-400" />
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                    {page.tag}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="font-mono text-[10px] font-bold text-[#2563eb] uppercase tracking-[0.2em]">ACCESS_FILE</span>
-                  <ArrowRight className="w-4 h-4 text-[#2563eb] group-hover:translate-x-1 transition-transform" />
-                </div>
-              </Link>
-            );
-          })}
+                <h3 className="text-[19px] font-bold text-[#0B1221] mb-6 tracking-tight line-clamp-2">
+                  {page.title}
+                </h3>
+              </div>
+              <div className="flex items-center justify-between mt-auto">
+                <span className="font-mono text-[10px] font-bold text-[#2563eb] uppercase tracking-[0.2em]">ACCESS_FILE</span>
+                <ArrowRight className="w-4 h-4 text-[#2563eb] group-hover:translate-x-1 transition-transform" />
+              </div>
+            </Link>
+          ))}
         </div>
         
         <div className={`flex justify-center transition-all duration-1000 delay-300 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>

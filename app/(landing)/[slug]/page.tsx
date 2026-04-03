@@ -85,7 +85,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   // Phase 4: Code-Injected OG Image URLs
   // Dynamically extract the best SQL snippet to showcase developer credibility in social feeds
-  const codeSnippet = data.demo?.generatedSql || data.useCases?.find(u => u.sqlSnippet)?.sqlSnippet;
+  const codeSnippet = data.demo?.generatedSql || data.useCases?.find((u: any) => u.sqlSnippet)?.sqlSnippet;
   
   const ogUrl = new URL(`${BASE_URL}/api/og`);
   ogUrl.searchParams.set('title', data.seo.h1);
@@ -135,7 +135,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     schemas.push({
       '@context': 'https://schema.org',
       '@type': 'FAQPage',
-      mainEntity: data.faqs.map((faq) => ({
+      mainEntity: data.faqs.map((faq: any) => ({
         '@type': 'Question',
         name: faq.q,
         acceptedAnswer: { '@type': 'Answer', text: faq.a },
@@ -163,7 +163,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       '@type': 'HowTo',
       name: data.seo.h1,
       description: data.seo.description,
-      step: data.steps.map((step, index) => ({
+      step: data.steps.map((step: any, index: number) => ({
         '@type': 'HowToStep',
         position: index + 1,
         name: step.title,
@@ -171,6 +171,19 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       }))
     });
   }
+
+  // SERVER-SIDE DATA RESOLUTION (Fixes the Client fs module error)
+  const resolvedRelatedPages = (data.relatedSlugs || [])
+    .map((relatedSlug: string) => {
+      const pageData = getNormalizedPage(relatedSlug);
+      if (!pageData) return null;
+      return {
+        slug: relatedSlug,
+        title: pageData.seo.h1 || pageData.seo.title,
+        tag: (pageData.tags && pageData.tags.length > 0) ? pageData.tags[0] : pageData.type
+      };
+    })
+    .filter(Boolean);
 
   // Retrieve the appropriate layout sequence for the current page type
   const layoutSequence = LAYOUT_CONFIG[data.type] || LAYOUT_CONFIG.default;
@@ -205,7 +218,10 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               case 'Features': return { features: data.features };
               case 'Architecture': return { architecture: data.architecture };
               case 'FAQs': return { faqs: data.faqs };
-              case 'RelatedLinks': return { slugs: data.relatedSlugs, heroCta: data.hero?.cta };
+              
+              // We pass down the pre-resolved array so the Client Component doesn't import fs
+              case 'RelatedLinks': return { relatedPages: resolvedRelatedPages, heroCta: data.hero?.cta };
+              
               default: return {};
             }
           })();

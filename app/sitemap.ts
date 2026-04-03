@@ -1,6 +1,6 @@
 // app/sitemap.ts
 import { MetadataRoute } from 'next';
-import { seoPages } from '@/lib/seo/index';
+import { getAllSlugs } from '@/lib/seo/index';
 
 /**
  * Arcli Global Sitemap Generator
@@ -67,11 +67,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ];
 
   // 2. Dynamic SEO Routes (High Priority Growth Engine)
-  // Vectorized mapping of our semantic content silos. Because we export the Shopify
-  // campaign from our central SEO registry, this automatically captures and maps 
-  // all Programmatic SEO endpoints without penalizing the DOM of our application UI.
+  // Vectorized mapping of our semantic content silos using the lazy hydration registry.
   // We assign a 0.9 priority to signal to Google that these are high-value entry points.
-  const dynamicSeoRoutes: MetadataRoute.Sitemap = Object.keys(seoPages).map((slug) => ({
+  const slugs = getAllSlugs();
+  const dynamicSeoRoutes: MetadataRoute.Sitemap = slugs.map((slug) => ({
     url: `${baseUrl}/${slug}`,
     lastModified: currentDate,
     changeFrequency: 'weekly',

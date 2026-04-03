@@ -66,14 +66,14 @@ function hydrateRegistry() {
       seoCategoryCache[category] = {};
       
       for (const file of files as string[]) {
-        // Dynamic file resolution based on the manifest map
-        const modulePath = path.join(process.cwd(), 'lib/seo', file.replace('./', '') + '.tsx');
-        
         // Note for Next.js: For full production build environments where tsx isn't 
         // compiled dynamically, ensure Webpack/Turbopack is configured to trace these, 
         // or configure the pre-build script to generate an index.js map instead.
         try {
-            const mod = require(modulePath);
+            // FIXED FOR TURBOPACK: Use a localized, statically analyzable path template 
+            // instead of path.join so the bundler correctly maps the lib/seo directory.
+            const cleanFileName = file.replace('./', '').replace('.tsx', '');
+            const mod = require('./' + cleanFileName + '.tsx');
             
             // Dynamically extract the exported data object (e.g., coreFeaturesPart1)
             const exportedDataKey = Object.keys(mod).find(key => key !== 'default');
@@ -84,7 +84,7 @@ function hydrateRegistry() {
               seoPagesCache = { ...seoPagesCache, ...data };
             }
         } catch (loadError) {
-            console.error(`Failed to dynamic-load SEO module: ${modulePath}`);
+            console.error(`Failed to dynamic-load SEO module: ${file}`);
         }
       }
     }
