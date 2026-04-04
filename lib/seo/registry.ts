@@ -1,6 +1,8 @@
-// AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY.
-// Run `node scripts/generate-registry.mjs` to update.
-
+// AUTO-GENERATED — DO NOT EDIT DIRECTLY.
+// Regenerate with: node scripts/generate-registry.mjs
+//
+// Silos tracked: 36
+// Generated:     2026-04-04T22:51:14.904Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';
@@ -16,27 +18,27 @@ import * as silo_11 from './file-analysis-1';
 import * as silo_12 from './file-analysis-2';
 import * as silo_13 from './guides-1';
 import * as silo_14 from './guides-2';
-import * as silo_16 from './indie-hacker-campaigns';
-import * as silo_17 from './industry-verticals-1';
-import * as silo_18 from './multi-tenant-analytics-security';
-import * as silo_20 from './persona-buyers-1';
-import * as silo_21 from './pillar-snowflake-integration';
-import * as silo_24 from './saas-integrations-1';
-import * as silo_25 from './saas-integrations-2';
-import * as silo_26 from './sales-pipeline-velocity';
-import * as silo_27 from './semantic-metric-governance';
-import * as silo_28 from './shopify-campaign';
-import * as silo_29 from './templates-1';
-import * as silo_30 from './templates-2';
-import * as silo_31 from './templates-3';
-import * as silo_32 from './templates-shopify-1';
-import * as silo_33 from './templates-stripe-1';
-import * as silo_34 from './text-to-sql-1';
-import * as silo_35 from './text-to-sql-2';
-import * as silo_36 from './text-to-sql-shopify-1';
-import * as silo_37 from './text-to-sql-stripe-1';
-import * as silo_38 from './workflow-jtbd-1';
-import * as silo_39 from './zendesk-support-analytics';
+import * as silo_15 from './indie-hacker-campaigns';
+import * as silo_16 from './industry-verticals-1';
+import * as silo_17 from './multi-tenant-analytics-security';
+import * as silo_18 from './persona-buyers-1';
+import * as silo_19 from './pillar-snowflake-integration';
+import * as silo_20 from './saas-integrations-1';
+import * as silo_21 from './saas-integrations-2';
+import * as silo_22 from './sales-pipeline-velocity';
+import * as silo_23 from './semantic-metric-governance';
+import * as silo_24 from './shopify-campaign';
+import * as silo_25 from './templates-1';
+import * as silo_26 from './templates-2';
+import * as silo_27 from './templates-3';
+import * as silo_28 from './templates-shopify-1';
+import * as silo_29 from './templates-stripe-1';
+import * as silo_30 from './text-to-sql-1';
+import * as silo_31 from './text-to-sql-2';
+import * as silo_32 from './text-to-sql-shopify-1';
+import * as silo_33 from './text-to-sql-stripe-1';
+import * as silo_34 from './workflow-jtbd-1';
+import * as silo_35 from './zendesk-support-analytics';
 
 const allModules = [
   silo_0,
@@ -54,11 +56,15 @@ const allModules = [
   silo_12,
   silo_13,
   silo_14,
+  silo_15,
   silo_16,
   silo_17,
   silo_18,
+  silo_19,
   silo_20,
   silo_21,
+  silo_22,
+  silo_23,
   silo_24,
   silo_25,
   silo_26,
@@ -70,90 +76,100 @@ const allModules = [
   silo_32,
   silo_33,
   silo_34,
-  silo_35,
-  silo_36,
-  silo_37,
-  silo_38,
-  silo_39
+  silo_35
 ];
 
 export const SEO_REGISTRY: Record<string, any> = {};
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, exportValue]) => {
-    if (exportValue && typeof exportValue === 'object' && !Array.isArray(exportValue)) {
-      
-      // V2 Schema Detection (Arcli Enterprise Block Architecture)
-      const isV2Schema = 'path' in exportValue && 'meta' in exportValue && 'blocks' in exportValue;
+    if (!exportValue || typeof exportValue !== 'object' || Array.isArray(exportValue)) return;
 
-      // V1 Schema Detection (Legacy Landing Architecture)
-      const isV1SinglePage = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue;
+    const isV2 = 'path' in exportValue && 'meta' in exportValue && 'blocks' in exportValue;
+    const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue;
 
-      if (isV2Schema) {
-        // Strip leading slash from path to create the router slug (e.g., "/use-cases/x" -> "use-cases/x")
-        const slug = (exportValue as any).path.replace(/^\//, '');
-        SEO_REGISTRY[slug] = exportValue;
-      } else if (isV1SinglePage) {
-        // Legacy single page exported directly
-        const slug = (exportValue as any).slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-        SEO_REGISTRY[slug] = exportValue;
-      } else {
-        // Legacy collection of pages (Record<string, SEOPageData>)
-        Object.entries(exportValue).forEach(([key, pageData]: [string, any]) => {
-          if (pageData && typeof pageData === 'object' && !Array.isArray(pageData)) {
-            // Check if nested page is V2
-            if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
-               const slug = pageData.path.replace(/^\//, '');
-               SEO_REGISTRY[slug] = pageData;
-            } 
-            // Check if nested page is V1
-            else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData) {
-              const slug = pageData.slug || key;
-              SEO_REGISTRY[slug] = pageData;
-            }
-          }
-        });
+    if (isV2) {
+      const slug = (exportValue as any).path.replace(/^\//, '');
+      if (SEO_REGISTRY[slug]) {
+        console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
       }
+      SEO_REGISTRY[slug] = exportValue;
+      return;
     }
+
+    if (isV1Page) {
+      const slug = (exportValue as any).slug
+        || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      if (SEO_REGISTRY[slug]) {
+        console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
+      }
+      SEO_REGISTRY[slug] = exportValue;
+      return;
+    }
+
+    // V1 collection: Record<string, PageData>
+    Object.entries(exportValue).forEach(([key, pageData]: [string, any]) => {
+      if (!pageData || typeof pageData !== 'object' || Array.isArray(pageData)) return;
+
+      let slug: string;
+
+      if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
+        slug = (pageData as any).path.replace(/^\//, '');
+      } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData) {
+        slug = (pageData as any).slug || key;
+      } else {
+        return;
+      }
+
+      if (SEO_REGISTRY[slug]) {
+        console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
+      }
+      SEO_REGISTRY[slug] = pageData;
+    });
   });
 });
 
-/**
- * Normalizes both V1 and V2 architectures into a predictable format 
- * so the Next.js page renderer doesn't crash on differing schemas.
- */
 export function getNormalizedPage(slug: string): any | null {
-  // Try exact match or exact match minus leading slash
   const cleanSlug = slug.replace(/^\//, '');
-  const data = SEO_REGISTRY[cleanSlug] || SEO_REGISTRY[slug];
-  
+  const data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];
   if (!data) return null;
 
-  // Normalize V2 (Block Architecture) 
+  // V2 (block architecture)
   if (data.blocks && data.meta) {
-    // Attempt to extract H1 from Hero block payload if it exists
     const heroBlock = data.blocks.find((b: any) => b.type === 'Hero');
-    
     return {
       ...data,
       seo: {
-        title: data.meta.title || 'Arcli Analytics',
+        title:       data.meta.title       || 'Arcli Analytics',
         description: data.meta.description || 'Enterprise Data Platform',
-        keywords: data.meta.keywords || [],
-        h1: heroBlock?.payload?.title || data.meta.title || 'Arcli AI Analytics',
-      }
+        keywords:    data.meta.keywords    || [],
+        h1:          heroBlock?.payload?.title || data.meta.title || 'Arcli AI Analytics',
+      },
     };
   }
 
-  // Normalize V1 (Legacy Architecture)
+  // V1 (legacy / flat architecture)
+  // Synthesize 'hero' from flat fields when absent (competitor-comparison schema).
+  // Without this, Hero component crashes: "Cannot read properties of undefined (reading 'subtitle')"
+  const hero = data.hero ?? {
+    title:    data.h1    || data.title || '',
+    subtitle: data.subtitle || data.description || '',
+    cta: {
+      primary: { href: '/login', text: 'Get Started Free' },
+    },
+  };
+
   return {
     ...data,
+    hero,
     seo: {
       ...data.seo,
-      title: data.seo?.title || data.title || 'Arcli Analytics',
+      title:       data.seo?.title       || data.title       || 'Arcli Analytics',
       description: data.seo?.description || data.description || 'Enterprise Data Platform',
-      h1: data.hero?.title || data.hero?.h1 || data.seo?.h1 || data.h1 || data.seo?.title || data.title || 'Arcli AI Analytics',
-    }
+      h1:          hero.title || hero.h1  || data.seo?.h1    || data.h1
+                               || data.seo?.title            || data.title
+                               || 'Arcli AI Analytics',
+    },
   };
 }
 
@@ -165,23 +181,18 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
   return slugs
     .map((rawSlug) => {
       const slug = rawSlug.replace(/^\//, '');
-      const page = SEO_REGISTRY[slug] || SEO_REGISTRY[rawSlug];
+      const page = SEO_REGISTRY[slug] ?? SEO_REGISTRY[rawSlug];
       if (!page) return null;
-      
-      // Handle V2 Schema
+
       if (page.meta && page.blocks) {
-        return {
-          slug,
-          title: page.meta.title || slug,
-          type: 'use-case-block'
-        }
+        return { slug, title: page.meta.title || slug, type: 'use-case-block' };
       }
 
-      // Handle V1 Schema
       return {
         slug,
-        title: page.hero?.title || page.hero?.h1 || page.seo?.h1 || page.h1 || page.seo?.title || page.title || slug,
-        type: page.type || 'template'
+        title: page.hero?.title || page.hero?.h1 || page.seo?.h1
+             || page.h1 || page.seo?.title || page.title || slug,
+        type: page.type || 'template',
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
