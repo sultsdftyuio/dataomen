@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 import { NormalizedPage } from '@/lib/seo/parser';
-import { getPage } from '@/lib/seo/index';
+import { getNormalizedPage as getPage } from '@/lib/seo/registry';
 import { useVisible } from "@/hooks/useVisible";
 import { SectionHeading } from './seo-blocks-1';
 
