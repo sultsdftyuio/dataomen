@@ -1,6 +1,9 @@
 // lib/seo/index.tsx
-import fs from 'fs';
-import path from 'path';
+
+// --- Static Import Layer ---
+// Using the statically generated registry instead of dynamic fs/require
+// to guarantee 100% compatibility with Next.js/Turbopack serverless builds.
+import { seoRegistry } from './registry';
 
 // --- 1. The Polymorphic Type Definition System ---
 // Decoupled from static imports to ensure exhaustive type-checking in the UI layer
@@ -14,6 +17,11 @@ export interface BaseSEOPageData {
     h1: string;
     datePublished?: string;
     dateModified?: string;
+    // Added to support advanced SEO template architectures
+    canonicalDomain?: string; 
+    keywords?: string[];
+    intent?: 'template' | 'guide' | 'comparison' | string;
+    [key: string]: any; // Allows future nested meta extensions
   };
   hero: any; // Note: Can be strictly typed to a specific Hero interface
   demo?: any;
@@ -24,9 +32,14 @@ export interface BaseSEOPageData {
   steps?: any;
   features?: any;
   architecture?: any;
-  faqs?: { q: string; a: string }[];
+  faqs?: { 
+    q: string; 
+    a: string; 
+    persona?: string; // Added for persona-driven targeted FAQs 
+    [key: string]: any; 
+  }[];
   relatedSlugs?: string[];
-  [key: string]: any; // Polymorphic catch-all for silo-specific data
+  [key: string]: any; // Polymorphic catch-all for silo-specific root data (e.g., assets, technicalStack)
 }
 
 export interface TemplateBlueprint extends BaseSEOPageData {
@@ -42,8 +55,9 @@ let seoPagesCache: Record<string, SEOPageData> | null = null;
 let seoCategoryCache: Record<string, Record<string, SEOPageData>> | null = null;
 
 /**
- * Shared Computation Layer: Hydrates the full SEO registry from the manifest.
+ * Shared Computation Layer: Hydrates the full SEO registry from the static map.
  * Evaluates lazily to optimize Next.js server startup and memory chunking.
+ * Statically traceable by Webpack/Turbopack.
  */
 function hydrateRegistry() {
   if (seoPagesCache) return;
@@ -52,31 +66,21 @@ function hydrateRegistry() {
   seoCategoryCache = {};
 
   try {
-    const manifestPath = path.join(process.cwd(), 'lib/seo/registry-manifest.json');
-    
-    // Controlled Determinism: Fallback safety if the prebuild script hasn't run
-    if (!fs.existsSync(manifestPath)) {
-      console.warn('⚠️ SEO Registry Manifest not found. Run generate-registry.mjs pre-build.');
+    if (!seoRegistry) {
+      console.warn('⚠️ Static SEO Registry not found. Ensure generate-registry.mjs ran successfully.');
       return;
     }
-
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     
-    for (const [category, files] of Object.entries(manifest.silos)) {
+    // Loop through the statically mapped categories and modules
+    for (const [category, modules] of Object.entries(seoRegistry)) {
       seoCategoryCache[category] = {};
       
-      for (const file of files as string[]) {
-        // Note for Next.js: For full production build environments where tsx isn't 
-        // compiled dynamically, ensure Webpack/Turbopack is configured to trace these, 
-        // or configure the pre-build script to generate an index.js map instead.
+      for (const mod of modules as any[]) {
         try {
-            // FIXED FOR TURBOPACK: Use a localized, statically analyzable path template 
-            // instead of path.join so the bundler correctly maps the lib/seo directory.
-            const cleanFileName = file.replace('./', '').replace('.tsx', '');
-            const mod = require('./' + cleanFileName + '.tsx');
-            
             // Dynamically extract the exported data object (e.g., coreFeaturesPart1)
+            // from the statically imported module.
             const exportedDataKey = Object.keys(mod).find(key => key !== 'default');
+            
             if (exportedDataKey && mod[exportedDataKey]) {
               const data = mod[exportedDataKey];
               
@@ -84,7 +88,7 @@ function hydrateRegistry() {
               seoPagesCache = { ...seoPagesCache, ...data };
             }
         } catch (loadError) {
-            console.error(`Failed to dynamic-load SEO module: ${file}`);
+            console.error(`Failed to map SEO module data in category: ${category}`);
         }
       }
     }

@@ -1,7 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { Metadata } from 'next';
-import { Navbar } from '@/components/landing/navbar'; // <-- Injected Navbar
+import { Navbar } from '@/components/landing/navbar';
+import Footer from '@/components/landing/footer';
 import { 
   ArrowRight, 
   MessageSquare, 
@@ -17,7 +18,6 @@ import {
   LineChart,
   Users,
   ChevronDown,
-  Sparkles,
   BarChart3
 } from 'lucide-react';
 
@@ -40,7 +40,7 @@ export default function AnalyzeShopifyDataPage() {
       {/* 0. Global Navigation */}
       <Navbar />
 
-      <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+      <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-blue-100 selection:text-blue-900 flex flex-col">
         
         {/* 1. Hero Section */}
         <section className="relative pt-32 pb-20 md:pt-40 md:pb-32 overflow-hidden">
@@ -321,7 +321,7 @@ export default function AnalyzeShopifyDataPage() {
         </section>
 
         {/* 6. FAQ Section */}
-        <section className="py-24 bg-white border-t border-slate-200">
+        <section className="py-24 bg-white border-t border-slate-200 flex-grow">
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-4 tracking-tight">Frequently Asked Questions</h2>
@@ -388,6 +388,9 @@ export default function AnalyzeShopifyDataPage() {
             </div>
           </div>
         </section>
+
+        {/* 8. Global Footer (Imported) */}
+        <Footer />
         
       </div>
     </>

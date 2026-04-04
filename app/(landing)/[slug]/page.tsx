@@ -43,14 +43,15 @@ const BLOCK_REGISTRY: Record<string, React.ComponentType<any>> = {
 /**
  * LAYOUT ORCHESTRATION
  * Deterministic section ordering based on persona/page intent.
+ * FIXED: Reordered FAQs to the bottom and ensured all valid blocks are present.
  */
 const LAYOUT_CONFIG: Record<string, string[]> = {
-  guide: ['Hero', 'Steps', 'FAQs', 'Demo', 'Features', 'Architecture', 'RelatedLinks'],
-  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'FAQs', 'RelatedLinks'],
+  guide: ['Hero', 'Demo', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
+  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'Architecture', 'FAQs', 'RelatedLinks'],
   integration: ['Hero', 'WorkflowSection', 'Demo', 'Features', 'Steps', 'Architecture', 'FAQs', 'RelatedLinks'],
   feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'Architecture', 'FAQs', 'RelatedLinks'],
-  template: ['Hero', 'Demo', 'Steps', 'Features', 'Matrix', 'FAQs', 'RelatedLinks'],
-  campaign: ['Hero', 'Personas', 'Demo', 'WorkflowSection', 'Features', 'FAQs', 'RelatedLinks'],
+  template: ['Hero', 'Demo', 'Steps', 'Features', 'Matrix', 'Architecture', 'FAQs', 'RelatedLinks'],
+  campaign: ['Hero', 'Personas', 'Demo', 'WorkflowSection', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
   default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
 };
 
@@ -183,7 +184,15 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
           // Block Visibility Heuristics: Do not render empty sections
           const propData = Object.values(blockProps)[0];
-          const hasValidData = propData !== undefined && propData !== null && (!Array.isArray(propData) || propData.length > 0);
+          let hasValidData = false;
+
+          if (Array.isArray(propData)) {
+            hasValidData = propData.length > 0;
+          } else if (propData !== null && typeof propData === 'object') {
+            hasValidData = Object.keys(propData).length > 0;
+          } else {
+            hasValidData = propData !== undefined && propData !== null;
+          }
           
           if (!hasValidData && blockKey !== 'Hero') return null;
 
