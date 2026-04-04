@@ -1,6 +1,6 @@
 // lib/seo/parser.tsx
 import React, { cache } from 'react';
-import { getPage, getAllSlugs } from '@/lib/seo/index';
+import { getNormalizedPage as getPage, getAllSlugs } from '@/lib/seo/registry';
 import { 
   Database,
   Layers,
