@@ -1,7 +1,6 @@
 /**
  * FILE: app/(landing)/[slug]/page.tsx
- * OBJECTIVE: Fix build crash during static generation for V1 pages.
- * FIX: Implement Hero fallback to H1 and harden array-based props.
+ * FIX: Implement Hero fallback to H1/Description and harden array-based props.
  */
 
 import { Metadata } from 'next';
@@ -125,22 +124,26 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 /**
  * Normalizes V1 data into props expected by specific UI blocks.
- * Implements "Hero fallback to H1" and ensures arrays exist for V1 components.
+ * Implements robustness against missing properties and ensures 
+ * mandatory array properties are never undefined.
  */
 function getV1BlockProps(type: string, data: any) {
   const d = data || {};
+  const defaultCta = { primary: { text: 'Start Free Trial', href: '/register' } };
+
   switch (type) {
     case 'Hero': {
-      // FIX: Ensure hero exists and falls back to SEO metadata if missing
+      // FIX: Ensure hero object exists. Fallback to SEO metadata if missing.
       const hero = d.hero || { 
         title: d.h1 || d.heroTitle || d.seo?.h1 || d.title || 'Arcli Analytics', 
-        subtitle: d.heroDescription || d.description || d.seo?.description || 'Enterprise Data Intelligence' 
+        subtitle: d.heroDescription || d.description || d.seo?.description || 'Enterprise Data Intelligence',
+        cta: d.ctaHierarchy || d.cta || defaultCta
       };
       return { 
         data: { 
           ...d, 
           hero, 
-          cta: d.ctaHierarchy || d.cta || { primary: { text: 'Start Free Trial', href: '/register' } } 
+          cta: hero.cta 
         } 
       };
     }
@@ -151,7 +154,7 @@ function getV1BlockProps(type: string, data: any) {
     case 'ContrarianBanner': 
       return { 
         statement: d.contrarianBanner?.statement || d.subtitle || d.seo?.h1, 
-        subtext: d.contrarianBanner?.subtext || d.description 
+        subtext: d.contrarianBanner?.subtext || d.description || d.seo?.description
       };
     case 'Matrix': 
       return { matrix: d.matrix || d.evaluationMatrix || d.competitiveAdvantage || [] };
@@ -172,7 +175,7 @@ function getV1BlockProps(type: string, data: any) {
     case 'RelatedLinks': 
       return { 
         slugs: d.relatedSlugs || d.relatedBlueprints || [], 
-        heroCta: d.hero?.cta || d.cta || { primary: { text: 'Start Free Trial', href: '/register' } } 
+        heroCta: d.hero?.cta || d.cta || defaultCta 
       };
     case 'Features':
       return { features: d.features || d.capabilities || [] };
@@ -240,18 +243,19 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           const BlockComponent = BLOCK_REGISTRY[block.type];
           if (!BlockComponent) return null;
 
-          // Advanced Prop Mapping with V1/V2 normalization
+          // Prop Normalization Layer
           const blockProps = isV2 
             ? (block.payload || {}) 
             : getV1BlockProps(block.type, page);
 
-          // Component-Specific Hardening: Prevent "length of undefined" errors for V2 payloads
+          // Component-Specific Hardening: Prevent ".length of undefined" errors
           if (block.type === 'RelatedLinks' && !blockProps.slugs) blockProps.slugs = [];
           if (block.type === 'FAQs' && !blockProps.faqs) blockProps.faqs = [];
           if (block.type === 'Matrix' && !blockProps.matrix) blockProps.matrix = [];
           if (block.type === 'UseCases' && !blockProps.useCases) blockProps.useCases = [];
           if (block.type === 'Features' && !blockProps.features) blockProps.features = [];
           if (block.type === 'Steps' && !blockProps.steps) blockProps.steps = [];
+          if (block.type === 'Personas' && !blockProps.personas) blockProps.personas = [];
 
           // Validation: Hide empty blocks automatically
           const firstVal = Object.values(blockProps)[0];
