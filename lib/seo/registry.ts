@@ -1,34 +1,84 @@
-// AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY.
-// Run `npm run lint:seo` or `node scripts/generate-registry.mjs` to update.
+// lib/seo/registry.ts
 
-import * as silo_0 from './competitor-comparisons-1';
-import * as silo_1 from './competitor-comparisons-2';
-import * as silo_2 from './core-features-1';
-import * as silo_3 from './core-features-2';
-import * as silo_4 from './database-integrations-1';
-import * as silo_5 from './database-integrations-2';
-import * as silo_6 from './file-analysis-1';
-import * as silo_7 from './file-analysis-2';
-import * as silo_8 from './guides-1';
-import * as silo_9 from './guides-2';
-import * as silo_11 from './indie-hacker-campaigns';
-import * as silo_14 from './saas-integrations-1';
-import * as silo_15 from './saas-integrations-2';
-import * as silo_16 from './shopify-campaign';
-import * as silo_17 from './templates-1';
-import * as silo_18 from './templates-2';
-import * as silo_19 from './text-to-sql-1';
-import * as silo_20 from './text-to-sql-2';
+import { TemplateBlueprint } from './index';
 
-export const seoRegistry: Record<string, any[]> = {
-  'competitor-comparisons': [silo_0, silo_1],
-  'core-features': [silo_2, silo_3],
-  'database-integrations': [silo_4, silo_5],
-  'file-analysis': [silo_6, silo_7],
-  'guides': [silo_8, silo_9],
-  'indie-hacker-campaigns': [silo_11],
-  'saas-integrations': [silo_14, silo_15],
-  'shopify-campaign': [silo_16],
-  'templates': [silo_17, silo_18],
-  'text-to-sql': [silo_19, silo_20],
+// --- Silo Part Imports: Shopify ---
+import * as ShopifySql from './text-to-sql-shopify-1';
+import * as ShopifyDash from './templates-shopify-1';
+
+// --- Silo Part Imports: Stripe ---
+import * as StripeSql from './text-to-sql-stripe-1';
+import * as StripeDash from './templates-stripe-1';
+
+/**
+ * DETERMINISTIC REPOSITORY MAPPING
+ * Maps stable slug keys to production-ready TemplateBlueprints.
+ * Logic: [data-source]-[pattern]-[mode/modifier]
+ */
+const SEO_REGISTRY: Record<string, TemplateBlueprint> = {
+  // --- Shopify Silo ---
+  'shopify-ltv-sql': ShopifySql.shopifyLtvSql,
+  'shopify-cohort-retention-sql': ShopifySql.shopifyCohortRetentionSql,
+  'shopify-rfm-segmentation-sql': ShopifySql.shopifyRfmSegmentationSql,
+  
+  'shopify-ltv-dashboard': ShopifyDash.shopifyLtvDashboard,
+  'shopify-cohort-retention-dashboard': ShopifyDash.shopifyCohortRetentionDashboard,
+  'shopify-rfm-dashboard': ShopifyDash.shopifyRfmDashboard,
+
+  // --- Stripe Silo ---
+  'stripe-mrr-sql': StripeSql.stripeMrrSql,
+  'stripe-churn-rate-sql': StripeSql.stripeChurnRateSql,
+  'stripe-ltv-sql': StripeSql.stripeLtvSql,
+
+  'stripe-mrr-dashboard': StripeDash.stripeMrrDashboard,
+  'stripe-churn-dashboard': StripeDash.stripeChurnDashboard,
+  'stripe-ltv-dashboard': StripeDash.stripeLtvDashboard,
 };
+
+/**
+ * HEURISTIC DATA RESOLVER
+ * Sections: 2.2 Normalization & 3.2 Shared Computation
+ */
+export function getNormalizedPage(slug: string): TemplateBlueprint | null {
+  const data = SEO_REGISTRY[slug];
+  
+  if (!data) return null;
+
+  // Apply Heuristic Fallbacks (Section 2.2)
+  // Ensures p.hero.h1 > p.seo.h1 > p.seo.title
+  const normalizedData = {
+    ...data,
+    seo: {
+      ...data.seo,
+      h1: data.hero?.h1 || data.seo.h1 || data.seo.title,
+    }
+  };
+
+  return normalizedData;
+}
+
+/**
+ * STATIC ORCHESTRATOR
+ * Used by generateStaticParams in app/(landing)/[slug]/page.tsx
+ */
+export function getAllSlugs(): string[] {
+  return Object.keys(SEO_REGISTRY);
+}
+
+/**
+ * SEARCH & DISCOVERY HELPER
+ * Facilitates internal linking and silo-depth analysis.
+ */
+export function getRelatedPages(slugs: string[]) {
+  return slugs
+    .map(slug => {
+      const page = SEO_REGISTRY[slug];
+      if (!page) return null;
+      return {
+        slug,
+        title: page.seo.h1 || page.seo.title,
+        type: page.type
+      };
+    })
+    .filter(Boolean);
+}

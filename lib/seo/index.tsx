@@ -3,7 +3,8 @@
 // --- Static Import Layer ---
 // Using the statically generated registry instead of dynamic fs/require
 // to guarantee 100% compatibility with Next.js/Turbopack serverless builds.
-import { seoRegistry } from './registry';
+import * as registryModule from './registry';
+const seoRegistry = (registryModule as Record<string, any>).default || registryModule;
 
 // --- 1. The Polymorphic Type Definition System ---
 // Decoupled from static imports to ensure exhaustive type-checking in the UI layer
