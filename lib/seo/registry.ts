@@ -26,29 +26,9 @@ import * as silo_25 from './text-to-sql-shopify-1';
 import * as silo_26 from './text-to-sql-stripe-1';
 
 const allModules = [
-  silo_0,
-  silo_1,
-  silo_2,
-  silo_3,
-  silo_4,
-  silo_5,
-  silo_6,
-  silo_7,
-  silo_8,
-  silo_9,
-  silo_11,
-  silo_15,
-  silo_16,
-  silo_17,
-  silo_18,
-  silo_19,
-  silo_20,
-  silo_21,
-  silo_22,
-  silo_23,
-  silo_24,
-  silo_25,
-  silo_26
+  silo_0, silo_1, silo_2, silo_3, silo_4, silo_5, silo_6, silo_7, silo_8, silo_9,
+  silo_11, silo_15, silo_16, silo_17, silo_18, silo_19, silo_20, silo_21, silo_22,
+  silo_23, silo_24, silo_25, silo_26
 ];
 
 /**
@@ -58,12 +38,24 @@ const allModules = [
 export const SEO_REGISTRY: Record<string, any> = {};
 
 allModules.forEach((mod) => {
-  Object.entries(mod).forEach(([exportName, pageData]) => {
-    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData)) {
-      // Derive slug: Prefer explicit pageData.slug if present, otherwise fallback
-      // to formatting the export name (e.g. shopifyLtvSql -> shopify-ltv-sql).
-      const slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-      SEO_REGISTRY[slug] = pageData;
+  Object.entries(mod).forEach(([exportName, exportValue]) => {
+    if (exportValue && typeof exportValue === 'object' && !Array.isArray(exportValue)) {
+      
+      // Differentiate between a direct page export and a collection map/record.
+      if ('title' in exportValue && ('description' in exportValue || 'heroTitle' in exportValue || 'type' in exportValue)) {
+        // It's a single page exported directly
+        const slug = exportValue.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+        SEO_REGISTRY[slug] = exportValue;
+      } else {
+        // It's a collection of pages (e.g. Record<string, SEOPageData>)
+        // We need to iterate through the keys (which are the actual URLs)
+        Object.entries(exportValue).forEach(([key, pageData]: [string, any]) => {
+          if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && 'title' in pageData) {
+            const slug = pageData.slug || key;
+            SEO_REGISTRY[slug] = pageData;
+          }
+        });
+      }
     }
   });
 });
@@ -78,12 +70,14 @@ export function getNormalizedPage(slug: string): any | null {
   if (!data) return null;
 
   // Apply Tier-1 Heuristic Fallbacks 
-  // Ensures the H1 cascade always has a valid fallback: hero.h1 > seo.h1 > seo.title
+  // Ensures the H1 cascade always has a valid fallback across all legacy and new schemas
   return {
     ...data,
     seo: {
       ...data.seo,
-      h1: data.hero?.h1 || data.seo?.h1 || data.seo?.title || 'Arcli Template',
+      title: data.seo?.title || data.title || 'Arcli Analytics',
+      description: data.seo?.description || data.description || 'Enterprise Data Platform',
+      h1: data.hero?.h1 || data.seo?.h1 || data.h1 || data.heroTitle || data.seo?.title || data.title || 'Arcli Template',
     }
   };
 }
@@ -109,7 +103,7 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
       
       return {
         slug,
-        title: page.hero?.h1 || page.seo?.h1 || page.seo?.title || slug,
+        title: page.hero?.h1 || page.seo?.h1 || page.h1 || page.heroTitle || page.seo?.title || page.title || slug,
         type: page.type || 'template'
       };
     })
