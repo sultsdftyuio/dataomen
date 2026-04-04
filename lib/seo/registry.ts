@@ -1,34 +1,66 @@
 // AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY.
-// Run `npm run lint:seo` or `node scripts/generate-registry.mjs` to update.
+// Run `node scripts/generate-registry.mjs` to update.
 
 import * as silo_0 from './competitor-comparisons-1';
 import * as silo_1 from './competitor-comparisons-2';
-import * as silo_2 from './core-features-1';
-import * as silo_3 from './core-features-2';
-import * as silo_4 from './database-integrations-1';
-import * as silo_5 from './database-integrations-2';
-import * as silo_6 from './file-analysis-1';
-import * as silo_7 from './file-analysis-2';
-import * as silo_8 from './guides-1';
-import * as silo_9 from './guides-2';
-import * as silo_11 from './indie-hacker-campaigns';
-import * as silo_15 from './saas-integrations-1';
-import * as silo_16 from './saas-integrations-2';
-import * as silo_17 from './shopify-campaign';
-import * as silo_18 from './templates-1';
-import * as silo_19 from './templates-2';
-import * as silo_20 from './templates-3';
-import * as silo_21 from './templates-shopify-1';
-import * as silo_22 from './templates-stripe-1';
-import * as silo_23 from './text-to-sql-1';
-import * as silo_24 from './text-to-sql-2';
-import * as silo_25 from './text-to-sql-shopify-1';
-import * as silo_26 from './text-to-sql-stripe-1';
+import * as silo_2 from './compliance-standards-1';
+import * as silo_3 from './core-features-1';
+import * as silo_4 from './core-features-2';
+import * as silo_5 from './database-integrations-1';
+import * as silo_6 from './database-integrations-2';
+import * as silo_7 from './database-integrations-3';
+import * as silo_8 from './file-analysis-1';
+import * as silo_9 from './file-analysis-2';
+import * as silo_10 from './guides-1';
+import * as silo_11 from './guides-2';
+import * as silo_13 from './indie-hacker-campaigns';
+import * as silo_14 from './industry-verticals-1';
+import * as silo_16 from './persona-buyers-1';
+import * as silo_17 from './pillar-snowflake-integration';
+import * as silo_20 from './saas-integrations-1';
+import * as silo_21 from './saas-integrations-2';
+import * as silo_22 from './shopify-campaign';
+import * as silo_23 from './templates-1';
+import * as silo_24 from './templates-2';
+import * as silo_25 from './templates-3';
+import * as silo_26 from './templates-shopify-1';
+import * as silo_27 from './templates-stripe-1';
+import * as silo_28 from './text-to-sql-1';
+import * as silo_29 from './text-to-sql-2';
+import * as silo_30 from './text-to-sql-shopify-1';
+import * as silo_31 from './text-to-sql-stripe-1';
+import * as silo_32 from './workflow-jtbd-1';
 
 const allModules = [
-  silo_0, silo_1, silo_2, silo_3, silo_4, silo_5, silo_6, silo_7, silo_8, silo_9,
-  silo_11, silo_15, silo_16, silo_17, silo_18, silo_19, silo_20, silo_21, silo_22,
-  silo_23, silo_24, silo_25, silo_26
+  silo_0,
+  silo_1,
+  silo_2,
+  silo_3,
+  silo_4,
+  silo_5,
+  silo_6,
+  silo_7,
+  silo_8,
+  silo_9,
+  silo_10,
+  silo_11,
+  silo_13,
+  silo_14,
+  silo_16,
+  silo_17,
+  silo_20,
+  silo_21,
+  silo_22,
+  silo_23,
+  silo_24,
+  silo_25,
+  silo_26,
+  silo_27,
+  silo_28,
+  silo_29,
+  silo_30,
+  silo_31,
+  silo_32
 ];
 
 /**
@@ -38,24 +70,32 @@ const allModules = [
 export const SEO_REGISTRY: Record<string, any> = {};
 
 allModules.forEach((mod) => {
-  Object.entries(mod).forEach(([exportName, exportValue]) => {
-    if (exportValue && typeof exportValue === 'object' && !Array.isArray(exportValue)) {
+  Object.entries(mod).forEach(([exportName, pageData]) => {
+    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && pageData.type) {
       
-      // Differentiate between a direct page export and a collection map/record.
-      if ('title' in exportValue && ('description' in exportValue || 'heroTitle' in exportValue || 'type' in exportValue)) {
-        // It's a single page exported directly
-        const slug = exportValue.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-        SEO_REGISTRY[slug] = exportValue;
-      } else {
-        // It's a collection of pages (e.g. Record<string, SEOPageData>)
-        // We need to iterate through the keys (which are the actual URLs)
-        Object.entries(exportValue).forEach(([key, pageData]: [string, any]) => {
-          if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && 'title' in pageData) {
-            const slug = pageData.slug || key;
-            SEO_REGISTRY[slug] = pageData;
+      let slug = '';
+
+      // 1. Intelligent Canonical Slug Extraction
+      // Maps 'https://arcli.tech/industries/healthcare' -> 'healthcare' 
+      // This ensures exact compatibility with Next.js app/(landing)/[slug] router.
+      if (pageData.seo?.canonicalDomain) {
+        try {
+          const url = new URL(pageData.seo.canonicalDomain);
+          const segments = url.pathname.split('/').filter(Boolean);
+          if (segments.length > 0) {
+            slug = segments[segments.length - 1];
           }
-        });
+        } catch (e) {
+          // Silent fallback if URL parsing fails
+        }
       }
+
+      // 2. Fallback: Kebab-case the export name (e.g. healthcareIndustry -> healthcare-industry)
+      if (!slug) {
+        slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      }
+
+      SEO_REGISTRY[slug] = pageData;
     }
   });
 });
@@ -70,14 +110,12 @@ export function getNormalizedPage(slug: string): any | null {
   if (!data) return null;
 
   // Apply Tier-1 Heuristic Fallbacks 
-  // Ensures the H1 cascade always has a valid fallback across all legacy and new schemas
+  // Ensures the H1 cascade always has a valid fallback
   return {
     ...data,
     seo: {
       ...data.seo,
-      title: data.seo?.title || data.title || 'Arcli Analytics',
-      description: data.seo?.description || data.description || 'Enterprise Data Platform',
-      h1: data.hero?.h1 || data.seo?.h1 || data.h1 || data.heroTitle || data.seo?.title || data.title || 'Arcli Template',
+      h1: data.hero?.title || data.seo?.h1 || data.seo?.title || 'Arcli AI Analytics',
     }
   };
 }
@@ -103,12 +141,12 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
       
       return {
         slug,
-        title: page.hero?.h1 || page.seo?.h1 || page.h1 || page.heroTitle || page.seo?.title || page.title || slug,
+        title: page.hero?.title || page.seo?.h1 || page.seo?.title || slug,
         type: page.type || 'template'
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-// Export default to support legacy hydration maps (prevents TypeError on old files)
+// Export default to support legacy hydration maps
 export default SEO_REGISTRY;

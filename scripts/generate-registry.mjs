@@ -26,23 +26,25 @@ function generateRegistry() {
   const files = fs.readdirSync(SEO_DIR);
   
   let importStatements = `// AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY.\n`;
-  importStatements += `// Run \`npm run lint:seo\` or \`node scripts/generate-registry.mjs\` to update.\n\n`;
+  importStatements += `// Run \`node scripts/generate-registry.mjs\` to update.\n\n`;
 
   let fileCount = 0;
   const moduleNames = [];
 
   files.forEach((file, index) => {
-    // Ignore non-tsx files, the index, parser, types, and the registry itself
+    // Ignore non-tsx files and core utility/index files
     if (
       !file.endsWith('.tsx') || 
       file === 'index.tsx' || 
       file === 'parser.tsx' || 
       file === 'seo-data.tsx' ||
-      file === 'registry.tsx'
+      file === 'registry.tsx' ||
+      file === 'registry.ts'
     ) return;
 
     const baseName = file.replace('.tsx', '');
-    const importName = `silo_${index}`; // Unique alias for static import
+    // Use an index-based alias to prevent invalid JS variable names from dashed filenames
+    const importName = `silo_${index}`; 
       
     importStatements += `import * as ${importName} from './${baseName}';\n`;
     moduleNames.push(importName);
@@ -63,10 +65,30 @@ export const SEO_REGISTRY: Record<string, any> = {};
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, pageData]) => {
-    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData)) {
-      // Derive slug: Prefer explicit pageData.slug if present, otherwise fallback
-      // to formatting the export name (e.g. shopifyLtvSql -> shopify-ltv-sql).
-      const slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && pageData.type) {
+      
+      let slug = '';
+
+      // 1. Intelligent Canonical Slug Extraction
+      // Maps 'https://arcli.tech/industries/healthcare' -> 'healthcare' 
+      // This ensures exact compatibility with Next.js app/(landing)/[slug] router.
+      if (pageData.seo?.canonicalDomain) {
+        try {
+          const url = new URL(pageData.seo.canonicalDomain);
+          const segments = url.pathname.split('/').filter(Boolean);
+          if (segments.length > 0) {
+            slug = segments[segments.length - 1];
+          }
+        } catch (e) {
+          // Silent fallback if URL parsing fails
+        }
+      }
+
+      // 2. Fallback: Kebab-case the export name (e.g. healthcareIndustry -> healthcare-industry)
+      if (!slug) {
+        slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      }
+
       SEO_REGISTRY[slug] = pageData;
     }
   });
@@ -82,12 +104,12 @@ export function getNormalizedPage(slug: string): any | null {
   if (!data) return null;
 
   // Apply Tier-1 Heuristic Fallbacks 
-  // Ensures the H1 cascade always has a valid fallback: hero.h1 > seo.h1 > seo.title
+  // Ensures the H1 cascade always has a valid fallback
   return {
     ...data,
     seo: {
       ...data.seo,
-      h1: data.hero?.h1 || data.seo?.h1 || data.seo?.title || 'Arcli Template',
+      h1: data.hero?.title || data.seo?.h1 || data.seo?.title || 'Arcli AI Analytics',
     }
   };
 }
@@ -113,14 +135,14 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
       
       return {
         slug,
-        title: page.hero?.h1 || page.seo?.h1 || page.seo?.title || slug,
+        title: page.hero?.title || page.seo?.h1 || page.seo?.title || slug,
         type: page.type || 'template'
       };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-// Export default to support legacy hydration maps (prevents TypeError on old files)
+// Export default to support legacy hydration maps
 export default SEO_REGISTRY;
 `;
 
