@@ -10,10 +10,10 @@ const SEO_DIR = path.join(__dirname, '../lib/seo');
 const OUTPUT_FILE = path.join(SEO_DIR, 'registry.ts');
 
 /**
- * Phase 1: Pre-build Registry Generator
+ * Phase 1: Pre-build Registry Generator (ARCLI V2)
  * Scans the /lib/seo directory for silo files and compiles a statically
- * analyzable TypeScript registry. This completely eliminates Next.js/Webpack 
- * dynamic require() issues in Vercel production builds.
+ * analyzable TypeScript registry. This generates a flat O(1) lookup map 
+ * to completely eliminate Next.js/Webpack hydration crashes in Vercel.
  */
 function generateRegistry() {
   console.log('🔍 Scanning SEO Silos for Static Registry...');
@@ -24,46 +24,109 @@ function generateRegistry() {
   }
 
   const files = fs.readdirSync(SEO_DIR);
-  const silos = {};
   
   let importStatements = `// AUTO-GENERATED FILE. DO NOT EDIT DIRECTLY.\n`;
   importStatements += `// Run \`npm run lint:seo\` or \`node scripts/generate-registry.mjs\` to update.\n\n`;
 
   let fileCount = 0;
+  const moduleNames = [];
 
   files.forEach((file, index) => {
-    // Ignore non-tsx files, the index, parser, and pure type files
-    if (!file.endsWith('.tsx') || file === 'index.tsx' || file === 'parser.tsx' || file === 'seo-data.tsx') return;
+    // Ignore non-tsx files, the index, parser, types, and the registry itself
+    if (
+      !file.endsWith('.tsx') || 
+      file === 'index.tsx' || 
+      file === 'parser.tsx' || 
+      file === 'seo-data.tsx' ||
+      file === 'registry.tsx'
+    ) return;
 
     const baseName = file.replace('.tsx', '');
-    
-    // Extract base category name (e.g., 'core-features-1' -> 'core-features')
-    const match = file.match(/^([a-zA-Z-]+)(?:-\d+)?\.tsx$/);
-    if (match) {
-      const category = match[1];
-      const importName = `silo_${index}`; // Unique alias for static import
+    const importName = `silo_${index}`; // Unique alias for static import
       
-      importStatements += `import * as ${importName} from './${baseName}';\n`;
-      
-      if (!silos[category]) {
-        silos[category] = [];
-      }
-      
-      silos[category].push(importName);
-      fileCount++;
-    }
+    importStatements += `import * as ${importName} from './${baseName}';\n`;
+    moduleNames.push(importName);
+    fileCount++;
   });
 
-  // Build the exported static registry object
-  let exportStatement = `\nexport const seoRegistry: Record<string, any[]> = {\n`;
-  for (const [category, modules] of Object.entries(silos)) {
-    exportStatement += `  '${category}': [${modules.join(', ')}],\n`;
-  }
-  exportStatement += `};\n`;
+  // Inject the resilient flat-map architecture and helper functions
+  const registryLogic = `
+const allModules = [
+  ${moduleNames.join(',\n  ')}
+];
 
-  fs.writeFileSync(OUTPUT_FILE, importStatements + exportStatement);
+/**
+ * STATIC SEO REGISTRY (ARCLI STANDARD)
+ * Auto-generated deterministic mapping of stable slug keys to production-ready pages.
+ */
+export const SEO_REGISTRY: Record<string, any> = {};
+
+allModules.forEach((mod) => {
+  Object.entries(mod).forEach(([exportName, pageData]) => {
+    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData)) {
+      // Derive slug: Prefer explicit pageData.slug if present, otherwise fallback
+      // to formatting the export name (e.g. shopifyLtvSql -> shopify-ltv-sql).
+      const slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      SEO_REGISTRY[slug] = pageData;
+    }
+  });
+});
+
+/**
+ * HEURISTIC DATA RESOLVER (O(1) Lookup)
+ * Resolves the raw static template data and applies Tier-1 baseline heuristics.
+ */
+export function getNormalizedPage(slug: string): any | null {
+  const data = SEO_REGISTRY[slug];
+  
+  if (!data) return null;
+
+  // Apply Tier-1 Heuristic Fallbacks 
+  // Ensures the H1 cascade always has a valid fallback: hero.h1 > seo.h1 > seo.title
+  return {
+    ...data,
+    seo: {
+      ...data.seo,
+      h1: data.hero?.h1 || data.seo?.h1 || data.seo?.title || 'Arcli Template',
+    }
+  };
+}
+
+/**
+ * STATIC ORCHESTRATOR
+ * Used by \`generateStaticParams\` to generate all deterministic static pages at build time.
+ */
+export function getAllSlugs(): string[] {
+  return Object.keys(SEO_REGISTRY);
+}
+
+/**
+ * SEARCH & DISCOVERY HELPER
+ * Facilitates internal linking, silo-depth analysis, and related page clusters.
+ * Enforces strict typing to prevent undefined UI renders.
+ */
+export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: string; type: string }> {
+  return slugs
+    .map((slug) => {
+      const page = SEO_REGISTRY[slug];
+      if (!page) return null;
+      
+      return {
+        slug,
+        title: page.hero?.h1 || page.seo?.h1 || page.seo?.title || slug,
+        type: page.type || 'template'
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+}
+
+// Export default to support legacy hydration maps (prevents TypeError on old files)
+export default SEO_REGISTRY;
+`;
+
+  fs.writeFileSync(OUTPUT_FILE, importStatements + registryLogic);
   console.log(`✅ SEO Static Registry generated successfully at: ${OUTPUT_FILE}`);
-  console.log(`📦 Tracked ${fileCount} files across Categories: ${Object.keys(silos).join(', ')}`);
+  console.log(`📦 Tracked ${fileCount} data silos and automatically flattened their exports into SEO_REGISTRY.`);
 }
 
 generateRegistry();
