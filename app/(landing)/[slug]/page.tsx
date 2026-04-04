@@ -11,7 +11,7 @@ import Footer from '@/components/landing/footer';
 import { getNormalizedPage } from '@/lib/seo/parser';
 import { getAllSlugs } from '@/lib/seo/registry';
 
-// UI Blocks
+// UI Blocks - Phase 1 & 2
 import {
   Hero,
   Demo,
@@ -29,6 +29,14 @@ import {
   FAQs
 } from '@/components/landing/seo-blocks-2';
 
+// UI Blocks - Phase 3 (Enterprise & Security)
+import {
+  SecurityGuardrails,
+  ContrarianBanner,
+  StrategicQuery,
+  ExecutiveSummary
+} from '@/components/landing/seo-blocks-3';
+
 const BASE_URL = 'https://www.arcli.tech';
 
 export const dynamicParams = false;
@@ -39,15 +47,19 @@ interface PageProps {
 }
 
 // ----------------------------------------------------------------------
-// BLOCK ORCHESTRATOR CONFIGURATION (PHASE 1)
+// BLOCK ORCHESTRATOR CONFIGURATION (PHASE 3 UPGRADED)
 // ----------------------------------------------------------------------
 type BlockKey = 
   | 'Hero' 
+  | 'ExecutiveSummary'
+  | 'ContrarianBanner'
   | 'Demo' 
   | 'Personas' 
   | 'Matrix' 
   | 'WorkflowSection' 
   | 'UseCases' 
+  | 'StrategicQuery'
+  | 'SecurityGuardrails'
   | 'Steps' 
   | 'Features' 
   | 'Architecture' 
@@ -55,18 +67,18 @@ type BlockKey =
   | 'RelatedLinks';
 
 const LAYOUT_CONFIG: Record<string, BlockKey[]> = {
-  guide: ['Hero', 'Steps', 'FAQs', 'Demo', 'UseCases', 'Features', 'Architecture', 'RelatedLinks'],
-  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'UseCases', 'FAQs', 'RelatedLinks'],
-  integration: ['Hero', 'WorkflowSection', 'Demo', 'Features', 'Steps', 'Architecture', 'FAQs', 'RelatedLinks'],
-  feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'UseCases', 'Architecture', 'FAQs', 'RelatedLinks'],
+  guide: ['Hero', 'ExecutiveSummary', 'Steps', 'FAQs', 'Demo', 'UseCases', 'Features', 'Architecture', 'RelatedLinks'],
+  comparison: ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'Matrix', 'Features', 'Personas', 'UseCases', 'FAQs', 'RelatedLinks'],
+  integration: ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'WorkflowSection', 'Demo', 'StrategicQuery', 'Features', 'Steps', 'SecurityGuardrails', 'Architecture', 'FAQs', 'RelatedLinks'],
+  feature: ['Hero', 'ExecutiveSummary', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'UseCases', 'Architecture', 'FAQs', 'RelatedLinks'],
   template: ['Hero', 'Demo', 'Steps', 'UseCases', 'Features', 'Matrix', 'FAQs', 'RelatedLinks'],
-  campaign: ['Hero', 'Personas', 'UseCases', 'Demo', 'WorkflowSection', 'Features', 'FAQs', 'RelatedLinks'],
-  default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'UseCases', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
+  campaign: ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'Personas', 'UseCases', 'WorkflowSection', 'StrategicQuery', 'SecurityGuardrails', 'Features', 'Demo', 'FAQs', 'RelatedLinks'],
+  default: ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'UseCases', 'StrategicQuery', 'Steps', 'Features', 'SecurityGuardrails', 'Architecture', 'FAQs', 'RelatedLinks'],
 };
 
 const BLOCK_REGISTRY: Record<BlockKey, React.ElementType> = {
-  Hero, Demo, Personas, Matrix, WorkflowSection, UseCases,
-  Steps, Features, Architecture, FAQs, RelatedLinks
+  Hero, ExecutiveSummary, ContrarianBanner, Demo, Personas, Matrix, WorkflowSection, UseCases, StrategicQuery,
+  SecurityGuardrails, Steps, Features, Architecture, FAQs, RelatedLinks
 };
 
 // ----------------------------------------------------------------------
@@ -79,13 +91,15 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const data = getNormalizedPage(slug);
+  const rawData = getNormalizedPage(slug);
 
-  if (!data) notFound();
+  if (!rawData) notFound();
 
-  // Phase 4: Code-Injected OG Image URLs
+  // Type assertion to bypass strict missing property checks on NormalizedPage
+  const data = rawData as typeof rawData & Record<string, any>;
+
   // Dynamically extract the best SQL snippet to showcase developer credibility in social feeds
-  const codeSnippet = data.demo?.generatedSql || data.useCases?.find(u => u.sqlSnippet)?.sqlSnippet;
+  const codeSnippet = data.strategicScenario?.sql || data.demo?.generatedSql || data.useCases?.find((u: any) => u.sqlSnippet)?.sqlSnippet;
   
   const ogUrl = new URL(`${BASE_URL}/api/og`);
   ogUrl.searchParams.set('title', data.seo.h1);
@@ -113,9 +127,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ----------------------------------------------------------------------
 export default async function DynamicSEOPage({ params }: PageProps) {
   const { slug } = await params;
-  const data = getNormalizedPage(slug); 
+  const rawData = getNormalizedPage(slug); 
   
-  if (!data) notFound();
+  if (!rawData) notFound();
+
+  // Type assertion to allow access to Phase 3 dynamic properties
+  const data = rawData as typeof rawData & Record<string, any>;
 
   // PHASE 4: Rich Schema Injection Engine
   // 1. Base TechArticle Schema (All Pages)
@@ -135,7 +152,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     schemas.push({
       '@context': 'https://schema.org',
       '@type': 'FAQPage',
-      mainEntity: data.faqs.map((faq) => ({
+      mainEntity: data.faqs.map((faq: any) => ({
         '@type': 'Question',
         name: faq.q,
         acceptedAnswer: { '@type': 'Answer', text: faq.a },
@@ -163,7 +180,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       '@type': 'HowTo',
       name: data.seo.h1,
       description: data.seo.description,
-      step: data.steps.map((step, index) => ({
+      step: data.steps.map((step: any, index: number) => ({
         '@type': 'HowToStep',
         position: index + 1,
         name: step.title,
@@ -196,11 +213,15 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           const blockProps = (() => {
             switch (blockKey) {
               case 'Hero': return { data };
+              case 'ExecutiveSummary': return { highlights: data.executiveSummary };
+              case 'ContrarianBanner': return { statement: data.contrarianBanner?.statement, subtext: data.contrarianBanner?.subtext };
               case 'Demo': return { demo: data.demo };
               case 'Personas': return { personas: data.personas };
               case 'Matrix': return { matrix: data.matrix };
               case 'WorkflowSection': return { workflow: data.workflow };
               case 'UseCases': return { useCases: data.useCases };
+              case 'StrategicQuery': return { scenario: data.strategicScenario };
+              case 'SecurityGuardrails': return { items: data.securityGuardrails };
               case 'Steps': return { steps: data.steps };
               case 'Features': return { features: data.features };
               case 'Architecture': return { architecture: data.architecture };
@@ -216,7 +237,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           
           if (!hasData && blockKey !== 'Hero') return null;
 
-          return <BlockComponent key={blockKey} {...blockProps} />;
+          return <BlockComponent key={blockKey} {...blockProps as any} />;
         })}
       </main>
 
