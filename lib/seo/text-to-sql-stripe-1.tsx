@@ -8,6 +8,7 @@ import { TemplateBlueprint } from './index';
  * Analytical Pattern: MRR (Normalization & Aggregation)
  */
 export const stripeMrrSql: TemplateBlueprint = {
+  slug: 'stripe-mrr-sql',
   type: 'template',
   seo: {
     title: 'Stripe MRR (Monthly Recurring Revenue) SQL Query | Arcli',
@@ -92,6 +93,7 @@ FROM active_subs;
  * Analytical Pattern: Churn (Time-series & State Tracking)
  */
 export const stripeChurnRateSql: TemplateBlueprint = {
+  slug: 'stripe-churn-rate-sql',
   type: 'template',
   seo: {
     title: 'Stripe Churn Rate SQL Query Template | Arcli',
@@ -173,6 +175,7 @@ ORDER BY month_start DESC;
  * Analytical Pattern: Lifetime Value (Net Revenue & Percentile Distribution)
  */
 export const stripeLtvSql: TemplateBlueprint = {
+  slug: 'stripe-ltv-sql',
   type: 'template',
   seo: {
     title: 'Stripe Lifetime Value (LTV) SQL Query Template | Arcli',

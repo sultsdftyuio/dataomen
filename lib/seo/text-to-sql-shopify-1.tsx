@@ -8,6 +8,7 @@ import { TemplateBlueprint } from './index';
  * Analytical Pattern: Lifetime Value (Aggregation)
  */
 export const shopifyLtvSql: TemplateBlueprint = {
+  slug: 'shopify-ltv-sql',
   type: 'template',
   seo: {
     title: 'Shopify Customer Lifetime Value (LTV) SQL Query | Arcli',
@@ -82,6 +83,7 @@ FROM customer_orders;
  * Analytical Pattern: Cohort Analysis (Date Truncation & Self-Joins)
  */
 export const shopifyCohortRetentionSql: TemplateBlueprint = {
+  slug: 'shopify-cohort-retention-sql',
   type: 'template',
   seo: {
     title: 'Shopify Cohort Retention SQL Query Template | Arcli',
@@ -171,6 +173,7 @@ ORDER BY 1, 3;
  * Analytical Pattern: RFM (Recency, Frequency, Monetary)
  */
 export const shopifyRfmSegmentationSql: TemplateBlueprint = {
+  slug: 'shopify-rfm-segmentation-sql',
   type: 'template',
   seo: {
     title: 'Shopify RFM Segmentation SQL Query Template | Arcli',
