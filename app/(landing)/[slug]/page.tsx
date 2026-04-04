@@ -1,3 +1,9 @@
+/**
+ * FILE: app/(landing)/[slug]/page.tsx
+ * OBJECTIVE: Fix build crash during static generation for V1 pages.
+ * FIX: Implement Hero fallback to H1 and harden array-based props.
+ */
+
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import React from 'react';
@@ -119,41 +125,59 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 /**
  * Normalizes V1 data into props expected by specific UI blocks.
- * This solves the "TypeError: subtitle of undefined" by ensuring 
- * components always receive an object, even if empty.
+ * Implements "Hero fallback to H1" and ensures arrays exist for V1 components.
  */
 function getV1BlockProps(type: string, data: any) {
-  const d = data;
+  const d = data || {};
   switch (type) {
-    case 'Hero': 
-      return { data: d };
+    case 'Hero': {
+      // FIX: Ensure hero exists and falls back to SEO metadata if missing
+      const hero = d.hero || { 
+        title: d.h1 || d.heroTitle || d.seo?.h1 || d.title || 'Arcli Analytics', 
+        subtitle: d.heroDescription || d.description || d.seo?.description || 'Enterprise Data Intelligence' 
+      };
+      return { 
+        data: { 
+          ...d, 
+          hero, 
+          cta: d.ctaHierarchy || d.cta || { primary: { text: 'Start Free Trial', href: '/register' } } 
+        } 
+      };
+    }
     case 'ExecutiveSummary': 
       return { 
         highlights: d.executiveSummary || (d.corePhilosophy ? Object.values(d.corePhilosophy) : []) 
       };
     case 'ContrarianBanner': 
       return { 
-        statement: d.contrarianBanner?.statement || d.subtitle, 
+        statement: d.contrarianBanner?.statement || d.subtitle || d.seo?.h1, 
         subtext: d.contrarianBanner?.subtext || d.description 
       };
     case 'Matrix': 
-      return { matrix: d.matrix || d.evaluationMatrix || [] };
+      return { matrix: d.matrix || d.evaluationMatrix || d.competitiveAdvantage || [] };
     case 'UseCases': 
-      return { useCases: d.useCases || d.executiveScenarios || [] };
+      return { useCases: d.useCases || d.executiveScenarios || d.analyticalScenarios || [] };
     case 'StrategicQuery': {
-      const scenario = d.strategicScenario || d.executiveScenarios?.find((s: any) => s.complexity === 'Strategic');
+      const scenario = d.strategicScenario || d.executiveScenarios?.find((s: any) => s.complexity === 'Strategic') || d.analyticalScenarios?.[0];
       return { 
         scenario, 
-        code: scenario?.sqlGenerated || scenario?.sql,
-        businessOutcome: scenario?.arcliResolution 
+        code: scenario?.sqlGenerated || scenario?.sql || scenario?.sqlSnippet,
+        businessOutcome: scenario?.arcliResolution || scenario?.description 
       };
     }
     case 'SecurityGuardrails': 
-      return { items: d.securityGuardrails || [] };
+      return { items: d.securityGuardrails || d.trustAndSecurity || d.security || [] };
     case 'FAQs': 
       return { faqs: d.faqs || [] };
     case 'RelatedLinks': 
-      return { slugs: d.relatedSlugs || [], heroCta: d.hero?.cta || d.cta };
+      return { 
+        slugs: d.relatedSlugs || d.relatedBlueprints || [], 
+        heroCta: d.hero?.cta || d.cta || { primary: { text: 'Start Free Trial', href: '/register' } } 
+      };
+    case 'Features':
+      return { features: d.features || d.capabilities || [] };
+    case 'Steps':
+      return { steps: d.steps || d.onboardingExperience || [] };
     default: 
       return { ...d };
   }
@@ -221,9 +245,17 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             ? (block.payload || {}) 
             : getV1BlockProps(block.type, page);
 
+          // Component-Specific Hardening: Prevent "length of undefined" errors for V2 payloads
+          if (block.type === 'RelatedLinks' && !blockProps.slugs) blockProps.slugs = [];
+          if (block.type === 'FAQs' && !blockProps.faqs) blockProps.faqs = [];
+          if (block.type === 'Matrix' && !blockProps.matrix) blockProps.matrix = [];
+          if (block.type === 'UseCases' && !blockProps.useCases) blockProps.useCases = [];
+          if (block.type === 'Features' && !blockProps.features) blockProps.features = [];
+          if (block.type === 'Steps' && !blockProps.steps) blockProps.steps = [];
+
           // Validation: Hide empty blocks automatically
-          const checkVal = Object.values(blockProps)[0];
-          const hasData = checkVal !== undefined && checkVal !== null && (!Array.isArray(checkVal) || checkVal.length > 0);
+          const firstVal = Object.values(blockProps)[0];
+          const hasData = firstVal !== undefined && firstVal !== null && (!Array.isArray(firstVal) || firstVal.length > 0);
           
           if (!hasData && block.type !== 'Hero') return null;
 
