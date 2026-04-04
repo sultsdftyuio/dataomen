@@ -13,6 +13,7 @@ import { getAllSlugs } from '@/lib/seo/index';
 // UI Blocks - Phase 3/4 Sophisticated Exports
 import * as Blocks1 from '@/components/landing/seo-blocks-1';
 import * as Blocks2 from '@/components/landing/seo-blocks-2';
+import { SqlSnippetBlock } from '@/components/landing/sql-snippet-block';
 
 const BASE_URL = 'https://arcli.tech';
 
@@ -26,10 +27,12 @@ interface PageProps {
 /**
  * MASTER BLOCK REGISTRY
  * Maps polymorphic content keys to sophisticated UI components.
+ * Updated for Protocol v3.1: Added SqlSnippet and mapped business depth blocks.
  */
 const BLOCK_REGISTRY: Record<string, React.ComponentType<any>> = {
   Hero: Blocks1.Hero,
   Demo: Blocks1.Demo,
+  SqlSnippet: SqlSnippetBlock, // NEW: LIGHT Mode Core
   Personas: Blocks1.Personas,
   Matrix: Blocks1.Matrix,
   WorkflowSection: Blocks1.WorkflowSection,
@@ -42,15 +45,19 @@ const BLOCK_REGISTRY: Record<string, React.ComponentType<any>> = {
 
 /**
  * LAYOUT ORCHESTRATION
- * Deterministic section ordering based on persona/page intent.
- * FIXED: Reordered FAQs to the bottom and ensured all valid blocks are present.
+ * Updated for Protocol v3.1: Split 'template' into 'template-light' and 'template-heavy'.
  */
 const LAYOUT_CONFIG: Record<string, string[]> = {
+  // LIGHT Mode: SQL-first, minimal narrative (Section 9.4)
+  'template-light': ['Hero', 'SqlSnippet', 'Personas', 'FAQs', 'RelatedLinks'],
+  
+  // HEAVY Mode: Business + Technical Depth (Section 9.4)
+  'template-heavy': ['Hero', 'Features', 'Steps', 'WorkflowSection', 'Matrix', 'Architecture', 'FAQs', 'RelatedLinks'],
+  
   guide: ['Hero', 'Demo', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
   comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'Architecture', 'FAQs', 'RelatedLinks'],
   integration: ['Hero', 'WorkflowSection', 'Demo', 'Features', 'Steps', 'Architecture', 'FAQs', 'RelatedLinks'],
   feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'Architecture', 'FAQs', 'RelatedLinks'],
-  template: ['Hero', 'Demo', 'Steps', 'Features', 'Matrix', 'Architecture', 'FAQs', 'RelatedLinks'],
   campaign: ['Hero', 'Personas', 'Demo', 'WorkflowSection', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
   default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
 };
@@ -61,7 +68,6 @@ const LAYOUT_CONFIG: Record<string, string[]> = {
 
 export async function generateStaticParams() {
   const slugs = getAllSlugs();
-  // Data Normalization: Filter out numeric IDs and '0' placeholders to prevent Vercel build failure
   return slugs
     .filter(slug => slug && slug.length > 1 && isNaN(Number(slug)))
     .map((slug) => ({ slug }));
@@ -73,12 +79,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   if (!data) return {};
 
-  // Phase 4: Developer-First OG Strategy
   const ogUrl = new URL(`${BASE_URL}/api/og`);
   ogUrl.searchParams.set('title', data.seo.h1 || data.seo.title);
   ogUrl.searchParams.set('type', data.type);
   
-  if (data.demo?.generatedSql) {
+  // SEO Logic: Prioritize raw SQL in OG image for LIGHT mode
+  if (data.features?.sqlQuery) {
+    ogUrl.searchParams.set('code', data.features.sqlQuery);
+  } else if (data.demo?.generatedSql) {
     ogUrl.searchParams.set('code', data.demo.generatedSql);
   }
 
@@ -106,7 +114,15 @@ export default async function DynamicSEOPage({ params }: PageProps) {
   
   if (!data) notFound();
 
-  // RICH SCHEMA ENGINE: TechArticle + Contextual JSON-LD
+  // HEURISTIC MODE SELECTION (Section 9.1)
+  const isLightMode = slug.includes('sql') || slug.includes('query') || slug.includes('example');
+  const pageTypeKey = data.type === 'template' 
+    ? (isLightMode ? 'template-light' : 'template-heavy') 
+    : data.type;
+
+  const layoutSequence = LAYOUT_CONFIG[pageTypeKey] || LAYOUT_CONFIG.default;
+
+  // RICH SCHEMA ENGINE
   const schemas: any[] = [
     {
       '@context': 'https://schema.org',
@@ -114,8 +130,6 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       headline: data.seo.h1,
       description: data.seo.description,
       author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
-      datePublished: data.seo.datePublished,
-      dateModified: data.seo.dateModified,
       mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
     }
   ];
@@ -132,7 +146,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     });
   }
 
-  // SERVER-SIDE DATA RESOLUTION (Preventing 'fs' import in browser via relatedSlugs)
+  // SERVER-SIDE DATA RESOLUTION
   const resolvedRelatedPages = (data.relatedSlugs || [])
     .map((relatedSlug: string) => {
       const pageData = getNormalizedPage(relatedSlug);
@@ -145,11 +159,8 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     })
     .filter(Boolean);
 
-  const layoutSequence = LAYOUT_CONFIG[data.type] || LAYOUT_CONFIG.default;
-
   return (
     <>
-      {/* Semantic SERP Injections */}
       {schemas.map((schema, index) => (
         <script 
           key={index} 
@@ -165,16 +176,26 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           const BlockComponent = BLOCK_REGISTRY[blockKey];
           if (!BlockComponent) return null;
 
-          // Prop Normalization & Data Routing
+          // Prop Normalization & Data Routing (Section 2.2)
           const blockProps = (() => {
             switch (blockKey) {
               case 'Hero': return { data };
+              case 'SqlSnippet': return { features: data.features };
               case 'Demo': return { demo: data.demo };
-              case 'Personas': return { personas: data.personas };
+              case 'Personas': return { 
+                // Map analytical scenarios to personas block if in Heavy mode
+                personas: data.analyticalScenarios || data.personas 
+              };
               case 'Matrix': return { matrix: data.matrix };
               case 'WorkflowSection': return { workflow: data.workflow };
-              case 'Steps': return { steps: data.steps };
-              case 'Features': return { features: data.features };
+              case 'Steps': return { 
+                // Map Quickstart to Steps block
+                steps: data.quickStart?.steps || data.steps 
+              };
+              case 'Features': return { 
+                // Map ImmediateValue to Features block in Heavy mode
+                features: data.immediateValue || data.features 
+              };
               case 'Architecture': return { architecture: data.architecture };
               case 'FAQs': return { faqs: data.faqs };
               case 'RelatedLinks': return { relatedPages: resolvedRelatedPages, heroCta: data.hero?.cta };
@@ -182,17 +203,12 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             }
           })();
 
-          // Block Visibility Heuristics: Do not render empty sections
+          // Visibility Heuristics
           const propData = Object.values(blockProps)[0];
           let hasValidData = false;
-
-          if (Array.isArray(propData)) {
-            hasValidData = propData.length > 0;
-          } else if (propData !== null && typeof propData === 'object') {
-            hasValidData = Object.keys(propData).length > 0;
-          } else {
-            hasValidData = propData !== undefined && propData !== null;
-          }
+          if (Array.isArray(propData)) hasValidData = propData.length > 0;
+          else if (propData !== null && typeof propData === 'object') hasValidData = Object.keys(propData).length > 0;
+          else hasValidData = propData !== undefined && propData !== null;
           
           if (!hasValidData && blockKey !== 'Hero') return null;
 
