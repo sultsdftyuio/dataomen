@@ -53,16 +53,26 @@ const allModules = [
 export const SEO_REGISTRY: Record<string, any> = {};
 
 allModules.forEach((mod) => {
-  Object.entries(mod).forEach(([exportName, pageData]) => {
-    // LOOSENED VALIDATION: Recovers all your older templates that might not have a "type"
-    // As long as it's an object with seo, hero, or type, we count it as a valid page.
-    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && (pageData.seo || pageData.hero || pageData.type)) {
+  Object.entries(mod).forEach(([exportName, exportValue]) => {
+    if (exportValue && typeof exportValue === 'object' && !Array.isArray(exportValue)) {
       
-      // REVERTED SLUG LOGIC: Back to your original, safe method.
-      // This guarantees no URL collisions and restores all your original slugs.
-      const slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-      
-      SEO_REGISTRY[slug] = pageData;
+      // Determine if this is a direct page export or a collection (Record) of pages
+      const isSinglePage = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue;
+
+      if (isSinglePage) {
+        // It's a single page exported directly
+        const slug = exportValue.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+        SEO_REGISTRY[slug] = exportValue;
+      } else {
+        // It's a collection of pages (e.g. Record<string, SEOPageData>)
+        // We need to iterate through the keys (which are the actual URLs/slugs)
+        Object.entries(exportValue).forEach(([key, pageData]: [string, any]) => {
+          if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData)) {
+            const slug = pageData.slug || key;
+            SEO_REGISTRY[slug] = pageData;
+          }
+        });
+      }
     }
   });
 });
@@ -76,7 +86,9 @@ export function getNormalizedPage(slug: string): any | null {
     ...data,
     seo: {
       ...data.seo,
-      h1: data.hero?.title || data.seo?.h1 || data.seo?.title || 'Arcli AI Analytics',
+      title: data.seo?.title || data.title || 'Arcli Analytics',
+      description: data.seo?.description || data.description || 'Enterprise Data Platform',
+      h1: data.hero?.title || data.hero?.h1 || data.seo?.h1 || data.h1 || data.seo?.title || data.title || 'Arcli AI Analytics',
     }
   };
 }
@@ -93,7 +105,7 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
       
       return {
         slug,
-        title: page.hero?.title || page.seo?.h1 || page.seo?.title || slug,
+        title: page.hero?.title || page.hero?.h1 || page.seo?.h1 || page.h1 || page.seo?.title || page.title || slug,
         type: page.type || 'template'
       };
     })
@@ -104,6 +116,8 @@ export default SEO_REGISTRY;
 `;
 
   fs.writeFileSync(OUTPUT_FILE, importStatements + registryLogic);
+  
+  // The corrected logs (no escape characters)
   console.log(`✅ SEO Static Registry generated successfully at: ${OUTPUT_FILE}`);
   console.log(`📦 Tracked ${fileCount} data silos.`);
 }

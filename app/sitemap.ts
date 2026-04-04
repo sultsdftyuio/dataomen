@@ -1,7 +1,6 @@
 // app/sitemap.ts
 import { MetadataRoute } from 'next';
-import { getAllSlugs } from '@/lib/seo/registry';
-import { getNormalizedPage } from '@/lib/seo/parser';
+import { getAllSlugs, getNormalizedPage } from '@/lib/seo/registry';
 
 const BASE_URL = 'https://www.arcli.tech';
 
@@ -14,30 +13,43 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // NOTE: Ensure you run `node scripts/generate-registry.mjs` to pick up new files!
   const slugs = getAllSlugs();
 
-  const dynamicRoutes: MetadataRoute.Sitemap = slugs.map((slug) => {
-    const data = getNormalizedPage(slug);
-    
-    // Default values for standard pages (guides, etc.)
-    let priority = 0.7;
-    let changeFrequency: 'daily' | 'weekly' | 'monthly' = 'monthly';
+  const dynamicRoutes: MetadataRoute.Sitemap = slugs
+    .filter((slug) => slug) // Guard against empty or undefined keys
+    .map((slug) => {
+      const data = getNormalizedPage(slug);
+      
+      // Default values for standard pages (guides, etc.)
+      let priority = 0.7;
+      let changeFrequency: 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never' = 'monthly';
 
-    // Boost priority for high-conversion intents (Bottom of Funnel)
-    if (data?.type === 'campaign' || data?.type === 'integration') {
-      priority = 0.9;
-      changeFrequency = 'weekly';
-    } else if (data?.type === 'comparison') {
-      priority = 0.8;
-      changeFrequency = 'monthly';
-    }
+      // Boost priority for high-conversion intents (Bottom of Funnel)
+      if (data?.type === 'campaign' || data?.type === 'integration') {
+        priority = 0.9;
+        changeFrequency = 'weekly';
+      } else if (data?.type === 'comparison') {
+        priority = 0.8;
+        changeFrequency = 'monthly';
+      }
 
-    return {
-      url: `${BASE_URL}/${slug}`,
-      // Uses the explicit SEO dateModified, or falls back to now
-      lastModified: data?.seo?.dateModified ? new Date(data.seo.dateModified) : new Date(),
-      changeFrequency,
-      priority,
-    };
-  });
+      // Safely parse the date, fallback to current date if missing or invalid
+      let lastModified = new Date();
+      if (data?.seo?.dateModified) {
+        const parsedDate = new Date(data.seo.dateModified);
+        if (!isNaN(parsedDate.getTime())) {
+          lastModified = parsedDate;
+        }
+      }
+
+      // Prevent accidental double slashes in URLs if slugs start with '/'
+      const cleanSlug = slug.replace(/^\/+/, '');
+
+      return {
+        url: `${BASE_URL}/${cleanSlug}`,
+        lastModified,
+        changeFrequency,
+        priority,
+      };
+    });
 
   // 2. Define all static application routes found in app/(landing)
   // These are the "Core" pages that don't rely on the SEO registry.
