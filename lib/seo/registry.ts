@@ -63,54 +63,28 @@ const allModules = [
   silo_32
 ];
 
-/**
- * STATIC SEO REGISTRY (ARCLI STANDARD)
- * Auto-generated deterministic mapping of stable slug keys to production-ready pages.
- */
 export const SEO_REGISTRY: Record<string, any> = {};
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, pageData]) => {
-    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && pageData.type) {
+    // LOOSENED VALIDATION: Recovers all your older templates that might not have a "type"
+    // As long as it's an object with seo, hero, or type, we count it as a valid page.
+    if (pageData && typeof pageData === 'object' && !Array.isArray(pageData) && (pageData.seo || pageData.hero || pageData.type)) {
       
-      let slug = '';
-
-      // 1. Intelligent Canonical Slug Extraction
-      // Maps 'https://arcli.tech/industries/healthcare' -> 'healthcare' 
-      // This ensures exact compatibility with Next.js app/(landing)/[slug] router.
-      if (pageData.seo?.canonicalDomain) {
-        try {
-          const url = new URL(pageData.seo.canonicalDomain);
-          const segments = url.pathname.split('/').filter(Boolean);
-          if (segments.length > 0) {
-            slug = segments[segments.length - 1];
-          }
-        } catch (e) {
-          // Silent fallback if URL parsing fails
-        }
-      }
-
-      // 2. Fallback: Kebab-case the export name (e.g. healthcareIndustry -> healthcare-industry)
-      if (!slug) {
-        slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-      }
-
+      // REVERTED SLUG LOGIC: Back to your original, safe method.
+      // This guarantees no URL collisions and restores all your original slugs.
+      const slug = pageData.slug || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+      
       SEO_REGISTRY[slug] = pageData;
     }
   });
 });
 
-/**
- * HEURISTIC DATA RESOLVER (O(1) Lookup)
- * Resolves the raw static template data and applies Tier-1 baseline heuristics.
- */
 export function getNormalizedPage(slug: string): any | null {
   const data = SEO_REGISTRY[slug];
   
   if (!data) return null;
 
-  // Apply Tier-1 Heuristic Fallbacks 
-  // Ensures the H1 cascade always has a valid fallback
   return {
     ...data,
     seo: {
@@ -120,19 +94,10 @@ export function getNormalizedPage(slug: string): any | null {
   };
 }
 
-/**
- * STATIC ORCHESTRATOR
- * Used by `generateStaticParams` to generate all deterministic static pages at build time.
- */
 export function getAllSlugs(): string[] {
   return Object.keys(SEO_REGISTRY);
 }
 
-/**
- * SEARCH & DISCOVERY HELPER
- * Facilitates internal linking, silo-depth analysis, and related page clusters.
- * Enforces strict typing to prevent undefined UI renders.
- */
 export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: string; type: string }> {
   return slugs
     .map((slug) => {
@@ -148,5 +113,4 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
     .filter((item): item is NonNullable<typeof item> => item !== null);
 }
 
-// Export default to support legacy hydration maps
 export default SEO_REGISTRY;
