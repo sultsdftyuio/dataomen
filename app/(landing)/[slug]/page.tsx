@@ -4,7 +4,7 @@ import React from 'react';
 
 // Global Layout Components
 import { Navbar } from '@/components/landing/navbar';
-import { Footer } from '@/components/landing/footer';
+import Footer from '@/components/landing/footer';
 
 // Data Parser & Slugs
 import { getNormalizedPage } from '@/lib/seo/parser';
