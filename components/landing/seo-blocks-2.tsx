@@ -12,16 +12,19 @@ import {
   BarChart3,
   ChevronDown,
   Layers,
-  Network
+  Network,
+  Zap,
+  ShieldCheck,
+  FileCode,
+  Box
 } from 'lucide-react';
 
-// Use 'import type' to ensure no server code (like 'fs') leaks into the client bundle
 import type { NormalizedPage } from '@/lib/seo/parser';
 import { useVisible } from "@/hooks/useVisible";
 import { SectionHeading } from './seo-blocks-1';
 
 // ----------------------------------------------------------------------
-// BOTTOM-OF-FUNNEL BLOCKS (PHASE 3/4 UPGRADED)
+// BOTTOM-OF-FUNNEL BLOCKS (ELEGANT SOPHISTICATED STYLE)
 // ----------------------------------------------------------------------
 
 export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
@@ -29,7 +32,7 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
 
   if (!steps || steps.length === 0) return null;
   return (
-    <section className="py-24 bg-white relative">
+    <section className="py-32 bg-white relative">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
         <SectionHeading 
           monoLabel="// EXECUTION_PIPELINE"
@@ -39,30 +42,32 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="relative pl-10 md:pl-0">
-          <div className={`absolute left-[29px] md:left-1/2 md:-ml-[1.5px] top-0 bottom-0 w-[3px] bg-slate-100 transition-all duration-1000 ${vis ? 'opacity-100 h-full' : 'opacity-0 h-0'}`}></div>
+          <div className={`absolute left-[29px] md:left-1/2 md:-ml-[1px] top-0 bottom-0 w-[2px] bg-slate-100 transition-all duration-1000 ${vis ? 'opacity-100 h-full' : 'opacity-0 h-0'}`}></div>
           
-          <div className="space-y-12 md:space-y-16">
+          <div className="space-y-12 md:space-y-20">
             {steps.map((step, i) => (
               <div 
                 key={i} 
                 style={{ transitionDelay: `${i * 200}ms` }}
                 className={`relative flex flex-col md:flex-row items-start md:items-center justify-between gap-6 md:gap-12 group transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} 
               >
-                <div className="hidden md:block w-1/2"></div>
-                
-                <div className="absolute left-[-20px] md:left-1/2 md:-ml-3 w-6 h-6 rounded-full bg-white border-[3px] border-slate-200 group-hover:border-[#2563eb] z-10 flex items-center justify-center transition-colors duration-300 shadow-sm">
-                   <div className="w-2 h-2 bg-transparent group-hover:bg-[#2563eb] rounded-full transition-colors duration-300"></div>
+                <div className="hidden md:block w-1/2 text-right pr-12">
+                   <span className="font-mono text-[11px] font-bold text-slate-300 tracking-[0.3em]">STEP_0{i + 1}</span>
                 </div>
                 
-                <div className="w-full md:w-1/2 bg-white border border-slate-200 shadow-sm rounded-2xl p-8 hover:shadow-[0_10px_25px_-5px_rgba(37,99,235,0.15)] hover:border-[#2563eb]/30 transition-all duration-300 relative overflow-hidden">
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb] mb-2">
-                    PHASE_{i + 1} // {step.title}
+                <div className="absolute left-[-20px] md:left-1/2 md:-ml-2.5 w-5 h-5 rounded-full bg-white border-2 border-slate-200 group-hover:border-[#2563eb] z-10 flex items-center justify-center transition-all duration-300 shadow-sm group-hover:scale-125">
+                   <div className="w-1.5 h-1.5 bg-transparent group-hover:bg-[#2563eb] rounded-full transition-colors"></div>
+                </div>
+                
+                <div className="w-full md:w-1/2 bg-white border border-slate-200 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.05)] rounded-2xl p-8 hover:shadow-[0_20px_40px_-15px_rgba(37,99,235,0.1)] hover:border-[#2563eb]/20 transition-all duration-500 relative overflow-hidden">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#2563eb] mb-3">
+                    {step.title}
                   </div>
-                  <h4 className="text-xl font-bold text-[#0B1221] leading-snug mb-2 tracking-tight">
+                  <h4 className="text-[19px] font-extrabold text-[#0B1221] leading-tight mb-3 tracking-tight">
                     {step.description}
                   </h4>
                   {step.outcome && (
-                    <div className="mt-4 text-[15px] text-slate-500 font-bold flex items-center gap-2 pt-4 border-t border-slate-100">
+                    <div className="mt-4 text-[14px] text-slate-500 font-semibold flex items-center gap-2.5 pt-4 border-t border-slate-50">
                       <CheckCircle2 className="w-4 h-4 text-[#2563eb]" />
                       {step.outcome}
                     </div>
@@ -82,47 +87,45 @@ export const Features = ({ features }: { features: NormalizedPage['features'] })
 
   if (!features || features.length === 0) return null;
   return (
-    <section className="py-32 bg-slate-50 relative border-y border-slate-200/50">
+    <section className="py-32 bg-[#f8fafc] relative border-y border-slate-200/60">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
         
-        <div className="flex flex-col md:flex-row gap-16 relative">
+        <div className="flex flex-col lg:flex-row gap-16 relative">
           
-          <div className="w-full md:w-5/12">
+          <div className="w-full lg:w-5/12">
             <div className="sticky top-32">
               <SectionHeading 
                 align="left"
-                monoLabel="// CORE_ENGINE_SPECS"
-                subtitle="The technological foundation behind the unified engine. Designed to completely bypass manual RevOps bottlenecks."
+                monoLabel="// ENGINE_CAPABILITIES"
+                subtitle="The technological foundation behind Arcli. Designed to eliminate infrastructure overhead and manual RevOps lag."
               >
-                Core Capabilities
+                Sophisticated<br />Data Handling
               </SectionHeading>
               
-              <div className="hidden md:flex items-center gap-4 text-slate-400 mt-8">
-                <span className="w-12 h-[1px] bg-slate-300"></span>
-                <span className="font-mono text-xs font-bold uppercase tracking-widest">Scroll to explore</span>
+              <div className="hidden lg:flex items-center gap-4 text-slate-400 mt-12">
+                <div className="w-10 h-[1px] bg-slate-300"></div>
+                <span className="font-mono text-[10px] font-black uppercase tracking-[0.2em]">Scroll to inspect system specs</span>
               </div>
             </div>
           </div>
 
-          <div ref={ref as React.RefObject<HTMLDivElement>} className="w-full md:w-7/12 space-y-8">
+          <div ref={ref as React.RefObject<HTMLDivElement>} className="w-full lg:w-7/12 space-y-6">
             {features.map((feature, i) => (
               <div 
                 key={i} 
-                style={{ transitionDelay: `${i * 150}ms` }}
-                className={`flex flex-col sm:flex-row items-start gap-6 bg-white/80 backdrop-blur-xl p-8 rounded-[2rem] border border-slate-200 shadow-[0_20px_40px_-15px_rgba(11,18,33,0.05)] hover:shadow-[0_25px_50px_-20px_rgba(37,99,235,0.15)] hover:border-[#2563eb]/20 transition-all duration-700 group relative overflow-hidden transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+                style={{ transitionDelay: `${i * 100}ms` }}
+                className={`flex flex-col sm:flex-row items-start gap-8 bg-white p-10 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-[0_30px_60px_-15px_rgba(11,18,33,0.08)] hover:border-[#2563eb]/20 transition-all duration-700 group relative overflow-hidden transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
               >
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b from-[#2563eb] to-blue-300 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#2563eb] opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 
-                <div className="relative shrink-0 w-20 h-20 rounded-2xl border border-blue-100 flex items-center justify-center bg-gradient-to-br from-white to-blue-50/50 group-hover:border-[#2563eb]/30 transition-colors shadow-sm">
-                  <div className="absolute inset-2 rounded-full border border-dashed border-[#2563eb]/30 group-hover:rotate-180 transition-transform duration-[3000ms] ease-linear"></div>
-                  <div className="absolute inset-4 rounded-full border border-slate-100 group-hover:border-blue-200 transition-colors"></div>
-                  <Layers className="absolute inset-0 m-auto w-8 h-8 text-[#2563eb]" />
+                <div className="relative shrink-0 w-16 h-16 rounded-2xl border border-slate-100 flex items-center justify-center bg-slate-50 group-hover:bg-blue-50/50 group-hover:border-blue-100 transition-all duration-500">
+                  <Box className="w-7 h-7 text-slate-400 group-hover:text-[#2563eb] transition-colors" />
                 </div>
 
                 <div>
-                  <h3 className="text-2xl font-bold text-[#0B1221] mb-3 tracking-tight">{feature.title}</h3>
+                  <h3 className="text-2xl font-black text-[#0B1221] mb-3 tracking-tight">{feature.title}</h3>
                   {feature.description && (
-                    <p className="text-slate-500 leading-relaxed font-medium text-[16px]">
+                    <p className="text-slate-500 leading-relaxed font-medium text-[17px]">
                       {feature.description}
                     </p>
                   )}
@@ -141,51 +144,55 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
 
   if (!architecture || Object.keys(architecture).length === 0) return null;
   return (
-    <section className="py-24 bg-[#0B1221] text-white relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#2563eb]/10 blur-[120px] pointer-events-none"></div>
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px] opacity-20"></div>
+    <section className="py-32 bg-[#0B1221] text-white relative overflow-hidden">
+      {/* Visual background accents */}
+      <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-[#2563eb]/5 blur-[140px] pointer-events-none"></div>
+      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-500/5 blur-[100px] pointer-events-none"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:32px_32px] opacity-30"></div>
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
+        <div className="mb-20">
           <div className={`transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            <div className="flex items-center gap-2 mb-4">
-              <Cpu className="w-5 h-5 text-[#60a5fa]" />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[#60a5fa]">SYSTEM_SPECIFICATION</span>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+                <Cpu className="w-5 h-5 text-[#60a5fa]" />
+              </div>
+              <span className="font-mono text-[11px] font-black uppercase tracking-[0.3em] text-[#60a5fa]">SYSTEM_SPECIFICATION_v4.0</span>
             </div>
-            <h2 className="text-[clamp(32px,5vw,48px)] font-extrabold tracking-tight leading-[1.05]">Enterprise Architecture</h2>
+            <h2 className="text-[clamp(36px,5vw,56px)] font-black tracking-tighter leading-none mb-6">Enterprise Architecture</h2>
+            <p className="text-slate-400 max-w-xl text-lg font-medium">The technical protocols governing Arcli's high-concurrency local execution engine.</p>
           </div>
         </div>
         
-        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-6 mb-12">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-1 mb-20 bg-white/5 border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
           {Object.entries(architecture).map(([key, value], i) => (
             <div 
               key={key} 
-              style={{ transitionDelay: `${i * 100}ms` }}
-              className={`bg-white/5 border border-white/10 p-8 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all duration-700 group transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+              className="bg-[#0B1221] p-10 hover:bg-white/[0.03] transition-colors group border-white/5 border"
             >
-              <h4 className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-2 group-hover:text-[#60a5fa] transition-colors">
-                {key.replace(/([A-Z])/g, '_$1')}
+              <h4 className="font-mono text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-4 group-hover:text-[#60a5fa] transition-colors">
+                {/* Fixed the clunky camelCase logic to return INGESTION_METHOD style */}
+                {key.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toUpperCase()}
               </h4>
-              <p className="text-xl font-bold text-white leading-relaxed tracking-tight">
+              <p className="text-[20px] font-bold text-white leading-snug tracking-tight">
                 {value as string}
               </p>
             </div>
           ))}
         </div>
 
-        <div className={`pt-8 border-t border-white/10 grid grid-cols-2 md:grid-cols-4 gap-6 transition-all duration-1000 delay-500 ${vis ? 'opacity-100' : 'opacity-0'}`}>
-           <div className="flex items-center gap-3 text-slate-300 font-bold font-mono text-[12px] tracking-tight uppercase">
-             <Globe className="w-4 h-4 text-slate-500" /> MULTI-REGION
-           </div>
-           <div className="flex items-center gap-3 text-slate-300 font-bold font-mono text-[12px] tracking-tight uppercase">
-             <Lock className="w-4 h-4 text-slate-500" /> SOC2 TYPE II
-           </div>
-           <div className="flex items-center gap-3 text-slate-300 font-bold font-mono text-[12px] tracking-tight uppercase">
-             <Workflow className="w-4 h-4 text-slate-500" /> API FIRST
-           </div>
-           <div className="flex items-center gap-3 text-slate-300 font-bold font-mono text-[12px] tracking-tight uppercase">
-             <BarChart3 className="w-4 h-4 text-slate-500" /> LOW LATENCY
-           </div>
+        <div className={`grid grid-cols-2 lg:grid-cols-4 gap-8 transition-all duration-1000 delay-500 ${vis ? 'opacity-100' : 'opacity-0'}`}>
+           {[
+             { Icon: Globe, Label: "MULTI-REGION" },
+             { Icon: Lock, Label: "SOC2 TYPE II" },
+             { Icon: Workflow, Label: "API FIRST" },
+             { Icon: BarChart3, Label: "LOW LATENCY" }
+           ].map((badge, idx) => (
+             <div key={idx} className="flex items-center gap-3">
+               <badge.Icon className="w-4 h-4 text-slate-500" />
+               <span className="text-slate-400 font-black font-mono text-[11px] tracking-widest uppercase">{badge.Label}</span>
+             </div>
+           ))}
         </div>
       </div>
     </section>
@@ -204,36 +211,38 @@ export const RelatedLinks = ({
   if (!relatedPages || relatedPages.length === 0) return null;
   
   return (
-    <section className="py-24 bg-slate-50 relative overflow-hidden border-t border-slate-200/50">
+    <section className="py-32 bg-white relative overflow-hidden border-t border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
         <SectionHeading 
           monoLabel="// SEMANTIC_CLUSTERS"
-          subtitle="Continue exploring semantically connected architectural patterns and documentation."
+          subtitle="Explore semantically connected architectural patterns and technical documentation."
         >
-          Explore Deep Dives
+          Deep Dive Exploration
         </SectionHeading>
         
-        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
           {relatedPages.map((page, i) => (
             <Link 
               key={page.slug}
               href={`/${page.slug}`}
               style={{ transitionDelay: `${i * 100}ms` }}
-              className={`bg-white p-8 rounded-xl border border-slate-200 shadow-sm hover:border-[#2563eb]/40 hover:shadow-[0_8px_20px_-6px_rgba(37,99,235,0.15)] transition-all duration-700 group flex flex-col justify-between h-full hover:-translate-y-1 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
+              className={`bg-[#f8fafc] p-10 rounded-[2rem] border border-slate-200 shadow-sm hover:border-[#2563eb]/40 hover:shadow-[0_30px_60px_-15px_rgba(37,99,235,0.12)] transition-all duration-700 group flex flex-col justify-between h-full hover:-translate-y-2 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
             >
               <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <Network className="w-4 h-4 text-slate-400" />
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400 font-bold">
+                <div className="flex items-center gap-2.5 mb-6">
+                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:text-[#2563eb] group-hover:border-blue-100 transition-all">
+                    <FileCode size={16} />
+                  </div>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-slate-400 font-black">
                     {page.tag}
                   </span>
                 </div>
-                <h3 className="text-[19px] font-bold text-[#0B1221] mb-6 tracking-tight line-clamp-2">
+                <h3 className="text-xl font-bold text-[#0B1221] mb-8 tracking-tight line-clamp-3 leading-snug">
                   {page.title}
                 </h3>
               </div>
-              <div className="flex items-center justify-between mt-auto">
-                <span className="font-mono text-[10px] font-bold text-[#2563eb] uppercase tracking-[0.2em]">ACCESS_FILE</span>
+              <div className="flex items-center justify-between mt-auto pt-6 border-t border-slate-200/50">
+                <span className="font-mono text-[10px] font-black text-[#2563eb] uppercase tracking-[0.2em]">ACCESS_FILE</span>
                 <ArrowRight className="w-4 h-4 text-[#2563eb] group-hover:translate-x-1 transition-transform" />
               </div>
             </Link>
@@ -243,9 +252,10 @@ export const RelatedLinks = ({
         <div className={`flex justify-center transition-all duration-1000 delay-300 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
           <Link 
             href={heroCta.primary.href} 
-            className="group relative flex items-center justify-center gap-2 bg-[#0B1221] text-white px-8 py-4 rounded-xl text-lg font-bold shadow-[0_4px_14px_0_rgb(0,0,0,0.1)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-all duration-300"
+            className="group relative flex items-center justify-center gap-3 bg-[#0B1221] text-white px-10 py-5 rounded-2xl text-lg font-black shadow-xl hover:shadow-[0_20px_40px_-10px_rgba(0,0,0,0.3)] hover:-translate-y-1 transition-all duration-300"
           >
-            {heroCta.primary.text} <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            {heroCta.primary.text} 
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </Link>
         </div>
       </div>
@@ -258,30 +268,32 @@ export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
 
   if (!faqs || faqs.length === 0) return null;
   return (
-    <section className="py-24 bg-white border-t border-slate-200/50">
+    <section className="py-32 bg-[#f8fafc] border-t border-slate-200/60">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
         <SectionHeading 
-          monoLabel="// DOCUMENTATION"
-          subtitle="Everything you need to know about implementing Arcli's engine into your stack."
+          monoLabel="// TECHNICAL_FAQ"
+          subtitle="Critical insights regarding local compute, data sovereignty, and engine integration."
         >
           Expert Insights
         </SectionHeading>
         
-        <div ref={ref as React.RefObject<HTMLDivElement>} className="space-y-4">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="space-y-4 mt-12">
           {faqs.map((faq, i) => (
             <details 
               key={i} 
               style={{ transitionDelay: `${i * 100}ms` }}
-              className={`group bg-white border border-slate-200 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden shadow-sm hover:border-slate-300 transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+              className={`group bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:border-[#2563eb]/20 transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
             >
-              <summary className="flex items-center justify-between cursor-pointer p-6 md:p-8 font-bold text-[#0B1221] text-[18px] hover:bg-slate-50 transition-colors focus:outline-none tracking-tight">
-                {faq.q}
-                <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-slate-50 border border-slate-200 p-2 rounded-lg text-slate-500 group-hover:bg-[#2563eb] group-hover:text-white group-hover:border-[#2563eb]">
+              <summary className="flex items-center justify-between cursor-pointer p-8 font-bold text-[#0B1221] text-lg hover:bg-slate-50 transition-colors focus:outline-none tracking-tight list-none">
+                <span className="pr-8">{faq.q}</span>
+                <span className="shrink-0 transition-all duration-500 group-open:rotate-180 bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-slate-400 group-hover:text-[#2563eb]">
                   <ChevronDown className="w-5 h-5" />
                 </span>
               </summary>
-              <div className="p-6 md:p-8 pt-0 text-slate-500 text-[16px] leading-relaxed font-medium bg-white border-t border-slate-100">
-                {faq.a}
+              <div className="px-8 pb-8 text-slate-500 text-[17px] leading-relaxed font-medium bg-white">
+                <div className="pt-2 border-t border-slate-100">
+                  {faq.a}
+                </div>
               </div>
             </details>
           ))}
