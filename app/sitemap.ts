@@ -1,6 +1,6 @@
 // app/sitemap.ts
 import { MetadataRoute } from 'next';
-import { getAllSlugs } from '@/lib/seo/index';
+import { getAllSlugs } from '@/lib/seo/registry';
 
 /**
  * Arcli Global Sitemap Generator

@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 // Core Registry & Deep-Data Parser
 import { getAllSlugs } from '@/lib/seo/index';
-import { getNormalizedPage } from '@/lib/seo/parser';
+import { getNormalizedPage } from '@/lib/seo/registry';
 
 /**
  * PHASE 2: Semantic Topic Clusters (The Ontology)
@@ -31,6 +31,7 @@ interface SeoPageLink {
  */
 export async function SeoLinkSilo() {
   const slugs = getAllSlugs();
+  const excludedFallbackTypes = new Set<string>(['campaign', 'template']);
   
   // Initialize cluster buckets
   const clusters: Record<string, SeoPageLink[]> = {};
@@ -49,7 +50,7 @@ export async function SeoLinkSilo() {
 
     // Route page into the correct semantic silo based on Tag Intersection
     for (const [clusterName, keywords] of Object.entries(CLUSTER_ONTOLOGY)) {
-      const hasOverlap = page.tags.some(tag => keywords.includes(tag.toLowerCase()));
+      const hasOverlap = page.tags.some((tag: string) => keywords.includes(tag.toLowerCase()));
       
       if (hasOverlap) {
         // Determinism: Prevent duplicates. A page belongs to its highest-priority matched silo.
@@ -60,7 +61,7 @@ export async function SeoLinkSilo() {
     }
 
     // Fallback logic for standalone or lightly-tagged pages
-    if (!matched && page.type !== 'campaign' && page.type !== 'template') {
+    if (!matched && !excludedFallbackTypes.has(page.type)) {
       clusters[fallbackCluster].push({ slug, title: cleanTitle });
     }
   });
