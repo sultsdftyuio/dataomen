@@ -1,3 +1,4 @@
+// app/(landing)/[slug]/page.tsx
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import React from 'react';
@@ -6,88 +7,91 @@ import React from 'react';
 import { Navbar } from '@/components/landing/navbar';
 import Footer from '@/components/landing/footer';
 
-// Data Parser & Slugs
+// Data Parser
 import { getNormalizedPage } from '@/lib/seo/parser';
 import { getAllSlugs } from '@/lib/seo/index';
 
-// UI Blocks - Phase 3/4 Sophisticated Exports
-import * as Blocks1 from '@/components/landing/seo-blocks-1';
-import * as Blocks2 from '@/components/landing/seo-blocks-2';
-import { SqlSnippetBlock } from '@/components/landing/sql-snippet-block';
+// UI Blocks
+import {
+  Hero,
+  Demo,
+  Personas,
+  Matrix,
+  WorkflowSection,
+  UseCases
+} from '@/components/landing/seo-blocks-1';
 
-const BASE_URL = 'https://arcli.tech';
+import {
+  Steps,
+  Features,
+  Architecture,
+  RelatedLinks,
+  FAQs
+} from '@/components/landing/seo-blocks-2';
+
+const BASE_URL = 'https://www.arcli.tech';
 
 export const dynamicParams = false;
-export const revalidate = 86400; // Controlled Determinism: 24h cycle
+export const revalidate = 86400;
 
 interface PageProps { 
   params: Promise<{ slug: string }>; 
 }
 
-/**
- * MASTER BLOCK REGISTRY
- * Maps polymorphic content keys to sophisticated UI components.
- * Updated for Protocol v3.1: Added SqlSnippet and mapped business depth blocks.
- */
-const BLOCK_REGISTRY: Record<string, React.ComponentType<any>> = {
-  Hero: Blocks1.Hero,
-  Demo: Blocks1.Demo,
-  SqlSnippet: SqlSnippetBlock, // NEW: LIGHT Mode Core
-  Personas: Blocks1.Personas,
-  Matrix: Blocks1.Matrix,
-  WorkflowSection: Blocks1.WorkflowSection,
-  Steps: Blocks2.Steps,
-  Features: Blocks2.Features,
-  Architecture: Blocks2.Architecture,
-  FAQs: Blocks2.FAQs,
-  RelatedLinks: Blocks2.RelatedLinks,
-};
+// ----------------------------------------------------------------------
+// BLOCK ORCHESTRATOR CONFIGURATION (PHASE 1)
+// ----------------------------------------------------------------------
+type BlockKey = 
+  | 'Hero' 
+  | 'Demo' 
+  | 'Personas' 
+  | 'Matrix' 
+  | 'WorkflowSection' 
+  | 'UseCases' 
+  | 'Steps' 
+  | 'Features' 
+  | 'Architecture' 
+  | 'FAQs' 
+  | 'RelatedLinks';
 
-/**
- * LAYOUT ORCHESTRATION
- * Updated for Protocol v3.1: Split 'template' into 'template-light' and 'template-heavy'.
- */
-const LAYOUT_CONFIG: Record<string, string[]> = {
-  // LIGHT Mode: SQL-first, minimal narrative (Section 9.4)
-  'template-light': ['Hero', 'SqlSnippet', 'Personas', 'FAQs', 'RelatedLinks'],
-  
-  // HEAVY Mode: Business + Technical Depth (Section 9.4)
-  'template-heavy': ['Hero', 'Features', 'Steps', 'WorkflowSection', 'Matrix', 'Architecture', 'FAQs', 'RelatedLinks'],
-  
-  guide: ['Hero', 'Demo', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
-  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'Architecture', 'FAQs', 'RelatedLinks'],
+const LAYOUT_CONFIG: Record<string, BlockKey[]> = {
+  guide: ['Hero', 'Steps', 'FAQs', 'Demo', 'UseCases', 'Features', 'Architecture', 'RelatedLinks'],
+  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'UseCases', 'FAQs', 'RelatedLinks'],
   integration: ['Hero', 'WorkflowSection', 'Demo', 'Features', 'Steps', 'Architecture', 'FAQs', 'RelatedLinks'],
-  feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'Architecture', 'FAQs', 'RelatedLinks'],
-  campaign: ['Hero', 'Personas', 'Demo', 'WorkflowSection', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
-  default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
+  feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'UseCases', 'Architecture', 'FAQs', 'RelatedLinks'],
+  template: ['Hero', 'Demo', 'Steps', 'UseCases', 'Features', 'Matrix', 'FAQs', 'RelatedLinks'],
+  campaign: ['Hero', 'Personas', 'UseCases', 'Demo', 'WorkflowSection', 'Features', 'FAQs', 'RelatedLinks'],
+  default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'UseCases', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
+};
+
+const BLOCK_REGISTRY: Record<BlockKey, React.ElementType> = {
+  Hero, Demo, Personas, Matrix, WorkflowSection, UseCases,
+  Steps, Features, Architecture, FAQs, RelatedLinks
 };
 
 // ----------------------------------------------------------------------
-// STATIC GENERATION & METADATA
+// STATIC GENERATION & METADATA (PHASE 4 UPGRADED)
 // ----------------------------------------------------------------------
-
 export async function generateStaticParams() {
   const slugs = getAllSlugs();
-  return slugs
-    .filter(slug => slug && slug.length > 1 && isNaN(Number(slug)))
-    .map((slug) => ({ slug }));
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const data = getNormalizedPage(slug);
 
-  if (!data) return {};
+  if (!data) notFound();
 
-  const ogUrl = new URL(`${BASE_URL}/api/og`);
-  ogUrl.searchParams.set('title', data.seo.h1 || data.seo.title);
-  ogUrl.searchParams.set('type', data.type);
+  // Phase 4: Code-Injected OG Image URLs
+  // Dynamically extract the best SQL snippet to showcase developer credibility in social feeds
+  const codeSnippet = data.demo?.generatedSql || data.useCases?.find(u => u.sqlSnippet)?.sqlSnippet;
   
-  // SEO Logic: Prioritize raw SQL in OG image for LIGHT mode
-  if (data.features?.sqlQuery) {
-    ogUrl.searchParams.set('code', data.features.sqlQuery);
-  } else if (data.demo?.generatedSql) {
-    ogUrl.searchParams.set('code', data.demo.generatedSql);
+  const ogUrl = new URL(`${BASE_URL}/api/og`);
+  ogUrl.searchParams.set('title', data.seo.h1);
+  ogUrl.searchParams.set('type', data.type);
+  if (codeSnippet) {
+    ogUrl.searchParams.set('code', codeSnippet);
   }
 
   return {
@@ -105,40 +109,33 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 // ----------------------------------------------------------------------
-// MAIN PAGE ORCHESTRATOR
+// MAIN PAGE COMPONENT
 // ----------------------------------------------------------------------
-
 export default async function DynamicSEOPage({ params }: PageProps) {
   const { slug } = await params;
   const data = getNormalizedPage(slug); 
   
   if (!data) notFound();
 
-  // HEURISTIC MODE SELECTION (Section 9.1)
-  const isLightMode = slug.includes('sql') || slug.includes('query') || slug.includes('example');
-  const pageTypeKey = data.type === 'template' 
-    ? (isLightMode ? 'template-light' : 'template-heavy') 
-    : data.type;
+  // PHASE 4: Rich Schema Injection Engine
+  // 1. Base TechArticle Schema (All Pages)
+  const schemas: any[] = [{
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: data.seo.h1,
+    description: data.seo.description,
+    author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
+    datePublished: data.seo.datePublished,
+    dateModified: data.seo.dateModified,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
+  }];
 
-  const layoutSequence = LAYOUT_CONFIG[pageTypeKey] || LAYOUT_CONFIG.default;
-
-  // RICH SCHEMA ENGINE
-  const schemas: any[] = [
-    {
-      '@context': 'https://schema.org',
-      '@type': 'TechArticle',
-      headline: data.seo.h1,
-      description: data.seo.description,
-      author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
-      mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
-    }
-  ];
-
-  if (data.faqs?.length) {
+  // 2. FAQ Schema
+  if (data.faqs && data.faqs.length > 0) {
     schemas.push({
       '@context': 'https://schema.org',
       '@type': 'FAQPage',
-      mainEntity: data.faqs.map((faq: any) => ({
+      mainEntity: data.faqs.map((faq) => ({
         '@type': 'Question',
         name: faq.q,
         acceptedAnswer: { '@type': 'Answer', text: faq.a },
@@ -146,21 +143,43 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     });
   }
 
-  // SERVER-SIDE DATA RESOLUTION
-  const resolvedRelatedPages = (data.relatedSlugs || [])
-    .map((relatedSlug: string) => {
-      const pageData = getNormalizedPage(relatedSlug);
-      if (!pageData) return null;
-      return {
-        slug: relatedSlug,
-        title: pageData.seo.h1 || pageData.seo.title,
-        tag: pageData.tags?.[0] || pageData.type
-      };
-    })
-    .filter(Boolean);
+  // 3. Software Application Schema (Integration Pages)
+  if (data.type === 'integration') {
+    schemas.push({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: data.seo.h1,
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Cloud',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      description: data.seo.description
+    });
+  }
+
+  // 4. How-To Schema (Guide Pages)
+  if (data.type === 'guide' && data.steps && data.steps.length > 0) {
+    schemas.push({
+      '@context': 'https://schema.org',
+      '@type': 'HowTo',
+      name: data.seo.h1,
+      description: data.seo.description,
+      step: data.steps.map((step, index) => ({
+        '@type': 'HowToStep',
+        position: index + 1,
+        name: step.title,
+        text: step.description
+      }))
+    });
+  }
+
+  // Retrieve the appropriate layout sequence for the current page type
+  const layoutSequence = LAYOUT_CONFIG[data.type] || LAYOUT_CONFIG.default;
 
   return (
     <>
+      <Navbar />
+
+      {/* Semantic SERP Injections */}
       {schemas.map((schema, index) => (
         <script 
           key={index} 
@@ -169,50 +188,35 @@ export default async function DynamicSEOPage({ params }: PageProps) {
         />
       ))}
 
-      <Navbar />
-
-      <main className="min-h-screen bg-white selection:bg-[#2563eb] selection:text-white">
+      <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-[#2563eb] selection:text-white overflow-x-hidden">
         {layoutSequence.map((blockKey) => {
           const BlockComponent = BLOCK_REGISTRY[blockKey];
-          if (!BlockComponent) return null;
-
-          // Prop Normalization & Data Routing (Section 2.2)
+          
+          // Data routing to the appropriate block prop payload
           const blockProps = (() => {
             switch (blockKey) {
               case 'Hero': return { data };
-              case 'SqlSnippet': return { features: data.features };
               case 'Demo': return { demo: data.demo };
-              case 'Personas': return { 
-                // Map analytical scenarios to personas block if in Heavy mode
-                personas: data.analyticalScenarios || data.personas 
-              };
+              case 'Personas': return { personas: data.personas };
               case 'Matrix': return { matrix: data.matrix };
               case 'WorkflowSection': return { workflow: data.workflow };
-              case 'Steps': return { 
-                // Map Quickstart to Steps block
-                steps: data.quickStart?.steps || data.steps 
-              };
-              case 'Features': return { 
-                // Map ImmediateValue to Features block in Heavy mode
-                features: data.immediateValue || data.features 
-              };
+              case 'UseCases': return { useCases: data.useCases };
+              case 'Steps': return { steps: data.steps };
+              case 'Features': return { features: data.features };
               case 'Architecture': return { architecture: data.architecture };
               case 'FAQs': return { faqs: data.faqs };
-              case 'RelatedLinks': return { relatedPages: resolvedRelatedPages, heroCta: data.hero?.cta };
+              case 'RelatedLinks': return { slugs: data.relatedSlugs, heroCta: data.hero?.cta };
               default: return {};
             }
           })();
 
-          // Visibility Heuristics
-          const propData = Object.values(blockProps)[0];
-          let hasValidData = false;
-          if (Array.isArray(propData)) hasValidData = propData.length > 0;
-          else if (propData !== null && typeof propData === 'object') hasValidData = Object.keys(propData).length > 0;
-          else hasValidData = propData !== undefined && propData !== null;
+          // Render optimization: Automatically hide blocks if their assigned data is missing/empty.
+          const requiredData = Object.values(blockProps)[0];
+          const hasData = requiredData !== undefined && requiredData !== null && (!Array.isArray(requiredData) || requiredData.length > 0);
           
-          if (!hasValidData && blockKey !== 'Hero') return null;
+          if (!hasData && blockKey !== 'Hero') return null;
 
-          return <BlockComponent key={blockKey} {...blockProps} data={data} />;
+          return <BlockComponent key={blockKey} {...blockProps} />;
         })}
       </main>
 
