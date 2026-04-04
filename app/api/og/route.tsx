@@ -16,6 +16,9 @@ export async function GET(req: NextRequest) {
     // PHASE 4 INJECTION: Capture the SQL/Code snippet from the page parser
     const code = searchParams.get('code');
 
+    // Typography scaling logic based on spatial constraints
+    const titleFontSize = code ? (title.length > 40 ? 56 : 64) : (title.length > 50 ? 64 : 76);
+
     // 2. Functional & Vectorized Logic: Constructing a high-performance SVG payload
     return new ImageResponse(
       (
@@ -24,7 +27,7 @@ export async function GET(req: NextRequest) {
             height: '100%',
             width: '100%',
             display: 'flex',
-            flexDirection: 'row', // Switched to row to accommodate the dynamic code block
+            flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
             backgroundColor: '#0B1221', // Deep Navy from your UI parser
@@ -35,7 +38,17 @@ export async function GET(req: NextRequest) {
           }}
         >
           {/* Left Column: Text & Branding */}
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', flex: 1, paddingRight: code ? '60px' : '0' }}>
+          <div 
+            style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              height: '100%', 
+              justifyContent: 'space-between', 
+              paddingRight: code ? '60px' : '0',
+              // Satori Optimization: Explicit widths prevent layout collapse
+              width: code ? '55%' : '100%', 
+            }}
+          >
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               {/* Dynamic Category/Type Badge */}
               <div
@@ -43,7 +56,7 @@ export async function GET(req: NextRequest) {
                   display: 'flex',
                   alignItems: 'center',
                   padding: '12px 28px',
-                  background: 'rgba(37, 99, 235, 0.15)', // Sharp Blue #2563eb
+                  backgroundColor: 'rgba(37, 99, 235, 0.15)', // Sharp Blue #2563eb
                   border: '1px solid rgba(37, 99, 235, 0.4)',
                   borderRadius: '100px',
                   marginBottom: '40px',
@@ -58,13 +71,12 @@ export async function GET(req: NextRequest) {
               <div
                 style={{
                   display: 'flex',
-                  fontSize: title.length > 40 && code ? 56 : (code ? 64 : 76), // Auto-scale typography depending on code presence
+                  fontSize: titleFontSize,
                   fontFamily: 'sans-serif',
                   fontWeight: 900,
                   letterSpacing: '-0.04em',
                   color: 'white',
                   lineHeight: 1.1,
-                  maxWidth: code ? '600px' : '900px',
                 }}
               >
                 {title}
@@ -81,7 +93,7 @@ export async function GET(req: NextRequest) {
                   width: 56,
                   height: 56,
                   borderRadius: 16,
-                  background: '#2563eb',
+                  backgroundColor: '#2563eb',
                   marginRight: 24,
                   boxShadow: '0 0 40px rgba(37, 99, 235, 0.4)',
                 }}
@@ -104,10 +116,9 @@ export async function GET(req: NextRequest) {
               style={{
                 display: 'flex',
                 flexDirection: 'column',
-                width: '480px',
-                height: 'auto',
-                maxHeight: '470px',
-                background: '#020617', // Deep IDE background
+                width: '45%',
+                height: '470px',
+                backgroundColor: '#020617', // Deep IDE background
                 borderRadius: '24px',
                 border: '1px solid #1e293b',
                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.05) inset',
@@ -115,11 +126,11 @@ export async function GET(req: NextRequest) {
               }}
             >
               {/* IDE Header (macOS style dots) */}
-              <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #1e293b', background: '#0f172a' }}>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #1e293b', backgroundColor: '#0f172a' }}>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <div style={{ width: '12px', height: '12px', borderRadius: '6px', background: '#ef4444' }} />
-                  <div style={{ width: '12px', height: '12px', borderRadius: '6px', background: '#f59e0b' }} />
-                  <div style={{ width: '12px', height: '12px', borderRadius: '6px', background: '#10b981' }} />
+                  <div style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#ef4444' }} />
+                  <div style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#f59e0b' }} />
+                  <div style={{ width: '12px', height: '12px', borderRadius: '6px', backgroundColor: '#10b981' }} />
                 </div>
                 <div style={{ display: 'flex', marginLeft: 'auto', color: '#64748b', fontSize: '14px', fontFamily: 'monospace', fontWeight: 600 }}>
                   sys.engine_query
@@ -152,6 +163,16 @@ export async function GET(req: NextRequest) {
     );
   } catch (e: any) {
     console.error(`Failed to generate the OG image: ${e.message}`);
-    return new Response(`Failed to generate image`, { status: 500 });
+    
+    // Graceful Degradation: Avoid sending a 500 error, which causes a broken image 
+    // icon on Twitter/Slack. Return a safe, minimalist branded fallback instead.
+    return new ImageResponse(
+      (
+        <div style={{ height: '100%', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0B1221' }}>
+           <span style={{ color: 'white', fontSize: 72, fontWeight: 800, letterSpacing: '-0.02em', fontFamily: 'sans-serif' }}>Arcli Data Platform</span>
+        </div>
+      ),
+      { width: 1200, height: 630 }
+    );
   }
 }

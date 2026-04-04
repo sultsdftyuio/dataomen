@@ -9,7 +9,7 @@ import Footer from '@/components/landing/footer';
 
 // Data Parser
 import { getNormalizedPage } from '@/lib/seo/parser';
-import { getAllSlugs } from '@/lib/seo/index';
+import { getAllSlugs } from '@/lib/seo/registry';
 
 // UI Blocks
 import {
