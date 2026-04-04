@@ -1,97 +1,84 @@
-// app/(landing)/[slug]/page.tsx
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import React from 'react';
 
 // Global Layout Components
 import { Navbar } from '@/components/landing/navbar';
-import Footer from '@/components/landing/footer';
+import { Footer } from '@/components/landing/footer';
 
-// Data Parser
+// Data Parser & Slugs
 import { getNormalizedPage } from '@/lib/seo/parser';
 import { getAllSlugs } from '@/lib/seo/index';
 
-// UI Blocks
-import {
-  Hero,
-  Demo,
-  Personas,
-  Matrix,
-  WorkflowSection,
-  UseCases
-} from '@/components/landing/seo-blocks-1';
+// UI Blocks - Phase 3/4 Sophisticated Exports
+import * as Blocks1 from '@/components/landing/seo-blocks-1';
+import * as Blocks2 from '@/components/landing/seo-blocks-2';
 
-import {
-  Steps,
-  Features,
-  Architecture,
-  RelatedLinks,
-  FAQs
-} from '@/components/landing/seo-blocks-2';
-
-const BASE_URL = 'https://www.arcli.tech';
+const BASE_URL = 'https://arcli.tech';
 
 export const dynamicParams = false;
-export const revalidate = 86400;
+export const revalidate = 86400; // Controlled Determinism: 24h cycle
 
 interface PageProps { 
   params: Promise<{ slug: string }>; 
 }
 
-// ----------------------------------------------------------------------
-// BLOCK ORCHESTRATOR CONFIGURATION (PHASE 1)
-// ----------------------------------------------------------------------
-type BlockKey = 
-  | 'Hero' 
-  | 'Demo' 
-  | 'Personas' 
-  | 'Matrix' 
-  | 'WorkflowSection' 
-  | 'UseCases' 
-  | 'Steps' 
-  | 'Features' 
-  | 'Architecture' 
-  | 'FAQs' 
-  | 'RelatedLinks';
+/**
+ * MASTER BLOCK REGISTRY
+ * Maps polymorphic content keys to sophisticated UI components.
+ */
+const BLOCK_REGISTRY: Record<string, React.ComponentType<any>> = {
+  Hero: Blocks1.Hero,
+  Demo: Blocks1.Demo,
+  Personas: Blocks1.Personas,
+  Matrix: Blocks1.Matrix,
+  WorkflowSection: Blocks1.WorkflowSection,
+  Steps: Blocks2.Steps,
+  Features: Blocks2.Features,
+  Architecture: Blocks2.Architecture,
+  FAQs: Blocks2.FAQs,
+  RelatedLinks: Blocks2.RelatedLinks,
+};
 
-const LAYOUT_CONFIG: Record<string, BlockKey[]> = {
-  guide: ['Hero', 'Steps', 'FAQs', 'Demo', 'UseCases', 'Features', 'Architecture', 'RelatedLinks'],
-  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'UseCases', 'FAQs', 'RelatedLinks'],
+/**
+ * LAYOUT ORCHESTRATION
+ * Deterministic section ordering based on persona/page intent.
+ */
+const LAYOUT_CONFIG: Record<string, string[]> = {
+  guide: ['Hero', 'Steps', 'FAQs', 'Demo', 'Features', 'Architecture', 'RelatedLinks'],
+  comparison: ['Hero', 'Matrix', 'Features', 'Personas', 'FAQs', 'RelatedLinks'],
   integration: ['Hero', 'WorkflowSection', 'Demo', 'Features', 'Steps', 'Architecture', 'FAQs', 'RelatedLinks'],
-  feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'UseCases', 'Architecture', 'FAQs', 'RelatedLinks'],
-  template: ['Hero', 'Demo', 'Steps', 'UseCases', 'Features', 'Matrix', 'FAQs', 'RelatedLinks'],
-  campaign: ['Hero', 'Personas', 'UseCases', 'Demo', 'WorkflowSection', 'Features', 'FAQs', 'RelatedLinks'],
-  default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'UseCases', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
-};
-
-const BLOCK_REGISTRY: Record<BlockKey, React.ElementType> = {
-  Hero, Demo, Personas, Matrix, WorkflowSection, UseCases,
-  Steps, Features, Architecture, FAQs, RelatedLinks
+  feature: ['Hero', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'Architecture', 'FAQs', 'RelatedLinks'],
+  template: ['Hero', 'Demo', 'Steps', 'Features', 'Matrix', 'FAQs', 'RelatedLinks'],
+  campaign: ['Hero', 'Personas', 'Demo', 'WorkflowSection', 'Features', 'FAQs', 'RelatedLinks'],
+  default: ['Hero', 'Demo', 'Personas', 'Matrix', 'WorkflowSection', 'Steps', 'Features', 'Architecture', 'FAQs', 'RelatedLinks'],
 };
 
 // ----------------------------------------------------------------------
-// STATIC GENERATION & METADATA (PHASE 4 UPGRADED)
+// STATIC GENERATION & METADATA
 // ----------------------------------------------------------------------
+
 export async function generateStaticParams() {
   const slugs = getAllSlugs();
-  return slugs.map((slug) => ({ slug }));
+  // Data Normalization: Filter out numeric IDs and '0' placeholders to prevent Vercel build failure
+  return slugs
+    .filter(slug => slug && slug.length > 1 && isNaN(Number(slug)))
+    .map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const data = getNormalizedPage(slug);
 
-  if (!data) notFound();
+  if (!data) return {};
 
-  // Phase 4: Code-Injected OG Image URLs
-  // Dynamically extract the best SQL snippet to showcase developer credibility in social feeds
-  const codeSnippet = data.demo?.generatedSql || data.useCases?.find((u: any) => u.sqlSnippet)?.sqlSnippet;
-  
+  // Phase 4: Developer-First OG Strategy
   const ogUrl = new URL(`${BASE_URL}/api/og`);
-  ogUrl.searchParams.set('title', data.seo.h1);
+  ogUrl.searchParams.set('title', data.seo.h1 || data.seo.title);
   ogUrl.searchParams.set('type', data.type);
-  if (codeSnippet) {
-    ogUrl.searchParams.set('code', codeSnippet);
+  
+  if (data.demo?.generatedSql) {
+    ogUrl.searchParams.set('code', data.demo.generatedSql);
   }
 
   return {
@@ -109,29 +96,30 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 // ----------------------------------------------------------------------
-// MAIN PAGE COMPONENT
+// MAIN PAGE ORCHESTRATOR
 // ----------------------------------------------------------------------
+
 export default async function DynamicSEOPage({ params }: PageProps) {
   const { slug } = await params;
   const data = getNormalizedPage(slug); 
   
   if (!data) notFound();
 
-  // PHASE 4: Rich Schema Injection Engine
-  // 1. Base TechArticle Schema (All Pages)
-  const schemas: any[] = [{
-    '@context': 'https://schema.org',
-    '@type': 'TechArticle',
-    headline: data.seo.h1,
-    description: data.seo.description,
-    author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
-    datePublished: data.seo.datePublished,
-    dateModified: data.seo.dateModified,
-    mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
-  }];
+  // RICH SCHEMA ENGINE: TechArticle + Contextual JSON-LD
+  const schemas: any[] = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'TechArticle',
+      headline: data.seo.h1,
+      description: data.seo.description,
+      author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
+      datePublished: data.seo.datePublished,
+      dateModified: data.seo.dateModified,
+      mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
+    }
+  ];
 
-  // 2. FAQ Schema
-  if (data.faqs && data.faqs.length > 0) {
+  if (data.faqs?.length) {
     schemas.push({
       '@context': 'https://schema.org',
       '@type': 'FAQPage',
@@ -143,36 +131,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     });
   }
 
-  // 3. Software Application Schema (Integration Pages)
-  if (data.type === 'integration') {
-    schemas.push({
-      '@context': 'https://schema.org',
-      '@type': 'SoftwareApplication',
-      name: data.seo.h1,
-      applicationCategory: 'BusinessApplication',
-      operatingSystem: 'Cloud',
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-      description: data.seo.description
-    });
-  }
-
-  // 4. How-To Schema (Guide Pages)
-  if (data.type === 'guide' && data.steps && data.steps.length > 0) {
-    schemas.push({
-      '@context': 'https://schema.org',
-      '@type': 'HowTo',
-      name: data.seo.h1,
-      description: data.seo.description,
-      step: data.steps.map((step: any, index: number) => ({
-        '@type': 'HowToStep',
-        position: index + 1,
-        name: step.title,
-        text: step.description
-      }))
-    });
-  }
-
-  // SERVER-SIDE DATA RESOLUTION (Fixes the Client fs module error)
+  // SERVER-SIDE DATA RESOLUTION (Preventing 'fs' import in browser via relatedSlugs)
   const resolvedRelatedPages = (data.relatedSlugs || [])
     .map((relatedSlug: string) => {
       const pageData = getNormalizedPage(relatedSlug);
@@ -180,18 +139,15 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       return {
         slug: relatedSlug,
         title: pageData.seo.h1 || pageData.seo.title,
-        tag: (pageData.tags && pageData.tags.length > 0) ? pageData.tags[0] : pageData.type
+        tag: pageData.tags?.[0] || pageData.type
       };
     })
     .filter(Boolean);
 
-  // Retrieve the appropriate layout sequence for the current page type
   const layoutSequence = LAYOUT_CONFIG[data.type] || LAYOUT_CONFIG.default;
 
   return (
     <>
-      <Navbar />
-
       {/* Semantic SERP Injections */}
       {schemas.map((schema, index) => (
         <script 
@@ -201,11 +157,14 @@ export default async function DynamicSEOPage({ params }: PageProps) {
         />
       ))}
 
-      <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-[#2563eb] selection:text-white overflow-x-hidden">
+      <Navbar />
+
+      <main className="min-h-screen bg-white selection:bg-[#2563eb] selection:text-white">
         {layoutSequence.map((blockKey) => {
           const BlockComponent = BLOCK_REGISTRY[blockKey];
-          
-          // Data routing to the appropriate block prop payload
+          if (!BlockComponent) return null;
+
+          // Prop Normalization & Data Routing
           const blockProps = (() => {
             switch (blockKey) {
               case 'Hero': return { data };
@@ -213,26 +172,22 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               case 'Personas': return { personas: data.personas };
               case 'Matrix': return { matrix: data.matrix };
               case 'WorkflowSection': return { workflow: data.workflow };
-              case 'UseCases': return { useCases: data.useCases };
               case 'Steps': return { steps: data.steps };
               case 'Features': return { features: data.features };
               case 'Architecture': return { architecture: data.architecture };
               case 'FAQs': return { faqs: data.faqs };
-              
-              // We pass down the pre-resolved array so the Client Component doesn't import fs
               case 'RelatedLinks': return { relatedPages: resolvedRelatedPages, heroCta: data.hero?.cta };
-              
               default: return {};
             }
           })();
 
-          // Render optimization: Automatically hide blocks if their assigned data is missing/empty.
-          const requiredData = Object.values(blockProps)[0];
-          const hasData = requiredData !== undefined && requiredData !== null && (!Array.isArray(requiredData) || requiredData.length > 0);
+          // Block Visibility Heuristics: Do not render empty sections
+          const propData = Object.values(blockProps)[0];
+          const hasValidData = propData !== undefined && propData !== null && (!Array.isArray(propData) || propData.length > 0);
           
-          if (!hasData && blockKey !== 'Hero') return null;
+          if (!hasValidData && blockKey !== 'Hero') return null;
 
-          return <BlockComponent key={blockKey} {...blockProps} />;
+          return <BlockComponent key={blockKey} {...blockProps} data={data} />;
         })}
       </main>
 
