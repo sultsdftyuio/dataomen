@@ -14,6 +14,7 @@
  * 10. [V10.1 PATCH] Layout Configurations updated to automatically parse and render advanced Phase 4-9 blocks if data exists.
  * 11. [V10.1.1 PATCH] UIBlock Mapper Safeguards: Implemented strict length checks and string-to-array fallbacks for AI blocks to prevent SSR crashes (e.g. `filename` read on empty array structures).
  * 12. [V10.1.1 PATCH] Prevent nested UIBlock payloads during Intelligence Injection.
+ * 13. [V10.1.2 PATCH] StrategicQuery strict TypeScript alignment: formats scenario object perfectly to prevent TS 'IntrinsicAttributes' build errors.
  */
 
 import { Metadata } from 'next';
@@ -72,13 +73,13 @@ function UIBlockMapper(props: any) {
     case 'ComparisonTable':
     case 'Comparisons': {
       const matrix = Array.isArray(data) ? data : (typeof data === 'string' ? [{ category: "Key Detail", legacy: "Legacy Output", arcliAdvantage: data }] : []);
-      if (matrix.length === 0) return null; // Prevent empty prop render crashing
+      if (matrix.length === 0) return null;
       return <Matrix matrix={matrix} />;
     }
     case 'ProcessStepper':
     case 'Processes': {
       const steps = Array.isArray(data) ? data : (typeof data === 'string' ? [{ title: "Workflow", description: data }] : []);
-      if (steps.length === 0) return null; // Prevent Empty Steps component crash (fixes `filename` SSR bug)
+      if (steps.length === 0) return null; 
       return <Steps steps={steps} />;
     }
     case 'MetricsChart':
@@ -88,12 +89,21 @@ function UIBlockMapper(props: any) {
     case 'Relationships':
       return <TelemetryTrace data={data} />;
     case 'AnalyticsDashboard':
-    case 'Insights':
-      return typeof data === 'object' ? (
-        <StrategicQuery scenario={data} code={data.code || data.sqlSnippet} businessOutcome={data.businessOutcome || data.description} />
-      ) : (
-        <StrategicQuery scenario={{ description: data }} businessOutcome={typeof data === 'string' ? data : ''} />
+    case 'Insights': {
+      // FIX: Map strictly to the StrategicScenarioProps type to satisfy TS
+      const isObj = typeof data === 'object' && data !== null;
+      return (
+        <StrategicQuery 
+          scenario={{
+            title: isObj ? (data.title || "Strategic Insight") : "Data Insight",
+            description: isObj ? (data.description || "Generated analysis") : data,
+            dialect: isObj ? (data.dialect || "SQL") : "SQL",
+            sql: isObj ? (data.code || data.sqlSnippet || data.sql || "-- Logic executing...") : "-- Query logic omitted",
+            businessOutcome: isObj ? (data.businessOutcome || data.arcliResolution || data.description || "Actionable intelligence derived.") : data
+          }} 
+        />
       );
+    }
     case 'Cards / Lists':
     case 'Lists': {
       const features = Array.isArray(data) ? data : (typeof data === 'string' ? [{ title: "Capability", description: data }] : []);
@@ -101,7 +111,6 @@ function UIBlockMapper(props: any) {
       return <Features features={features} />;
     }
     default:
-      // Fallback for unmapped visual data
       return <Architecture architecture={data} />;
   }
 }
@@ -117,12 +126,11 @@ const BLOCK_REGISTRY: Record<string, React.ElementType> = {
   ParadigmTeardown, TelemetryTrace, MetricGovernance, EmbeddableSDK,
   DataGravityCost, DynamicSchemaMapping, GranularAccessControl,
   ConcurrencyProof, TenantIsolationArchitecture, DeterministicGuardrails,
-  UIBlock: UIBlockMapper, // 👈 Routes AI generated blocks to native components
+  UIBlock: UIBlockMapper, 
 };
 
 // ----------------------------------------------------------------------
-// ADAPTIVE LAYOUT CONFIGURATION (V1 Fallback)
-// Updated to include Phase 4-9 blocks so they naturally render if present
+// ADAPTIVE LAYOUT CONFIGURATION 
 // ----------------------------------------------------------------------
 const LAYOUT_CONFIG: Record<string, string[]> = {
   guide:      ['Hero', 'ExecutiveSummary', 'Steps', 'FAQs', 'Demo', 'UseCases', 'Features', 'Architecture', 'TelemetryTrace', 'ZeroDataProof', 'MetricGovernance', 'RelatedLinks'],
@@ -274,8 +282,18 @@ function getV1BlockProps(type: string, data: any): Record<string, any> {
     case 'UseCases':
       return { useCases: d.useCases || d.executiveScenarios || d.analyticalScenarios || [] };
     case 'StrategicQuery': {
-      const scenario = d.strategicScenario || d.executiveScenarios?.find((s: any) => s.complexity === 'Strategic') || d.analyticalScenarios?.[0];
-      return { scenario, code: scenario?.sqlGenerated || scenario?.sql || scenario?.sqlSnippet, businessOutcome: scenario?.arcliResolution || scenario?.description };
+      const rawScenario = d.strategicScenario || d.executiveScenarios?.find((s: any) => s.complexity === 'Strategic') || d.analyticalScenarios?.[0];
+      if (!rawScenario) return {}; // Allows IS_EMPTY to correctly skip this if undefined
+      // FIX: Ensure strict property match with StrategicScenarioProps
+      return { 
+        scenario: {
+          title: rawScenario.title || "Strategic Blueprint",
+          description: rawScenario.description || "Advanced data extraction pattern.",
+          dialect: rawScenario.dialect || "SQL",
+          sql: rawScenario.sqlGenerated || rawScenario.sql || rawScenario.sqlSnippet || "-- Query logic parsing",
+          businessOutcome: rawScenario.arcliResolution || rawScenario.businessOutcome || rawScenario.description || "Optimized data workflow."
+        } 
+      };
     }
     case 'SecurityGuardrails':
       return { items: toArray(d.securityGuardrails) || toArray(d.trustAndSecurity) || toArray(d.security) };
@@ -295,9 +313,6 @@ function getV1BlockProps(type: string, data: any): Record<string, any> {
     case 'UIBlock':
       return d;
     default: {
-      // FIX: Dynamically convert PascalCase block names (e.g., 'TelemetryTrace') 
-      // to camelCase keys (e.g., 'telemetryTrace') to extract exact data.
-      // This stops advanced blocks from crashing or bypassing IS_EMPTY checks.
       const dataKey = type.charAt(0).toLowerCase() + type.slice(1);
       return { data: d[dataKey] };
     }
@@ -321,15 +336,11 @@ export default async function DynamicSEOPage({ params }: PageProps) {
         payload: page,
       }));
 
-  // 🚀 V10.1 UI INTELLIGENCE INJECTION
-  // Force-maps generic parser UI chunks directly into the visual layout sequence
   if (page.uiBlocks && page.uiBlocks.length > 0) {
     const uiRenderBlocks = page.uiBlocks.map((block: any) => {
-      // FIX: Ensure we don't infinitely nest block payloads if it is already wrapped
       return block.type === 'UIBlock' ? block : { type: 'UIBlock', payload: block };
     });
     
-    // Splice them directly into position #3 so they dominate 'above the fold'
     const insertionIndex = Math.min(2, renderList.length);
     renderList.splice(insertionIndex, 0, ...uiRenderBlocks);
   }
