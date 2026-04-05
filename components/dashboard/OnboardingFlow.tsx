@@ -1,162 +1,276 @@
-// components/dashboard/OnboardingFlow.tsx
-"use client";
+/**
+ * ARCLI Intelligence System
+ * Phase 5: Omniscient Scratchpad
+ * * The embedded AI interaction layer.
+ * * Converts natural language into structured, rendered UI components dynamically.
+ */
 
-import { useState } from "react";
-import { 
-  Store, 
-  CreditCard, 
-  TrendingUp, 
-  Users, 
-  ArrowRight, 
-  CheckCircle2, 
-  Loader2 
-} from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Sparkles, Send, Bot, User, ArrowRight, Loader2 } from "lucide-react";
+import { AIResponse, AIResponseBlock, AIMapper } from "@/lib/intelligence/ai-mapper";
+import { ExecutiveKPICard } from "./ExecutiveKPICard";
+import { InsightsFeed } from "./InsightsFeed";
+// Assuming ProgressiveChart exists from Phase 4
+import { ProgressiveChart } from "./ProgressiveChart"; 
+import { ChartOrchestrator } from "@/lib/intelligence/chart-orchestrator";
 
-// Extracted outside render for memory efficiency
-const USE_CASES = [
-  {
-    id: "saas",
-    title: "B2B SaaS Metrics",
-    description: "Track MRR, Churn, and Customer LTV.",
-    icon: <CreditCard className="w-6 h-6 text-indigo-600" />,
-    integrations: ["Stripe", "HubSpot"],
-    color: "indigo"
-  },
-  {
-    id: "ecommerce",
-    title: "E-Commerce Growth",
-    description: "Analyze ROAS, Cart Abandonment, and Sales.",
-    icon: <Store className="w-6 h-6 text-emerald-600" />,
-    integrations: ["Shopify", "Meta Ads"],
-    color: "emerald"
-  },
-  {
-    id: "marketing",
-    title: "Marketing ROI",
-    description: "Measure campaign performance and CAC.",
-    icon: <TrendingUp className="w-6 h-6 text-rose-600" />,
-    integrations: ["Google Ads", "Salesforce"],
-    color: "rose"
-  },
-  {
-    id: "product",
-    title: "Product Analytics",
-    description: "Understand user retention and feature usage.",
-    icon: <Users className="w-6 h-6 text-blue-600" />,
-    integrations: ["Mixpanel", "Segment"],
-    color: "blue"
-  }
-];
+// -----------------------------------------------------------------------------
+// Block Renderers (Translating AI JSON -> UI Components)
+// -----------------------------------------------------------------------------
 
-export function OnboardingFlow() {
-  const [selectedUseCase, setSelectedUseCase] = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
-
-  // Simulating an OAuth connection flow
-  const handleConnect = async () => {
-    setIsConnecting(true);
-    // In production, this redirects to your backend endpoint that initiates Supabase OAuth
-    // window.location.href = `/api/auth/connect?provider=${selectedProvider}`;
+const AIBlockRenderer: React.FC<{ 
+  block: AIResponseBlock; 
+  orchestrator: ChartOrchestrator 
+}> = ({ block, orchestrator }) => {
+  switch (block.type) {
+    case "stat":
+      return (
+        <div className="w-full max-w-sm my-3 animate-in slide-in-from-bottom-2 fade-in duration-500">
+          <ExecutiveKPICard kpi={block.data} />
+        </div>
+      );
     
-    setTimeout(() => {
-      setIsConnecting(false);
-      // Simulate successful connection and redirect to the generated dashboard
-      window.location.href = "/dashboard/generated"; 
-    }, 2000);
+    case "insight":
+      return (
+        <div className="w-full max-w-md my-3 animate-in slide-in-from-bottom-2 fade-in duration-500">
+          {/* Reusing the styling logic of the Insights Feed for a single item */}
+          <div className={`p-4 rounded-lg border shadow-sm ${
+            block.data.direction === "negative" ? "bg-red-50/50 border-red-100" :
+            block.data.direction === "positive" ? "bg-blue-50/50 border-blue-100" :
+            "bg-white border-slate-200"
+          }`}>
+            <h4 className="text-sm font-semibold text-slate-900">{block.data.title}</h4>
+            <p className="text-xs text-slate-600 mt-1">{block.data.description}</p>
+          </div>
+        </div>
+      );
+
+    case "chart":
+      // Dynamically register the chart job requested by the AI
+      orchestrator.addJob({
+        id: block.config.id,
+        query: block.config.query,
+        params: block.config.params,
+        group: "ai_generated",
+        priority: 100 // High priority for real-time user requests
+      });
+
+      return (
+        <div className="w-full my-4 animate-in zoom-in-95 fade-in duration-500">
+          <ProgressiveChart
+            jobId={block.config.id}
+            orchestrator={orchestrator}
+            title={block.config.title}
+            heightClass="h-[250px]"
+          >
+            {(data) => (
+              <div className="w-full h-full flex items-center justify-center bg-slate-50 border border-slate-100 rounded-md">
+                <span className="text-xs font-medium text-slate-400">
+                  [Render {block.config.type} chart with {data.length} points]
+                </span>
+              </div>
+            )}
+          </ProgressiveChart>
+        </div>
+      );
+
+    case "table":
+      const headers = block.data.length > 0 ? Object.keys(block.data[0]) : [];
+      return (
+        <div className="w-full overflow-auto rounded-md border border-slate-200 my-3 text-sm animate-in fade-in duration-500">
+          <table className="w-full text-left bg-white">
+            <thead className="bg-slate-50 text-slate-500 text-xs">
+              <tr>{headers.map(h => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {block.data.map((row, i) => (
+                <tr key={i}>
+                  {headers.map(h => <td key={h} className="px-3 py-2 text-slate-700">{row[h]}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+
+    case "explanation":
+      return (
+        <div className="text-sm text-slate-700 leading-relaxed my-2">
+          {block.text}
+        </div>
+      );
+    
+    default:
+      return null;
+  }
+};
+
+// -----------------------------------------------------------------------------
+// Types & Main Component
+// -----------------------------------------------------------------------------
+
+type Message = {
+  id: string;
+  role: "user" | "ai";
+  content?: string; // For simple user text
+  blocks?: AIResponseBlock[]; // For structured AI UI
+};
+
+interface OmniscientScratchpadProps {
+  activeConnector: string;
+  orchestrator: ChartOrchestrator;
+  initialContext?: string;
+}
+
+export const OmniscientScratchpad: React.FC<OmniscientScratchpadProps> = ({
+  activeConnector,
+  orchestrator,
+  initialContext
+}) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState(initialContext || "");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const endOfMessagesRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim() || isProcessing) return;
+
+    const userMessage: Message = { id: Date.now().toString(), role: "user", content: input };
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsProcessing(true);
+
+    try {
+      // 1. Build Context (In a real app, gather visible KPIs/Charts here)
+      const contextPayload = AIMapper.buildContextSnapshot(activeConnector, [], []);
+
+      // 2. Call your actual backend orchestration route
+      const response = await fetch("/api/chat/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: userMessage.content, context: contextPayload }),
+      });
+
+      const rawJsonText = await response.text();
+      
+      // 3. Parse JSON into Deterministic UI Blocks
+      const aiResponse: AIResponse = AIMapper.parseResponse(rawJsonText);
+
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "ai",
+        blocks: aiResponse.blocks
+      };
+
+      setMessages(prev => [...prev, aiMessage]);
+
+      // If the AI suggested follow-ups, we could store them in state to render as quick-action pills.
+    } catch (error) {
+      console.error("AI execution failed:", error);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: "ai",
+        blocks: [{ type: "explanation", text: "I encountered an error processing that request." }]
+      }]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
-      <div className="max-w-4xl mx-auto w-full space-y-8">
-        
-        {/* Header */}
-        <div className="text-center">
-          <h2 className="mt-6 text-3xl font-extrabold text-slate-900 tracking-tight">
-            Welcome to DataOmen. What are we building today?
-          </h2>
-          <p className="mt-2 text-base text-slate-600 max-w-2xl mx-auto">
-            Select your primary goal below. We'll automatically configure your AI agents and build your first dashboard in seconds.
-          </p>
+    <div className="flex flex-col h-full bg-white border border-slate-200/60 shadow-sm rounded-xl overflow-hidden">
+      
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 bg-slate-50/50 border-b border-slate-100">
+        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-md">
+          <Sparkles className="w-4 h-4" />
         </div>
-
-        {/* Use Case Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-10">
-          {USE_CASES.map((useCase) => {
-            const isSelected = selectedUseCase === useCase.id;
-            return (
-              <button
-                key={useCase.id}
-                onClick={() => setSelectedUseCase(useCase.id)}
-                className={`relative flex flex-col items-start p-6 rounded-2xl border-2 transition-all duration-200 text-left focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-${useCase.color}-500 ${
-                  isSelected 
-                    ? `border-${useCase.color}-600 bg-${useCase.color}-50 shadow-md transform scale-[1.02]` 
-                    : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-                }`}
-              >
-                <div className="flex justify-between w-full mb-4">
-                  <div className={`p-3 rounded-xl ${isSelected ? `bg-${useCase.color}-100` : "bg-slate-100"}`}>
-                    {useCase.icon}
-                  </div>
-                  {isSelected && (
-                    <CheckCircle2 className={`w-6 h-6 text-${useCase.color}-600`} />
-                  )}
-                </div>
-                
-                <h3 className="text-xl font-bold text-slate-900 mb-1">
-                  {useCase.title}
-                </h3>
-                <p className="text-slate-600 text-sm mb-4">
-                  {useCase.description}
-                </p>
-
-                {/* Integration preview */}
-                <div className="mt-auto pt-4 border-t border-slate-200/60 w-full flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Connects seamlessly with:
-                  <span className="text-slate-700 font-bold ml-1">
-                    {useCase.integrations.join(", ")}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Omniscient Scratchpad</h2>
+          <p className="text-xs text-slate-500">Query your {activeConnector} data naturally.</p>
         </div>
+      </div>
 
-        {/* Action Area */}
-        <div className={`transition-all duration-500 transform ${selectedUseCase ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}>
-          <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-xl shadow-slate-200/50 text-center">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">
-              Ready to generate your {USE_CASES.find(u => u.id === selectedUseCase)?.title} dashboard?
-            </h3>
-            <p className="text-slate-600 mb-8 max-w-xl mx-auto">
-              Securely connect your primary data source. DataOmen only requires read-access, and we never train our core models on your proprietary data.
+      {/* Message Feed */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {messages.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-4">
+            <Bot className="w-10 h-10 opacity-20" />
+            <p className="text-sm max-w-[250px]">
+              Ask a question to dynamically generate charts, tables, and insights.
             </p>
-            
-            <button
-              onClick={handleConnect}
-              disabled={isConnecting}
-              className="inline-flex items-center justify-center gap-3 px-8 py-4 text-base font-bold text-white bg-slate-900 rounded-xl hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 disabled:opacity-70 disabled:cursor-not-allowed transition-colors w-full sm:w-auto min-w-[280px]"
-            >
-              {isConnecting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Connecting securely...
-                </>
+          </div>
+        )}
+
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+            {/* Avatar */}
+            <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+              msg.role === "user" ? "bg-slate-900 text-white" : "bg-blue-50 text-blue-600 border border-blue-100"
+            }`}>
+              {msg.role === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+            </div>
+
+            {/* Content Area */}
+            <div className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}>
+              {msg.role === "user" ? (
+                <div className="px-4 py-2 bg-slate-900 text-white text-sm rounded-2xl rounded-tr-sm">
+                  {msg.content}
+                </div>
               ) : (
-                <>
-                  Connect {USE_CASES.find(u => u.id === selectedUseCase)?.integrations[0]} securely
-                  <ArrowRight className="w-5 h-5" />
-                </>
+                <div className="flex flex-col w-full">
+                  {msg.blocks?.map((block, i) => (
+                    <AIBlockRenderer key={i} block={block} orchestrator={orchestrator} />
+                  ))}
+                </div>
               )}
-            </button>
-            
-            <div className="mt-4 text-xs text-slate-500 flex items-center justify-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              256-bit AES encryption standard
             </div>
           </div>
-        </div>
-
+        ))}
+        
+        {isProcessing && (
+          <div className="flex gap-3">
+            <div className="shrink-0 w-8 h-8 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </div>
+            <div className="flex items-center px-4 py-2 bg-slate-50 rounded-2xl rounded-tl-sm text-xs text-slate-500">
+              Analyzing metrics...
+            </div>
+          </div>
+        )}
+        <div ref={endOfMessagesRef} />
       </div>
+
+      {/* Input Area */}
+      <div className="p-3 bg-white border-t border-slate-100">
+        <form 
+          onSubmit={handleSubmit}
+          className="relative flex items-center"
+        >
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="E.g., Show me MRR churn over the last 30 days..."
+            className="w-full pl-4 pr-12 py-3 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+            disabled={isProcessing}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || isProcessing}
+            className="absolute right-2 p-1.5 text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-md transition-colors"
+          >
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </form>
+      </div>
+
     </div>
   );
-}
+};

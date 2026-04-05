@@ -252,8 +252,8 @@ export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
 
   if (faqs.length === 0) return null;
   return (
-    <section className="py-24 bg-white border-t border-slate-200/50">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+    <section className="py-16 md:py-24 bg-white border-t border-slate-200/50">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-3xl">
         <SectionHeading 
           monoLabel="// DOCUMENTATION"
           subtitle="Everything you need to know about implementing Arcli's engine into your stack."
@@ -261,20 +261,20 @@ export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
           Expert Insights
         </SectionHeading>
         
-        <div ref={ref} className="space-y-4">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="space-y-3">
           {faqs.map((faq, i) => (
             <details 
               key={i} 
               style={{ transitionDelay: `${i * 100}ms` }}
-              className={`group bg-white border border-slate-200 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden shadow-sm hover:border-slate-300 transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+              className={`group bg-white border border-slate-200 rounded-lg overflow-hidden [&_summary::-webkit-details-marker]:hidden shadow-sm hover:border-slate-300 transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
             >
-              <summary className="flex items-center justify-between cursor-pointer p-6 md:p-8 font-bold text-[#0B1221] text-[18px] hover:bg-slate-50 transition-colors focus:outline-none tracking-tight">
+              <summary className="flex items-center justify-between cursor-pointer p-4 md:p-5 font-bold text-[#0B1221] text-[15px] md:text-[16px] hover:bg-slate-50 transition-colors focus:outline-none tracking-tight">
                 {faq.q}
-                <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-slate-50 border border-slate-200 p-2 rounded-lg text-slate-500 group-hover:bg-[#2563eb] group-hover:text-white group-hover:border-[#2563eb]">
-                  <ChevronDown className="w-5 h-5" />
+                <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-slate-50 border border-slate-200 p-1.5 rounded-md text-slate-500 group-hover:bg-[#2563eb] group-hover:text-white group-hover:border-[#2563eb]">
+                  <ChevronDown className="w-4 h-4" />
                 </span>
               </summary>
-              <div className="p-6 md:p-8 pt-0 text-slate-500 text-[16px] leading-relaxed font-medium bg-white border-t border-slate-100">
+              <div className="p-4 md:p-5 pt-2 text-slate-500 text-[14px] md:text-[15px] leading-relaxed font-medium bg-white border-t border-slate-100">
                 {faq.a}
               </div>
             </details>

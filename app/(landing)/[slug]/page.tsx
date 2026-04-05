@@ -26,6 +26,11 @@
  *     when resolved data does not conform to the component's required props interface.
  * 16. [V10.2 FIX] uiBlocks injection always produces canonical { type, payload } shape
  *     regardless of whether the source block already has a `type` field.
+ * 17. [V10.3 FIX] IS_EMPTY updated to accept both V1 and V2 schema keys so blocks like
+ *     ContrarianBanner (heading/argument) and ExecutiveSummary (pillars) are not silently
+ *     hidden when rendered from V2 JSON data.
+ * 18. [V10.3 FIX] V2 Payload Normalization Bridge injected in the render loop: maps V2
+ *     payload keys to the props expected by each UI component before IS_EMPTY evaluation.
  */
 
 import { Metadata } from 'next';
@@ -237,37 +242,45 @@ const LAYOUT_CONFIG: Record<string, string[]> = {
 
 // ----------------------------------------------------------------------
 // PER-BLOCK EMPTY CHECK
+// [V10.3 FIX] Updated to accept both V1 and V2 schema keys, preventing blocks
+// from being silently hidden when V2 JSON uses different field names than V1
+// (e.g. ContrarianBanner: heading/argument vs statement/subtext;
+//       ExecutiveSummary: pillars vs highlights;
+//       StrategicQuery:   code/sqlSnippet vs scenario;
+//       UseCases:         scenarios vs useCases;
+//       SecurityGuardrails: features vs items;
+//       Architecture:     components vs architecture).
 // ----------------------------------------------------------------------
 const IS_EMPTY: Partial<Record<string, (props: Record<string, any>) => boolean>> = {
-  Demo:                       (p) => !p.demo,
-  Personas:                   (p) => !p.personas?.length,
-  Matrix:                     (p) => !p.matrix?.length,
-  WorkflowSection:            (p) => !p.workflow,
-  UseCases:                   (p) => !p.useCases?.length,
-  Steps:                      (p) => !p.steps?.length,
-  Features:                   (p) => !p.features?.length,
-  Architecture:               (p) => !p.architecture,
-  SecurityGuardrails:         (p) => !p.items?.length,
-  ExecutiveSummary:           (p) => !p.highlights?.length,
-  ContrarianBanner:           (p) => !p.statement,
-  StrategicQuery:             (p) => !p.scenario,
-  FAQs:                       (p) => !p.faqs?.length,
-  RelatedLinks:               (p) => !p.slugs?.length,
-  ZeroDataProof:              (p) => !p.data,
-  SemanticTranslation:        (p) => !p.data,
-  TrustAndCompliance:         (p) => !p.data,
-  ParadigmTeardown:           (p) => !p.data,
-  TelemetryTrace:             (p) => !p.data,
-  MetricGovernance:           (p) => !p.data,
-  EmbeddableSDK:              (p) => !p.data,
-  DataGravityCost:            (p) => !p.data,
-  DynamicSchemaMapping:       (p) => !p.data,
-  GranularAccessControl:      (p) => !p.data,
-  ConcurrencyProof:           (p) => !p.data,
-  TenantIsolationArchitecture:(p) => !p.data,
-  DeterministicGuardrails:    (p) => !p.data,
+  Demo:                        (p) => !p.demo,
+  Personas:                    (p) => !p.personas?.length,
+  Matrix:                      (p) => !(p.matrix?.length || p.rows?.length),
+  WorkflowSection:             (p) => !p.workflow,
+  UseCases:                    (p) => !(p.useCases?.length || p.scenarios?.length),
+  Steps:                       (p) => !p.steps?.length,
+  Features:                    (p) => !p.features?.length,
+  Architecture:                (p) => !(p.architecture || p.components?.length),
+  SecurityGuardrails:          (p) => !(p.items?.length || p.features?.length),
+  ExecutiveSummary:            (p) => !(p.highlights?.length || p.pillars?.length),
+  ContrarianBanner:            (p) => !(p.statement || p.heading),
+  StrategicQuery:              (p) => !(p.scenario || p.code || p.sqlSnippet),
+  FAQs:                        (p) => !p.faqs?.length,
+  RelatedLinks:                (p) => !p.slugs?.length,
+  ZeroDataProof:               (p) => !p.data,
+  SemanticTranslation:         (p) => !p.data,
+  TrustAndCompliance:          (p) => !p.data,
+  ParadigmTeardown:            (p) => !p.data,
+  TelemetryTrace:              (p) => !p.data,
+  MetricGovernance:            (p) => !p.data,
+  EmbeddableSDK:               (p) => !p.data,
+  DataGravityCost:             (p) => !p.data,
+  DynamicSchemaMapping:        (p) => !p.data,
+  GranularAccessControl:       (p) => !p.data,
+  ConcurrencyProof:            (p) => !p.data,
+  TenantIsolationArchitecture: (p) => !p.data,
+  DeterministicGuardrails:     (p) => !p.data,
   // A UIBlock with no type or no data after resolution is empty.
-  UIBlock:                    (p) => !p.visualizationType || p.dataMapping === undefined || p.dataMapping === null,
+  UIBlock:                     (p) => !p.visualizationType || p.dataMapping === undefined || p.dataMapping === null,
 };
 
 // ----------------------------------------------------------------------
@@ -485,8 +498,70 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           // V2 blocks and UIBlocks carry their own payload.
           // V1 layout blocks derive props from the flat page object via getV1BlockProps.
           const blockProps: Record<string, any> = (isV2 || block.type === 'UIBlock')
-            ? (block.payload ?? {})
+            ? { ...(block.payload ?? {}) }
             : getV1BlockProps(block.type, page);
+
+          // ------------------------------------------------------------------
+          // V2 PAYLOAD NORMALIZATION BRIDGE  [V10.3 FIX]
+          // Maps V2 JSON field names to the prop names expected by each UI
+          // component. Runs only for V2 pages; V1 paths are handled by
+          // getV1BlockProps above. This keeps the two schemas fully decoupled
+          // while avoiding duplicate component logic.
+          // ------------------------------------------------------------------
+          if (isV2) {
+            switch (block.type) {
+              case 'ContrarianBanner':
+                blockProps.statement = blockProps.statement || blockProps.heading;
+                blockProps.subtext   = blockProps.subtext   || blockProps.argument || blockProps.description;
+                break;
+
+              case 'ExecutiveSummary':
+                if (!blockProps.highlights && blockProps.pillars) {
+                  blockProps.highlights = blockProps.pillars.map((p: any) => ({
+                    value: p.title,
+                    label: p.description,
+                  }));
+                }
+                break;
+
+              case 'StrategicQuery':
+                if (!blockProps.scenario) {
+                  blockProps.scenario = {
+                    title:           blockProps.title,
+                    description:     blockProps.description,
+                    businessOutcome: blockProps.businessOutcome,
+                    sql:             blockProps.code || blockProps.sqlSnippet,
+                    dialect:         blockProps.language || 'SQL',
+                  };
+                }
+                break;
+
+              case 'UseCases':
+                blockProps.useCases = blockProps.useCases || blockProps.scenarios || [];
+                break;
+
+              case 'SecurityGuardrails':
+                blockProps.items = blockProps.items || blockProps.features || [];
+                break;
+
+              case 'Architecture':
+                // Some V2 payloads use `components` instead of the top-level `architecture` key.
+                if (!blockProps.architecture && blockProps.components) {
+                  blockProps.architecture = { components: blockProps.components };
+                }
+                break;
+
+              case 'Matrix':
+                // Some V2 payloads use `rows` instead of `matrix`.
+                if (!blockProps.matrix && blockProps.rows) {
+                  blockProps.matrix = blockProps.rows;
+                }
+                break;
+            }
+          }
+          // ------------------------------------------------------------------
+          // END V2 PAYLOAD NORMALIZATION BRIDGE
+          // ------------------------------------------------------------------
 
           // Defensive array coercion for all known array props.
           if (!Array.isArray(blockProps.slugs))    blockProps.slugs    = blockProps.slugs    ?? [];

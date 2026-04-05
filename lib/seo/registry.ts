@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/generate-registry.mjs
 //
 // Silos tracked: 36
-// Generated:     2026-04-04T22:51:14.904Z
+// Generated:     2026-04-05T21:09:33.128Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';
@@ -89,7 +89,8 @@ allModules.forEach((mod) => {
     const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue;
 
     if (isV2) {
-      const slug = (exportValue as any).path.replace(/^\//, '');
+      const fullPath = (exportValue as any).path.replace(/^\//, '');
+      const slug = fullPath.split('/').pop() || fullPath; // Flatten nested routes
       if (SEO_REGISTRY[slug]) {
         console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
       }
@@ -114,7 +115,8 @@ allModules.forEach((mod) => {
       let slug: string;
 
       if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
-        slug = (pageData as any).path.replace(/^\//, '');
+        const fullPath = (pageData as any).path.replace(/^\//, '');
+        slug = fullPath.split('/').pop() || fullPath; // Flatten nested routes
       } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData) {
         slug = (pageData as any).slug || key;
       } else {
@@ -180,7 +182,7 @@ export function getAllSlugs(): string[] {
 export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: string; type: string }> {
   return slugs
     .map((rawSlug) => {
-      const slug = rawSlug.replace(/^\//, '');
+      const slug = rawSlug.replace(/^\//, '').split('/').pop() || rawSlug; // Flatten here too for relations
       const page = SEO_REGISTRY[slug] ?? SEO_REGISTRY[rawSlug];
       if (!page) return null;
 
