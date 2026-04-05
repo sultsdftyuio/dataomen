@@ -44,6 +44,14 @@ export function resolveIcon(raw: string | React.ReactNode | undefined): React.Re
   return iconRegistry[DEFAULT_ICON_KEY];
 }
 
+// --- SEO v10.1 UI BLOCK DEFINITION ---
+export type UIBlock = {
+  visualizationType: 'MetricsChart' | 'DataRelationshipsGraph' | 'AnalyticsDashboard' | 'ComparisonTable' | 'ProcessStepper' | string;
+  dataMapping: any; 
+  interactionPurpose: string;
+  intentServed: string;
+};
+
 // --- UNIVERSAL DATA INTERFACE ---
 export interface NormalizedPage {
   slug: string;
@@ -63,6 +71,7 @@ export interface NormalizedPage {
   features: CoreCapability[];
   businessValueMetrics: Array<{ metric: string; value: string; context: string }>;
   trustAndSecurity: Array<{ principle: string; description: string }>;
+  uiBlocks?: UIBlock[]; // ADDED: Captures the UI-Driven Intelligence payload
 }
 
 // -------------------------------------------------------------------------
@@ -142,8 +151,8 @@ const normalizeMatrix = (p: any): NormalizedPage['matrix'] => {
 const normalizeWorkflow = (p: any): NormalizedPage['workflow'] | undefined => {
   if (p.workflowUpgrade) return p.workflowUpgrade; // Legacy
   
-  // UNBLOCK TELEMETRY: If new onboarding or uiBlocks exist, feed the UI a dummy object so it renders the Telemetry Pipeline
-  if (p.onboardingExperience || p.steps || p.uiBlocks) {
+  // UNBLOCK TELEMETRY: If new onboarding exists, feed the UI a dummy object so it renders the Telemetry Pipeline
+  if (p.onboardingExperience || p.steps) {
     return { legacyBottleneck: [], arcliAutomation: [] };
   }
   return undefined;
@@ -214,6 +223,12 @@ const normalizeMetrics = (p: any): NormalizedPage['businessValueMetrics'] => {
   })).filter(m => m.value !== 'N/A');
 };
 
+// ADDED: Extracts UIBlocks directly without losing intent or mapping data
+const normalizeUIBlocks = (p: any): NormalizedPage['uiBlocks'] => {
+  const rawBlocks = p.uiBlocks || (Array.isArray(p.blocks) ? p.blocks.filter((b: any) => b.type === 'UIBlock') : []);
+  return Array.isArray(rawBlocks) ? rawBlocks : [];
+};
+
 const getPageCached = cache((slug: string) => getPage(slug));
 
 // -------------------------------------------------------------------------
@@ -268,7 +283,8 @@ export const getNormalizedPage = cache((slug: string): NormalizedPage | null => 
       relatedSlugs: clusteredSlugs,
       features: normalizeFeatures(rawPage),
       businessValueMetrics: normalizeMetrics(rawPage),
-      trustAndSecurity: normalizeTrust(rawPage)
+      trustAndSecurity: normalizeTrust(rawPage),
+      uiBlocks: normalizeUIBlocks(rawPage) // ADDED: Directly maps the UI chunks to the output
     };
   } catch (err) {
     console.error(`[getNormalizedPage] Failed to normalize slug "${slug}":`, err);
