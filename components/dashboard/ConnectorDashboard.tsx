@@ -1,11 +1,14 @@
 // components/dashboard/ConnectorDashboard.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Activity, AlertCircle, RefreshCw, Sparkles, Database } from "lucide-react";
+import React, { useEffect, useState, useMemo } from "react";
+import { Activity, AlertCircle, RefreshCw, Database } from "lucide-react";
 import { DynamicChartFactory } from "@/components/dashboard/DynamicChartFactory";
+import { ExecutiveKPICard } from "@/components/dashboard/ExecutiveKPICard";
+import { InsightsFeed } from "@/components/dashboard/InsightsFeed";
 import { ExecutionPayload } from "@/lib/chart-engine";
 import { ApiClient } from "@/lib/api-client";
+import { KPIEngine, KPI } from "@/lib/intelligence/kpi-engine";
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -22,14 +25,15 @@ interface ConnectorDashboardProps {
 }
 
 // -----------------------------------------------------------------------------
-// Core Layout Contract (Phase 1 Foundation)
+// Core Smart Hub Orchestrator (Phase 3 Finalization)
 // -----------------------------------------------------------------------------
 export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrationName }) => {
-  // State lifted to the Hub level. In Phase 4, this orchestrates via chart-orchestrator.ts
   const [metrics, setMetrics] = useState<MetricView[]>([]);
   const [chartPayloads, setChartPayloads] = useState<Record<string, ExecutionPayload>>({});
+  const [kpis, setKpis] = useState<Record<string, KPI>>({});
   const [isLoading, setIsLoading] = useState(true);
 
+  // 1. Fetch Semantic Models (Phase 1 Foundation)
   useEffect(() => {
     const fetchMetrics = async () => {
       setIsLoading(true);
@@ -49,11 +53,11 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
     fetchMetrics();
   }, [integrationName]);
 
-  // Phase 4 Orchestration stub: Executes charts based on loaded metrics
+  // 2. Execute & Extract Intelligence (Phase 2 & 3 Integration)
   useEffect(() => {
     if (metrics.length === 0) return;
 
-    const executeMetrics = async () => {
+    const executeAndProcess = async () => {
       await Promise.all(
         metrics.map(async (metric) => {
           try {
@@ -61,21 +65,37 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
               sql: metric.compiled_sql 
             });
             
+            // Register Chart Payload for Analytical Grid
             setChartPayloads((prev) => ({
               ...prev,
-              [metric.id]: {
-                type: "chart",
-                data: result.data,
-                sql_used: metric.compiled_sql,
+              [metric.id]: { 
+                type: "chart", 
+                data: result.data, 
+                sql_used: metric.compiled_sql 
               }
             }));
+
+            // Attempt Deterministic KPI Extraction
+            const kpi = KPIEngine.extract(result.data, {
+              id: metric.id,
+              label: metric.metric_name.replace(/^vw_[^_]+_/i, '').replace(/_/g, ' ').toUpperCase(),
+              timeColumn: "created_at", // Aligned with canonical schema conventions
+              valueColumn: "value",      
+              formatType: metric.metric_name.toLowerCase().includes("revenue") ? "currency" : "number",
+              polarity: metric.metric_name.toLowerCase().includes("churn") ? "positive_down" : "positive_up",
+              source: integrationName
+            });
+
+            if (kpi) {
+              setKpis((prev) => ({ ...prev, [metric.id]: kpi }));
+            }
           } catch (error: any) {
             setChartPayloads((prev) => ({
               ...prev,
-              [metric.id]: {
-                type: "error",
-                message: error.message || `Failed to execute canonical view.`,
-                sql_used: metric.compiled_sql,
+              [metric.id]: { 
+                type: "error", 
+                message: error.message || "Failed to execute canonical view.", 
+                sql_used: metric.compiled_sql 
               }
             }));
           }
@@ -83,8 +103,8 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
       );
     };
 
-    executeMetrics();
-  }, [metrics]);
+    executeAndProcess();
+  }, [metrics, integrationName]);
 
   return (
     <div className="flex flex-col space-y-8 w-full max-w-[1600px] mx-auto pb-24 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -92,12 +112,21 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
       {/* 1. SMART HUB HEADER */}
       <SmartHubHeader integrationName={integrationName} />
 
-      {/* 2. EXECUTIVE KPI STRIP */}
-      <ExecutiveKPIStrip />
+      {/* 2. EXECUTIVE KPI STRIP (Phase 3 Integration) */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {Object.values(kpis).length > 0 ? (
+          Object.values(kpis).slice(0, 4).map((kpi) => (
+            <ExecutiveKPICard key={kpi.id} kpi={kpi} />
+          ))
+        ) : (
+          // Staggered loading skeletons while the engine processes datasets
+          Array(4).fill(0).map((_, i) => <ExecutiveKPICard key={i} kpi={{} as any} isLoading />)
+        )}
+      </section>
 
       {/* 3. MIDDLE TIER: ANALYTICAL GRID & INSIGHTS FEED */}
       <section className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        <div className="xl:col-span-3 space-y-6">
+        <div className="xl:col-span-3">
           <AnalyticalGrid 
             integrationName={integrationName} 
             metrics={metrics} 
@@ -106,21 +135,25 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
           />
         </div>
         
-        <div className="xl:col-span-1 space-y-6">
-          <InsightsFeedMini />
+        <div className="xl:col-span-1">
+          <InsightsFeed />
         </div>
       </section>
 
       {/* 4. OMNISCIENT SCRATCHPAD SLOT */}
       <OmniscientScratchpadSlot 
-        context={{ activeConnector: integrationName, visibleMetrics: metrics.map(m => m.metric_name) }} 
+        context={{ 
+          activeConnector: integrationName, 
+          visibleMetrics: metrics.map(m => m.metric_name),
+          kpiStates: Object.values(kpis).map(k => ({ id: k.id, status: k.status }))
+        }} 
       />
     </div>
   );
 };
 
 // -----------------------------------------------------------------------------
-// Sub-Components (Strict Structural Adherence)
+// Sub-Components (Internal Structural Alignment)
 // -----------------------------------------------------------------------------
 
 const SmartHubHeader = ({ integrationName }: { integrationName: string }) => (
@@ -156,102 +189,50 @@ const SmartHubHeader = ({ integrationName }: { integrationName: string }) => (
   </header>
 );
 
-const ExecutiveKPIStrip = () => (
-  <section className="w-full">
-    <div className="h-32 w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 flex flex-col items-center justify-center relative overflow-hidden group hover:border-blue-300 transition-colors">
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-500/5 to-transparent -translate-x-[100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-in-out" />
-      <Activity className="w-5 h-5 text-slate-400 mb-2" />
-      <span className="text-[10px] font-bold font-mono text-slate-500 uppercase tracking-widest">
-        &lt;ExecutiveKPIStrip /&gt; 
-      </span>
-      <span className="text-xs text-slate-400 mt-1">Reserved for Phase 2 KPI Engine</span>
-    </div>
-  </section>
-);
-
-const InsightsFeedMini = () => (
-  <>
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
-        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-          <Sparkles className="w-4 h-4" />
-        </div>
-        Priority Insights
-      </h2>
-    </div>
-    <div className="h-[500px] w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 flex flex-col items-center justify-center relative overflow-hidden group hover:border-blue-300 transition-colors">
-      <span className="text-[10px] font-bold font-mono text-slate-500 uppercase tracking-widest text-center px-4 leading-relaxed">
-        &lt;InsightsFeedMini /&gt; <br/> 
-      </span>
-      <span className="text-xs text-slate-400 mt-1">Reserved for Phase 3 Insight Engine</span>
-    </div>
-  </>
-);
-
 const AnalyticalGrid = ({ integrationName, metrics, chartPayloads, isLoading }: any) => {
   const titleRegex = new RegExp(`vw_${integrationName.toLowerCase()}_`, 'i');
 
   return (
-    <>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-extrabold tracking-tight text-slate-900">Analytical Grid</h2>
-      </div>
-
+    <div className="space-y-6">
+      <h2 className="text-lg font-extrabold tracking-tight text-slate-900">Analytical Grid</h2>
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center h-64 text-slate-500 bg-white rounded-3xl border border-slate-200 shadow-sm">
+        <div className="flex flex-col items-center justify-center h-64 bg-white rounded-3xl border border-slate-200 shadow-sm">
           <RefreshCw className="w-5 h-5 animate-spin mb-4 text-blue-500" />
-          <p className="text-sm font-bold">Compiling canonical data models...</p>
+          <p className="text-sm font-bold text-slate-500">Compiling canonical data models...</p>
         </div>
       ) : metrics.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 text-slate-500 bg-slate-50/50 rounded-3xl border border-dashed border-slate-300">
           <AlertCircle className="w-6 h-6 mb-3 opacity-30" />
-          <p className="text-sm font-medium">No semantic models mapped for <span className="capitalize text-slate-900">{integrationName}</span> yet.</p>
+          <p className="text-sm font-medium">No semantic models mapped for <span className="capitalize text-slate-900">{integrationName}</span>.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {metrics.map((metric: any) => {
             const payload = chartPayloads[metric.id];
-            const cleanTitle = metric.metric_name
-              .replace(titleRegex, '')
-              .replace(/_/g, ' ')
-              .toUpperCase();
+            const cleanTitle = metric.metric_name.replace(titleRegex, '').replace(/_/g, ' ').toUpperCase();
 
             return (
-              <div key={metric.id} className="flex flex-col group bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:border-blue-200 hover:shadow-md transition-all">
+              <div key={metric.id} className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:border-blue-200 transition-all flex flex-col group">
                 <div className="mb-4">
-                  <h3 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">
-                    {cleanTitle}
-                  </h3>
-                  <p className="text-sm text-slate-900 font-medium mt-1.5 line-clamp-1">
-                    {metric.description}
-                  </p>
+                  <h3 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{cleanTitle}</h3>
+                  <p className="text-sm text-slate-900 font-medium mt-1.5 line-clamp-1">{metric.description}</p>
                 </div>
-
-                {payload ? (
-                  <div className="mt-2 flex-1">
-                    <DynamicChartFactory payload={payload} />
-                  </div>
-                ) : (
-                  <div className="h-[250px] w-full bg-slate-50/50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="h-2 w-2 bg-blue-500/50 rounded-full animate-ping" />
-                      <span className="text-[10px] text-slate-400 font-mono font-bold uppercase tracking-widest">Scheduling Query...</span>
-                    </div>
-                  </div>
-                )}
+                <div className="flex-1 mt-2">
+                  {payload ? <DynamicChartFactory payload={payload} /> : <div className="h-[250px] animate-pulse bg-slate-50 rounded-xl" />}
+                </div>
               </div>
             );
           })}
         </div>
       )}
-    </>
+    </div>
   );
 };
 
 const OmniscientScratchpadSlot = ({ context }: any) => (
-  <div className="fixed bottom-6 right-6 w-14 h-14 rounded-full border border-dashed border-slate-400 bg-white shadow-xl flex items-center justify-center group hover:w-56 hover:rounded-2xl transition-all duration-300 overflow-hidden cursor-pointer z-50">
-    <Sparkles className="w-5 h-5 text-blue-500 group-hover:mr-3 flex-shrink-0" />
-    <span className="text-[10px] font-bold font-mono text-slate-600 uppercase tracking-widest whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+  <div className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-slate-900 shadow-xl flex items-center justify-center group hover:w-56 hover:rounded-2xl transition-all duration-300 cursor-pointer z-50">
+    <Activity className="w-5 h-5 text-blue-400 group-hover:mr-3" />
+    <span className="text-[10px] font-bold font-mono text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
       Omniscient Scratchpad
     </span>
   </div>

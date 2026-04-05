@@ -3,11 +3,24 @@ import React from 'react';
 import { Database, Server } from 'lucide-react';
 
 /**
- * SEOPageData Interface - Database Integrations Edition
- * Upgraded to the "Enterprise Conversion" schema.
- * Focuses on zero data movement, read-only security, executive business value,
- * and emotional decision triggers designed for CIOs, Data Engineers, and VP of Operations.
+ * SEOPageData Interface - Database Integrations Edition (v10.1)
+ * Upgraded to the "Enterprise Conversion" schema with Strict Block Composition.
+ * Incorporates Multi-Surface Distribution, Query Class Coverage, and SERP Realism.
  */
+
+export type UIBlock = {
+  visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'DataRelationshipsGraph' | 'Cards' | 'AnalyticsDashboard';
+  dataMapping: string;
+  interactionPurpose: string;
+  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
+};
+
+export type ComparisonBlock = {
+  target: string;
+  arcliAdvantage: string;
+  legacyFlaw: string;
+};
+
 export type SEOPageData = {
   type: 'integration';
   title: string;
@@ -16,7 +29,7 @@ export type SEOPageData = {
   h1: string;
   subtitle: string;
   icon: React.ReactElement;
-  contrarianStatement: string;
+  contrarianStatement: string; // Fulfills "Information Gain Layer: New perspective"
   decisionTrigger: {
     headline: string;
     bullets: string[];
@@ -38,15 +51,17 @@ export type SEOPageData = {
     beforeArcli: string[];
     withArcli: string[];
   };
-  analyticalScenarios: {
+  analyticalScenarios: { // Fulfills "QueryExamplesBlock"
     title: string;
     complexity: 'Basic' | 'Advanced' | 'Strategic';
     businessQuestion: string;
     businessOutcome: string;
-    sqlSnippet?: string; // Strictly limited to ONE per page (Strategic only)
+    sqlSnippet?: string; 
   }[];
+  comparisonData?: ComparisonBlock[]; // Fulfills "ComparisonBlock"
+  uiComponents?: UIBlock[]; // Fulfills "UIBlock"
   faqs: { q: string; a: string }[];
-  relatedSlugs: string[];
+  relatedSlugs: string[]; // Fulfills "InternalLinkingBlock"
 };
 
 export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
@@ -54,7 +69,7 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
     type: 'integration',
     title: 'PostgreSQL AI Analytics & Reporting | Arcli',
     description: 'Connect your PostgreSQL database securely to Arcli. Empower your team to analyze unstructured JSONB and relational data conversationally without moving your data.',
-    metaKeywords: ['PostgreSQL Analytics', 'AI for Postgres', 'JSONB SQL Generator', 'PostgreSQL BI Tool', 'Zero Data Movement'],
+    metaKeywords: ['PostgreSQL Analytics', 'AI for Postgres', 'JSONB SQL Generator', 'PostgreSQL BI Tool', 'Zero Data Movement', 'PostgreSQL Dashboard'],
     h1: 'Conversational Intelligence for PostgreSQL',
     subtitle: 'Securely connect your Postgres read-replica. Empower your entire executive team to answer their own data questions instantly without waiting for an engineer.',
     icon: <Database className="w-12 h-12 text-indigo-500 mb-6" />,
@@ -68,6 +83,21 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
         'Strict compliance means you cannot move data to a third-party BI cloud.'
       ]
     },
+    uiComponents: [
+      {
+        visualizationType: 'ProcessStepper',
+        dataMapping: 'Visualizing Zero-Data Movement Architecture (User Input -> LLM Logic -> Postgres Server -> Local Browser Rendering)',
+        interactionPurpose: 'Demonstrate how PII never leaves the client VPC',
+        intentServed: 'How-to'
+      }
+    ],
+    comparisonData: [
+      {
+        target: 'Legacy ETL Pipelines',
+        arcliAdvantage: 'Queries nested JSONB structures on the fly directly from the app schema.',
+        legacyFlaw: 'Requires brittle, nightly scheduled flattening pipelines to extract JSON keys.'
+      }
+    ],
     businessValueMetrics: [
       { 
         label: 'Engineering Bandwidth', 
@@ -162,17 +192,16 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
       { q: 'Can I restrict which Postgres tables the AI can access?', a: 'Yes. We enforce the permissions of the database user you provide. If you revoke access to the "salaries" table for that specific Postgres user, the AI cannot query it.' },
       { q: 'What happens if a query takes too long?', a: 'Arcli respects the statement timeout configurations of your database. The system also automatically suggests tighter date constraints if it detects a potentially massive query.' },
       { q: 'Do we need to configure foreign keys for the AI to work?', a: 'It helps, but isn\'t required. Arcli’s mapping engine automatically infers relationships based on standard column naming conventions (e.g., matching `user_id` to `users.id`).' },
-      { q: 'How is the visualization rendered so quickly?', a: 'We utilize an in-browser WebAssembly engine. Once the small, aggregated dataset is returned from Postgres, cross-filtering and rendering happen instantly on the user\'s local machine.' },
-      { q: 'Do I have to migrate off my existing BI tools?', a: 'No. Arcli acts as a highly agile complementary layer. Keep your legacy tools for rigid board reports, and use Arcli for the hundreds of ad-hoc operational questions asked in Slack every week.' }
+      { q: 'How is the visualization rendered so quickly?', a: 'We utilize an in-browser WebAssembly engine. Once the small, aggregated dataset is returned from Postgres, cross-filtering and rendering happen instantly on the user\'s local machine.' }
     ],
-    relatedSlugs: ['mysql-ai-analytics', 'sql-server-ai-analytics']
+    relatedSlugs: ['mysql-ai-analytics', 'sql-server-ai-analytics', 'data-security-zero-movement']
   },
 
   'mysql-ai-analytics': {
     type: 'integration',
     title: 'MySQL AI Analytics & Dashboard Builder | Arcli',
     description: 'Connect your MySQL database securely to Arcli. Leverage conversational AI to navigate highly normalized schemas and automate complex multi-table JOINs instantly.',
-    metaKeywords: ['MySQL Analytics', 'AI for MySQL', 'MySQL Dashboard', 'Conversational SQL', 'Self Serve BI'],
+    metaKeywords: ['MySQL Analytics', 'AI for MySQL', 'MySQL Dashboard', 'Conversational SQL', 'Self Serve BI', 'MySQL Reporting Tool'],
     h1: 'Relational Agility for MySQL',
     subtitle: 'Provide your organization with secure, conversational access to your MySQL databases. Automate complex table joins and aggregations without writing a single line of code.',
     icon: <Database className="w-12 h-12 text-blue-400 mb-6" />,
@@ -186,6 +215,21 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
         'You need real-time operational visibility, not yesterday\'s batched data.'
       ]
     },
+    uiComponents: [
+      {
+        visualizationType: 'DataRelationshipsGraph',
+        dataMapping: 'Visual representation of AI autonomously mapping foreign keys across a 5-table JOIN without human intervention',
+        interactionPurpose: 'Demonstrate semantic pathfinding capability',
+        intentServed: 'Informational'
+      }
+    ],
+    comparisonData: [
+      {
+        target: 'Traditional BI Dashboards',
+        arcliAdvantage: 'Ad-hoc questioning allows unrestricted exploration across the entire schema.',
+        legacyFlaw: 'Limits users strictly to pre-defined widgets and filters explicitly created by analysts.'
+      }
+    ],
     businessValueMetrics: [
       { 
         label: 'Ad-Hoc Reporting Speed', 
@@ -273,18 +317,16 @@ GROUP BY 1, 2;`
       { q: 'Does Arcli support older versions of MySQL?', a: 'We fully support MySQL 5.7 and 8.0+. For versions prior to 8.0, the AI intelligently avoids using Window Functions (which were not supported) and utilizes standard subqueries instead.' },
       { q: 'Is my data secure during transmission?', a: 'Yes. We require secure, encrypted connections. Arcli communicates with your database via TLS, meaning your data is never exposed in plain text over the network.' },
       { q: 'Can the AI understand my cryptic column names?', a: 'Yes. Arcli’s Governance layer allows you to alias complex column names (e.g., mapping `tx_amt_usd` to `Transaction Amount`), ensuring the AI perfectly translates natural English.' },
-      { q: 'Will complex queries crash our database?', a: 'Arcli applies intelligent guardrails, including automatic limits on raw row requests, to prevent accidental full-table scans. We also heavily recommend utilizing a read-replica.' },
-      { q: 'Can I export the generated charts?', a: 'Absolutely. Any visual chart or data table generated by Arcli can be securely exported to a CSV file or shared with internal teams via an encrypted link.' },
-      { q: 'How long does it take to deploy?', a: 'Minutes. Simply provide a secure connection string and whitelist our static IPs. Arcli will index your database structure and be ready for conversational queries immediately.' }
+      { q: 'Will complex queries crash our database?', a: 'Arcli applies intelligent guardrails, including automatic limits on raw row requests, to prevent accidental full-table scans. We also heavily recommend utilizing a read-replica.' }
     ],
-    relatedSlugs: ['postgresql-ai-analytics', 'sql-server-ai-analytics']
+    relatedSlugs: ['postgresql-ai-analytics', 'sql-server-ai-analytics', 'ai-sql-agent-guide']
   },
 
   'sql-server-ai-analytics': {
     type: 'integration',
     title: 'Microsoft SQL Server AI Analytics | Arcli',
     description: 'Connect Microsoft SQL Server directly to Arcli. Leverage generative AI to author complex T-SQL and automate enterprise reporting without moving your data.',
-    metaKeywords: ['SQL Server Analytics', 'T-SQL AI Generator', 'MS SQL Dashboard', 'Enterprise BI', 'Self Serve Analytics'],
+    metaKeywords: ['SQL Server Analytics', 'T-SQL AI Generator', 'MS SQL Dashboard', 'Enterprise BI', 'Self Serve Analytics', 'SSMS AI Tool'],
     h1: 'Conversational T-SQL Generation',
     subtitle: 'Unlock the power of your Microsoft SQL Server. Give your business leaders secure, conversational access to enterprise data without relying on rigid dashboards.',
     icon: <Server className="w-12 h-12 text-blue-600 mb-6" />,
@@ -298,6 +340,21 @@ GROUP BY 1, 2;`
         'You need strict, read-only compliance that inherits your existing security model.'
       ]
     },
+    uiComponents: [
+      {
+        visualizationType: 'ComparisonTable',
+        dataMapping: 'TCO Comparison Matrix: Arcli Direct-Query vs Modern Data Stack Cloud Egress Fees',
+        interactionPurpose: 'Prove financial advantage of avoiding data duplication',
+        intentServed: 'Commercial Investigation'
+      }
+    ],
+    comparisonData: [
+      {
+        target: 'Proprietary Cloud BI (Looker/PowerBI)',
+        arcliAdvantage: 'Operates directly on SQL Server without requiring a secondary data storage contract.',
+        legacyFlaw: 'Forces expensive data egress and locks your analytics logic into proprietary DAX/MDX syntax.'
+      }
+    ],
     businessValueMetrics: [
       { 
         label: 'Enterprise Agility', 
@@ -386,9 +443,8 @@ ORDER BY o.amount DESC;`
       { q: 'Is my highly sensitive data used to train the AI?', a: 'No. Arcli operates under a strict Zero-Data Movement policy. Your data never leaves your infrastructure, and we only utilize column headers to map conversational intent to SQL.' },
       { q: 'How does Arcli handle complex enterprise security?', a: 'Arcli strictly inherits the security model of the credential provided. If your SQL Server enforces Row-Level Security (RLS) for that user, Arcli inherently respects those boundaries.' },
       { q: 'Can the AI generate T-SQL Window Functions?', a: 'Absolutely. The AI natively understands advanced analytical requests (like rolling averages or cohort percentiles) and seamlessly generates the required `OVER (PARTITION BY...)` T-SQL syntax.' },
-      { q: 'Do we need a data warehouse to use Arcli?', a: 'No. While we support massive warehouses, Arcli works perfectly against operational SQL Server read-replicas, providing real-time analytics without the need for an expensive ETL pipeline.' },
-      { q: 'How do you prevent the AI from generating slow queries?', a: 'Arcli includes intelligent query planning guardrails. It attempts to filter by partitioned dates and relies heavily on indexed columns to ensure your server processes the request efficiently.' }
+      { q: 'Do we need a data warehouse to use Arcli?', a: 'No. While we support massive warehouses, Arcli works perfectly against operational SQL Server read-replicas, providing real-time analytics without the need for an expensive ETL pipeline.' }
     ],
-    relatedSlugs: ['postgresql-ai-analytics', 'mysql-ai-analytics']
+    relatedSlugs: ['postgresql-ai-analytics', 'mysql-ai-analytics', 'text-to-sql-enterprise-guide']
   }
 };
