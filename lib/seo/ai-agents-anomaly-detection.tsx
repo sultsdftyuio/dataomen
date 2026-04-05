@@ -1,19 +1,44 @@
 // lib/seo/ai-agents-anomaly-detection.tsx
 
+/**
+ * SEO v10 SYSTEM: AI Agents for Anomaly Detection & Metric Governance
+ * * SERP Realism Layer: 
+ * - Target: We are NOT competing for Position 1 on generic "AI Agents" (unrealistic vs OpenAI/Anthropic).
+ * - Target: Position 1 for "AI data agents anomaly detection", "semantic layer metric governance AI", and "automated revenue leak detection SQL".
+ * * Query Prioritization:
+ * - Tier 1 (High Intent): "AI data agents anomaly detection", "automated revenue leak detection"
+ * - Tier 2 (Supporting): "semantic layer AI integration", "text-to-sql metric governance"
+ * - Tier 3 (Long-Tail): "calculating z-score in snowflake for anomalies", "preventing LLM hallucination in data analysis"
+ */
+
 export const aiAgentsAnomalyDetectionData = {
   path: "/use-cases/ai-agents-anomaly-detection",
   meta: {
-    title: "AI Agents for Automated Anomaly Detection & Metric Governance | Arcli",
-    description: "Deploy omniscient AI data agents to monitor your semantic layer, detect revenue leaks in real-time, and govern enterprise metrics automatically without manual SQL.",
-    keywords: ["AI data agents", "automated anomaly detection", "metric governance", "semantic layer AI", "revenue leak detection", "text-to-sql agents"]
+    title: "AI Data Agents for Automated Anomaly Detection | Arcli",
+    description: "Deploy omniscient AI data agents to monitor your semantic layer, detect revenue leaks in real-time, and govern enterprise metrics autonomously without manual SQL.",
+    keywords: [
+      "AI data agents anomaly detection", 
+      "semantic layer metric governance", 
+      "automated revenue leak detection", 
+      "text-to-sql agents", 
+      "Z-score anomaly SQL"
+    ],
+    serpRealism: {
+      primaryTarget: "AI data anomaly detection software",
+      difficulty: "Medium-High",
+      intent: "Commercial Investigation & Deep Technical Information"
+    }
   },
   blocks: [
+    // ------------------------------------------------------------------------
+    // 1. HERO BLOCK (Conversion Engine & Tier 1 Query Targeting)
+    // ------------------------------------------------------------------------
     {
       type: "Hero",
       payload: {
         badge: "AI & Metric Governance",
         title: "Omniscient AI Agents for Real-Time Anomaly Detection",
-        subtitle: "Stop waiting for dashboards to break. Deploy persistent AI agents that autonomously monitor your semantic layer, detect hidden revenue leaks, and provide root-cause analysis in plain English.",
+        subtitle: "Stop waiting for dashboards to break. Deploy persistent AI agents that autonomously monitor your semantic layer, detect hidden revenue leaks, and provide root-cause analysis in plain English before they impact your P&L.",
         primaryCta: {
           label: "Deploy Your First Agent",
           href: "/register"
@@ -24,93 +49,72 @@ export const aiAgentsAnomalyDetectionData = {
         },
         trustSignals: [
           "Connects to Snowflake, BigQuery, Postgres & DuckDB",
-          "Zero-copy analytics",
+          "Zero-copy analytics & strict data privacy",
           "Read-only execution guarantees"
         ]
       }
     },
+
+    // ------------------------------------------------------------------------
+    // 2. KEYWORD ANCHOR BLOCK (Anti-Overfitting & Semantic Density)
+    // ------------------------------------------------------------------------
     {
-      type: "ExecutiveSummary",
+      type: "KeywordAnchorBlock",
       payload: {
-        heading: "Why AI-Driven Metric Governance Matters",
-        businessOutcome: "Traditional BI requires humans to actively look for problems. Arcli flips the paradigm: our AI agents continuously monitor your data warehouse, identifying statistically significant deviations before they impact your P&L.",
-        pillars: [
+        heading: "Moving Beyond Reactive Dashboards",
+        text: "Traditional Business Intelligence requires humans to actively hunt for problems. Arcli flips the paradigm: our **AI data agents** continuously monitor your data warehouse, utilizing your defined **semantic layer** to identify statistically significant metric deviations. By automating **anomaly detection** via generated SQL, these agents catch silent failures—like regional payment drops or broken checkout flows—instantly, eliminating manual data engineering overhead.",
+        semanticEntities: ["AI data agents", "semantic layer", "anomaly detection", "Business Intelligence", "data engineering"]
+      }
+    },
+
+    // ------------------------------------------------------------------------
+    // 3. UI BLOCK (UI Visualization Layer - UI as Conversion Driver)
+    // ------------------------------------------------------------------------
+    {
+      type: "UIBlock",
+      payload: {
+        visualizationType: "AnalyticsDashboard",
+        dataMapping: "Time-series graph showing 'EU Stripe Conversions' hitting a 3-sigma drop, overlaid with an AI Chat Interface displaying root-cause: 'Drop correlated with 94% failure rate on 3D Secure Verification in Germany.'",
+        interactionPurpose: "Demonstrate the shift from seeing a line go down (symptom) to instantly receiving the localized reason (root-cause) without writing SQL.",
+        intentServed: "Commercial Investigation & Actionable Insight",
+        contextText: "When an anomaly triggers, the agent doesn't just send a generic alert. It autonomously executes dozens of downstream diagnostic queries against adjacent dimensional tables to isolate the exact cohort driving the failure."
+      }
+    },
+
+    // ------------------------------------------------------------------------
+    // 4. QUERY EXAMPLES BLOCK (Information Gain & Tier 3 Long-Tail)
+    // ------------------------------------------------------------------------
+    {
+      type: "QueryExamplesBlock",
+      payload: {
+        title: "Conversational Metric Governance",
+        description: "Instead of filing a Jira ticket for the data team, stakeholders interact directly with the agent. Because the agent understands the Semantic Layer, 'Active Users' means the exact same thing to the AI as it does to the CFO.",
+        examples: [
           {
-            title: "Risk Reduction",
-            description: "Catch silent failures—like regional Stripe payment drops or broken checkout flows—within minutes, not at the end of the month."
+            query: "Alert me if Blended CAC rises more than 15% week-over-week.",
+            intent: "Automated threshold monitoring on compound semantic metrics."
           },
           {
-            title: "Speed to Resolution",
-            description: "Agents don't just alert you that a metric dropped; they automatically generate and run the diagnostic SQL to tell you exactly *why*."
+            query: "Why did our iOS subscription revenue drop yesterday?",
+            intent: "Root-cause dimensional slicing and anomaly isolation."
           },
           {
-            title: "Engineering Efficiency",
-            description: "Free your data team from writing ad-hoc diagnostic queries. Stakeholders interact directly with the agent via natural language."
+            query: "Run a fraud scan for high-velocity micro-transactions over the last 6 hours.",
+            intent: "High-frequency pattern recognition and risk mitigation."
           }
         ]
       }
     },
-    {
-      type: "Workflow",
-      payload: {
-        title: "How the Autonomous Agent Pipeline Works",
-        description: "From raw database connection to proactive Slack alerts, powered by our multi-tenant execution engine.",
-        steps: [
-          {
-            step: 1,
-            title: "Semantic Layer Definition",
-            description: "Map your raw tables (e.g., Stripe, Shopify, Snowflake) into governed, standardized metrics (e.g., 'Active Subscriptions', 'Blended CAC')."
-          },
-          {
-            step: 2,
-            title: "Agent Deployment & Memory Allocation",
-            description: "Spin up a dedicated AI agent. Arcli grants it contextual memory of your schema and historical metric baseline data."
-          },
-          {
-            step: 3,
-            title: "Continuous Watchdog Execution",
-            description: "The agent writes and schedules highly optimized, dialect-specific SQL (using DuckDB or your cloud warehouse) to poll for anomalies."
-          },
-          {
-            step: 4,
-            title: "Root-Cause Orchestration",
-            description: "Upon detecting a 2σ (sigma) deviation, the agent autonomously queries adjacent tables to find the correlating dimension (e.g., 'iOS users in Germany')."
-          }
-        ]
-      }
-    },
-    {
-      type: "UseCases",
-      payload: {
-        title: "Data Agent Scenarios",
-        scenarios: [
-          {
-            level: "Basic",
-            title: "Automated MRR Drop Alerts",
-            businessQuestion: "Are our Stripe subscriptions failing at a higher rate than normal today?",
-            description: "The agent continuously monitors the Stripe MRR semantic metric. If failed payments spike above the 30-day moving average, it triggers a webhook alerting the RevOps team in Slack with the exact cohort of affected users."
-          },
-          {
-            level: "Intermediate",
-            title: "Cross-Platform Ad Spend vs. Conversion Decay",
-            businessQuestion: "Did our Meta Ads CPC spike while our Shopify conversion rate dropped?",
-            description: "The agent cross-references ingestion streams from Meta Ads and Shopify. It identifies anomalies in blended ROAS and proactively flags inefficient campaigns, preventing wasted ad spend over weekends."
-          },
-          {
-            level: "Strategic",
-            title: "High-Frequency Fraud & Revenue Leakage Detection",
-            businessQuestion: "Are there systemic anomalies in high-value transaction patterns indicating fraud or technical leakage?",
-            description: "By executing complex window functions over transactional data, the agent detects micro-anomalies (e.g., high-velocity small transactions from specific IP ranges) and isolates the variables without manual data engineering intervention."
-          }
-        ]
-      }
-    },
+
+    // ------------------------------------------------------------------------
+    // 5. STRATEGIC TECHNICAL BLOCK (E-E-A-T & Authority Test)
+    // ------------------------------------------------------------------------
     {
       type: "StrategicQuery",
       payload: {
         title: "Inside the Brain: Snowflake Anomaly Detection Query",
-        description: "How the AI Agent translates a request to 'monitor for unusual transaction drops' into highly optimized, dialect-specific Snowflake SQL utilizing Z-scores.",
-        businessOutcome: "Eliminates the need for a data engineer to write complex statistical SQL. The agent generates, optimizes, and executes this code directly against your warehouse, saving hours of manual diagnostic time and preventing revenue loss.",
+        description: "How the AI Agent translates a request to 'monitor for unusual transaction drops' into highly optimized, dialect-specific Snowflake SQL utilizing rolling Z-scores.",
+        businessOutcome: "By pushing complex statistical compute down to your warehouse, Arcli achieves zero-copy analytics. The AI never ingests your raw PII—it only retrieves the mathematical aggregate of the anomaly.",
         language: "sql",
         code: `
 -- AI Agent Generated: Anomaly Detection via Z-Score calculation
@@ -135,7 +139,7 @@ rolling_stats AS (
         AVG(total_revenue) OVER (
             PARTITION BY region_code 
             ORDER BY txn_hour 
-            ROWS BETWEEN 336 PRECEDING AND 1 PRECEDING -- 14 days of hours
+            ROWS BETWEEN 336 PRECEDING AND 1 PRECEDING
         ) AS rolling_avg,
         STDDEV(total_revenue) OVER (
             PARTITION BY region_code 
@@ -148,59 +152,99 @@ SELECT
     txn_hour,
     region_code,
     total_revenue,
-    rolling_avg,
-    rolling_stddev,
-    -- Calculate Z-Score
     (total_revenue - rolling_avg) / NULLIF(rolling_stddev, 0) AS z_score
 FROM rolling_stats
--- Isolate statistically significant anomalies (negative drops)
 WHERE z_score <= -2.5 
   AND txn_hour >= DATEADD(hour, -1, CURRENT_TIMESTAMP())
-ORDER BY z_score ASC;
-        `
+ORDER BY z_score ASC;`
       }
     },
+
+    // ------------------------------------------------------------------------
+    // 6. COMPARISON BLOCK (Competitive Test Layer)
+    // ------------------------------------------------------------------------
+    {
+      type: "ComparisonBlock",
+      payload: {
+        title: "Anomaly Detection: Build vs. Buy vs. Arcli",
+        description: "How Arcli's semantic agents compare to traditional monitoring approaches.",
+        visualizationType: "ComparisonTable",
+        columns: ["Capability", "Arcli AI Agents", "Traditional BI Alerts", "Custom Python Scripts"],
+        rows: [
+          { feature: "Root-Cause Slicing", arcli: "Automated Decision-Tree Search", competitor: "None (Just sends the alert)", internal: "Requires heavy maintenance" },
+          { feature: "Semantic Awareness", arcli: "Governed by central definitions", competitor: "Siloed per dashboard", internal: "Prone to metric drift" },
+          { feature: "Setup Time", arcli: "Minutes (Natural Language)", competitor: "Hours (Complex UI builders)", internal: "Weeks (Dev sprints)" },
+          { feature: "Data Movement", arcli: "Zero-copy (Compute pushed down)", competitor: "Extracts to BI engine", internal: "Extracts to memory/Airflow" }
+        ]
+      }
+    },
+
+    // ------------------------------------------------------------------------
+    // 7. SECURITY & GOVERNANCE BLOCK (E-E-A-T & System Validation)
+    // ------------------------------------------------------------------------
     {
       type: "SecurityGuardrails",
       payload: {
         title: "Agent Boundaries & Data Security",
-        description: "Giving AI access to your data requires enterprise-grade constraints. Arcli agents operate inside a heavily fortified security perimeter.",
+        description: "Giving AI access to your data requires enterprise-grade constraints. Arcli agents operate inside a heavily fortified, SOC2-compliant security perimeter.",
         features: [
           {
             title: "Strict Row-Level Security (RLS)",
-            description: "Agents inherit the exact permissions of the tenant they operate within. Multi-tenant boundaries are strictly enforced at the query execution engine layer."
+            description: "Agents inherit the exact permissions of the user querying them. Multi-tenant boundaries are strictly enforced at the query execution engine layer."
           },
           {
             title: "Read-Only Execution",
-            description: "All agent-generated SQL is parsed and validated by our DuckDB/Postgres execution engine to ensure absolutely no DML (INSERT, UPDATE, DELETE) or DDL commands can be run."
+            description: "All agent-generated SQL is parsed and validated by our query engine to ensure absolutely no DML (INSERT, UPDATE, DELETE) or DDL commands can be executed against your warehouse."
           },
           {
-            title: "Audit Logging & Query Transparency",
-            description: "Every query generated and executed by an agent is logged with an immutable hash. Administrators can review exactly what the AI asked the database."
+            title: "Semantic Anti-Hallucination",
+            description: "Arcli mitigates LLM hallucinations by forcing the agent to query strictly against your pre-defined Semantic Layer, preventing the invention of fake tables or rogue metrics."
           }
         ]
       }
     },
+
+    // ------------------------------------------------------------------------
+    // 8. INTERNAL LINKING BLOCK (Compounding Authority Layer)
+    // ------------------------------------------------------------------------
+    {
+      type: "InternalLinkingBlock",
+      payload: {
+        title: "Scale Your Data Operations",
+        links: [
+          {
+            label: "Semantic Metric Governance Strategy",
+            href: "/use-cases/semantic-metric-governance",
+            description: "Learn how Arcli ensures your agents, BI tools, and data team are all using the exact same mathematical definitions."
+          },
+          {
+            label: "Integrating Snowflake with AI Agents",
+            href: "/integrations/snowflake",
+            description: "See how Arcli connects to Snowflake to process massive event logs without data movement."
+          }
+        ]
+      }
+    },
+
+    // ------------------------------------------------------------------------
+    // 9. FAQS (Tier 3 Long-Tail & Snippet Optimization)
+    // ------------------------------------------------------------------------
     {
       type: "FAQs",
       payload: {
-        title: "Frequently Asked Questions",
+        title: "Technical Execution FAQs",
         faqs: [
           {
-            question: "Will the AI agent hallucinate queries and return bad data?",
-            answer: "Arcli mitigates LLM hallucinations by forcing the agent to query against your pre-defined Semantic Layer, not raw untyped tables. If the agent generates invalid SQL, our internal Query Planner catches the syntax error before execution, self-corrects, and retries."
+            question: "How does the agent handle massive multi-terabyte datasets?",
+            answer: "The agent does not pull raw data into the LLM context window. It utilizes zero-copy analytics: it writes the SQL, pushes the compute down to your data warehouse (Snowflake, BigQuery), and only ingests the aggregated statistical results back into memory."
           },
           {
-            question: "How does the agent handle massive datasets?",
-            answer: "The agent does not pull raw data into the LLM context window. It uses zero-copy analytics. It writes the SQL, pushes the compute down to your data warehouse (like Snowflake or BigQuery), and only ingests the aggregated results (the answer) back into its memory."
+            question: "Can I limit what datasets the AI agent has access to?",
+            answer: "Yes. You assign specific datasets and semantic metric definitions to an agent's 'Workspace'. It physically cannot query or 'see' tables outside of the precise scope authorized by the admin."
           },
           {
-            question: "Can I limit what the agent has access to?",
-            answer: "Yes. You assign specific datasets and metric definitions to an agent's 'Workspace'. It cannot query or 'see' tables outside of the precise scope you have authorized."
-          },
-          {
-            question: "How long does it take to train an agent?",
-            answer: "Zero training time. Because Arcli relies on semantic mapping and dynamic schema injection, the agent understands your data structure the second you connect your database and define your core metrics."
+            question: "How does the agent detect anomalies on dimensions it wasn't explicitly told to monitor?",
+            answer: "When a top-line metric (e.g., Conversion Rate) drops, the agent dynamically generates a multi-dimensional search query, scanning high-cardinality columns (Device, Geo, Browser) via GROUP BY GROUPING SETS to find the mathematical driver of the variance."
           }
         ]
       }

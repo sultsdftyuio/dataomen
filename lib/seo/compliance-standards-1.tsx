@@ -6,9 +6,36 @@ import { SEOPageData } from './index';
  * SEO Compliance Campaign: Zero-Copy Analytics Architecture
  * Target Audience: Enterprise Architects, Head of IT, Cloud Infrastructure Leads
  * Core Focus: Decentralized BI, Federated Querying, eliminating ETL/Reverse-ETL.
+ * Upgraded to SEO v10 Architecture (Intent, Realism, Info Gain, UI Blocks)
  */
 export const zeroCopyAnalytics: SEOPageData = {
   type: 'campaign',
+  searchIntent: {
+    primary: 'Understand the security and architectural benefits of Zero-Copy AI Analytics',
+    secondary: ['Eliminate ETL for BI', 'Federated query AI architectures', 'Decentralized BI security'],
+    queryPriority: 'Tier 1',
+    queryClass: ['Informational', 'Commercial investigation']
+  },
+  serpRealism: {
+    targetPosition: 'Top 3 for "Zero Copy AI Analytics" & "No ETL BI"',
+    competitionDifficulty: 'Medium',
+    domainAdvantage: 'Leveraging a contrarian architectural stance (decentralized compute) against legacy centralized BI vendors.'
+  },
+  informationGain: 'Quantifying the reduction of attack surfaces by completely eliminating the need to extract, transform, load, or cache data in third-party vendor clouds for analytics.',
+  uiBlocks: [
+    {
+      visualizationType: 'MetricsChart',
+      dataMapping: 'executiveSummary',
+      interactionPurpose: 'High-impact scannable validation of architectural claims.',
+      intentServed: 'Trust building for Cloud Infrastructure Leads.'
+    },
+    {
+      visualizationType: 'ProcessStepper',
+      dataMapping: 'securityGuardrails',
+      interactionPurpose: 'Step-by-step visualization of how a query is compiled without moving data.',
+      intentServed: 'Architectural clarity for Enterprise Architects.'
+    }
+  ],
   seo: {
     title: 'Zero Copy AI Analytics | Decentralized BI Platform | Arcli',
     description: 'The most secure way to analyze data is to never move it. Arcli’s zero copy AI analytics platform generates federated queries directly inside your VPC.',
@@ -43,14 +70,17 @@ export const zeroCopyAnalytics: SEOPageData = {
   securityGuardrails: [
     {
       title: 'Decentralized Compute Execution',
+      depthLevel: 'Surface',
       description: 'Arcli acts solely as a compilation engine. We translate natural language into dialect-perfect SQL. We then dispatch that SQL string to your Snowflake or Postgres cluster. Your infrastructure does the heavy lifting.'
     },
     {
       title: 'Stateless Chart Rendering',
+      depthLevel: 'Intermediate',
       description: 'When your database returns the results of an AI-generated query, Arcli only holds the lightweight JSON aggregate in memory for the milliseconds required to render the UI visualization. Nothing is written to disk.'
     },
     {
       title: 'Identity Provider (IdP) Passthrough',
+      depthLevel: 'Deep',
       description: 'Arcli passes the end-user’s identity directly through to the database connection layer via OAuth or JWT. If a user tries to ask the AI for data they cannot access in the database, the query fails at the warehouse level.'
     }
   ],
@@ -85,17 +115,20 @@ ORDER BY
     {
       q: 'If Arcli is Zero-Copy, how does the AI know what my data means?',
       a: 'We perform a one-time sync of your database schema (metadata). This includes table names, column names, data types, and foreign key relationships. We vectorize this metadata to ground the LLM, but we never ingest the actual rows of data.',
-      persona: 'Data Architect'
+      persona: 'Data Architect',
+      intent: 'Technical Validation'
     },
     {
       q: 'Does Zero-Copy mean queries are slower?',
       a: 'Not necessarily. While we don’t cache data, we leverage the massive parallel processing power of your cloud warehouse (like BigQuery or Snowflake). Because we write highly optimized, dialect-specific SQL, execution times are typically sub-second.',
-      persona: 'Performance Engineer'
+      persona: 'Performance Engineer',
+      intent: 'Objection Handling'
     },
     {
       q: 'Can Arcli connect to on-premises databases without a VPN?',
       a: 'For on-premises databases behind a strict firewall, we provide a lightweight, open-source Arcli Agent. It runs inside your network, establishing a secure outbound-only WebSocket tunnel to receive compiled SQL from the Orchestrator.',
-      persona: 'Network Administrator'
+      persona: 'Network Administrator',
+      intent: 'Infrastructure Capability'
     }
   ]
 };
@@ -104,9 +137,36 @@ ORDER BY
  * SEO Compliance Campaign: AI Query Auditing & Data Governance
  * Target Audience: Compliance Officers, DPO (Data Protection Officers), InfoSec
  * Core Focus: Audit logs, cryptographic provenance, non-repudiation.
+ * Upgraded to SEO v10 Architecture
  */
 export const queryAuditingGovernance: SEOPageData = {
   type: 'campaign',
+  searchIntent: {
+    primary: 'Evaluate compliance, auditing, and governance features for AI analytics platforms',
+    secondary: ['AI query auditing', 'Cryptographic query logging', 'Preventing AI data exfiltration'],
+    queryPriority: 'Tier 1',
+    queryClass: ['Commercial investigation', 'Informational']
+  },
+  serpRealism: {
+    targetPosition: 'Top 3 for "AI Data Governance Analytics"',
+    competitionDifficulty: 'High',
+    domainAdvantage: 'Positioning Arcli as the only platform treating AI-generated SQL as a strictly auditable, cryptographically signed artifact.'
+  },
+  informationGain: 'Bridging the gap between the "black-box" nature of most AI tools and the strict non-repudiation requirements of Enterprise compliance frameworks (SOC2, GDPR, HIPAA).',
+  uiBlocks: [
+    {
+      visualizationType: 'DataRelationshipsGraph',
+      dataMapping: 'features',
+      interactionPurpose: 'Illustrate the flow of an audit log from generation to SIEM webhook ingestion.',
+      intentServed: 'Operational workflow visualization for SecOps.'
+    },
+    {
+      visualizationType: 'ComparisonTable',
+      dataMapping: 'contrarianBanner',
+      interactionPurpose: 'Highlight the difference between obscure Chat-BI logic and transparent, auditable SQL generation.',
+      intentServed: 'Persuasion for Risk and Compliance Officers.'
+    }
+  ],
   seo: {
     title: 'AI Query Auditing & Data Governance Analytics | Arcli',
     description: 'Maintain absolute control over your AI analytics. Arcli provides cryptographic query logging, granular RBAC, and strict data governance for enterprise AI.',
@@ -136,16 +196,19 @@ export const queryAuditingGovernance: SEOPageData = {
     items: [
       {
         title: 'Cryptographic Provenance',
+        depthLevel: 'Intermediate',
         description: 'Every query executed by Arcli is hashed and logged with a tamper-evident timestamp. Auditors can verify that the generated SQL was not altered post-execution.',
         icon: 'Lock'
       },
       {
         title: 'SIEM Webhook Integration',
+        depthLevel: 'Deep',
         description: 'Stream Arcli audit logs directly into Datadog, Splunk, or AWS CloudTrail in real-time. Trigger automated alerts if a user requests data outside their normal behavioral baseline.',
         icon: 'Network'
       },
       {
         title: 'Granular Role-Based Access (RBAC)',
+        depthLevel: 'Surface',
         description: 'Map your Okta or Azure AD groups directly to Arcli. Restrict which LLM models users can access, which databases they can query, and which metrics they are allowed to calculate.',
         icon: 'Users'
       }
@@ -186,17 +249,20 @@ ORDER BY
     {
       q: 'How long does Arcli retain audit logs?',
       a: 'By default, Arcli retains detailed audit logs for 90 days within our managed cloud. However, Enterprise customers can configure automated daily exports to their own S3 buckets for infinite, compliant retention.',
-      persona: 'Data Protection Officer'
+      persona: 'Data Protection Officer',
+      intent: 'Data Retention Requirements'
     },
     {
       q: 'Can Arcli mask PII data before it reaches the UI?',
       a: 'Yes. In addition to relying on your database’s inherent Data Masking policies, Arcli provides an application-level regex masking engine that automatically redacts SSNs, credit cards, or email addresses from the visualized results.',
-      persona: 'CISO'
+      persona: 'CISO',
+      intent: 'Data Security / Redaction'
     },
     {
       q: 'Does Arcli send our database schema to OpenAI?',
       a: 'Arcli supports an agnostic LLM routing layer. For highly sensitive schemas, you can route embedding and generation requests exclusively to private, zero-retention models hosted on Azure OpenAI, AWS Bedrock, or even local Llama 3 instances.',
-      persona: 'VP of Engineering'
+      persona: 'VP of Engineering',
+      intent: 'Vendor Risk Assessment'
     }
   ]
 };
