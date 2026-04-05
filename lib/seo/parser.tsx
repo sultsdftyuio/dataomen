@@ -2,22 +2,8 @@
 import React, { cache } from 'react';
 import { getNormalizedPage as getPage, getAllSlugs } from '@/lib/seo/registry';
 import { 
-  Database,
-  Layers,
-  ShieldCheck,
-  Zap,
-  Terminal,
-  Users,
-  Activity,
-  Cpu,
-  Globe,
-  Lock,
-  Workflow,
-  BarChart3,
-  Cloud,
-  PieChart,
-  LineChart,
-  TrendingUp,
+  Database, Layers, ShieldCheck, Zap, Terminal, Users, Activity, 
+  Cpu, Globe, Lock, Workflow, BarChart3, Cloud, PieChart, LineChart, TrendingUp
 } from 'lucide-react';
 
 export type CTA = { text: string; href: string };
@@ -58,7 +44,7 @@ export function resolveIcon(raw: string | React.ReactNode | undefined): React.Re
   return iconRegistry[DEFAULT_ICON_KEY];
 }
 
-// --- PHASE 2: Deep-Data Semantic Interface ---
+// --- UNIVERSAL DATA INTERFACE ---
 export interface NormalizedPage {
   slug: string;
   type: string;
@@ -73,21 +59,22 @@ export interface NormalizedPage {
   useCases: Array<{ title: string; description: string; businessQuestion?: string; complexity?: string; sqlSnippet?: string }>;
   architecture?: Record<string, string>;
   faqs: Array<{ q: string; a: string }>;
-  relatedSlugs: string[]; // Now dynamically computed via Tag Clustering
+  relatedSlugs: string[]; // Dynamically computed via Tag Clustering
   features: CoreCapability[];
-  // Trust Signals & Business Value
   businessValueMetrics: Array<{ metric: string; value: string; context: string }>;
   trustAndSecurity: Array<{ principle: string; description: string }>;
 }
 
-// --- NORMALIZATION HEURISTICS ---
+// -------------------------------------------------------------------------
+// COMPATIBILITY NORMALIZERS (Bridges Legacy, v9, and v10 SEO Architectures)
+// -------------------------------------------------------------------------
 
 const normalizeSEO = (p: any): NormalizedPage['seo'] => {
   const published = p.datePublished || '2024-01-01T08:00:00Z';
   return {
-    title: p.title || p.metadata?.title || 'Arcli Platform',
-    description: p.description || p.metadata?.description || '',
-    h1: p.type === 'template' ? p.hero?.h1 : (p.h1 || p.heroTitle || p.title || 'Arcli'),
+    title: p.title || p.seo?.title || p.metadata?.title || 'Arcli Platform',
+    description: p.description || p.seo?.description || p.metadata?.description || '',
+    h1: p.type === 'template' ? p.hero?.h1 : (p.h1 || p.seo?.h1 || p.heroTitle || p.title || 'Arcli'),
     datePublished: published,
     dateModified: p.dateModified || published,
   };
@@ -96,16 +83,12 @@ const normalizeSEO = (p: any): NormalizedPage['seo'] => {
 const normalizeHero = (p: any): NormalizedPage['hero'] => {
   const rawIcon = p.type === 'template' ? (p.hero?.icon ?? p.icon) : p.icon;
   return {
-    subtitle: p.type === 'template' ? p.hero?.subtitle : (p.heroDescription || p.description || ''),
+    subtitle: p.type === 'template' ? p.hero?.subtitle : (p.subtitle || p.heroDescription || p.description || ''),
     icon: resolveIcon(rawIcon),
-    cta: p.ctaHierarchy || { primary: { text: 'Start Free Trial', href: '/register' } },
+    cta: p.ctaHierarchy || p.hero?.primaryCTA ? { primary: p.hero?.primaryCTA || { text: 'Start Free Trial', href: '/register' } } : { primary: { text: 'Start Free Trial', href: '/register' } },
   };
 };
 
-/**
- * SQL-Aware Props Injection: Intelligently pulls SQL snippets from 
- * analytical scenarios if a dedicated demo block isn't explicitly defined.
- */
 const normalizeDemo = (p: any): NormalizedPage['demo'] | undefined => {
   const rawDemo = p.demo || p.demoPipeline;
   
@@ -119,9 +102,71 @@ const normalizeDemo = (p: any): NormalizedPage['demo'] | undefined => {
   return {
     userPrompt: rawDemo?.userPrompt || firstSqlScenario?.businessQuestion || 'Show me the revenue analysis.',
     generatedSql: rawDemo?.generatedSql || firstSqlScenario?.sqlSnippet || 'SELECT * FROM metrics;',
-    aiInsight: rawDemo?.aiInsight || firstSqlScenario?.description || 'Data successfully processed.',
+    aiInsight: rawDemo?.aiInsight || firstSqlScenario?.businessOutcome || firstSqlScenario?.description || 'Data successfully processed.',
     chartMetric: rawDemo?.chartMetric || 'Revenue'
   };
+};
+
+const normalizePersonas = (p: any): NormalizedPage['personas'] => {
+  if (Array.isArray(p.targetPersonas)) return p.targetPersonas; // Legacy
+  
+  // SEO v10: Dynamically generate rich Persona cards from the lightweight 'idealFor' array
+  if (Array.isArray(p.idealFor)) {
+    return p.idealFor.map((role: string) => ({
+      role,
+      description: `Tailored orchestration workflows designed specifically for ${role}s to maximize data leverage.`,
+      capabilities: ['Instant natural language querying', 'Automated anomaly detection', 'Live interactive dashboards']
+    }));
+  }
+  return [];
+};
+
+const normalizeMatrix = (p: any): NormalizedPage['matrix'] => {
+  // Legacy comparison
+  if (p.comparison?.competitorFlaws) {
+    return p.comparison.competitorFlaws.map((flaw: string, i: number) => ({
+      category: p.comparison.competitor || 'Legacy',
+      legacy: flaw,
+      arcliAdvantage: p.comparison.arcliWins?.[i] || 'Automated AI processing'
+    }));
+  }
+  // SEO v10 evaluationMatrix & competitiveAdvantage
+  const rawMatrix = p.evaluationMatrix || p.competitiveAdvantage || [];
+  return (Array.isArray(rawMatrix) ? rawMatrix : []).map((m: any) => ({
+    category: m?.category || m?.legacyTool || 'Advantage',
+    legacy: m?.competitorApproach || m?.limitation || 'Manual processes',
+    arcliAdvantage: m?.arcliAdvantage || (typeof m === 'string' ? m : '')
+  }));
+};
+
+const normalizeWorkflow = (p: any): NormalizedPage['workflow'] | undefined => {
+  if (p.workflowUpgrade) return p.workflowUpgrade; // Legacy
+  
+  // UNBLOCK TELEMETRY: If new onboarding or uiBlocks exist, feed the UI a dummy object so it renders the Telemetry Pipeline
+  if (p.onboardingExperience || p.steps || p.uiBlocks) {
+    return { legacyBottleneck: [], arcliAutomation: [] };
+  }
+  return undefined;
+};
+
+const normalizeSteps = (p: any): NormalizedPage['steps'] => {
+  const raw = p.steps || p.onboardingExperience || p.orchestrationWorkflow || [];
+  return (Array.isArray(raw) ? raw : []).map((s: any) => ({
+    title: s?.title || s?.name || s?.phase || 'Phase',
+    description: typeof s === 'string' ? s : (s?.text || s?.action || s?.description || (s?.userAction ? `${s.userAction}` : '')),
+    outcome: s?.outcome
+  }));
+};
+
+const normalizeUseCases = (p: any): NormalizedPage['useCases'] => {
+  const raw = p.useCases || p.analyticalScenarios || [];
+  return (Array.isArray(raw) ? raw : []).map((u: any) => ({
+    title: u?.title || u?.vertical || (u?.complexity ? `${u.complexity} Scenario` : 'Application'),
+    description: typeof u === 'string' ? u : (u?.description || u?.businessOutcome || u?.application || ''),
+    businessQuestion: u?.businessQuestion,
+    complexity: u?.complexity,
+    sqlSnippet: u?.sqlSnippet
+  }));
 };
 
 const normalizeTags = (p: any): string[] => {
@@ -132,11 +177,14 @@ const normalizeTags = (p: any): string[] => {
     const kws = Array.isArray(p.seo.keywords) ? p.seo.keywords : p.seo.keywords.split(',');
     kws.forEach((k: string) => derived.add(k.trim().toLowerCase()));
   }
+  if (p.metaKeywords && Array.isArray(p.metaKeywords)) {
+    p.metaKeywords.forEach((k: string) => derived.add(k.trim().toLowerCase()));
+  }
   return Array.from(derived);
 };
 
 const normalizeFeatures = (p: any): CoreCapability[] => {
-  const raw = p.features || p.capabilities || p.performanceMetrics || p.trustAndSecurity;
+  const raw = p.features?.items || p.features || p.capabilities || p.performanceMetrics;
   if (!raw) return [];
   const safe = Array.isArray(raw) ? raw : [raw];
   const mapped = safe.map((f: any) => {
@@ -146,12 +194,6 @@ const normalizeFeatures = (p: any): CoreCapability[] => {
       description: f?.description || f?.executiveExplanation || f?.howWeDeliver || ''
     };
   });
-  if (p.transformationCapabilities && typeof p.transformationCapabilities === 'object') {
-    mapped.push(...Object.entries(p.transformationCapabilities).map(([k, v]) => ({
-      title: k.replace(/([A-Z])/g, ' $1').trim(),
-      description: String(v)
-    })));
-  }
   return mapped;
 };
 
@@ -159,22 +201,25 @@ const normalizeTrust = (p: any): NormalizedPage['trustAndSecurity'] => {
   const raw = p.trustAndSecurity || p.security || [];
   return (Array.isArray(raw) ? raw : [raw]).map((t: any) => ({
     principle: t?.principle || t?.title || 'Security Standard',
-    description: t?.description || t?.detail || ''
+    description: t?.howWeDeliver || t?.description || t?.detail || ''
   })).filter(t => t.description);
 };
 
 const normalizeMetrics = (p: any): NormalizedPage['businessValueMetrics'] => {
-  const raw = p.businessValueMetrics || p.roiMetrics || [];
+  const raw = p.businessValueMetrics || p.roiMetrics || p.executiveSummary || [];
   return (Array.isArray(raw) ? raw : [raw]).map((m: any) => ({
-    metric: m?.metric || m?.title || 'KPI',
-    value: m?.value || m?.stat || 'N/A',
-    context: m?.context || m?.description || ''
+    metric: m?.metric || m?.label || m?.title || 'KPI',
+    value: m?.value || m?.stat || m?.competitorAverage || 'N/A',
+    context: m?.context || m?.description || m?.financialValue || ''
   })).filter(m => m.value !== 'N/A');
 };
 
 const getPageCached = cache((slug: string) => getPage(slug));
 
-// --- THE DATA ORCHESTRATOR ---
+// -------------------------------------------------------------------------
+// THE DATA ORCHESTRATOR
+// -------------------------------------------------------------------------
+
 export const getNormalizedPage = cache((slug: string): NormalizedPage | null => {
   try {
     const rawPage = getPageCached(slug) as any;
@@ -182,8 +227,7 @@ export const getNormalizedPage = cache((slug: string): NormalizedPage | null => 
 
     const tags = normalizeTags(rawPage);
 
-    // Automated Clustering: Replaces manual `relatedSlugs` arrays
-    // Computes semantic relevance based on Tag Intersections.
+    // Automated Clustering: Computes semantic relevance based on Tag Intersections.
     let clusteredSlugs: string[] = [];
     if (tags.length > 0) {
       const allSlugs = getAllSlugs();
@@ -214,31 +258,11 @@ export const getNormalizedPage = cache((slug: string): NormalizedPage | null => 
       seo: normalizeSEO(rawPage),
       hero: normalizeHero(rawPage),
       demo: normalizeDemo(rawPage),
-      personas: Array.isArray(rawPage.targetPersonas) ? rawPage.targetPersonas : [],
-      matrix: rawPage.comparison ? 
-        (rawPage.comparison.competitorFlaws || []).map((flaw: string, i: number) => ({
-          category: rawPage.comparison.competitor || 'Legacy',
-          legacy: flaw,
-          arcliAdvantage: rawPage.comparison.arcliWins?.[i] || 'Automated AI processing'
-        })) : 
-        (Array.isArray(rawPage.evaluationMatrix || rawPage.competitiveAdvantage) ? (rawPage.evaluationMatrix || rawPage.competitiveAdvantage) : []).map((m: any) => ({
-          category: m?.category || m?.legacyTool || 'Advantage',
-          legacy: m?.competitorApproach || m?.limitation || 'Manual processes',
-          arcliAdvantage: m?.arcliAdvantage || (typeof m === 'string' ? m : '')
-        })),
-      workflow: rawPage.workflowUpgrade,
-      steps: (Array.isArray(rawPage.steps || rawPage.onboardingExperience || rawPage.orchestrationWorkflow) ? (rawPage.steps || rawPage.onboardingExperience || rawPage.orchestrationWorkflow) : []).map((s: any) => ({
-        title: s?.title || s?.name || s?.phase || 'Phase',
-        description: typeof s === 'string' ? s : (s?.text || s?.action || s?.description || (s?.userAction ? `${s.userAction}` : '')),
-        outcome: s?.outcome
-      })),
-      useCases: (Array.isArray(rawPage.useCases || rawPage.analyticalScenarios) ? (rawPage.useCases || rawPage.analyticalScenarios) : []).map((u: any) => ({
-        title: u?.title || u?.vertical || (u?.complexity ? `${u.complexity} Scenario` : 'Application'),
-        description: typeof u === 'string' ? u : (u?.description || u?.businessOutcome || u?.application || ''),
-        businessQuestion: u?.businessQuestion,
-        complexity: u?.complexity,
-        sqlSnippet: u?.sqlSnippet
-      })),
+      personas: normalizePersonas(rawPage),
+      matrix: normalizeMatrix(rawPage),
+      workflow: normalizeWorkflow(rawPage),
+      steps: normalizeSteps(rawPage),
+      useCases: normalizeUseCases(rawPage),
       architecture: rawPage.processingArchitecture || rawPage.technicalArchitecture || rawPage.technicalStack,
       faqs: Array.isArray(rawPage.faqs) ? rawPage.faqs : [],
       relatedSlugs: clusteredSlugs,
