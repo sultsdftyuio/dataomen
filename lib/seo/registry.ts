@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/generate-registry.mjs
 //
 // Silos tracked: 36
-// Generated:     2026-04-05T21:09:33.128Z
+// Generated:     2026-04-06T23:44:16.021Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';
@@ -138,7 +138,8 @@ export function getNormalizedPage(slug: string): any | null {
 
   // V2 (block architecture)
   if (data.blocks && data.meta) {
-    const heroBlock = data.blocks.find((b: any) => b.type === 'Hero');
+    // [FIX] Defensive chaining added: `b?.type` instead of `b.type`
+    const heroBlock = data.blocks.find((b: any) => b?.type === 'Hero');
     return {
       ...data,
       seo: {

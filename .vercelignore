@@ -1,0 +1,19 @@
+# ARCLI.TECH - Vercel Deployment Ignore
+# Purpose: Prevent Vercel from attempting to build the FastAPI backend as Serverless Functions.
+# Strategy: Maintain Edge isolation by ignoring non-frontend assets.
+
+# Backend Source
+api/
+tests/
+scripts/
+
+# Infrastructure & Orchestration
+Dockerfile
+render.yaml
+requirements.txt
+compute_worker.py
+.coverage
+pytest.ini
+
+# Package Manager
+pnpm-lock.yaml
