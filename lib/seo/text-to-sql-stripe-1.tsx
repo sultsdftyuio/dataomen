@@ -5,26 +5,27 @@ import { TemplateBlueprint } from './index';
 /**
  * LIGHT TEMPLATE: Stripe MRR SQL
  * High-intent query focused on real-time Monthly Recurring Revenue extraction.
- * Analytical Pattern: MRR (Normalization & Aggregation)
+ * Analytical Pattern: MRR (Normalization, Quantity Expansion & Aggregation)
  */
 export const stripeMrrSql: TemplateBlueprint = {
   slug: 'stripe-mrr-sql',
   type: 'template',
   seo: {
     title: 'Stripe MRR (Monthly Recurring Revenue) SQL Query | Arcli',
-    description: 'Calculate your true Stripe MRR using this production-ready SQL template. Automatically normalizes annual and monthly subscription tiers.',
+    description: 'Calculate true Stripe MRR using this production-ready SQL template. Automatically normalizes annual/monthly billing intervals and unit quantities.',
     h1: 'Stripe MRR (Monthly Recurring Revenue) SQL Template',
     keywords: [
       'stripe mrr sql', 
       'how to calculate mrr in stripe query', 
       'stripe monthly recurring revenue sql',
-      'stripe subscription sql'
+      'stripe subscription sql',
+      'stripe mrr normalization'
     ],
     intent: 'template',
   },
   hero: {
     h1: 'Stripe MRR (Monthly Recurring Revenue) SQL Template',
-    subtitle: 'A standardized SQL snippet to extract and normalize your active subscription revenue directly from Stripe into a clean MRR baseline.',
+    subtitle: 'A standardized SQL snippet to extract, normalize, and aggregate your active subscription revenue directly from Stripe into a clean MRR baseline.',
   },
   features: {
     sqlQuery: `
@@ -34,53 +35,53 @@ WITH active_subs AS (
     customer_id,
     id AS subscription_id,
     status,
-    -- Stripe stores amounts in cents; convert to standard currency
-    (plan_amount / 100.0) AS base_amount,
+    -- Stripe stores amounts in cents; convert to decimal
+    (plan_amount / 100.0) AS base_unit_amount,
+    -- Must account for per-seat pricing models
+    COALESCE(quantity, 1) AS seat_count,
     plan_interval
   FROM stripe.subscriptions
   WHERE status IN ('active', 'past_due')
-    -- Exclude subscriptions explicitly set to cancel
-    AND cancel_at_period_end = false
+    -- Subscriptions set to cancel are still MRR until the exact period end date
+    AND (cancel_at_period_end = false OR cancel_at > CURRENT_TIMESTAMP)
 )
 SELECT 
   ROUND(SUM(
     CASE 
-      WHEN plan_interval = 'year' THEN base_amount / 12
-      WHEN plan_interval = 'week' THEN base_amount * 4.33
-      ELSE base_amount 
+      WHEN plan_interval = 'year' THEN (base_unit_amount * seat_count) / 12.0
+      WHEN plan_interval = 'week' THEN (base_unit_amount * seat_count) * (52.0 / 12.0)
+      ELSE (base_unit_amount * seat_count)
     END
   )::numeric, 2) AS total_mrr,
   COUNT(DISTINCT customer_id) AS active_customers,
   ROUND((SUM(
     CASE 
-      WHEN plan_interval = 'year' THEN base_amount / 12
-      ELSE base_amount 
+      WHEN plan_interval = 'year' THEN (base_unit_amount * seat_count) / 12.0
+      ELSE (base_unit_amount * seat_count) 
     END
   ) / NULLIF(COUNT(DISTINCT customer_id), 0))::numeric, 2) AS arpu
 FROM active_subs;
     `,
-    explanation: 'This query isolates all active and past-due subscriptions, converts their cent-based integer values into standard decimals, and uses a CASE statement to mathematically normalize annual and weekly billing intervals into a monthly MRR equivalent.',
+    explanation: 'This query isolates all revenue-generating subscriptions (including those in dunning). It converts cent-based integers into standard decimals, multiplies by the `quantity` field to account for per-seat pricing, and uses a deterministic CASE statement to mathematically normalize annual and weekly billing intervals into a precise monthly MRR equivalent.',
   },
   useCases: [
     {
-      title: 'Investor Reporting (CFO)',
-      description: 'Generate an audit-proof MRR metric that standardizes multi-interval billing, providing a single source of truth for financial modeling and board updates.'
+      title: 'Investor Reporting (VP of Finance)',
+      description: 'Generate an audit-proof MRR metric that standardizes multi-interval billing and seat-expansions, providing a single source of truth for financial modeling and board updates.'
     }
   ],
-  // STRICT RULE: 2-3 FAQs, ultra concise, edge case focused
   faqs: [
     {
       q: 'Does this MRR query account for Stripe coupons or discounts?',
-      a: 'No. To calculate net MRR post-discount, you must join the `stripe.discounts` table against the active subscriptions and subtract the percentage or fixed amount prior to the final aggregation.',
-      persona: 'Engineer'
+      a: 'No. To calculate Net MRR post-discount, you must join the `stripe.discounts` and `stripe.coupons` tables against the active subscriptions, applying the `percent_off` or `amount_off` logic prior to the final aggregation step.',
+      persona: 'Lead Analytics Engineer'
     },
     {
       q: 'Why include "past_due" subscriptions in the MRR calculation?',
-      a: 'A past-due invoice is still legally considered active revenue undergoing dunning retries. Excluding it prematurely artificially depresses your MRR before a hard churn event has actually occurred.',
-      persona: 'RevOps'
+      a: 'A past-due invoice is legally considered active revenue undergoing dunning retries (Smart Retries). Excluding it prematurely artificially depresses your MRR before a hard churn event has actually been realized by the system.',
+      persona: 'RevOps Manager'
     }
   ],
-  // STRICT RULE: Link to 1 relevant HEAVY page (Dashboard) + 1 lateral LIGHT page
   relatedSlugs: [
     'stripe-mrr-dashboard',
     'stripe-churn-rate-sql'
@@ -90,79 +91,82 @@ FROM active_subs;
 /**
  * LIGHT TEMPLATE: Stripe Churn Rate SQL
  * High-intent query focused on subscription loss velocity.
- * Analytical Pattern: Churn (Time-series & State Tracking)
+ * Analytical Pattern: Churn (Temporal State Tracking & Cohorts)
  */
 export const stripeChurnRateSql: TemplateBlueprint = {
   slug: 'stripe-churn-rate-sql',
   type: 'template',
   seo: {
-    title: 'Stripe Churn Rate SQL Query Template | Arcli',
-    description: 'Track your SaaS gross churn rate with this standardized Stripe SQL query. Monitor monthly subscription cancellations against active baselines.',
+    title: 'Stripe Gross Churn Rate SQL Query Template | Arcli',
+    description: 'Track SaaS gross churn rate with this standardized Stripe SQL query. Accurately calculate monthly subscription cancellations against active temporal baselines.',
     h1: 'Stripe Gross Churn Rate SQL Query',
     keywords: [
       'stripe churn rate sql', 
       'how to calculate churn stripe query', 
       'saas churn calculation sql',
-      'stripe cancellation tracking'
+      'stripe cancellation tracking database'
     ],
     intent: 'template',
   },
   hero: {
     h1: 'Stripe Gross Churn Rate SQL Template',
-    subtitle: 'Measure your subscription retention health by calculating the exact percentage of customers who canceled their service month-over-month.',
+    subtitle: 'Measure your subscription retention health by calculating the exact percentage of customers who canceled their service relative to the active base at the start of the month.',
   },
   features: {
     sqlQuery: `
--- Dialect: Standard PostgreSQL / BigQuery
-WITH monthly_activity AS (
+-- Dialect: Standard PostgreSQL / Snowflake
+WITH subscription_periods AS (
   SELECT 
-    DATE_TRUNC('month', created) AS month_start,
-    COUNT(id) AS new_subscriptions,
-    -- Count distinct subscriptions where the cancellation occurred in this exact month
-    SUM(CASE WHEN status = 'canceled' AND DATE_TRUNC('month', canceled_at) = DATE_TRUNC('month', created) THEN 1 ELSE 0 END) AS immediate_churn,
-    SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) AS total_historical_churn
+    id AS subscription_id,
+    customer_id,
+    DATE_TRUNC('month', start_date) AS active_month,
+    -- Determine the exact month the subscription was hard-canceled
+    DATE_TRUNC('month', canceled_at) AS churn_month
   FROM stripe.subscriptions
-  GROUP BY 1
+  WHERE status IN ('active', 'canceled', 'past_due')
 ),
-churn_metrics AS (
-  SELECT
-    month_start,
-    new_subscriptions,
-    -- Use a window function to calculate the running total of active subs prior to the current month
-    SUM(new_subscriptions) OVER (ORDER BY month_start ASC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS starting_active_subs,
-    total_historical_churn
-  FROM monthly_activity
+monthly_totals AS (
+  SELECT 
+    DATE_TRUNC('month', calendar.month_date) AS month_start,
+    -- Count subs active at the very start of the month
+    COUNT(DISTINCT CASE WHEN s.active_month <= calendar.month_date AND (s.churn_month > calendar.month_date OR s.churn_month IS NULL) THEN s.subscription_id END) AS starting_active_subs,
+    -- Count subs that specifically churned during this month
+    COUNT(DISTINCT CASE WHEN s.churn_month = calendar.month_date THEN s.subscription_id END) AS churned_this_month
+  FROM (
+    -- Generate a simple trailing 12-month spine
+    SELECT GENERATE_SERIES(DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months'), DATE_TRUNC('month', CURRENT_DATE), '1 month'::interval) AS month_date
+  ) calendar
+  CROSS JOIN subscription_periods s
+  GROUP BY 1
 )
 SELECT 
   month_start,
   starting_active_subs,
-  total_historical_churn AS canceled_this_month,
-  ROUND((total_historical_churn::numeric / NULLIF(starting_active_subs, 0)) * 100, 2) AS gross_churn_percentage
-FROM churn_metrics
+  churned_this_month,
+  ROUND((churned_this_month::numeric / NULLIF(starting_active_subs, 0)) * 100, 2) AS gross_churn_percentage
+FROM monthly_totals
 ORDER BY month_start DESC;
     `,
-    explanation: 'This script groups subscription creation and cancellation timestamps by month. It utilizes window functions to determine the starting active subscription base for any given month, then divides the cancellations by that base to yield the gross churn percentage.',
+    explanation: 'This script utilizes a temporal state-tracking approach. It generates a 12-month calendar spine and cross-joins it against subscription lifecycles to calculate exactly how many subscriptions were active at the dawn of the month, versus how many experienced a hard `canceled_at` timestamp during that same month.',
   },
   useCases: [
     {
-      title: 'SaaS Health Monitoring (RevOps)',
-      description: 'Track gross churn percentage natively in your warehouse. A sudden spike in the current month provides an early warning signal to pause acquisition spend and investigate product issues.'
+      title: 'SaaS Health Monitoring (Product Analytics)',
+      description: 'Track gross churn percentage natively in your data warehouse. A sudden spike in the current month provides an early warning signal to pause acquisition spend and investigate product friction.'
     }
   ],
-  // STRICT RULE: 2-3 FAQs, ultra concise, edge case focused
   faqs: [
     {
       q: 'Does this query distinguish between voluntary and involuntary churn?',
-      a: 'No. The `canceled` status in Stripe catches both explicit user cancellations (voluntary) and dunning failures (involuntary). You must join `stripe.invoices` to isolate dunning-induced churn.',
-      persona: 'Engineer'
+      a: 'No. The `canceled` status in Stripe catches both explicit user cancellations (voluntary) and terminal dunning failures (involuntary). You must join `stripe.invoices` and check the `billing_reason` to isolate dunning-induced churn.',
+      persona: 'Lead Analytics Engineer'
     },
     {
       q: 'What is the difference between `canceled_at` and `cancel_at_period_end`?',
-      a: '`canceled_at` is the exact timestamp the subscription was terminated. `cancel_at_period_end` is a boolean flag indicating the user clicked cancel, but they retain access until their billing cycle finishes. This query only counts hard cancellations.',
-      persona: 'RevOps'
+      a: '`canceled_at` is the exact timestamp the subscription was physically terminated. `cancel_at_period_end` is a boolean flag indicating the user clicked cancel in the UI, but they retain access until their billing cycle finishes. True churn metrics only count the hard `canceled_at` date.',
+      persona: 'FinOps Analyst'
     }
   ],
-  // STRICT RULE: Link to 1 relevant HEAVY page (Dashboard) + 1 lateral LIGHT page
   relatedSlugs: [
     'stripe-churn-dashboard',
     'stripe-ltv-sql'
@@ -172,26 +176,26 @@ ORDER BY month_start DESC;
 /**
  * LIGHT TEMPLATE: Stripe LTV (Lifetime Value) SQL
  * High-intent query utilizing advanced statistical percentiles.
- * Analytical Pattern: Lifetime Value (Net Revenue & Percentile Distribution)
+ * Analytical Pattern: Lifetime Value (Net Cash Realization & Percentile Distribution)
  */
 export const stripeLtvSql: TemplateBlueprint = {
   slug: 'stripe-ltv-sql',
   type: 'template',
   seo: {
     title: 'Stripe Lifetime Value (LTV) SQL Query Template | Arcli',
-    description: 'Calculate true Stripe Customer Lifetime Value using net successful charges. Includes median and average LTV percentile distribution logic.',
+    description: 'Calculate empirical Stripe Customer Lifetime Value using net successful charges. Avoid enterprise skew with native median LTV percentile distribution logic.',
     h1: 'Stripe Customer Lifetime Value (LTV) SQL Query',
     keywords: [
       'stripe ltv sql', 
       'calculate ltv from stripe charges', 
       'saas lifetime value sql',
-      'median ltv sql query'
+      'median ltv sql query postgres'
     ],
     intent: 'template',
   },
   hero: {
     h1: 'Stripe Customer Lifetime Value (LTV) SQL Template',
-    subtitle: 'Bypass theoretical ARR/Churn formulas. Calculate your absolute, realized historical LTV by aggregating successful, unrefunded Stripe charges.',
+    subtitle: 'Bypass theoretical ARR/Churn formulas. Calculate your absolute, empirical historical LTV by aggregating successful, unrefunded Stripe charges.',
   },
   features: {
     sqlQuery: `
@@ -201,43 +205,45 @@ WITH successful_charges AS (
     customer_id,
     MIN(created) AS first_charge_date,
     COUNT(id) AS total_payments,
-    -- Extract net revenue by deducting refunds from the raw capture amount
-    SUM(amount - COALESCE(amount_refunded, 0)) / 100.0 AS net_revenue
+    -- Extract true net cash by deducting refunds and disputed chargebacks
+    SUM(amount - COALESCE(amount_refunded, 0)) / 100.0 AS net_realized_cash
   FROM stripe.charges
   WHERE paid = true 
     AND captured = true
+    -- Exclude charges currently under active dispute
+    AND disputed = false
   GROUP BY 1
 )
 SELECT 
-  ROUND(AVG(net_revenue)::numeric, 2) AS average_ltv,
-  ROUND(MAX(net_revenue)::numeric, 2) AS max_ltv,
-  -- Use percentile functions to find the median, avoiding massive enterprise skew
-  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY net_revenue) AS median_ltv,
+  ROUND(AVG(net_realized_cash)::numeric, 2) AS average_ltv,
+  ROUND(MAX(net_realized_cash)::numeric, 2) AS max_ltv,
+  -- Use percentile window functions to find the true median, avoiding enterprise skew
+  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY net_realized_cash)::numeric, 2) AS median_ltv,
   COUNT(customer_id) AS total_paying_customers
-FROM successful_charges;
+FROM successful_charges
+-- Ensure we only evaluate cohorts that have had time to mature (e.g., > 3 months old)
+WHERE first_charge_date <= CURRENT_DATE - INTERVAL '90 days';
     `,
-    explanation: 'Rather than using predictive formulas (ARPU / Churn), this query calculates empirical LTV. It aggregates all successfully captured charges minus refunds per customer. Because B2B SaaS data is often heavily skewed by a few massive enterprise accounts, it utilizes the `PERCENTILE_CONT(0.5)` function to provide the true Median LTV.',
+    explanation: 'Rather than using predictive formulas (ARPU / Churn), this query calculates empirical Cash LTV. It aggregates all successfully captured charges minus refunds and active disputes per customer. Because B2B SaaS data is often heavily right-skewed by a few massive enterprise accounts, it utilizes the `PERCENTILE_CONT(0.5)` function to provide the true Median LTV.',
   },
   useCases: [
     {
       title: 'Allowable CAC Definition (CFO)',
-      description: 'Relying on "Average LTV" can be dangerous if 10% of users provide 80% of revenue. Using the Median LTV metric generated here ensures your allowable Customer Acquisition Cost (CAC) targets are grounded in reality.'
+      description: 'Relying on "Average LTV" is dangerous if 10% of users provide 80% of revenue. Using the Median LTV metric generated here ensures your allowable Customer Acquisition Cost (CAC) marketing targets are grounded in typical user reality.'
     }
   ],
-  // STRICT RULE: 2-3 FAQs, ultra concise, edge case focused
   faqs: [
     {
-      q: 'Why use `stripe.charges` instead of `stripe.invoices`?',
-      a: '`stripe.charges` acts as the lowest-level source of truth for physical money movement, capturing one-off payments, prorations, and setup fees that might be obfuscated in higher-level subscription invoices.',
-      persona: 'Engineer'
+      q: 'Why use `stripe.charges` instead of `stripe.invoices` for LTV?',
+      a: '`stripe.charges` acts as the lowest-level source of truth for physical money movement, capturing one-off payments, prorations, and setup fees that might be obfuscated or zeroed-out in higher-level subscription invoices.',
+      persona: 'Lead Data Engineer'
     },
     {
-      q: 'Does this handle multi-currency Stripe accounts?',
-      a: 'No. The `SUM(amount)` logic assumes a single base currency. If you accept payments in multiple currencies, you must join exchange rate data and normalize everything to your base currency (e.g., USD) before aggregating.',
-      persona: 'Engineer'
+      q: 'Does this SQL script handle multi-currency Stripe accounts?',
+      a: 'No. The `SUM(amount)` logic inherently assumes a single base currency. If you accept payments in multiple currencies, you must join `stripe.charges` against a daily FX exchange rate table and normalize all amounts to your base currency (e.g., USD) before aggregating.',
+      persona: 'Analytics Engineer'
     }
   ],
-  // STRICT RULE: Link to 1 relevant HEAVY page (Dashboard) + 1 lateral LIGHT page
   relatedSlugs: [
     'stripe-ltv-dashboard',
     'stripe-mrr-sql'

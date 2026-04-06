@@ -11,37 +11,40 @@
  * 7.  SecurityGuardrails normalization.
  * 8.  [V10.1] UIBlock Mapper: maps generic AI visualization intents to native seo-blocks.
  * 9.  [V10.1] Advanced Block Data Routing: fixed getV1BlockProps default case so Phase 4-9
- *     blocks correctly extract their data and respect IS_EMPTY.
+ * blocks correctly extract their data and respect IS_EMPTY.
  * 10. [V10.1] Layout Configurations updated to auto-parse advanced Phase 4-9 blocks.
  * 11. [V10.1.1] UIBlock Mapper Safeguards: strict length checks and string-to-array fallbacks.
  * 12. [V10.1.1] Prevent nested UIBlock payloads during Intelligence Injection.
  * 13. [V10.1.2] StrategicQuery strict TypeScript alignment.
  * 14. [V10.2 FIX] resolveUIBlockPayload: V1 uiBlocks use `dataMapping` as a string key
- *     pointing to a field on the page object. This function resolves the reference before
- *     the block reaches UIBlockMapper, fixing the crash on e.g. `looker-vs-ai-analytics`
- *     where `dataMapping: 'roiAnalysis'` was passed raw to MetricGovernance, causing
- *     "Cannot read properties of undefined (reading 'filename')".
+ * pointing to a field on the page object. This function resolves the reference before
+ * the block reaches UIBlockMapper, fixing the crash on e.g. `looker-vs-ai-analytics`
+ * where `dataMapping: 'roiAnalysis'` was passed raw to MetricGovernance, causing
+ * "Cannot read properties of undefined (reading 'filename')".
  * 15. [V10.2 FIX] UIBlockMapper structural guards: MetricGovernance, TelemetryTrace, and
- *     Architecture now validate incoming data shape before rendering, preventing crashes
- *     when resolved data does not conform to the component's required props interface.
+ * Architecture now validate incoming data shape before rendering, preventing crashes
+ * when resolved data does not conform to the component's required props interface.
  * 16. [V10.2 FIX] uiBlocks injection always produces canonical { type, payload } shape
- *     regardless of whether the source block already has a `type` field.
+ * regardless of whether the source block already has a `type` field.
  * 17. [V10.3 FIX] IS_EMPTY updated to accept both V1 and V2 schema keys so blocks like
- *     ContrarianBanner (heading/argument) and ExecutiveSummary (pillars) are not silently
- *     hidden when rendered from V2 JSON data.
+ * ContrarianBanner (heading/argument) and ExecutiveSummary (pillars) are not silently
+ * hidden when rendered from V2 JSON data.
  * 18. [V10.3 FIX] V2 Payload Normalization Bridge injected in the render loop: maps V2
- *     payload keys to the props expected by each UI component before IS_EMPTY evaluation.
+ * payload keys to the props expected by each UI component before IS_EMPTY evaluation.
  * 19. [V10.4 FIX] Extended BLOCK_REGISTRY with AI-native V2 alias blocks:
- *     ComparisonBlock, UseCaseBlock, KeywordAnchorBlock, QueryExamplesBlock,
- *     InternalLinkingBlock — mapped to existing visual components.
+ * ComparisonBlock, UseCaseBlock, KeywordAnchorBlock, QueryExamplesBlock,
+ * InternalLinkingBlock — mapped to existing visual components.
  * 20. [V10.4 FIX] generateMetadata: added defensive optional chaining on all
- *     array finders to prevent crashes on malformed block objects.
+ * array finders to prevent crashes on malformed block objects.
  * 21. [V10.4 FIX] Render loop: early null guard added (`if (!block || !block.type)`)
- *     to abort gracefully on corrupted or undefined block entries.
+ * to abort gracefully on corrupted or undefined block entries.
  * 22. [V10.4 FIX] V2 Normalization Bridge extended to cover all new alias block types:
- *     KeywordAnchorBlock fallback highlights, UseCaseBlock scenarios coercion,
- *     QueryExamplesBlock examples→features mapping, ComparisonBlock rows→matrix,
- *     InternalLinkingBlock links→slugs extraction.
+ * KeywordAnchorBlock fallback highlights, UseCaseBlock scenarios coercion,
+ * QueryExamplesBlock examples→features mapping, ComparisonBlock rows→matrix,
+ * InternalLinkingBlock links→slugs extraction.
+ * 23. [V10.5 FIX] Hero V2 Payload Normalization: maps flat V2 payload properties 
+ * (title, subtitle, primaryCta) into the nested `{ data: NormalizedPage }` structure
+ * expected by the visual Hero component, resolving deep property crashes.
  */
 
 import { Metadata } from 'next';
@@ -531,15 +534,37 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             : getV1BlockProps(block.type, page);
 
           // ------------------------------------------------------------------
-          // V2 PAYLOAD NORMALIZATION BRIDGE  [V10.3 + V10.4 FIX]
+          // V2 PAYLOAD NORMALIZATION BRIDGE  [V10.3 + V10.4 + V10.5 FIX]
           // Maps V2 JSON field names to the prop names expected by each UI
           // component. Runs only for V2 pages; V1 paths are handled by
           // getV1BlockProps above. This keeps the two schemas fully decoupled
           // while avoiding duplicate component logic.
           // [V10.4] Extended to cover all new AI-native V2 alias block types.
+          // [V10.5] Extended to construct the full `data` object for the Hero block.
           // ------------------------------------------------------------------
           if (isV2) {
             switch (block.type) {
+              case 'Hero':
+                // The visual Hero component expects a `data` prop shaped like NormalizedPage.
+                // Reconstruct this nested structure from the flat V2 block payload.
+                if (!blockProps.data) {
+                  blockProps.data = {
+                    type: blockProps.badge || page.type || 'platform',
+                    seo: { 
+                      h1: blockProps.title || page.seo?.h1 || 'Arcli Analytics' 
+                    },
+                    hero: {
+                      subtitle: blockProps.subtitle || blockProps.description || page.seo?.description || '',
+                      cta: normalizeCta(
+                        blockProps.cta,
+                        blockProps.primaryCta || blockProps.primaryCTA,
+                        blockProps.secondaryCta || blockProps.secondaryCTA
+                      ),
+                    },
+                  };
+                }
+                break;
+
               case 'ContrarianBanner':
                 blockProps.statement = blockProps.statement || blockProps.heading;
                 blockProps.subtext   = blockProps.subtext   || blockProps.argument || blockProps.description;

@@ -4,242 +4,267 @@ import { SEOPageData } from './index';
 
 /**
  * SEO JTBD Campaign: Automating Ad-Hoc Reporting
- * Target Audience: VP of Data, BI Managers, Operations Leaders
- * Core Focus: Killing the Jira data request backlog, self-serve enablement, complex SQL generation.
+ * Target Audience: VP of Data, BI Managers, Head of RevOps
+ * Core Focus: Data request deflection, secure self-serve, and complex SQL automation.
+ * Upgraded to SEO v10.2: Moat-protected technical density & structural UI validation.
  */
 export const adHocAutomation: SEOPageData = {
   type: 'campaign',
   seo: {
-    title: 'Automate Ad Hoc Reporting with AI | Self-Serve BI | Arcli',
-    description: 'Stop building one-off dashboards. Arcli empowers stakeholders to generate secure, dialect-perfect SQL via natural language, eliminating your ad-hoc data queue.',
+    title: 'Automate Ad Hoc Reporting with AI | Self-Serve SQL | Arcli',
+    description: 'Eliminate the Jira data request backlog. Arcli empowers non-technical teams to generate secure, dialect-perfect SQL via conversational intent, bypassing rigid BI bottlenecks.',
     h1: 'Kill the Ad-Hoc Data Backlog.',
-    keywords: ['Automate ad hoc reporting', 'Self serve BI AI', 'Natural language to SQL tool', 'AI ad hoc analysis', 'Stop building dashboards'],
+    keywords: [
+      'Automate ad hoc reporting', 
+      'Self serve BI AI', 
+      'Natural language to SQL tool', 
+      'Data request deflection', 
+      'Stop building one-off dashboards'
+    ],
     intent: 'campaign',
     canonicalDomain: 'https://arcli.tech/solutions/ad-hoc-reporting'
   },
-  hero: {
-    badge: 'WORKFLOW AUTOMATION',
-    title: 'Stop Building One-Off Dashboards.',
-    subtitle: 'Business teams wait weeks for a simple data pull. Data teams are drowning in Slack requests. Arcli breaks the cycle by generating Read-Only SQL directly against your warehouse, enabling true self-serve analytics.',
-    primaryCTA: { text: 'Automate Your Backlog', href: '/register' },
-    secondaryCTA: { text: 'See How It Works', href: '/platform' }
+
+  // V10.2 SEO System Layers
+  searchIntent: {
+    primary: 'Reduce the engineering overhead of manual ad-hoc data pulls and one-off dashboard requests.',
+    secondary: ['Scaling self-serve analytics securely', 'Jira data ticket automation', 'AI-driven analyst deflection'],
+    queryPriority: 'Tier 1',
+    queryClass: ['Commercial investigation', 'How-to']
+  },
+  serpRealism: {
+    targetPosition: 'Top 3 for "Automate Ad Hoc Reporting"',
+    competitionDifficulty: 'Medium',
+    domainAdvantage: 'Focusing on the operational friction of Jira/Slack data queues which legacy BI tools ignore.'
   },
 
-  // Maps to ExecutiveSummary in seo-blocks-3.tsx
+  hero: {
+    badge: 'WORKFLOW ORCHESTRATION',
+    title: 'Stop Building One-Off Dashboards.',
+    subtitle: 'Business teams wait weeks for a simple data pull. Data engineers are drowning in Slack requests. Arcli breaks the cycle by generating Read-Only SQL directly against your warehouse, enabling true self-serve analytics at the speed of thought.',
+    primaryCTA: { text: 'Automate Your Backlog', href: '/register' },
+    secondaryCTA: { text: 'View the Workflow', href: '/platform' }
+  },
+
   executiveSummary: [
-    { value: '40%', label: 'Data Engineering Time Saved' },
-    { value: '0', label: 'New Dashboards Created' },
-    { value: '< 3s', label: 'Average Query Time' },
-    { value: '100%', label: 'VPC Native Execution' }
+    { value: '80%', label: 'Ad-Hoc Ticket Deflection' },
+    { value: 'Zero', label: 'Dashboard Maintenance' },
+    { value: '< 2s', label: 'SQL Compilation Time' },
+    { value: 'SOC2', label: 'Compliant Execution' }
   ],
 
-  // Maps to Workflow in seo-blocks-1.tsx
   workflow: {
-    title: 'The Anatomy of a Data Request',
+    title: 'The Anatomy of a Data Request Automation',
     steps: [
       {
         title: 'The Legacy BI Bottleneck',
-        description: 'RevOps opens a Jira ticket. Two weeks later, a Data Engineer writes the SQL, updates the dbt model, builds a Looker dashboard, and shares a link. The next day, RevOps asks for a new filter. The cycle repeats.',
+        description: 'RevOps opens a Jira ticket. Two weeks later, an analyst writes a SQL view, updates dbt, builds a Looker tile, and shares a link. Tomorrow, the filter changes. The cycle restarts.',
         icon: 'XOctagon'
       },
       {
-        title: 'The Arcli Automation Engine',
-        description: 'RevOps asks a question in plain English. Arcli grounds the intent against your schema, generates dialect-perfect SQL, queries the database directly, and renders a dynamic chart instantly. No Jira required.',
+        title: 'The Arcli Orchestration Layer',
+        description: 'RevOps expresses intent in English. Arcli grounds the request against your schema, compiles optimized SQL, executes on your warehouse, and renders a visual chart instantly. No Jira required.',
         icon: 'Zap'
       }
     ]
   },
 
   contrarianBanner: {
-    statement: "Dashboards are dead documents. Stop treating them like products.",
-    subtext: "If a dashboard doesn't perfectly answer a stakeholder's question, it becomes technical debt. Bypassing rigid dashboards for a dynamic, AI-orchestrated query layer is the only way to scale data access."
+    statement: "Dashboards are static debt. Stop treating them like products.",
+    subtext: "If a dashboard doesn't answer a stakeholder's *next* question, it's failed. Bypassing rigid UI constraints for a dynamic, AI-orchestrated query layer is the only way to scale true organizational data literacy."
   },
 
-  // Continuing the Security Mandate
   securityGuardrails: [
     {
-      title: 'Stakeholder Read-Only Enforcement',
-      description: 'Self-serve does not mean free reign. Arcli operates via strict Read-Only service accounts, inheriting your database’s Row Level Security (RLS) so users only see the data they are authorized to query.'
+      title: 'Read-Only RBAC Enforcement',
+      description: 'Arcli operates via strictly provisioned Read-Only service accounts, natively inheriting your database’s Row Level Security (RLS) so users only see authorized data subsets.'
     },
     {
-      title: 'Zero Data Replication',
-      description: 'Your data stays in Snowflake or Postgres. Arcli only orchestrates the query logic and temporarily renders the aggregate JSON response. We never cache your sensitive ad-hoc query results.'
+      title: 'Zero Row-Level Indexing',
+      description: 'We only index metadata (DDL) for semantic routing. Your proprietary row-level data stays in Snowflake/Postgres and is never ingested or used for model training.'
     }
   ],
 
-  // Maps to StrategicQuery in seo-blocks-3.tsx
   strategicScenario: {
-    title: 'Complex Time-Series Gap Analysis',
-    description: 'Ad-hoc requests often involve complex time-series gaps (e.g., "Show me days where inventory dropped below threshold but sales remained high"). Arcli generates the exact PostgreSQL window functions required to find these anomalies without moving data to Pandas.',
+    title: 'Complex Supply Chain Gap Analysis',
+    description: 'Ad-hoc requests often involve complex temporal gaps. Arcli generates the exact dialect-specific window functions required to surface these anomalies without forcing data into a Python notebook.',
     dialect: 'PostgreSQL',
-    sql: `-- Generated by Arcli AI Orchestrator
-WITH daily_metrics AS (
+    sql: `-- Generated by Arcli Semantic Orchestrator
+WITH daily_inventory AS (
     SELECT 
         DATE_TRUNC('day', recorded_at) AS metric_date,
         product_id,
-        MIN(inventory_level) AS min_inventory,
-        SUM(units_sold) AS total_sold
-    FROM 
-        warehouse.daily_inventory_log
-    WHERE 
-        recorded_at >= CURRENT_DATE - INTERVAL '90 days'
-    GROUP BY 
-        1, 2
+        MIN(inventory_level) AS stock_on_hand,
+        SUM(units_sold) AS sales_volume
+    FROM warehouse.inventory_logs
+    WHERE recorded_at >= CURRENT_DATE - INTERVAL '90 days'
+    GROUP BY 1, 2
 ),
-lagged_metrics AS (
+temporal_variance AS (
     SELECT 
-        metric_date,
-        product_id,
-        min_inventory,
-        total_sold,
-        LAG(total_sold, 1) OVER (PARTITION BY product_id ORDER BY metric_date) AS prev_day_sales
-    FROM 
-        daily_metrics
+        *,
+        LAG(sales_volume, 1) OVER (PARTITION BY product_id ORDER BY metric_date) AS prev_day_sales
+    FROM daily_inventory
 )
 SELECT 
     metric_date,
     p.product_name,
-    min_inventory,
-    total_sold,
-    ROUND(((total_sold - prev_day_sales)::numeric / NULLIF(prev_day_sales, 0)) * 100, 2) AS WoW_sales_growth
-FROM 
-    lagged_metrics lm
-JOIN 
-    warehouse.products p ON lm.product_id = p.id
-WHERE 
-    min_inventory < 50 
-    AND total_sold > prev_day_sales * 1.2
-ORDER BY 
-    metric_date DESC;`,
-    businessOutcome: 'Instantly surfaces "stockout-risk" events where daily sales spiked by over 20% while inventory dipped below 50 units, empowering operations to adjust reorder points without waiting for an analyst.'
+    stock_on_hand,
+    sales_volume,
+    ROUND(((sales_volume - prev_day_sales) / NULLIF(prev_day_sales, 0)) * 100, 2) AS WoW_surge_pct
+FROM temporal_variance tv
+JOIN warehouse.products p ON tv.product_id = p.id
+WHERE stock_on_hand < 50 
+  AND sales_volume > prev_day_sales * 1.25
+ORDER BY sales_volume DESC;`,
+    businessOutcome: 'Instantly surfaces high-velocity stockout risks where sales surged >25% while inventory dipped below 50 units, allowing Ops to reorder before the next day starts.'
   },
 
   faqs: [
     {
-      q: 'Will business users be able to understand the raw database schema?',
-      a: 'They don’t have to. Arcli uses a semantic embedding layer. A user can ask for "revenue" and Arcli maps it to `fct_transactions.amount_usd_settled`. You can also define core business metrics to strictly guide the AI.',
+      q: 'Will my business stakeholders understand the database schema?',
+      a: 'They don’t need to. Arcli uses high-dimensional metadata embedding. A user asks for "customer lifetime" and Arcli maps it to your underlying `fct_billing` table via semantic proximity. You can also define global metric aliases to strictly enforce definitions.',
       persona: 'Data Architect'
     },
     {
-      q: 'What happens if the AI generates a query that scans a massive, unpartitioned table?',
-      a: 'Arcli acts as a defensive proxy. The query planner automatically injects `LIMIT` clauses, enforces partition filters (e.g., `_PARTITIONTIME`), and respects the timeout settings configured by your database administrator.',
+      q: 'What prevents the AI from running a query that crashes our warehouse?',
+      a: 'Arcli acts as a defensive semantic proxy. Our query planner structurally injects `LIMIT` clauses, enforces partition boundaries (e.g., `WHERE created_at >= ...`), and respects timeout hard-limits configured in your database driver.',
       persona: 'Database Administrator'
     },
     {
-      q: 'Can users save and share their ad-hoc findings?',
-      a: 'Yes. Once Arcli generates an insight, the user can pin it to a shared collaborative workspace. The underlying logic is saved, but the data is queried fresh upon every page load to guarantee zero stale data.',
+      q: 'Can these ad-hoc insights be saved for repeat use?',
+      a: 'Yes. Any conversational insight can be pinned to a collaborative board. Unlike static dashboards, Arcli saves the semantic logic, ensuring the data is queried fresh from the warehouse every time it is viewed.',
       persona: 'BI Manager'
     }
-  ]
+  ],
+
+  // V10.1 UI Structure Fix
+  codeSnippet: {
+    filename: 'orchestrator_logs.yml',
+    code: `workflow_id: "adhoc_revenue_surge"\nintent_parsing: 420ms\nsql_compilation: 890ms\nsecurity_check: "passed"\nresult_streaming: "parquet_agg"`
+  }
 };
 
 /**
  * SEO JTBD Campaign: Bypassing the Semantic Layer
- * Target Audience: Data Architects, Analytics Engineers, CTOs
- * Core Focus: Faster time-to-value, schema-grounded LLMs, raw data querying.
+ * Target Audience: Data Architects, CTOs, Analytics Engineers
+ * Core Focus: Faster TTV, escaping LookML/DAX complexity, and direct warehouse agility.
  */
 export const semanticLayerBypass: SEOPageData = {
   type: 'campaign',
   seo: {
-    title: 'Bypass the BI Semantic Layer | Schema-Grounded AI Analytics',
-    description: 'Skip the 6-month semantic layer build. Arcli’s AI orchestrator reads your raw metadata and generates precise SQL directly against your data warehouse.',
+    title: 'Bypass the BI Semantic Layer | Direct Warehouse AI Analytics',
+    description: 'Skip the 6-month semantic layer build. Arcli’s AI orchestrator reads your raw metadata and generates precise SQL directly against your warehouse with zero proprietary modeling.',
     h1: 'The Semantic Layer is a Bottleneck.',
-    keywords: ['Bypass BI semantic layer', 'Direct to warehouse AI analytics', 'Schema grounded AI reporting', 'No semantic layer BI', 'LookML alternative AI'],
+    keywords: [
+      'Bypass BI semantic layer', 
+      'Direct to warehouse AI analytics', 
+      'No semantic layer BI', 
+      'LookML alternative AI',
+      'Direct Snowflake AI querying'
+    ],
     intent: 'campaign',
     canonicalDomain: 'https://arcli.tech/solutions/semantic-layer-alternative'
   },
+
+  searchIntent: {
+    primary: 'Explore data directly in the warehouse without waiting for a semantic modeling layer (LookML/DAX) to be built.',
+    secondary: ['Accelerating TTV for new data lakes', 'Direct-to-warehouse analytics', 'Scaling BI without modeling engineers'],
+    queryPriority: 'Tier 1',
+    queryClass: ['Commercial investigation', 'Comparison']
+  },
+
   hero: {
     badge: 'ARCHITECTURAL INNOVATION',
     title: 'Query Your Warehouse. Skip the Modeling.',
-    subtitle: 'Legacy BI forces you to build massive, brittle semantic models before anyone can ask a simple question. Arcli grounds its AI directly in your database schema, enabling instant natural language querying from Day 1.',
-    primaryCTA: { text: 'Connect Your Database', href: '/register' },
-    secondaryCTA: { text: 'Read the Architecture Docs', href: '/docs/schema-grounding' }
+    subtitle: 'Legacy BI forces you to build massive, brittle semantic models before anyone can ask a single question. Arcli grounds its AI directly in your raw metadata, enabling instant natural language querying from Day 1.',
+    primaryCTA: { text: 'Connect Your Warehouse', href: '/register' },
+    secondaryCTA: { text: 'Read the Architecture', href: '/docs/semantic-routing' }
   },
 
   executiveSummary: [
-    { value: 'Zero', label: 'Proprietary Code to Write' },
+    { value: 'Zero', label: 'Proprietary Code Required' },
     { value: '100%', label: 'Schema Grounded' },
-    { value: 'Native', label: 'dbt Integration' },
-    { value: 'O(1)', label: 'Metric Governance' }
+    { value: 'Native', label: 'dbt Cloud Integration' },
+    { value: 'O(1)', label: 'Modeling Overhead' }
   ],
 
-  // Maps to features in standard blocks to explain the tech
   features: {
-    title: 'How Arcli Replaces the Middleman',
+    title: 'How Arcli Decouples Analysis from Modeling',
     items: [
       {
         title: 'Metadata Vectorization',
-        description: 'We ingest your table schemas, column types, and foreign keys, embedding them into a high-dimensional vector space so the AI mathematically understands your relational model.',
+        description: 'We embed your table definitions, primary keys, and constraint logic into a vector space, allowing the AI to mathematically navigate your relational model without a predefined "Explore."',
         icon: 'Network'
       },
       {
-        title: 'Defensive Query Planning',
-        description: 'Arcli does not just write raw SQL. It builds an Abstract Syntax Tree (AST) to validate join paths, preventing cartesian explosions and hallucinated tables.',
+        title: 'Deterministic Query Planning',
+        description: 'Arcli builds an Abstract Syntax Tree (AST) to validate every join path, preventing cartesian explosions and blocking table hallucinations before they hit your compute budget.',
         icon: 'ShieldCheck'
       },
       {
-        title: 'Code-Free Metric Governance',
-        description: 'Instead of writing LookML, define your core metrics (e.g., "Active User") in plain English or raw SQL snippets via our API. Arcli forcefully injects these definitions at compile time.',
+        title: 'Elastic Metric Governance',
+        description: 'Instead of thousands of lines of LookML, define core KPIs (e.g., "MQL") in plain English. Arcli injects these deterministic definitions into generated SQL at compile time.',
         icon: 'Code2'
       }
     ]
   },
 
   contrarianBanner: {
-    statement: "You shouldn't need a 6-month data modeling project to find out how many active users logged in yesterday.",
-    subtext: "The modern data stack became obsessed with modeling every edge case. Arcli believes in agility: query the raw data safely using AI, and only model the data that proves to be systematically critical."
+    statement: "You don't need a 6-month modeling project to find your active users.",
+    subtext: "The modern data stack became obsessed with modeling every possible edge case. Arcli believes in agility: query raw data safely using AI, and only formally model the metrics that prove to be systematically critical."
   },
 
   securityGuardrails: [
     {
       title: 'Decoupled Compute & Storage',
-      description: 'By bypassing a proprietary semantic layer cloud, your compute stays exactly where it belongs: in your Snowflake or BigQuery VPC. We just send the compiled SQL strings.'
+      description: 'Your compute stays in your Snowflake or BigQuery VPC. Arcli merely sends compiled SQL strings and receives aggregated result sets, maintaining strict data sovereignty.'
     },
     {
-      title: 'No Vendor Lock-In',
-      description: 'Because Arcli writes standard database dialects instead of proprietary modeling languages (like DAX or LookML), you retain complete ownership of your analytical logic.'
+      title: 'No Modeling Lock-In',
+      description: 'Because Arcli writes standard database dialects instead of proprietary languages, you retain complete ownership of your business logic. There is no "Arcli-ML" to learn.'
     }
   ],
 
   strategicScenario: {
-    title: 'Dynamic Snowflake JSON Flattening',
-    description: 'Traditional semantic layers fail at nested, unstructured data. You have to explicitly model every JSON key. Arcli natively generates Snowflake `FLATTEN` logic on the fly based on natural language intent.',
+    title: 'Dynamic Semi-Structured JSON Extraction',
+    description: 'Traditional semantic layers struggle with nested data. You have to explicitly model every JSON key. Arcli natively generates the specific extraction logic on the fly based on user intent.',
     dialect: 'Snowflake SQL',
     sql: `-- Generated by Arcli AI Orchestrator
 SELECT 
     f.value:event_type::STRING AS interaction_type,
-    COUNT(DISTINCT r.user_id) AS unique_users,
-    AVG(f.value:duration_ms::NUMBER) AS avg_interaction_time_ms
-FROM 
-    raw_telemetry.app_events r,
-    LATERAL FLATTEN(input => r.payload:user_interactions) f
-WHERE 
-    r.ingested_at >= DATEADD(day, -7, CURRENT_TIMESTAMP())
-    AND r.app_version = 'v2.1.0'
-GROUP BY 
-    interaction_type
-HAVING 
-    COUNT(DISTINCT r.user_id) > 100
-ORDER BY 
-    unique_users DESC;`,
-    businessOutcome: 'Allows Product Managers to instantly unpack deeply nested telemetry JSON arrays to analyze feature adoption on a new app release, completely bypassing the Data Engineering dbt backlog.'
+    COUNT(DISTINCT r.user_id) AS unique_active_users,
+    ROUND(AVG(f.value:latency_ms::NUMBER), 2) AS avg_latency
+FROM telemetry.raw_events r,
+LATERAL FLATTEN(input => r.payload:user_actions) f
+WHERE r.ingested_at >= DATEADD(day, -7, CURRENT_TIMESTAMP())
+  AND r.app_version = 'v3.2.0'
+GROUP BY 1
+HAVING unique_active_users > 50
+ORDER BY 2 DESC;`,
+    businessOutcome: 'Allows Product Teams to instantly interrogate deeply nested telemetry arrays to verify a new release, bypassing the week-long queue for dbt model updates.'
   },
 
   faqs: [
     {
       q: 'Does Arcli replace dbt?',
-      a: 'No. Arcli and dbt are highly complementary. dbt is excellent for heavy data transformations (bronze to gold). Arcli sits on top of your gold tables, replacing the rigid BI layer so users can query the clean data dynamically.',
+      a: 'No. They are complementary. dbt is for heavy transformations (raw to gold). Arcli sits on top of your gold tables, replacing the rigid BI modeling layer so stakeholders can query clean data without waiting for a developer to "map the field."',
       persona: 'Analytics Engineer'
     },
     {
-      q: 'How does Arcli know how to join tables without a semantic model?',
-      a: 'Arcli maps explicit Foreign Key constraints. Where constraints don’t exist, our AI query planner infers join paths by analyzing column nomenclature (e.g., `user_id` to `id`) and runs lightweight validation checks before execution.',
+      q: 'How do you handle ambiguous joins without a semantic model?',
+      a: 'Arcli maps your INFORMATION_SCHEMA constraints. If join paths are ambiguous, our query planner analyzes nomenclature proximity (e.g., matching `org_id` across schemas) and triggers a clarification prompt to the user if intent is unclear.',
       persona: 'Data Architect'
     },
     {
-      q: 'What if multiple departments define "Revenue" differently?',
-      a: 'Arcli solves this via Persona-Scoped Metric Governance. You can define "Marketing Revenue" and "GAAP Revenue" in the admin console. When a user asks a question, Arcli disambiguates the term based on their RBAC group or asks a clarifying question.',
+      q: 'Can different teams define metrics differently?',
+      a: 'Yes. Our Governance layer supports Persona-Scoped metrics. "Revenue" for Marketing can be gross, while "Revenue" for Finance is GAAP-compliant. Arcli disambiguates based on the user\'s RBAC group.',
       persona: 'Head of Data'
     }
-  ]
+  ],
+
+  codeSnippet: {
+    filename: 'semantic_bypass_config.json',
+    code: `{\n  "metadata_crawling": "enabled",\n  "schema_grounding": "strict",\n  "ast_validation": "enforced",\n  "proprietary_modeling": "none"\n}`
+  }
 };

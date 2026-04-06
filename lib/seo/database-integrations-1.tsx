@@ -4,15 +4,17 @@ import { Database, Server } from 'lucide-react';
 
 /**
  * SEOPageData Interface - Database Integrations Edition (v10.1)
- * Upgraded to the "Enterprise Conversion" schema with Strict Block Composition.
- * Incorporates Multi-Surface Distribution, Query Class Coverage, and SERP Realism.
+ * Systematically built for Compounding Authority, SERP Domination, and UI-Driven Intelligence.
+ * Incorporates Multi-Surface Distribution, Query Class Coverage, and strict E-E-A-T standards.
  */
+
+// --- BLOCK COMPOSITION SYSTEM ---
 
 export type UIBlock = {
   visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'DataRelationshipsGraph' | 'Cards' | 'AnalyticsDashboard';
   dataMapping: string;
   interactionPurpose: string;
-  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
+  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to'; // SERP Query Class Coverage
 };
 
 export type ComparisonBlock = {
@@ -21,24 +23,52 @@ export type ComparisonBlock = {
   legacyFlaw: string;
 };
 
-export type SEOPageData = {
-  type: 'integration';
+export type QueryExamplesBlock = {
   title: string;
-  description: string;
-  metaKeywords: string[];
-  h1: string;
-  subtitle: string;
-  icon: React.ReactElement;
-  contrarianStatement: string; // Fulfills "Information Gain Layer: New perspective"
-  decisionTrigger: {
-    headline: string;
-    bullets: string[];
-  };
+  complexity: 'Surface' | 'Intermediate' | 'Deep'; // Content Depth Hierarchy
+  intentCoverage: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
+  businessQuestion: string;
+  businessOutcome: string;
+  sqlSnippet?: string; // For E-E-A-T and Developer Trust
+};
+
+export type KeywordAnchorBlock = {
+  primaryIntent: string; // e.g., "PostgreSQL AI analytics tool"
+  secondaryIntents: string[];
+  serpRealisticTarget: 'Long-tail' | 'Primary Volume' | 'Semantic Gap';
+};
+
+export type UseCaseBlock = {
+  workflowBefore: string[];
+  workflowAfter: string[];
   businessValueMetrics: {
     label: string;
     value: string;
     description: string;
   }[];
+};
+
+export type InternalLinkingBlock = {
+  relatedSlugs: string[];
+  clusterParent: string; // Reinforces Topical Authority Graph
+};
+
+// --- CORE SYSTEM ARCHITECTURE ---
+
+export type SEOPageData = {
+  type: 'integration';
+  title: string;
+  description: string;
+  searchIntentMapping: KeywordAnchorBlock;
+  h1: string;
+  subtitle: string;
+  icon: React.ReactElement;
+  contrarianStatement: string; // Information Gain Layer: Forces unique perspective
+  decisionTrigger: {
+    headline: string;
+    bullets: string[];
+  };
+  useCases: UseCaseBlock;
   trustAndSecurity: {
     principle: string;
     howWeDeliver: string;
@@ -47,33 +77,29 @@ export type SEOPageData = {
     metric: string;
     description: string;
   }[];
-  workflowTransformation: {
-    beforeArcli: string[];
-    withArcli: string[];
-  };
-  analyticalScenarios: { // Fulfills "QueryExamplesBlock"
-    title: string;
-    complexity: 'Basic' | 'Advanced' | 'Strategic';
-    businessQuestion: string;
-    businessOutcome: string;
-    sqlSnippet?: string; 
-  }[];
-  comparisonData?: ComparisonBlock[]; // Fulfills "ComparisonBlock"
-  uiComponents?: UIBlock[]; // Fulfills "UIBlock"
+  analyticalScenarios: QueryExamplesBlock[];
+  comparisonData: ComparisonBlock[];
+  uiComponents: UIBlock[];
   faqs: { q: string; a: string }[];
-  relatedSlugs: string[]; // Fulfills "InternalLinkingBlock"
+  internalLinks: InternalLinkingBlock;
 };
+
+// --- CONTENT ENGINE EXPORT ---
 
 export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
   'postgresql-ai-analytics': {
     type: 'integration',
-    title: 'PostgreSQL AI Analytics & Reporting | Arcli',
-    description: 'Connect your PostgreSQL database securely to Arcli. Empower your team to analyze unstructured JSONB and relational data conversationally without moving your data.',
-    metaKeywords: ['PostgreSQL Analytics', 'AI for Postgres', 'JSONB SQL Generator', 'PostgreSQL BI Tool', 'Zero Data Movement', 'PostgreSQL Dashboard'],
+    title: 'PostgreSQL AI Analytics & Reporting Tool | Arcli',
+    description: 'Securely connect your PostgreSQL database to Arcli. Empower business teams to analyze nested JSONB and relational data conversationally without moving data.',
+    searchIntentMapping: {
+      primaryIntent: 'PostgreSQL AI analytics',
+      secondaryIntents: ['JSONB SQL Generator', 'PostgreSQL BI Tool', 'Zero Data Movement Postgres'],
+      serpRealisticTarget: 'Semantic Gap' // Targets the gap where traditional BI fails at JSONB
+    },
     h1: 'Conversational Intelligence for PostgreSQL',
-    subtitle: 'Securely connect your Postgres read-replica. Empower your entire executive team to answer their own data questions instantly without waiting for an engineer.',
+    subtitle: 'Securely connect your Postgres read-replica. Empower your entire executive team to answer their own data questions instantly without waiting for data engineering.',
     icon: <Database className="w-12 h-12 text-indigo-500 mb-6" />,
-    contrarianStatement: 'If your team is exporting live Postgres data into Excel just to build a pivot table, your modern data stack is broken.',
+    contrarianStatement: 'If your team is exporting live Postgres data into Excel just to build a pivot table, your modern data stack is acting as a bottleneck, not an enabler.',
     decisionTrigger: {
       headline: 'When PostgreSQL Teams Choose Arcli',
       bullets: [
@@ -89,6 +115,12 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
         dataMapping: 'Visualizing Zero-Data Movement Architecture (User Input -> LLM Logic -> Postgres Server -> Local Browser Rendering)',
         interactionPurpose: 'Demonstrate how PII never leaves the client VPC',
         intentServed: 'How-to'
+      },
+      {
+        visualizationType: 'ComparisonTable',
+        dataMapping: 'Arcli JSONB parsing vs Legacy ETL flattening',
+        interactionPurpose: 'Provide visual contrast in time-to-insight',
+        intentServed: 'Comparison'
       }
     ],
     comparisonData: [
@@ -98,23 +130,35 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
         legacyFlaw: 'Requires brittle, nightly scheduled flattening pipelines to extract JSON keys.'
       }
     ],
-    businessValueMetrics: [
-      { 
-        label: 'Engineering Bandwidth', 
-        value: '+20 Hours/Wk', 
-        description: 'Stops your engineers from acting like a reporting help desk by eliminating routine SQL data pulls.' 
-      },
-      { 
-        label: 'Infrastructure Cost', 
-        value: 'Optimized', 
-        description: 'Your data stays where it is. Avoid paying massive cloud egress fees to duplicate your Postgres data into a proprietary BI cloud.' 
-      },
-      { 
-        label: 'Decision Speed', 
-        value: 'Instant', 
-        description: 'Executives can validate operational hypotheses in seconds during live meetings rather than waiting days for a static report.' 
-      }
-    ],
+    useCases: {
+      workflowBefore: [
+        'Extracting insights from nested JSONB columns requires highly specialized data engineering.',
+        'Business users submit Jira tickets for simple metric changes and wait 3-5 days.',
+        'Companies pay thousands duplicating raw Postgres data into third-party BI warehouses.'
+      ],
+      workflowAfter: [
+        'Operators ask plain-English questions, and AI translates them into perfect SQL instantly.',
+        'Data access is democratized, shifting engineers from ticket-takers to infrastructure builders.',
+        'Data remains securely in your VPC, dramatically lowering your total cost of ownership.'
+      ],
+      businessValueMetrics: [
+        { 
+          label: 'Engineering Bandwidth', 
+          value: '+20 Hours/Wk', 
+          description: 'Stops your engineers from acting like a reporting help desk by eliminating routine SQL data pulls.' 
+        },
+        { 
+          label: 'Infrastructure Cost', 
+          value: 'Optimized', 
+          description: 'Your data stays where it is. Avoid paying massive cloud egress fees to duplicate Postgres data into proprietary BI.' 
+        },
+        { 
+          label: 'Decision Speed', 
+          value: 'Instant', 
+          description: 'Executives can validate operational hypotheses in seconds during live meetings rather than waiting days for a static report.' 
+        }
+      ]
+    },
     trustAndSecurity: [
       { 
         principle: 'Your Data Stays Where It Is', 
@@ -139,34 +183,25 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
         description: 'Arcli prioritizes highly efficient database indexes, ensuring queries run fast and avoid crashing your replica with massive full-table scans.' 
       }
     ],
-    workflowTransformation: {
-      beforeArcli: [
-        'Extracting insights from nested JSONB columns requires highly specialized data engineering.',
-        'Business users submit Jira tickets for simple metric changes and wait 3-5 days.',
-        'Companies pay thousands of dollars duplicating raw Postgres data into third-party BI warehouses.'
-      ],
-      withArcli: [
-        'Operators ask plain-English questions, and the AI translates them into perfect SQL instantly.',
-        'Data access is fully democratized, shifting engineers from ticket-takers to infrastructure builders.',
-        'Data remains securely in your VPC, dramatically lowering your total cost of ownership.'
-      ]
-    },
     analyticalScenarios: [
       {
         title: 'Daily Operational Tracking',
-        complexity: 'Basic',
+        complexity: 'Surface',
+        intentCoverage: 'Informational',
         businessQuestion: 'What was our total revenue grouped by subscription tier for the last 30 days?',
         businessOutcome: 'Provides immediate visibility into monthly targets. Sales leaders can autonomously track recurring revenue without navigating complex dashboard filters.'
       },
       {
         title: 'Unstructured Telemetry Discovery',
-        complexity: 'Advanced',
+        complexity: 'Intermediate',
+        intentCoverage: 'Commercial Investigation',
         businessQuestion: 'Count the number of active users this week who have the "dark_mode" flag set to true inside their settings JSON.',
-        businessOutcome: 'Allows product managers to analyze highly specific feature usage directly from raw application logs, completely bypassing the need for data engineers to build custom ETL pipelines first.'
+        businessOutcome: 'Allows product managers to analyze highly specific feature usage directly from raw application logs, bypassing the need for data engineers to build custom ETL pipelines.'
       },
       {
         title: 'Cohort Retention via JSONB',
-        complexity: 'Strategic',
+        complexity: 'Deep',
+        intentCoverage: 'How-to',
         businessQuestion: 'Show me the 3-month retention rate for users acquired in Q1, filtering only for those who completed the onboarding flow stored in their event payload.',
         businessOutcome: 'Delivers highly advanced product analytics instantly. Enables growth teams to definitively prove whether a new onboarding feature actually drives long-term customer retention.',
         sqlSnippet: `WITH q1_users AS (
@@ -190,18 +225,23 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
       { q: 'Is my Postgres data used to train your AI?', a: 'Absolutely not. Your proprietary data never leaves your secure perimeter and is strictly excluded from any global model training. We only use your schema metadata (column names) to map intent.' },
       { q: 'Do you support AWS RDS or Supabase?', a: 'Yes. We support any PostgreSQL instance accessible via a secure connection string, including AWS RDS, Aurora, Google Cloud SQL, and Supabase.' },
       { q: 'Can I restrict which Postgres tables the AI can access?', a: 'Yes. We enforce the permissions of the database user you provide. If you revoke access to the "salaries" table for that specific Postgres user, the AI cannot query it.' },
-      { q: 'What happens if a query takes too long?', a: 'Arcli respects the statement timeout configurations of your database. The system also automatically suggests tighter date constraints if it detects a potentially massive query.' },
-      { q: 'Do we need to configure foreign keys for the AI to work?', a: 'It helps, but isn\'t required. Arcli’s mapping engine automatically infers relationships based on standard column naming conventions (e.g., matching `user_id` to `users.id`).' },
-      { q: 'How is the visualization rendered so quickly?', a: 'We utilize an in-browser WebAssembly engine. Once the small, aggregated dataset is returned from Postgres, cross-filtering and rendering happen instantly on the user\'s local machine.' }
+      { q: 'What happens if a query takes too long?', a: 'Arcli respects the statement timeout configurations of your database. The system also automatically suggests tighter date constraints if it detects a potentially massive query.' }
     ],
-    relatedSlugs: ['mysql-ai-analytics', 'sql-server-ai-analytics', 'data-security-zero-movement']
+    internalLinks: {
+      relatedSlugs: ['mysql-ai-analytics', 'sql-server-ai-analytics', 'data-security-zero-movement'],
+      clusterParent: 'database-integrations'
+    }
   },
 
   'mysql-ai-analytics': {
     type: 'integration',
     title: 'MySQL AI Analytics & Dashboard Builder | Arcli',
     description: 'Connect your MySQL database securely to Arcli. Leverage conversational AI to navigate highly normalized schemas and automate complex multi-table JOINs instantly.',
-    metaKeywords: ['MySQL Analytics', 'AI for MySQL', 'MySQL Dashboard', 'Conversational SQL', 'Self Serve BI', 'MySQL Reporting Tool'],
+    searchIntentMapping: {
+      primaryIntent: 'MySQL AI Analytics',
+      secondaryIntents: ['MySQL Dashboard Builder', 'Conversational SQL', 'Self Serve BI MySQL'],
+      serpRealisticTarget: 'Primary Volume'
+    },
     h1: 'Relational Agility for MySQL',
     subtitle: 'Provide your organization with secure, conversational access to your MySQL databases. Automate complex table joins and aggregations without writing a single line of code.',
     icon: <Database className="w-12 h-12 text-blue-400 mb-6" />,
@@ -230,23 +270,35 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
         legacyFlaw: 'Limits users strictly to pre-defined widgets and filters explicitly created by analysts.'
       }
     ],
-    businessValueMetrics: [
-      { 
-        label: 'Ad-Hoc Reporting Speed', 
-        value: 'Seconds', 
-        description: 'Replaces the manual process of writing complex, multi-table JOINs to fulfill routine business requests.' 
-      },
-      { 
-        label: 'Compliance Risk', 
-        value: 'Minimized', 
-        description: 'Stops employees from exporting raw, sensitive MySQL data into local Excel files just to build a pivot table.' 
-      },
-      { 
-        label: 'Operational Visibility', 
-        value: 'Real-Time', 
-        description: 'Queries are executed directly against your live read-replica, ensuring your team is never looking at stale data.' 
-      }
-    ],
+    useCases: {
+      workflowBefore: [
+        'Analyzing highly normalized legacy schemas requires analysts to memorize complex database maps.',
+        'Business operators cannot self-serve data due to the strict SQL barrier to entry.',
+        'Data engineering queues are clogged with requests for simple funnel and sales reports.'
+      ],
+      workflowAfter: [
+        'The AI maps the schema instantly, allowing users to query across 5 different tables using conversational intent.',
+        'Marketing and Sales leaders can independently pull live leaderboards and campaign ROIs in seconds.',
+        'The data team is unblocked, focusing solely on infrastructure and predictive modeling.'
+      ],
+      businessValueMetrics: [
+        { 
+          label: 'Ad-Hoc Reporting Speed', 
+          value: 'Seconds', 
+          description: 'Replaces the manual process of writing complex, multi-table JOINs to fulfill routine business requests.' 
+        },
+        { 
+          label: 'Compliance Risk', 
+          value: 'Minimized', 
+          description: 'Stops employees from exporting raw, sensitive MySQL data into local Excel files just to build a pivot table.' 
+        },
+        { 
+          label: 'Operational Visibility', 
+          value: 'Real-Time', 
+          description: 'Queries are executed directly against your live read-replica, ensuring your team is never looking at stale data.' 
+        }
+      ]
+    },
     trustAndSecurity: [
       { 
         principle: 'End-to-End Encryption', 
@@ -271,34 +323,25 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
         description: 'Expertly generates MySQL-specific functions (like DATE_ADD) so your server processes requests natively and efficiently.' 
       }
     ],
-    workflowTransformation: {
-      beforeArcli: [
-        'Analyzing highly normalized legacy schemas requires analysts to memorize complex database maps.',
-        'Business operators cannot self-serve data due to the strict SQL barrier to entry.',
-        'Data engineering queues are clogged with requests for simple funnel and sales reports.'
-      ],
-      withArcli: [
-        'The AI maps the schema instantly, allowing users to query across 5 different tables using conversational intent.',
-        'Marketing and Sales leaders can independently pull live leaderboards and campaign ROIs in seconds.',
-        'The data team is unblocked, focusing solely on infrastructure and predictive modeling.'
-      ]
-    },
     analyticalScenarios: [
       {
         title: 'E-commerce Category Sales',
-        complexity: 'Basic',
+        complexity: 'Surface',
+        intentCoverage: 'Informational',
         businessQuestion: 'Show me our top 5 product categories by total sales volume this quarter.',
         businessOutcome: 'Provides immediate inventory visibility. Category managers can seamlessly track product performance without manually joining the orders, items, products, and categories tables.'
       },
       {
         title: 'Application Funnel Drop-off',
-        complexity: 'Advanced',
+        complexity: 'Intermediate',
+        intentCoverage: 'Comparison',
         businessQuestion: 'What percentage of users who created an account this month actually completed their first purchase?',
         businessOutcome: 'Instantly identifies friction points in the user journey. Product teams can continuously monitor live conversion rates across the application lifecycle without waiting for a nightly ETL sync.'
       },
       {
         title: 'Cross-Functional Campaign ROI',
-        complexity: 'Strategic',
+        complexity: 'Deep',
+        intentCoverage: 'Commercial Investigation',
         businessQuestion: 'Calculate the true ROI of the "Summer_Promo" campaign by joining our ad spend table with the actual closed-won revenue in the CRM tables.',
         businessOutcome: 'Delivers executive-level financial clarity. Proves the actual pipeline value of marketing spend without requiring an analyst to manually reconcile database rows in a spreadsheet.',
         sqlSnippet: `SELECT 
@@ -316,17 +359,23 @@ GROUP BY 1, 2;`
     faqs: [
       { q: 'Does Arcli support older versions of MySQL?', a: 'We fully support MySQL 5.7 and 8.0+. For versions prior to 8.0, the AI intelligently avoids using Window Functions (which were not supported) and utilizes standard subqueries instead.' },
       { q: 'Is my data secure during transmission?', a: 'Yes. We require secure, encrypted connections. Arcli communicates with your database via TLS, meaning your data is never exposed in plain text over the network.' },
-      { q: 'Can the AI understand my cryptic column names?', a: 'Yes. Arcli’s Governance layer allows you to alias complex column names (e.g., mapping `tx_amt_usd` to `Transaction Amount`), ensuring the AI perfectly translates natural English.' },
-      { q: 'Will complex queries crash our database?', a: 'Arcli applies intelligent guardrails, including automatic limits on raw row requests, to prevent accidental full-table scans. We also heavily recommend utilizing a read-replica.' }
+      { q: 'Can the AI understand my cryptic column names?', a: 'Yes. Arcli’s Governance layer allows you to alias complex column names (e.g., mapping `tx_amt_usd` to `Transaction Amount`), ensuring the AI perfectly translates natural English.' }
     ],
-    relatedSlugs: ['postgresql-ai-analytics', 'sql-server-ai-analytics', 'ai-sql-agent-guide']
+    internalLinks: {
+      relatedSlugs: ['postgresql-ai-analytics', 'sql-server-ai-analytics', 'ai-sql-agent-guide'],
+      clusterParent: 'database-integrations'
+    }
   },
 
   'sql-server-ai-analytics': {
     type: 'integration',
     title: 'Microsoft SQL Server AI Analytics | Arcli',
     description: 'Connect Microsoft SQL Server directly to Arcli. Leverage generative AI to author complex T-SQL and automate enterprise reporting without moving your data.',
-    metaKeywords: ['SQL Server Analytics', 'T-SQL AI Generator', 'MS SQL Dashboard', 'Enterprise BI', 'Self Serve Analytics', 'SSMS AI Tool'],
+    searchIntentMapping: {
+      primaryIntent: 'SQL Server Analytics',
+      secondaryIntents: ['T-SQL AI Generator', 'Enterprise BI Self Serve', 'SSMS AI Tool'],
+      serpRealisticTarget: 'Primary Volume'
+    },
     h1: 'Conversational T-SQL Generation',
     subtitle: 'Unlock the power of your Microsoft SQL Server. Give your business leaders secure, conversational access to enterprise data without relying on rigid dashboards.',
     icon: <Server className="w-12 h-12 text-blue-600 mb-6" />,
@@ -355,23 +404,35 @@ GROUP BY 1, 2;`
         legacyFlaw: 'Forces expensive data egress and locks your analytics logic into proprietary DAX/MDX syntax.'
       }
     ],
-    businessValueMetrics: [
-      { 
-        label: 'Enterprise Agility', 
-        value: 'Maximized', 
-        description: 'Bypasses the slow, traditional BI development cycle. Answer new, unanticipated business questions instantly.' 
-      },
-      { 
-        label: 'Total Cost of Ownership', 
-        value: 'Reduced', 
-        description: 'Leverages your existing SQL Server compute power. Avoid the massive licensing costs of migrating data into secondary proprietary clouds.' 
-      },
-      { 
-        label: 'Data Democratization', 
-        value: 'Seamless', 
-        description: 'Empowers non-technical operators (Sales, Marketing, HR) to author their own insights using natural language.' 
-      }
-    ],
+    useCases: {
+      workflowBefore: [
+        'Answering a new business question requires an engineer to write T-SQL, build a view, and update a static dashboard.',
+        'Data remains locked behind a highly technical barrier, slowing down executive decision-making.',
+        'Legacy BI tools require extensive training, leading to low adoption among business operators.'
+      ],
+      workflowAfter: [
+        'Executives ask questions in English, and Arcli authors the exact T-SQL needed to render the chart immediately.',
+        'Self-serve data discovery becomes a reality for non-technical teams, dramatically accelerating business velocity.',
+        'The platform’s chat interface requires zero training, resulting in immediate, widespread organizational adoption.'
+      ],
+      businessValueMetrics: [
+        { 
+          label: 'Enterprise Agility', 
+          value: 'Maximized', 
+          description: 'Bypasses the slow, traditional BI development cycle. Answer new, unanticipated business questions instantly.' 
+        },
+        { 
+          label: 'Total Cost of Ownership', 
+          value: 'Reduced', 
+          description: 'Leverages your existing SQL Server compute power. Avoid the massive licensing costs of migrating data into secondary proprietary clouds.' 
+        },
+        { 
+          label: 'Data Democratization', 
+          value: 'Seamless', 
+          description: 'Empowers non-technical operators (Sales, Marketing, HR) to author their own insights using natural language.' 
+        }
+      ]
+    },
     trustAndSecurity: [
       { 
         principle: 'Zero Data Duplication', 
@@ -396,34 +457,25 @@ GROUP BY 1, 2;`
         description: 'Intelligently handles the `schema.table` architecture inherent in large-scale SQL Server deployments, enabling seamless cross-departmental queries.' 
       }
     ],
-    workflowTransformation: {
-      beforeArcli: [
-        'Answering a new business question requires an engineer to write T-SQL, build a view, and update a static dashboard.',
-        'Data remains locked behind a highly technical barrier, slowing down executive decision-making.',
-        'Legacy BI tools require extensive training, leading to low adoption among business operators.'
-      ],
-      withArcli: [
-        'Executives ask questions in English, and Arcli authors the exact T-SQL needed to render the chart immediately.',
-        'Self-serve data discovery becomes a reality for non-technical teams, dramatically accelerating business velocity.',
-        'The platform’s chat interface requires zero training, resulting in immediate, widespread organizational adoption.'
-      ]
-    },
     analyticalScenarios: [
       {
         title: 'Regional Revenue Tracking',
-        complexity: 'Basic',
+        complexity: 'Surface',
+        intentCoverage: 'Informational',
         businessQuestion: 'What is our total closed revenue year-to-date, broken down by sales region?',
         businessOutcome: 'Provides sales directors with instant visibility into territory performance, allowing them to dynamically reallocate resources to underperforming regions without waiting for the weekly sync.'
       },
       {
         title: 'Sales Cycle Velocity',
-        complexity: 'Advanced',
+        complexity: 'Intermediate',
+        intentCoverage: 'How-to',
         businessQuestion: 'Calculate the average number of days it takes to close a deal, grouped by the lead source.',
         businessOutcome: 'Identifies which marketing channels produce the most efficient pipeline. By proving that inbound leads close 14 days faster than outbound, leadership can confidently adjust their marketing spend.'
       },
       {
         title: 'Predictive Lead Scoring',
-        complexity: 'Strategic',
+        complexity: 'Deep',
+        intentCoverage: 'Commercial Investigation',
         businessQuestion: 'Find all open opportunities in the "Negotiation" stage that have been stalled longer than our 30-day historical average for their specific industry.',
         businessOutcome: 'Proactively flags high-risk enterprise deals before they are lost to competitors, allowing the VP of Sales to intervene immediately with executive sponsorship.',
         sqlSnippet: `WITH IndustryAverages AS (
@@ -442,9 +494,11 @@ ORDER BY o.amount DESC;`
       { q: 'Does Arcli connect to Azure SQL Database?', a: 'Yes. We fully support Microsoft SQL Server environments whether they are hosted on-premise, on Azure SQL Database, or via Amazon RDS.' },
       { q: 'Is my highly sensitive data used to train the AI?', a: 'No. Arcli operates under a strict Zero-Data Movement policy. Your data never leaves your infrastructure, and we only utilize column headers to map conversational intent to SQL.' },
       { q: 'How does Arcli handle complex enterprise security?', a: 'Arcli strictly inherits the security model of the credential provided. If your SQL Server enforces Row-Level Security (RLS) for that user, Arcli inherently respects those boundaries.' },
-      { q: 'Can the AI generate T-SQL Window Functions?', a: 'Absolutely. The AI natively understands advanced analytical requests (like rolling averages or cohort percentiles) and seamlessly generates the required `OVER (PARTITION BY...)` T-SQL syntax.' },
-      { q: 'Do we need a data warehouse to use Arcli?', a: 'No. While we support massive warehouses, Arcli works perfectly against operational SQL Server read-replicas, providing real-time analytics without the need for an expensive ETL pipeline.' }
+      { q: 'Can the AI generate T-SQL Window Functions?', a: 'Absolutely. The AI natively understands advanced analytical requests (like rolling averages or cohort percentiles) and seamlessly generates the required `OVER (PARTITION BY...)` T-SQL syntax.' }
     ],
-    relatedSlugs: ['postgresql-ai-analytics', 'mysql-ai-analytics', 'text-to-sql-enterprise-guide']
+    internalLinks: {
+      relatedSlugs: ['postgresql-ai-analytics', 'mysql-ai-analytics', 'text-to-sql-enterprise-guide'],
+      clusterParent: 'database-integrations'
+    }
   }
 };
