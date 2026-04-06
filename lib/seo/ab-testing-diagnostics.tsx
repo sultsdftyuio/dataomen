@@ -1,26 +1,24 @@
 // lib/seo/ab-testing-diagnostics.tsx
 
 /**
- * SEO v10 SYSTEM: A/B Testing & Root-Cause Diagnostics
+ * SEO v13 SYSTEM: A/B Testing & Root-Cause Diagnostics
  * * SERP Realism Layer: 
- * - Target: We are NOT competing for Position 1 on generic "A/B Testing" (unrealistic vs Optimizely/VWO).
  * - Target: Position 1 for "A/B testing root-cause diagnostics", "SRM detection SQL", and "A/B test statistical significance automated".
- * * Query Prioritization:
- * - Tier 1 (High Intent): "AI A/B testing diagnostics", "automated SRM detection"
- * - Tier 2 (Supporting): "Simpson's paradox product growth", "feature flag analytics integration"
- * - Tier 3 (Long-Tail): "how to slice AB test results by dimension in SQL", "calculating p-value in DuckDB"
+ * * Information Gain:
+ * - Added deterministic DuckDB SQL for Chi-Square Sample Ratio Mismatch (SRM) to crush generic competitor blog posts.
+ * - Integrated deep Schema.org Structured Data for Rich Snippet dominance.
  */
 
 export const abTestingDiagnosticsData = {
   path: "/use-cases/ab-testing-diagnostics",
   meta: {
-    title: "AI-Powered A/B Testing Diagnostics & SRM Detection | Arcli",
-    description: "Automate statistical significance calculations and root-cause analysis. Arcli's AI agents ingest feature flag data to diagnose exactly why an A/B test variant won or lost across deep user dimensions.",
+    title: "AI A/B Testing Diagnostics & Automated SRM Detection | Arcli",
+    description: "Automate statistical significance and root-cause analysis. Arcli's AI agents ingest feature flag data to diagnose why variants won and detect Sample Ratio Mismatches in seconds.",
     keywords: [
       "A/B testing root-cause diagnostics", 
       "automated SRM detection",
       "feature flag analytics AI", 
-      "statistical significance calculator SQL", 
+      "sample ratio mismatch SQL chi-square", 
       "Simpson's paradox product growth"
     ],
     serpRealism: {
@@ -31,14 +29,14 @@ export const abTestingDiagnosticsData = {
   },
   blocks: [
     // ------------------------------------------------------------------------
-    // 1. HERO BLOCK (Conversion Engine & Tier 1 Query Targeting)
+    // 1. HERO BLOCK (Conversion Engine)
     // ------------------------------------------------------------------------
     {
       type: "Hero",
       payload: {
         badge: "Product Growth Diagnostics",
         title: "Beyond the P-Value: AI Root-Cause Experiment Diagnostics",
-        subtitle: "Native feature flag tools tell you Variant B won. Arcli's AI agents tell you *why* it won, autonomously slicing millions of events to find the exact user segments and guardrail metrics driving the result.",
+        subtitle: "Feature flag tools tell you Variant B won. Arcli's AI tells you *why*, autonomously slicing millions of events to find hidden segments, guardrail breaches, and Sample Ratio Mismatches.",
         primaryCta: {
           label: "Analyze Your First Test",
           href: "/register?intent=product_growth"
@@ -49,7 +47,7 @@ export const abTestingDiagnosticsData = {
         },
         trustSignals: [
           "Native LaunchDarkly & Statsig Integrations",
-          "Automated Sample Ratio Mismatch (SRM) checks",
+          "Automated Sample Ratio Mismatch (SRM) validation",
           "Sub-second dimensional slicing via DuckDB"
         ]
       }
@@ -62,13 +60,13 @@ export const abTestingDiagnosticsData = {
       type: "KeywordAnchorBlock",
       payload: {
         heading: "The Engineering Cost of Experimentation",
-        text: "Data engineering teams spend 30% of their time answering follow-up questions about finished A/B tests. Standard dashboards fail to detect underlying anomalies like **Sample Ratio Mismatch (SRM)** or global metric degradation. By pushing **statistical significance calculations** directly down to the data warehouse via **SQL**, Arcli completely eliminates this operational drag, providing Product Managers with mathematically rigorous, conversational diagnostic answers.",
-        semanticEntities: ["Sample Ratio Mismatch (SRM)", "statistical significance calculations", "data warehouse", "feature flag analytics"]
+        text: "Data engineering teams spend 30% of their time answering follow-up questions about finished A/B tests. Standard dashboards fail to detect underlying anomalies like **Sample Ratio Mismatch (SRM)** or global metric degradation. By pushing **statistical significance calculations** directly down to the data warehouse via **SQL**, Arcli completely eliminates this operational drag, providing Product Managers with mathematically rigorous, conversational diagnostic answers without pulling raw data into memory.",
+        semanticEntities: ["Sample Ratio Mismatch (SRM)", "statistical significance calculations", "data warehouse", "feature flag analytics", "conversational diagnostics"]
       }
     },
 
     // ------------------------------------------------------------------------
-    // 3. UI BLOCK (UI Visualization Layer - UI as Conversion Driver)
+    // 3. UI BLOCK (UI Visualization Layer)
     // ------------------------------------------------------------------------
     {
       type: "UIBlock",
@@ -77,7 +75,7 @@ export const abTestingDiagnosticsData = {
         dataMapping: "Simulated Simpson's Paradox: Global Conversion (Up 4%) vs. Segment Conversion (iOS Down 12%, Android Down 8%, Web Down 5%)",
         interactionPurpose: "Demonstrate visually how top-line aggregate metrics hide segmented degradations, requiring multi-dimensional analysis.",
         intentServed: "Informational & Commercial Investigation",
-        contextText: "Most product teams look at top-line aggregate conversions to declare a winner. But without deep dimensional slicing, you miss Simpson's Paradox: Variant B might increase conversion globally due to traffic shifting, while simultaneously decreasing it across every individual platform. Arcli visualizes these hidden vectors instantly."
+        contextText: "Most product teams look at top-line aggregate conversions to declare a winner. But without deep dimensional slicing, you miss Simpson's Paradox: Variant B might increase conversion globally due to traffic shifting, while simultaneously decreasing it across every individual platform. Arcli visualizes these hidden vectors instantly, protecting your revenue."
       }
     },
 
@@ -107,35 +105,47 @@ export const abTestingDiagnosticsData = {
     },
 
     // ------------------------------------------------------------------------
-    // 5. STRATEGIC TECHNICAL BLOCK (E-E-A-T & Authority Test)
+    // 5. STRATEGIC TECHNICAL BLOCK (Information Gain: Massive SEO Value)
     // ------------------------------------------------------------------------
     {
       type: "StrategicQuery",
       payload: {
-        title: "The Engine Room: Two-Proportion Z-Test via SQL",
-        description: "AI shouldn't invent statistical formulas. Arcli enforces rigorous mathematical standards by mapping user intent to governed SQL macros, executing directly in DuckDB.",
-        businessOutcome: "By pushing statistical compute down to the warehouse, Arcli avoids pulling millions of raw event rows into memory—ensuring sub-second diagnostic analysis and absolute data privacy.",
+        title: "The Engine Room: Automated SRM Chi-Square Testing via SQL",
+        description: "AI shouldn't invent statistical formulas. Arcli enforces rigorous mathematical standards by mapping user intent to governed SQL macros. Here is how Arcli autonomously detects Sample Ratio Mismatch (SRM) directly in DuckDB.",
+        businessOutcome: "By pushing statistical compute down to the warehouse, Arcli avoids pulling millions of raw event rows into memory—ensuring sub-second diagnostic analysis, absolute data privacy, and mathematically verified test validity.",
         language: "sql",
         code: `
--- AI Agent Generated: A/B Test Statistical Significance
+-- AI Agent Generated: SRM (Sample Ratio Mismatch) Chi-Square Validation
 -- Dialect: DuckDB
-WITH user_exposures AS (
-    SELECT user_id, variant_name, MIN(timestamp) AS exposed_at
-    FROM tenant.experiment_logs
-    WHERE experiment_id = 'exp_checkout_2025' GROUP BY 1, 2
-),
-variant_stats AS (
+WITH variant_counts AS (
     SELECT 
-        e.variant_name,
-        COUNT(e.user_id) AS visitors,
-        SUM(CASE WHEN c.timestamp > e.exposed_at THEN 1 ELSE 0 END) AS conversions
-    FROM user_exposures e
-    LEFT JOIN tenant.core_events c ON e.user_id = c.user_id 
-    GROUP BY 1
+        variant_name,
+        COUNT(DISTINCT user_id) AS observed_users,
+        (SELECT COUNT(DISTINCT user_id) FROM tenant.experiment_logs WHERE experiment_id = 'exp_checkout') AS total_users
+    FROM tenant.experiment_logs
+    WHERE experiment_id = 'exp_checkout'
+    GROUP BY variant_name
+),
+expected_traffic AS (
+    -- Assuming a 50/50 intended split for this experiment
+    SELECT 
+        variant_name, 
+        observed_users, 
+        total_users * 0.5 AS expected_users
+    FROM variant_counts
 )
--- Engine calculates SE, Z-Score, and Confidence Intervals dynamically
-SELECT variant_name, visitors, conversions, (conversions::FLOAT / visitors) as cr 
-FROM variant_stats;`
+-- Calculate Chi-Square Statistic: Sum of ((Observed - Expected)^2 / Expected)
+SELECT 
+    variant_name,
+    observed_users,
+    expected_users,
+    POWER(observed_users - expected_users, 2) / expected_users AS chi_square_component,
+    CASE 
+        WHEN (SUM(POWER(observed_users - expected_users, 2) / expected_users) OVER()) > 3.841 
+        THEN 'SRM Detected (p < 0.05)' 
+        ELSE 'Valid Split' 
+    END AS srm_status
+FROM expected_traffic;`
       }
     },
 
@@ -172,7 +182,7 @@ FROM variant_stats;`
           },
           {
             title: "Isolating Sub-Segment Winners",
-            description: "Variant C lost globally. Arcli's diagnostic agent executes automated dimensional slicing and discovers Variant C actually increased conversion by 14% specifically for 'Returning Users on Android 12+'. The product team pivots to a targeted rollout."
+            description: "Variant C lost globally. Arcli's diagnostic agent executes automated dimensional slicing and discovers Variant C actually increased conversion by 14% specifically for 'Returning Users on Android 12+'. The product team pivots to a targeted rollout instead of discarding the work."
           }
         ]
       }
@@ -192,9 +202,9 @@ FROM variant_stats;`
             description: "Learn how Arcli ensures 'Conversion Rate' means the exact same thing across every test."
           },
           {
-            label: "Snowflake & DuckDB Ingestion",
-            href: "/integrations/snowflake",
-            description: "See how Arcli connects to your data warehouse to process massive event logs without data movement."
+            label: "DuckDB Vector Ingestion Engine",
+            href: "/integrations/duckdb",
+            description: "See how Arcli processes massive event logs locally for sub-second analytical response times."
           }
         ]
       }
@@ -210,17 +220,65 @@ FROM variant_stats;`
         faqs: [
           {
             question: "Does Arcli handle traffic splitting and feature flagging?",
-            answer: "No. Arcli is an analytics and diagnostic layer. You continue to use tools like LaunchDarkly or Statsig to route users. Arcli ingests those assignment logs and handles the complex downstream mathematical analysis."
+            answer: "No. Arcli is a purely analytical and diagnostic layer. You continue to use tools like LaunchDarkly, Statsig, or VWO to route users. Arcli ingests those assignment logs and handles the complex downstream mathematical analysis."
           },
           {
             question: "Can Arcli calculate significance for continuous metrics like ARPU?",
-            answer: "Yes. While standard conversion rates use Two-Proportion Z-tests, Arcli automatically routes requests for continuous metrics (like Average Order Value or Session Length) to Welch's T-test formulas to account for unequal variances."
+            answer: "Yes. While standard conversion rates use Two-Proportion Z-tests, Arcli automatically routes requests for continuous metrics (like Average Order Value or Session Length) to Welch's T-test macros to correctly account for unequal variances."
           },
           {
-            question: "How does the AI prevent the 'Peeking Problem'?",
-            answer: "Arcli is configured to enforce Minimum Detectable Effect (MDE) time-horizons based on your traffic volume, warning PMs if they attempt to call a test winner prematurely just because it hit false significance on day two."
+            question: "How does the AI prevent the 'Peeking Problem' in continuous testing?",
+            answer: "Arcli is configured to enforce Minimum Detectable Effect (MDE) time-horizons based on your historical traffic volume, warning PMs if they attempt to call a test winner prematurely just because it hit false significance on day two."
           }
         ]
+      }
+    },
+
+    // ------------------------------------------------------------------------
+    // 10. STRUCTURED DATA (Schema.org for AI & Search Engines)
+    // ------------------------------------------------------------------------
+    {
+      type: "StructuredDataBlock",
+      payload: {
+        schemaType: ["SoftwareApplication", "FAQPage"],
+        jsonLd: {
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "SoftwareApplication",
+              "name": "Arcli A/B Testing Diagnostic Agent",
+              "applicationCategory": "BusinessApplication",
+              "operatingSystem": "Web",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD"
+              },
+              "description": "AI-powered A/B testing diagnostics and Sample Ratio Mismatch (SRM) detection via conversational SQL generation over DuckDB."
+            },
+            {
+              "@type": "FAQPage",
+              "mainEntity": [
+                {
+                  "@type": "Question",
+                  "name": "Does Arcli handle traffic splitting and feature flagging?",
+                  "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "No. Arcli is a purely analytical and diagnostic layer. You continue to use tools like LaunchDarkly, Statsig, or VWO to route users. Arcli ingests those assignment logs and handles the complex downstream mathematical analysis."
+                  }
+                },
+                {
+                  "@type": "Question",
+                  "name": "Can Arcli calculate significance for continuous metrics like ARPU?",
+                  "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. While standard conversion rates use Two-Proportion Z-tests, Arcli automatically routes requests for continuous metrics (like Average Order Value or Session Length) to Welch's T-test macros to correctly account for unequal variances."
+                  }
+                }
+              ]
+            }
+          ]
+        }
       }
     }
   ]

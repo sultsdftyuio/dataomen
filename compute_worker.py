@@ -43,14 +43,21 @@ logger = logging.getLogger("ComputeWorker")
 # REPLACEMENT: Import DATABASE_URL from our primary infrastructure
 from api.database import DATABASE_URL
 
-# Engineering Excellence: Transform Postgres URL for Celery SQLAlchemy transport
+# Engineering Excellence: Standardize and Transform Postgres URL for Celery
 if not DATABASE_URL:
     logger.critical("DATABASE_URL is missing. Worker cannot initialize.")
     sys.exit(1)
 
-# Using 'sqla+postgresql' for the broker and 'db+postgresql' for the results backend
-db_broker_url = DATABASE_URL.replace("postgresql://", "sqla+postgresql://")
-celery_app = Celery("compute_worker", broker=db_broker_url, backend="db+" + DATABASE_URL)
+# FIX: Robust URL transformation handling both 'postgres://' and 'postgresql://'
+# Celery requires 'sqla+postgresql://' for the broker and 'db+postgresql://' for results
+_base_url = DATABASE_URL
+if _base_url.startswith("postgres://"):
+    _base_url = _base_url.replace("postgres://", "postgresql://", 1)
+
+db_broker_url = f"sqla+{_base_url}"
+db_backend_url = f"db+{_base_url}"
+
+celery_app = Celery("compute_worker", broker=db_broker_url, backend=db_backend_url)
 
 celery_app.conf.update(
     # ── Serialisation ────────────────────────────────────────────────────────
@@ -71,9 +78,8 @@ celery_app.conf.update(
     task_default_queue="analytics",
 
     # ── Modular Strategy: Database Broker Optimizations ──────────────────────
-    # We replace Redis-specific polling with a stable Database polling interval.
     broker_transport_options={
-        'polling_interval': 5.0, # Check for tasks every 5 seconds to minimize DB load
+        'polling_interval': 5.0, # Minimize DB load with 5s polling
     },
 
     # ── Worker Hygiene ───────────────────────────────────────────────────────
@@ -365,7 +371,7 @@ def execute_heavy_analytical_pipeline(
             plan=plan,
             chart_spec=chart_spec,
             tenant_id=tenant_id,
-            llm_client=llm_client  # Dependency Injection 
+            llm_client=llm_client 
         ))
 
         _run_async(cache_manager.set_cached_insight(

@@ -1,11 +1,10 @@
-// lib/seo/core-features-2.tsx
 import React from 'react';
 import { FileText, FileSpreadsheet, LayoutTemplate } from 'lucide-react';
 
 /**
- * CoreFeatures Schema - SEO v10 Architecture
+ * CoreFeatures Schema - V13 SYSTEM ARCHITECTURE
  * Enforces scannability, pain-centric messaging, competitive positioning, and high-value SEO hooks.
- * Upgraded with: Search Intent Routing, SERP Realism, Information Gain, and UI Blocks.
+ * Upgraded with: Search Intent Routing, SERP Realism, Information Gain, UI Blocks, Conversion Engine, and Structured Data.
  */
 export type SEOPageData = {
   type: 'feature';
@@ -28,6 +27,14 @@ export type SEOPageData = {
   subtitle: string;
   icon: React.ReactElement;
   idealFor: string[];
+  
+  // V13 CONVERSION ENGINE
+  conversionCTA: {
+    primaryLabel: string;
+    primaryHref: string;
+    secondaryLabel: string;
+  };
+
   businessValueMetrics: {
     label: string;
     value: string;
@@ -70,8 +77,12 @@ export type SEOPageData = {
     interactionPurpose: string;
     intentServed: string;
   }[];
-  faqs: { q: string; a: string; intent: string }[];
-  relatedSlugs: string[];
+  
+  // V13 STRUCTURED DATA
+  faqs: { q: string; a: string; intent: string; schemaEnabled: boolean }[];
+  
+  // V13 INTERNAL LINKING ENGINE
+  relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
 };
 
 export const coreFeaturesPart2: Record<string, SEOPageData> = {
@@ -102,6 +113,13 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
     subtitle: 'Arcli replaces manual reporting by automatically translating your data into plain-English executive summaries that your entire team can understand and act upon instantly.',
     icon: <FileText className="w-12 h-12 text-emerald-500 mb-6" />,
     idealFor: ['Sales Managers', 'VP of Operations', 'Chief of Staff'],
+    
+    conversionCTA: {
+      primaryLabel: 'Automate Your Reporting',
+      primaryHref: '/register?intent=reporting_automation',
+      secondaryLabel: 'See Example Narratives'
+    },
+
     uiBlocks: [
       {
         visualizationType: 'ComparisonTable',
@@ -132,7 +150,7 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
         name: 'Instant Root Cause Analysis', 
         depthLevel: 'Deep',
         benefit: 'Stop guessing why numbers dropped.', 
-        executiveExplanation: 'If top-line revenue dips, the system dynamically analyzes underlying segments to tell you exactly which region, product line, or sales rep caused it. Pair this with [Predictive Analytics](/predictive-ai-analytics) for complete visibility.' 
+        executiveExplanation: 'If top-line revenue dips, the system dynamically analyzes underlying segments to tell you exactly which region, product line, or sales rep caused it. Pair this with predictive models for complete visibility.' 
       },
       { 
         name: 'Dynamic Audience Translation', 
@@ -183,10 +201,14 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
       { keyword: 'Root cause analysis automated', description: 'Automatically drill down into the "why" behind data anomalies without writing complex grouping SQL.' }
     ],
     faqs: [
-      { q: 'Will the AI miss small but important details?', a: 'The narrative engine is programmatically tuned using statistical variance thresholds. It inherently ignores background noise and focuses exclusively on the mathematical outliers that actually impact your business.', intent: 'Accuracy/Trust' },
-      { q: 'Is our data fed into a public LLM to write these stories?', a: 'No. We utilize secure, private inference architectures. Your data is processed entirely within an isolated environment and never trains external models.', intent: 'Data Privacy' }
+      { q: 'Will the AI miss small but important details?', a: 'The narrative engine is programmatically tuned using statistical variance thresholds. It inherently ignores background noise and focuses exclusively on the mathematical outliers that actually impact your business.', intent: 'Accuracy/Trust', schemaEnabled: true },
+      { q: 'Is our data fed into a public LLM to write these stories?', a: 'No. We utilize secure, private inference architectures. Your data is processed entirely within an isolated environment and never trains external models.', intent: 'Data Privacy', schemaEnabled: true }
     ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'slack-teams-data-bot']
+    relatedSlugs: [
+      { label: 'Conversational BI Architecture', slug: '/use-cases/conversational-bi', intent: 'Parent' },
+      { label: 'Automated Anomaly Detection', slug: '/seo/ai-agents-anomaly-detection', intent: 'Supporting' },
+      { label: 'Start Free Trial', slug: '/register', intent: 'Conversion' }
+    ]
   },
 
   'ai-excel-analysis': {
@@ -216,6 +238,13 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
     subtitle: 'Upload massive Excel or CSV files and analyze them without freezing your computer. No complex VLOOKUPs, no broken macros—just plain English conversation.',
     icon: <FileSpreadsheet className="w-12 h-12 text-green-600 mb-6" />,
     idealFor: ['Data Analysts', 'RevOps Professionals', 'Performance Marketers'],
+    
+    conversionCTA: {
+      primaryLabel: 'Analyze a File Now',
+      primaryHref: '/files',
+      secondaryLabel: 'Read the WASM Documentation'
+    },
+
     uiBlocks: [
       {
         visualizationType: 'ProcessStepper',
@@ -240,7 +269,7 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
         name: 'Bypass the 1M Row Limit', 
         depthLevel: 'Surface',
         benefit: 'Enterprise speed without enterprise infrastructure.', 
-        executiveExplanation: 'We utilize a specialized WebAssembly (WASM) analytical engine that runs entirely inside your web browser (no upload required). Filter and aggregate multi-gigabyte files with zero latency.' 
+        executiveExplanation: 'We utilize a specialized WebAssembly (WASM) analytical engine (DuckDB) that runs entirely inside your web browser (no upload required). Filter and aggregate multi-gigabyte files with zero latency.' 
       },
       { 
         name: 'Conversational File Joins', 
@@ -291,11 +320,15 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
       { keyword: 'Join multiple CSV files without SQL', description: 'Upload two CSVs and let Arcli\'s AI join them on common keys instantly.' }
     ],
     faqs: [
-      { q: 'Does this replace Microsoft Excel entirely?', a: 'No. Excel is excellent for manual data entry. Arcli is built for Data Discovery at Scale. You use Excel to collect numbers, and Arcli to analyze them when they become too large.', intent: 'Product Scope' },
-      { q: 'What happens if my CSV file is larger than 1GB?', a: 'Because the platform runs a specialized columnar database locally inside your browser, it can seamlessly process multi-gigabyte files that would instantly crash traditional software.', intent: 'Technical Capability' },
-      { q: 'Are my highly confidential files uploaded to your servers?', a: 'No. The file processing happens purely on your local machine using WebAssembly. Only the column headers and your text prompt hit our AI—never the raw rows.', intent: 'Security' }
+      { q: 'Does this replace Microsoft Excel entirely?', a: 'No. Excel is excellent for manual data entry. Arcli is built for Data Discovery at Scale. You use Excel to collect numbers, and Arcli to analyze them when they become too large.', intent: 'Product Scope', schemaEnabled: true },
+      { q: 'What happens if my CSV file is larger than 1GB?', a: 'Because the platform runs a specialized columnar database locally inside your browser, it can seamlessly process multi-gigabyte files that would instantly crash traditional software.', intent: 'Technical Capability', schemaEnabled: true },
+      { q: 'Are my highly confidential files uploaded to your servers?', a: 'No. The file processing happens purely on your local machine using WebAssembly. Only the column headers and your text prompt hit our AI—never the raw rows.', intent: 'Security', schemaEnabled: true }
     ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence']
+    relatedSlugs: [
+      { label: 'Secure Architecture', slug: '/security', intent: 'Parent' },
+      { label: 'Shopify File Integration', slug: '/seo/templates-shopify-1', intent: 'Supporting' },
+      { label: 'Upload a File Now', slug: '/files', intent: 'Conversion' }
+    ]
   },
 
   'embedded-analytics-api': {
@@ -325,6 +358,13 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
     subtitle: 'Stop wasting engineering sprints building custom dashboards for demanding clients. Drop Arcli’s secure, white-labeled AI directly into your SaaS and let your users query their own data.',
     icon: <LayoutTemplate className="w-12 h-12 text-indigo-500 mb-6" />,
     idealFor: ['SaaS Founders', 'Product Managers', 'CTOs'],
+    
+    conversionCTA: {
+      primaryLabel: 'Get API Access',
+      primaryHref: '/register?intent=embedded_api',
+      secondaryLabel: 'Read Integration Docs'
+    },
+
     uiBlocks: [
       {
         visualizationType: 'DataRelationshipsGraph',
@@ -404,11 +444,15 @@ export const coreFeaturesPart2: Record<string, SEOPageData> = {
       { keyword: 'White label BI tool for SaaS', description: 'Maintain complete brand control while offering enterprise-grade analytics.' }
     ],
     faqs: [
-      { q: 'How does the system ensure a user only sees their own data?', a: 'We use cryptographically signed tokens. Your backend signs a token containing the user’s Tenant ID. Our engine injects that ID as a hard filter into every generated query.', intent: 'Security/Architecture' },
-      { q: 'Can we restrict the tables the end-user is allowed to query?', a: 'Absolutely. You explicitly define which tables and columns are exposed. Internal system logs or administrative tables remain completely hidden.', intent: 'Data Governance' },
-      { q: 'How is the embedded product priced?', a: 'Embedded analytics is priced on a predictable usage model rather than per-seat, ensuring you maintain strong profit margins as you scale to thousands of customers.', intent: 'Pricing' },
-      { q: 'Does the AI ever generate slow queries that impact our production database?', a: 'Our query planner enforces strict execution timeouts and mandatory indexed filtering. Heavy table scans are blocked before execution.', intent: 'Performance/Safety' }
+      { q: 'How does the system ensure a user only sees their own data?', a: 'We use cryptographically signed tokens. Your backend signs a token containing the user’s Tenant ID. Our engine injects that ID as a hard filter into every generated query.', intent: 'Security/Architecture', schemaEnabled: true },
+      { q: 'Can we restrict the tables the end-user is allowed to query?', a: 'Absolutely. You explicitly define which tables and columns are exposed. Internal system logs or administrative tables remain completely hidden.', intent: 'Data Governance', schemaEnabled: true },
+      { q: 'How is the embedded product priced?', a: 'Embedded analytics is priced on a predictable usage model rather than per-seat, ensuring you maintain strong profit margins as you scale to thousands of customers.', intent: 'Pricing', schemaEnabled: true },
+      { q: 'Does the AI ever generate slow queries that impact our production database?', a: 'Our query planner enforces strict execution timeouts and mandatory indexed filtering. Heavy table scans are blocked before execution.', intent: 'Performance/Safety', schemaEnabled: true }
     ],
-    relatedSlugs: ['ai-dashboard-builder', 'ai-business-intelligence']
+    relatedSlugs: [
+      { label: 'Multi-Tenant Security Architecture', slug: '/seo/multi-tenant-analytics-security', intent: 'Parent' },
+      { label: 'Compare ThoughtSpot vs Arcli', slug: '/comparisons/thoughtspot-vs-ai-analytics', intent: 'Supporting' },
+      { label: 'Request an API Key', slug: '/register', intent: 'Conversion' }
+    ]
   }
 };

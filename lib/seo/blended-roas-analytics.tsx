@@ -1,14 +1,11 @@
-// lib/seo/blended-roas-analytics.tsx
-
 /**
- * SEO v10 SYSTEM: Blended ROAS & Cross-Platform Analytics
+ * SEO v13 SYSTEM: Blended ROAS & Cross-Platform Analytics
  * * SERP Realism Layer: 
- * - Target: We are NOT competing for Position 1 on generic "Marketing Analytics" (unrealistic vs Google Analytics/Hubspot).
+ * - Target: We are NOT competing for Position 1 on generic "Marketing Analytics".
  * - Target: Position 1 for "automated blended ROAS calculation SQL", "cross-platform ad reporting AI agent", and "Shopify Meta Ads true ROAS".
- * * Query Prioritization:
- * - Tier 1 (High Intent): "automated blended ROAS calculation", "cross-platform ad reporting software"
- * - Tier 2 (Supporting): "LTV to CAC ratio AI analytics", "Shopify Meta Ads true attribution"
- * - Tier 3 (Long-Tail): "how to calculate blended ROAS in DuckDB", "normalizing ad spend across Meta and Google SQL"
+ * * Information Gain Focus: 
+ * - Expose the flaw in pixel-based tracking (TripleWhale) vs Arcli's Server-Side Transactional Truth.
+ * - Provide actual DuckDB SQL engine output to build E-E-A-T with RevOps/Data engineers.
  */
 
 export const blendedRoasAnalyticsData = {
@@ -21,7 +18,8 @@ export const blendedRoasAnalyticsData = {
       "cross-platform ad reporting", 
       "Meta Ads to Shopify analytics", 
       "LTV to CAC ratio AI", 
-      "ecommerce AI data agents"
+      "ecommerce AI data agents",
+      "server-side attribution software"
     ],
     serpRealism: {
       primaryTarget: "Blended ROAS reporting software",
@@ -62,8 +60,8 @@ export const blendedRoasAnalyticsData = {
       type: "KeywordAnchorBlock",
       payload: {
         heading: "The Cost of Fragmented Attribution",
-        text: "Growth teams waste countless hours exporting CSVs to calculate true **Blended ROAS** because platform-native reporting inherently over-reports attribution. By defining 'Total Spend' and 'Net Revenue' centrally within the **Semantic Layer**, Arcli's **AI data agents** eliminate the discrepancies between marketing platform claims and actual cash-in-bank, delivering deterministic **cross-platform ad reporting**.",
-        semanticEntities: ["Blended ROAS", "Semantic Layer", "cross-platform ad reporting", "attribution", "AI data agents"]
+        text: "Growth teams waste countless hours exporting CSVs to calculate true **Blended ROAS** because platform-native reporting inherently over-reports attribution. By defining 'Total Spend' and 'Net Revenue' centrally within the **Semantic Layer**, Arcli's **AI data agents** eliminate the discrepancies between marketing platform claims and actual cash-in-bank. We abandon fragile browser pixels in favor of deterministic **server-side cross-platform reporting**.",
+        semanticEntities: ["Blended ROAS", "Semantic Layer", "cross-platform ad reporting", "server-side attribution", "AI data agents"]
       }
     },
 
@@ -73,9 +71,9 @@ export const blendedRoasAnalyticsData = {
     {
       type: "UIBlock",
       payload: {
-        visualizationType: "ComparisonTable",
-        dataMapping: "Side-by-side metric comparison: 'Meta Ads Manager Claimed ROAS (3.4x)' vs. 'Arcli True Blended ROAS (1.6x)'.",
-        interactionPurpose: "Visually expose the attribution illusion. Demonstrate why relying on siloed ad-platform data leads to aggressive over-spending.",
+        visualizationType: "ProgressiveChart",
+        dataMapping: "Diverging Bar Chart: 'Meta Claims (3.4x)' & 'Google Claims (2.1x)' vs 'Arcli True Omnichannel ROAS (1.8x)'.",
+        interactionPurpose: "Visually expose the attribution illusion. Demonstrate why relying on siloed ad-platform data leads to double-counting and aggressive over-spending.",
         intentServed: "Commercial Investigation & Trust Building",
         contextText: "Platforms like Meta and Google both take credit for the exact same conversion, leading to double-counting. Arcli bypasses pixel attribution entirely, comparing normalized omnichannel spend directly against your source-of-truth transactional database (Shopify/Stripe)."
       }
@@ -88,14 +86,14 @@ export const blendedRoasAnalyticsData = {
       type: "QueryExamplesBlock",
       payload: {
         title: "Conversational BI for Growth Teams",
-        description: "Bypass the data engineering backlog. Marketers interact directly with the agent using natural language, dynamically slicing cross-platform data without writing SQL.",
+        description: "Bypass the data engineering backlog. Marketers interact directly with the agent using natural language, dynamically slicing cross-platform data without writing SQL or waiting for Looker dashboard updates.",
         examples: [
           {
             query: "What is our true Blended ROAS for the last 14 days, split by new vs. returning customers?",
             intent: "Omnichannel profitability segmentation."
           },
           {
-            query: "Which ad platform drove the highest first-order profit margin yesterday, accounting for COGS?",
+            query: "Which ad platform drove the highest first-order profit margin yesterday, accounting for Shopify COGS?",
             intent: "Deep funnel margin calculation bridging Shopify COGS and Ad Spend."
           },
           {
@@ -116,24 +114,24 @@ export const blendedRoasAnalyticsData = {
         description: "While the marketer asks 'What's our Blended ROAS?', the Arcli engine generates this mathematically rigorous, dialect-specific query to normalize chaotic API schemas on the fly.",
         businessOutcome: "Saves RevOps from writing complex UNIONs across structurally incompatible datasets. Calculates true business metrics securely in real-time.",
         language: "sql",
-        code: `
--- AI Agent Generated: Daily Blended ROAS & CAC Calculation
--- Dialect: DuckDB (Arcli Compute Engine)
+        code: `-- AI Agent Generated: Daily Blended ROAS & CAC Calculation
+-- Dialect: DuckDB (Arcli Embedded Compute Engine)
+-- Semantic Governance: strictly joins spend against ledger-verified Net Revenue.
 
 WITH daily_spend AS (
-    -- Normalize and union spend from Meta and Google
-    SELECT DATE_TRUNC('day', date_start) AS metric_date, 'Meta Ads' AS source, SUM(spend) AS daily_cost
+    -- Normalize and union spend schemas from Meta and Google
+    SELECT DATE_TRUNC('day', date_start) AS metric_date, 'Meta Ads' AS platform, SUM(spend) AS daily_cost
     FROM tenant.meta_ads.campaign_insights GROUP BY 1, 2
     UNION ALL
-    SELECT DATE_TRUNC('day', segments_date) AS metric_date, 'Google Ads' AS source, SUM(metrics_cost_micros / 1000000.0) AS daily_cost
+    SELECT DATE_TRUNC('day', segments_date) AS metric_date, 'Google Ads' AS platform, SUM(metrics_cost_micros / 1000000.0) AS daily_cost
     FROM tenant.google_ads.campaign_stats GROUP BY 1, 2
 ),
 daily_revenue AS (
-    -- Calculate true net sales (excluding refunds and taxes)
+    -- Calculate true net sales (excluding refunds, taxes, and shipping) directly from the transactional ledger
     SELECT 
         DATE_TRUNC('day', created_at) AS metric_date,
         COUNT(DISTINCT customer_id) AS unique_purchasers,
-        SUM(total_price - total_tax - total_discounts) AS net_sales
+        SUM(total_price - total_tax - total_discounts - total_shipping) AS net_sales
     FROM tenant.shopify.orders
     WHERE financial_status IN ('paid', 'partially_refunded') AND cancelled_at IS NULL
     GROUP BY 1
@@ -145,7 +143,7 @@ SELECT
     CASE 
         WHEN SUM(s.daily_cost) = 0 THEN 0 
         ELSE ROUND((COALESCE(r.net_sales, 0) / SUM(s.daily_cost)), 2) 
-    END AS blended_roas
+    END AS true_blended_roas
 FROM daily_spend s
 LEFT JOIN daily_revenue r ON s.metric_date = r.metric_date
 WHERE s.metric_date >= CURRENT_DATE - INTERVAL 30 DAY
@@ -161,14 +159,14 @@ ORDER BY s.metric_date DESC;`
       type: "ComparisonBlock",
       payload: {
         title: "Marketing Analytics: Arcli vs. The Status Quo",
-        description: "Why static reporting fails modern performance marketing teams.",
+        description: "Why static reporting and pixel-based attribution tools fail modern performance marketing teams.",
         visualizationType: "ComparisonTable",
-        columns: ["Capability", "Arcli AI Agents", "Static BI (Looker/Tableau)", "In-Platform (Meta/Google)"],
+        columns: ["Capability", "Arcli AI Agents", "Static BI (Looker/Tableau)", "Attribution Tools (TripleWhale)"],
         rows: [
-          { feature: "Cross-Platform Normalization", arcli: "Automated via Semantic Engine", competitor: "Requires dedicated Data Engineer", internal: "Impossible (Siloed)" },
-          { feature: "Ad-Hoc Deep Dives", arcli: "Instant via Chat UI", competitor: "Wait for data team ticket", internal: "Rigid pre-built tables" },
-          { feature: "Custom Logic (e.g., Net Margin)", arcli: "Defined once in Semantic Layer", competitor: "Complex SQL views required", internal: "Limited to Gross Revenue" },
-          { feature: "Anomaly Alerting", arcli: "Proactive Contextual Slack Alerts", competitor: "Basic threshold emails", internal: "Algorithmic pacing only" }
+          { feature: "Data Source Truth", arcli: "Server-side API Ledgers", competitor: "Batch ETL Data Warehouse", internal: "Fragile Browser Pixels (Blocked by iOS)" },
+          { feature: "Cross-Platform Normalization", arcli: "Automated via AI Semantic Engine", competitor: "Requires dedicated Data Engineer & dbt", internal: "Pre-set black-box formulas" },
+          { feature: "Ad-Hoc Deep Dives", arcli: "Instant via Chat & OmniInput UI", competitor: "Wait for data team Jira ticket", internal: "Rigid pre-built dashboard tables" },
+          { feature: "Custom Logic (e.g., Net Margin)", arcli: "Defined once globally in Semantic Layer", competitor: "Complex SQL views required per report", internal: "Limited to Gross Revenue estimates" }
         ]
       }
     },
@@ -187,7 +185,7 @@ ORDER BY s.metric_date DESC;`
           },
           {
             title: "Automated SRM & Traffic Discrepancy Checks",
-            description: "If Google Analytics reports 40% less traffic than Meta Ads claims they sent, Arcli's agent autonomously flags the discrepancy, identifying potential bot traffic or broken tracking links before the budget is drained."
+            description: "If Google Analytics reports 40% less traffic than Meta Ads claims they sent, Arcli's agent autonomously flags the discrepancy via the Watchdog Service, identifying potential bot traffic or broken tracking links before the budget is drained."
           }
         ]
       }
@@ -203,37 +201,43 @@ ORDER BY s.metric_date DESC;`
         links: [
           {
             label: "Semantic Metric Governance",
-            href: "/use-cases/semantic-metric-governance",
+            href: "/seo/semantic-metric-governance",
             description: "Learn how Arcli ensures 'Net Revenue' uses the exact same formula across your entire company."
           },
           {
             label: "Shopify Data Architecture",
             href: "/integrations/shopify",
             description: "See how our ingestion engine syncs e-commerce transactional data with zero ETL."
+          },
+          {
+            label: "AI Agents for Anomaly Detection",
+            href: "/seo/ai-agents-anomaly-detection",
+            description: "Automatically detect CPC spikes or ROAS drop-offs before your daily standup."
           }
         ]
       }
     },
 
     // ------------------------------------------------------------------------
-    // 9. FAQS (Tier 3 Long-Tail & Snippet Optimization)
+    // 9. FAQS (Tier 3 Long-Tail & Snippet Optimization / Structured Data)
     // ------------------------------------------------------------------------
     {
       type: "FAQs",
       payload: {
         title: "Technical Implementation FAQs",
+        schemaEnabled: true,
         faqs: [
           {
-            question: "Does Arcli rely on third-party tracking pixels?",
-            answer: "No. Arcli calculates true business metrics based purely on server-side API data natively ingested from your platforms (Shopify, Stripe, Meta, Google). We do not use fragile browser pixels or rely on cookies."
+            question: "Does Arcli rely on third-party tracking pixels for ROAS?",
+            answer: "No. Arcli calculates true business metrics based purely on server-side API data natively ingested from your platforms (Shopify, Stripe, Meta, Google). We do not use fragile browser pixels or rely on cookies, making our Blended ROAS immune to iOS14/ITP tracking restrictions."
           },
           {
             question: "What happens when Meta or Google changes their API schema?",
-            answer: "Arcli's managed ingestion engine abstracts API schema changes away from your tenant. If an ad network deprecates a metric field, our integration layer handles the migration transparently, ensuring your Blended ROAS calculations never break."
+            answer: "Arcli's managed ingestion engine abstracts API schema changes away from your tenant. If an ad network deprecates a metric field, our integration layer handles the migration transparently, ensuring your Blended ROAS calculations and AI queries never break."
           },
           {
             question: "Can I bring my own data warehouse instead of using Arcli's storage?",
-            answer: "Yes. While Arcli provides embedded DuckDB storage by default for sub-second speeds, enterprise customers can deploy our AI Agents directly onto their existing Snowflake or BigQuery infrastructure via a Zero-Copy Architecture."
+            answer: "Yes. While Arcli provides embedded DuckDB storage by default for sub-second speeds, enterprise customers can deploy our AI Agents directly onto their existing Snowflake or BigQuery infrastructure via a Zero-Copy Architecture. We compute where your data lives."
           }
         ]
       }

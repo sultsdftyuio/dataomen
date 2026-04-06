@@ -1,23 +1,37 @@
-// lib/seo/file-analysis-2.tsx
 import React from 'react';
 import { TableProperties, FileJson, DatabaseBackup } from 'lucide-react';
 
 /**
- * SEOPageData Interface - Data Transformation Blueprint
+ * SEOPageData Interface - V13 SYSTEM ARCHITECTURE (File Analysis Edition)
  * Designed for users hitting hardware or software limits with massive files. 
- * Upgraded with Interactive Demo Pipelines, Target Personas, and strict CTA Hierarchies 
- * to meet enterprise evaluation criteria and drive conversions.
+ * Upgraded with Interactive Demo Pipelines, Target Personas, Search Intent Routing,
+ * SERP Realism, Information Gain, and strict CTA/Link Hierarchies.
  */
 export type SEOPageData = {
   type: 'guide';
   title: string;
   description: string;
   metaKeywords: string[];
+  
+  // V13 SYSTEM ADDITIONS
+  searchIntent: {
+    primary: string;
+    secondary: string[];
+    queryPriority: 'Tier 1' | 'Tier 2' | 'Tier 3';
+    queryClass: ('Informational' | 'Commercial investigation' | 'Comparison' | 'How-to')[];
+  };
+  serpRealism: {
+    targetPosition: string;
+    competitionDifficulty: 'High' | 'Medium' | 'Low';
+    domainAdvantage: string;
+  };
+  informationGain: string;
+
   h1: string;
   subtitle: string;
   icon: React.ReactElement;
   
-  // NEW: Interactive Demo Payload
+  // INTERACTIVE UI PAYLOADS
   demoPipeline?: {
     userPrompt: string;
     aiInsight: string;
@@ -25,7 +39,6 @@ export type SEOPageData = {
     chartMetric: string;
   };
 
-  // NEW: Audience Segmentation
   targetPersonas?: {
     role: string;
     iconType: 'exec' | 'ops' | 'data';
@@ -33,7 +46,7 @@ export type SEOPageData = {
     capabilities: string[];
   }[];
 
-  // NEW: CTA Hierarchy
+  // V13 CONVERSION ENGINE
   ctaHierarchy?: {
     primary: { text: string; href: string };
     secondary: { text: string; href: string };
@@ -70,8 +83,10 @@ export type SEOPageData = {
     businessOutcome: string;
     sqlSnippet?: string;
   }[];
-  faqs: { q: string; a: string }[];
-  relatedSlugs: string[];
+  
+  // V13 STRUCTURED DATA & SILO
+  faqs: { q: string; a: string; intent: string; schemaEnabled: boolean }[];
+  relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
 };
 
 export const fileAnalysisPart2: Record<string, SEOPageData> = {
@@ -80,11 +95,24 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
     title: 'Analyze & Automate Excel Data with AI | Arcli',
     description: 'Transition from brittle VLOOKUPs to robust data engineering. Upload Excel workbooks and use Arcli to execute cross-sheet SQL analysis instantly without crashing.',
     metaKeywords: ['AI Excel Analysis', 'Excel Data Automation', 'VLOOKUP Alternative', 'Cross Sheet SQL', 'Local File Analytics', 'Excel Dashboard Generator'],
+    
+    searchIntent: {
+      primary: 'Analyze massive Excel files with AI',
+      secondary: ['VLOOKUP alternatives for large data', 'Excel dashboard generator', 'Cross sheet join without SQL'],
+      queryPriority: 'Tier 1',
+      queryClass: ['How-to', 'Commercial investigation']
+    },
+    serpRealism: {
+      targetPosition: 'Top 3 for "AI Excel Analysis" & "VLOOKUP Alternative"',
+      competitionDifficulty: 'High',
+      domainAdvantage: 'Emphasizing local WASM execution to eliminate the file-size upload limits and privacy concerns inherent in legacy cloud tools.'
+    },
+    informationGain: 'Proving that true Excel automation isn\'t about writing better VBA macros; it\'s about treating spreadsheet tabs as relational database tables and querying them with native SQL.',
+
     h1: 'The End of Broken Spreadsheets',
     subtitle: 'Replace fragile cell references and frozen applications with robust AI data engineering. Upload massive .xlsx files to build flawless cross-sheet relationships and interactive dashboards in seconds.',
     icon: <TableProperties className="w-12 h-12 text-green-600 mb-6" />,
 
-    // Powered Interactive Demo
     demoPipeline: {
       userPrompt: "Join the 'Employees' sheet with the 'Q3_Bonuses' sheet. What is the total compensation by department?",
       aiInsight: "Engineering has the highest total compensation at $1.2M. The average Q3 bonus for this department was $4,500, which is 12% higher than the company average.",
@@ -92,7 +120,6 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       chartMetric: "$1.2M Total Comp"
     },
 
-    // Powered Audience Segmentation
     targetPersonas: [
       {
         role: 'For Finance Leaders',
@@ -114,9 +141,8 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       }
     ],
 
-    // Strong CTA Hierarchy
     ctaHierarchy: {
-      primary: { text: 'Analyze Excel Free', href: '/register' },
+      primary: { text: 'Analyze Excel Free', href: '/register?intent=excel_upload' },
       secondary: { text: 'See VLOOKUP Alternative', href: '#interactive-demo' }
     },
 
@@ -162,12 +188,16 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       }
     ],
     faqs: [
-      { q: 'Does Arcli overwrite or modify my original Excel file?', a: 'No. Arcli operates utilizing a strict read-only extraction process. Data is temporarily loaded into our analytical engine for exploration, leaving your original .xlsx file completely untouched.' },
-      { q: 'Is it safe to upload highly confidential financial files?', a: 'Yes. We utilize a Local-First architecture. Your file is read and analyzed directly within your browser’s secure sandbox. We never transmit or store your raw financial rows on our external servers.' },
-      { q: 'How does the AI know how to join two different sheets?', a: 'Our Semantic Router scans the headers of all uploaded sheets. If it detects overlapping concepts (like `Employee_ID` on one sheet and `Emp_Num` on another), it infers the link and generates the correct SQL JOIN.' },
-      { q: 'Does this replace Microsoft Excel for our company?', a: 'No. Excel remains the gold standard for manual data entry and highly bespoke grid modeling. Arcli is built to take over when you need to rapidly discover insights or merge massive files.' }
+      { q: 'Does Arcli overwrite or modify my original Excel file?', a: 'No. Arcli operates utilizing a strict read-only extraction process. Data is temporarily loaded into our analytical engine for exploration, leaving your original .xlsx file completely untouched.', intent: 'Data Safety', schemaEnabled: true },
+      { q: 'Is it safe to upload highly confidential financial files?', a: 'Yes. We utilize a Local-First architecture. Your file is read and analyzed directly within your browser’s secure sandbox. We never transmit or store your raw financial rows on our external servers.', intent: 'Security', schemaEnabled: true },
+      { q: 'How does the AI know how to join two different sheets?', a: 'Our Semantic Router scans the headers of all uploaded sheets. If it detects overlapping concepts (like `Employee_ID` on one sheet and `Emp_Num` on another), it infers the link and generates the correct SQL JOIN.', intent: 'Feature Capability', schemaEnabled: true },
+      { q: 'Does this replace Microsoft Excel for our company?', a: 'No. Excel remains the gold standard for manual data entry and highly bespoke grid modeling. Arcli is built to take over when you need to rapidly discover insights or merge massive files.', intent: 'Positioning', schemaEnabled: true }
     ],
-    relatedSlugs: ['json-data-analysis-ai', 'parquet-data-analysis-ai']
+    relatedSlugs: [
+      { label: 'File Analysis Infrastructure', slug: '/files', intent: 'Parent' },
+      { label: 'Automated Executive Reporting', slug: '/seo/ai-narrative-insights', intent: 'Supporting' },
+      { label: 'Upload an Excel File Now', slug: '/files/upload', intent: 'Conversion' }
+    ]
   },
 
   'json-data-analysis-ai': {
@@ -175,11 +205,24 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
     title: 'Analyze Complex JSON Exports with AI | Arcli',
     description: 'Stop writing custom Python scripts to parse JSON files. Upload nested application logs or API exports and let Arcli flatten and analyze them conversationally.',
     metaKeywords: ['JSON Data Analysis', 'Parse JSON AI', 'Analyze API Exports', 'Log File Analytics', 'Flatten JSON', 'JSON to SQL'],
+    
+    searchIntent: {
+      primary: 'Analyze JSON data files with AI',
+      secondary: ['Flatten nested JSON', 'JSON to SQL parser', 'Analyze API log exports'],
+      queryPriority: 'Tier 1',
+      queryClass: ['How-to', 'Informational']
+    },
+    serpRealism: {
+      targetPosition: 'Top 3 for "Parse JSON AI" & "JSON Data Analysis"',
+      competitionDifficulty: 'Medium',
+      domainAdvantage: 'Bypassing the need for Python scripts and Pandas dataframes by directly querying raw JSON structures with DuckDB-WASM.'
+    },
+    informationGain: 'Shifting the paradigm from "engineers parsing log files" to "business users querying raw JSON exports natively in English."',
+
     h1: 'Unwrap Complex JSON Instantly',
     subtitle: 'Extracting business value from nested JSON exports usually requires an engineer. Arcli automatically unwraps, flattens, and analyzes deep API payloads so business users can find answers immediately.',
     icon: <FileJson className="w-12 h-12 text-blue-500 mb-6" />,
 
-    // Powered Interactive Demo
     demoPipeline: {
       userPrompt: "Flatten this MongoDB export and show me the count of users by subscription tier.",
       aiInsight: "Out of 50,000 processed JSON objects, 65% are on the 'Free' tier, while 'Pro' tier users generate 80% of your total API calls.",
@@ -187,7 +230,6 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       chartMetric: "65% Free Tier"
     },
 
-    // Powered Audience Segmentation
     targetPersonas: [
       {
         role: 'For Product Managers',
@@ -209,9 +251,8 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       }
     ],
 
-    // Strong CTA Hierarchy
     ctaHierarchy: {
-      primary: { text: 'Parse JSON Free', href: '/register' },
+      primary: { text: 'Parse JSON Free', href: '/register?intent=json_upload' },
       secondary: { text: 'Try Interactive Parser', href: '#interactive-demo' }
     },
 
@@ -257,12 +298,16 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       }
     ],
     faqs: [
-      { q: 'Do I need to know how to write JSON paths to use this?', a: 'No. You simply ask for the data in plain English (e.g., "Extract the user\'s location"). The AI acts as the translator, generating the exact JSON-path syntax required to pull the data.' },
-      { q: 'Is it safe to upload logs containing sensitive customer data?', a: 'Yes. Because the file is processed locally within your web browser using WebAssembly, the raw logs are never uploaded to our servers. Sensitive PII is never exposed to external networks.' },
-      { q: 'What specific JSON file formats do you support?', a: 'We support standard JSON objects, JSON arrays, and NDJSON (Newline Delimited JSON) files, which are highly common for massive server log exports.' },
-      { q: 'How do you prevent AI hallucinations when parsing data?', a: 'We do not use LLMs to "guess" the contents of your JSON. We use a deterministic, highly optimized local database engine (DuckDB) to physically parse the file, ensuring 100% mathematical fidelity.' }
+      { q: 'Do I need to know how to write JSON paths to use this?', a: 'No. You simply ask for the data in plain English (e.g., "Extract the user\'s location"). The AI acts as the translator, generating the exact JSON-path syntax required to pull the data.', intent: 'Usability', schemaEnabled: true },
+      { q: 'Is it safe to upload logs containing sensitive customer data?', a: 'Yes. Because the file is processed locally within your web browser using WebAssembly, the raw logs are never uploaded to our servers. Sensitive PII is never exposed to external networks.', intent: 'Security', schemaEnabled: true },
+      { q: 'What specific JSON file formats do you support?', a: 'We support standard JSON objects, JSON arrays, and NDJSON (Newline Delimited JSON) files, which are highly common for massive server log exports.', intent: 'Compatibility', schemaEnabled: true },
+      { q: 'How do you prevent AI hallucinations when parsing data?', a: 'We do not use LLMs to "guess" the contents of your JSON. We use a deterministic, highly optimized local database engine (DuckDB) to physically parse the file, ensuring 100% mathematical fidelity.', intent: 'Accuracy', schemaEnabled: true }
     ],
-    relatedSlugs: ['ai-excel-analysis', 'parquet-data-analysis-ai']
+    relatedSlugs: [
+      { label: 'File Analysis Architecture', slug: '/files', intent: 'Parent' },
+      { label: 'Analyze Parquet Files', slug: '/seo/parquet-data-analysis-ai', intent: 'Supporting' },
+      { label: 'Start Parsing JSON', slug: '/files/upload', intent: 'Conversion' }
+    ]
   },
 
   'parquet-data-analysis-ai': {
@@ -270,11 +315,24 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
     title: 'Analyze Massive Parquet Files with AI | Arcli',
     description: 'Process big data locally. Upload massive, highly-compressed Parquet files and query millions of rows in milliseconds using Arcli\'s conversational AI.',
     metaKeywords: ['Parquet Data Analysis', 'Analyze Parquet AI', 'Big Data Analytics', 'Local Parquet Viewer', 'WebAssembly Analytics', 'DuckDB Parquet'],
+    
+    searchIntent: {
+      primary: 'Analyze Parquet data files locally',
+      secondary: ['Local Parquet file viewer', 'Big data analytics AI', 'Query parquet without python'],
+      queryPriority: 'Tier 1',
+      queryClass: ['How-to', 'Commercial investigation']
+    },
+    serpRealism: {
+      targetPosition: 'Top 1-3 for "Local Parquet Viewer" & "Analyze Parquet AI"',
+      competitionDifficulty: 'Medium',
+      domainAdvantage: 'Leveraging embedded browser technologies to provide instant access to compressed formats that competitors require users to upload to cloud storage first.'
+    },
+    informationGain: 'Democratizing big data by allowing non-technical business operators to open, read, and query massive columnar formats without spinning up a cloud warehouse or writing Pandas.',
+
     h1: 'Conversational Big Data Analytics',
     subtitle: 'Bypass the data warehouse. Drop massive, highly-compressed Parquet files directly into your browser and analyze millions of rows instantly without incurring cloud compute costs.',
     icon: <DatabaseBackup className="w-12 h-12 text-teal-500 mb-6" />,
 
-    // Powered Interactive Demo
     demoPipeline: {
       userPrompt: "Analyze this 2GB IoT sensor Parquet file. What was the average temperature for machine 405 yesterday?",
       aiInsight: "Machine 405 averaged 74.2°C yesterday, with a dangerous peak of 82.1°C at 14:00. Analyzed 14M rows locally in 210ms.",
@@ -282,7 +340,6 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       chartMetric: "210ms Execution"
     },
 
-    // Powered Audience Segmentation
     targetPersonas: [
       {
         role: 'For Data Engineers',
@@ -304,9 +361,8 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       }
     ],
 
-    // Strong CTA Hierarchy
     ctaHierarchy: {
-      primary: { text: 'Query Parquet Free', href: '/register' },
+      primary: { text: 'Query Parquet Free', href: '/register?intent=parquet_upload' },
       secondary: { text: 'See Big Data Demo', href: '#interactive-demo' }
     },
 
@@ -352,11 +408,15 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
       }
     ],
     faqs: [
-      { q: 'Why use Parquet instead of CSV?', a: 'Parquet is a columnar storage format that is highly compressed and optimized for analytics. It is much smaller to store and exponentially faster to query than a standard CSV, making it the format of choice for big data.' },
-      { q: 'I don’t know how to open a Parquet file. Can Arcli help?', a: 'Yes. Parquet files cannot be opened in Excel. Arcli acts as your immediate, conversational Parquet viewer. Just drop the file in the browser and start asking questions.' },
-      { q: 'Are my massive datasets uploaded to your servers?', a: 'No. The beauty of WebAssembly is Local-First execution. The file stays on your machine, ensuring zero network egress time and absolute compliance with your data privacy policies.' },
-      { q: 'Does it support partitioned Parquet directories?', a: 'Yes. If you have a folder of Parquet files partitioned by date (e.g., `data/year=2023/month=10/`), you can query across them seamlessly using standard wildcard SQL generated by the AI.' }
+      { q: 'Why use Parquet instead of CSV?', a: 'Parquet is a columnar storage format that is highly compressed and optimized for analytics. It is much smaller to store and exponentially faster to query than a standard CSV, making it the format of choice for big data.', intent: 'Education', schemaEnabled: true },
+      { q: 'I don’t know how to open a Parquet file. Can Arcli help?', a: 'Yes. Parquet files cannot be opened in Excel. Arcli acts as your immediate, conversational Parquet viewer. Just drop the file in the browser and start asking questions.', intent: 'Usability', schemaEnabled: true },
+      { q: 'Are my massive datasets uploaded to your servers?', a: 'No. The beauty of WebAssembly is Local-First execution. The file stays on your machine, ensuring zero network egress time and absolute compliance with your data privacy policies.', intent: 'Security', schemaEnabled: true },
+      { q: 'Does it support partitioned Parquet directories?', a: 'Yes. If you have a folder of Parquet files partitioned by date (e.g., `data/year=2023/month=10/`), you can query across them seamlessly using standard wildcard SQL generated by the AI.', intent: 'Advanced Capability', schemaEnabled: true }
     ],
-    relatedSlugs: ['ai-excel-analysis', 'json-data-analysis-ai']
+    relatedSlugs: [
+      { label: 'Local-First Architecture', slug: '/seo/data-security-zero-movement', intent: 'Parent' },
+      { label: 'Analyze BigQuery Data', slug: '/seo/bigquery-ai-analytics', intent: 'Supporting' },
+      { label: 'Drop a Parquet File', slug: '/files/upload', intent: 'Conversion' }
+    ]
   }
 };

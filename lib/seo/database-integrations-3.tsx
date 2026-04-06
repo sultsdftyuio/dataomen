@@ -1,13 +1,96 @@
-// lib/seo/database-integrations-3.tsx
 import React from 'react';
 import { Database, Zap } from 'lucide-react';
-import { SEOPageData } from './database-integrations-1'; // Implementing strict v10.1 block architecture
 
 /**
- * SEO v10.1 — Database Integrations Part 3 (Oracle & ClickHouse)
- * Focus: Enterprise Compliance, Real-Time Scale, and strict E-E-A-T technical grounding.
- * Incorporates Multi-Surface Distribution, Query Class Coverage, and SERP Realism.
+ * SEOPageData Interface - V13 SYSTEM ARCHITECTURE
+ * Systematically built for Compounding Authority, SERP Domination, and UI-Driven Intelligence.
+ * Incorporates Conversion Engines, Structured Data, and strict E-E-A-T standards.
  */
+
+// --- BLOCK COMPOSITION SYSTEM ---
+
+export type UIBlock = {
+  visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'DataRelationshipsGraph' | 'Cards' | 'AnalyticsDashboard';
+  dataMapping: string;
+  interactionPurpose: string;
+  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
+};
+
+export type ComparisonBlock = {
+  target: string;
+  arcliAdvantage: string;
+  legacyFlaw: string;
+};
+
+export type QueryExamplesBlock = {
+  title: string;
+  complexity: 'Surface' | 'Intermediate' | 'Deep';
+  intentCoverage: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
+  businessQuestion: string;
+  businessOutcome: string;
+  sqlSnippet?: string; 
+};
+
+export type KeywordAnchorBlock = {
+  primaryIntent: string;
+  secondaryIntents: string[];
+  serpRealisticTarget: 'Long-tail' | 'Primary Volume' | 'Semantic Gap';
+};
+
+export type UseCaseBlock = {
+  workflowBefore: string[];
+  workflowAfter: string[];
+  businessValueMetrics: {
+    label: string;
+    value: string;
+    description: string;
+  }[];
+};
+
+// --- CORE SYSTEM ARCHITECTURE ---
+
+export type SEOPageData = {
+  type: 'integration';
+  title: string;
+  description: string;
+  searchIntentMapping: KeywordAnchorBlock;
+  h1: string;
+  subtitle: string;
+  icon: React.ReactElement;
+  contrarianStatement: string;
+  
+  // V13 CONVERSION ENGINE
+  conversionCTA: {
+    primaryLabel: string;
+    primaryHref: string;
+    secondaryLabel: string;
+  };
+
+  decisionTrigger: {
+    headline: string;
+    bullets: string[];
+  };
+  useCases: UseCaseBlock;
+  trustAndSecurity: {
+    principle: string;
+    howWeDeliver: string;
+  }[];
+  performanceHighlights: {
+    metric: string;
+    description: string;
+  }[];
+  analyticalScenarios: QueryExamplesBlock[];
+  comparisonData: ComparisonBlock[];
+  uiComponents: UIBlock[];
+  
+  // V13 STRUCTURED DATA
+  faqs: { q: string; a: string; intent: string; schemaEnabled: boolean }[];
+  
+  // V13 INTERNAL LINKING ENGINE
+  relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
+};
+
+// --- CONTENT ENGINE EXPORT ---
 
 export const databaseIntegrationsPart3: Record<string, SEOPageData> = {
   'oracle-ai-analytics': {
@@ -17,12 +100,19 @@ export const databaseIntegrationsPart3: Record<string, SEOPageData> = {
     searchIntentMapping: {
       primaryIntent: 'Oracle AI Analytics',
       secondaryIntents: ['Oracle BI integration', 'PL/SQL generator', 'Zero data movement Oracle', 'Secure enterprise AI'],
-      serpRealisticTarget: 'Semantic Gap' // Captures the enterprise sector actively avoiding cloud-migration BI architectures
+      serpRealisticTarget: 'Semantic Gap' 
     },
     h1: 'Enterprise AI for Oracle Database',
     subtitle: 'Unlock Oracle data without moving it. Connect via strict Read-Only credentials, let our AI generate the PL/SQL, and let your infrastructure execute it with absolute security.',
     icon: <Database className="w-12 h-12 text-red-600 mb-6" />,
     contrarianStatement: 'You do not need another expensive semantic layer or a 6-month BI migration. Legacy vendors want you to extract your Oracle data into their proprietary clouds; we believe your data should stay exactly where it is.',
+    
+    conversionCTA: {
+      primaryLabel: 'Deploy Oracle Analytics',
+      primaryHref: '/register?intent=oracle_integration',
+      secondaryLabel: 'View Security Architecture'
+    },
+
     decisionTrigger: {
       headline: 'When Enterprise Oracle Teams Choose Arcli',
       bullets: [
@@ -150,14 +240,15 @@ FETCH FIRST 5 ROWS ONLY;`
       }
     ],
     faqs: [
-      { q: 'Does Arcli support Oracle Cloud Infrastructure (OCI) and On-Premises?', a: 'Yes. As long as a secure connection tunnel (like an SSH bastion or VPC peering) can be established, Arcli can analyze the schema. We strongly recommend our On-Prem Agent for highly restricted environments.' },
-      { q: 'How do you prevent the AI from generating inefficient table scans?', a: 'Arcli ingests index metadata during the initial sync. The query planner is instructed to utilize existing indexes and partitions, ensuring the generated PL/SQL is highly performant.' },
-      { q: 'Will Arcli retain my proprietary customer data?', a: 'No. Arcli never stores row-level data. We only process the aggregate results returned by your database in memory to render charts, immediately discarding the ephemeral data afterward.' }
+      { q: 'Does Arcli support Oracle Cloud Infrastructure (OCI) and On-Premises?', a: 'Yes. As long as a secure connection tunnel (like an SSH bastion or VPC peering) can be established, Arcli can analyze the schema. We strongly recommend our On-Prem Agent for highly restricted environments.', intent: 'Compatibility', schemaEnabled: true },
+      { q: 'How do you prevent the AI from generating inefficient table scans?', a: 'Arcli ingests index metadata during the initial sync. The query planner is instructed to utilize existing indexes and partitions, ensuring the generated PL/SQL is highly performant.', intent: 'Performance', schemaEnabled: true },
+      { q: 'Will Arcli retain my proprietary customer data?', a: 'No. Arcli never stores row-level data. We only process the aggregate results returned by your database in memory to render charts, immediately discarding the ephemeral data afterward.', intent: 'Security', schemaEnabled: true }
     ],
-    internalLinks: {
-      relatedSlugs: ['sql-server-ai-analytics', 'multi-tenant-analytics-security', 'data-security-zero-movement'],
-      clusterParent: 'database-integrations'
-    }
+    relatedSlugs: [
+      { label: 'Database Integrations', slug: '/integrations', intent: 'Parent' },
+      { label: 'Zero Data Movement Architecture', slug: '/seo/data-security-zero-movement', intent: 'Supporting' },
+      { label: 'Get Started', slug: '/register', intent: 'Conversion' }
+    ]
   },
 
   'clickhouse-ai-analytics': {
@@ -167,12 +258,19 @@ FETCH FIRST 5 ROWS ONLY;`
     searchIntentMapping: {
       primaryIntent: 'ClickHouse AI Analytics',
       secondaryIntents: ['ClickHouse SQL generator', 'Real-time analytics AI', 'ClickHouse BI tool', 'AI for billion row databases'],
-      serpRealisticTarget: 'Primary Volume' // ClickHouse is surging; ranking for specific real-time AI BI tools is high-value
+      serpRealisticTarget: 'Primary Volume' 
     },
     h1: 'Real-Time AI Analytics for ClickHouse',
     subtitle: 'Harness the blistering speed of ClickHouse without writing complex SQL. Arcli grounds its AI in your schema to generate dialect-perfect, real-time analytics instantly.',
     icon: <Zap className="w-12 h-12 text-yellow-500 mb-6" />,
     contrarianStatement: 'Standard SQL generators fail spectacularly on ClickHouse. Generic LLMs hallucinate Postgres syntax for real-time streaming data, completely missing powerful native functions like argMax or quantilesTiming.',
+    
+    conversionCTA: {
+      primaryLabel: 'Connect ClickHouse',
+      primaryHref: '/register?intent=clickhouse_integration',
+      secondaryLabel: 'Read the Docs'
+    },
+
     decisionTrigger: {
       headline: 'When ClickHouse Teams Choose Arcli',
       bullets: [
@@ -297,13 +395,14 @@ FORMAT JSON;`
       }
     ],
     faqs: [
-      { q: 'Does Arcli support ClickHouse Cloud as well as self-hosted?', a: 'Yes, Arcli seamlessly connects to both ClickHouse Cloud (via standard HTTPS/native ports) and self-hosted Open Source ClickHouse clusters.' },
-      { q: 'How does Arcli handle ClickHouse arrays and nested types?', a: 'Arcli\'s semantic engine is specifically trained on ClickHouse syntax. When a user asks about nested data, the AI correctly utilizes functions like `arrayJoin` or `JSONExtract` instead of standard SQL JOINs.' },
-      { q: 'Can I restrict which tables Arcli has access to?', a: 'Absolutely. Security is paramount. We recommend creating a specific ClickHouse user for Arcli and granting `SELECT` privileges only to the specific databases, tables, or materialized views you want to expose to the AI.' }
+      { q: 'Does Arcli support ClickHouse Cloud as well as self-hosted?', a: 'Yes, Arcli seamlessly connects to both ClickHouse Cloud (via standard HTTPS/native ports) and self-hosted Open Source ClickHouse clusters.', intent: 'Compatibility', schemaEnabled: true },
+      { q: 'How does Arcli handle ClickHouse arrays and nested types?', a: 'Arcli\'s semantic engine is specifically trained on ClickHouse syntax. When a user asks about nested data, the AI correctly utilizes functions like `arrayJoin` or `JSONExtract` instead of standard SQL JOINs.', intent: 'Data Modeling', schemaEnabled: true },
+      { q: 'Can I restrict which tables Arcli has access to?', a: 'Absolutely. Security is paramount. We recommend creating a specific ClickHouse user for Arcli and granting `SELECT` privileges only to the specific databases, tables, or materialized views you want to expose to the AI.', intent: 'Security', schemaEnabled: true }
     ],
-    internalLinks: {
-      relatedSlugs: ['snowflake-ai-analytics', 'bigquery-ai-analytics', 'ai-sql-agent-guide'],
-      clusterParent: 'database-integrations'
-    }
+    relatedSlugs: [
+      { label: 'Database Integrations', slug: '/integrations', intent: 'Parent' },
+      { label: 'Conversational SQL Guide', slug: '/seo/ai-sql-agent-guide', intent: 'Supporting' },
+      { label: 'Start Free Trial', slug: '/register', intent: 'Conversion' }
+    ]
   }
 };

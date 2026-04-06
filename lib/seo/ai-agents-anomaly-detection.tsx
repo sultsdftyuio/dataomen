@@ -1,7 +1,7 @@
 // lib/seo/ai-agents-anomaly-detection.tsx
 
 /**
- * SEO v10 SYSTEM: AI Agents for Anomaly Detection & Metric Governance
+ * SEO v13 SYSTEM: AI Agents for Anomaly Detection & Metric Governance
  * * SERP Realism Layer: 
  * - Target: We are NOT competing for Position 1 on generic "AI Agents" (unrealistic vs OpenAI/Anthropic).
  * - Target: Position 1 for "AI data agents anomaly detection", "semantic layer metric governance AI", and "automated revenue leak detection SQL".

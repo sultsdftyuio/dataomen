@@ -5,55 +5,50 @@ import { SEOPageData } from './index';
 /**
  * SEO Industry Campaign: Healthcare & Life Sciences
  * Target Audience: Chief Medical Information Officers (CMIO), Healthcare CISOs, Data Architects
- * Core Focus: HIPAA Compliance, PHI (Protected Health Information) Security, Zero-Data Movement.
+ * Core Focus: HIPAA Compliance, PHI (Protected Health Information) Security, Zero-Data Movement, FHIR R4.
  */
 export const healthcareIndustry: SEOPageData = {
   type: 'campaign',
   seo: {
-    title: 'HIPAA Compliant AI Analytics & BI | Zero Data Movement | Arcli',
-    description: 'Deploy AI on top of your clinical and operational data without moving PHI. Arcli’s read-only architecture generates secure SQL directly in your warehouse.',
-    h1: 'HIPAA-Compliant AI Analytics for Healthcare',
+    title: 'HIPAA Compliant AI Analytics | Zero Data Movement BI | Arcli',
+    description: 'Deploy AI on top of your EHR and clinical data without moving PHI. Arcli’s read-only, VPC-native architecture generates secure SQL directly in your warehouse.',
+    h1: 'HIPAA-Compliant AI Analytics for Healthcare Data',
     keywords: [
       'HIPAA compliant AI analytics', 
       'Healthcare BI zero data movement', 
-      'Patient data AI reporting', 
-      'Secure clinical analytics',
-      'AI for EHR analytics without ETL',
+      'VPC native AI BI tool',
       'query FHIR data with SQL AI',
+      'AI for EHR analytics without ETL',
       'secure patient data analytics platform',
       'Epic Systems AI reporting',
       'Cerner zero copy analytics',
       'healthcare data lake text-to-sql',
       'CMIO healthcare dashboard AI',
       'hospital readmission predictive analytics',
-      'PHI secure data visualization',
       'medical records AI querying',
-      'genomic data SQL generator',
-      'healthcare text-to-sql architecture',
+      'FHIR R4 JSONB analytics',
       'zero data replication healthcare BI',
       'HIPAA BAA AI analytics',
-      'clinical trial data matching AI',
-      'hospital resource allocation analytics'
+      'clinical trial cohort discovery AI'
     ],
     intent: 'campaign',
     canonicalDomain: 'https://arcli.tech/industries/healthcare'
   },
   hero: {
     badge: 'HEALTHCARE & LIFE SCIENCES',
-    title: 'Analyze Patient Data Without Moving PHI.',
-    subtitle: 'Extract insights from your EHR and clinical databases securely. Arcli generates the dialect-perfect SQL, but your secure VPC executes it. Zero data replication means zero compliance risk.',
+    title: 'Query EHR Data with AI. Keep PHI in Your VPC.',
+    subtitle: 'Extract insights from your clinical databases instantly. Arcli generates dialect-perfect SQL, but your secure infrastructure executes it. Zero data replication. Zero compliance risk.',
     primaryCTA: { text: 'Schedule a Security Review', href: '/book-demo' },
-    secondaryCTA: { text: 'Read the BAA Overview', href: '/compliance' }
+    secondaryCTA: { text: 'View VPC Architecture', href: '/security' }
   },
 
   // Cross-page Differentiation Signal: Healthcare Specific Architecture
   complianceStack: {
-    standards: ['HIPAA', 'HITECH', 'HITRUST CSF (Inherited)'],
-    encryption: ['AES-256 at Rest', 'TLS 1.3 in Transit', 'Zero PHI Persistence'],
+    standards: ['HIPAA BAA', 'HITECH', 'HITRUST CSF (Inherited)'],
+    encryption: ['AES-256 at Rest', 'TLS 1.2+ in Transit', 'Stateless Memory Purge'],
     audit: ['Cryptographic Query Hashing', 'End-to-End Execution Logging', 'Automated Anomaly Flagging']
   },
 
-  // Maps to ExecutiveSummary in seo-blocks-3.tsx
   executiveSummary: [
     { value: '0MB', label: 'PHI Replicated' },
     { value: '100%', label: 'HIPAA Compliant' },
@@ -61,35 +56,32 @@ export const healthcareIndustry: SEOPageData = {
     { value: 'End-to-End', label: 'Audit Logging' }
   ],
 
-  // Maps to ContrarianBanner in seo-blocks-3.tsx
   contrarianBanner: {
     statement: "Copying patient records into a third-party BI cloud is a massive liability.",
-    subtext: "Legacy analytics tools force you to build complex ETL pipelines that duplicate sensitive PHI across multiple environments. Arcli fundamentally rejects this. Keep your data in your secure infrastructure; let our AI come to you."
+    subtext: "Legacy analytics force you to build complex ETL pipelines, duplicating sensitive PHI across multiple environments. Arcli fundamentally rejects this. Keep your data in your secure infrastructure; let our AI come to you."
   },
 
-  // Maps to SecurityGuardrails in seo-blocks-3.tsx
   securityGuardrails: [
     {
       title: 'Architectural PHI Protection',
-      description: 'Because Arcli only ingests schema metadata (table structures, column names), raw Protected Health Information never touches our servers. We generate the query, but your warehouse handles the actual patient records.'
+      description: 'Arcli only ingests schema metadata (table structures, column names). Raw Protected Health Information never touches our servers. We generate the query; your warehouse handles the actual patient records.'
     },
     {
       title: 'Strict Read-Only Guarantee',
-      description: 'We connect to your Epic, Cerner, or custom databases using heavily restricted, Read-Only service accounts. It is programmatically impossible for Arcli to mutate or delete clinical data.'
+      description: 'We connect to your Epic, Cerner, or FHIR data lakes using heavily restricted, Read-Only service accounts. It is programmatically impossible for Arcli to mutate, update, or delete clinical data.'
     },
     {
       title: 'Cryptographic Query Auditing',
-      description: 'Every interaction is logged. Healthcare compliance teams have full visibility into exactly what SQL was generated, who requested it, and when it was executed against the database.'
+      description: 'Every interaction is logged via our Metric Governance layer. Compliance teams have full visibility into exactly what SQL was generated, who requested it, and when it executed.'
     }
   ],
 
-  // Adapting the Usecase block for Healthcare scenarios
   useCases: {
     title: 'High-Impact Clinical Analytics',
     items: [
       {
         title: 'Hospital Readmission Tracking',
-        description: 'Instantly generate reports on 30-day readmission rates filtered by diagnosis codes, attending physicians, or specific wards without waiting weeks for IT to build a dashboard.',
+        description: 'Instantly generate reports on 30-day readmission rates filtered by ICD-10 codes, attending physicians, or wards without waiting weeks for data engineering.',
         icon: 'Activity'
       },
       {
@@ -105,45 +97,61 @@ export const healthcareIndustry: SEOPageData = {
     ]
   },
 
-  // Maps to StrategicQuery in seo-blocks-3.tsx
   strategicScenario: {
-    title: 'Postgres JSONB FHIR Analysis',
-    description: 'Healthcare data is often stored in complex FHIR (Fast Healthcare Interoperability Resources) JSON blobs. Standard BI tools choke on this. Arcli understands nested JSONB and writes the precise Postgres operators needed.',
+    title: 'Postgres JSONB FHIR R4 Analysis',
+    description: 'Standard BI tools choke on nested FHIR (Fast Healthcare Interoperability Resources) JSON blobs. Arcli natively understands nested JSONB and writes the precise Postgres operators needed.',
     dialect: 'PostgreSQL (JSONB)',
-    sql: `-- Generated by Arcli AI Orchestrator
+    sql: `-- Generated by Arcli Semantic Router & AI Orchestrator
+WITH patient_metrics AS (
+    SELECT 
+        resource->>'id' AS patient_id,
+        resource->>'gender' AS patient_gender,
+        (resource->'extension'->0->>'valueDecimal')::numeric AS risk_score,
+        jsonb_array_elements(resource->'address')->>'city' AS city
+    FROM 
+        fhir_patients
+    WHERE 
+        resource->>'resourceType' = 'Patient'
+        AND (resource->'active')::boolean = true
+)
 SELECT 
-    resource->>'gender' AS patient_gender,
-    COUNT(id) AS total_patients,
-    ROUND(AVG((resource->'extension'->0->>'valueDecimal')::numeric), 2) AS avg_risk_score
+    patient_gender,
+    COUNT(patient_id) AS total_patients,
+    ROUND(AVG(risk_score), 2) AS avg_risk_score
 FROM 
-    fhir_patients
+    patient_metrics
 WHERE 
-    resource->>'resourceType' = 'Patient'
-    AND (resource->'active')::boolean = true
-    AND resource->'address'->0->>'city' = 'Boston'
+    city = 'Boston'
 GROUP BY 
-    resource->>'gender'
+    patient_gender
 HAVING 
-    COUNT(id) > 50
+    COUNT(patient_id) > 50
 ORDER BY 
     avg_risk_score DESC;`,
-    businessOutcome: 'Empowers CMIOs to instantly extract patient risk scores deeply nested within FHIR JSON blobs, providing immediate population health insights without requiring a data engineer.'
+    businessOutcome: 'Empowers CMIOs to instantly extract patient risk scores deeply nested within FHIR JSON blobs, providing immediate population health insights without requiring complex ETL unnesting.'
+  },
+
+  // NEW: UI Hook mapping for DynamicChartFactory / InteractiveDemo
+  interactiveDemoMap: {
+    component: 'ProgressiveChart',
+    defaultQuery: 'Show me the 30-day readmission rate for cardiac patients by ward',
+    visualizationType: 'bar-chart'
   },
 
   faqs: [
     {
       q: 'Will Arcli sign a Business Associate Agreement (BAA)?',
-      a: 'Yes. For Enterprise tier customers operating in the United States, we provide standard BAAs to satisfy HIPAA regulatory requirements.',
+      a: 'Yes. For Enterprise tier customers operating in the United States, we provide standard BAAs to satisfy HIPAA and HITECH regulatory requirements.',
       persona: 'Compliance Officer'
     },
     {
       q: 'Does Arcli store any data temporarily for caching?',
-      a: 'Arcli only holds aggregate results in memory temporarily to render the visual charts (e.g., "50 patients in Boston"). Row-level patient data is never stored on our disks and is purged instantly after the session.',
+      a: 'Arcli only holds aggregate results in memory temporarily to render visual charts (e.g., "50 patients in Boston"). Row-level patient data is never stored on our disks and is purged instantly after the session.',
       persona: 'Head of Security'
     },
     {
       q: 'Can we self-host Arcli inside our own VPC?',
-      a: 'Yes. For the strictest security postures, Arcli offers an On-Premise/VPC deployment model where both the Orchestrator and the UI run entirely within your firewalled environment.',
+      a: 'Yes. For the strictest security postures, Arcli offers a Single-Tenant/VPC deployment model where both the Orchestrator and the UI run entirely within your firewalled environment.',
       persona: 'Data Architect'
     }
   ]
@@ -152,19 +160,19 @@ ORDER BY
 /**
  * SEO Industry Campaign: FinTech & Banking
  * Target Audience: CTOs, Chief Risk Officers (CRO), FinTech Data Leads
- * Core Focus: Ledger immutability, SOC2 compliance, complex financial calculations.
+ * Core Focus: Ledger immutability, SOC2 Type II, RLS Passthrough, Zero-ETL.
  */
 export const fintechIndustry: SEOPageData = {
   type: 'campaign',
   seo: {
-    title: 'Financial Services AI Analytics | Secure BI Tool | Arcli',
-    description: 'Query your core banking ledgers and payment gateways with natural language. Arcli guarantees zero data movement and immutable read-only security.',
-    h1: 'Bank-Grade AI Analytics',
+    title: 'Financial Services AI Analytics | Zero-ETL BI Tool | Arcli',
+    description: 'Query your core banking ledgers and payment gateways with natural language. Arcli guarantees zero data movement and immutable read-only security for FinTechs.',
+    h1: 'Zero-ETL AI Analytics for Core Ledgers',
     keywords: [
       'Financial services AI analytics', 
       'Secure ledger BI tool', 
       'SOC2 compliant AI reporting', 
-      'FinTech data AI', 
+      'Zero-ETL banking analytics',
       'Zero copy analytics banking',
       'AI ledger analytics without ETL',
       'secure payment gateway BI',
@@ -179,7 +187,6 @@ export const fintechIndustry: SEOPageData = {
       'capital ratio calculation SQL',
       'unit economics BI platform',
       'fintech row level security AI',
-      'banking data warehouse text-to-sql',
       'ledger reconciliation AI'
     ],
     intent: 'campaign',
@@ -188,14 +195,13 @@ export const fintechIndustry: SEOPageData = {
   hero: {
     badge: 'FINANCIAL SERVICES',
     title: 'Query Your Ledger. Keep It Secure.',
-    subtitle: 'For modern FinTechs and institutions, moving transaction data is a non-starter. Arcli connects directly to your secure data warehouse, translating English into optimized SQL without ever extracting your customer’s financial data.',
+    subtitle: 'For modern FinTechs, moving transaction data is a non-starter. Arcli connects directly to your secure data warehouse, translating English into optimized SQL without ever extracting your customer’s financial data.',
     primaryCTA: { text: 'Start Free Trial', href: '/register' },
     secondaryCTA: { text: 'View SOC2 Report', href: '/security' }
   },
 
-  // Cross-page Differentiation Signal: FinTech Specific Architecture
   financialDataModels: {
-    supportedLedgers: ['Double-Entry Core Ledgers', 'Payment Gateways (Stripe, Adyen, Plaid)', 'Trading Execution Logs'],
+    supportedLedgers: ['Double-Entry Core Ledgers', 'Payment Gateways (Stripe, Adyen)', 'Trading Execution Logs'],
     coreMetrics: ['Liquidity & Capital Ratios', 'Real-time CAC/LTV', 'Net Revenue Retention (NRR)', 'Fraud Velocity'],
     securityPrerequisites: ['Strict Row-Level Security (RLS) Passthrough', 'VPC Peering', 'No-ETL Architecture Required']
   },
@@ -208,22 +214,22 @@ export const fintechIndustry: SEOPageData = {
   ],
 
   contrarianBanner: {
-    statement: "Your customer transaction data belongs in your vault, not in a vendor's dashboard cache.",
-    subtext: "If your BI tool requires a nightly sync of your core ledger, your attack surface just doubled. Arcli’s Zero-Data Movement architecture ensures that your financial data remains exactly where you put it."
+    statement: "Your customer transaction data belongs in your vault, not a vendor's cache.",
+    subtext: "If your BI tool requires a nightly sync of your core ledger, your attack surface just doubled. Arcli’s Zero-Data Movement architecture ensures that your financial data remains exactly where you put it—protected by your own warehouse policies."
   },
 
   securityGuardrails: [
     {
-      title: 'Inherited Row-Level Security',
-      description: 'Arcli natively respects the Row-Level Security (RLS) policies defined in your Snowflake or Postgres databases. The AI can never surface a transaction a user isn\'t explicitly authorized to see.'
+      title: 'Inherited Row-Level Security (RLS)',
+      description: 'Arcli natively respects the RLS policies defined in your Snowflake or Postgres databases. The AI can never surface a transaction a user isn\'t explicitly authorized to see at the database level.'
     },
     {
-      title: 'No-ETL Architecture',
-      description: 'Skip the vulnerable middle-man. Because Arcli writes the SQL directly against your live schema, there are no brittle ETL pipelines or stale data lakes holding unencrypted PII.'
+      title: 'Zero-ETL Architecture',
+      description: 'Skip the vulnerable middle-man. Because Arcli writes the SQL directly against your live schema, there are no brittle dbt pipelines or stale data lakes holding unencrypted PII.'
     },
     {
       title: 'Immutable Query Logging',
-      description: 'Satisfy auditors instantly. Arcli maintains a tamper-proof cryptographic log of every single query the AI generates and executes, including timestamp and user identity.'
+      description: 'Satisfy auditors instantly. Arcli maintains a tamper-proof cryptographic log of every single query the AI generates and executes, tracking the exact timestamp and Azure AD/Okta user identity.'
     }
   ],
 
@@ -232,17 +238,17 @@ export const fintechIndustry: SEOPageData = {
     items: [
       {
         title: 'Fraud & Anomaly Detection',
-        description: 'Empower risk teams to query raw transaction velocity and geographic anomalies in real-time, generating visualizations of suspicious activity before clearing.',
+        description: 'Empower risk teams to query raw transaction velocity and geographic anomalies in real-time via the AI scratchpad, detecting micro-structuring before clearing.',
         icon: 'ShieldAlert'
       },
       {
         title: 'Liquidity & Capital Ratios',
-        description: 'Treasury teams can ask complex questions about daily capital requirements and instantly receive accurate, mathematically sound calculations directly from the core ledger.',
+        description: 'Treasury teams can ask complex questions about daily capital requirements and instantly receive mathematically sound calculations verified by our Semantic Metric Builder.',
         icon: 'Landmark'
       },
       {
         title: 'Unit Economics Tracking',
-        description: 'Blend payment gateway data (Stripe, Adyen) with your internal database to calculate exact Customer Acquisition Cost (CAC) vs. Lifetime Value (LTV) across cohorts.',
+        description: 'Blend payment gateway data with your internal database to calculate exact Customer Acquisition Cost (CAC) vs. Lifetime Value (LTV) across product cohorts.',
         icon: 'TrendingUp'
       }
     ]
@@ -250,46 +256,58 @@ export const fintechIndustry: SEOPageData = {
 
   strategicScenario: {
     title: 'Snowflake Time-Travel & Windowing',
-    description: 'Financial analysis requires precise window functions to calculate moving averages and running totals. Arcli’s engine generates advanced Snowflake dialect SQL to process millions of transactions flawlessly.',
+    description: 'Financial analysis requires precise window functions and array flattening. Arcli’s execution engine generates advanced Snowflake dialect SQL to process millions of ledger rows flawlessly.',
     dialect: 'Snowflake SQL',
-    sql: `-- Generated by Arcli AI Orchestrator
+    sql: `-- Generated by Arcli NL2SQL Generator
+WITH daily_rollup AS (
+    SELECT
+        DATE_TRUNC('day', transaction_date) AS txn_day,
+        merchant_category,
+        SUM(amount) AS daily_volume
+    FROM 
+        core_ledger.production.transactions
+    WHERE 
+        status = 'SETTLED'
+        AND transaction_date >= DATEADD(day, -30, CURRENT_DATE())
+    GROUP BY 
+        txn_day, merchant_category
+)
 SELECT
-    DATE_TRUNC('day', transaction_date) AS txn_day,
+    txn_day,
     merchant_category,
-    SUM(amount) AS daily_volume,
-    SUM(SUM(amount)) OVER (
+    daily_volume,
+    SUM(daily_volume) OVER (
         PARTITION BY merchant_category 
-        ORDER BY DATE_TRUNC('day', transaction_date)
+        ORDER BY txn_day
         ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
     ) AS rolling_7_day_volume
 FROM 
-    core_ledger.production.transactions
-WHERE 
-    status = 'SETTLED'
-    AND transaction_date >= DATEADD(day, -30, CURRENT_DATE())
-GROUP BY 
-    txn_day, 
-    merchant_category
+    daily_rollup
 ORDER BY 
-    txn_day DESC, 
-    daily_volume DESC;`,
-    businessOutcome: 'Provides the Head of Risk with a real-time, 7-day rolling average of transaction volumes across all merchant categories to detect sudden micro-structuring attacks or liquidity spikes.'
+    txn_day DESC, daily_volume DESC;`,
+    businessOutcome: 'Provides the Head of Risk with a real-time, 7-day rolling average of transaction volumes to detect liquidity spikes, executing purely on Snowflake compute.'
+  },
+
+  interactiveDemoMap: {
+    component: 'OmniscientScratchpad',
+    defaultQuery: 'Calculate the 7-day rolling average for settled transactions by merchant category.',
+    visualizationType: 'area-chart'
   },
 
   faqs: [
     {
       q: 'Is Arcli SOC 2 Type II compliant?',
-      a: 'Yes. We undergo rigorous independent auditing to maintain our SOC 2 Type II certification, ensuring our security, availability, and confidentiality controls meet strict financial standards.',
+      a: 'Yes. We undergo rigorous independent auditing to maintain our SOC 2 Type II certification, ensuring our security, availability, and confidentiality controls meet strict FinTech standards.',
       persona: 'Chief Risk Officer'
     },
     {
       q: 'How do you handle highly complex financial calculations like IRR or Yield?',
-      a: 'Arcli grounds its AI not just in table names, but in semantic definitions. You can define "Internal Rate of Return" via our metric governance layer, and the AI will reliably insert the correct mathematical SQL logic every time.',
+      a: 'Arcli grounds its AI not just in table names, but in semantic definitions via `SemanticMetricBuilder`. You define "Internal Rate of Return" once, and the AI will reliably insert the correct mathematical SQL logic every time.',
       persona: 'Data Engineer'
     },
     {
       q: 'Can Arcli connect to legacy mainframe databases?',
-      a: 'Arcli excels with modern cloud warehouses (Snowflake, BigQuery, Redshift) and robust RDBMS (Postgres, SQL Server). For legacy mainframes, we recommend querying the replicated operational data store (ODS) via an ODBC/JDBC compatible gateway.',
+      a: 'Arcli excels with modern cloud warehouses (Snowflake, BigQuery) and RDBMS (Postgres, SQL Server). For legacy mainframes, we recommend querying the replicated operational data store (ODS) via our JDBC-compatible Integrations layer.',
       persona: 'CTO'
     }
   ]

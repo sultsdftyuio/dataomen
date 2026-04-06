@@ -1,11 +1,10 @@
-// lib/seo/database-integrations-1.tsx
 import React from 'react';
 import { Database, Server } from 'lucide-react';
 
 /**
- * SEOPageData Interface - Database Integrations Edition (v10.1)
+ * SEOPageData Interface - V13 SYSTEM ARCHITECTURE
  * Systematically built for Compounding Authority, SERP Domination, and UI-Driven Intelligence.
- * Incorporates Multi-Surface Distribution, Query Class Coverage, and strict E-E-A-T standards.
+ * Incorporates Conversion Engines, Structured Data, and strict E-E-A-T standards.
  */
 
 // --- BLOCK COMPOSITION SYSTEM ---
@@ -14,7 +13,7 @@ export type UIBlock = {
   visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'DataRelationshipsGraph' | 'Cards' | 'AnalyticsDashboard';
   dataMapping: string;
   interactionPurpose: string;
-  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to'; // SERP Query Class Coverage
+  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
 };
 
 export type ComparisonBlock = {
@@ -25,15 +24,15 @@ export type ComparisonBlock = {
 
 export type QueryExamplesBlock = {
   title: string;
-  complexity: 'Surface' | 'Intermediate' | 'Deep'; // Content Depth Hierarchy
+  complexity: 'Surface' | 'Intermediate' | 'Deep';
   intentCoverage: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
   businessQuestion: string;
   businessOutcome: string;
-  sqlSnippet?: string; // For E-E-A-T and Developer Trust
+  sqlSnippet?: string; 
 };
 
 export type KeywordAnchorBlock = {
-  primaryIntent: string; // e.g., "PostgreSQL AI analytics tool"
+  primaryIntent: string;
   secondaryIntents: string[];
   serpRealisticTarget: 'Long-tail' | 'Primary Volume' | 'Semantic Gap';
 };
@@ -48,11 +47,6 @@ export type UseCaseBlock = {
   }[];
 };
 
-export type InternalLinkingBlock = {
-  relatedSlugs: string[];
-  clusterParent: string; // Reinforces Topical Authority Graph
-};
-
 // --- CORE SYSTEM ARCHITECTURE ---
 
 export type SEOPageData = {
@@ -63,7 +57,15 @@ export type SEOPageData = {
   h1: string;
   subtitle: string;
   icon: React.ReactElement;
-  contrarianStatement: string; // Information Gain Layer: Forces unique perspective
+  contrarianStatement: string;
+  
+  // V13 CONVERSION ENGINE
+  conversionCTA: {
+    primaryLabel: string;
+    primaryHref: string;
+    secondaryLabel: string;
+  };
+
   decisionTrigger: {
     headline: string;
     bullets: string[];
@@ -80,8 +82,12 @@ export type SEOPageData = {
   analyticalScenarios: QueryExamplesBlock[];
   comparisonData: ComparisonBlock[];
   uiComponents: UIBlock[];
-  faqs: { q: string; a: string }[];
-  internalLinks: InternalLinkingBlock;
+  
+  // V13 STRUCTURED DATA
+  faqs: { q: string; a: string; intent: string; schemaEnabled: boolean }[];
+  
+  // V13 INTERNAL LINKING ENGINE
+  relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
 };
 
 // --- CONTENT ENGINE EXPORT ---
@@ -94,12 +100,19 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
     searchIntentMapping: {
       primaryIntent: 'PostgreSQL AI analytics',
       secondaryIntents: ['JSONB SQL Generator', 'PostgreSQL BI Tool', 'Zero Data Movement Postgres'],
-      serpRealisticTarget: 'Semantic Gap' // Targets the gap where traditional BI fails at JSONB
+      serpRealisticTarget: 'Semantic Gap' 
     },
     h1: 'Conversational Intelligence for PostgreSQL',
     subtitle: 'Securely connect your Postgres read-replica. Empower your entire executive team to answer their own data questions instantly without waiting for data engineering.',
     icon: <Database className="w-12 h-12 text-indigo-500 mb-6" />,
     contrarianStatement: 'If your team is exporting live Postgres data into Excel just to build a pivot table, your modern data stack is acting as a bottleneck, not an enabler.',
+    
+    conversionCTA: {
+      primaryLabel: 'Connect PostgreSQL',
+      primaryHref: '/register?intent=postgres_integration',
+      secondaryLabel: 'Read Security Docs'
+    },
+
     decisionTrigger: {
       headline: 'When PostgreSQL Teams Choose Arcli',
       bullets: [
@@ -137,7 +150,7 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
         'Companies pay thousands duplicating raw Postgres data into third-party BI warehouses.'
       ],
       workflowAfter: [
-        'Operators ask plain-English questions, and AI translates them into perfect SQL instantly.',
+        'Operators ask plain-English questions, and AI translates them into perfect Postgres SQL instantly.',
         'Data access is democratized, shifting engineers from ticket-takers to infrastructure builders.',
         'Data remains securely in your VPC, dramatically lowering your total cost of ownership.'
       ],
@@ -222,15 +235,16 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
       }
     ],
     faqs: [
-      { q: 'Is my Postgres data used to train your AI?', a: 'Absolutely not. Your proprietary data never leaves your secure perimeter and is strictly excluded from any global model training. We only use your schema metadata (column names) to map intent.' },
-      { q: 'Do you support AWS RDS or Supabase?', a: 'Yes. We support any PostgreSQL instance accessible via a secure connection string, including AWS RDS, Aurora, Google Cloud SQL, and Supabase.' },
-      { q: 'Can I restrict which Postgres tables the AI can access?', a: 'Yes. We enforce the permissions of the database user you provide. If you revoke access to the "salaries" table for that specific Postgres user, the AI cannot query it.' },
-      { q: 'What happens if a query takes too long?', a: 'Arcli respects the statement timeout configurations of your database. The system also automatically suggests tighter date constraints if it detects a potentially massive query.' }
+      { q: 'Is my Postgres data used to train your AI?', a: 'Absolutely not. Your proprietary data never leaves your secure perimeter and is strictly excluded from any global model training. We only use your schema metadata (column names) to map intent.', intent: 'Security', schemaEnabled: true },
+      { q: 'Do you support AWS RDS or Supabase?', a: 'Yes. We support any PostgreSQL instance accessible via a secure connection string, including AWS RDS, Aurora, Google Cloud SQL, and Supabase.', intent: 'Compatibility', schemaEnabled: true },
+      { q: 'Can I restrict which Postgres tables the AI can access?', a: 'Yes. We enforce the permissions of the database user you provide. If you revoke access to the "salaries" table for that specific Postgres user, the AI cannot query it.', intent: 'Governance', schemaEnabled: true },
+      { q: 'What happens if a query takes too long?', a: 'Arcli respects the statement timeout configurations of your database. The system also automatically suggests tighter date constraints if it detects a potentially massive query.', intent: 'Performance', schemaEnabled: true }
     ],
-    internalLinks: {
-      relatedSlugs: ['mysql-ai-analytics', 'sql-server-ai-analytics', 'data-security-zero-movement'],
-      clusterParent: 'database-integrations'
-    }
+    relatedSlugs: [
+      { label: 'Database Integrations Overview', slug: '/integrations', intent: 'Parent' },
+      { label: 'Zero Data Movement Architecture', slug: '/seo/data-security-zero-movement', intent: 'Supporting' },
+      { label: 'Start Free Trial', slug: '/register', intent: 'Conversion' }
+    ]
   },
 
   'mysql-ai-analytics': {
@@ -246,6 +260,13 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
     subtitle: 'Provide your organization with secure, conversational access to your MySQL databases. Automate complex table joins and aggregations without writing a single line of code.',
     icon: <Database className="w-12 h-12 text-blue-400 mb-6" />,
     contrarianStatement: 'Moving highly normalized MySQL data into a rigid dashboard doesn\'t solve data literacy—it just creates a new bottleneck for your engineering team.',
+    
+    conversionCTA: {
+      primaryLabel: 'Automate MySQL Reporting',
+      primaryHref: '/register?intent=mysql_integration',
+      secondaryLabel: 'Explore the Semantic Engine'
+    },
+
     decisionTrigger: {
       headline: 'When MySQL Teams Choose Arcli',
       bullets: [
@@ -357,14 +378,15 @@ GROUP BY 1, 2;`
       }
     ],
     faqs: [
-      { q: 'Does Arcli support older versions of MySQL?', a: 'We fully support MySQL 5.7 and 8.0+. For versions prior to 8.0, the AI intelligently avoids using Window Functions (which were not supported) and utilizes standard subqueries instead.' },
-      { q: 'Is my data secure during transmission?', a: 'Yes. We require secure, encrypted connections. Arcli communicates with your database via TLS, meaning your data is never exposed in plain text over the network.' },
-      { q: 'Can the AI understand my cryptic column names?', a: 'Yes. Arcli’s Governance layer allows you to alias complex column names (e.g., mapping `tx_amt_usd` to `Transaction Amount`), ensuring the AI perfectly translates natural English.' }
+      { q: 'Does Arcli support older versions of MySQL?', a: 'We fully support MySQL 5.7 and 8.0+. For versions prior to 8.0, the AI intelligently avoids using Window Functions (which were not supported) and utilizes standard subqueries instead.', intent: 'Compatibility', schemaEnabled: true },
+      { q: 'Is my data secure during transmission?', a: 'Yes. We require secure, encrypted connections. Arcli communicates with your database via TLS, meaning your data is never exposed in plain text over the network.', intent: 'Security', schemaEnabled: true },
+      { q: 'Can the AI understand my cryptic column names?', a: 'Yes. Arcli’s Governance layer allows you to alias complex column names (e.g., mapping `tx_amt_usd` to `Transaction Amount`), ensuring the AI perfectly translates natural English.', intent: 'Data Modeling', schemaEnabled: true }
     ],
-    internalLinks: {
-      relatedSlugs: ['postgresql-ai-analytics', 'sql-server-ai-analytics', 'ai-sql-agent-guide'],
-      clusterParent: 'database-integrations'
-    }
+    relatedSlugs: [
+      { label: 'Database Integrations', slug: '/integrations', intent: 'Parent' },
+      { label: 'Conversational SQL Guide', slug: '/seo/ai-sql-agent-guide', intent: 'Supporting' },
+      { label: 'Deploy AI Analytics', slug: '/register', intent: 'Conversion' }
+    ]
   },
 
   'sql-server-ai-analytics': {
@@ -380,6 +402,13 @@ GROUP BY 1, 2;`
     subtitle: 'Unlock the power of your Microsoft SQL Server. Give your business leaders secure, conversational access to enterprise data without relying on rigid dashboards.',
     icon: <Server className="w-12 h-12 text-blue-600 mb-6" />,
     contrarianStatement: 'Paying massive licensing fees to duplicate your SQL Server data into a secondary BI cloud is a tax on your organizational agility.',
+    
+    conversionCTA: {
+      primaryLabel: 'Generate T-SQL Instantly',
+      primaryHref: '/register?intent=sqlserver_integration',
+      secondaryLabel: 'Calculate BI Savings'
+    },
+
     decisionTrigger: {
       headline: 'When SQL Server Teams Choose Arcli',
       bullets: [
@@ -491,14 +520,15 @@ ORDER BY o.amount DESC;`
       }
     ],
     faqs: [
-      { q: 'Does Arcli connect to Azure SQL Database?', a: 'Yes. We fully support Microsoft SQL Server environments whether they are hosted on-premise, on Azure SQL Database, or via Amazon RDS.' },
-      { q: 'Is my highly sensitive data used to train the AI?', a: 'No. Arcli operates under a strict Zero-Data Movement policy. Your data never leaves your infrastructure, and we only utilize column headers to map conversational intent to SQL.' },
-      { q: 'How does Arcli handle complex enterprise security?', a: 'Arcli strictly inherits the security model of the credential provided. If your SQL Server enforces Row-Level Security (RLS) for that user, Arcli inherently respects those boundaries.' },
-      { q: 'Can the AI generate T-SQL Window Functions?', a: 'Absolutely. The AI natively understands advanced analytical requests (like rolling averages or cohort percentiles) and seamlessly generates the required `OVER (PARTITION BY...)` T-SQL syntax.' }
+      { q: 'Does Arcli connect to Azure SQL Database?', a: 'Yes. We fully support Microsoft SQL Server environments whether they are hosted on-premise, on Azure SQL Database, or via Amazon RDS.', intent: 'Compatibility', schemaEnabled: true },
+      { q: 'Is my highly sensitive data used to train the AI?', a: 'No. Arcli operates under a strict Zero-Data Movement policy. Your data never leaves your infrastructure, and we only utilize column headers to map conversational intent to SQL.', intent: 'Security', schemaEnabled: true },
+      { q: 'How does Arcli handle complex enterprise security?', a: 'Arcli strictly inherits the security model of the credential provided. If your SQL Server enforces Row-Level Security (RLS) for that user, Arcli inherently respects those boundaries.', intent: 'Security', schemaEnabled: true },
+      { q: 'Can the AI generate T-SQL Window Functions?', a: 'Absolutely. The AI natively understands advanced analytical requests (like rolling averages or cohort percentiles) and seamlessly generates the required `OVER (PARTITION BY...)` T-SQL syntax.', intent: 'Performance', schemaEnabled: true }
     ],
-    internalLinks: {
-      relatedSlugs: ['postgresql-ai-analytics', 'mysql-ai-analytics', 'text-to-sql-enterprise-guide'],
-      clusterParent: 'database-integrations'
-    }
+    relatedSlugs: [
+      { label: 'Database Integrations', slug: '/integrations', intent: 'Parent' },
+      { label: 'Enterprise Text-to-SQL Guide', slug: '/seo/text-to-sql-enterprise-guide', intent: 'Supporting' },
+      { label: 'Connect SQL Server', slug: '/register', intent: 'Conversion' }
+    ]
   }
 };

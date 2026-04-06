@@ -1,20 +1,68 @@
 // lib/seo/semantic-metric-governance.tsx
 
+/**
+ * V13 ENFORCED: Semantic Metric Governance Architecture
+ * Upgraded to include strict Info Gain, Conversion Engine, and UI Mappings.
+ */
 export const semanticMetricGovernanceData = {
   path: "/platform/semantic-metric-governance",
+  type: "architecture-guide",
+
+  // 💡 V13: INFORMATION GAIN SYSTEM
+  informationGain: {
+    uniqueInsight: "Naive LLM text-to-SQL fails because models guess table relationships and mathematical formulas. Arcli bypasses this entirely by compiling intents into an Abstract Syntax Tree (AST) that maps to explicitly governed YAML definitions, ensuring 100% deterministic mathematical accuracy.",
+    structuralAdvantage: "Exposes a complete, deeply nested DuckDB SQL query generated via Semantic DAG traversal, providing incontrovertible proof that the LLM acts only as a router, while the governance layer writes the math."
+  },
+
+  // 🎯 V13: CONVERSION ENGINE
+  conversionEngine: {
+    primaryCTA: { text: "Read the Whitepaper", link: "/resources/hallucination-prevention" },
+    secondaryCTA: { text: "Explore the Architecture", link: "#architecture" },
+    contextualCTA: { text: "View our dbt Core Integration Docs", link: "/docs/integrations/dbt", placement: "mid-article" }
+  },
+
+  // 🧱 V13: UI VISUALIZATION ENGINE
+  uiVisualizations: [
+    {
+      type: "mermaid-architecture",
+      dataMapping: "User Intent -> Semantic Graph Traversal -> AST Compilation -> Executable SQL",
+      interactionPurpose: "Allows Data Architects to visually trace the journey of a prompt, verifying the LLM is stripped of calculation responsibilities.",
+      intentServed: "Architectural Validation"
+    },
+    {
+      type: "sql-diff-viewer",
+      dataMapping: "Hallucinated LLM SQL vs Arcli Semantic DAG SQL",
+      interactionPurpose: "Highlights the structural difference between a naive `SELECT SUM(amount)` and a robust, governed CTE aggregation.",
+      intentServed: "Technical Execution Proof"
+    }
+  ],
+
+  // 🧬 V13: STRUCTURED DATA LAYER
+  schemaMarkup: {
+    type: "TechArticle",
+    payload: {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": "Semantic Metric Governance & LLM Hallucination Prevention",
+      "proficiencyLevel": "Expert",
+      "keywords": "Semantic Layer, Metric Governance, LLM Hallucinations, Text-to-SQL, AST Parsing",
+      "publisher": { "@type": "Organization", "name": "Arcli" }
+    }
+  },
+
   meta: {
     title: "Semantic Metric Governance & LLM Hallucination Prevention | Arcli",
-    description: "Eliminate Text-to-SQL hallucinations. Arcli's embedded semantic layer standardizes enterprise metrics, ensuring AI data agents always query governed definitions, not raw, untyped tables.",
+    description: "Eliminate Text-to-SQL hallucinations. Arcli's embedded semantic layer standardizes enterprise metrics, ensuring AI data agents always query governed definitions.",
     keywords: [
       "semantic layer", 
       "metric governance", 
       "preventing LLM hallucinations", 
       "text-to-sql accuracy", 
       "semantic routing", 
-      "enterprise AI analytics",
-      "data standardization"
+      "enterprise AI analytics"
     ]
   },
+
   blocks: [
     {
       type: "Hero",
@@ -22,14 +70,6 @@ export const semanticMetricGovernanceData = {
         badge: "Core Architecture: The Semantic Engine",
         title: "Stop LLM Hallucinations at the Source",
         subtitle: "Naive Text-to-SQL fails in production because LLMs don't understand your business logic. Arcli's semantic engine maps natural language to strictly governed metric definitions, guaranteeing 100% accurate, deterministic SQL generation.",
-        primaryCta: {
-          label: "Read the Whitepaper",
-          href: "/resources/hallucination-prevention"
-        },
-        secondaryCta: {
-          label: "Explore the Architecture",
-          href: "#architecture"
-        },
         trustSignals: [
           "Deterministic Abstract Syntax Tree (AST) Parsing",
           "Compatible with dbt & LookML frameworks",
@@ -41,7 +81,7 @@ export const semanticMetricGovernanceData = {
       type: "ContrarianBanner",
       payload: {
         heading: "Why 'Just plugging GPT-4 into your database' is a disaster.",
-        argument: "If you connect a raw LLM to your data warehouse and ask 'What is our revenue?', the AI will guess. It might sum the `amount` column, completely ignoring refunds, taxes, and voided transactions. Without a semantic layer enforcing business logic, AI analytics is a liability, not an asset.",
+        argument: "If you connect a raw LLM to your data warehouse and ask 'What is our revenue?', the AI will guess. It might sum the `amount` column, completely ignoring refunds, taxes, and voided transactions. Without a semantic layer enforcing business logic, AI analytics is a liability.",
         solution: "Arcli separates the 'understanding' from the 'calculation'. The AI interprets the user's intent, but the Semantic Layer dictates the exact mathematical formula used to execute it."
       }
     },
@@ -49,7 +89,7 @@ export const semanticMetricGovernanceData = {
       type: "ExecutiveSummary",
       payload: {
         heading: "Govern Once, Query Infinitely",
-        businessOutcome: "By centralizing metric definitions, Arcli ensures that the CEO, the marketing team, and the automated anomaly watchdogs are all looking at the exact same numbers, calculated the exact same way. This eliminates board-level disputes over data validity.",
+        businessOutcome: "By centralizing metric definitions, Arcli ensures that the CEO, the marketing team, and the automated anomaly watchdogs are all looking at the exact same numbers, calculated the exact same way.",
         pillars: [
           {
             title: "Single Source of Truth",
@@ -74,11 +114,11 @@ export const semanticMetricGovernanceData = {
         components: [
           {
             name: "1. Intent Recognition Engine",
-            description: "Parses the user's natural language to identify requested entities, time bounds, and dimensional cuts (e.g., 'Show me MRR for Enterprise customers in Q3')."
+            description: "Parses the user's natural language to identify requested entities, time bounds, and dimensional cuts."
           },
           {
             name: "2. Semantic Graph Traversal",
-            description: "The engine maps the identified intent ('MRR') to the explicit YAML definition in the Arcli Governance Layer, retrieving the required base tables and join paths."
+            description: "The engine maps the identified intent ('MRR') to the explicit YAML definition, retrieving the required base tables and join paths."
           },
           {
             name: "3. AST Query Compilation",
@@ -86,7 +126,7 @@ export const semanticMetricGovernanceData = {
           },
           {
             name: "4. Dialect-Specific SQL Generation",
-            description: "The AST is translated into highly optimized SQL specific to your storage layer (DuckDB, Snowflake, or PostgreSQL) and executed securely."
+            description: "The AST is translated into highly optimized SQL specific to your storage layer (DuckDB, Snowflake, or PostgreSQL)."
           }
         ]
       }
@@ -106,13 +146,13 @@ export const semanticMetricGovernanceData = {
             level: "Intermediate",
             title: "Cross-Metric Mathematical Operations",
             businessQuestion: "What is our LTV to CAC ratio by acquisition channel?",
-            description: "The AI agent doesn't calculate this from scratch. It asks the Semantic Layer for the definition of 'LTV' and the definition of 'CAC', and then orchestrates a complex JOIN between the two pre-governed subqueries based on the 'channel' dimension."
+            description: "The AI agent asks the Semantic Layer for the definition of 'LTV' and 'CAC', and then orchestrates a complex JOIN between the two pre-governed subqueries based on the 'channel' dimension."
           },
           {
             level: "Strategic",
             title: "Handling Synonyms and Aliasing",
             businessQuestion: "What's our churn rate for annual plans?",
-            description: "A user asks for 'annual plans', but the database stores it as `interval = 'year'`. The semantic layer maps user-friendly synonyms to database-strict enumerations, ensuring the LLM never hallucinates a `WHERE plan_type = 'annual'` filter that returns zero rows."
+            description: "The semantic layer maps user-friendly synonyms to database-strict enumerations, ensuring the LLM never hallucinates a `WHERE plan_type = 'annual'` filter that returns zero rows."
           }
         ]
       }
@@ -121,18 +161,16 @@ export const semanticMetricGovernanceData = {
       type: "StrategicQuery",
       payload: {
         title: "Compiled Output: The Power of the Semantic DAG",
-        description: "When a user asks 'Show me Net Margin by Product Category', the Arcli engine references the Semantic DAG to generate this deeply nested, deterministic DuckDB query. The LLM did not write this math; the Semantic Layer strictly enforced it.",
-        businessOutcome: "Guarantees 100% financial accuracy. The AI acts as the interface, but the governance layer acts as the impenetrable calculator, ensuring enterprise-grade trust.",
+        description: "When a user asks 'Show me Net Margin by Product Category', the Arcli engine references the Semantic DAG to generate this nested, deterministic query.",
+        businessOutcome: "Guarantees 100% financial accuracy. The governance layer acts as the impenetrable calculator, ensuring enterprise-grade trust.",
         language: "sql",
         code: `
 -- Arcli Semantic Compiler Output
 -- Request Intent: "Net Margin by Product Category for Q3 2025"
 -- Resolved Semantic Metrics: [gross_revenue, cogs, refund_amount, net_margin]
--- Resolved Dimensions: [product_category]
 
 WITH base_sales AS (
     -- Semantic Definition: Gross Revenue
-    -- Source Table: tenant_99.raw_stripe_charges
     -- Governance Rule: Exclude failed and disputed charges
     SELECT 
         item_id,
@@ -145,7 +183,6 @@ WITH base_sales AS (
 ),
 base_refunds AS (
     -- Semantic Definition: Refund Amount
-    -- Source Table: tenant_99.raw_stripe_refunds
     SELECT 
         item_id,
         SUM(amount_cents) / 100.0 AS refund_amount
@@ -155,7 +192,6 @@ base_refunds AS (
 ),
 base_costs AS (
     -- Semantic Definition: COGS (Cost of Goods Sold)
-    -- Governance Rule: Vendor cost + processing fee constant
     SELECT 
         item_id,
         category AS product_category,
@@ -196,14 +232,11 @@ ORDER BY net_margin_percentage DESC;
       type: "ComparisonMatrix",
       payload: {
         title: "Semantic Approaches: Arcli vs Alternatives",
-        description: "How Arcli's embedded AI semantic layer compares to traditional and naive approaches.",
-        columns: ["Feature", "Arcli Semantic Engine", "Naive LLM (ChatGPT / LangChain)", "Traditional BI (Looker)"],
+        columns: ["Feature", "Arcli Semantic Engine", "Naive LLM (ChatGPT)", "Traditional BI (Looker)"],
         rows: [
-          ["Deterministic Accuracy", "100% (Math is hardcoded)", "Variable (Prone to hallucination)", "100% (But rigid)"],
-          ["Time to Deploy", "Minutes (AI assisted YAML generation)", "Minutes (But requires constant prompt fixing)", "Months (Requires heavy data engineering)"],
-          ["Natural Language Interface", "Native & Context-Aware", "Native", "Bolted-on / Third-party"],
-          ["Handling Schema Changes", "Update one YAML file", "Breakage across all prompts", "Requires rewriting LookML views"],
-          ["Multi-Tenant Metric Scoping", "Native Row-Level Security", "Requires massive context injection", "Complex parameterized configurations"]
+          ["Deterministic Accuracy", "100% (Math is hardcoded)", "Variable (Hallucinates)", "100% (But rigid)"],
+          ["Time to Deploy", "Minutes (AI assisted YAML)", "Minutes (Constant fixing)", "Months (Data engineering)"],
+          ["Handling Schema Changes", "Update one YAML file", "Breakage across all prompts", "Requires rewriting LookML views"]
         ]
       }
     },
@@ -215,15 +248,15 @@ ORDER BY net_margin_percentage DESC;
         features: [
           {
             title: "Metric CI/CD",
-            description: "Changes to semantic definitions can be version-controlled. Test changes against staging data to ensure historical numbers don't unexpectedly shift before deploying to production AI agents."
+            description: "Changes to semantic definitions can be version-controlled and tested against staging data."
           },
           {
             title: "Immutable Audit Logs",
-            description: "Every time an AI agent resolves a semantic metric, the exact version of the definition used is hashed and logged, allowing full backward traceability of executive reports."
+            description: "Every time an AI agent resolves a semantic metric, the exact version of the definition used is hashed and logged."
           },
           {
             title: "Fallback Constraints",
-            description: "If a user asks a question that cannot be mapped to governed metrics, the Arcli engine triggers a 'Graceful Refusal' workflow rather than guessing, maintaining absolute data integrity."
+            description: "If a question cannot be mapped to governed metrics, Arcli triggers a 'Graceful Refusal' rather than guessing."
           }
         ]
       }
@@ -234,24 +267,16 @@ ORDER BY net_margin_percentage DESC;
         title: "Deep Dive: Metric Governance FAQs",
         faqs: [
           {
-            question: "Do I have to write YAML to use Arcli?",
-            answer: "No. While Arcli compiles down to standard YAML/JSON definitions for version control, we provide a UI-based 'Metric Builder' and an AI assistant that profiles your database to suggest metric definitions automatically."
-          },
-          {
             question: "Can Arcli connect to my existing dbt semantic layer?",
-            answer: "Yes. Arcli integrates seamlessly with dbt Core. We ingest your `metrics.yml` files and use them as the source of truth for our NLP-to-SQL compiler, acting as the intelligent interface on top of your existing engineering work."
+            answer: "Yes. Arcli integrates seamlessly with dbt Core. We ingest your `metrics.yml` files and use them as the source of truth for our NLP-to-SQL compiler."
           },
           {
             question: "How does the system handle multi-tenant metrics in a SaaS environment?",
-            answer: "Arcli is designed for B2B SaaS. Metric definitions are bound to the schema level, but execution is dynamically injected with Tenant IDs. A single 'MRR' definition securely computes only the MRR for the requesting tenant via mandatory row-level security."
+            answer: "Arcli is designed for B2B SaaS. A single 'MRR' definition securely computes only the MRR for the requesting tenant via mandatory row-level security parameters injected at the AST level."
           },
           {
             question: "What happens if a user asks a fundamentally unanswerable question?",
-            answer: "The Semantic Router detects when requested dimensions are incompatible (e.g., asking for 'Ad Spend by Employee Name'). Instead of writing a broken CROSS JOIN, the AI intervenes, explaining the incompatibility based on the semantic graph."
-          },
-          {
-            question: "How does the LLM know which metrics exist without a massive context window?",
-            answer: "Arcli uses highly optimized vector search and metadata retrieval. We do not inject your entire schema into the LLM prompt. We use a multi-stage RAG (Retrieval-Augmented Generation) pipeline to fetch only the relevant semantic definitions needed for the user's specific query."
+            answer: "The Semantic Router detects when requested dimensions are incompatible (e.g., 'Ad Spend by Employee Name'). Instead of writing a broken CROSS JOIN, the AI gracefully intervenes."
           }
         ]
       }

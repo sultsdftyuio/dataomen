@@ -1,585 +1,717 @@
 // lib/seo/core-features-1.tsx
-import React from 'react';
-import { Sparkles, LineChart, BarChart3, TrendingUp, MessageSquare } from 'lucide-react';
 
 /**
- * CoreFeatures Schema - SEO v10 Architecture
- * Enforces scannability, pain-centric messaging, competitive positioning, and high-value SEO hooks.
- * Upgraded with: Search Intent Routing, SERP Realism, Information Gain, and UI Blocks.
+ * SEO v13 SYSTEM: Core Features (Part 1)
+ * * SERP Realism Layer: 
+ * - Target: Position 1-3 for "Conversational AI Data Analysis", "Enterprise AI Business Intelligence", "AI Dashboard Builder", "Predictive AI Analytics", and "Slack Data Bot".
+ * * Architecture:
+ * - Upgraded to V13 deterministic block engine.
+ * - Deep schema.org integration for Rich Snippets.
+ * - Massive Information Gain via concrete SQL examples replacing generic feature claims.
  */
-export type SEOPageData = {
-  type: 'feature';
-  title: string;
-  description: string;
-  metaKeywords: string[];
-  searchIntent: {
-    primary: string;
-    secondary: string[];
-    queryPriority: 'Tier 1' | 'Tier 2' | 'Tier 3';
-    queryClass: ('Informational' | 'Commercial investigation' | 'Comparison' | 'How-to')[];
-  };
-  serpRealism: {
-    targetPosition: string;
-    competitionDifficulty: 'High' | 'Medium' | 'Low';
-    domainAdvantage: string;
-  };
-  informationGain: string;
-  h1: string;
-  subtitle: string;
-  icon: React.ReactElement;
-  idealFor: string[];
-  businessValueMetrics: {
-    label: string;
-    value: string;
-    description: string;
-  }[];
-  capabilities: {
-    name: string; // Must be Pain-Centric
-    depthLevel: 'Surface' | 'Intermediate' | 'Deep';
-    benefit: string;
-    executiveExplanation: string; // Supports internal markdown links
-  }[];
-  competitiveAdvantage: {
-    legacyTool: string;
-    limitation: string;
-    arcliAdvantage: string;
-  }[];
-  trustAndSecurity: {
-    principle: string; // Engineered, sharp
-    howWeDeliver: string;
-  }[];
-  onboardingExperience: {
-    phase: string;
-    userAction: string;
-    outcome: string;
-  }[];
-  analyticalScenarios: {
-    title: string;
-    complexity: 'Basic' | 'Advanced';
-    businessQuestion: string;
-    businessOutcome: string;
-    sqlSnippet?: string;
-  }[];
-  seoExamples: {
-    keyword: string;
-    description: string;
-  }[];
-  uiBlocks: {
-    visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'AnalyticsDashboard' | 'DataRelationshipsGraph';
-    dataMapping: string;
-    interactionPurpose: string;
-    intentServed: string;
-  }[];
-  faqs: { q: string; a: string; intent: string }[];
-  relatedSlugs: string[];
-};
 
-export const coreFeaturesPart1: Record<string, SEOPageData> = {
-  'ai-data-analysis': {
-    type: 'feature',
-    title: 'Conversational AI Data Analysis | Arcli',
-    description: 'Transform raw data into clear business answers instantly. Stop waiting on engineering tickets and get mathematically verified insights in seconds.',
-    metaKeywords: ['AI Data Analysis', 'Tableau alternative', 'Data Exploration AI', 'Natural Language Analytics', 'Self-Serve Data'],
-    searchIntent: {
-      primary: 'Find conversational AI tools that analyze database data without SQL',
-      secondary: ['Natural language data query', 'AI generated BI reporting', 'Self serve data analytics'],
-      queryPriority: 'Tier 1',
-      queryClass: ['Commercial investigation', 'Informational']
+export const coreFeaturesPart1 = {
+  "ai-data-analysis": {
+    path: "/features/ai-data-analysis",
+    meta: {
+      title: "Conversational AI Data Analysis | Arcli",
+      description: "Transform raw data into clear business answers instantly. Stop waiting on engineering tickets and get mathematically verified insights in seconds.",
+      keywords: [
+        "AI Data Analysis", 
+        "Tableau alternative", 
+        "Data Exploration AI", 
+        "Natural Language Analytics", 
+        "Self-Serve Data"
+      ],
+      serpRealism: {
+        primaryTarget: "Conversational AI Data Analysis",
+        difficulty: "High",
+        intent: "Commercial Investigation & Informational"
+      }
     },
-    serpRealism: {
-      targetPosition: 'Top 3 for "Conversational AI Data Analysis"',
-      competitionDifficulty: 'High',
-      domainAdvantage: 'Positioning as a mathematically-verified orchestration layer, rather than a hallucination-prone generic LLM chatbot.'
-    },
-    informationGain: 'Demonstrating that natural language BI is only valuable when coupled with deterministic SQL compilation and zero-data-movement security architectures.',
-    h1: 'Stop Waiting for Data Tickets',
-    subtitle: 'Ask your database questions in plain English and receive mathematically verified insights in seconds. No SQL required. No dashboard fatigue.',
-    icon: <Sparkles className="w-12 h-12 text-blue-500 mb-6" />,
-    idealFor: ['Founders', 'RevOps Teams', 'Data-Driven Sales Orgs'],
-    uiBlocks: [
+    blocks: [
       {
-        visualizationType: 'ProcessStepper',
-        dataMapping: 'onboardingExperience',
-        interactionPurpose: 'Visualize the speed from connection to insight (Connect -> Ask -> Act).',
-        intentServed: 'Onboarding friction reduction for technical evaluators.'
+        type: "Hero",
+        payload: {
+          badge: "Self-Serve Analytics",
+          title: "Stop Waiting for Data Tickets",
+          subtitle: "Ask your database questions in plain English and receive mathematically verified insights in seconds. No SQL required. No dashboard fatigue.",
+          primaryCta: { label: "Start Analyzing", href: "/register" },
+          secondaryCta: { label: "View How It Works", href: "#workflow" },
+          trustSignals: [
+            "Near Real-Time Time to Insight",
+            "~15 hrs/wk Engineering Hours Saved",
+            "Zero Data Duplication"
+          ]
+        }
       },
       {
-        visualizationType: 'MetricsChart',
-        dataMapping: 'businessValueMetrics',
-        interactionPurpose: 'Highlight the ROI of eliminating 15 engineering hours per week.',
-        intentServed: 'Executive validation and business case building.'
-      }
-    ],
-    businessValueMetrics: [
-      { label: 'Time to Insight', value: 'Near Real-Time', description: 'Move from a business question to a presentation-ready chart in seconds.' },
-      { label: 'Engineering Hours Saved', value: '~15 hrs/wk', description: 'Frees your technical team from pulling routine ad-hoc reports.' },
-      { label: 'Decision Velocity', value: 'Up to 4x Faster', description: 'Empowers leaders to validate hypotheses instantly during meetings.' }
-    ],
-    capabilities: [
-      { 
-        name: 'Eliminate the Learning Curve', 
-        depthLevel: 'Surface',
-        benefit: 'Zero proprietary formulas to memorize.', 
-        executiveExplanation: 'If you can type a question, you can analyze millions of rows. We translate your intent into optimal SQL, bypassing the steep learning curves of legacy BI tools.' 
-      },
-      { 
-        name: 'No More Broken Reports on Dirty Data', 
-        depthLevel: 'Intermediate',
-        benefit: 'Trustworthy numbers without manual Excel scrubbing.', 
-        executiveExplanation: 'The platform automatically navigates messy date formats, duplicate entries, and null values before performing math. For deeper forecasting, see [Predictive AI Analytics](/predictive-ai-analytics).' 
+        type: "KeywordAnchorBlock",
+        payload: {
+          heading: "The End of the Analytics Bottleneck",
+          text: "If you can type a question, you can analyze millions of rows. We translate your intent into optimal **SQL**, bypassing the steep learning curves of legacy BI tools. **Conversational AI data analysis** is only valuable when coupled with deterministic compilation and a **zero-data-movement** security architecture. Arcli acts as a mathematically-verified orchestration layer for your **self-serve data**, completely eliminating the operational drag of the analyst queue.",
+          semanticEntities: ["Conversational AI data analysis", "SQL", "zero-data-movement", "self-serve data", "orchestration layer"]
+        }
       },
       {
-        name: 'End Manual Metric Checking',
-        depthLevel: 'Deep',
-        benefit: 'Catch silent revenue leaks immediately.',
-        executiveExplanation: 'Continuously monitors core metrics and flags unusual dips or spikes automatically, eliminating the need for daily manual dashboard checks.'
-      }
-    ],
-    competitiveAdvantage: [
-      {
-        legacyTool: 'Traditional BI (Tableau / Power BI)',
-        limitation: 'Require dashboards to be pre-built and modeled by analysts before business users can see anything.',
-        arcliAdvantage: 'Ask any question instantly. The system explores the database on the fly with zero pre-configuration.'
-      }
-    ],
-    trustAndSecurity: [
-      { 
-        principle: 'Zero Data Duplication', 
-        howWeDeliver: 'We do not ingest or store your raw tables. We securely send the query to your warehouse (Snowflake, BigQuery, Postgres) and retrieve only the final summarized output.' 
-      },
-      { 
-        principle: 'Impossible to Modify Your Data (Architecturally Enforced)', 
-        howWeDeliver: 'The platform fundamentally cannot alter or overwrite your production data. It connects exclusively via restrictive, read-only credentials.' 
-      }
-    ],
-    onboardingExperience: [
-      { phase: 'Connect', userAction: 'Provide a secure, read-only database URL.', outcome: 'Platform maps your schema automatically.' },
-      { phase: 'Ask', userAction: 'Type: "Show me revenue by region for Q3."', outcome: 'System generates an interactive visualization.' },
-      { phase: 'Act', userAction: 'Export or pin the insight.', outcome: 'Immediate alignment across the executive team.' }
-    ],
-    analyticalScenarios: [
-      {
-        title: 'Daily Operational Tracking',
-        complexity: 'Basic',
-        businessQuestion: 'What was our total recurring revenue this month compared to last month?',
-        businessOutcome: 'Provides immediate visibility into monthly targets, allowing sales leaders to adjust strategies in real-time.',
-        sqlSnippet: `SELECT DATE_TRUNC('month', created_at) AS month, SUM(amount) AS revenue FROM payments WHERE status = 'completed' GROUP BY 1 ORDER BY 1 DESC LIMIT 2;`
+        type: "UIBlock",
+        payload: {
+          visualizationType: "ProcessStepper",
+          dataMapping: "Connect (Provide read-only URL) -> Ask (Type plain English) -> Act (System generates interactive visualization).",
+          interactionPurpose: "Visualize the speed from connection to insight, proving the elimination of the engineering bottleneck.",
+          intentServed: "Onboarding friction reduction for technical evaluators."
+        }
       },
       {
-        title: 'Cohort Analysis & Retention',
-        complexity: 'Advanced',
-        businessQuestion: 'Compare the 30-day retention rate of users who completed onboarding versus those who skipped it.',
-        businessOutcome: 'Identifies high-impact product friction points to justify engineering resources.',
-        sqlSnippet: `WITH cohort AS (SELECT user_id, MIN(DATE_TRUNC('month', created_at)) as cohort_month FROM events GROUP BY 1) SELECT cohort_month, COUNT(DISTINCT user_id) as retained FROM cohort WHERE active_days >= 30 GROUP BY 1;`
+        type: "StrategicQuery",
+        payload: {
+          title: "Translating Intent to Complex Cohort Analysis",
+          description: "A business user asks: 'Compare the 30-day retention rate of users who completed onboarding vs those who skipped.' Arcli instantly generates and executes the optimal warehouse SQL.",
+          businessOutcome: "Identifies high-impact product friction points to justify engineering resources instantly, without a 2-week Jira ticket delay.",
+          language: "sql",
+          code: `
+-- AI Generated: Cohort Retention Analysis
+WITH cohort AS (
+    SELECT user_id, MIN(DATE_TRUNC('month', created_at)) as cohort_month 
+    FROM tenant.events 
+    GROUP BY 1
+) 
+SELECT 
+    c.cohort_month, 
+    COUNT(DISTINCT c.user_id) as retained 
+FROM cohort c
+JOIN tenant.user_activity a ON c.user_id = a.user_id
+WHERE a.active_days >= 30 
+GROUP BY 1;`
+        }
+      },
+      {
+        type: "ComparisonBlock",
+        payload: {
+          title: "Arcli vs. Traditional BI",
+          description: "Why drag-and-drop tools are failing modern operations teams.",
+          visualizationType: "ComparisonTable",
+          columns: ["Capability", "Arcli (AI Data Analysis)", "Traditional BI (Tableau/Power BI)"],
+          rows: [
+            { feature: "Time to First Chart", arcli: "Seconds (AI inferred)", competitor: "Days (Manual modeling required)" },
+            { feature: "Learning Curve", arcli: "Zero (Natural Language)", competitor: "High (Proprietary formulas)" },
+            { feature: "Ad-Hoc Exploration", arcli: "Infinite conversational drill-downs", competitor: "Limited by pre-built dashboard filters" }
+          ]
+        }
+      },
+      {
+        type: "UseCaseBlock",
+        payload: {
+          title: "Transforming Daily Operations",
+          scenarios: [
+            {
+              title: "No More Broken Reports on Dirty Data",
+              description: "The platform automatically navigates messy date formats, duplicate entries, and null values before performing math, ensuring trustworthy numbers without manual Excel scrubbing."
+            },
+            {
+              title: "End Manual Metric Checking",
+              description: "Arcli continuously monitors core metrics and flags unusual dips or spikes automatically, eliminating the need for daily manual dashboard checks and catching silent revenue leaks."
+            }
+          ]
+        }
+      },
+      {
+        type: "InternalLinkingBlock",
+        payload: {
+          title: "Expand Your Analytical Capabilities",
+          links: [
+            { label: "Predictive AI Analytics", href: "/features/predictive-ai-analytics", description: "Forecast trends based on the data you just explored." },
+            { label: "AI Dashboard Builder", href: "/features/ai-dashboard-builder", description: "Turn your ad-hoc queries into live dashboards." }
+          ]
+        }
+      },
+      {
+        type: "FAQs",
+        payload: {
+          title: "AI Analysis FAQs",
+          faqs: [
+            { question: "Is my data used to train your AI models?", answer: "Absolutely not. Your proprietary data never leaves your secure perimeter and is strictly excluded from any global model training." },
+            { question: "What happens if the platform misunderstands a question?", answer: "Every generated chart includes a transparent, plain-English summary of the exact mathematical steps taken. You can verify the logic instantly, and tweak the underlying SQL if needed." }
+          ]
+        }
+      },
+      {
+        type: "StructuredDataBlock",
+        payload: {
+          schemaType: ["SoftwareApplication", "FAQPage"],
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "SoftwareApplication",
+                "name": "Arcli AI Data Analysis",
+                "applicationCategory": "BusinessApplication",
+                "description": "Conversational AI platform for generating instant, mathematically verified data insights without SQL."
+              }
+            ]
+          }
+        }
       }
-    ],
-    seoExamples: [
-      { keyword: 'how to calculate retention rate SQL', description: 'See how Arcli automatically generates complex cohort analysis and retention queries.' },
-      { keyword: 'MRR calculation SQL snippet', description: 'Calculate Monthly Recurring Revenue flawlessly by handling upgrades, downgrades, and churn.' }
-    ],
-    faqs: [
-      { q: 'Is my data used to train your AI models?', a: 'Absolutely not. Your proprietary data never leaves your secure perimeter and is strictly excluded from any global model training.', intent: 'Data Privacy' },
-      { q: 'What happens if the platform misunderstands a question?', a: 'Every generated chart includes a transparent, plain-English summary of the exact mathematical steps taken. You can verify the logic instantly.', intent: 'Trust/Accuracy' }
-    ],
-    relatedSlugs: ['ai-business-intelligence', 'ai-dashboard-builder', 'predictive-ai-analytics', 'shopify-cohort-analysis', 'increase-shopify-aov']
+    ]
   },
 
-  'ai-business-intelligence': {
-    type: 'feature',
-    title: 'Enterprise AI Business Intelligence | Arcli',
-    description: 'Ensure every department uses the exact same definitions for Revenue and Churn. Centralized metric governance meets self-serve AI analytics.',
-    metaKeywords: ['Metric Governance', 'Enterprise AI BI', 'Single Source of Truth', 'Data Semantic Layer', 'Self-Serve Analytics'],
-    searchIntent: {
-      primary: 'Implement centralized metric governance combined with AI BI',
-      secondary: ['AI semantic layer', 'Enterprise business intelligence platforms', 'Self serve BI for executives'],
-      queryPriority: 'Tier 1',
-      queryClass: ['Commercial investigation', 'Comparison']
+  "ai-business-intelligence": {
+    path: "/features/ai-business-intelligence",
+    meta: {
+      title: "Enterprise AI Business Intelligence | Arcli",
+      description: "Ensure every department uses the exact same definitions for Revenue and Churn. Centralized metric governance meets self-serve AI analytics.",
+      keywords: [
+        "Metric Governance", 
+        "Enterprise AI BI", 
+        "Single Source of Truth", 
+        "Data Semantic Layer", 
+        "Self-Serve Analytics"
+      ],
+      serpRealism: {
+        primaryTarget: "Enterprise AI Business Intelligence",
+        difficulty: "High",
+        intent: "Commercial Investigation & Architectural Comparison"
+      }
     },
-    serpRealism: {
-      targetPosition: 'Top 5 for "Enterprise AI Business Intelligence"',
-      competitionDifficulty: 'High',
-      domainAdvantage: 'Exploiting the gap between legacy "headless BI" tools (too hard to query) and modern "AI chat" tools (no governance).'
-    },
-    informationGain: 'Proving that AI analytics will fail at the enterprise level unless anchored to a strict semantic layer that governs mathematical definitions.',
-    h1: 'End the "Whose Numbers Are Right?" Debate',
-    subtitle: 'Define your core business metrics once. Allow your entire organization to query them securely in plain English, guaranteeing 100% consistency across departments.',
-    icon: <LineChart className="w-12 h-12 text-cyan-500 mb-6" />,
-    idealFor: ['CFOs', 'Head of Data', 'VP of Operations'],
-    uiBlocks: [
+    blocks: [
       {
-        visualizationType: 'ComparisonTable',
-        dataMapping: 'competitiveAdvantage',
-        interactionPurpose: 'Contrast Arcli’s dynamic routing against the brittle LookML/YAML configurations of legacy Headless BI.',
-        intentServed: 'Architectural evaluation for Data Leads.'
+        type: "Hero",
+        payload: {
+          badge: "Enterprise AI BI",
+          title: "End the 'Whose Numbers Are Right?' Debate",
+          subtitle: "Define your core business metrics once. Allow your entire organization to query them securely in plain English, guaranteeing 100% consistency across departments.",
+          primaryCta: { label: "Establish Governance", href: "/register" },
+          secondaryCta: { label: "Read Architecture", href: "#architecture" },
+          trustSignals: [
+            "100% Reporting Consistency",
+            "Strict Row-Level Access Controls (RBAC)",
+            "Native dbt Integration"
+          ]
+        }
       },
       {
-        visualizationType: 'DataRelationshipsGraph',
-        dataMapping: 'capabilities',
-        interactionPurpose: 'Show how a single defined metric (e.g., "Active User") propagates to Sales, Marketing, and Finance queries flawlessly.',
-        intentServed: 'System architecture validation.'
-      }
-    ],
-    businessValueMetrics: [
-      { label: 'Reporting Consistency', value: '100% Aligned', description: 'Sales, Marketing, and Finance all pull from identical, centrally governed mathematical definitions.' },
-      { label: 'Implementation Time', value: 'Hours, not Months', description: 'Connects to your existing data models instantly.' },
-      { label: 'Executive Confidence', value: 'Absolute', description: 'Leaders make decisions based on audited, system-enforced logic.' }
-    ],
-    capabilities: [
-      { 
-        name: 'Kill Conflicting Departmental Reports', 
-        depthLevel: 'Surface',
-        benefit: 'One definition of truth.', 
-        executiveExplanation: 'Define "Active User" or "Qualified Lead" centrally. Whenever anyone asks a question involving those terms, the platform forcefully applies your strict definition.' 
+        type: "KeywordAnchorBlock",
+        payload: {
+          heading: "The Semantic Layer for the AI Era",
+          text: "AI analytics will fail at the enterprise level unless anchored to a strict **Data Semantic Layer** that governs mathematical definitions. **Enterprise AI BI** requires more than a chat interface; it requires **Metric Governance**. With Arcli, data leaders define 'Active User' once. Whenever anyone asks a question involving those terms, the platform forcefully applies your strict definition, ensuring a true **single source of truth** across the entire organization.",
+          semanticEntities: ["Data Semantic Layer", "Enterprise AI BI", "Metric Governance", "single source of truth", "Self-Serve Analytics"]
+        }
       },
-      { 
-        name: 'Stop Guessing the Root Cause', 
-        depthLevel: 'Intermediate',
-        benefit: 'Answers the "Why," not just the "What."', 
-        executiveExplanation: 'When a KPI dips, the platform automatically performs variance analysis, highlighting the specific region or customer segment causing the drop. Seamlessly pairs with our [Slack Integration](/slack-teams-data-bot) for instant alerts.' 
-      },
-      { 
-        name: 'Leverage Your Existing dbt Models', 
-        depthLevel: 'Deep',
-        benefit: 'Zero wasted engineering effort.', 
-        executiveExplanation: 'Natively integrates with modern data stack tools, inheriting the rigorous transformations and tables your data engineers have already perfected.' 
-      }
-    ],
-    competitiveAdvantage: [
       {
-        legacyTool: 'Headless BI (Looker / dbt alone)',
-        limitation: 'Requires engineers to write complex YAML or LookML to expose metrics for every new business question.',
-        arcliAdvantage: 'Define metrics via an intuitive UI; Arcli’s AI dynamically routes any natural language question through those locked definitions.'
-      }
-    ],
-    trustAndSecurity: [
-      { 
-        principle: 'Strict Row-Level Access Controls (RBAC)', 
-        howWeDeliver: 'The platform flawlessly inherits your database’s row-level and column-level security protocols. Sensitive financial data remains invisible to unauthorized users.' 
+        type: "UIBlock",
+        payload: {
+          visualizationType: "DataRelationshipsGraph",
+          dataMapping: "Semantic Hub (Defines 'Net Revenue') -> Routes identically to -> Sales Chat, Marketing Dashboard, Finance Alert.",
+          interactionPurpose: "Show how a single defined metric propagates to all enterprise queries flawlessly, eliminating reporting drift.",
+          intentServed: "System architecture validation for Head of Data."
+        }
       },
-      { 
-        principle: 'Transparent Audit Trails', 
-        howWeDeliver: 'Every prompt asked and query executed is logged. Data administrators maintain complete oversight of enterprise data consumption.' 
-      }
-    ],
-    onboardingExperience: [
-      { phase: 'Align', userAction: 'Define core KPIs (e.g., Net Revenue) in the semantic hub.', outcome: 'A unified enterprise dictionary is established.' },
-      { phase: 'Deploy', userAction: 'Provision departmental workspaces.', outcome: 'Leaders gain instant, self-serve access to their metrics.' },
-      { phase: 'Scale', userAction: 'Users ask ad-hoc questions.', outcome: 'Platform routes queries through approved definitions automatically.' }
-    ],
-    analyticalScenarios: [
       {
-        title: 'Customer Expansion Insight',
-        complexity: 'Advanced',
-        businessQuestion: 'What is our Net Revenue Retention (NRR) for Enterprise clients active for more than one year?',
-        businessOutcome: 'Provides critical visibility into account health, justifying further investment in Customer Success.',
-        sqlSnippet: `SELECT customer_tier, SUM(current_arr) / SUM(starting_arr) AS net_revenue_retention FROM enterprise_accounts WHERE months_active > 12 GROUP BY 1;`
+        type: "StrategicQuery",
+        payload: {
+          title: "Governing Complex Calculations: NRR",
+          description: "Instead of having 5 different NRR formulas floating around in various spreadsheets, Arcli locks the definition in the semantic layer.",
+          businessOutcome: "Provides absolute executive confidence. Leaders make decisions based on audited, system-enforced logic.",
+          language: "sql",
+          code: `
+-- AI Semantic Router Output: Net Revenue Retention (NRR)
+-- Enforced globally for all 'NRR' related prompts
+SELECT 
+    customer_tier, 
+    SUM(current_arr) / NULLIF(SUM(starting_arr), 0) AS net_revenue_retention 
+FROM tenant.enterprise_accounts 
+WHERE months_active >= 12 
+GROUP BY 1;`
+        }
+      },
+      {
+        type: "ComparisonBlock",
+        payload: {
+          title: "Arcli vs. Legacy Headless BI",
+          description: "Bridging the gap between strict governance and actual usability.",
+          visualizationType: "ComparisonTable",
+          columns: ["Feature", "Arcli (AI BI)", "Headless BI (Looker/dbt alone)"],
+          rows: [
+            { feature: "Business User Accessibility", arcli: "Plain English queries", competitor: "Requires SQL/LookML knowledge" },
+            { feature: "Implementation Speed", arcli: "Hours (AI Maps Schema)", competitor: "Months (Manual YAML definition)" },
+            { feature: "Metric Consistency", arcli: "System-Enforced", competitor: "System-Enforced" }
+          ]
+        }
+      },
+      {
+        type: "UseCaseBlock",
+        payload: {
+          title: "Enterprise Scale Governance",
+          scenarios: [
+            {
+              title: "Leverage Your Existing dbt Models",
+              description: "Zero wasted engineering effort. Arcli natively integrates with the modern data stack, inheriting the rigorous transformations and tables your data engineers have already perfected."
+            },
+            {
+              title: "Stop Guessing the Root Cause",
+              description: "When a KPI dips, the platform automatically performs variance analysis, highlighting the specific region or customer segment causing the drop instead of just reporting the aggregate loss."
+            }
+          ]
+        }
+      },
+      {
+        type: "InternalLinkingBlock",
+        payload: {
+          title: "Extend Your Enterprise Deployment",
+          links: [
+            { label: "Slack & Teams Integration", href: "/features/slack-teams-data-bot", description: "Deploy your governed metrics directly into enterprise chat." },
+            { label: "Security & Auditing", href: "/compliance/query-auditing", description: "Review our cryptographic query logging and RBAC." }
+          ]
+        }
+      },
+      {
+        type: "FAQs",
+        payload: {
+          title: "Enterprise BI FAQs",
+          faqs: [
+            { question: "How do you ensure metric consistency across departments?", answer: "Through our AI Semantic Routing layer. A data leader defines a term once. If Marketing and Finance both ask for 'Revenue,' the AI forcefully compiles the exact same underlying SQL block." },
+            { question: "Can we restrict access to specific departments?", answer: "Yes. Arcli integrates with Okta/Azure AD to inherit row-level security. You can create isolated workspaces ensuring users only query data they are explicitly authorized to see." }
+          ]
+        }
+      },
+      {
+        type: "StructuredDataBlock",
+        payload: {
+          schemaType: ["SoftwareApplication", "FAQPage"],
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "SoftwareApplication",
+                "name": "Arcli Enterprise AI BI",
+                "applicationCategory": "BusinessApplication",
+                "description": "Enterprise business intelligence platform featuring strict semantic metric governance and conversational AI access."
+              }
+            ]
+          }
+        }
       }
-    ],
-    seoExamples: [
-      { keyword: 'Net Revenue Retention SQL formula', description: 'The exact query logic Arcli uses to calculate and govern complex SaaS metrics like NRR.' }
-    ],
-    faqs: [
-      { q: 'How do you ensure metric consistency across departments?', a: 'Through a Semantic Governance layer. A data leader defines a term once. If Marketing and Finance both ask for "Revenue," the AI uses the exact same underlying SQL block.', intent: 'Feature Functionality' },
-      { q: 'Can we restrict access to specific departments?', a: 'Yes. You can create isolated workspaces mapped to specific database roles, ensuring users only query data they are authorized to see.', intent: 'Security/Access' }
-    ],
-    relatedSlugs: ['ai-data-analysis', 'ai-dashboard-builder', 'slack-teams-data-bot', 'shopify-custom-reports']
+    ]
   },
 
-  'ai-dashboard-builder': {
-    type: 'feature',
-    title: 'Automated AI Dashboard Builder | Arcli',
-    description: 'Build interactive, live business dashboards using natural language. Replace weeks of manual configuration with instant, AI-generated layouts.',
-    metaKeywords: ['AI Dashboard Builder', 'Automated Visualization', 'BI Dashboard Generator', 'Live Dashboards', 'Self Serve BI'],
-    searchIntent: {
-      primary: 'Create live data dashboards instantly using AI prompts',
-      secondary: ['AI chart generator', 'Automated reporting dashboards', 'No-code BI dashboards'],
-      queryPriority: 'Tier 2',
-      queryClass: ['Commercial investigation', 'How-to']
+  "ai-dashboard-builder": {
+    path: "/features/ai-dashboard-builder",
+    meta: {
+      title: "Automated AI Dashboard Builder | Arcli",
+      description: "Build interactive, live business dashboards using natural language. Replace weeks of manual configuration with instant, AI-generated layouts.",
+      keywords: [
+        "AI Dashboard Builder", 
+        "Automated Visualization", 
+        "BI Dashboard Generator", 
+        "Live Dashboards", 
+        "Self Serve BI"
+      ],
+      serpRealism: {
+        primaryTarget: "AI Dashboard Builder",
+        difficulty: "Medium",
+        intent: "Commercial Investigation & How-to"
+      }
     },
-    serpRealism: {
-      targetPosition: 'Top 3 for "AI Dashboard Builder"',
-      competitionDifficulty: 'Medium',
-      domainAdvantage: 'Shifting the paradigm from "building dashboards" to "generating dashboards via prompt," saving critical operational time.'
-    },
-    informationGain: 'Demonstrating that the era of manually mapping X and Y axes is over; semantic intent should determine visual layout automatically.',
-    h1: 'Dashboards Built at the Speed of Thought',
-    subtitle: 'Stop dragging and dropping charts. Describe your reporting goals, and our AI automatically constructs beautiful, interactive dashboards connected to your live data.',
-    icon: <BarChart3 className="w-12 h-12 text-purple-500 mb-6" />,
-    idealFor: ['Marketing Agencies', 'Operations Managers', 'Product Managers'],
-    uiBlocks: [
+    blocks: [
       {
-        visualizationType: 'AnalyticsDashboard',
-        dataMapping: 'analyticalScenarios',
-        interactionPurpose: 'Showcase a live, AI-generated 4-panel marketing dashboard.',
-        intentServed: 'Visual proof of concept for Operations Managers.'
-      }
-    ],
-    businessValueMetrics: [
-      { label: 'Build Time', value: 'Seconds', description: 'Replaces weeks of submitting tickets, designing layouts, and QAing aggregations.' },
-      { label: 'Operational Agility', value: 'High', description: 'Create ephemeral dashboards for short-term campaigns without wasting engineering resources.' },
-      { label: 'Data Freshness', value: 'Live', description: 'Queries your database directly. Never look at stale, exported data again.' }
-    ],
-    capabilities: [
-      { 
-        name: 'Bypass Manual Configuration', 
-        depthLevel: 'Surface',
-        benefit: 'Zero design or technical skills required.', 
-        executiveExplanation: 'Type "Build a marketing health dashboard." The platform automatically determines the best KPIs, selects optimal visualizations (bar, line, scatter), and arranges them.' 
+        type: "Hero",
+        payload: {
+          badge: "Automated Visualization",
+          title: "Dashboards Built at the Speed of Thought",
+          subtitle: "Stop dragging and dropping charts. Describe your reporting goals, and our AI automatically constructs beautiful, interactive dashboards connected to your live data.",
+          primaryCta: { label: "Build a Dashboard Now", href: "/register" },
+          secondaryCta: { label: "See Examples", href: "#examples" },
+          trustSignals: [
+            "Generate in Seconds",
+            "Live Database Connection",
+            "Frictionless External Sharing"
+          ]
+        }
       },
-      { 
-        name: 'End the "Dead-End" Dashboard', 
-        depthLevel: 'Intermediate',
-        benefit: 'Answer follow-up questions instantly.', 
-        executiveExplanation: 'Unlike static BI images, every chart is conversational. Spot an anomaly? Click it and ask a follow-up question to drill down to the row-level data immediately.' 
-      },
-      { 
-        name: 'Frictionless External Sharing', 
-        depthLevel: 'Deep',
-        benefit: 'Align external partners securely.', 
-        executiveExplanation: 'Publish dashboards via read-only links or iframes to share live metrics with investors or clients. Combine this with [Predictive Analytics](/predictive-ai-analytics) for powerful board presentations.' 
-      }
-    ],
-    competitiveAdvantage: [
       {
-        legacyTool: 'Standard BI (Metabase / Superset)',
-        limitation: 'Users must manually map X/Y axes, select aggregation types, and configure dashboard filters chart-by-chart.',
-        arcliAdvantage: 'AI automatically infers the optimal chart type and underlying query structure based purely on your business intent.'
-      }
-    ],
-    trustAndSecurity: [
-      { 
-        principle: 'Isolated Browser-Side Compute', 
-        howWeDeliver: 'Heavy dashboard rendering logic (Vega/D3) is executed smoothly within the user’s browser, minimizing server load and latency.' 
+        type: "KeywordAnchorBlock",
+        payload: {
+          heading: "The End of Manual Configuration",
+          text: "The era of manually mapping X and Y axes is over. Your semantic intent should determine the visual layout automatically. With Arcli's **AI Dashboard Builder**, you simply type 'Build a marketing health dashboard.' The engine infers the required KPIs, writes the **live dashboard** SQL, selects the optimal **automated visualization** formats, and deploys a **self-serve BI** asset instantly.",
+          semanticEntities: ["AI Dashboard Builder", "live dashboards", "automated visualization", "self-serve BI", "BI Dashboard Generator"]
+        }
       },
-      { 
-        principle: 'Strict Link Expirations', 
-        howWeDeliver: 'External sharing is protected by domain whitelisting, password gating, and automated expirations.' 
-      }
-    ],
-    onboardingExperience: [
-      { phase: 'Describe', userAction: 'State your goal: "Track our new product launch metrics."', outcome: 'System selects relevant tables.' },
-      { phase: 'Generate', userAction: 'AI renders the layout.', outcome: 'A multi-chart dashboard appears instantly.' },
-      { phase: 'Refine', userAction: 'Ask to tweak a specific chart.', outcome: 'Updates instantly to reflect filters or formatting.' }
-    ],
-    analyticalScenarios: [
       {
-        title: 'Weekly Marketing Sync',
-        complexity: 'Basic',
-        businessQuestion: 'Create a dashboard showing website traffic, CAC, and total ad spend for the last 7 days.',
-        businessOutcome: 'Replaces manual CSV exports. The team reviews live performance dynamically.',
-        sqlSnippet: `SELECT campaign_name, SUM(spend) AS total_spend, SUM(spend)/COUNT(lead_id) AS customer_acquisition_cost FROM ad_performance WHERE date >= CURRENT_DATE - 7 GROUP BY 1;`
+        type: "UIBlock",
+        payload: {
+          visualizationType: "AnalyticsDashboard",
+          dataMapping: "Simulated generation: User Prompt -> AI infers 4 KPIs -> Renders Bar, Line, and Scatter plots instantly.",
+          interactionPurpose: "Showcase the seamless transition from natural language to a fully functional, multi-panel dashboard.",
+          intentServed: "Visual proof of concept for Operations and Agency Managers."
+        }
+      },
+      {
+        type: "StrategicQuery",
+        payload: {
+          title: "Automating Complex Visual Aggregations: CAC",
+          description: "To build a dashboard, the AI must first write perfect data extraction queries. Here is how Arcli automatically calculates CAC for a marketing dashboard generation request.",
+          businessOutcome: "Replaces weeks of submitting tickets, designing layouts, and QAing aggregations. Dashboards are ephemeral and cheap to generate.",
+          language: "sql",
+          code: `
+-- AI Generated: Dashboard Component (Customer Acquisition Cost)
+SELECT 
+    campaign_name, 
+    SUM(spend) AS total_spend, 
+    SUM(spend) / NULLIF(COUNT(DISTINCT lead_id), 0) AS customer_acquisition_cost 
+FROM marketing.ad_performance 
+WHERE date >= CURRENT_DATE - INTERVAL '7 days' 
+GROUP BY 1
+ORDER BY customer_acquisition_cost ASC;`
+        }
+      },
+      {
+        type: "ComparisonBlock",
+        payload: {
+          title: "Dashboard Creation Matrix",
+          description: "Comparing the operational overhead of visualization tools.",
+          visualizationType: "ComparisonTable",
+          columns: ["Action", "Arcli (AI Generator)", "Standard BI (Metabase/Tableau)"],
+          rows: [
+            { feature: "Select Chart Type", arcli: "AI Inferred", competitor: "Manual Selection" },
+            { feature: "Map Axes & Groupings", arcli: "AI Inferred", competitor: "Manual Configuration" },
+            { feature: "Update Parameters", arcli: "Natural Language Prompt", competitor: "Click through nested menus" },
+            { feature: "Drill-Down", arcli: "Conversational Follow-up", competitor: "Pre-configured drill paths only" }
+          ]
+        }
+      },
+      {
+        type: "UseCaseBlock",
+        payload: {
+          title: "Deploying Insights Instantly",
+          scenarios: [
+            {
+              title: "End the 'Dead-End' Dashboard",
+              description: "Unlike static BI images, every chart generated by Arcli is conversational. Spot an anomaly? Click it and ask a follow-up question to drill down to the row-level data immediately."
+            },
+            {
+              title: "Frictionless External Sharing",
+              description: "Publish dashboards via read-only secure links or iframes to share live metrics with investors or clients, protected by password gating and automated expirations."
+            }
+          ]
+        }
+      },
+      {
+        type: "InternalLinkingBlock",
+        payload: {
+          title: "Enhance Your Dashboards",
+          links: [
+            { label: "Predictive Analytics", href: "/features/predictive-ai-analytics", description: "Add forecasted trendlines to any dashboard." },
+            { label: "Slack Integration", href: "/features/slack-teams-data-bot", description: "Push dashboard summaries to Slack automatically." }
+          ]
+        }
+      },
+      {
+        type: "FAQs",
+        payload: {
+          title: "AI Dashboard FAQs",
+          faqs: [
+            { question: "Can I manually edit the dashboard after the AI builds it?", answer: "Absolutely. The platform provides a perfect starting baseline, but you retain full control to drag, drop, tweak the chart types, and edit the underlying SQL." },
+            { question: "Do viewers of the dashboard need a paid license?", answer: "No. You can securely share read-only dashboard links with internal stakeholders or external clients without requiring them to have authoring licenses." }
+          ]
+        }
+      },
+      {
+        type: "StructuredDataBlock",
+        payload: {
+          schemaType: ["SoftwareApplication"],
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "Arcli AI Dashboard Builder",
+            "applicationCategory": "BusinessApplication",
+            "description": "Generate live, interactive data dashboards instantly using conversational AI and natural language prompts."
+          }
+        }
       }
-    ],
-    seoExamples: [
-      { keyword: 'CAC calculation SQL', description: 'How to reliably calculate Customer Acquisition Cost across fragmented ad platforms.' }
-    ],
-    faqs: [
-      { q: 'Can I manually edit the dashboard after the AI builds it?', a: 'Absolutely. The platform provides a perfect starting baseline, but you retain full control to drag, drop, and tweak the underlying SQL.', intent: 'Flexibility Validation' },
-      { q: 'Do viewers of the dashboard need a paid license?', a: 'No. You can securely share read-only dashboard links with internal stakeholders or board members without requiring them to have authoring licenses.', intent: 'Pricing/Distribution' }
-    ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'predictive-ai-analytics']
+    ]
   },
 
-  'predictive-ai-analytics': {
-    type: 'feature',
-    title: 'Predictive AI Analytics & Forecasting | Arcli',
-    description: 'Anticipate market shifts before they happen. Forecast revenue, predict customer churn, and model financial scenarios instantly using historical data.',
-    metaKeywords: ['Predictive Analytics', 'AI Forecasting Tool', 'Revenue Projection Software', 'Churn Prediction AI', 'Data Modeling SaaS'],
-    searchIntent: {
-      primary: 'Apply predictive AI to data warehouse analytics for forecasting',
-      secondary: ['AI churn prediction', 'Automated revenue forecasting model', 'Time series forecasting BI'],
-      queryPriority: 'Tier 2',
-      queryClass: ['Commercial investigation', 'Informational']
+  "predictive-ai-analytics": {
+    path: "/features/predictive-ai-analytics",
+    meta: {
+      title: "Predictive AI Analytics & Forecasting | Arcli",
+      description: "Anticipate market shifts before they happen. Forecast revenue, predict customer churn, and model financial scenarios instantly using historical data.",
+      keywords: [
+        "Predictive Analytics", 
+        "AI Forecasting Tool", 
+        "Revenue Projection Software", 
+        "Churn Prediction AI", 
+        "Data Modeling SaaS"
+      ],
+      serpRealism: {
+        primaryTarget: "AI Forecasting Tool",
+        difficulty: "Medium",
+        intent: "Commercial Investigation & Informational"
+      }
     },
-    serpRealism: {
-      targetPosition: 'Top 5 for "AI Forecasting Tool"',
-      competitionDifficulty: 'Medium',
-      domainAdvantage: 'Pushing statistical modeling capabilities down to the business operator, removing the Data Scientist bottleneck.'
-    },
-    informationGain: 'Exposing the fact that you do not need to extract data into a Python/Jupyter environment to run powerful, mathematically sound linear regression or ARIMA forecasting.',
-    h1: 'See the Future. Act Before It Happens.',
-    subtitle: 'Move from looking backward to planning forward. Project financial trajectories and catch customer churn weeks before it hits the P&L statement.',
-    icon: <TrendingUp className="w-12 h-12 text-rose-500 mb-6" />,
-    idealFor: ['FP&A Teams', 'Customer Success Leaders', 'Supply Chain Planners'],
-    uiBlocks: [
+    blocks: [
       {
-        visualizationType: 'MetricsChart',
-        dataMapping: 'analyticalScenarios',
-        interactionPurpose: 'Visualize a time-series line chart branching into a predictive model with shaded confidence intervals.',
-        intentServed: 'Visual validation of forecasting capabilities for FP&A.'
-      }
-    ],
-    businessValueMetrics: [
-      { label: 'Forecast Accuracy', value: 'Statistically Verified', description: 'Replaces gut-feeling projections with robust mathematical models (ARIMA, Linear Regression).' },
-      { label: 'Planning Cycle Time', value: 'Reduced by 60%', description: 'Eliminates weeks of building brittle Excel forecast models prior to board meetings.' },
-      { label: 'Risk Mitigation', value: 'Proactive', description: 'Identifies negative trajectories (creeping churn) automatically.' }
-    ],
-    capabilities: [
-      { 
-        name: 'Bypass Complex Data Science Pipelines', 
-        depthLevel: 'Surface',
-        benefit: 'Instant forward-looking visibility.', 
-        executiveExplanation: 'Ask the system to "project revenue for the next 3 months." The engine evaluates historical seasonality and generates an accurate forecast instantly, without requiring a Python notebook.' 
-      },
-      { 
-        name: 'Catch Churn Before the Renewal', 
-        depthLevel: 'Intermediate',
-        benefit: 'Save accounts before they cancel.', 
-        executiveExplanation: 'Identify behavioral patterns in usage data that historically precede cancellation, enabling your CS team to intervene proactively. View these insights in your [AI Dashboards](/ai-dashboard-builder).' 
-      },
-      { 
-        name: 'Interactive Scenario Modeling', 
-        depthLevel: 'Deep',
-        benefit: 'De-risk strategic decisions in real-time.', 
-        executiveExplanation: 'Adjust variables conversationally ("What if marketing spend drops 15%?") to view dynamically updated financial outcomes instantly.' 
-      }
-    ],
-    competitiveAdvantage: [
-      {
-        legacyTool: 'Custom Data Science (Python/Jupyter)',
-        limitation: 'Takes highly paid engineers weeks to clean data, train a model, and deploy a basic forecast.',
-        arcliAdvantage: 'Instant, mathematically sound predictive trendlines generated directly on top of your live warehouse.'
-      }
-    ],
-    trustAndSecurity: [
-      { 
-        principle: 'Transparent Mathematical Methods', 
-        howWeDeliver: 'We do not use hallucinatory "magic." Every model relies on verifiable statistical functions. The math is always visible for your data team to audit.' 
-      },
-      { 
-        principle: 'Privacy-Preserving Execution', 
-        howWeDeliver: 'Forecasting is executed using aggregated numbers, entirely eliminating the need to expose sensitive individual PII to the predictive model.' 
-      }
-    ],
-    onboardingExperience: [
-      { phase: 'Analyze', userAction: 'Ask for historical data: "Show DAUs for the last year."', outcome: 'System displays actual historical data.' },
-      { phase: 'Project', userAction: 'Add command: "Add a 90-day forecast."', outcome: 'System plots the anticipated growth trajectory.' },
-      { phase: 'Evaluate', userAction: 'Review the confidence bands.', outcome: 'Leaders understand the realistic bounds (e.g., 95% confidence interval) of the prediction.' }
-    ],
-    analyticalScenarios: [
-      {
-        title: 'Quarterly Revenue Forecasting',
-        complexity: 'Basic',
-        businessQuestion: 'Based on the last two years, what will our Q4 revenue look like?',
-        businessOutcome: 'Provides immediate baseline expectations for planning, replacing multi-day Excel modeling.',
-        sqlSnippet: `SELECT month, SUM(revenue), REGR_SLOPE(SUM(revenue), EXTRACT(EPOCH FROM month)) OVER() AS trend FROM financial_data GROUP BY 1;`
+        type: "Hero",
+        payload: {
+          badge: "AI Forecasting",
+          title: "See the Future. Act Before It Happens.",
+          subtitle: "Move from looking backward to planning forward. Project financial trajectories and catch customer churn weeks before it hits the P&L statement.",
+          primaryCta: { label: "Model Your Data", href: "/register" },
+          secondaryCta: { label: "View Forecasting Engine", href: "#engine" },
+          trustSignals: [
+            "Statistically Verified Models",
+            "60% Reduction in Planning Cycle Time",
+            "In-Warehouse Compute (No Data Export)"
+          ]
+        }
       },
       {
-        title: 'Proactive Churn Modeling',
-        complexity: 'Advanced',
-        businessQuestion: 'Identify enterprise clients whose usage has dropped 30% below their 6-month historical average.',
-        businessOutcome: 'Generates a highly targeted "At-Risk" list for Customer Success to action immediately.',
-        sqlSnippet: `WITH avg_usage AS (SELECT account_id, AVG(login_count) as avg_6m FROM activity WHERE date >= CURRENT_DATE - 180 GROUP BY 1) SELECT a.account_id FROM current_activity a JOIN avg_usage b ON a.account_id = b.account_id WHERE a.current_login_count < (b.avg_6m * 0.7);`
+        type: "KeywordAnchorBlock",
+        payload: {
+          heading: "Democratizing Data Science",
+          text: "You no longer need to extract data into a Python or Jupyter environment to run powerful, mathematically sound linear regressions or ARIMA forecasting. Arcli pushes **predictive analytics** down to the business operator. As a native **AI forecasting tool**, it evaluates historical seasonality in your warehouse and generates a **revenue projection** instantly. Identify **churn prediction AI** patterns without the data science bottleneck.",
+          semanticEntities: ["Predictive Analytics", "AI forecasting tool", "revenue projection", "churn prediction AI", "ARIMA", "Linear regression"]
+        }
+      },
+      {
+        type: "UIBlock",
+        payload: {
+          visualizationType: "MetricsChart",
+          dataMapping: "Historical Line Chart (Solid) branching into Predictive Forecast (Dotted) with 95% Confidence Interval Shading.",
+          interactionPurpose: "Visual validation of forecasting capabilities, showing rigorous statistical bounds rather than random guesses.",
+          intentServed: "Trust building for FP&A Teams and Data Scientists."
+        }
+      },
+      {
+        type: "StrategicQuery",
+        payload: {
+          title: "Proactive Churn Modeling via SQL",
+          description: "Arcli doesn't use black-box magic; it writes highly advanced statistical SQL. Here is how the AI identifies enterprise clients whose usage has dropped significantly below their historical baseline.",
+          businessOutcome: "Generates a highly targeted 'At-Risk' list for Customer Success to action immediately, saving accounts before they cancel.",
+          language: "sql",
+          code: `
+-- AI Generated: Predictive Churn Risk Detection
+WITH historical_baseline AS (
+    SELECT account_id, AVG(login_count) as avg_6m 
+    FROM tenant.activity_logs 
+    WHERE date >= CURRENT_DATE - INTERVAL '180 days' 
+    GROUP BY 1
+) 
+SELECT 
+    c.account_id,
+    c.current_login_count,
+    h.avg_6m,
+    ((c.current_login_count - h.avg_6m) / NULLIF(h.avg_6m, 0)) * 100 AS usage_drop_percentage
+FROM tenant.current_activity c 
+JOIN historical_baseline h ON c.account_id = h.account_id 
+WHERE c.current_login_count < (h.avg_6m * 0.7) -- Flag 30% drop
+ORDER BY usage_drop_percentage ASC;`
+        }
+      },
+      {
+        type: "ComparisonBlock",
+        payload: {
+          title: "Forecasting Workflows",
+          description: "Comparing the time-to-insight for predictive modeling.",
+          visualizationType: "ComparisonTable",
+          columns: ["Phase", "Arcli (In-Warehouse AI)", "Custom Data Science (Python)"],
+          rows: [
+            { feature: "Data Extraction", arcli: "Zero (Queries live DB)", competitor: "Export to CSV/Dataframe" },
+            { feature: "Model Selection", arcli: "Automated (ARIMA/Regression)", competitor: "Manual testing via SciPy/Pandas" },
+            { feature: "Scenario Adjustments", arcli: "Instant (Natural Language)", competitor: "Requires code rewrite & re-run" }
+          ]
+        }
+      },
+      {
+        type: "UseCaseBlock",
+        payload: {
+          title: "Applied Predictive Modeling",
+          scenarios: [
+            {
+              title: "Interactive Scenario Modeling",
+              description: "Adjust variables conversationally ('What if marketing spend drops 15%?') to view dynamically updated financial outcomes instantly, de-risking strategic decisions in real-time."
+            },
+            {
+              title: "Privacy-Preserving Execution",
+              description: "Forecasting is executed using aggregated numbers natively in your warehouse, entirely eliminating the need to expose sensitive individual PII to an external predictive model."
+            }
+          ]
+        }
+      },
+      {
+        type: "InternalLinkingBlock",
+        payload: {
+          title: "Integrate Your Forecasts",
+          links: [
+            { label: "Dashboard Builder", href: "/features/ai-dashboard-builder", description: "Pin your live forecasts to an executive dashboard." },
+            { label: "Zero-Copy Security", href: "/compliance/zero-copy-analytics", description: "Learn how we forecast without moving your data." }
+          ]
+        }
+      },
+      {
+        type: "FAQs",
+        payload: {
+          title: "Predictive Analytics FAQs",
+          faqs: [
+            { question: "Can I export the forecasted numbers into our financial models?", answer: "Yes. Any predictive chart can be exported as raw CSV data, allowing your finance team to import the projected baseline directly into Excel or other planning software." },
+            { question: "Is our forecasting data sent to external AI providers?", answer: "No. The AI merely generates the SQL string. The actual mathematical calculations and data processing for the forecast are executed within the secure boundary of your own data warehouse." }
+          ]
+        }
+      },
+      {
+        type: "StructuredDataBlock",
+        payload: {
+          schemaType: ["SoftwareApplication", "FAQPage"],
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@graph": [
+              {
+                "@type": "SoftwareApplication",
+                "name": "Arcli Predictive AI Analytics",
+                "applicationCategory": "BusinessApplication",
+                "description": "In-warehouse predictive analytics and AI forecasting tool for revenue projection and churn modeling."
+              }
+            ]
+          }
+        }
       }
-    ],
-    seoExamples: [
-      { keyword: 'churn prediction SQL model', description: 'Using standard SQL window functions to detect declining usage patterns over time.' }
-    ],
-    faqs: [
-      { q: 'Can I export the forecasted numbers into our financial models?', a: 'Yes. Any predictive chart can be exported as raw CSV data, allowing your finance team to import the projected baseline directly into their primary planning software.', intent: 'Workflow Integration' },
-      { q: 'Is our forecasting data sent to external AI providers?', a: 'No. The mathematical calculations for forecasting are executed within the secure boundary of your own data warehouse.', intent: 'Data Security' }
-    ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'slack-teams-data-bot', 'shopify-inventory-forecasting']
+    ]
   },
 
-  'slack-teams-data-bot': {
-    type: 'feature',
-    title: 'Native Slack & MS Teams Data Bot | Arcli',
-    description: 'Bring live analytics directly into company chat. Query your database, pull charts, and set automated alerts without leaving Slack or Microsoft Teams.',
-    metaKeywords: ['Slack Data Bot', 'Teams Analytics Integration', 'ChatOps BI', 'Automated Data Alerts', 'Collaborative Analytics'],
-    searchIntent: {
-      primary: 'Query databases and receive data charts directly within Slack or Teams',
-      secondary: ['Slack BI integration', 'Automated Slack data alerts', 'SQL bot for Teams'],
-      queryPriority: 'Tier 3',
-      queryClass: ['Commercial investigation', 'How-to']
+  "slack-teams-data-bot": {
+    path: "/features/slack-teams-data-bot",
+    meta: {
+      title: "Native Slack & MS Teams Data Bot | Arcli",
+      description: "Bring live analytics directly into company chat. Query your database, pull charts, and set automated alerts without leaving Slack or Microsoft Teams.",
+      keywords: [
+        "Slack Data Bot", 
+        "Teams Analytics Integration", 
+        "ChatOps BI", 
+        "Automated Data Alerts", 
+        "Collaborative Analytics"
+      ],
+      serpRealism: {
+        primaryTarget: "Slack Data Analytics Bot",
+        difficulty: "Low",
+        intent: "Commercial Investigation & How-to"
+      }
     },
-    serpRealism: {
-      targetPosition: 'Top 3 for "Slack Data Analytics Bot"',
-      competitionDifficulty: 'Low',
-      domainAdvantage: 'Capturing the highly specific, high-converting ChatOps niche by showing visual proof of live charts rendering directly in Slack threads.'
-    },
-    informationGain: 'Proving that context-switching to a BI portal kills data adoption; delivering insights directly to the communication layer increases data-driven decisions by 3x.',
-    h1: 'Live Data, Right Where Your Team Works',
-    subtitle: 'Stop forcing teams to log into separate reporting portals. Bring the power of conversational BI directly into the Slack and Teams channels they already use.',
-    icon: <MessageSquare className="w-12 h-12 text-indigo-500 mb-6" />,
-    idealFor: ['Remote Teams', 'Sales Pods', 'Engineering On-Call'],
-    uiBlocks: [
+    blocks: [
       {
-        visualizationType: 'ProcessStepper',
-        dataMapping: 'capabilities',
-        interactionPurpose: 'Demonstrate setting up an automated threshold alert (e.g., Signups drop < 500 -> Ping #sales).',
-        intentServed: 'Automation setup visualization for Operations leads.'
-      }
-    ],
-    businessValueMetrics: [
-      { label: 'Platform Adoption', value: '3x Higher', description: 'Drastically increases data usage among non-technical staff by embedding it in their natural workflow.' },
-      { label: 'Context Switching', value: 'Eliminated', description: 'Keeps conversations fast. No more "Let me go pull a report and get back to you."' },
-      { label: 'Alert Response', value: 'Immediate', description: 'Automated pings notify key channels the exact moment critical metrics cross a threshold.' }
-    ],
-    capabilities: [
-      { 
-        name: 'End the Dashboard Login Friction', 
-        depthLevel: 'Surface',
-        benefit: 'Data at your fingertips.', 
-        executiveExplanation: 'Tag the bot in any channel: "@Arcli what was yesterday\'s total revenue?" The bot replies instantly with the verified number and a visual chart.' 
-      },
-      { 
-        name: 'Kill Silent Software Failures', 
-        depthLevel: 'Intermediate',
-        benefit: 'Never miss a critical business event.', 
-        executiveExplanation: 'Set rules in plain English: "Message #sales immediately if signups drop below 500." The platform monitors silently and alerts only when necessary.' 
-      },
-      { 
-        name: 'Automate Executive Briefings', 
-        depthLevel: 'Deep',
-        benefit: 'Start the day aligned.', 
-        executiveExplanation: 'Configure the bot to drop a consolidated summary of key metrics into the leadership channel every Monday morning, perfectly utilizing your [AI Dashboard](/ai-dashboard-builder) logic.' 
-      }
-    ],
-    competitiveAdvantage: [
-      {
-        legacyTool: 'Scheduled Dashboard Emails',
-        limitation: 'Static, stale PDF data that lives entirely outside the collaborative team workflow.',
-        arcliAdvantage: 'Interactive, real-time charts triggered directly within the chat thread where decisions are actually being made.'
-      }
-    ],
-    trustAndSecurity: [
-      { 
-        principle: 'Strict Channel-Level Enforcement', 
-        howWeDeliver: 'The bot rigorously respects existing data permissions. If an employee asks for locked financial data in a public marketing channel, the bot intelligently blocks the request.' 
-      },
-      { 
-        principle: 'Zero Persistent Slack Caching', 
-        howWeDeliver: 'When the bot unfurls a chart, the visual is generated securely on the fly. Underlying raw data is never cached on Slack or Microsoft’s servers.' 
-      }
-    ],
-    onboardingExperience: [
-      { phase: 'Install', userAction: 'Authorize the app via enterprise OAuth.', outcome: 'Securely binds to your communication platform.' },
-      { phase: 'Invite', userAction: 'Add the bot to a channel (#marketing).', outcome: 'Team immediately begins conversational data requests.' },
-      { phase: 'Automate', userAction: 'Set up a recurring alert.', outcome: 'Channel passively receives high-accuracy updates.' }
-    ],
-    analyticalScenarios: [
-      {
-        title: 'Daily Performance Pulse',
-        complexity: 'Basic',
-        businessQuestion: 'In #general: "@Arcli show me a bar chart of top performing sales reps this week."',
-        businessOutcome: 'Fosters public recognition and healthy competition without waiting for a manager to distribute a spreadsheet.',
-        sqlSnippet: `SELECT rep_name, SUM(deal_value) FROM closed_won WHERE close_date >= DATE_TRUNC('week', CURRENT_DATE) GROUP BY 1 ORDER BY 2 DESC LIMIT 5;`
+        type: "Hero",
+        payload: {
+          badge: "ChatOps Analytics",
+          title: "Live Data, Right Where Your Team Works",
+          subtitle: "Stop forcing teams to log into separate reporting portals. Bring the power of conversational BI directly into the Slack and Teams channels they already use.",
+          primaryCta: { label: "Install Slack Bot", href: "/register" },
+          secondaryCta: { label: "View Teams Setup", href: "#setup" },
+          trustSignals: [
+            "3x Higher Platform Adoption",
+            "Eliminated Context Switching",
+            "Immediate Alert Response"
+          ]
+        }
       },
       {
-        title: 'Automated Crisis Management',
-        complexity: 'Advanced',
-        businessQuestion: 'Background Alert: "If API timeout errors exceed 5% in a 10-minute window, alert #engineering-critical."',
-        businessOutcome: 'Drastically reduces Mean Time to Resolution (MTTR). Engineers act before customer complaints roll in.'
+        type: "KeywordAnchorBlock",
+        payload: {
+          heading: "Embedding Intelligence into Communication",
+          text: "Context-switching to a BI portal kills data adoption. Delivering insights directly to the communication layer increases data-driven decisions massively. With Arcli's **Slack Data Bot** and **Teams Analytics Integration**, you bring **ChatOps BI** to your entire workforce. Query your database instantly in a thread, set up **automated data alerts** for threshold breaches, and foster true **collaborative analytics** without ever leaving the chat interface.",
+          semanticEntities: ["Slack Data Bot", "Teams Analytics Integration", "ChatOps BI", "automated data alerts", "collaborative analytics"]
+        }
+      },
+      {
+        type: "UIBlock",
+        payload: {
+          visualizationType: "ProcessStepper",
+          dataMapping: "Install Bot -> Type '@Arcli alert #sales if signups < 500' -> Bot monitors silently -> Triggers alert chart when threshold breached.",
+          interactionPurpose: "Demonstrate the ease of setting up an automated threshold alert directly via chat syntax.",
+          intentServed: "Automation setup visualization for Operations and RevOps leads."
+        }
+      },
+      {
+        type: "StrategicQuery",
+        payload: {
+          title: "Automated Executive Briefings in Slack",
+          description: "Behind the scenes, when a user asks '@Arcli show me the top performing reps this week', the bot compiles the SQL, executes it, and unfurls the chart directly in the Slack thread.",
+          businessOutcome: "Fosters public recognition and healthy competition without waiting for a manager to export and distribute a spreadsheet.",
+          language: "sql",
+          code: `
+-- AI Generated: Slack Bot Ad-Hoc Request
+SELECT 
+    rep_name, 
+    SUM(deal_value) AS total_closed 
+FROM sales.closed_won_deals 
+WHERE close_date >= DATE_TRUNC('week', CURRENT_DATE) 
+GROUP BY 1 
+ORDER BY total_closed DESC 
+LIMIT 5;`
+        }
+      },
+      {
+        type: "ComparisonBlock",
+        payload: {
+          title: "Data Distribution Methods",
+          description: "Why interactive ChatOps beats static reporting.",
+          visualizationType: "ComparisonTable",
+          columns: ["Feature", "Arcli (Slack/Teams Bot)", "Legacy BI (Scheduled Emails)"],
+          rows: [
+            { feature: "Data Freshness", arcli: "Real-time query execution", competitor: "Stale at the time of sending" },
+            { feature: "Interactivity", arcli: "Reply in thread to drill-down", competitor: "Static PDF/Image" },
+            { feature: "Anomaly Detection", arcli: "Instant push notification", competitor: "Wait until next scheduled report" }
+          ]
+        }
+      },
+      {
+        type: "UseCaseBlock",
+        payload: {
+          title: "ChatOps Capabilities",
+          scenarios: [
+            {
+              title: "Kill Silent Software Failures",
+              description: "Set rules in plain English: 'Message #engineering immediately if API timeout errors exceed 5%.' The platform monitors silently and reduces Mean Time to Resolution (MTTR)."
+            },
+            {
+              title: "Strict Channel-Level Enforcement",
+              description: "The bot rigorously respects existing data permissions. If an employee asks for locked financial data in a public marketing channel, the bot intelligently blocks the request."
+            }
+          ]
+        }
+      },
+      {
+        type: "InternalLinkingBlock",
+        payload: {
+          title: "Power Your Bot",
+          links: [
+            { label: "Semantic Metric Governance", href: "/features/ai-business-intelligence", description: "Ensure the bot answers consistently across all channels." },
+            { label: "Anomaly Detection", href: "/features/predictive-ai-analytics", description: "Trigger Slack alerts based on predictive forecasting deviations." }
+          ]
+        }
+      },
+      {
+        type: "FAQs",
+        payload: {
+          title: "Slack & Teams Bot FAQs",
+          faqs: [
+            { question: "Will the bot read all of our private conversations?", answer: "No. By design, the bot operates on a strictly 'mention-only' basis. It only processes text when explicitly tagged with the @ symbol in an authorized channel." },
+            { question: "How does the bot handle massive datasets that don't fit in a chat message?", answer: "If a question requires deep analysis or returns a massive table, the bot provides a top-line visual summary in chat and securely links the user to the Arcli web portal for deeper exploration." }
+          ]
+        }
+      },
+      {
+        type: "StructuredDataBlock",
+        payload: {
+          schemaType: ["SoftwareApplication"],
+          jsonLd: {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "Arcli ChatOps Data Bot",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Slack, Microsoft Teams",
+            "description": "Slack and MS Teams bot for live database querying, automated alerts, and conversational business intelligence."
+          }
+        }
       }
-    ],
-    seoExamples: [
-      { keyword: 'Slack SQL integration', description: 'How to securely pipe direct data warehouse queries into Slack without exposing credentials.' }
-    ],
-    faqs: [
-      { q: 'Will the bot read all of our private conversations?', a: 'No. By design, the bot operates on a strictly "mention-only" basis. It only processes text when explicitly tagged with the @ symbol.', intent: 'Privacy/Security' },
-      { q: 'How does the bot handle massive datasets?', a: 'If a question requires deep analysis, the bot provides a top-line summary in chat and securely links the user to the full web portal for deeper exploration.', intent: 'Usability/Performance' }
-    ],
-    relatedSlugs: ['ai-data-analysis', 'ai-business-intelligence', 'predictive-ai-analytics']
+    ]
   }
 };
