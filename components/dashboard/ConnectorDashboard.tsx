@@ -6,9 +6,9 @@ import { Activity, AlertCircle, RefreshCw, Database } from "lucide-react";
 import { DynamicChartFactory } from "@/components/dashboard/DynamicChartFactory";
 import { ExecutiveKPICard } from "@/components/dashboard/ExecutiveKPICard";
 import { InsightsFeed } from "@/components/dashboard/InsightsFeed";
-import { ExecutionPayload } from "@/lib/chart-engine";
 import { ApiClient } from "@/lib/api-client";
 import { KPIEngine, KPI } from "@/lib/intelligence/kpi-engine";
+import { ChartOrchestrator, ChartJob } from "@/lib/intelligence/chart-orchestrator";
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -25,18 +25,35 @@ interface ConnectorDashboardProps {
 }
 
 // -----------------------------------------------------------------------------
-// Core Smart Hub Orchestrator (Phase 3 Finalization)
+// Core Smart Hub Orchestrator (Phase 4 Finalization)
 // -----------------------------------------------------------------------------
 export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrationName }) => {
   const [metrics, setMetrics] = useState<MetricView[]>([]);
-  const [chartPayloads, setChartPayloads] = useState<Record<string, ExecutionPayload>>({});
   const [kpis, setKpis] = useState<Record<string, KPI>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(true);
 
-  // 1. Fetch Semantic Models (Phase 1 Foundation)
+  // 1. Initialize the Execution Orchestrator (Singleton per hub instance)
+  const orchestrator = useMemo(() => new ChartOrchestrator(
+    async (query, params, signal) => {
+      // In a real app, ensure ApiClient supports passing the AbortSignal
+      const response = await fetch('/api/query/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql: query }),
+        signal 
+      });
+      
+      if (!response.ok) throw new Error("Failed to execute canonical view");
+      const result = await response.json();
+      return result.data;
+    },
+    { maxConcurrency: 3, maxRetries: 2 }
+  ), []);
+
+  // 2. Fetch Semantic Models (Phase 1 Foundation)
   useEffect(() => {
     const fetchMetrics = async () => {
-      setIsLoading(true);
+      setIsLoadingMetadata(true);
       try {
         const res = await fetch(`/api/insights/metrics?integration=${integrationName}`);
         if (!res.ok) throw new Error("Failed to fetch metrics");
@@ -46,81 +63,68 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
       } catch (error) {
         console.error(`[SmartHub] Error fetching ${integrationName} semantic models:`, error);
       } finally {
-        setIsLoading(false);
+        setIsLoadingMetadata(false);
       }
     };
 
     fetchMetrics();
-  }, [integrationName]);
 
-  // 2. Execute & Extract Intelligence (Phase 2 & 3 Integration)
+    // Cleanup: Flush queue if user unmounts/switches connectors
+    return () => orchestrator.flush();
+  }, [integrationName, orchestrator]);
+
+  // 3. Queue Jobs & Extract Intelligence
   useEffect(() => {
     if (metrics.length === 0) return;
 
-    const executeAndProcess = async () => {
-      await Promise.all(
-        metrics.map(async (metric) => {
-          try {
-            const result = await ApiClient.post<{ data: any[] }>('query/execute', { 
-              sql: metric.compiled_sql 
-            });
-            
-            // Register Chart Payload for Analytical Grid
-            setChartPayloads((prev) => ({
-              ...prev,
-              [metric.id]: { 
-                type: "chart", 
-                data: result.data, 
-                sql_used: metric.compiled_sql 
-              }
-            }));
+    metrics.forEach((metric) => {
+      const isRevenue = metric.metric_name.toLowerCase().includes("revenue") || metric.metric_name.toLowerCase().includes("mrr");
+      
+      // Queue the job with calculated priority
+      orchestrator.addJob({
+        id: metric.id,
+        query: metric.compiled_sql,
+        priority: isRevenue ? 100 : 50, // Prioritize financial data
+        group: isRevenue ? "financials" : "engagement"
+      });
 
-            // Attempt Deterministic KPI Extraction
-            const kpi = KPIEngine.extract(result.data, {
-              id: metric.id,
-              label: metric.metric_name.replace(/^vw_[^_]+_/i, '').replace(/_/g, ' ').toUpperCase(),
-              timeColumn: "created_at", // Aligned with canonical schema conventions
-              valueColumn: "value",      
-              formatType: metric.metric_name.toLowerCase().includes("revenue") ? "currency" : "number",
-              polarity: metric.metric_name.toLowerCase().includes("churn") ? "positive_down" : "positive_up",
-              source: integrationName
-            });
+      // Synchronously subscribe to the orchestrator to extract KPIs as soon as data arrives
+      const unsubscribe = orchestrator.subscribe(metric.id, (job) => {
+        if (job.status === "ready" && job.result) {
+          const extractedKpi = KPIEngine.extract(job.result, {
+            id: metric.id,
+            label: metric.metric_name.replace(/^vw_[^_]+_/i, '').replace(/_/g, ' ').toUpperCase(),
+            timeColumn: "created_at",
+            valueColumn: "value",      
+            formatType: isRevenue ? "currency" : "number",
+            polarity: metric.metric_name.toLowerCase().includes("churn") ? "positive_down" : "positive_up",
+            source: integrationName
+          });
 
-            if (kpi) {
-              setKpis((prev) => ({ ...prev, [metric.id]: kpi }));
-            }
-          } catch (error: any) {
-            setChartPayloads((prev) => ({
-              ...prev,
-              [metric.id]: { 
-                type: "error", 
-                message: error.message || "Failed to execute canonical view.", 
-                sql_used: metric.compiled_sql 
-              }
-            }));
+          if (extractedKpi) {
+            setKpis((prev) => ({ ...prev, [metric.id]: extractedKpi }));
           }
-        })
-      );
-    };
+        }
+      });
 
-    executeAndProcess();
-  }, [metrics, integrationName]);
+      return () => unsubscribe();
+    });
+  }, [metrics, integrationName, orchestrator]);
 
   return (
     <div className="flex flex-col space-y-8 w-full max-w-[1600px] mx-auto pb-24 animate-in fade-in slide-in-from-bottom-4 duration-700">
       
       {/* 1. SMART HUB HEADER */}
-      <SmartHubHeader integrationName={integrationName} />
+      <SmartHubHeader integrationName={integrationName} orchestrator={orchestrator} />
 
-      {/* 2. EXECUTIVE KPI STRIP (Phase 3 Integration) */}
+      {/* 2. EXECUTIVE KPI STRIP (Progressive Rendering) */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {Object.values(kpis).length > 0 ? (
-          Object.values(kpis).slice(0, 4).map((kpi) => (
-            <ExecutiveKPICard key={kpi.id} kpi={kpi} />
-          ))
+        {isLoadingMetadata ? (
+           Array(4).fill(0).map((_, i) => <ExecutiveKPICard key={i} kpi={{} as any} isLoading />)
         ) : (
-          // Staggered loading skeletons while the engine processes datasets
-          Array(4).fill(0).map((_, i) => <ExecutiveKPICard key={i} kpi={{} as any} isLoading />)
+           metrics.slice(0, 4).map((metric) => (
+             <ProgressiveKPICard key={metric.id} metricId={metric.id} kpis={kpis} />
+           ))
         )}
       </section>
 
@@ -130,8 +134,8 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
           <AnalyticalGrid 
             integrationName={integrationName} 
             metrics={metrics} 
-            chartPayloads={chartPayloads} 
-            isLoading={isLoading} 
+            orchestrator={orchestrator}
+            isLoadingMetadata={isLoadingMetadata} 
           />
         </div>
         
@@ -141,22 +145,21 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
       </section>
 
       {/* 4. OMNISCIENT SCRATCHPAD SLOT */}
-      <OmniscientScratchpadSlot 
-        context={{ 
-          activeConnector: integrationName, 
-          visibleMetrics: metrics.map(m => m.metric_name),
-          kpiStates: Object.values(kpis).map(k => ({ id: k.id, status: k.status }))
-        }} 
-      />
+      <div className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-slate-900 shadow-xl flex items-center justify-center group hover:w-56 hover:rounded-2xl transition-all duration-300 cursor-pointer z-50">
+        <Activity className="w-5 h-5 text-blue-400 group-hover:mr-3" />
+        <span className="text-[10px] font-bold font-mono text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+          Omniscient Scratchpad
+        </span>
+      </div>
     </div>
   );
 };
 
 // -----------------------------------------------------------------------------
-// Sub-Components (Internal Structural Alignment)
+// Sub-Components (Orchestrator Pub/Sub Bindings)
 // -----------------------------------------------------------------------------
 
-const SmartHubHeader = ({ integrationName }: { integrationName: string }) => (
+const SmartHubHeader = ({ integrationName, orchestrator }: { integrationName: string, orchestrator: ChartOrchestrator }) => (
   <header className="flex items-center justify-between pb-6 border-b border-slate-200/80">
     <div className="flex items-center gap-4">
       <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center border border-slate-200 shadow-sm">
@@ -172,7 +175,7 @@ const SmartHubHeader = ({ integrationName }: { integrationName: string }) => (
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
           <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-            Live Data Pipeline Active
+            Queue Orchestrator Active
           </span>
         </div>
       </div>
@@ -181,7 +184,6 @@ const SmartHubHeader = ({ integrationName }: { integrationName: string }) => (
       <button 
         onClick={() => window.location.reload()} 
         className="p-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-500 transition-colors border border-slate-200 shadow-sm"
-        title="Force refresh pipeline"
       >
         <RefreshCw className="w-4 h-4" />
       </button>
@@ -189,13 +191,17 @@ const SmartHubHeader = ({ integrationName }: { integrationName: string }) => (
   </header>
 );
 
-const AnalyticalGrid = ({ integrationName, metrics, chartPayloads, isLoading }: any) => {
-  const titleRegex = new RegExp(`vw_${integrationName.toLowerCase()}_`, 'i');
+const ProgressiveKPICard = ({ metricId, kpis }: { metricId: string, kpis: Record<string, KPI> }) => {
+  const kpi = kpis[metricId];
+  if (!kpi) return <ExecutiveKPICard kpi={{} as any} isLoading />;
+  return <ExecutiveKPICard kpi={kpi} />;
+};
 
+const AnalyticalGrid = ({ integrationName, metrics, orchestrator, isLoadingMetadata }: any) => {
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-extrabold tracking-tight text-slate-900">Analytical Grid</h2>
-      {isLoading ? (
+      {isLoadingMetadata ? (
         <div className="flex flex-col items-center justify-center h-64 bg-white rounded-3xl border border-slate-200 shadow-sm">
           <RefreshCw className="w-5 h-5 animate-spin mb-4 text-blue-500" />
           <p className="text-sm font-bold text-slate-500">Compiling canonical data models...</p>
@@ -207,33 +213,62 @@ const AnalyticalGrid = ({ integrationName, metrics, chartPayloads, isLoading }: 
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {metrics.map((metric: any) => {
-            const payload = chartPayloads[metric.id];
-            const cleanTitle = metric.metric_name.replace(titleRegex, '').replace(/_/g, ' ').toUpperCase();
-
-            return (
-              <div key={metric.id} className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:border-blue-200 transition-all flex flex-col group">
-                <div className="mb-4">
-                  <h3 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{cleanTitle}</h3>
-                  <p className="text-sm text-slate-900 font-medium mt-1.5 line-clamp-1">{metric.description}</p>
-                </div>
-                <div className="flex-1 mt-2">
-                  {payload ? <DynamicChartFactory payload={payload} /> : <div className="h-[250px] animate-pulse bg-slate-50 rounded-xl" />}
-                </div>
-              </div>
-            );
-          })}
+          {metrics.map((metric: any) => (
+            <ProgressiveChartCard 
+              key={metric.id} 
+              metric={metric} 
+              orchestrator={orchestrator} 
+              integrationName={integrationName}
+            />
+          ))}
         </div>
       )}
     </div>
   );
 };
 
-const OmniscientScratchpadSlot = ({ context }: any) => (
-  <div className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-slate-900 shadow-xl flex items-center justify-center group hover:w-56 hover:rounded-2xl transition-all duration-300 cursor-pointer z-50">
-    <Activity className="w-5 h-5 text-blue-400 group-hover:mr-3" />
-    <span className="text-[10px] font-bold font-mono text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
-      Omniscient Scratchpad
-    </span>
-  </div>
-);
+// Isolated Component that subscribes solely to its own chart execution job
+const ProgressiveChartCard = ({ metric, orchestrator, integrationName }: { metric: any, orchestrator: ChartOrchestrator, integrationName: string }) => {
+  const [jobState, setJobState] = useState<ChartJob | null>(null);
+  const titleRegex = new RegExp(`vw_${integrationName.toLowerCase()}_`, 'i');
+  const cleanTitle = metric.metric_name.replace(titleRegex, '').replace(/_/g, ' ').toUpperCase();
+
+  useEffect(() => {
+    // Native pub/sub subscription for React rendering
+    const unsubscribe = orchestrator.subscribe(metric.id, (state) => {
+      setJobState(state);
+    });
+    return () => unsubscribe();
+  }, [metric.id, orchestrator]);
+
+  return (
+    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:border-blue-200 transition-all flex flex-col group h-[380px]">
+      <div className="mb-4 shrink-0">
+        <div className="flex justify-between items-start">
+          <div>
+            <h3 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{cleanTitle}</h3>
+            <p className="text-sm text-slate-900 font-medium mt-1.5 line-clamp-1">{metric.description}</p>
+          </div>
+          {/* Status Indicators */}
+          {jobState?.status === "idle" && <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">Queued</span>}
+          {jobState?.status === "loading" && <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-md animate-pulse">Computing</span>}
+        </div>
+      </div>
+      
+      <div className="flex-1 mt-2 relative flex flex-col justify-center">
+        {!jobState || jobState.status === "idle" || jobState.status === "loading" ? (
+          <div className="absolute inset-0 animate-pulse bg-slate-50/50 rounded-xl border border-dashed border-slate-200 flex items-center justify-center">
+            <Activity className="w-6 h-6 text-slate-300" />
+          </div>
+        ) : jobState.status === "error" ? (
+          <div className="flex flex-col items-center text-center px-4">
+            <AlertCircle className="w-5 h-5 text-rose-400 mb-2" />
+            <span className="text-xs text-rose-600 font-medium">{jobState.error}</span>
+          </div>
+        ) : (
+          <DynamicChartFactory payload={{ type: "chart", data: jobState.result, sql_used: metric.compiled_sql }} />
+        )}
+      </div>
+    </div>
+  );
+};

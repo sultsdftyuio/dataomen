@@ -114,7 +114,8 @@ export function getNormalizedPage(slug: string): any | null {
 
   // V2 (block architecture)
   if (data.blocks && data.meta) {
-    const heroBlock = data.blocks.find((b: any) => b.type === 'Hero');
+    // [FIX] Defensive chaining added: \`b?.type\` instead of \`b.type\`
+    const heroBlock = data.blocks.find((b: any) => b?.type === 'Hero');
     return {
       ...data,
       seo: {

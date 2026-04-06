@@ -1,12 +1,13 @@
 // lib/intelligence/insight-engine.ts
-import { KPI } from "./kpi-engine";
+import { KPI } from "@/lib/intelligence/kpi-engine";
 
 /**
  * -----------------------------------------------------------------------------
- * Insight Engine (Intelligence Layer)
+ * Insight Engine (Action & Intelligence Layer)
  * -----------------------------------------------------------------------------
- * Evaluates semantic KPIs to detect anomalies, regressions, and hidden opportunities.
- * Generates prioritized, action-oriented intelligence payloads for the UI and AI.
+ * Deterministic rules-engine that evaluates semantic KPIs to extract high-leverage 
+ * anomalies, regressions, and hidden opportunities. It outputs prioritized payloads 
+ * designed to feed directly into the Executive Insights Feed and Omniscient Scratchpad.
  */
 
 export type InsightCategory = "revenue" | "growth" | "churn" | "ops";
@@ -18,7 +19,7 @@ export interface Insight {
   title: string;
   description: string;
   
-  impact_score: number; // 0-100 scale; drives UI sorting and priority
+  impact_score: number; // 0-100 scale; dictates analytical grid sorting
   urgency: InsightUrgency;
   category: InsightCategory;
   direction: InsightDirection;
@@ -28,27 +29,28 @@ export interface Insight {
     value: string;
   }[];
 
-  drivers?: string[]; // E.g., ["Red T-Shirts", "US-East"]
-  related_kpis?: string[]; // IDs of related metrics for contextual queries
-  suggested_questions: string[]; // Prompts injected into the Omniscient Scratchpad
+  drivers?: string[]; 
+  related_kpis?: string[]; 
+  suggested_questions?: string[]; 
 }
 
 export class InsightEngine {
   /**
    * Main orchestrator for insight generation. 
-   * In a production environment, this merges heuristic thresholding with LLM anomaly detection.
+   * Maps over canonical KPIs, applies deterministic heuristic thresholding, 
+   * and ranks the intelligence strictly by impact score.
    */
   public static evaluate(kpis: KPI[]): Insight[] {
-    const insights: Insight[] = [];
+    if (!kpis || kpis.length === 0) return [];
 
-    kpis.forEach((kpi) => {
-      const insight = this.analyzeMetricVolatility(kpi);
-      if (insight) insights.push(insight);
-    });
+    const insights = kpis
+      .map(kpi => this.analyzeMetricVolatility(kpi))
+      .filter((insight): insight is Insight => insight !== null);
 
-    // Cross-metric blended analysis could be injected here (e.g., CAC vs LTV convergence)
+    // Cross-metric heuristic blending (e.g., Revenue drops while Spend goes up)
+    // Future Phase: this.injectBlendedInsights(insights, kpis);
 
-    // Sort deterministically by impact score (highest priority first)
+    // Deterministic sort: Highest impact score first, prioritizing critical warnings
     return insights.sort((a, b) => b.impact_score - a.impact_score);
   }
 
@@ -61,24 +63,27 @@ export class InsightEngine {
     // Ignore statistical noise (e.g., < 3% variance)
     if (absDelta < 3.0) return null;
 
-    const isRevenue = kpi.id.toLowerCase().includes("revenue") || kpi.id.toLowerCase().includes("mrr");
-    const isChurn = kpi.id.toLowerCase().includes("churn");
+    const category = this.determineCategory(kpi.id);
+    const isFavorable = kpi.status === "good";
+    const isUnfavorable = kpi.status === "critical" || kpi.status === "warning";
 
-    // 1. Critical Negative Scenario (e.g., Revenue drops > 10%)
-    if (kpi.status === "critical" && kpi.delta.direction === "down" && isRevenue) {
+    // -------------------------------------------------------------------------
+    // 1. Critical Contractions (Negative Impact)
+    // -------------------------------------------------------------------------
+    if (isUnfavorable && kpi.delta.direction === "down") {
       return {
-        id: `ins_${kpi.id}_drop`,
+        id: `ins_${kpi.id}_contraction`,
         title: `${kpi.label} Contraction Detected`,
-        description: `Revenue has contracted significantly compared to the previous period. Immediate investigation into regional performance or product-line drop-off is recommended.`,
+        description: `This metric has contracted by ${kpi.delta.percentage}% compared to the previous period. Immediate investigation into underlying drivers is recommended.`,
         impact_score: this.calculateImpactScore(absDelta, 1.5),
-        urgency: "critical",
-        category: "revenue",
+        urgency: absDelta > 15 ? "critical" : "high",
+        category,
         direction: "negative",
         stats: [
-          { label: "Variance", value: `${kpi.delta.direction === "down" ? "-" : "+"}${kpi.delta.absolute.toLocaleString()}` },
+          { label: "Variance", value: `${kpi.delta.absolute > 0 ? "+" : ""}${kpi.delta.absolute.toLocaleString()}` },
           { label: "Relative Shift", value: `${kpi.delta.percentage}%` }
         ],
-        drivers: ["Anomaly detection pending"],
+        drivers: ["Awaiting LLM anomaly detection"],
         related_kpis: [kpi.id],
         suggested_questions: [
           `Why did ${kpi.label} drop by ${kpi.delta.percentage}%?`,
@@ -87,45 +92,49 @@ export class InsightEngine {
       };
     }
 
-    // 2. Critical Negative Scenario (e.g., Churn spikes > 5%)
-    if (kpi.status === "critical" && kpi.delta.direction === "up" && isChurn) {
+    // -------------------------------------------------------------------------
+    // 2. Critical Escalations (E.g., Churn / Ops Costs Spiking)
+    // -------------------------------------------------------------------------
+    if (isUnfavorable && kpi.delta.direction === "up") {
       return {
         id: `ins_${kpi.id}_spike`,
-        title: `Abnormal Churn Velocity`,
-        description: `Churn rate has escalated beyond standard deviation thresholds. Suggest querying recent support ticket volume or feature engagement.`,
-        impact_score: this.calculateImpactScore(absDelta, 2.0), // Churn is highly weighted
+        title: `Abnormal ${kpi.label} Velocity`,
+        description: `This metric is escalating beyond standard deviation thresholds. Suggest querying related operational metrics to identify the root cause.`,
+        impact_score: this.calculateImpactScore(absDelta, 1.8), // Spikes in negative metrics are weighted heavily
         urgency: "critical",
-        category: "churn",
+        category,
         direction: "negative",
         stats: [
           { label: "Variance", value: `+${kpi.delta.percentage}%` }
         ],
         related_kpis: [kpi.id],
         suggested_questions: [
-          `Analyze the underlying reasons for the churn spike.`,
-          `Cross-reference the recent churn cohort with support ticket density.`
+          `Analyze the underlying reasons for the ${kpi.label} spike.`,
+          `Cross-reference the recent cohort with support ticket density.`
         ]
       };
     }
 
-    // 3. Positive Opportunity Scenario (e.g., Growth > 15%)
-    if (kpi.status === "good" && absDelta >= 15) {
+    // -------------------------------------------------------------------------
+    // 3. Positive Opportunities / Accelerations
+    // -------------------------------------------------------------------------
+    if (isFavorable && absDelta >= 10) {
       return {
         id: `ins_${kpi.id}_opp`,
         title: `Hidden Gain: ${kpi.label} Acceleration`,
         description: `A significant positive variance has been detected. Identifying the driving factors could present an immediate scaling opportunity.`,
         impact_score: this.calculateImpactScore(absDelta, 1.2),
         urgency: "medium",
-        category: isRevenue ? "revenue" : "growth",
+        category,
         direction: "positive",
         stats: [
-          { label: "Uplift", value: `+${kpi.delta.absolute.toLocaleString()}` },
-          { label: "Momentum", value: `${kpi.delta.percentage}%` }
+          { label: "Uplift", value: `${kpi.delta.absolute > 0 ? "+" : ""}${kpi.delta.absolute.toLocaleString()}` },
+          { label: "Momentum", value: `${kpi.delta.direction === "up" ? "+" : "-"}${absDelta}%` }
         ],
         related_kpis: [kpi.id],
         suggested_questions: [
-          `What are the primary drivers behind the ${kpi.delta.percentage}% uplift in ${kpi.label}?`,
-          `Generate a breakdown of the top 3 attributes contributing to this acceleration.`
+          `What are the primary drivers behind the ${absDelta}% improvement in ${kpi.label}?`,
+          `Generate a breakdown of the top attributes contributing to this acceleration.`
         ]
       };
     }
@@ -134,10 +143,23 @@ export class InsightEngine {
   }
 
   /**
-   * Calculates a weighted impact score (0-100) to ensure the UI ranks critical insights accurately.
+   * Deterministic categorization based on canonical semantic naming conventions.
+   */
+  private static determineCategory(metricId: string): InsightCategory {
+    const id = metricId.toLowerCase();
+    if (id.includes("revenue") || id.includes("mrr") || id.includes("arr") || id.includes("sales")) return "revenue";
+    if (id.includes("churn") || id.includes("attrition") || id.includes("cancellation")) return "churn";
+    if (id.includes("ticket") || id.includes("latency") || id.includes("cost") || id.includes("spend")) return "ops";
+    return "growth"; // Default to growth for active users, signups, etc.
+  }
+
+  /**
+   * Calculates a weighted impact score (0-100) using a logarithmic scale 
+   * to prevent rapid plateauing at 100 for moderate variances.
    */
   private static calculateImpactScore(percentage: number, weightMultiplier: number): number {
-    const rawScore = (percentage * weightMultiplier) * 2; // Baseline calibration
-    return Math.min(Math.round(rawScore), 100); // Cap at 100
+    // Base score uses log2 to smooth the curve. e.g., 10% delta -> log2(11) * 15 ≈ 51. 
+    const rawScore = Math.log2(percentage + 1) * 15 * weightMultiplier;
+    return Math.min(Math.round(rawScore), 100);
   }
 }

@@ -31,6 +31,17 @@
  *     hidden when rendered from V2 JSON data.
  * 18. [V10.3 FIX] V2 Payload Normalization Bridge injected in the render loop: maps V2
  *     payload keys to the props expected by each UI component before IS_EMPTY evaluation.
+ * 19. [V10.4 FIX] Extended BLOCK_REGISTRY with AI-native V2 alias blocks:
+ *     ComparisonBlock, UseCaseBlock, KeywordAnchorBlock, QueryExamplesBlock,
+ *     InternalLinkingBlock — mapped to existing visual components.
+ * 20. [V10.4 FIX] generateMetadata: added defensive optional chaining on all
+ *     array finders to prevent crashes on malformed block objects.
+ * 21. [V10.4 FIX] Render loop: early null guard added (`if (!block || !block.type)`)
+ *     to abort gracefully on corrupted or undefined block entries.
+ * 22. [V10.4 FIX] V2 Normalization Bridge extended to cover all new alias block types:
+ *     KeywordAnchorBlock fallback highlights, UseCaseBlock scenarios coercion,
+ *     QueryExamplesBlock examples→features mapping, ComparisonBlock rows→matrix,
+ *     InternalLinkingBlock links→slugs extraction.
  */
 
 import { Metadata } from 'next';
@@ -207,6 +218,7 @@ function UIBlockMapper(props: any) {
 
 // ----------------------------------------------------------------------
 // BLOCK REGISTRY
+// [V10.4 FIX] Added AI-native V2 alias blocks mapped to existing visual components.
 // ----------------------------------------------------------------------
 const BLOCK_REGISTRY: Record<string, React.ElementType> = {
   Hero, ExecutiveSummary, ContrarianBanner, Demo, Personas, Matrix,
@@ -217,6 +229,13 @@ const BLOCK_REGISTRY: Record<string, React.ElementType> = {
   DataGravityCost, DynamicSchemaMapping, GranularAccessControl,
   ConcurrencyProof, TenantIsolationArchitecture, DeterministicGuardrails,
   UIBlock: UIBlockMapper,
+
+  // [V10.4 FIX] AI-native V2 block aliases — mapped to existing visual components.
+  ComparisonBlock:    Matrix,
+  UseCaseBlock:       UseCases,
+  KeywordAnchorBlock: ExecutiveSummary,
+  QueryExamplesBlock: Features,
+  InternalLinkingBlock: RelatedLinks,
 };
 
 // ----------------------------------------------------------------------
@@ -281,6 +300,12 @@ const IS_EMPTY: Partial<Record<string, (props: Record<string, any>) => boolean>>
   DeterministicGuardrails:     (p) => !p.data,
   // A UIBlock with no type or no data after resolution is empty.
   UIBlock:                     (p) => !p.visualizationType || p.dataMapping === undefined || p.dataMapping === null,
+  // Alias blocks share the same empty checks as their visual counterparts.
+  ComparisonBlock:             (p) => !(p.matrix?.length || p.rows?.length),
+  UseCaseBlock:                (p) => !(p.useCases?.length || p.scenarios?.length),
+  KeywordAnchorBlock:          (p) => !(p.highlights?.length || p.pillars?.length || p.text),
+  QueryExamplesBlock:          (p) => !(p.features?.length || p.examples?.length),
+  InternalLinkingBlock:        (p) => !(p.slugs?.length || p.links?.length),
 };
 
 // ----------------------------------------------------------------------
@@ -296,12 +321,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const page = getNormalizedPage(slug);
   if (!page) notFound();
 
+  // [V10.4 FIX] Optional chaining added throughout to prevent crashes on malformed blocks.
   const codeSnippet =
-    page.blocks?.find((b: any) => b.type === 'StrategicQuery')?.payload?.code ||
+    page.blocks?.find((b: any) => b?.type === 'StrategicQuery')?.payload?.code ||
     page.strategicScenario?.sql ||
     page.demo?.generatedSql ||
-    page.useCases?.find((u: any) => u.sqlSnippet)?.sqlSnippet ||
-    page.executiveScenarios?.find((s: any) => s.sqlGenerated)?.sqlGenerated;
+    page.useCases?.find((u: any) => u?.sqlSnippet)?.sqlSnippet ||
+    page.executiveScenarios?.find((s: any) => s?.sqlGenerated)?.sqlGenerated;
 
   const ogUrl = new URL(`${BASE_URL}/api/og`);
   ogUrl.searchParams.set('title', page.seo.h1);
@@ -463,7 +489,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
   ];
 
   const faqData = isV2
-    ? page.blocks.find((b: any) => b.type === 'FAQs')?.payload?.faqs
+    ? page.blocks.find((b: any) => b?.type === 'FAQs')?.payload?.faqs
     : page.faqs;
 
   if (faqData?.length > 0) {
@@ -492,6 +518,9 @@ export default async function DynamicSEOPage({ params }: PageProps) {
 
       <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-[#2563eb] selection:text-white overflow-x-hidden">
         {renderList.map((block, index) => {
+          // [V10.4 FIX] Abort early if the block object is corrupted or undefined in memory.
+          if (!block || !block.type) return null;
+
           const BlockComponent = BLOCK_REGISTRY[block.type];
           if (!BlockComponent) return null;
 
@@ -502,11 +531,12 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             : getV1BlockProps(block.type, page);
 
           // ------------------------------------------------------------------
-          // V2 PAYLOAD NORMALIZATION BRIDGE  [V10.3 FIX]
+          // V2 PAYLOAD NORMALIZATION BRIDGE  [V10.3 + V10.4 FIX]
           // Maps V2 JSON field names to the prop names expected by each UI
           // component. Runs only for V2 pages; V1 paths are handled by
           // getV1BlockProps above. This keeps the two schemas fully decoupled
           // while avoiding duplicate component logic.
+          // [V10.4] Extended to cover all new AI-native V2 alias block types.
           // ------------------------------------------------------------------
           if (isV2) {
             switch (block.type) {
@@ -515,12 +545,16 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 blockProps.subtext   = blockProps.subtext   || blockProps.argument || blockProps.description;
                 break;
 
+              case 'KeywordAnchorBlock':
               case 'ExecutiveSummary':
                 if (!blockProps.highlights && blockProps.pillars) {
                   blockProps.highlights = blockProps.pillars.map((p: any) => ({
                     value: p.title,
                     label: p.description,
                   }));
+                } else if (!blockProps.highlights && blockProps.text) {
+                  // Fallback for KeywordAnchorBlock with a flat text field.
+                  blockProps.highlights = [{ value: blockProps.heading, label: blockProps.text }];
                 }
                 break;
 
@@ -536,8 +570,19 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 }
                 break;
 
+              case 'UseCaseBlock':
               case 'UseCases':
                 blockProps.useCases = blockProps.useCases || blockProps.scenarios || [];
+                break;
+
+              case 'QueryExamplesBlock':
+                // Map QueryExamplesBlock `examples` array to the `features` prop shape.
+                if (!blockProps.features && blockProps.examples) {
+                  blockProps.features = blockProps.examples.map((ex: any) => ({
+                    title:       ex.query,
+                    description: ex.intent,
+                  }));
+                }
                 break;
 
               case 'SecurityGuardrails':
@@ -551,10 +596,18 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 }
                 break;
 
+              case 'ComparisonBlock':
               case 'Matrix':
                 // Some V2 payloads use `rows` instead of `matrix`.
                 if (!blockProps.matrix && blockProps.rows) {
                   blockProps.matrix = blockProps.rows;
+                }
+                break;
+
+              case 'InternalLinkingBlock':
+                // Map InternalLinkingBlock `links` array to the `slugs` prop.
+                if (!blockProps.slugs && blockProps.links) {
+                  blockProps.slugs = blockProps.links.map((l: any) => l.href || l.url);
                 }
                 break;
             }
