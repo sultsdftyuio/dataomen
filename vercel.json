@@ -1,5 +1,4 @@
 {
   "version": 2,
-  "buildCommand": "next build",
-  "installCommand": "pnpm install --no-frozen-lockfile"
+  "buildCommand": "next build"
 }

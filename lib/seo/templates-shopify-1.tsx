@@ -37,6 +37,26 @@ export const shopifyLtvDashboard: TemplateBlueprint = {
       'Arcli automatically extracts, cleans, and models your historical orders into a production-grade dashboard.'
     ]
   },
+  conversionRouting: {
+    primaryCTA: { label: 'Connect Shopify & Generate', url: '/register?intent=shopify_ltv' },
+    secondaryCTA: { label: 'View Interactive Demo', url: '/demo/ecommerce/ltv' },
+    parentLink: '/templates',
+    internalLinks: ['/templates/shopify-cohort-retention-dashboard', '/integrations/shopify']
+  },
+  uiVisualizations: [
+    {
+      type: 'CumulativeLineChart',
+      dataMapping: { x: 'months_since_first_purchase', yLines: ['historical_ltv', 'blended_cac'] },
+      interactionPurpose: 'Visualize the exact month where a customer cohort becomes profitable (Payback Period).',
+      intentServed: 'Determine Allowable CAC for media buying.'
+    },
+    {
+      type: 'BarChart',
+      dataMapping: { x: 'first_product_purchased', yBar: 'average_12m_ltv' },
+      interactionPurpose: 'Identify "gateway" products that lead to the highest long-term spend.',
+      intentServed: 'Product-level acquisition strategy.'
+    }
+  ],
   analyticalScenarios: [
     {
       title: 'LTV to CAC Ratio Optimization (CFO Persona)',
@@ -57,7 +77,18 @@ export const shopifyLtvDashboard: TemplateBlueprint = {
   trustAndSecurity: {
     description: 'Read-only access to your Shopify Orders API. Zero PII is stored in the presentation layer. SOC2 Type II compliant.'
   },
-  // NEW: STRICT RULE (4-5 FAQs, executive focus, net-new info, no fluff)
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arcli Shopify LTV Dashboard",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  },
   faqs: [
     {
       q: 'Does this template factor in Shopify transaction fees?',
@@ -80,7 +111,6 @@ export const shopifyLtvDashboard: TemplateBlueprint = {
       persona: 'CFO'
     }
   ],
-  // STRICT RULE: Link to 3-5 relevant LIGHT pages
   relatedSlugs: [
     'shopify-ltv-sql',
     'shopify-cohort-retention-sql',
@@ -123,6 +153,26 @@ export const shopifyCohortRetentionDashboard: TemplateBlueprint = {
       'Review your auto-generated triangular cohort matrix and flattening retention curves.'
     ]
   },
+  conversionRouting: {
+    primaryCTA: { label: 'Generate Cohort Matrix', url: '/register?intent=shopify_cohort' },
+    secondaryCTA: { label: 'Explore the DuckDB SQL', url: '/templates/shopify-cohort-retention-sql' },
+    parentLink: '/templates',
+    internalLinks: ['/templates/shopify-rfm-segmentation-dashboard']
+  },
+  uiVisualizations: [
+    {
+      type: 'TriangularHeatMap',
+      dataMapping: { y: 'acquisition_cohort_month', x: 'months_since_first_purchase', colorIntensity: 'retention_percentage' },
+      interactionPurpose: 'Instantly spot historical trends in customer drop-off velocity.',
+      intentServed: 'Macro product-market fit diagnosis.'
+    },
+    {
+      type: 'StackedAreaChart',
+      dataMapping: { x: 'calendar_month', yStack: 'revenue_by_cohort' },
+      interactionPurpose: 'Visualize what percentage of current monthly revenue comes from legacy vs. new customers.',
+      intentServed: 'Revenue durability assessment.'
+    }
+  ],
   analyticalScenarios: [
     {
       title: 'Subscription vs. One-off Retention (RevOps Persona)',
@@ -140,7 +190,12 @@ export const shopifyCohortRetentionDashboard: TemplateBlueprint = {
   assets: {
     dashboardPreviewImage: '/images/templates/shopify-cohort-dashboard-preview.png',
   },
-  // NEW: STRICT RULE (4-5 FAQs, executive focus, net-new info, no fluff)
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arcli Shopify Cohort Analysis",
+    "applicationCategory": "BusinessApplication"
+  },
   faqs: [
     {
       q: 'Should we look at weekly or monthly cohorts?',
@@ -163,7 +218,6 @@ export const shopifyCohortRetentionDashboard: TemplateBlueprint = {
       persona: 'CFO'
     }
   ],
-  // STRICT RULE: Link to 3-5 relevant LIGHT pages
   relatedSlugs: [
     'shopify-cohort-retention-sql',
     'shopify-ltv-sql',
@@ -206,6 +260,26 @@ export const shopifyRfmDashboard: TemplateBlueprint = {
       'Export the generated segments directly to your ESP or advertising platforms.'
     ]
   },
+  conversionRouting: {
+    primaryCTA: { label: 'Segment Customers Now', url: '/register?intent=shopify_rfm' },
+    secondaryCTA: { label: 'Read the Methodology', url: '/blog/rfm-analysis-ecommerce' },
+    parentLink: '/templates',
+    internalLinks: ['/templates/shopify-ltv-dashboard']
+  },
+  uiVisualizations: [
+    {
+      type: 'TreeMap',
+      dataMapping: { hierarchy: 'rfm_segment_name', size: 'customer_count', color: 'average_monetary_value' },
+      interactionPurpose: 'Understand the distribution and relative monetary worth of each customer segment.',
+      intentServed: 'Audience sizing and prioritization.'
+    },
+    {
+      type: 'ScatterPlot',
+      dataMapping: { x: 'recency_days', y: 'frequency_count', bubbleSize: 'monetary_value', color: 'segment' },
+      interactionPurpose: 'Visually isolate high-value customers who are nearing churn velocity.',
+      intentServed: 'Triggering win-back automations.'
+    }
+  ],
   analyticalScenarios: [
     {
       title: 'VIP "Champion" Nurture',
@@ -220,7 +294,12 @@ export const shopifyRfmDashboard: TemplateBlueprint = {
     heading: 'Protect Margins & Boost Conversions',
     description: 'Mass discounting destroys profitability. RFM segmentation allows you to reserve aggressive discounts only for price-sensitive or churning cohorts, while serving full-price messaging to your loyal Champions.'
   },
-  // NEW: STRICT RULE (4-5 FAQs, executive focus, net-new info, no fluff)
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arcli Shopify RFM Engine",
+    "applicationCategory": "BusinessApplication"
+  },
   faqs: [
     {
       q: 'Are the RFM segments updated in real-time?',
@@ -243,7 +322,6 @@ export const shopifyRfmDashboard: TemplateBlueprint = {
       persona: 'Engineer'
     }
   ],
-  // STRICT RULE: Link to 3-5 relevant LIGHT pages
   relatedSlugs: [
     'shopify-rfm-segmentation-sql',
     'shopify-cohort-retention-sql',

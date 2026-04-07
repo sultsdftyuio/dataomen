@@ -3,12 +3,12 @@ import React from 'react';
 import { Database, Server } from 'lucide-react';
 
 /**
- * SemanticOrchestration Schema v10.2 (Moat-Protected)
+ * SemanticOrchestration Schema v13.0 (Moat-Protected + SEO Optimized)
  * Upgraded to the "Category Leader Blueprint" schema.
  * Designed for Engineering Leaders, Data Architects, and RevOps seeking
  * to understand the exact mechanics of how Arcli translates Natural Language
  * into deterministic, hallucination-free SQL across various dialects.
- * * Incorporates V10.2 SEO architectural layers (Intent, SERP Realism, Anti-Overfitting).
+ * * Incorporates V13 SEO architectural layers (Intent, Visualizations, Conversion Routing).
  * * Protects proprietary execution logic while maintaining high technical density.
  */
 export interface SEOPageData {
@@ -16,7 +16,7 @@ export interface SEOPageData {
   title: string;
   description: string;
 
-  // V10.2 SEO System Layers
+  // V10.2 / V13 SEO System Layers
   searchIntent?: {
     primary: string;
     secondary: string[];
@@ -34,6 +34,22 @@ export interface SEOPageData {
   subtitle: string;
   icon: React.ReactElement;
   features: string[];
+
+  // --- V13 Conversion & UI Engine Upgrades ---
+  conversionRouting?: {
+    primaryCTA: { label: string; url: string };
+    secondaryCTA?: { label: string; url: string };
+    parentLink: string;
+    internalLinks: string[];
+  };
+  uiVisualizations?: {
+    type: string;
+    dataMapping: Record<string, string | string[]>;
+    interactionPurpose: string;
+    intentServed: string;
+  }[];
+  structuredData?: Record<string, any>;
+
   extractionLifecycle: {
     phase1: { name: string; description: string };
     phase2: { name: string; description: string };
@@ -89,7 +105,7 @@ export interface SEOPageData {
     context: string;
   }[];
 
-  // Structural bypass for V10.1 UIBlockMapper
+  // Structural bypass for UIBlockMapper
   codeSnippet?: { filename: string; code: string };
 }
 
@@ -123,6 +139,36 @@ export const textToSqlFeaturesPart1: Record<string, SEOPageData> = {
       'WASM-Powered In-Browser Parquet Engine',
       'Zero-Hallucination Semantic Guarantee'
     ],
+
+    conversionRouting: {
+      primaryCTA: { label: 'Test the SQL Compiler', url: '/register?intent=nl2sql' },
+      secondaryCTA: { label: 'Read Architecture Whitepaper', url: '/docs/architecture/semantic-router' },
+      parentLink: '/features',
+      internalLinks: ['/integrations/postgresql-text-to-sql', '/integrations/snowflake-text-to-sql']
+    },
+
+    uiVisualizations: [
+      {
+        type: 'ASTValidatorFlow',
+        dataMapping: { source: 'raw_sql', target: 'ast_nodes', validation_status: 'is_safe' },
+        interactionPurpose: 'Demonstrate how destructive commands (DROP, DELETE) are structurally blocked before execution.',
+        intentServed: 'Security validation for CISOs and Data Engineers.'
+      },
+      {
+        type: 'SemanticContextMap',
+        dataMapping: { query: 'user_prompt', vectors: 'schema_embeddings', injected: 'active_tables' },
+        interactionPurpose: 'Visualize how Arcli selects only the 3 relevant tables out of a 5,000-table database to prevent LLM context bloat.',
+        intentServed: 'Technical proof of anti-hallucination mechanics.'
+      }
+    ],
+
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Arcli Enterprise Text-to-SQL Engine",
+      "applicationCategory": "DeveloperApplication",
+      "securityPosture": "SOC2 Type II Compliant, Read-Only Execution"
+    },
     
     proofPoints: [
       {
@@ -415,6 +461,35 @@ WHERE week = DATE_TRUNC('week', CURRENT_DATE)
       'DuckDB WASM Result Export',
       'Zero-Copy Architecture'
     ],
+
+    conversionRouting: {
+      primaryCTA: { label: 'Connect Postgres Database', url: '/register?intent=postgres' },
+      secondaryCTA: { label: 'View Postgres Integration Docs', url: '/docs/integrations/postgresql' },
+      parentLink: '/integrations',
+      internalLinks: ['/features/natural-language-to-sql']
+    },
+
+    uiVisualizations: [
+      {
+        type: 'JSONPathExplorer',
+        dataMapping: { tree: 'jsonb_column', pointer: 'extraction_path', value: 'extracted_result' },
+        interactionPurpose: 'Visualize how the engine writes the exact `->>` pointer syntax to extract nested payload values.',
+        intentServed: 'Proof of unstructured data mastery for Data Engineers.'
+      },
+      {
+        type: 'QueryExecutionPlan',
+        dataMapping: { node: 'postgres_operator', cost: 'compute_time', rows: 'filtered_records' },
+        interactionPurpose: 'Showcase that heavy GROUP BY operations are pushed down to Postgres, not executed in-memory.',
+        intentServed: 'Alleviate performance concerns regarding AI-generated queries.'
+      }
+    ],
+
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Arcli Postgres AI Analytics",
+      "applicationCategory": "BusinessApplication"
+    },
     
     proofPoints: [
       {

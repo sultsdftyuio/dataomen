@@ -6,6 +6,7 @@ import { TemplateBlueprint } from './index';
  * LIGHT TEMPLATE: Stripe MRR SQL
  * High-intent query focused on real-time Monthly Recurring Revenue extraction.
  * Analytical Pattern: MRR (Normalization, Quantity Expansion & Aggregation)
+ * V13 Upgraded: Includes structuredData, conversionRouting, and uiVisualizations.
  */
 export const stripeMrrSql: TemplateBlueprint = {
   slug: 'stripe-mrr-sql',
@@ -27,6 +28,37 @@ export const stripeMrrSql: TemplateBlueprint = {
     h1: 'Stripe MRR (Monthly Recurring Revenue) SQL Template',
     subtitle: 'A standardized SQL snippet to extract, normalize, and aggregate your active subscription revenue directly from Stripe into a clean MRR baseline.',
   },
+  
+  conversionRouting: {
+    primaryCTA: { label: 'Connect Stripe & Calculate MRR', url: '/register?intent=stripe_mrr' },
+    secondaryCTA: { label: 'View the Full MRR Dashboard', url: '/templates/stripe-mrr-dashboard' },
+    parentLink: '/templates',
+    internalLinks: ['/integrations/stripe', '/templates/stripe-churn-rate-sql']
+  },
+
+  uiVisualizations: [
+    {
+      type: 'KPICardSeries',
+      dataMapping: { primary: 'total_mrr', secondary: 'active_customers', tertiary: 'arpu' },
+      interactionPurpose: 'Provide an immediate, executive-level view of the core SaaS metrics outputted by the query.',
+      intentServed: 'Executive summary.'
+    },
+    {
+      type: 'TimeSeriesBarChart',
+      dataMapping: { x: 'month', yBar: 'total_mrr' },
+      interactionPurpose: 'Visualize MRR growth over time when the query is grouped by subscription start dates.',
+      intentServed: 'Trend analysis.'
+    }
+  ],
+
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arcli Stripe MRR SQL Engine",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web"
+  },
+
   features: {
     sqlQuery: `
 -- Dialect: Standard PostgreSQL / Snowflake
@@ -112,6 +144,30 @@ export const stripeChurnRateSql: TemplateBlueprint = {
     h1: 'Stripe Gross Churn Rate SQL Template',
     subtitle: 'Measure your subscription retention health by calculating the exact percentage of customers who canceled their service relative to the active base at the start of the month.',
   },
+
+  conversionRouting: {
+    primaryCTA: { label: 'Connect Stripe & Track Churn', url: '/register?intent=stripe_churn' },
+    secondaryCTA: { label: 'Explore Churn Dashboards', url: '/templates/stripe-churn-dashboard' },
+    parentLink: '/templates',
+    internalLinks: ['/templates/stripe-mrr-sql', '/templates/stripe-ltv-sql']
+  },
+
+  uiVisualizations: [
+    {
+      type: 'ComboChart',
+      dataMapping: { x: 'month_start', yLine: 'gross_churn_percentage', yBar: 'churned_this_month' },
+      interactionPurpose: 'Plot the gross churn percentage as a line over a bar chart of absolute churned subscriptions.',
+      intentServed: 'Identify seasonal or product-driven churn spikes.'
+    }
+  ],
+
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arcli Stripe Churn Analytics",
+    "applicationCategory": "BusinessApplication"
+  },
+
   features: {
     sqlQuery: `
 -- Dialect: Standard PostgreSQL / Snowflake
@@ -197,6 +253,30 @@ export const stripeLtvSql: TemplateBlueprint = {
     h1: 'Stripe Customer Lifetime Value (LTV) SQL Template',
     subtitle: 'Bypass theoretical ARR/Churn formulas. Calculate your absolute, empirical historical LTV by aggregating successful, unrefunded Stripe charges.',
   },
+
+  conversionRouting: {
+    primaryCTA: { label: 'Connect Stripe & Analyze LTV', url: '/register?intent=stripe_ltv' },
+    secondaryCTA: { label: 'See the LTV Dashboard Blueprint', url: '/templates/stripe-ltv-dashboard' },
+    parentLink: '/templates',
+    internalLinks: ['/templates/stripe-churn-rate-sql']
+  },
+
+  uiVisualizations: [
+    {
+      type: 'DistributionHistogram',
+      dataMapping: { x: 'net_realized_cash', frequency: 'customer_count' },
+      interactionPurpose: 'Visualize the skew between average LTV and median LTV to prove the existence of enterprise outliers.',
+      intentServed: 'Statistical validation of customer value.'
+    }
+  ],
+
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Arcli Stripe LTV Analyzer",
+    "applicationCategory": "BusinessApplication"
+  },
+
   features: {
     sqlQuery: `
 -- Dialect: Snowflake / Standard PostgreSQL

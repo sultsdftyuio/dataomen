@@ -1,21 +1,19 @@
-// lib/seo/text-to-sql-2.tsx
 import React from 'react';
 import { Cloud, ShieldCheck } from 'lucide-react';
 
 /**
- * SemanticOrchestration Schema v10.1
+ * [V13 ENFORCED] SemanticOrchestration Schema
  * Upgraded to the "Category Leader Blueprint" schema specifically for Snowflake.
  * Designed for Engineering Leaders, Data Architects, FinOps, and RevOps seeking
  * to understand the exact mechanics of how Arcli translates Natural Language
  * into deterministic, hallucination-free, and COST-OPTIMIZED Snowflake SQL.
- * * Incorporates V10.1 SEO architectural layers (Intent, SERP Realism, Anti-Overfitting).
  */
 export interface SEOPageData {
   type: 'feature' | 'integration';
   title: string;
   description: string;
   
-  // V10.1 SEO System Layers
+  // V10.1/V13 SEO System Layers
   searchIntent?: {
     primary: string;
     secondary: string[];
@@ -28,6 +26,20 @@ export interface SEOPageData {
     domainAdvantage: string;
   };
   informationGain?: string;
+
+  // 🧬 STRUCTURED DATA LAYER
+  schemaEnforcement: {
+    enableFAQ: boolean;
+    enableSoftwareApplication: boolean;
+    enableHowTo: boolean;
+  };
+
+  // 🎯 CONVERSION ENGINE
+  conversionMatrix: {
+    primaryCTA: string;
+    secondaryCTA: string;
+    contextualCTA: string;
+  };
 
   h1: string;
   subtitle: string;
@@ -53,6 +65,12 @@ export interface SEOPageData {
     exampleQuery: string;
     exampleSql: string;
     businessOutcome: string;
+    // 🧱 UI VISUALIZATION ENGINE
+    visualizationConfig: {
+      type: 'BarChart' | 'LineChart' | 'Funnel' | 'MetricCard' | 'Scatter';
+      dataMapping: { x: string; y: string; groupBy?: string };
+      interactionPurpose: string;
+    };
   }[];
   businessValueAndROI: {
     metric: string;
@@ -91,7 +109,7 @@ export interface SEOPageData {
     description: string;
   }[];
 
-  // Structural bypass for V10.1 UIBlockMapper (Ensures safe rendering if requested)
+  // Structural bypass for UIBlockMapper
   codeSnippet?: { filename: string; code: string };
 }
 
@@ -113,6 +131,17 @@ export const textToSqlFeaturesPart2: Record<string, SEOPageData> = {
       domainAdvantage: 'Leveraging highly technical FinOps terminology (micro-partitions, RESULT_CACHE, LATERAL FLATTEN) to outrank generic AI wrapper landing pages.'
     },
     informationGain: 'Exposing the fatal flaw of generic AI-to-SQL tools: generating lazy "SELECT *" queries and Cartesian joins that cause massive, unexpected Snowflake billing spikes. Introducing "Cost-Aware Semantic Compilation."',
+
+    schemaEnforcement: {
+      enableFAQ: true,
+      enableSoftwareApplication: true,
+      enableHowTo: true
+    },
+    conversionMatrix: {
+      primaryCTA: 'Connect Snowflake (Zero-Copy)',
+      secondaryCTA: 'View FinOps Architecture',
+      contextualCTA: 'Learn How We Prevent Table Scans'
+    },
 
     h1: 'Cost-Aware Text-to-SQL for the Data Cloud',
     subtitle: 'Arcli is not a generic AI wrapper. It is a specialized, read-only semantic compiler that translates natural language into deterministic, FinOps-optimized Snowflake SQL—eliminating hallucinations and protecting your compute credits.',
@@ -263,7 +292,12 @@ WHERE WAREHOUSE_NAME = 'MARKETING_WH'
   AND START_TIME >= DATEADD(WEEK, -1, CURRENT_DATE())
 GROUP BY 1
 ORDER BY 1 ASC;`,
-        businessOutcome: 'Empowers FinOps to track down runaway compute costs natively without requiring engineering to build dedicated monitoring dashboards.'
+        businessOutcome: 'Empowers FinOps to track down runaway compute costs natively without requiring engineering to build dedicated monitoring dashboards.',
+        visualizationConfig: {
+          type: 'LineChart',
+          dataMapping: { x: 'usage_day', y: 'total_credits' },
+          interactionPurpose: 'Visualize daily compute cost spikes against budget thresholds.'
+        }
       },
       {
         level: 'Intermediate',
@@ -278,7 +312,12 @@ WHERE event_type = 'checkout_flow'
   AND event_timestamp >= DATEADD(DAY, -30, CURRENT_TIMESTAMP())
 GROUP BY 2
 ORDER BY 1 DESC;`,
-        businessOutcome: 'Allows Product and Growth teams to query unstructured telemetry instantly, bypassing the week-long queue for data engineering to build a flattening pipeline.'
+        businessOutcome: 'Allows Product and Growth teams to query unstructured telemetry instantly, bypassing the week-long queue for data engineering to build a flattening pipeline.',
+        visualizationConfig: {
+          type: 'BarChart',
+          dataMapping: { x: 'operating_system', y: 'total_abandoned' },
+          interactionPurpose: 'Identify specific devices driving the highest checkout abandonment.'
+        }
       },
       {
         level: 'Advanced',
@@ -294,7 +333,12 @@ FROM enterprise_contracts
   AT(TIMESTAMP => DATEADD(HOUR, -48, CURRENT_TIMESTAMP()))
 WHERE status = 'Active'
 ORDER BY contract_value DESC;`,
-        businessOutcome: 'Provides RevOps with a time-machine to perform precise historical audits on CRM data and instantly recover from accidental sync deletions.'
+        businessOutcome: 'Provides RevOps with a time-machine to perform precise historical audits on CRM data and instantly recover from accidental sync deletions.',
+        visualizationConfig: {
+          type: 'Scatter',
+          dataMapping: { x: 'renewal_date', y: 'contract_value', groupBy: 'status' },
+          interactionPurpose: 'Audit the historical density of enterprise renewals prior to a data mutation.'
+        }
       },
       {
         level: 'Strategic',
@@ -328,7 +372,12 @@ SELECT
 FROM marketing_spend m
 JOIN acquired_customers c ON m.campaign_source = c.acquisition_channel
 ORDER BY blended_cac DESC;`,
-        businessOutcome: 'Equips C-level executives with highly accurate, cross-departmental financial metrics without forcing analysts to export data into fragile Excel models.'
+        businessOutcome: 'Equips C-level executives with highly accurate, cross-departmental financial metrics without forcing analysts to export data into fragile Excel models.',
+        visualizationConfig: {
+          type: 'MetricCard',
+          dataMapping: { x: 'campaign_source', y: 'blended_cac' },
+          interactionPurpose: 'Provide instant, executive-level verification of customer acquisition costs.'
+        }
       }
     ],
 

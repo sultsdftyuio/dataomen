@@ -1,9 +1,8 @@
-// lib/seo/templates-2.tsx
 import React from 'react';
 import { Users, ShoppingCart, Database, Download, Zap, BarChart2 } from 'lucide-react';
 
 /**
- * TemplateBlueprint Schema
+ * [V13 ENFORCED] TemplateBlueprint Schema
  * Upgraded for SEO, Conversion, and High-Performance Programmatic Generation.
  * Designed to capture high-intent long-tail keywords (CAC, ROAS, Shopify Analytics)
  * while providing instant value (SQL snippets) to Marketing, E-commerce, and RevOps leaders.
@@ -19,28 +18,42 @@ export interface TemplateBlueprint {
     secondaryKeywords: string[];
     intent: 'template' | 'guide' | 'comparison';
   };
+  
+  // 🧬 STRUCTURED DATA LAYER
+  schemaEnforcement: {
+    enableFAQ: boolean;
+    enableSoftwareApplication: boolean;
+    enableHowTo: boolean;
+  };
+
+  // 🎯 CONVERSION ENGINE
+  conversionMatrix: {
+    primaryCTA: string;
+    secondaryCTA: string;
+    contextualCTA: string;
+  };
+
   hero: {
     h1: string;
     subtitle: string;
     icon: React.ReactElement;
   };
-  // NEW: Captures exact search intent for SEO and AI search
+  
   userQuestions: string[];
-  // NEW: Immediate Value section for < 5-second scannability
   immediateValue: string[];
-  // NEW: Quick start to prove low time-to-value
+  
   quickStart: {
     timeToValue: string;
     steps: string[];
   };
-  // NEW: Downloadable assets for conversion/lead gen
+  
   assets?: {
     type: 'sql' | 'csv' | 'notion' | 'pdf';
     label: string;
     url: string;
     icon: React.ReactElement;
   }[];
-  // NEW: Tool replacement positioning (e.g., vs GA4, vs Shopify native)
+  
   comparison?: {
     vsTool: string;
     metrics: {
@@ -49,22 +62,27 @@ export interface TemplateBlueprint {
       arcli: string;
     }[];
   };
+  
   technicalStack: {
     engine: 'DuckDB' | 'Polars' | 'SQL-Pushdown';
     format: 'Parquet' | 'Columnar' | 'JSONB-Unnested';
     compute: string;
   };
+  
   performanceMetrics: string[];
+  
   orchestrationWorkflow: {
     phase1: { name: string; description: string };
     phase2: { name: string; description: string };
     phase3: { name: string; description: string };
   };
+  
   strategicContext: {
     title: string;
     industrialConstraints: string[];
     arcliEfficiency: string;
   };
+  
   analyticalScenarios: {
     level: 'Basic' | 'Intermediate' | 'Advanced' | 'Strategic';
     title: string;
@@ -72,25 +90,36 @@ export interface TemplateBlueprint {
     exampleQuery: string;
     exampleSql: string;
     businessOutcome: string;
+    // 🧱 UI VISUALIZATION ENGINE
+    visualizationConfig: {
+      type: 'BarChart' | 'LineChart' | 'Funnel' | 'MetricCard' | 'Scatter';
+      dataMapping: { x: string; y: string; groupBy?: string };
+      interactionPurpose: string;
+    };
   }[];
+  
   businessValueAndROI: {
     metric: string;
     impact: string;
     timeframe: string;
   }[];
+  
   enterpriseApplications: {
     vertical: string;
     application: string;
   }[];
+  
   trustAndSecurity: {
     guarantee: string;
     mechanism: string;
   }[];
+  
   faqs: {
     persona: 'CEO' | 'CFO' | 'Data Engineer' | 'CISO' | 'RevOps' | 'Marketing Director' | 'E-commerce Director';
     q: string;
     a: string;
   }[];
+  
   relatedBlueprints: string[];
 }
 
@@ -105,6 +134,16 @@ export const dashboardTemplatesPart2: Record<string, TemplateBlueprint> = {
       primaryKeyword: 'marketing dashboard template',
       secondaryKeywords: ['true roas calculation', 'blended cac sql', 'marketing attribution dashboard', 'ga4 alternative sql', 'ltv to cac ratio'],
       intent: 'template'
+    },
+    schemaEnforcement: {
+      enableFAQ: true,
+      enableSoftwareApplication: true,
+      enableHowTo: true
+    },
+    conversionMatrix: {
+      primaryCTA: "Run this SQL in Arcli Instantly",
+      secondaryCTA: "Download Marketing SQL Pack",
+      contextualCTA: "See How Arcli Outperforms GA4"
     },
     hero: {
       h1: 'Marketing Dashboard Template (CAC, ROAS, LTV SQL)',
@@ -214,7 +253,12 @@ SELECT
 FROM spend_attr s 
 JOIN conversions c USING (utm_source) 
 ORDER BY blended_cac ASC;`,
-        businessOutcome: 'Immediately reveals which channels burn cash and which generate profitable, high-intent customers.'
+        businessOutcome: 'Immediately reveals which channels burn cash and which generate profitable, high-intent customers.',
+        visualizationConfig: {
+          type: 'BarChart',
+          dataMapping: { x: 'utm_source', y: 'blended_cac' },
+          interactionPurpose: 'Quickly identify the most expensive acquisition channels to reallocate budget.'
+        }
       },
       {
         level: 'Intermediate',
@@ -244,7 +288,12 @@ SELECT
   ROUND((r.total_revenue / NULLIF(s.total_cost, 0)) * 100, 2) AS true_roas_percentage
 FROM campaign_spend s
 JOIN campaign_revenue r ON s.campaign_name = r.acquisition_campaign;`,
-        businessOutcome: 'Provides the CFO with undeniable proof of marketing efficiency based on cash-in-bank, not algorithm estimates.'
+        businessOutcome: 'Provides the CFO with undeniable proof of marketing efficiency based on cash-in-bank, not algorithm estimates.',
+        visualizationConfig: {
+          type: 'MetricCard',
+          dataMapping: { x: 'campaign_name', y: 'true_roas_percentage' },
+          interactionPurpose: 'High-level executive validation of campaign profitability.'
+        }
       },
       {
         level: 'Advanced',
@@ -271,7 +320,12 @@ WHERE utm_medium IS NOT NULL
 GROUP BY 1
 HAVING COUNT(user_id) > 10
 ORDER BY avg_days_to_convert ASC;`,
-        businessOutcome: 'Helps accurately forecast cash flow (e.g., knowing LinkedIn leads take 45 days to convert, while Google Search takes 12 days).'
+        businessOutcome: 'Helps accurately forecast cash flow (e.g., knowing LinkedIn leads take 45 days to convert, while Google Search takes 12 days).',
+        visualizationConfig: {
+          type: 'Funnel',
+          dataMapping: { x: 'avg_days_to_convert', y: 'utm_medium' },
+          interactionPurpose: 'Visualize sales cycle length against ad channel origin.'
+        }
       },
       {
         level: 'Strategic',
@@ -300,7 +354,12 @@ SELECT
   ROUND((c.lifetime_revenue / NULLIF(c.acquired_customers, 0)) / NULLIF((s.total_cac_spend / NULLIF(c.acquired_customers, 0)), 0), 2) AS ltv_to_cac_ratio
 FROM cohort_spend s
 CROSS JOIN cohort_customers c;`,
-        businessOutcome: 'Delivers the golden 3:1 ratio proof to investors, unlocking approval to aggressively scale paid acquisition.'
+        businessOutcome: 'Delivers the golden 3:1 ratio proof to investors, unlocking approval to aggressively scale paid acquisition.',
+        visualizationConfig: {
+          type: 'MetricCard',
+          dataMapping: { x: 'ltv_to_cac_ratio', y: 'cohort_cac' },
+          interactionPurpose: 'Provide VC/Board-ready KPI metrics instantaneously.'
+        }
       }
     ],
     businessValueAndROI: [
@@ -363,6 +422,16 @@ CROSS JOIN cohort_customers c;`,
       primaryKeyword: 'shopify analytics dashboard template',
       secondaryKeywords: ['ecommerce sql queries', 'how to calculate true net margin shopify', 'shopify cohort analysis', 'inventory forecasting sql', 'shopify ltv calculator'],
       intent: 'template'
+    },
+    schemaEnforcement: {
+      enableFAQ: true,
+      enableSoftwareApplication: true,
+      enableHowTo: true
+    },
+    conversionMatrix: {
+      primaryCTA: "Sync Shopify to Arcli (Free)",
+      secondaryCTA: "Copy E-commerce SQL Snippets",
+      contextualCTA: "See How We Predict Inventory"
     },
     hero: {
       h1: 'Shopify Analytics Dashboard Template (SQL + Profit Tracking)',
@@ -464,7 +533,12 @@ LEFT JOIN inventory_cogs_mapping cogs ON li.sku = cogs.sku
 GROUP BY 1, 2
 ORDER BY net_profit DESC
 LIMIT 10;`,
-        businessOutcome: 'Shifts merchandising focus away from break-even "loss leaders" toward the high-margin items that actually sustain your business.'
+        businessOutcome: 'Shifts merchandising focus away from break-even "loss leaders" toward the high-margin items that actually sustain your business.',
+        visualizationConfig: {
+          type: 'BarChart',
+          dataMapping: { x: 'product_name', y: 'net_profit' },
+          interactionPurpose: 'Highlight highest-margin products for advertising priority.'
+        }
       },
       {
         level: 'Intermediate',
@@ -492,7 +566,12 @@ SELECT
   COUNT(DISTINCT r.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT b.customer_id), 0) AS bf_repeat_rate_pct
 FROM bf_cohort b
 LEFT JOIN repeats r ON b.customer_id = r.customer_id;`,
-        businessOutcome: 'Quantifies whether steep holiday discounts acquire loyal, long-term customers, or just transient bargain-hunters.'
+        businessOutcome: 'Quantifies whether steep holiday discounts acquire loyal, long-term customers, or just transient bargain-hunters.',
+        visualizationConfig: {
+          type: 'MetricCard',
+          dataMapping: { x: 'cohort_date', y: 'bf_repeat_rate_pct' },
+          interactionPurpose: 'Evaluate the true success of promotional discount events.'
+        }
       },
       {
         level: 'Advanced',
@@ -530,7 +609,12 @@ GROUP BY 1
 HAVING COUNT(DISTINCT g.customer_id) > 50
 ORDER BY avg_12m_ltv DESC
 LIMIT 10;`,
-        businessOutcome: 'Directs your marketing team to intentionally advertise specific high-LTV "gateway" products, maximizing long-term revenue.'
+        businessOutcome: 'Directs your marketing team to intentionally advertise specific high-LTV "gateway" products, maximizing long-term revenue.',
+        visualizationConfig: {
+          type: 'Scatter',
+          dataMapping: { x: 'total_customers_acquired', y: 'avg_12m_ltv', groupBy: 'gateway_product' },
+          interactionPurpose: 'Plot product volume vs. long-term customer value potential.'
+        }
       },
       {
         level: 'Strategic',
@@ -555,7 +639,12 @@ JOIN trailing_velocity tv ON i.sku = tv.sku
 WHERE (i.inventory_quantity / NULLIF(tv.daily_sales_velocity, 0)) < 30
   AND tv.daily_sales_velocity > 0
 ORDER BY days_of_inventory_left ASC;`,
-        businessOutcome: 'Prevents catastrophic stockouts by enabling proactive reordering perfectly aligned with supplier lead times.'
+        businessOutcome: 'Prevents catastrophic stockouts by enabling proactive reordering perfectly aligned with supplier lead times.',
+        visualizationConfig: {
+          type: 'BarChart',
+          dataMapping: { x: 'sku', y: 'days_of_inventory_left' },
+          interactionPurpose: 'Immediate identification of critical supply chain vulnerabilities.'
+        }
       }
     ],
     businessValueAndROI: [
