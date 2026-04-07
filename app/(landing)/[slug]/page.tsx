@@ -126,9 +126,9 @@ import { TenantIsolationArchitecture, DeterministicGuardrails } from '@/componen
 // renders null during load, which is safe because it appears below-the-fold.
 const BrutalistCTA = dynamic(
   () =>
-    import('@/components/landing/seo-blocks-cta')
-      .then((m) => ({ default: m.BrutalistCTA }))
-      .catch(() => ({ default: Features })), // Graceful fallback until the component ships.
+    import('@/components/landing/brutalist-cta')
+      .then((m) => ({ default: m.BrutalistCTA })) // <-- Remove `|| m.default`
+      .catch(() => ({ default: Features })),
   { ssr: true, loading: () => null },
 );
 
