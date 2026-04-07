@@ -665,22 +665,43 @@ export default async function DynamicSEOPage({ params }: PageProps) {
     });
   }
 
+  {schemas.map((schema, index) => {
+  let safeJson = '{}';
+
+  try {
+    safeJson = JSON.stringify(schema) || '{}';
+  } catch (e) {
+    if (DEV) console.warn(`[SCHEMA_ERROR] Failed to stringify JSON-LD at index ${index}`, e);
+  }
+
   return (
     <>
       <Navbar />
 
-      {schemas.map((schema, index) => (
-        <script
-          key={index}
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            // [CRITICAL FIX #38] Escape </script> sequences in serialized JSON to prevent
-            // the structured-data string from inadvertently closing the script tag and
-            // allowing arbitrary HTML injection into the page.
-            __html: JSON.stringify(schema).replace(/</g, '\\u003c'),
-          }}
-        />
-      ))}
+      {schemas.map((schema, index) => {
+        let safeJson = '{}';
+        try {
+          // Safely attempt to serialize the schema.
+          // If a getter or toJSON method on the page object throws an error,
+          // it will be caught here instead of crashing the Next.js build.
+          safeJson = JSON.stringify(schema) || '{}';
+        } catch (e) {
+          if (DEV) console.warn(`[SCHEMA_ERROR] Failed to stringify JSON-LD at index ${index}`, e);
+        }
+
+        return (
+          <script
+            key={index}
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              // [CRITICAL FIX #38] Escape </script> sequences in serialized JSON to prevent
+              // the structured-data string from inadvertently closing the script tag and
+              // allowing arbitrary HTML injection into the page.
+              __html: safeJson.replace(/</g, '\\u003c'),
+            }}
+          />
+        );
+      })}
 
       <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-[#2563eb] selection:text-white overflow-x-hidden">
         {renderList.map((block, index) => {
@@ -936,4 +957,6 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       <Footer />
     </>
   );
-}
+});
+}}
+
