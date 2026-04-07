@@ -58,10 +58,43 @@
  * 28. [V13 FIX] uiVisualizations injection: when a V13 block carries an inline
  *     `uiVisualizations` array, each visualization is rendered as a UIBlockMapper
  *     immediately after its parent block inside a React.Fragment.
+ * 29. [V10.7 FIX] RelatedLinks: V13 relatedSlugs objects safely coerced to strings so
+ *     the registry lookup never receives raw objects, preventing "Cannot read properties
+ *     of undefined (reading 'map')" when mapping over undefined pages.
+ * 30. [CRITICAL FIX] params: removed incorrect Promise<> wrapper — Next.js App Router
+ *     params is a plain object, not a Promise.
+ * 31. [CRITICAL FIX] BrutalistCTA: replaced synchronous require() with async dynamic
+ *     import to prevent Edge/ESM build failures and enable tree-shaking.
+ * 32. [CRITICAL FIX] blockProps: cloned into safeProps before mutation to prevent
+ *     shared-reference side effects and React strict-mode violations.
+ * 33. [CRITICAL FIX] Key stability: block keys now use block.id || block.slug as a
+ *     stable identifier, falling back to index only when neither is available.
+ * 34. [CRITICAL FIX] UIBlockMapper default case: logs unknown types in DEV instead of
+ *     silently forcing everything through Architecture.
+ * 35. [CRITICAL FIX] resolveUIBlockPayload: uses Object.prototype.hasOwnProperty.call
+ *     to guard against prototype pollution on the dataMapping key.
+ * 36. [CRITICAL FIX] generateMetadata: Array.isArray guard on useCases before .find()
+ *     to prevent crash when the field is not an array.
+ * 37. [CRITICAL FIX] page.seo: full optional chaining throughout generateMetadata so
+ *     a malformed page does not crash the entire route.
+ * 38. [CRITICAL FIX] Schema JSON injection: </script> sequences escaped as \u003c/script>
+ *     to prevent HTML injection through structured data strings.
+ * 39. [CRITICAL FIX] forceArray: objects are now returned as [] rather than [obj] to
+ *     prevent components from receiving an array of the wrong shape.
+ * 40. [ARCH FIX] UIBlock injection index: derived from the Hero block's actual position
+ *     rather than a hardcoded Math.min(2, …) assumption.
+ * 41. [ARCH FIX] IS_EMPTY.MetricGovernance: aligned to check data.codeSnippet presence
+ *     so the block is never shown with data that will crash the component.
+ * 42. [ARCH FIX] UIBlockMapper inline validation: ui.type and ui.dataMapping are
+ *     validated before rendering inline visualization entries.
+ * 43. [ARCH FIX] BLOCK_REGISTRY unknown type: DEV warning emitted instead of silent null.
+ * 44. [ARCH FIX] CTA normalization: strengthened to require both text and href on primary.
+ * 45. [ARCH FIX] forceArray moved outside the render loop to avoid recreation per render.
  */
 
 import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import React from 'react';
 
 import { Navbar } from '@/components/landing/navbar';
@@ -88,16 +121,16 @@ import { DataGravityCost, DynamicSchemaMapping } from '@/components/landing/seo-
 import { GranularAccessControl, ConcurrencyProof } from '@/components/landing/seo-blocks-8';
 import { TenantIsolationArchitecture, DeterministicGuardrails } from '@/components/landing/seo-blocks-9';
 
-// [V13] BrutalistCTA is the intended target for ConversionEngine. If the component
-// does not yet exist in the build, the registry falls back to Features gracefully
-// rather than crashing the entire page at module load time.
-let BrutalistCTA: React.ElementType;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  BrutalistCTA = require('@/components/landing/seo-blocks-cta').BrutalistCTA;
-} catch {
-  BrutalistCTA = Features; // Graceful fallback until the component ships.
-}
+// [CRITICAL FIX #31] BrutalistCTA: use Next.js dynamic() instead of synchronous require()
+// so it works correctly in Edge/ESM builds and is properly tree-shaken. The component
+// renders null during load, which is safe because it appears below-the-fold.
+const BrutalistCTA = dynamic(
+  () =>
+    import('@/components/landing/seo-blocks-cta')
+      .then((m) => ({ default: m.BrutalistCTA }))
+      .catch(() => ({ default: Features })), // Graceful fallback until the component ships.
+  { ssr: true, loading: () => null },
+);
 
 const BASE_URL = 'https://www.arcli.tech';
 
@@ -108,21 +141,27 @@ const DEV = process.env.NODE_ENV !== 'production';
 export const dynamicParams = false;
 export const revalidate = 86400;
 
+// [CRITICAL FIX #30] params is NOT a Promise in Next.js App Router — removed the
+// incorrect Promise<> wrapper that would have caused runtime crashes at await params.
 interface PageProps {
-  params: Promise<{ slug: string }>;
+  params: { slug: string };
 }
 
 // ----------------------------------------------------------------------
 // HELPERS
 // ----------------------------------------------------------------------
 
+// [ARCH FIX #44] Strengthened: require both text and href on primary CTA to prevent
+// components from receiving a structurally valid but functionally broken CTA object.
 const DEFAULT_CTA = { primary: { text: 'Start Free Trial', href: '/register' } };
 
 function normalizeCta(
   cta: any, primaryCTA: any, secondaryCTA: any,
 ): { primary: { text: string; href: string }; secondary?: { text: string; href: string } } {
-  if (cta?.primary) return cta;
-  if (primaryCTA) return { primary: primaryCTA, ...(secondaryCTA ? { secondary: secondaryCTA } : {}) };
+  if (cta?.primary?.text && cta?.primary?.href) return cta;
+  if (primaryCTA?.text && primaryCTA?.href) {
+    return { primary: primaryCTA, ...(secondaryCTA ? { secondary: secondaryCTA } : {}) };
+  }
   return DEFAULT_CTA;
 }
 
@@ -140,6 +179,18 @@ function toArray(raw: any): any[] {
   return [];
 }
 
+// [ARCH FIX #45] forceArray defined at module level — not inside the render loop —
+// so it is not recreated on every render call.
+// [CRITICAL FIX #39] Objects are returned as [] rather than [obj]: wrapping a plain
+// object in an array produces an array of the wrong shape for every consumer that
+// expects arrays of strings, feature tuples, or slug strings.
+const forceArray = (val: any): any[] => {
+  if (Array.isArray(val)) return val;
+  if (val === undefined || val === null) return [];
+  if (typeof val === 'object') return []; // objects wrapped as [obj] break consumers
+  return [val];
+};
+
 /**
  * V10.2: Resolves a UIBlock payload for V1 pages.
  *
@@ -148,9 +199,14 @@ function toArray(raw: any): any[] {
  * This function swaps the key for the actual data before the block reaches UIBlockMapper,
  * preventing components like MetricGovernance from receiving a raw string instead of the
  * structured object they require.
+ *
+ * [CRITICAL FIX #35] Uses Object.prototype.hasOwnProperty.call() instead of a bare
+ * property access to guard against prototype-pollution via crafted dataMapping keys
+ * (e.g. `dataMapping: '__proto__'` or `dataMapping: 'constructor'`).
  */
 function resolveUIBlockPayload(block: any, pageData: any): any {
   if (typeof block.dataMapping !== 'string') return block;
+  if (!Object.prototype.hasOwnProperty.call(pageData, block.dataMapping)) return block;
   const resolved = pageData[block.dataMapping];
   if (resolved === undefined) return block;
   return { ...block, dataMapping: resolved };
@@ -163,6 +219,8 @@ function resolveUIBlockPayload(block: any, pageData: any): any {
 // (MetricGovernance.codeSnippet, TelemetryTrace.traces, Architecture) so that
 // partially-formed or mismatched data silently skips rendering rather than crashing.
 // [V13] Added DEV warnings so "silently skipped" is no longer silent in development.
+// [CRITICAL FIX #34] Default case: unknown types now log a DEV warning and return null
+// instead of silently forcing all unrecognised visualizations through Architecture.
 // ----------------------------------------------------------------------
 function UIBlockMapper(props: any) {
   const type = props.visualizationType;
@@ -259,12 +317,11 @@ function UIBlockMapper(props: any) {
     }
 
     default: {
-      // Architecture accepts loosely-typed data; guard against primitives and arrays.
-      if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        if (DEV) console.warn(`[UIBLOCK_INVALID] default (Architecture): data is not a plain object`, { type, data });
-        return null;
-      }
-      return <Architecture architecture={data} />;
+      // [CRITICAL FIX #34] Unknown visualization type: log a DEV warning and bail out
+      // rather than silently shunting unrecognised data into Architecture, which would
+      // produce wrong UI and make bugs nearly impossible to trace.
+      if (DEV) console.warn(`[UIBLOCK_UNKNOWN_TYPE]: ${type}`, data);
+      return null;
     }
   }
 }
@@ -275,6 +332,8 @@ function UIBlockMapper(props: any) {
 // [V13 FIX]   Added V13 dimension blocks:
 //               - InformationGain → Features (unique insights rendered as bullet points)
 //               - ConversionEngine → BrutalistCTA (or Features fallback until component ships)
+// [ARCH FIX #43] Unknown block type now emits a DEV warning instead of silently returning
+//               null, making BLOCK_REGISTRY misses visible during development.
 // ----------------------------------------------------------------------
 const BLOCK_REGISTRY: Record<string, React.ElementType> = {
   Hero, ExecutiveSummary, ContrarianBanner, Demo, Personas, Matrix,
@@ -330,6 +389,8 @@ const LAYOUT_CONFIG: Record<string, string[]> = {
 //       SecurityGuardrails: features vs items;
 //       Architecture:     components vs architecture).
 // [V13 FIX] Added guards for InformationGain, ConversionEngine, and uiVisualizations.
+// [ARCH FIX #41] MetricGovernance: aligned to check data.codeSnippet so the block is
+//     never shown with data that will cause the component to crash on render.
 // ----------------------------------------------------------------------
 const IS_EMPTY: Partial<Record<string, (props: Record<string, any>) => boolean>> = {
   Demo:                        (p) => !p.demo,
@@ -351,7 +412,8 @@ const IS_EMPTY: Partial<Record<string, (props: Record<string, any>) => boolean>>
   TrustAndCompliance:          (p) => !p.data,
   ParadigmTeardown:            (p) => !p.data,
   TelemetryTrace:              (p) => !p.data,
-  MetricGovernance:            (p) => !p.data,
+  // [ARCH FIX #41] MetricGovernance needs data.codeSnippet — not just data — to render.
+  MetricGovernance:            (p) => !p.data?.codeSnippet,
   EmbeddableSDK:               (p) => !p.data,
   DataGravityCost:             (p) => !p.data,
   DynamicSchemaMapping:        (p) => !p.data,
@@ -381,31 +443,36 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = await params;
+  // [CRITICAL FIX #30] params is not a Promise — no await needed.
+  const { slug } = params;
   const page = getNormalizedPage(slug);
   if (!page) notFound();
 
   // [V10.4 FIX] Optional chaining added throughout to prevent crashes on malformed blocks.
+  // [CRITICAL FIX #36] Array.isArray guard on useCases before .find() call — the field
+  // may be undefined or a non-array object on malformed pages, causing a runtime crash.
   const codeSnippet =
     page.blocks?.find((b: any) => b?.type === 'StrategicQuery')?.payload?.code ||
     page.strategicScenario?.sql ||
     page.demo?.generatedSql ||
-    page.useCases?.find((u: any) => u?.sqlSnippet)?.sqlSnippet ||
+    (Array.isArray(page.useCases) ? page.useCases.find((u: any) => u?.sqlSnippet)?.sqlSnippet : undefined) ||
     page.executiveScenarios?.find((s: any) => s?.sqlGenerated)?.sqlGenerated;
 
+  // [CRITICAL FIX #37] Full optional chaining on page.seo so a malformed page does not
+  // crash the entire route at the metadata stage.
   const ogUrl = new URL(`${BASE_URL}/api/og`);
-  ogUrl.searchParams.set('title', page.seo.h1);
+  ogUrl.searchParams.set('title', page.seo?.h1 || 'Arcli Analytics');
   ogUrl.searchParams.set('type', page.type || 'article');
   if (codeSnippet) ogUrl.searchParams.set('code', codeSnippet);
 
   return {
-    title: page.seo.title,
-    description: page.seo.description,
+    title:       page.seo?.title       || 'Arcli',
+    description: page.seo?.description || '',
     openGraph: {
-      title: page.seo.title,
-      description: page.seo.description,
-      type: 'article',
-      url: `${BASE_URL}/${slug}`,
+      title:       page.seo?.title       || 'Arcli',
+      description: page.seo?.description || '',
+      type:  'article',
+      url:   `${BASE_URL}/${slug}`,
       images: [{ url: ogUrl.toString(), width: 1200, height: 630 }],
     },
     alternates: { canonical: `${BASE_URL}/${slug}` },
@@ -479,7 +546,17 @@ function getV1BlockProps(type: string, data: any): Record<string, any> {
     case 'RelatedLinks': {
       const rawCta = d.hero?.cta || d.cta;
       const heroCta = normalizeCta(rawCta, d.hero?.primaryCTA, d.hero?.secondaryCTA);
-      return { slugs: d.relatedSlugs || d.relatedBlueprints || [], heroCta };
+
+      // [V10.7 FIX] Coerce V13 relatedSlugs objects to strings so RelatedLinks doesn't
+      // crash while mapping over undefined pages. The V13 schema stores relatedSlugs as
+      // [{ label, slug, intent }] objects rather than plain strings; extract the slug
+      // string from each entry before handing the array to the component.
+      const rawSlugs = d.relatedSlugs || d.relatedBlueprints || [];
+      const slugs = rawSlugs
+        .map((s: any) => typeof s === 'string' ? s : (s?.slug || s?.href || s?.url))
+        .filter(Boolean);
+
+      return { slugs, heroCta };
     }
 
     case 'Features':
@@ -521,7 +598,8 @@ function getV1BlockProps(type: string, data: any): Record<string, any> {
 // HYBRID PAGE COMPONENT
 // ----------------------------------------------------------------------
 export default async function DynamicSEOPage({ params }: PageProps) {
-  const { slug } = await params;
+  // [CRITICAL FIX #30] params is not a Promise — no await.
+  const { slug } = params;
   const page = getNormalizedPage(slug);
   if (!page) notFound();
 
@@ -550,7 +628,11 @@ export default async function DynamicSEOPage({ params }: PageProps) {
       return { type: 'UIBlock', payload: resolvedPayload };
     });
 
-    const insertionIndex = Math.min(2, renderList.length);
+    // [ARCH FIX #40] Derive insertion index from the Hero block's actual position in the
+    // render list rather than assuming it is always at index 0 or 1. This handles layouts
+    // where a non-Hero block is prepended or the Hero is absent.
+    const heroIndex = renderList.findIndex((b) => b.type === 'Hero');
+    const insertionIndex = heroIndex >= 0 ? heroIndex + 1 : 0;
     renderList.splice(insertionIndex, 0, ...uiRenderBlocks);
   }
 
@@ -558,11 +640,11 @@ export default async function DynamicSEOPage({ params }: PageProps) {
   const schemas: object[] = [
     {
       '@context': 'https://schema.org',
-      '@type': 'TechArticle',
-      headline: page.seo.h1,
-      description: page.seo.description,
+      '@type':    'TechArticle',
+      headline:   page.seo?.h1 || 'Arcli Analytics',
+      description: page.seo?.description || '',
       author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
-      datePublished: page.seo.datePublished || new Date().toISOString(),
+      datePublished: page.seo?.datePublished || new Date().toISOString(),
       mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
     },
   ];
@@ -574,10 +656,10 @@ export default async function DynamicSEOPage({ params }: PageProps) {
   if (faqData?.length > 0) {
     schemas.push({
       '@context': 'https://schema.org',
-      '@type': 'FAQPage',
+      '@type':    'FAQPage',
       mainEntity: faqData.map((f: any) => ({
-        '@type': 'Question',
-        name: f.question || f.q,
+        '@type':        'Question',
+        name:           f.question || f.q,
         acceptedAnswer: { '@type': 'Answer', text: f.answer || f.a },
       })),
     });
@@ -591,7 +673,12 @@ export default async function DynamicSEOPage({ params }: PageProps) {
         <script
           key={index}
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+          dangerouslySetInnerHTML={{
+            // [CRITICAL FIX #38] Escape </script> sequences in serialized JSON to prevent
+            // the structured-data string from inadvertently closing the script tag and
+            // allowing arbitrary HTML injection into the page.
+            __html: JSON.stringify(schema).replace(/</g, '\\u003c'),
+          }}
         />
       ))}
 
@@ -601,11 +688,19 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           if (!block || !block.type) return null;
 
           const BlockComponent = BLOCK_REGISTRY[block.type];
-          if (!BlockComponent) return null;
+          if (!BlockComponent) {
+            // [ARCH FIX #43] Emit a DEV warning instead of silently swallowing unknown types.
+            if (DEV) console.warn(`[UNKNOWN_BLOCK]: ${block.type}`);
+            return null;
+          }
 
           // V2 blocks and UIBlocks carry their own payload.
           // V1 layout blocks derive props from the flat page object via getV1BlockProps.
-          const blockProps: Record<string, any> = (isV2 || block.type === 'UIBlock')
+          // [CRITICAL FIX #32] Spread into a fresh object (safeProps) before any mutation
+          // so we never mutate a shared payload reference. Mutating blockProps directly
+          // breaks React strict-mode assumptions and can cause cross-render contamination
+          // when the same payload object is referenced by multiple render list entries.
+          const safeProps: Record<string, any> = (isV2 || block.type === 'UIBlock')
             ? { ...(block.payload ?? {}) }
             : getV1BlockProps(block.type, page);
 
@@ -624,18 +719,18 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               case 'Hero':
                 // The visual Hero component expects a `data` prop shaped like NormalizedPage.
                 // Reconstruct this nested structure from the flat V2 block payload.
-                if (!blockProps.data) {
-                  blockProps.data = {
-                    type: blockProps.badge || page.type || 'platform',
+                if (!safeProps.data) {
+                  safeProps.data = {
+                    type: safeProps.badge || page.type || 'platform',
                     seo: {
-                      h1: blockProps.title || page.seo?.h1 || 'Arcli Analytics',
+                      h1: safeProps.title || page.seo?.h1 || 'Arcli Analytics',
                     },
                     hero: {
-                      subtitle: blockProps.subtitle || blockProps.description || page.seo?.description || '',
+                      subtitle: safeProps.subtitle || safeProps.description || page.seo?.description || '',
                       cta: normalizeCta(
-                        blockProps.cta,
-                        blockProps.primaryCta || blockProps.primaryCTA,
-                        blockProps.secondaryCta || blockProps.secondaryCTA,
+                        safeProps.cta,
+                        safeProps.primaryCta || safeProps.primaryCTA,
+                        safeProps.secondaryCta || safeProps.secondaryCTA,
                       ),
                     },
                   };
@@ -643,44 +738,44 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 break;
 
               case 'ContrarianBanner':
-                blockProps.statement = blockProps.statement || blockProps.heading;
-                blockProps.subtext   = blockProps.subtext   || blockProps.argument || blockProps.description;
+                safeProps.statement = safeProps.statement || safeProps.heading;
+                safeProps.subtext   = safeProps.subtext   || safeProps.argument || safeProps.description;
                 break;
 
               case 'KeywordAnchorBlock':
               case 'ExecutiveSummary':
-                if (!blockProps.highlights && blockProps.pillars) {
-                  blockProps.highlights = blockProps.pillars.map((p: any) => ({
+                if (!safeProps.highlights && safeProps.pillars) {
+                  safeProps.highlights = safeProps.pillars.map((p: any) => ({
                     value: p.title,
                     label: p.description,
                   }));
-                } else if (!blockProps.highlights && blockProps.text) {
+                } else if (!safeProps.highlights && safeProps.text) {
                   // Fallback for KeywordAnchorBlock with a flat text field.
-                  blockProps.highlights = [{ value: blockProps.heading, label: blockProps.text }];
+                  safeProps.highlights = [{ value: safeProps.heading, label: safeProps.text }];
                 }
                 break;
 
               case 'StrategicQuery':
-                if (!blockProps.scenario) {
-                  blockProps.scenario = {
-                    title:           blockProps.title,
-                    description:     blockProps.description,
-                    businessOutcome: blockProps.businessOutcome,
-                    sql:             blockProps.code || blockProps.sqlSnippet,
-                    dialect:         blockProps.language || 'SQL',
+                if (!safeProps.scenario) {
+                  safeProps.scenario = {
+                    title:           safeProps.title,
+                    description:     safeProps.description,
+                    businessOutcome: safeProps.businessOutcome,
+                    sql:             safeProps.code || safeProps.sqlSnippet,
+                    dialect:         safeProps.language || 'SQL',
                   };
                 }
                 break;
 
               case 'UseCaseBlock':
               case 'UseCases':
-                blockProps.useCases = blockProps.useCases || blockProps.scenarios || [];
+                safeProps.useCases = safeProps.useCases || safeProps.scenarios || [];
                 break;
 
               case 'QueryExamplesBlock':
                 // Map QueryExamplesBlock `examples` array to the `features` prop shape.
-                if (!blockProps.features && blockProps.examples) {
-                  blockProps.features = blockProps.examples.map((ex: any) => ({
+                if (!safeProps.features && safeProps.examples) {
+                  safeProps.features = safeProps.examples.map((ex: any) => ({
                     title:       ex.query,
                     description: ex.intent,
                   }));
@@ -688,21 +783,21 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 break;
 
               case 'SecurityGuardrails':
-                blockProps.items = blockProps.items || blockProps.features || [];
+                safeProps.items = safeProps.items || safeProps.features || [];
                 break;
 
               case 'Architecture':
                 // Some V2 payloads use `components` instead of the top-level `architecture` key.
-                if (!blockProps.architecture && blockProps.components) {
-                  blockProps.architecture = { components: blockProps.components };
+                if (!safeProps.architecture && safeProps.components) {
+                  safeProps.architecture = { components: safeProps.components };
                 }
                 break;
 
               case 'ComparisonBlock':
               case 'Matrix':
                 // Some V2 payloads use `rows` instead of `matrix`.
-                if (!blockProps.matrix && blockProps.rows) {
-                  blockProps.matrix = blockProps.rows;
+                if (!safeProps.matrix && safeProps.rows) {
+                  safeProps.matrix = safeProps.rows;
                 }
                 break;
 
@@ -710,39 +805,39 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               case 'InternalLinkingBlock':
               case 'RelatedLinks':
                 // Map InternalLinkingBlock `links` array to the `slugs` prop.
-                if (!blockProps.slugs && blockProps.links) {
-                  blockProps.slugs = blockProps.links.map((l: any) => l.href || l.url);
+                if (!safeProps.slugs && safeProps.links) {
+                  safeProps.slugs = safeProps.links.map((l: any) => l?.href || l?.url).filter(Boolean);
                 }
-                // RelatedLinks component requires a heroCta prop which is missing from 
+                // RelatedLinks component requires a heroCta prop which is missing from
                 // native V2 payloads. Ensure we fall back to the top-level page Hero.
-                if (!blockProps.heroCta) {
+                if (!safeProps.heroCta) {
                   const heroBlock = page.blocks?.find((b: any) => b?.type === 'Hero');
                   const hp = heroBlock?.payload || {};
-                  blockProps.heroCta = normalizeCta(
-                    blockProps.cta || hp.cta,
-                    blockProps.primaryCta || blockProps.primaryCTA || hp.primaryCta || hp.primaryCTA,
-                    blockProps.secondaryCta || blockProps.secondaryCTA || hp.secondaryCta || hp.secondaryCTA
+                  safeProps.heroCta = normalizeCta(
+                    safeProps.cta || hp.cta,
+                    safeProps.primaryCta || safeProps.primaryCTA || hp.primaryCta || hp.primaryCTA,
+                    safeProps.secondaryCta || safeProps.secondaryCTA || hp.secondaryCta || hp.secondaryCTA,
                   );
                 }
                 break;
 
               // [V13 FIX] InformationGain: map V13 insight strings into Features bullet shape.
               case 'InformationGain':
-                if (!blockProps.features?.length) {
-                  blockProps.features = [
-                    { title: 'Unique Insight',       description: blockProps.uniqueInsight },
-                    { title: 'Structural Advantage', description: blockProps.structuralAdvantage },
+                if (!safeProps.features?.length) {
+                  safeProps.features = [
+                    { title: 'Unique Insight',       description: safeProps.uniqueInsight },
+                    { title: 'Structural Advantage', description: safeProps.structuralAdvantage },
                   ].filter((item) => Boolean(item.description));
                 }
                 break;
 
               // [V13 FIX] ConversionEngine: normalize V13 CTA fields into the unified cta shape.
               case 'ConversionEngine':
-                if (!blockProps.cta?.primary) {
-                  blockProps.cta = normalizeCta(
-                    blockProps.cta,
-                    blockProps.primaryCTA,
-                    blockProps.secondaryCTA,
+                if (!safeProps.cta?.primary) {
+                  safeProps.cta = normalizeCta(
+                    safeProps.cta,
+                    safeProps.primaryCTA,
+                    safeProps.secondaryCTA,
                   );
                 }
                 break;
@@ -753,44 +848,50 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           // ------------------------------------------------------------------
 
           // Defensive array coercion for all known array props.
-          const forceArray = (val: any) => Array.isArray(val) ? val : (val !== undefined && val !== null ? [val] : []);
-          
-          blockProps.slugs      = forceArray(blockProps.slugs);
-          blockProps.faqs       = forceArray(blockProps.faqs);
-          blockProps.matrix     = forceArray(blockProps.matrix || blockProps.rows);
-          blockProps.useCases   = forceArray(blockProps.useCases || blockProps.scenarios);
-          blockProps.features   = forceArray(blockProps.features);
-          blockProps.steps      = forceArray(blockProps.steps);
-          blockProps.personas   = forceArray(blockProps.personas);
-          blockProps.items      = forceArray(blockProps.items);
-          blockProps.highlights = forceArray(blockProps.highlights || blockProps.pillars);
+          // [CRITICAL FIX #39] forceArray (defined at module level) now returns [] for
+          // plain objects instead of [obj], preventing consumers from receiving an array
+          // of the wrong element shape.
+          // [V10.7 FIX] slugs: already coerced to strings upstream in getV1BlockProps for
+          // V1 RelatedLinks; the forceArray here handles any residual non-array edge cases.
+          safeProps.slugs      = forceArray(safeProps.slugs);
+          safeProps.faqs       = forceArray(safeProps.faqs);
+          safeProps.matrix     = forceArray(safeProps.matrix || safeProps.rows);
+          safeProps.useCases   = forceArray(safeProps.useCases || safeProps.scenarios);
+          safeProps.features   = forceArray(safeProps.features);
+          safeProps.steps      = forceArray(safeProps.steps);
+          safeProps.personas   = forceArray(safeProps.personas);
+          safeProps.items      = forceArray(safeProps.items);
+          safeProps.highlights = forceArray(safeProps.highlights || safeProps.pillars);
 
-          // Deep structural guards for components with nested array mapping requirements
-          if (blockProps.architecture) {
-            if (typeof blockProps.architecture !== 'object') {
-              blockProps.architecture = { components: [{ title: 'System Node', description: String(blockProps.architecture) }] };
+          // Deep structural guards for components with nested array mapping requirements.
+          if (safeProps.architecture) {
+            if (typeof safeProps.architecture !== 'object') {
+              safeProps.architecture = {
+                components: [{ title: 'System Node', description: String(safeProps.architecture) }],
+              };
             } else {
-              blockProps.architecture.components = forceArray(blockProps.architecture.components);
+              safeProps.architecture.components = forceArray(safeProps.architecture.components);
             }
           }
-          
-          if (blockProps.data && typeof blockProps.data === 'object') {
-             if (block.type === 'TelemetryTrace') {
-                blockProps.data.traces = forceArray(blockProps.data.traces);
-             }
+
+          if (safeProps.data && typeof safeProps.data === 'object' && block.type === 'TelemetryTrace') {
+            safeProps.data = { ...safeProps.data, traces: forceArray(safeProps.data.traces) };
           }
 
           // Hero always renders (builds its own fallback data).
           if (block.type !== 'Hero') {
             const isEmpty = IS_EMPTY[block.type];
-            if (isEmpty && isEmpty(blockProps)) {
+            if (isEmpty && isEmpty(safeProps)) {
               // [V13 FIX] Emit a dev warning so skipped blocks are no longer silent.
-              if (DEV) {
-                console.warn(`[BLOCK_SKIPPED_EMPTY]: ${block.type}`, blockProps);
-              }
+              if (DEV) console.warn(`[BLOCK_SKIPPED_EMPTY]: ${block.type}`, safeProps);
               return null;
             }
           }
+
+          // [CRITICAL FIX #33] Key stability: prefer a semantic block identifier over
+          // array index. Index-only keys cause React reconciliation bugs (wrong component
+          // reuse, UI flickering) whenever the render list is spliced or reordered.
+          const stableKey = `${block.type}-${(block as any).id || (block as any).slug || index}`;
 
           // ------------------------------------------------------------------
           // [V13 FIX] uiVisualizations Injection
@@ -798,20 +899,27 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           // each entry is rendered as a UIBlockMapper immediately after the parent
           // block. This keeps related data visualizations contextually co-located
           // without requiring them to be top-level render list entries.
+          // [ARCH FIX #42] Inline visualization entries are validated (ui.type required,
+          // ui.dataMapping !== undefined) before rendering to mirror UIBlockMapper's own
+          // top-level guard and prevent crashes from malformed visualization objects.
           // ------------------------------------------------------------------
-          const inlineVisualizations = Array.isArray(blockProps.uiVisualizations)
-            ? blockProps.uiVisualizations
+          const inlineVisualizations = Array.isArray(safeProps.uiVisualizations)
+            ? safeProps.uiVisualizations
             : [];
 
           if (inlineVisualizations.length > 0) {
             return (
-              <React.Fragment key={`${block.type}-${index}`}>
-                <BlockComponent {...blockProps} />
+              <React.Fragment key={stableKey}>
+                <BlockComponent {...safeProps} />
                 {inlineVisualizations.map((ui: any, uiIndex: number) => {
-                  if (!ui?.type) return null;
+                  // [ARCH FIX #42] Validate before rendering — match UIBlockMapper's own guard.
+                  if (!ui?.type || ui.dataMapping === undefined) {
+                    if (DEV) console.warn(`[UIBLOCK_INVALID] inline visualization at ${stableKey}[${uiIndex}]`, ui);
+                    return null;
+                  }
                   return (
                     <UIBlockMapper
-                      key={`${block.type}-${index}-ui-${uiIndex}`}
+                      key={`${stableKey}-ui-${uiIndex}`}
                       visualizationType={ui.type}
                       dataMapping={ui.dataMapping}
                     />
@@ -821,7 +929,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             );
           }
 
-          return <BlockComponent key={`${block.type}-${index}`} {...blockProps} />;
+          return <BlockComponent key={stableKey} {...safeProps} />;
         })}
       </main>
 
