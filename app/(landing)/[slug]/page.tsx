@@ -753,14 +753,32 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           // ------------------------------------------------------------------
 
           // Defensive array coercion for all known array props.
-          if (!Array.isArray(blockProps.slugs))    blockProps.slugs    = blockProps.slugs    ?? [];
-          if (!Array.isArray(blockProps.faqs))     blockProps.faqs     = blockProps.faqs     ?? [];
-          if (!Array.isArray(blockProps.matrix))   blockProps.matrix   = blockProps.matrix   ?? [];
-          if (!Array.isArray(blockProps.useCases)) blockProps.useCases = blockProps.useCases ?? [];
-          if (!Array.isArray(blockProps.features)) blockProps.features = blockProps.features ?? [];
-          if (!Array.isArray(blockProps.steps))    blockProps.steps    = blockProps.steps    ?? [];
-          if (!Array.isArray(blockProps.personas)) blockProps.personas = blockProps.personas ?? [];
-          if (!Array.isArray(blockProps.items))    blockProps.items    = blockProps.items    ?? [];
+          const forceArray = (val: any) => Array.isArray(val) ? val : (val !== undefined && val !== null ? [val] : []);
+          
+          blockProps.slugs      = forceArray(blockProps.slugs);
+          blockProps.faqs       = forceArray(blockProps.faqs);
+          blockProps.matrix     = forceArray(blockProps.matrix || blockProps.rows);
+          blockProps.useCases   = forceArray(blockProps.useCases || blockProps.scenarios);
+          blockProps.features   = forceArray(blockProps.features);
+          blockProps.steps      = forceArray(blockProps.steps);
+          blockProps.personas   = forceArray(blockProps.personas);
+          blockProps.items      = forceArray(blockProps.items);
+          blockProps.highlights = forceArray(blockProps.highlights || blockProps.pillars);
+
+          // Deep structural guards for components with nested array mapping requirements
+          if (blockProps.architecture) {
+            if (typeof blockProps.architecture !== 'object') {
+              blockProps.architecture = { components: [{ title: 'System Node', description: String(blockProps.architecture) }] };
+            } else {
+              blockProps.architecture.components = forceArray(blockProps.architecture.components);
+            }
+          }
+          
+          if (blockProps.data && typeof blockProps.data === 'object') {
+             if (block.type === 'TelemetryTrace') {
+                blockProps.data.traces = forceArray(blockProps.data.traces);
+             }
+          }
 
           // Hero always renders (builds its own fallback data).
           if (block.type !== 'Hero') {
