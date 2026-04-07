@@ -706,10 +706,23 @@ export default async function DynamicSEOPage({ params }: PageProps) {
                 }
                 break;
 
+              // [V10.6 FIX] Explicitly extract the CTA context from the page's Hero object.
               case 'InternalLinkingBlock':
+              case 'RelatedLinks':
                 // Map InternalLinkingBlock `links` array to the `slugs` prop.
                 if (!blockProps.slugs && blockProps.links) {
                   blockProps.slugs = blockProps.links.map((l: any) => l.href || l.url);
+                }
+                // RelatedLinks component requires a heroCta prop which is missing from 
+                // native V2 payloads. Ensure we fall back to the top-level page Hero.
+                if (!blockProps.heroCta) {
+                  const heroBlock = page.blocks?.find((b: any) => b?.type === 'Hero');
+                  const hp = heroBlock?.payload || {};
+                  blockProps.heroCta = normalizeCta(
+                    blockProps.cta || hp.cta,
+                    blockProps.primaryCta || blockProps.primaryCTA || hp.primaryCta || hp.primaryCTA,
+                    blockProps.secondaryCta || blockProps.secondaryCTA || hp.secondaryCta || hp.secondaryCTA
+                  );
                 }
                 break;
 
