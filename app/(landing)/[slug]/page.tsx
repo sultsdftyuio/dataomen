@@ -144,7 +144,7 @@ export const revalidate = 86400;
 // [CRITICAL FIX #30] params is NOT a Promise in Next.js App Router — removed the
 // incorrect Promise<> wrapper that would have caused runtime crashes at await params.
 interface PageProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 // ----------------------------------------------------------------------
@@ -443,8 +443,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  // [CRITICAL FIX #30] params is not a Promise — no await needed.
-  const { slug } = params;
+  const { slug } = await params;
   const page = getNormalizedPage(slug);
   if (!page) notFound();
 
@@ -598,8 +597,7 @@ function getV1BlockProps(type: string, data: any): Record<string, any> {
 // HYBRID PAGE COMPONENT
 // ----------------------------------------------------------------------
 export default async function DynamicSEOPage({ params }: PageProps) {
-  // [CRITICAL FIX #30] params is not a Promise — no await.
-  const { slug } = params;
+  const { slug } = await params;
   const page = getNormalizedPage(slug);
   if (!page) notFound();
 

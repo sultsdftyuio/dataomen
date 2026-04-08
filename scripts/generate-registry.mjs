@@ -1,3 +1,4 @@
+// scripts/generate-registry.mjs
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -108,6 +109,10 @@ allModules.forEach((mod) => {
 });
 
 export function getNormalizedPage(slug: string): any | null {
+  // [CRITICAL FIX] Next.js 15+ async params safeguard
+  // Prevents crash when slug evaluates to undefined from un-awaited Promises
+  if (!slug || typeof slug !== 'string') return null;
+
   const cleanSlug = slug.replace(/^\\//, '');
   const data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];
   if (!data) return null;
@@ -157,8 +162,14 @@ export function getAllSlugs(): string[] {
 }
 
 export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: string; type: string }> {
+  // [CRITICAL FIX] Next.js 15+ array shape safeguard
+  if (!Array.isArray(slugs)) return [];
+
   return slugs
     .map((rawSlug) => {
+      // [CRITICAL FIX] Ensure string evaluation before replace() execution
+      if (!rawSlug || typeof rawSlug !== 'string') return null;
+
       const slug = rawSlug.replace(/^\\//, '').split('/').pop() || rawSlug; // Flatten here too for relations
       const page = SEO_REGISTRY[slug] ?? SEO_REGISTRY[rawSlug];
       if (!page) return null;
