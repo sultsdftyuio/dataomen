@@ -1,4 +1,14 @@
-// components/landing/seo-blocks-2.tsx
+/**
+ * FILE: components/landing/seo-blocks-2.tsx
+ * ═══════════════════════════════════════════════════════════════════
+ * BUG FIXES (Bulletproofing)
+ * ═══════════════════════════════════════════════════════════════════
+ * - Added strict null checks (!array || array.length === 0)
+ * - Added optional chaining (?.) to all array.map() calls.
+ * - Added strict type-guard for Object.keys() in Architecture block.
+ * - Added safe fallbacks for nested CTA object traversal.
+ */
+
 "use client";
 
 import React from 'react';
@@ -27,7 +37,7 @@ import { SectionHeading } from './seo-blocks-1';
 export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (steps.length === 0) return null;
+  if (!steps || steps.length === 0) return null;
   return (
     <section className="py-24 bg-white relative">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
@@ -38,11 +48,11 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
           Implementation Pipeline
         </SectionHeading>
         
-        <div ref={ref} className="relative pl-10 md:pl-0">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="relative pl-10 md:pl-0">
           <div className={`absolute left-[29px] md:left-1/2 md:-ml-[1.5px] top-0 bottom-0 w-[3px] bg-slate-100 transition-all duration-1000 ${vis ? 'opacity-100 h-full' : 'opacity-0 h-0'}`}></div>
           
           <div className="space-y-12 md:space-y-16">
-            {steps.map((step, i) => (
+            {steps?.map((step, i) => (
               <div 
                 key={i} 
                 style={{ transitionDelay: `${i * 200}ms` }}
@@ -80,7 +90,7 @@ export const Steps = ({ steps }: { steps: NormalizedPage['steps'] }) => {
 export const Features = ({ features }: { features: NormalizedPage['features'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (features.length === 0) return null;
+  if (!features || features.length === 0) return null;
   return (
     <section className="py-32 bg-slate-50 relative border-y border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
@@ -104,8 +114,8 @@ export const Features = ({ features }: { features: NormalizedPage['features'] })
             </div>
           </div>
 
-          <div ref={ref} className="w-full md:w-7/12 space-y-8">
-            {features.map((feature, i) => (
+          <div ref={ref as React.RefObject<HTMLDivElement>} className="w-full md:w-7/12 space-y-8">
+            {features?.map((feature, i) => (
               <div 
                 key={i} 
                 style={{ transitionDelay: `${i * 150}ms` }}
@@ -139,7 +149,7 @@ export const Features = ({ features }: { features: NormalizedPage['features'] })
 export const Architecture = ({ architecture }: { architecture: NormalizedPage['architecture'] }) => {
   const [ref, vis] = useVisible(0.2);
 
-  if (!architecture || Object.keys(architecture).length === 0) return null;
+  if (!architecture || typeof architecture !== 'object' || Object.keys(architecture).length === 0) return null;
   return (
     <section className="py-24 bg-[#0B1221] text-white relative overflow-hidden">
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#2563eb]/10 blur-[120px] pointer-events-none"></div>
@@ -156,7 +166,7 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
           </div>
         </div>
         
-        <div ref={ref} className="grid md:grid-cols-3 gap-6 mb-12">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-6 mb-12">
           {Object.entries(architecture).map(([key, value], i) => (
             <div 
               key={key} 
@@ -195,7 +205,7 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
 export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: NormalizedPage['hero']['cta'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (slugs.length === 0) return null;
+  if (!slugs || slugs.length === 0) return null;
   return (
     <section className="py-24 bg-slate-50 relative overflow-hidden border-t border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
@@ -206,8 +216,8 @@ export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Nor
           Explore Deep Dives
         </SectionHeading>
         
-        <div ref={ref} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {slugs.map((relatedSlug, i) => {
+        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+          {slugs?.map((relatedSlug, i) => {
             const rawRelated = getPage(relatedSlug) as any;
             if (!rawRelated) return null;
             
@@ -234,14 +244,16 @@ export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Nor
           })}
         </div>
         
-        <div className={`flex justify-center transition-all duration-1000 delay-300 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-          <Link 
-            href={heroCta.primary.href} 
-            className="group relative flex items-center justify-center gap-2 bg-[#0B1221] text-white px-8 py-4 rounded-xl text-lg font-bold shadow-[0_4px_14px_0_rgb(0,0,0,0.1)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-all duration-300"
-          >
-            {heroCta.primary.text} <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </Link>
-        </div>
+        {heroCta?.primary && (
+          <div className={`flex justify-center transition-all duration-1000 delay-300 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+            <Link 
+              href={heroCta.primary.href || '#'} 
+              className="group relative flex items-center justify-center gap-2 bg-[#0B1221] text-white px-8 py-4 rounded-xl text-lg font-bold shadow-[0_4px_14px_0_rgb(0,0,0,0.1)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-all duration-300"
+            >
+              {heroCta.primary.text || 'Get Started'} <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </Link>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -250,7 +262,7 @@ export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: Nor
 export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (faqs.length === 0) return null;
+  if (!faqs || faqs.length === 0) return null;
   return (
     <section className="py-16 md:py-24 bg-white border-t border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-3xl">
@@ -262,7 +274,7 @@ export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="space-y-3">
-          {faqs.map((faq, i) => (
+          {faqs?.map((faq, i) => (
             <details 
               key={i} 
               style={{ transitionDelay: `${i * 100}ms` }}

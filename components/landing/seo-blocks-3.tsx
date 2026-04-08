@@ -1,4 +1,12 @@
-// components/landing/seo-blocks-3.tsx
+/**
+ * FILE: components/landing/seo-blocks-3.tsx
+ * ═══════════════════════════════════════════════════════════════════
+ * BUG FIXES (Bulletproofing)
+ * ═══════════════════════════════════════════════════════════════════
+ * - Added strict null checks (!array || array.length === 0)
+ * - Added optional chaining (?.) to all array.map() calls.
+ */
+
 "use client";
 
 import React, { useState } from 'react';
@@ -57,7 +65,7 @@ export const SecurityGuardrails = ({ items }: { items: SecurityItem[] }) => {
         </div>
 
         <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-6">
-          {items.map((item, i) => (
+          {items?.map((item, i) => (
             <div 
               key={i}
               style={{ transitionDelay: `${i * 150}ms` }}
@@ -126,9 +134,10 @@ export const StrategicQuery = ({ scenario }: StrategicScenarioProps) => {
   const [ref, vis] = useVisible(0.1);
   const [copied, setCopied] = useState(false);
 
-  if (!scenario) return null;
+  if (!scenario || typeof scenario !== 'object') return null;
 
   const handleCopy = () => {
+    if (!scenario.sql) return;
     navigator.clipboard.writeText(scenario.sql);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -231,7 +240,7 @@ export const ExecutiveSummary = ({ highlights }: { highlights: { value: string; 
           ref={ref as React.RefObject<HTMLDivElement>}
           className={`grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 transition-all duration-1000 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
         >
-          {highlights.map((stat, i) => (
+          {highlights?.map((stat, i) => (
             <div 
               key={i}
               style={{ transitionDelay: `${i * 100}ms` }}

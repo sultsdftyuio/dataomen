@@ -1,4 +1,13 @@
-// components/landing/seo-blocks-4.tsx
+/**
+ * FILE: components/landing/seo-blocks-4.tsx
+ * ═══════════════════════════════════════════════════════════════════
+ * BUG FIXES (Bulletproofing)
+ * ═══════════════════════════════════════════════════════════════════
+ * - Added deep null checks for complex nested objects (!data || !data.scenario)
+ * - Added optional chaining (?.) to all nested array.map() calls.
+ * - Safely guarded tablesUtilized, semanticTokens, and processes.
+ */
+
 "use client";
 
 import React from 'react';
@@ -51,7 +60,7 @@ export interface ZeroDataProofProps {
 export const ZeroDataProof = ({ data }: { data: ZeroDataProofProps }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (!data) return null;
+  if (!data || !data.customerZone || !data.arcliZone || !data.networkBoundary) return null;
 
   return (
     <section className="py-24 bg-slate-50 relative border-y border-slate-200/50 overflow-hidden">
@@ -88,7 +97,7 @@ export const ZeroDataProof = ({ data }: { data: ZeroDataProofProps }) => {
             </p>
 
             <div className="space-y-4 mb-8">
-              {data.customerZone.dataSources.map((source, idx) => (
+              {data.customerZone.dataSources?.map((source, idx) => (
                 <div key={idx} className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
                   <Server className="w-4 h-4 text-slate-400" />
                   <span className="font-bold text-sm text-[#0B1221]">{source}</span>
@@ -150,7 +159,7 @@ export const ZeroDataProof = ({ data }: { data: ZeroDataProofProps }) => {
             </p>
 
             <div className="space-y-4 mb-8">
-              {data.arcliZone.processes.map((process, idx) => (
+              {data.arcliZone.processes?.map((process, idx) => (
                 <div key={idx} className="flex items-center gap-3 p-3 rounded-lg bg-white border border-blue-50 shadow-sm">
                   <Cpu className="w-4 h-4 text-[#2563eb]" />
                   <span className="font-bold text-sm text-[#0B1221]">{process}</span>
@@ -187,7 +196,7 @@ export interface SemanticTranslationProps {
 export const SemanticTranslation = ({ data }: { data: SemanticTranslationProps }) => {
   const [ref, vis] = useVisible(0.2);
 
-  if (!data) return null;
+  if (!data || !data.scenario) return null;
 
   return (
     <section className="py-32 bg-[#0B1221] text-white relative border-y border-[#1e293b]">
@@ -224,7 +233,7 @@ export const SemanticTranslation = ({ data }: { data: SemanticTranslationProps }
 
             <div className="space-y-4 mt-auto">
               <div className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-4">Token Resolution</div>
-              {data.scenario.semanticTokens.map((token, i) => (
+              {data.scenario.semanticTokens?.map((token, i) => (
                 <div key={i} className="flex items-center gap-4 bg-[#1e293b]/50 border border-[#1e293b] p-3 rounded-xl">
                   <div className={`px-2 py-1 rounded text-xs font-bold font-mono ${token.isMetric ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
                     "{token.word}"
@@ -258,13 +267,13 @@ export const SemanticTranslation = ({ data }: { data: SemanticTranslationProps }
               <div className="bg-[#0f172a] p-4 rounded-xl border border-[#1e293b]">
                 <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-2">Tables Utilized</div>
                 <div className="text-sm font-mono text-blue-400 flex flex-col gap-1">
-                  {data.scenario.schemaContext.tablesUtilized.map(t => <span key={t}>{t}</span>)}
+                  {data.scenario.schemaContext?.tablesUtilized?.map(t => <span key={t}>{t}</span>)}
                 </div>
               </div>
               <div className="bg-[#0f172a] p-4 rounded-xl border border-[#1e293b]">
                 <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-2">Join Strategy</div>
                 <div className="text-sm font-mono text-emerald-400 break-all">
-                  {data.scenario.schemaContext.joinCondition}
+                  {data.scenario.schemaContext?.joinCondition}
                 </div>
               </div>
             </div>
@@ -292,7 +301,7 @@ export interface TrustAndComplianceProps {
 export const TrustAndCompliance = ({ data }: { data: TrustAndComplianceProps }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (!data || data.certifications.length === 0) return null;
+  if (!data || !data.certifications || data.certifications.length === 0) return null;
 
   return (
     <section className="py-24 bg-white relative">
@@ -318,7 +327,7 @@ export const TrustAndCompliance = ({ data }: { data: TrustAndComplianceProps }) 
               <div className="font-mono text-[10px] uppercase font-bold text-slate-400 tracking-[0.2em] mb-6">
                 Active Certifications
               </div>
-              {data.certifications.map((cert, i) => (
+              {data.certifications?.map((cert, i) => (
                 <div key={i} className="flex gap-4 p-5 bg-white rounded-2xl border border-slate-200 shadow-sm">
                   <div className="w-12 h-12 shrink-0 bg-emerald-50 rounded-xl flex items-center justify-center border border-emerald-100">
                     <Shield className="w-6 h-6 text-emerald-600" />
@@ -343,7 +352,7 @@ export const TrustAndCompliance = ({ data }: { data: TrustAndComplianceProps }) 
               </div>
               <div className="bg-[#0B1221] rounded-2xl p-6 md:p-8 border border-[#1e293b] shadow-xl">
                 <ul className="space-y-5">
-                  {data.compliancePoints.map((point, i) => (
+                  {data.compliancePoints?.map((point, i) => (
                     <li key={i} className="flex items-start gap-4">
                       <div className="mt-1 flex-shrink-0 w-6 h-6 rounded-full bg-[#1e293b] flex items-center justify-center border border-slate-700">
                         <LockKeyhole className="w-3 h-3 text-[#60a5fa]" />

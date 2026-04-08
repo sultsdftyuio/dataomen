@@ -1,3 +1,14 @@
+/**
+ * FILE: components/landing/seo-blocks-1.tsx
+ * * ═══════════════════════════════════════════════════════════════════
+ * BUG FIXES (Bulletproofing)
+ * ═══════════════════════════════════════════════════════════════════
+ * - Added strict null checks (!array || array.length === 0) and optional
+ * chaining (?.) to all .map() calls. This prevents the Next.js static
+ * generator from crashing when duplicate slugs or malformed payloads
+ * are injected into the components.
+ */
+
 "use client";
 
 import React, { useState, useEffect } from 'react';
@@ -79,19 +90,19 @@ export const Hero = ({ data }: { data: NormalizedPage }) => {
           </div>
           
           <h1 className="text-[clamp(44px,6vw,72px)] font-extrabold tracking-tight text-[#0B1221] mb-6 leading-[1.05]">
-            {data.seo.h1}
+            {data.seo?.h1 || 'Arcli Analytics'}
           </h1>
           
           <p className="text-slate-500 text-[20px] font-medium leading-[1.6] max-w-3xl mx-auto mb-10">
-            {data.hero.subtitle}
+            {data.hero?.subtitle}
           </p>
           
           <div className="flex flex-col items-center justify-center gap-4">
             <Link 
-              href={data.hero.cta.primary.href} 
+              href={data.hero?.cta?.primary?.href || '/register'} 
               className="group relative flex items-center justify-center gap-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white px-8 py-4 rounded-xl text-lg font-bold shadow-[0_8px_24px_-6px_rgba(37,99,235,0.4)] hover:shadow-[0_12px_30px_-6px_rgba(37,99,235,0.6)] transition-all duration-300 transform hover:-translate-y-0.5"
             >
-              {data.hero.cta.primary.text}
+              {data.hero?.cta?.primary?.text || 'Get Started'}
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
               <div className="absolute inset-0 rounded-xl ring-2 ring-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
             </Link>
@@ -171,7 +182,7 @@ export const Demo = ({ demo }: { demo: NormalizedPage['demo'] }) => {
 export const Personas = ({ personas }: { personas: NormalizedPage['personas'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (personas.length === 0) return null;
+  if (!personas || personas.length === 0) return null;
   return (
     <section className="py-32 bg-white relative overflow-hidden">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl h-[600px] bg-slate-50/80 rounded-full blur-[100px] -z-10" />
@@ -185,7 +196,7 @@ export const Personas = ({ personas }: { personas: NormalizedPage['personas'] })
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-3 gap-8 md:gap-6 pt-12 pb-16">
-          {personas.map((persona, i) => (
+          {personas?.map((persona, i) => (
             <div 
               key={i} 
               style={{ transitionDelay: `${i * 150}ms` }}
@@ -201,7 +212,7 @@ export const Personas = ({ personas }: { personas: NormalizedPage['personas'] })
               </p>
 
               <div className="space-y-4 relative z-10">
-                {persona.capabilities.map((cap, j) => (
+                {persona.capabilities?.map((cap, j) => (
                   <div key={j} className="flex items-center gap-4 bg-white p-4 rounded-2xl shadow-[0_10px_30px_-10px_rgba(11,18,33,0.08)] border border-slate-100 group-hover:border-blue-100 transition-colors">
                     <div className="w-10 h-10 rounded-xl bg-blue-50/50 flex items-center justify-center shrink-0 border border-blue-100/50">
                       <CheckCircle2 className="w-5 h-5 text-[#2563eb]" />
@@ -221,7 +232,7 @@ export const Personas = ({ personas }: { personas: NormalizedPage['personas'] })
 export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (matrix.length === 0) return null;
+  if (!matrix || matrix.length === 0) return null;
   return (
     <section className="py-24 bg-slate-50 relative border-y border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
@@ -233,7 +244,7 @@ export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="grid gap-6">
-          {matrix.map((item, i) => (
+          {matrix?.map((item, i) => (
             <div 
               key={i} 
               style={{ transitionDelay: `${i * 100}ms` }}
@@ -273,7 +284,6 @@ export const Matrix = ({ matrix }: { matrix: NormalizedPage['matrix'] }) => {
 
 // ----------------------------------------------------------------------
 // EXECUTION PIPELINE (TELEMETRY VIEW)
-// Replaces the original WorkflowSection
 // ----------------------------------------------------------------------
 
 const PIPELINE_STEPS = [
@@ -333,7 +343,7 @@ export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workfl
         >
           {/* LEFT PANE: The Logic Log */}
           <div className="lg:col-span-5 flex flex-col gap-4">
-            {PIPELINE_STEPS.map((step, index) => {
+            {PIPELINE_STEPS?.map((step, index) => {
               const isActive = activeStep === index;
               const StepIcon = step.icon;
               
@@ -445,7 +455,7 @@ export const WorkflowSection = ({ workflow }: { workflow: NormalizedPage['workfl
 export const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (useCases.length === 0) return null;
+  if (!useCases || useCases.length === 0) return null;
   return (
     <section className="py-24 bg-slate-50 border-y border-slate-200/50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
@@ -457,8 +467,8 @@ export const UseCases = ({ useCases }: { useCases: NormalizedPage['useCases'] })
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 gap-6">
-          {useCases.map((item, i) => {
-            const isAdvanced = item.complexity?.toLowerCase().includes('advanced') || item.complexity?.toLowerCase().includes('strategic');
+          {useCases?.map((item, i) => {
+            const isAdvanced = item.complexity?.toLowerCase()?.includes('advanced') || item.complexity?.toLowerCase()?.includes('strategic');
             return (
               <div 
                 key={i} 
