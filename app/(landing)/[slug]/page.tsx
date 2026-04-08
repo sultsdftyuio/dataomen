@@ -875,7 +875,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = params; // [B3] plain object — no await
+  const { slug } = await params;
   const page     = getNormalizedPage(slug);
   if (!page) notFound();
 
@@ -911,7 +911,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function DynamicSEOPage({ params }: PageProps) {
-  const { slug } = params; // [B3] plain object — no await
+  const { slug } = await params;
   const page     = getNormalizedPage(slug);
   if (!page) notFound();
 
