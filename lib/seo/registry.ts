@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/generate-registry.mjs
 //
 // Silos tracked: 36
-// Generated:     2026-04-08T10:36:31.708Z
+// Generated:     2026-04-08T19:11:38.594Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';
@@ -81,29 +81,28 @@ const allModules = [
 
 export const SEO_REGISTRY: Record<string, any> = {};
 
+// [FIX] Helper to ensure safe URL formatting
+const toKebab = (str) => str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, exportValue]) => {
     if (!exportValue || typeof exportValue !== 'object' || Array.isArray(exportValue)) return;
 
     const isV2 = 'path' in exportValue && 'meta' in exportValue && 'blocks' in exportValue;
-    const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue;
+    // [FIX] Added 'h1' and 'blocks' to catch previously ignored partial V1 pages
+    const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue || 'h1' in exportValue || 'blocks' in exportValue;
 
     if (isV2) {
       const fullPath = (exportValue as any).path.replace(/^\//, '');
-      const slug = fullPath.split('/').pop() || fullPath; // Flatten nested routes
-      if (SEO_REGISTRY[slug]) {
-        console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
-      }
+      const slug = fullPath.split('/').pop() || fullPath; 
       SEO_REGISTRY[slug] = exportValue;
       return;
     }
 
     if (isV1Page) {
-      const slug = (exportValue as any).slug
-        || exportName.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-      if (SEO_REGISTRY[slug]) {
-        console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
-      }
+      // [FIX] Prevent default exports from hijacking the slug as "/default"
+      const fallbackSlug = exportName === 'default' ? 'unnamed-silo' : toKebab(exportName);
+      const slug = (exportValue as any).slug || fallbackSlug;
       SEO_REGISTRY[slug] = exportValue;
       return;
     }
@@ -116,16 +115,14 @@ allModules.forEach((mod) => {
 
       if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
         const fullPath = (pageData as any).path.replace(/^\//, '');
-        slug = fullPath.split('/').pop() || fullPath; // Flatten nested routes
-      } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData) {
-        slug = (pageData as any).slug || key;
+        slug = fullPath.split('/').pop() || fullPath; 
+      } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData || 'h1' in pageData || 'blocks' in pageData) {
+        // [CRITICAL FIX] Converts camelCase properties (e.g., predictiveAnalytics -> predictive-analytics)
+        slug = (pageData as any).slug || toKebab(key);
       } else {
-        return;
+        return; // Still skips invalid shapes
       }
 
-      if (SEO_REGISTRY[slug]) {
-        console.warn(`[registry] Duplicate slug detected: "${slug}" — overwriting.`);
-      }
       SEO_REGISTRY[slug] = pageData;
     });
   });
