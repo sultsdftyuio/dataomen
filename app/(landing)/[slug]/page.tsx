@@ -157,7 +157,7 @@ const DEFAULT_CTA = {
 
 // [B3] params is a plain object in Next.js App Router — NOT a Promise.
 interface PageProps {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 interface Cta {
@@ -227,7 +227,7 @@ function normalizeCta(cta: any, primaryCta: any, secondaryCta: any): Cta {
   return DEFAULT_CTA;
 }
 
-function toFeatureArray(raw: unknown): Array<{ title: string; description?: string }> {
+function toFeatureArray(raw: unknown): Array<{ title: string; description: string }> {
   if (!raw)                              return [];
   if (Array.isArray(raw))               return raw;
   if (Array.isArray((raw as any).items)) return (raw as any).items;
@@ -346,14 +346,14 @@ function normalizeHighlights(
 /** Feature / capability items: { title, description? } */
 function normalizeFeatures(
   raw: any[],
-): Array<{ title: string; description?: string }> {
+): Array<{ title: string; description: string }> {
   if (!raw.length)              return [];
   if (isAlreadyNormalized(raw)) return raw as any;
 
   return tagNormalized(
     raw.map((r: any) => ({
       title:       r.title       || r.name  || r.heading || '',
-      description: r.description || r.body  || r.text    || undefined,
+      description: r.description || r.body  || r.text    || '', // <-- Changed to empty string
     })),
   );
 }
@@ -361,14 +361,14 @@ function normalizeFeatures(
 /** Step items: { title, description? } */
 function normalizeSteps(
   raw: any[],
-): Array<{ title: string; description?: string }> {
+): Array<{ title: string; description: string }> {
   if (!raw.length)              return [];
   if (isAlreadyNormalized(raw)) return raw as any;
 
   return tagNormalized(
     raw.map((r: any, i: number) => ({
       title:       r.title       || r.name  || r.step   || `Step ${i + 1}`,
-      description: r.description || r.body  || r.detail || undefined,
+      description: r.description || r.body  || r.detail || '', // <-- Changed to empty string
     })),
   );
 }
@@ -1130,8 +1130,8 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  // [B3] params is NOT a Promise — destructure directly.
-  const { slug } = params;
+  // [FIX] Await the params Promise
+  const { slug } = await params; 
   const page     = getNormalizedPage(slug);
   if (!page) notFound();
 
@@ -1166,8 +1166,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function DynamicSEOPage({ params }: PageProps) {
-  // [B3] params is NOT a Promise — destructure directly.
-  const { slug } = params;
+  // [FIX] Await the params Promise
+  const { slug } = await params;
   const page     = getNormalizedPage(slug);
   if (!page) notFound();
 
