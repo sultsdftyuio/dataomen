@@ -1,4 +1,3 @@
-// lib/seo/guides-1.tsx
 import React from 'react';
 import { TrendingUp, FileText, DatabaseZap } from 'lucide-react';
 

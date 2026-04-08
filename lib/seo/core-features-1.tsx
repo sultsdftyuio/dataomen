@@ -1,5 +1,3 @@
-// lib/seo/core-features-1.tsx
-
 /**
  * SEO v13 SYSTEM: Core Features (Part 1)
  * * SERP Realism Layer: 
@@ -7,7 +5,7 @@
  * * Architecture:
  * - Upgraded to V13 deterministic block engine.
  * - Deep schema.org integration for Rich Snippets.
- * - Massive Information Gain via concrete SQL examples replacing generic feature claims.
+ * - Strict typing applied per Rule 21 (Comparison matrix rows, typed dataMappings).
  */
 
 export const coreFeaturesPart1 = {
@@ -57,7 +55,14 @@ export const coreFeaturesPart1 = {
         type: "UIBlock",
         payload: {
           visualizationType: "ProcessStepper",
-          dataMapping: "Connect (Provide read-only URL) -> Ask (Type plain English) -> Act (System generates interactive visualization).",
+          dataMapping: {
+            title: "Analysis Generation Flow",
+            steps: [
+              { title: "Connect", description: "Provide a read-only database URL. Arcli vectorizes your schema instantly." },
+              { title: "Ask", description: "Type a complex query in plain English (e.g., 'Compare MRR growth across EMEA tiers')." },
+              { title: "Act", description: "Arcli executes the generated SQL and renders an interactive visualization in milliseconds." }
+            ]
+          },
           interactionPurpose: "Visualize the speed from connection to insight, proving the elimination of the engineering bottleneck.",
           intentServed: "Onboarding friction reduction for technical evaluators."
         }
@@ -93,9 +98,9 @@ GROUP BY 1;`
           visualizationType: "ComparisonTable",
           columns: ["Capability", "Arcli (AI Data Analysis)", "Traditional BI (Tableau/Power BI)"],
           rows: [
-            { feature: "Time to First Chart", arcli: "Seconds (AI inferred)", competitor: "Days (Manual modeling required)" },
-            { feature: "Learning Curve", arcli: "Zero (Natural Language)", competitor: "High (Proprietary formulas)" },
-            { feature: "Ad-Hoc Exploration", arcli: "Infinite conversational drill-downs", competitor: "Limited by pre-built dashboard filters" }
+            { category: "Time to First Chart", arcliAdvantage: "Seconds (AI inferred)", legacy: "Days (Manual modeling required)" },
+            { category: "Learning Curve", arcliAdvantage: "Zero (Natural Language)", legacy: "High (Proprietary formulas)" },
+            { category: "Ad-Hoc Exploration", arcliAdvantage: "Infinite conversational drill-downs", legacy: "Limited by pre-built dashboard filters" }
           ]
         }
       },
@@ -201,7 +206,14 @@ GROUP BY 1;`
         type: "UIBlock",
         payload: {
           visualizationType: "DataRelationshipsGraph",
-          dataMapping: "Semantic Hub (Defines 'Net Revenue') -> Routes identically to -> Sales Chat, Marketing Dashboard, Finance Alert.",
+          dataMapping: {
+            title: "Semantic Metric Propagation Traces",
+            traces: [
+              { phase: "Definition (Semantic Hub)", durationMs: 0, log: "Metric 'Net Revenue' established and locked." },
+              { phase: "Execution (Sales Chatbot)", durationMs: 14, log: "Routed query mapped directly to 'Net Revenue' node." },
+              { phase: "Execution (Finance Dashboard)", durationMs: 22, log: "Governed metric block injected into visualization compilation." }
+            ]
+          },
           interactionPurpose: "Show how a single defined metric propagates to all enterprise queries flawlessly, eliminating reporting drift.",
           intentServed: "System architecture validation for Head of Data."
         }
@@ -232,9 +244,9 @@ GROUP BY 1;`
           visualizationType: "ComparisonTable",
           columns: ["Feature", "Arcli (AI BI)", "Headless BI (Looker/dbt alone)"],
           rows: [
-            { feature: "Business User Accessibility", arcli: "Plain English queries", competitor: "Requires SQL/LookML knowledge" },
-            { feature: "Implementation Speed", arcli: "Hours (AI Maps Schema)", competitor: "Months (Manual YAML definition)" },
-            { feature: "Metric Consistency", arcli: "System-Enforced", competitor: "System-Enforced" }
+            { category: "Business User Accessibility", arcliAdvantage: "Plain English queries", legacy: "Requires SQL/LookML knowledge" },
+            { category: "Implementation Speed", arcliAdvantage: "Hours (AI Maps Schema)", legacy: "Months (Manual YAML definition)" },
+            { category: "Metric Consistency", arcliAdvantage: "System-Enforced", legacy: "System-Enforced" }
           ]
         }
       },
@@ -340,7 +352,13 @@ GROUP BY 1;`
         type: "UIBlock",
         payload: {
           visualizationType: "AnalyticsDashboard",
-          dataMapping: "Simulated generation: User Prompt -> AI infers 4 KPIs -> Renders Bar, Line, and Scatter plots instantly.",
+          dataMapping: {
+            title: "Automated KPI Generation",
+            description: "AI infers required metrics from a general intent string ('marketing health').",
+            dialect: "PostgreSQL",
+            businessOutcome: "Provides immediate visual context for operations managers.",
+            code: "SELECT campaign, COUNT(lead_id) as conversions FROM marketing.events GROUP BY campaign;"
+          },
           interactionPurpose: "Showcase the seamless transition from natural language to a fully functional, multi-panel dashboard.",
           intentServed: "Visual proof of concept for Operations and Agency Managers."
         }
@@ -372,10 +390,10 @@ ORDER BY customer_acquisition_cost ASC;`
           visualizationType: "ComparisonTable",
           columns: ["Action", "Arcli (AI Generator)", "Standard BI (Metabase/Tableau)"],
           rows: [
-            { feature: "Select Chart Type", arcli: "AI Inferred", competitor: "Manual Selection" },
-            { feature: "Map Axes & Groupings", arcli: "AI Inferred", competitor: "Manual Configuration" },
-            { feature: "Update Parameters", arcli: "Natural Language Prompt", competitor: "Click through nested menus" },
-            { feature: "Drill-Down", arcli: "Conversational Follow-up", competitor: "Pre-configured drill paths only" }
+            { category: "Select Chart Type", arcliAdvantage: "AI Inferred", legacy: "Manual Selection" },
+            { category: "Map Axes & Groupings", arcliAdvantage: "AI Inferred", legacy: "Manual Configuration" },
+            { category: "Update Parameters", arcliAdvantage: "Natural Language Prompt", legacy: "Click through nested menus" },
+            { category: "Drill-Down", arcliAdvantage: "Conversational Follow-up", legacy: "Pre-configured drill paths only" }
           ]
         }
       },
@@ -477,7 +495,19 @@ ORDER BY customer_acquisition_cost ASC;`
         type: "UIBlock",
         payload: {
           visualizationType: "MetricsChart",
-          dataMapping: "Historical Line Chart (Solid) branching into Predictive Forecast (Dotted) with 95% Confidence Interval Shading.",
+          dataMapping: {
+            title: "Predictive Revenue Model vs Baseline",
+            codeSnippet: {
+              filename: "arima-forecast.sql",
+              language: "sql",
+              code: "SELECT projected_mrr, confidence_upper, confidence_lower FROM ml.revenue_forecast_model;"
+            },
+            governedOutputs: [
+              { label: "Projected Q4 Revenue", value: "$4.2M", status: "trend-up" },
+              { label: "Confidence Interval", value: "95%", status: "stable" },
+              { label: "Identified Churn Risk", value: "-$120k", status: "trend-down" }
+            ]
+          },
           interactionPurpose: "Visual validation of forecasting capabilities, showing rigorous statistical bounds rather than random guesses.",
           intentServed: "Trust building for FP&A Teams and Data Scientists."
         }
@@ -516,9 +546,9 @@ ORDER BY usage_drop_percentage ASC;`
           visualizationType: "ComparisonTable",
           columns: ["Phase", "Arcli (In-Warehouse AI)", "Custom Data Science (Python)"],
           rows: [
-            { feature: "Data Extraction", arcli: "Zero (Queries live DB)", competitor: "Export to CSV/Dataframe" },
-            { feature: "Model Selection", arcli: "Automated (ARIMA/Regression)", competitor: "Manual testing via SciPy/Pandas" },
-            { feature: "Scenario Adjustments", arcli: "Instant (Natural Language)", competitor: "Requires code rewrite & re-run" }
+            { category: "Data Extraction", arcliAdvantage: "Zero (Queries live DB)", legacy: "Export to CSV/Dataframe" },
+            { category: "Model Selection", arcliAdvantage: "Automated (ARIMA/Regression)", legacy: "Manual testing via SciPy/Pandas" },
+            { category: "Scenario Adjustments", arcliAdvantage: "Instant (Natural Language)", legacy: "Requires code rewrite & re-run" }
           ]
         }
       },
@@ -624,7 +654,15 @@ ORDER BY usage_drop_percentage ASC;`
         type: "UIBlock",
         payload: {
           visualizationType: "ProcessStepper",
-          dataMapping: "Install Bot -> Type '@Arcli alert #sales if signups < 500' -> Bot monitors silently -> Triggers alert chart when threshold breached.",
+          dataMapping: {
+            title: "Automated Chat Alerts Setup",
+            steps: [
+              { title: "Install", description: "Deploy the Arcli Bot into your desired Slack or Teams channel securely." },
+              { title: "Configure", description: "Type '@Arcli alert #sales if signups < 500' in plain English." },
+              { title: "Monitor", description: "The bot continually executes queries in the background, monitoring thresholds." },
+              { title: "Alert", description: "Instantly pushes a detailed chart and summary into the channel when triggered." }
+            ]
+          },
           interactionPurpose: "Demonstrate the ease of setting up an automated threshold alert directly via chat syntax.",
           intentServed: "Automation setup visualization for Operations and RevOps leads."
         }
@@ -656,9 +694,9 @@ LIMIT 5;`
           visualizationType: "ComparisonTable",
           columns: ["Feature", "Arcli (Slack/Teams Bot)", "Legacy BI (Scheduled Emails)"],
           rows: [
-            { feature: "Data Freshness", arcli: "Real-time query execution", competitor: "Stale at the time of sending" },
-            { feature: "Interactivity", arcli: "Reply in thread to drill-down", competitor: "Static PDF/Image" },
-            { feature: "Anomaly Detection", arcli: "Instant push notification", competitor: "Wait until next scheduled report" }
+            { category: "Data Freshness", arcliAdvantage: "Real-time query execution", legacy: "Stale at the time of sending" },
+            { category: "Interactivity", arcliAdvantage: "Reply in thread to drill-down", legacy: "Static PDF/Image" },
+            { category: "Anomaly Detection", arcliAdvantage: "Instant push notification", legacy: "Wait until next scheduled report" }
           ]
         }
       },

@@ -1,3 +1,5 @@
+// lib/seo/blended-roas-analytics.tsx
+
 /**
  * SEO v13 SYSTEM: Blended ROAS & Cross-Platform Analytics
  * * SERP Realism Layer: 
@@ -72,7 +74,21 @@ export const blendedRoasAnalyticsData = {
       type: "UIBlock",
       payload: {
         visualizationType: "ProgressiveChart",
-        dataMapping: "Diverging Bar Chart: 'Meta Claims (3.4x)' & 'Google Claims (2.1x)' vs 'Arcli True Omnichannel ROAS (1.8x)'.",
+        // [FIXED] Replaced string with proper object containing codeSnippet and governedOutputs arrays
+        dataMapping: {
+          title: "Attribution Illusion vs True ROAS",
+          description: "Diverging Bar Chart: 'Meta Claims (3.4x)' & 'Google Claims (2.1x)' vs 'Arcli True Omnichannel ROAS (1.8x)'.",
+          codeSnippet: {
+            filename: "roas_normalization.sql",
+            language: "sql",
+            code: "SELECT \n  SUM(revenue) / SUM(spend) AS true_roas \nFROM normalized_omnichannel_spend;"
+          },
+          governedOutputs: [
+            { label: "Meta Reported", value: "3.4x", status: "Inflated" },
+            { label: "Google Reported", value: "2.1x", status: "Overlapped" },
+            { label: "Arcli True ROAS", value: "1.8x", status: "Governed" }
+          ]
+        },
         interactionPurpose: "Visually expose the attribution illusion. Demonstrate why relying on siloed ad-platform data leads to double-counting and aggressive over-spending.",
         intentServed: "Commercial Investigation & Trust Building",
         contextText: "Platforms like Meta and Google both take credit for the exact same conversion, leading to double-counting. Arcli bypasses pixel attribution entirely, comparing normalized omnichannel spend directly against your source-of-truth transactional database (Shopify/Stripe)."
@@ -162,11 +178,12 @@ ORDER BY s.metric_date DESC;`
         description: "Why static reporting and pixel-based attribution tools fail modern performance marketing teams.",
         visualizationType: "ComparisonTable",
         columns: ["Capability", "Arcli AI Agents", "Static BI (Looker/Tableau)", "Attribution Tools (TripleWhale)"],
+        // [FIXED] Standardized Matrix keys to category, arcliAdvantage, and legacy
         rows: [
-          { feature: "Data Source Truth", arcli: "Server-side API Ledgers", competitor: "Batch ETL Data Warehouse", internal: "Fragile Browser Pixels (Blocked by iOS)" },
-          { feature: "Cross-Platform Normalization", arcli: "Automated via AI Semantic Engine", competitor: "Requires dedicated Data Engineer & dbt", internal: "Pre-set black-box formulas" },
-          { feature: "Ad-Hoc Deep Dives", arcli: "Instant via Chat & OmniInput UI", competitor: "Wait for data team Jira ticket", internal: "Rigid pre-built dashboard tables" },
-          { feature: "Custom Logic (e.g., Net Margin)", arcli: "Defined once globally in Semantic Layer", competitor: "Complex SQL views required per report", internal: "Limited to Gross Revenue estimates" }
+          { category: "Data Source Truth", arcliAdvantage: "Server-side API Ledgers", legacy: "Batch ETL Data Warehouse" },
+          { category: "Cross-Platform Normalization", arcliAdvantage: "Automated via AI Semantic Engine", legacy: "Requires dedicated Data Engineer & dbt" },
+          { category: "Ad-Hoc Deep Dives", arcliAdvantage: "Instant via Chat & OmniInput UI", legacy: "Wait for data team Jira ticket" },
+          { category: "Custom Logic (e.g., Net Margin)", arcliAdvantage: "Defined once globally in Semantic Layer", legacy: "Complex SQL views required per report" }
         ]
       }
     },

@@ -11,15 +11,17 @@ import { Database, Server } from 'lucide-react';
 
 export type UIBlock = {
   visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'DataRelationshipsGraph' | 'Cards' | 'AnalyticsDashboard';
-  dataMapping: string;
+  // V13 STRICT TYPING: dataMapping MUST be an object. Never a string.
+  dataMapping: Record<string, any>;
   interactionPurpose: string;
   intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
 };
 
 export type ComparisonBlock = {
-  target: string;
+  // V13 STRICT TYPING: Standardized prop keys for React Table Component mapping
+  category: string;
   arcliAdvantage: string;
-  legacyFlaw: string;
+  legacy: string;
 };
 
 export type QueryExamplesBlock = {
@@ -125,22 +127,42 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
     uiComponents: [
       {
         visualizationType: 'ProcessStepper',
-        dataMapping: 'Visualizing Zero-Data Movement Architecture (User Input -> LLM Logic -> Postgres Server -> Local Browser Rendering)',
+        dataMapping: {
+          title: "Zero-Data Movement Architecture",
+          steps: [
+            { title: "User Input", description: "Business user asks a plain-English question." },
+            { title: "LLM Logic", description: "Arcli uses schema metadata to compile dialect-perfect Postgres SQL." },
+            { title: "Postgres Server", description: "Query executes safely on your native Postgres read-replica." },
+            { title: "Local Browser Render", description: "Stateless JSON aggregate renders instantly in the client browser." }
+          ]
+        },
         interactionPurpose: 'Demonstrate how PII never leaves the client VPC',
         intentServed: 'How-to'
       },
       {
         visualizationType: 'ComparisonTable',
-        dataMapping: 'Arcli JSONB parsing vs Legacy ETL flattening',
+        dataMapping: {
+          title: "Data Agility Comparison",
+          rows: [
+            { category: "JSONB Extraction", arcliAdvantage: "On-the-fly conversational parsing", legacy: "Nightly scheduled flattening pipelines" },
+            { category: "Data Duplication", arcliAdvantage: "Zero (Compute in-place)", legacy: "Heavy (Move to Snowflake/Redshift)" },
+            { category: "Query Language", arcliAdvantage: "Natural English", legacy: "Strict SQL/LookML required" }
+          ]
+        },
         interactionPurpose: 'Provide visual contrast in time-to-insight',
         intentServed: 'Comparison'
       }
     ],
     comparisonData: [
       {
-        target: 'Legacy ETL Pipelines',
-        arcliAdvantage: 'Queries nested JSONB structures on the fly directly from the app schema.',
-        legacyFlaw: 'Requires brittle, nightly scheduled flattening pipelines to extract JSON keys.'
+        category: 'JSONB Data Parsing',
+        arcliAdvantage: 'Queries nested JSONB structures on the fly directly from the app schema via native `->>` operators.',
+        legacy: 'Requires brittle, nightly scheduled ETL flattening pipelines to extract JSON keys into columns.'
+      },
+      {
+        category: 'Data Storage Strategy',
+        arcliAdvantage: 'Zero data movement. Insights are computed natively inside your Postgres cluster.',
+        legacy: 'Massive egress fees to duplicate raw Postgres rows into third-party cloud data warehouses.'
       }
     ],
     useCases: {
@@ -279,16 +301,28 @@ FROM activity GROUP BY 1, 2 ORDER BY 1, 2;`
     uiComponents: [
       {
         visualizationType: 'DataRelationshipsGraph',
-        dataMapping: 'Visual representation of AI autonomously mapping foreign keys across a 5-table JOIN without human intervention',
-        interactionPurpose: 'Demonstrate semantic pathfinding capability',
+        dataMapping: {
+          title: "Autonomous Semantic Pathfinding",
+          traces: [
+            { phase: "Entity Mapping", durationMs: 14, log: "AI identified target tables: `users`, `orders`, `campaigns`." },
+            { phase: "Foreign Key Resolution", durationMs: 35, log: "Established multi-hop JOIN path via `acquisition_campaign_id`." },
+            { phase: "MySQL Compilation", durationMs: 120, log: "Generated optimized MySQL query utilizing explicit INNER JOINs." }
+          ]
+        },
+        interactionPurpose: 'Demonstrate semantic pathfinding capability and automated JOIN resolution',
         intentServed: 'Informational'
       }
     ],
     comparisonData: [
       {
-        target: 'Traditional BI Dashboards',
+        category: 'Schema Navigation',
+        arcliAdvantage: 'AI autonomously maps foreign keys and resolves multi-table JOINs dynamically.',
+        legacy: 'Requires engineers to manually define every relationship via LookML or YAML.'
+      },
+      {
+        category: 'Data Access',
         arcliAdvantage: 'Ad-hoc questioning allows unrestricted exploration across the entire schema.',
-        legacyFlaw: 'Limits users strictly to pre-defined widgets and filters explicitly created by analysts.'
+        legacy: 'Limits users strictly to pre-defined widgets and filters explicitly created by analysts.'
       }
     ],
     useCases: {
@@ -421,16 +455,28 @@ GROUP BY 1, 2;`
     uiComponents: [
       {
         visualizationType: 'ComparisonTable',
-        dataMapping: 'TCO Comparison Matrix: Arcli Direct-Query vs Modern Data Stack Cloud Egress Fees',
+        dataMapping: {
+          title: "TCO: Arcli Direct-Query vs Legacy BI Migration",
+          rows: [
+            { category: "Infrastructure Model", arcliAdvantage: "Utilize existing SQL Server compute", legacy: "Duplicate data to Snowflake/Redshift" },
+            { category: "Deployment Time", arcliAdvantage: "Minutes (Secure read-only connection)", legacy: "Months (ETL pipeline construction)" },
+            { category: "Language Support", arcliAdvantage: "Generates native T-SQL", legacy: "Proprietary DAX/MDX syntax lock-in" }
+          ]
+        },
         interactionPurpose: 'Prove financial advantage of avoiding data duplication',
         intentServed: 'Commercial Investigation'
       }
     ],
     comparisonData: [
       {
-        target: 'Proprietary Cloud BI (Looker/PowerBI)',
+        category: 'Architectural Footprint',
         arcliAdvantage: 'Operates directly on SQL Server without requiring a secondary data storage contract.',
-        legacyFlaw: 'Forces expensive data egress and locks your analytics logic into proprietary DAX/MDX syntax.'
+        legacy: 'Forces expensive data egress and locks your analytics logic into proprietary DAX/MDX syntax.'
+      },
+      {
+        category: 'Time to Insight',
+        arcliAdvantage: 'Instantly translates English into complex T-SQL to answer new business questions in seconds.',
+        legacy: 'Requires an engineer to write new T-SQL, build a view, and update a static dashboard.'
       }
     ],
     useCases: {

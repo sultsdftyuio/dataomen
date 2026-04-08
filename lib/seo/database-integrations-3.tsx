@@ -1,96 +1,16 @@
 import React from 'react';
 import { Database, Zap } from 'lucide-react';
+import { SEOPageData } from './database-integrations-1';
 
 /**
- * SEOPageData Interface - V13 SYSTEM ARCHITECTURE
- * Systematically built for Compounding Authority, SERP Domination, and UI-Driven Intelligence.
- * Incorporates Conversion Engines, Structured Data, and strict E-E-A-T standards.
+ * SEO v13 SYSTEM: Database Integrations Part 3 (Oracle & ClickHouse)
+ * * SERP Realism Layer: 
+ * - Target: Position 1-3 for "Oracle AI Analytics", "ClickHouse SQL generator".
+ * * Architecture:
+ * - Refactored to V13 strict TypeScript `SEOPageData` schema.
+ * - Deep schema.org integration for Rich Snippets.
+ * - Massive Information Gain via concrete SQL examples proving dialect-specific expertise (PL/SQL & ClickHouse functions).
  */
-
-// --- BLOCK COMPOSITION SYSTEM ---
-
-export type UIBlock = {
-  visualizationType: 'ComparisonTable' | 'MetricsChart' | 'ProcessStepper' | 'DataRelationshipsGraph' | 'Cards' | 'AnalyticsDashboard';
-  dataMapping: string;
-  interactionPurpose: string;
-  intentServed: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
-};
-
-export type ComparisonBlock = {
-  target: string;
-  arcliAdvantage: string;
-  legacyFlaw: string;
-};
-
-export type QueryExamplesBlock = {
-  title: string;
-  complexity: 'Surface' | 'Intermediate' | 'Deep';
-  intentCoverage: 'Informational' | 'Commercial Investigation' | 'Comparison' | 'How-to';
-  businessQuestion: string;
-  businessOutcome: string;
-  sqlSnippet?: string; 
-};
-
-export type KeywordAnchorBlock = {
-  primaryIntent: string;
-  secondaryIntents: string[];
-  serpRealisticTarget: 'Long-tail' | 'Primary Volume' | 'Semantic Gap';
-};
-
-export type UseCaseBlock = {
-  workflowBefore: string[];
-  workflowAfter: string[];
-  businessValueMetrics: {
-    label: string;
-    value: string;
-    description: string;
-  }[];
-};
-
-// --- CORE SYSTEM ARCHITECTURE ---
-
-export type SEOPageData = {
-  type: 'integration';
-  title: string;
-  description: string;
-  searchIntentMapping: KeywordAnchorBlock;
-  h1: string;
-  subtitle: string;
-  icon: React.ReactElement;
-  contrarianStatement: string;
-  
-  // V13 CONVERSION ENGINE
-  conversionCTA: {
-    primaryLabel: string;
-    primaryHref: string;
-    secondaryLabel: string;
-  };
-
-  decisionTrigger: {
-    headline: string;
-    bullets: string[];
-  };
-  useCases: UseCaseBlock;
-  trustAndSecurity: {
-    principle: string;
-    howWeDeliver: string;
-  }[];
-  performanceHighlights: {
-    metric: string;
-    description: string;
-  }[];
-  analyticalScenarios: QueryExamplesBlock[];
-  comparisonData: ComparisonBlock[];
-  uiComponents: UIBlock[];
-  
-  // V13 STRUCTURED DATA
-  faqs: { q: string; a: string; intent: string; schemaEnabled: boolean }[];
-  
-  // V13 INTERNAL LINKING ENGINE
-  relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
-};
-
-// --- CONTENT ENGINE EXPORT ---
 
 export const databaseIntegrationsPart3: Record<string, SEOPageData> = {
   'oracle-ai-analytics': {
@@ -125,22 +45,42 @@ export const databaseIntegrationsPart3: Record<string, SEOPageData> = {
     uiComponents: [
       {
         visualizationType: 'ProcessStepper',
-        dataMapping: 'Zero-Data Movement Flow: Natural Language -> Metadata Map -> PL/SQL Generation -> Local Oracle Execution -> Browser Render',
+        dataMapping: {
+          title: "Secure Zero-Data Movement Flow",
+          steps: [
+            { title: "Natural Language", description: "Executive asks: 'Show me Q3 operating expenses by department.'" },
+            { title: "Metadata Map", description: "Arcli reads Oracle schema structure (No PII ingested)." },
+            { title: "PL/SQL Generation", description: "AI authors optimized PL/SQL utilizing SYSDATE and Partitions." },
+            { title: "Local Oracle Execution", description: "Query runs inside your VPC. Stateless aggregate renders in browser." }
+          ]
+        },
         interactionPurpose: 'Demonstrate VPC isolation and architectural security to CISOs',
         intentServed: 'How-to'
       },
       {
         visualizationType: 'Cards',
-        dataMapping: 'Cryptographic Audit Log Interface Mockup',
+        dataMapping: {
+          title: "Cryptographic Audit Log Example",
+          cards: [
+            { title: "User Context", content: "Identity: CFO (OAuth Passthrough), Role: Finance_Read_Only" },
+            { title: "Generated PL/SQL", content: "SELECT department, SUM(expense) FROM finance_ledger..." },
+            { title: "Execution Status", content: "Hash: 8f4e2a... SUCCESS (1.2s)" }
+          ]
+        },
         interactionPurpose: 'Prove governance and exact query transparency',
         intentServed: 'Commercial Investigation'
       }
     ],
     comparisonData: [
       {
-        target: 'Cloud Data Warehousing (Snowflake/Redshift migration)',
-        arcliAdvantage: 'Operates directly on existing Oracle instances, delivering AI analytics with zero egress costs or migration risks.',
-        legacyFlaw: 'Requires multi-year, multi-million dollar lift-and-shift operations just to utilize modern AI BI features.'
+        category: 'Data Strategy',
+        arcliAdvantage: 'Operates directly on existing Oracle instances, delivering AI analytics with zero egress costs.',
+        legacy: 'Requires multi-year, multi-million dollar lift-and-shift migration to Snowflake/Redshift.'
+      },
+      {
+        category: 'Dialect Expertise',
+        arcliAdvantage: 'Expertly generates Oracle PL/SQL, natively understanding SYSDATE, TRUNC, and specific window functions.',
+        legacy: 'Generic SQL generators hallucinate Postgres syntax, failing to execute on Oracle.'
       }
     ],
     useCases: {
@@ -283,22 +223,44 @@ FETCH FIRST 5 ROWS ONLY;`
     uiComponents: [
       {
         visualizationType: 'MetricsChart',
-        dataMapping: 'Query Latency Comparison: Traditional BI vs Arcli ClickHouse Pushdown (Sub-second)',
+        dataMapping: {
+          title: "Query Latency Comparison",
+          codeSnippet: {
+            language: "sql",
+            code: "SELECT toStartOfHour(event_time) AS hour, countIf(event_type = 'error') FROM telemetry..."
+          },
+          governedOutputs: [
+            { label: "Traditional BI Over JDBC", value: "32.4s", status: "trend-up" },
+            { label: "Arcli ClickHouse Native", value: "0.4s", status: "trend-down" }
+          ]
+        },
         interactionPurpose: 'Visually prove the speed advantage of direct query execution',
         intentServed: 'Comparison'
       },
       {
         visualizationType: 'DataRelationshipsGraph',
-        dataMapping: 'Unwrapping ClickHouse Array and Tuple types into flat analytical dimensions',
+        dataMapping: {
+          title: "Streaming Array Unwrapping",
+          traces: [
+            { phase: "User Prompt", durationMs: 0, log: "Count errors by nested API endpoint." },
+            { phase: "Schema Vector Match", durationMs: 45, log: "Identified `tags` as an Array(Tuple(String, String))." },
+            { phase: "Dialect Generation", durationMs: 120, log: "Injected `arrayJoin` and `argMax` combinators." }
+          ]
+        },
         interactionPurpose: 'Demonstrate advanced technical handling of semi-structured streaming data',
         intentServed: 'How-to'
       }
     ],
     comparisonData: [
       {
-        target: 'Generic LLM SQL Generators',
+        category: 'Function Support',
         arcliAdvantage: 'Natively trained on ClickHouse dialect, correctly deploying functions like `arrayJoin`, `uniqExact`, and `toStartOfHour`.',
-        legacyFlaw: 'Attempts to use standard Postgres/MySQL window functions which execute poorly or error out entirely on ClickHouse.'
+        legacy: 'Attempts to use standard Postgres/MySQL window functions which execute poorly or error out entirely on ClickHouse.'
+      },
+      {
+        category: 'Cluster Stability',
+        arcliAdvantage: 'Automatically appends strict `max_execution_time` and memory constraint settings to every generated query.',
+        legacy: 'Uncapped ad-hoc queries frequently consume too much memory, threatening cluster stability.'
       }
     ],
     useCases: {

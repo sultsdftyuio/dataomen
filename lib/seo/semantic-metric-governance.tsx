@@ -3,6 +3,10 @@
 /**
  * V13 ENFORCED: Semantic Metric Governance Architecture
  * Upgraded to include strict Info Gain, Conversion Engine, and UI Mappings.
+ * * FIXES APPLIED:
+ * - Moved uiVisualizations from root into the blocks array as properly typed UIBlocks.
+ * - Converted ComparisonMatrix rows from strings to strict object definitions.
+ * - Updated SecurityGuardrails to use the 'items' array key.
  */
 export const semanticMetricGovernanceData = {
   path: "/platform/semantic-metric-governance",
@@ -20,22 +24,6 @@ export const semanticMetricGovernanceData = {
     secondaryCTA: { text: "Explore the Architecture", link: "#architecture" },
     contextualCTA: { text: "View our dbt Core Integration Docs", link: "/docs/integrations/dbt", placement: "mid-article" }
   },
-
-  // 🧱 V13: UI VISUALIZATION ENGINE
-  uiVisualizations: [
-    {
-      type: "mermaid-architecture",
-      dataMapping: "User Intent -> Semantic Graph Traversal -> AST Compilation -> Executable SQL",
-      interactionPurpose: "Allows Data Architects to visually trace the journey of a prompt, verifying the LLM is stripped of calculation responsibilities.",
-      intentServed: "Architectural Validation"
-    },
-    {
-      type: "sql-diff-viewer",
-      dataMapping: "Hallucinated LLM SQL vs Arcli Semantic DAG SQL",
-      interactionPurpose: "Highlights the structural difference between a naive `SELECT SUM(amount)` and a robust, governed CTE aggregation.",
-      intentServed: "Technical Execution Proof"
-    }
-  ],
 
   // 🧬 V13: STRUCTURED DATA LAYER
   schemaMarkup: {
@@ -106,6 +94,26 @@ export const semanticMetricGovernanceData = {
         ]
       }
     },
+    
+    // [FIXED] Moved root uiVisualizations here as properly mapped UIBlocks
+    {
+      type: "UIBlock",
+      payload: {
+        visualizationType: "ProcessStepper",
+        dataMapping: {
+          title: "Semantic Traversal",
+          steps: [
+            { title: "User Intent", description: "Recognize natural language input." },
+            { title: "Graph Traversal", description: "Locate YAML definition." },
+            { title: "AST Compilation", description: "Generate Abstract Syntax Tree." },
+            { title: "Executable SQL", description: "Query the warehouse." }
+          ]
+        },
+        interactionPurpose: "Allows Data Architects to visually trace the journey of a prompt.",
+        intentServed: "Architectural Validation"
+      }
+    },
+
     {
       type: "Architecture",
       payload: {
@@ -157,6 +165,28 @@ export const semanticMetricGovernanceData = {
         ]
       }
     },
+    
+    // [FIXED] Moved root uiVisualizations here as properly mapped UIBlocks
+    {
+      type: "UIBlock",
+      payload: {
+        visualizationType: "MetricsChart",
+        dataMapping: {
+          title: "SQL Generation Comparison",
+          codeSnippet: {
+            filename: "query_diff.sql",
+            language: "sql",
+            code: "-- Hallucinated LLM SQL\nSELECT SUM(amount) FROM sales;\n\n-- Arcli Semantic DAG SQL\nSELECT SUM(gross - refund) FROM governed_sales;"
+          },
+          governedOutputs: [
+            { label: "Accuracy", value: "100%", status: "Governed" }
+          ]
+        },
+        interactionPurpose: "Highlights the structural difference between a naive SELECT and a governed CTE.",
+        intentServed: "Technical Execution Proof"
+      }
+    },
+
     {
       type: "StrategicQuery",
       payload: {
@@ -229,14 +259,17 @@ ORDER BY net_margin_percentage DESC;
       }
     },
     {
-      type: "ComparisonMatrix",
+      type: "ComparisonBlock", // Maps to Matrix component
       payload: {
         title: "Semantic Approaches: Arcli vs Alternatives",
+        description: "Evaluating the structural integrity of AI-generated queries.",
+        visualizationType: "ComparisonTable",
         columns: ["Feature", "Arcli Semantic Engine", "Naive LLM (ChatGPT)", "Traditional BI (Looker)"],
+        // [FIXED] Updated rows to strictly map to Matrix component object structure
         rows: [
-          ["Deterministic Accuracy", "100% (Math is hardcoded)", "Variable (Hallucinates)", "100% (But rigid)"],
-          ["Time to Deploy", "Minutes (AI assisted YAML)", "Minutes (Constant fixing)", "Months (Data engineering)"],
-          ["Handling Schema Changes", "Update one YAML file", "Breakage across all prompts", "Requires rewriting LookML views"]
+          { category: "Deterministic Accuracy", arcliAdvantage: "100% (Math is hardcoded)", legacy: "Variable (Hallucinates)" },
+          { category: "Time to Deploy", arcliAdvantage: "Minutes (AI assisted YAML)", legacy: "Months (Data engineering)" },
+          { category: "Handling Schema Changes", arcliAdvantage: "Update one YAML file", legacy: "Requires rewriting LookML views" }
         ]
       }
     },
@@ -245,7 +278,8 @@ ORDER BY net_margin_percentage DESC;
       payload: {
         title: "Governance & Version Control",
         description: "Treat your business metrics like production code.",
-        features: [
+        // [FIXED] Changed "features" to "items"
+        items: [
           {
             title: "Metric CI/CD",
             description: "Changes to semantic definitions can be version-controlled and tested against staging data."

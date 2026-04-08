@@ -1,161 +1,105 @@
-// lib/seo/compliance-standards-1.tsx
-
 /**
- * SEO v13 SYSTEM: Compliance Standards (Part 1)
+ * SEO v13 SYSTEM: Compliance Standards (Part 2)
  * * SERP Realism Layer: 
- * - Target: Position 1 for "Zero Copy AI Analytics", "No ETL BI architecture", "AI query auditing", and "cryptographic query logging".
- * * Query Prioritization:
- * - Tier 1 (High Intent): "Zero copy analytics", "Decentralized AI BI"
- * - Tier 2 (Supporting): "Preventing AI data exfiltration", "SOC2 AI analytics"
- * * Enhancements: Deep schema.org integration, UI block security visualization specs, and concrete audit SQL comparisons.
+ * - Target: Position 1 for "SOC2 AI analytics", "HIPAA compliant AI BI", "Row-level security AI", "Identity passthrough AI query".
+ * * Strict Typing applied per Rule 21: dataMapping is strictly an object, rows use category/arcliAdvantage/legacy, SecurityGuardrails uses items.
  */
 
-export const complianceStandardsPart1 = {
-  "zero-copy-analytics": {
-    path: "/compliance/zero-copy-analytics",
+export const complianceStandardsPart2 = {
+  "soc2-hipaa-ai-analytics": {
+    path: "/compliance/soc2-hipaa",
     meta: {
-      title: "Zero Copy AI Analytics | Decentralized BI Platform | Arcli",
-      description: "The most secure way to analyze data is to never move it. Arcli’s zero-copy AI analytics platform generates federated queries directly inside your VPC.",
+      title: "SOC2 & HIPAA Compliant AI Analytics | Arcli",
+      description: "Deploy generative AI BI without risking PHI or PII exposure. Arcli's zero-data-movement architecture is natively built for SOC2, HIPAA, and GDPR compliance.",
       keywords: [
-        "Zero copy analytics", 
-        "Federated query AI", 
-        "Decentralized AI BI", 
-        "Zero data movement BI", 
-        "No ETL analytics AI"
+        "SOC2 compliant AI analytics", 
+        "HIPAA compliant AI BI", 
+        "Healthcare AI analytics", 
+        "Secure generative BI", 
+        "No PHI exfiltration AI"
       ],
       serpRealism: {
-        primaryTarget: "Zero Copy AI Analytics",
-        difficulty: "Medium",
-        intent: "Commercial Investigation & Architectural Information"
+        primaryTarget: "HIPAA compliant AI BI",
+        difficulty: "Medium-High",
+        intent: "Commercial / Trust & Safety Verification"
       }
     },
     blocks: [
       {
         type: "Hero",
         payload: {
-          badge: "Architectural Standard",
-          title: "The Best Way to Secure Data is to Never Move It.",
-          subtitle: "Every time you copy data from your warehouse to a BI vendor's cloud, you multiply your attack surface. Arcli is a decentralized, Zero-Copy AI orchestrator that sends logic to your data, not your data to our logic.",
-          primaryCta: { label: "View Architectural Diagram", href: "/security" },
-          secondaryCta: { label: "Start Free Trial", href: "/register" },
+          badge: "Enterprise Security",
+          title: "Generative AI Built for Healthcare & Finance.",
+          subtitle: "Stop sending your most sensitive data to vendor clouds. Arcli translates natural language into SQL using only your schema metadata. The actual rows of PII and PHI never leave your infrastructure.",
+          primaryCta: { label: "Read the Whitepaper", href: "/resources/security-whitepaper" },
+          secondaryCta: { label: "Contact Sales", href: "/contact" },
           trustSignals: [
-            "0 ETL Pipelines Required",
-            "100% Compute in Your VPC",
-            "0MB Data Exfiltrated"
+            "SOC2 Type II Certified",
+            "HIPAA Compliant Architecture",
+            "GDPR / CCPA Ready"
           ]
         }
       },
       {
         type: "KeywordAnchorBlock",
         payload: {
-          heading: "Eliminating the Analytics Attack Surface",
-          text: "Your cloud data warehouse is incredibly secure. The centralized BI tools you connect to it are the vulnerability. Vendors demand that you extract, transform, load, and cache your most sensitive data onto their proprietary servers just to render a bar chart. Arcli fundamentally rejects this model via **Zero-Copy Analytics**. As a **decentralized AI BI** platform, Arcli translates natural language into dialect-perfect **SQL**, dispatching **federated queries** directly to your infrastructure and rendering the stateless result in milliseconds.",
-          semanticEntities: ["Zero-Copy Analytics", "decentralized AI BI", "SQL", "federated queries", "stateless result", "ETL Pipelines"]
+          heading: "How Arcli Solves the LLM Privacy Paradox",
+          text: "The greatest risk in deploying **Healthcare AI analytics** is the inadvertent exposure of Protected Health Information (PHI). Generic AI tools ingest raw data to answer questions, creating massive compliance liabilities. Arcli fundamentally bypasses this. To deliver **HIPAA compliant AI BI**, Arcli only sends structural database metadata (table schemas, data types) to the LLM. The AI generates dialect-perfect SQL, which is executed securely inside your VPC. Your raw data never touches the generative model, ensuring automated **SOC2 compliant AI analytics** out of the box.",
+          semanticEntities: ["Healthcare AI analytics", "PHI", "HIPAA compliant AI BI", "database metadata", "VPC", "SOC2 compliant AI analytics"]
         }
       },
       {
         type: "UIBlock",
         payload: {
           visualizationType: "SecurityFlowchart",
-          dataMapping: "Legacy BI (Warehouse -> ETL -> Vendor Cloud -> Cache -> User) vs Arcli Zero-Copy (User Prompt -> Arcli AI Generates SQL -> Warehouse Computes -> Stateless JSON to Browser).",
-          interactionPurpose: "Step-by-step visualization of how a query is compiled without moving data, explicitly showing the truncation of the attack surface.",
-          intentServed: "Architectural Clarity & Trust Building for Enterprise Architects."
+          dataMapping: {
+            title: "Metadata-Only AI Generation Flow",
+            steps: [
+              { title: "User Prompt", description: "A clinician asks: 'What is the average recovery time for knee replacements this quarter?'" },
+              { title: "Metadata Context", description: "Arcli sends the prompt + database schema (NO patient data) to the LLM." },
+              { title: "SQL Generation", description: "The LLM returns an optimized SQL query designed for the hospital's specific warehouse." },
+              { title: "VPC Execution", description: "The SQL executes entirely within the hospital's secure network. PHI never leaves." }
+            ]
+          },
+          interactionPurpose: "Step-by-step technical proof that raw data is decoupled from the language model, satisfying InfoSec auditor requirements.",
+          intentServed: "Architectural Validation for InfoSec & Compliance Teams."
         }
       },
       {
-        type: "StrategicQuery",
+        type: "InformationGain",
         payload: {
-          title: "Federated Query Generation: Joining DB to S3",
-          description: "Zero-copy means querying data exactly where it lives. Arcli excels at generating complex federated queries (e.g., Snowflake External Tables or Postgres FDW), allowing the AI to join structured warehouse data with raw S3 data seamlessly without writing an ETL job.",
-          businessOutcome: "Allows analysts to instantly join curated customer dimensions in the warehouse with raw, unstructured JSON clickstream data in an S3 data lake, entirely bypassing data duplication costs.",
-          language: "sql",
-          code: `
--- AI Generated: Zero-Copy Federated Query
--- Dialect: Snowflake (External Tables)
-SELECT 
-    c.customer_segment,
-    COUNT(DISTINCT e.user_id) AS active_users,
-    SUM(TRY_CAST(e.value:purchase_amount::STRING AS FLOAT)) AS total_raw_revenue
-FROM 
-    production.core.customers c
-JOIN 
-    data_lake.s3_external.raw_clickstream e 
-    ON c.customer_id = e.value:user_id::STRING
-WHERE 
-    e.event_type = 'checkout_success'
-    AND e.event_date >= DATEADD(month, -1, CURRENT_DATE())
-    AND c.status = 'ACTIVE'
-GROUP BY 
-    c.customer_segment
-ORDER BY 
-    total_raw_revenue DESC;`
+          uniqueInsight: "Most competitors attempt to mask or redact PII/PHI before sending it to an LLM. This is computationally expensive and error-prone. Arcli simply doesn't send the data at all. By generating the query rather than analyzing the data, compliance is architecturally guaranteed, not algorithmically approximated.",
+          structuralAdvantage: "Pivots the conversation from 'How strong is your encryption?' to 'We don't hold your data to begin with.'"
         }
       },
       {
         type: "ComparisonBlock",
         payload: {
-          title: "Centralized BI vs. Zero-Copy Architecture",
-          description: "The hidden compliance costs of traditional analytics architectures.",
-          visualizationType: "ComparisonTable",
-          columns: ["Security Vector", "Arcli (Zero-Copy AI)", "Traditional Cloud BI"],
+          title: "Compliance by Design vs. Compliance by Patchwork",
+          description: "Why Arcli clears InfoSec reviews months faster than generic BI wrappers.",
+          visualizationType: "ComparisonMatrix",
+          columns: ["Compliance Vector", "Arcli (Zero-Copy)", "Legacy Cloud BI"],
           rows: [
-            { feature: "Data Residency", arcli: "Remains in Client VPC", competitor: "Duplicated to Vendor Cloud" },
-            { feature: "Compute Location", arcli: "Client's Native Warehouse", competitor: "Vendor's Shared Infrastructure" },
-            { feature: "Caching", arcli: "Stateless (In-memory render only)", competitor: "Disk-level caching required" },
-            { feature: "Identity Passthrough", arcli: "Native OAuth / JWT to DB", competitor: "Service Account Bottleneck" }
-          ]
-        }
-      },
-      {
-        type: "UseCaseBlock",
-        payload: {
-          title: "Security Guardrails in Action",
-          scenarios: [
-            {
-              title: "Identity Provider (IdP) Passthrough",
-              description: "Arcli passes the end-user's identity directly through to the database connection layer via OAuth or JWT. If a user tries to ask the AI for data they cannot access in the database, the query fails at the warehouse level. Arcli cannot bypass your DB permissions."
-            },
-            {
-              title: "Stateless Chart Rendering",
-              description: "When your database returns the results of an AI-generated query, Arcli only holds the lightweight JSON aggregate in memory for the milliseconds required to render the UI visualization. Nothing is written to disk."
-            }
-          ]
-        }
-      },
-      {
-        type: "InternalLinkingBlock",
-        payload: {
-          title: "Explore the Decentralized Engine",
-          links: [
-            { label: "Snowflake Integration", href: "/integrations/snowflake", description: "Learn how we leverage Snowflake's virtual warehouses." },
-            { label: "BigQuery Integration", href: "/integrations/bigquery", description: "Zero-copy analytics on Google Cloud." },
-            { label: "Security & Trust Center", href: "/security", description: "Review our SOC2 and GDPR compliance." }
-          ]
-        }
-      },
-      {
-        type: "FAQs",
-        payload: {
-          title: "Zero-Copy Architecture FAQs",
-          faqs: [
-            { question: "If Arcli is Zero-Copy, how does the AI know what my data means?", answer: "We perform a one-time sync of your database schema (metadata). This includes table names, column names, data types, and foreign key relationships. We vectorize this metadata to ground the LLM, but we never ingest the actual rows of data." },
-            { question: "Does Zero-Copy mean queries are slower?", answer: "Not necessarily. While we don’t cache data, we leverage the massive parallel processing power of your cloud warehouse (like BigQuery or Snowflake). Because we write highly optimized, dialect-specific SQL, execution times are typically sub-second." },
-            { question: "Can Arcli connect to on-premises databases without a VPN?", answer: "For on-premises databases behind a strict firewall, we provide a lightweight, open-source Arcli Agent. It runs inside your network, establishing a secure outbound-only WebSocket tunnel to receive compiled SQL from the Orchestrator." }
+            { category: "PHI/PII Movement", arcliAdvantage: "Remains inside Client VPC", legacy: "Duplicated to Vendor Servers" },
+            { category: "LLM Data Exposure", arcliAdvantage: "Schema Metadata Only", legacy: "Raw Data Ingested for Context" },
+            { category: "Data Residency", arcliAdvantage: "Native to Client Cloud Region", legacy: "Subject to Vendor Cloud Region" },
+            { category: "Audit Trail", arcliAdvantage: "Cryptographic SQL Logging", legacy: "Application-level clicks only" }
           ]
         }
       },
       {
         type: "StructuredDataBlock",
         payload: {
-          schemaType: ["SoftwareApplication", "FAQPage"],
+          schemaType: ["SoftwareApplication", "WebPage"],
           jsonLd: {
             "@context": "https://schema.org",
             "@graph": [
               {
                 "@type": "SoftwareApplication",
-                "name": "Arcli Zero-Copy Analytics",
+                "name": "Arcli Healthcare AI Analytics",
                 "applicationCategory": "BusinessApplication",
-                "description": "Decentralized AI analytics platform utilizing federated query generation and zero-data-movement architectures."
+                "securityClearance": "SOC2, HIPAA",
+                "description": "HIPAA and SOC2 compliant AI analytics platform utilizing metadata-only LLM context generation."
               }
             ]
           }
@@ -164,150 +108,138 @@ ORDER BY
     ]
   },
 
-  "query-auditing-governance": {
-    path: "/compliance/query-auditing",
+  "rbac-row-level-security-ai": {
+    path: "/compliance/row-level-security",
     meta: {
-      title: "AI Query Auditing & Data Governance Analytics | Arcli",
-      description: "Maintain absolute control over your AI analytics. Arcli provides cryptographic query logging, granular RBAC, and strict data governance for enterprise AI.",
+      title: "AI Analytics with Row-Level Security & RBAC | Arcli",
+      description: "Bring your own database permissions. Arcli natively inherits your Row-Level Security (RLS) and Role-Based Access Control (RBAC) via identity passthrough.",
       keywords: [
-        "AI query auditing", 
-        "Cryptographic query logging", 
-        "Data governance AI analytics", 
-        "AI compliance logging", 
-        "Secure AI BI audit"
+        "AI analytics row level security", 
+        "RBAC AI BI", 
+        "Identity passthrough AI query", 
+        "Secure AI tenant architecture", 
+        "Database RLS AI"
       ],
       serpRealism: {
-        primaryTarget: "AI query auditing",
+        primaryTarget: "AI analytics row level security",
         difficulty: "High",
-        intent: "Commercial Investigation & Compliance Validation"
+        intent: "Technical Investigation / Architecture Feasibility"
       }
     },
     blocks: [
       {
         type: "Hero",
         payload: {
-          badge: "Governance & Compliance",
-          title: "Know Exactly What the AI Asked Your Database.",
-          subtitle: "Black-box AI is a compliance nightmare. Arcli provides a transparent, immutable audit trail of every natural language request, the exact SQL generated, and the user identity that executed it.",
-          primaryCta: { label: "Schedule a Security Demo", href: "/book-demo" },
-          secondaryCta: { label: "View Trust Center", href: "/security" },
+          badge: "Identity & Access",
+          title: "The AI Only Sees What the User Sees.",
+          subtitle: "Stop rebuilding permissions in your BI layer. Arcli utilizes Identity Passthrough to ensure the AI inherently respects your database's existing Row-Level Security (RLS) and RBAC policies.",
+          primaryCta: { label: "Explore the Architecture", href: "/docs/security/rls" },
+          secondaryCta: { label: "Start Free Trial", href: "/register" },
           trustSignals: [
-            "100% Cryptographic Auditing",
-            "Native SIEM Webhooks",
-            "SOC2 & GDPR Compliant Architecture"
+            "Native PostgreSQL RLS",
+            "Snowflake Secure Views",
+            "Okta / Azure AD Integrated"
           ]
         }
       },
       {
         type: "KeywordAnchorBlock",
         payload: {
-          heading: "The End of Black-Box Analytics",
-          text: "If you cannot prove exactly how the AI arrived at an answer, you cannot use it in the enterprise. Many 'Chat with Data' tools obscure the underlying logic, leaving compliance teams blind to potential data exposure. Arcli is fundamentally transparent: the compiled SQL is always visible, and we enforce **AI query auditing** through **cryptographic query logging**. Every interaction is treated as an auditable artifact, allowing organizations to maintain strict **data governance** while unlocking the speed of generative **AI analytics**.",
-          semanticEntities: ["AI query auditing", "cryptographic query logging", "data governance", "AI analytics", "Black-Box Analytics", "SOC2"]
+          heading: "Inherited Security, Zero Duplication",
+          text: "Managing permissions across multiple tools creates security drift. If a user shouldn't see European sales data in the database, the AI shouldn't be able to query it either. Arcli solves this by supporting strict **AI analytics row level security**. By utilizing an **identity passthrough AI query** execution model, Arcli impersonates the requesting user at the database level. This means your native database **RBAC AI BI** configurations are enforced automatically. If the LLM hallucinates a query for restricted data, the database simply rejects it.",
+          semanticEntities: ["Row level security", "Identity passthrough", "RBAC", "security drift", "AI query execution", "database permissions"]
         }
       },
       {
         type: "UIBlock",
         payload: {
-          visualizationType: "DataRelationshipsGraph",
-          dataMapping: "User Prompt -> AI Generates SQL -> Hashed & Signed Payload -> Warehouse Execution -> Webhook to Splunk/Datadog.",
-          interactionPurpose: "Illustrate the flow of an audit log from generation to SIEM webhook ingestion, proving non-repudiation.",
-          intentServed: "Operational Workflow Visualization for SecOps."
+          visualizationType: "ProcessStepper",
+          dataMapping: {
+            title: "Identity Passthrough Execution",
+            steps: [
+              { title: "SSO Authentication", "description": "User logs into Arcli via Okta/Azure AD. Arcli receives a JWT." },
+              { title: "Query Generation", "description": "User asks a question. AI generates standard SQL." },
+              { title: "Connection Impersonation", "description": "Arcli passes the JWT/Role to the database (e.g., Snowflake 'USE ROLE analyst_eu')." },
+              { title: "Native RLS Enforcement", "description": "The database executes the query, automatically filtering rows the user isn't authorized to see." }
+            ]
+          },
+          interactionPurpose: "Visualizes the delegation of authorization from the Arcli application layer down to the hardened database layer.",
+          intentServed: "Technical architectural validation for Data Engineers."
         }
       },
       {
         type: "StrategicQuery",
         payload: {
-          title: "Auditing the Audit Logs (Anomaly Detection)",
-          description: "Because Arcli logs all its own activity to an accessible schema, Security Operations (SecOps) teams can use Arcli’s AI to analyze Arcli’s own usage logs. This query identifies mass-extraction attempts.",
-          businessOutcome: "Instantly identifies any internal users who have repeatedly executed AI queries that returned over 1 million rows of PII data within the last 7 days, flagging potential data exfiltration attempts.",
+          title: "How Arcli Triggers PostgreSQL RLS",
+          description: "When Arcli executes a generated query against a Postgres database, it seamlessly injects the authenticated user's context into the session parameters before running the generated SQL. This guarantees absolute enforcement of your predefined Row-Level Security policies.",
+          businessOutcome: "Eliminates the need to maintain redundant permission logic in the BI tool. Security policies are defined once in the database and inherited globally.",
           language: "sql",
           code: `
--- AI Generated: SecOps Audit Anomaly Detection
--- Dialect: PostgreSQL
+-- Arcli Execution Wrapper (Identity Passthrough)
+BEGIN;
+
+-- 1. Set the local role to the authenticated Arcli user
+SET LOCAL ROLE arcli_standard_user;
+
+-- 2. Inject the specific user's identity into the session context
+SET LOCAL request.jwt.claim.email = 'john.doe@company.com';
+SET LOCAL request.jwt.claim.region = 'EMEA';
+
+-- 3. Execute the AI-Generated Query
+-- (RLS automatically filters rows where region != 'EMEA')
 SELECT 
-    user_email,
-    COUNT(query_id) AS total_queries_executed,
-    COUNT(CASE WHEN result_row_count > 1000000 THEN 1 END) AS massive_extractions,
-    MAX(executed_at) AS last_active
+    product_line,
+    SUM(revenue) as total_revenue
 FROM 
-    arcli_system.audit_logs
+    production.sales_data
 WHERE 
-    executed_at >= CURRENT_DATE - INTERVAL '7 days'
-    AND database_target = 'production_pii_vault'
+    quarter = 'Q3 2024'
 GROUP BY 
-    user_email
-HAVING 
-    COUNT(CASE WHEN result_row_count > 1000000 THEN 1 END) > 5
-ORDER BY 
-    massive_extractions DESC;`
+    product_line;
+
+COMMIT;`
         }
       },
       {
-        type: "ComparisonBlock",
+        type: "UIBlock",
         payload: {
-          title: "Data Governance: Arcli vs Status Quo",
-          description: "Comparing the auditability of generative analytics layers.",
-          visualizationType: "ComparisonTable",
-          columns: ["Governance Feature", "Arcli (Transparent AI)", "Generic LLM Wrappers"],
-          rows: [
-            { feature: "Query Provenance", arcli: "Cryptographically Hashed SQL", competitor: "Obscured 'Black-Box' Logic" },
-            { feature: "SIEM Integration", arcli: "Native Webhooks (Datadog/Splunk)", competitor: "CSV Export Only" },
-            { feature: "RBAC Granularity", arcli: "Okta/Azure AD Group Mapping", competitor: "App-level only" },
-            { feature: "Data Masking", arcli: "Automated PII Regex Redaction", competitor: "Manual or Non-existent" }
-          ]
-        }
-      },
-      {
-        type: "UseCaseBlock",
-        payload: {
-          title: "The Arcli Governance Framework",
-          scenarios: [
-            {
-              title: "Cryptographic Provenance for Auditors",
-              description: "Every query executed by Arcli is hashed and logged with a tamper-evident timestamp. Auditors can verify that the generated SQL was not altered post-execution, ensuring absolute non-repudiation."
-            },
-            {
-              title: "Automated PII Masking",
-              description: "In addition to relying on your database's inherent Data Masking policies, Arcli provides an application-level regex masking engine that automatically redacts SSNs, credit cards, or email addresses from the visualized UI results."
-            }
-          ]
+          visualizationType: "SecurityGuardrails",
+          dataMapping: {
+            title: "Zero-Trust Access Controls",
+            items: [
+              { title: "OAuth / JWT Passthrough", description: "Pass end-user identities directly to Snowflake, BigQuery, and Databricks." },
+              { title: "Native RLS Inheritance", description: "Zero permission replication required. RLS is enforced at the compute layer." },
+              { title: "Dynamic Data Masking", description: "Compatible with database-native dynamic column masking for PII fields." },
+              { title: "Query Execution Timeouts", description: "Hard limits on execution times and compute cluster sizes per RBAC role." }
+            ]
+          },
+          interactionPurpose: "High-contrast scanning of key security features.",
+          intentServed: "Rapid qualification by security engineering teams."
         }
       },
       {
         type: "InternalLinkingBlock",
         payload: {
-          title: "Secure Your Analytics Workflow",
+          title: "Related Architecture Deep Dives",
           links: [
-            { label: "Semantic Metric Governance", href: "/use-cases/semantic-metric-governance", description: "How we ensure mathematical accuracy across the organization." },
-            { label: "PostgreSQL Integration", href: "/integrations/postgresql", description: "Connect securely via SSL/TLS." },
-            { label: "Book a Security Review", href: "/book-demo", description: "Talk directly to our engineering team." }
-          ]
-        }
-      },
-      {
-        type: "FAQs",
-        payload: {
-          title: "Compliance & Auditing FAQs",
-          faqs: [
-            { question: "How long does Arcli retain audit logs?", answer: "By default, Arcli retains detailed audit logs for 90 days within our managed cloud. However, Enterprise customers can configure automated daily exports to their own S3 buckets for infinite, compliant retention." },
-            { question: "Does Arcli send our database schema to OpenAI?", answer: "Arcli supports an agnostic LLM routing layer. For highly sensitive schemas, you can route embedding and generation requests exclusively to private, zero-retention models hosted on Azure OpenAI, AWS Bedrock, or even local Llama 3 instances within your VPC." },
-            { question: "Can we trigger alerts based on Arcli audit logs?", answer: "Yes. By streaming Arcli audit logs to your SIEM via webhooks, you can set up automated alerts in Splunk or Datadog if a user requests data outside their normal behavioral baseline." }
+            { label: "Zero-Copy Analytics", href: "/compliance/zero-copy-analytics", description: "Why data movement is the enemy of security." },
+            { label: "AI Query Auditing", href: "/compliance/query-auditing", description: "Cryptographic logging of all AI activity." },
+            { label: "PostgreSQL Setup Guide", href: "/docs/integrations/postgresql/rls", description: "How to configure RLS for Arcli." }
           ]
         }
       },
       {
         type: "StructuredDataBlock",
         payload: {
-          schemaType: ["SoftwareApplication", "FAQPage"],
+          schemaType: ["Article", "TechArticle"],
           jsonLd: {
             "@context": "https://schema.org",
             "@graph": [
               {
-                "@type": "SoftwareApplication",
-                "name": "Arcli AI Data Governance",
-                "applicationCategory": "SecurityApplication",
-                "description": "Enterprise AI analytics platform featuring cryptographic query logging, SIEM integration, and zero-trust data governance."
+                "@type": "TechArticle",
+                "headline": "Implementing Row-Level Security in AI Analytics",
+                "description": "Detailed guide on how Arcli utilizes Identity Passthrough to enforce native database Row-Level Security (RLS) in Generative AI BI workflows.",
+                "proficiencyLevel": "Expert"
               }
             ]
           }

@@ -56,7 +56,14 @@ export const competitorComparisonsPart1 = {
         type: "UIBlock",
         payload: {
           visualizationType: "ProcessStepper",
-          dataMapping: "Tableau: Jira Ticket -> Analyst assigns -> Extract Data -> Build LODs -> Publish to Server -> PM Views. | Arcli: PM asks plain English -> AI queries DB -> Renders Chart instantly.",
+          // [FIXED] Replaced string with proper object containing steps array
+          dataMapping: {
+            title: "Traditional BI vs AI Workflow",
+            steps: [
+              { title: "Tableau Workflow", description: "Jira Ticket -> Analyst assigns -> Extract Data -> Build LODs -> Publish to Server -> PM Views." },
+              { title: "Arcli Workflow", description: "PM asks plain English -> AI queries DB -> Renders Chart instantly." }
+            ]
+          },
           interactionPurpose: "Visually contrast the time-to-insight bottleneck of traditional BI vs AI-driven workflows.",
           intentServed: "Commercial Investigation & Operational Efficiency"
         }
@@ -201,7 +208,14 @@ GROUP BY 1, 2 ORDER BY 1, 2;`
         type: "UIBlock",
         payload: {
           visualizationType: "ArchitectureDiagram",
-          dataMapping: "Power BI (Windows Desktop -> Gateway -> DAX Model -> Cloud Service) vs Arcli (Any Browser -> AI Semantic Router -> Live Cloud DB).",
+          // [FIXED] Replaced string with proper object containing steps array
+          dataMapping: {
+            title: "Architecture Comparison",
+            steps: [
+              { title: "Power BI", description: "Windows Desktop -> Gateway -> DAX Model -> Cloud Service" },
+              { title: "Arcli", description: "Any Browser -> AI Semantic Router -> Live Cloud DB" }
+            ]
+          },
           interactionPurpose: "Highlight the reduction in infrastructure bloat and OS dependencies.",
           intentServed: "Technical Architecture Comparison"
         }
@@ -333,7 +347,14 @@ Arcli Agent Action:
         type: "UIBlock",
         payload: {
           visualizationType: "ProcessStepper",
-          dataMapping: "Looker Workflow (Jira Ticket -> LookML Dev -> Pull Request -> Deploy -> Dashboard) vs Arcli Workflow (Ask Question -> AI Maps Schema -> Chart Renders).",
+          // [FIXED] Replaced string with proper object containing steps array
+          dataMapping: {
+            title: "Time to Insight Comparison",
+            steps: [
+              { title: "Looker Workflow", description: "Jira Ticket -> LookML Dev -> Pull Request -> Deploy -> Dashboard" },
+              { title: "Arcli Workflow", description: "Ask Question -> AI Maps Schema -> Chart Renders" }
+            ]
+          },
           interactionPurpose: "Highlight the drastic reduction in 'Time to Insight' by removing the mandatory engineering intervention layer.",
           intentServed: "Commercial Investigation & ROI Justification"
         }
@@ -425,7 +446,14 @@ Arcli Agent Action:
         type: "UIBlock",
         payload: {
           visualizationType: "SecurityFlowchart",
-          dataMapping: "Domo (Client DB -> ETL Pipeline -> Domo Cloud Storage -> Rendering) vs Arcli (Arcli AI generates SQL -> Client DB executes -> Results stream to Browser).",
+          // [FIXED] Replaced string with proper object containing steps array
+          dataMapping: {
+            title: "Data Movement Comparison",
+            steps: [
+              { title: "Domo", description: "Client DB -> ETL Pipeline -> Domo Cloud Storage -> Rendering" },
+              { title: "Arcli", description: "Arcli AI generates SQL -> Client DB executes -> Results stream to Browser" }
+            ]
+          },
           interactionPurpose: "Demonstrate the reduced attack surface and compliance benefits of a stateless architecture.",
           intentServed: "Security & Compliance Evaluation"
         }

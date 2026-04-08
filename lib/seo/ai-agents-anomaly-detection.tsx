@@ -74,7 +74,14 @@ export const aiAgentsAnomalyDetectionData = {
       type: "UIBlock",
       payload: {
         visualizationType: "AnalyticsDashboard",
-        dataMapping: "Time-series graph showing 'EU Stripe Conversions' hitting a 3-sigma drop, overlaid with an AI Chat Interface displaying root-cause: 'Drop correlated with 94% failure rate on 3D Secure Verification in Germany.'",
+        // [FIXED] Replaced string with the proper scenario object expected by the normalizer
+        dataMapping: {
+          title: "Anomaly Isolation Query",
+          description: "Time-series graph showing 'EU Stripe Conversions' hitting a 3-sigma drop.",
+          dialect: "SQL",
+          code: "-- AI isolated root cause\nSELECT * FROM eu_stripe_logs WHERE error = '3D Secure'",
+          businessOutcome: "Drop correlated with 94% failure rate on 3D Secure Verification in Germany."
+        },
         interactionPurpose: "Demonstrate the shift from seeing a line go down (symptom) to instantly receiving the localized reason (root-cause) without writing SQL.",
         intentServed: "Commercial Investigation & Actionable Insight",
         contextText: "When an anomaly triggers, the agent doesn't just send a generic alert. It autonomously executes dozens of downstream diagnostic queries against adjacent dimensional tables to isolate the exact cohort driving the failure."
@@ -170,11 +177,12 @@ ORDER BY z_score ASC;`
         description: "How Arcli's semantic agents compare to traditional monitoring approaches.",
         visualizationType: "ComparisonTable",
         columns: ["Capability", "Arcli AI Agents", "Traditional BI Alerts", "Custom Python Scripts"],
+        // [FIXED] Standardized Matrix keys to category, arcliAdvantage, and legacy
         rows: [
-          { feature: "Root-Cause Slicing", arcli: "Automated Decision-Tree Search", competitor: "None (Just sends the alert)", internal: "Requires heavy maintenance" },
-          { feature: "Semantic Awareness", arcli: "Governed by central definitions", competitor: "Siloed per dashboard", internal: "Prone to metric drift" },
-          { feature: "Setup Time", arcli: "Minutes (Natural Language)", competitor: "Hours (Complex UI builders)", internal: "Weeks (Dev sprints)" },
-          { feature: "Data Movement", arcli: "Zero-copy (Compute pushed down)", competitor: "Extracts to BI engine", internal: "Extracts to memory/Airflow" }
+          { category: "Root-Cause Slicing", arcliAdvantage: "Automated Decision-Tree Search", legacy: "None (Just sends the alert)" },
+          { category: "Semantic Awareness", arcliAdvantage: "Governed by central definitions", legacy: "Siloed per dashboard" },
+          { category: "Setup Time", arcliAdvantage: "Minutes (Natural Language)", legacy: "Hours (Complex UI builders)" },
+          { category: "Data Movement", arcliAdvantage: "Zero-copy (Compute pushed down)", legacy: "Extracts to BI engine" }
         ]
       }
     },
@@ -187,7 +195,8 @@ ORDER BY z_score ASC;`
       payload: {
         title: "Agent Boundaries & Data Security",
         description: "Giving AI access to your data requires enterprise-grade constraints. Arcli agents operate inside a heavily fortified, SOC2-compliant security perimeter.",
-        features: [
+        // [FIXED] Mapped array to strict 'items' key required by SecurityGuardrails
+        items: [
           {
             title: "Strict Row-Level Security (RLS)",
             description: "Agents inherit the exact permissions of the user querying them. Multi-tenant boundaries are strictly enforced at the query execution engine layer."

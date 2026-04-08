@@ -83,11 +83,23 @@ export type SEOPageData = {
   // V13 INTERNAL LINKING ENGINE
   relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
 
-  // Data structures for UIBlockMapper
-  deploymentMetrics?: { codeSnippet: { filename: string; code: string } };
-  stateFlowTraces?: { traces: { source: string; target: string; latency: string; status: string }[] };
+  // [FIX] Updated Data structures for UIBlockMapper to support required nested arrays
+  deploymentMetrics?: { 
+    codeSnippet: { filename: string; code: string };
+    governedOutputs?: { label: string; value: string; status: string }[];
+  };
+  stateFlowTraces?: { 
+    title?: string;
+    queryInput?: string;
+    totalLatency?: string;
+    architecturalTakeaway?: string;
+    traces: { phase: string; durationMs: number; log: string }[];
+  };
   workflowSteps?: { title: string; description: string }[];
-  tcoMetrics?: { codeSnippet: { filename: string; code: string } };
+  tcoMetrics?: { 
+    codeSnippet: { filename: string; code: string };
+    governedOutputs?: { label: string; value: string; status: string }[];
+  };
 };
 
 export const competitorComparisonsPart2: Record<string, SEOPageData> = {
@@ -137,11 +149,16 @@ export const competitorComparisonsPart2: Record<string, SEOPageData> = {
         intentServed: 'Persuasion and conversion for executive buyers focused on TCO & Time-to-Value.'
       }
     ],
+    // [FIX] Added governedOutputs to prevent MetricGovernance map crash
     deploymentMetrics: {
       codeSnippet: {
         filename: 'deployment_velocity.yml',
         code: `legacy_looker_deployment:\n  semantic_modeling: 12 weeks\n  git_pr_cycles: 2 weeks\n  total_ttv: 14 weeks\n\nmodern_arcli_deployment:\n  schema_indexing: 5 minutes\n  auto_mapping: 2 minutes\n  total_ttv: Day 1`
-      }
+      },
+      governedOutputs: [
+        { label: "Implementation", value: "Day 1", status: "Active" },
+        { label: "Engineering Load", value: "Zero", status: "Optimized" }
+      ]
     },
     evaluationMatrix: [
       {
@@ -255,11 +272,16 @@ export const competitorComparisonsPart2: Record<string, SEOPageData> = {
         intentServed: 'Architectural clarity for modern data stack designs.'
       }
     ],
+    // [FIX] Restructured arrays to match what TelemetryTrace expects
     stateFlowTraces: {
+      title: "Stateful to Stateless Execution",
+      queryInput: "Deploy predictive model to business users",
+      totalLatency: "Sub-second",
+      architecturalTakeaway: "Arcli consumes Hex outputs instantly without notebook wiring.",
       traces: [
-        { source: 'Hex Python Kernel', target: 'Snowflake Prediction Table', latency: 'Batch', status: 'Data Scientist Model Output' },
-        { source: 'Snowflake Prediction Table', target: 'Arcli AI Compiler', latency: 'Real-time', status: 'Semantic Routing' },
-        { source: 'Arcli AI Compiler', target: 'Business Operator UI', latency: '< 1s', status: 'Conversational Chart Render' }
+        { phase: "Hex Python Kernel", durationMs: 1500, log: "Data Scientist Model Output to Snowflake" },
+        { phase: "Arcli Compiler", durationMs: 120, log: "Semantic Routing via AI" },
+        { phase: "Browser UI", durationMs: 45, log: "Conversational Chart Render" }
       ]
     },
     evaluationMatrix: [
@@ -367,11 +389,16 @@ export const competitorComparisonsPart2: Record<string, SEOPageData> = {
         intentServed: 'Financial validation for VP of Engineering and FinOps.'
       }
     ],
+    // [FIX] Added governedOutputs to prevent MetricGovernance map crash
     tcoMetrics: {
       codeSnippet: {
         filename: 'oss_tco_calculator.json',
         code: `{\n  "apache_superset_tco": {\n    "software_licensing": "$0",\n    "ec2_redis_celery_infrastructure": "$3,500/mo",\n    "devops_maintenance_salary_fraction": "$8,000/mo",\n    "total_hidden_cost": "$11,500/mo"\n  },\n  "arcli_analytics_tco": {\n    "managed_infrastructure": "$0",\n    "devops_maintenance": "$0",\n    "total_monthly": "Predictable SaaS Tier"\n  }\n}`
-      }
+      },
+      governedOutputs: [
+        { label: "DevOps Overhead", value: "$0", status: "Eliminated" },
+        { label: "SaaS ROI", value: "High", status: "Verified" }
+      ]
     },
     evaluationMatrix: [
       {
