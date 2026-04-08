@@ -8,7 +8,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // 1. Diagnostic Metadata: Capture Vercel Trace ID for Cloudflare/Vercel debugging
