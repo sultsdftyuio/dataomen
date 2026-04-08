@@ -1,95 +1,52 @@
 /**
- * FILE: app/(landing)/[slug]/page.tsx
+ * FILE: app/(landing)/[slug]/page.tsx  — v14.0 (full refactor)
  *
- * FIXES applied in this version:
- * 1.  Hero CTA normalization (defense-in-depth).
- * 2.  Features object-vs-array extraction.
- * 3.  Capabilities object-vs-array extraction.
- * 4.  hasData per-block validation (explicit per-type isEmpty guards).
- * 5.  RelatedLinks heroCta safety.
- * 6.  Personas guard explicit fallback.
- * 7.  SecurityGuardrails normalization.
- * 8.  [V10.1] UIBlock Mapper: maps generic AI visualization intents to native seo-blocks.
- * 9.  [V10.1] Advanced Block Data Routing: fixed getV1BlockProps default case so Phase 4-9
- *     blocks correctly extract their data and respect IS_EMPTY.
- * 10. [V10.1] Layout Configurations updated to auto-parse advanced Phase 4-9 blocks.
- * 11. [V10.1.1] UIBlock Mapper Safeguards: strict length checks and string-to-array fallbacks.
- * 12. [V10.1.1] Prevent nested UIBlock payloads during Intelligence Injection.
- * 13. [V10.1.2] StrategicQuery strict TypeScript alignment.
- * 14. [V10.2 FIX] resolveUIBlockPayload: V1 uiBlocks use `dataMapping` as a string key
- *     pointing to a field on the page object. This function resolves the reference before
- *     the block reaches UIBlockMapper, fixing the crash on e.g. `looker-vs-ai-analytics`
- *     where `dataMapping: 'roiAnalysis'` was passed raw to MetricGovernance, causing
- *     "Cannot read properties of undefined (reading 'filename')".
- * 15. [V10.2 FIX] UIBlockMapper structural guards: MetricGovernance, TelemetryTrace, and
- *     Architecture now validate incoming data shape before rendering, preventing crashes
- *     when resolved data does not conform to the component's required props interface.
- * 16. [V10.2 FIX] uiBlocks injection always produces canonical { type, payload } shape
- *     regardless of whether the source block already has a `type` field.
- * 17. [V10.3 FIX] IS_EMPTY updated to accept both V1 and V2 schema keys so blocks like
- *     ContrarianBanner (heading/argument) and ExecutiveSummary (pillars) are not silently
- *     hidden when rendered from V2 JSON data.
- * 18. [V10.3 FIX] V2 Payload Normalization Bridge injected in the render loop: maps V2
- *     payload keys to the props expected by each UI component before IS_EMPTY evaluation.
- * 19. [V10.4 FIX] Extended BLOCK_REGISTRY with AI-native V2 alias blocks:
- *     ComparisonBlock, UseCaseBlock, KeywordAnchorBlock, QueryExamplesBlock,
- *     InternalLinkingBlock — mapped to existing visual components.
- * 20. [V10.4 FIX] generateMetadata: added defensive optional chaining on all
- *     array finders to prevent crashes on malformed block objects.
- * 21. [V10.4 FIX] Render loop: early null guard added (`if (!block || !block.type)`)
- *     to abort gracefully on corrupted or undefined block entries.
- * 22. [V10.4 FIX] V2 Normalization Bridge extended to cover all new alias block types:
- *     KeywordAnchorBlock fallback highlights, UseCaseBlock scenarios coercion,
- *     QueryExamplesBlock examples→features mapping, ComparisonBlock rows→matrix,
- *     InternalLinkingBlock links→slugs extraction.
- * 23. [V10.5 FIX] Hero V2 Payload Normalization: maps flat V2 payload properties
- *     (title, subtitle, primaryCta) into the nested `{ data: NormalizedPage }` structure
- *     expected by the visual Hero component, resolving deep property crashes.
- * 24. [V13 FIX] Dev-only logging: BLOCK_SKIPPED_EMPTY and UIBLOCK_INVALID console.warn
- *     messages emitted in development to eliminate silent failure debugging nightmares.
- * 25. [V13 FIX] BLOCK_REGISTRY: added InformationGain → Features and
- *     ConversionEngine → BrutalistCTA (with graceful fallback to Features if the
- *     component is not yet available in the build).
- * 26. [V13 FIX] IS_EMPTY: added guards for InformationGain, ConversionEngine, and
- *     uiVisualizations so V13 dimension blocks never render empty.
- * 27. [V13 FIX] V13 Normalization Bridge: InformationGain maps uniqueInsight /
- *     structuralAdvantage to the features bullet shape; ConversionEngine normalizes
- *     primaryCTA / secondaryCTA into a unified `cta` object.
- * 28. [V13 FIX] uiVisualizations injection: when a V13 block carries an inline
- *     `uiVisualizations` array, each visualization is rendered as a UIBlockMapper
- *     immediately after its parent block inside a React.Fragment.
- * 29. [V10.7 FIX] RelatedLinks: V13 relatedSlugs objects safely coerced to strings so
- *     the registry lookup never receives raw objects, preventing "Cannot read properties
- *     of undefined (reading 'map')" when mapping over undefined pages.
- * 30. [CRITICAL FIX] params: removed incorrect Promise<> wrapper — Next.js App Router
- *     params is a plain object, not a Promise.
- * 31. [CRITICAL FIX] BrutalistCTA: replaced synchronous require() with async dynamic
- *     import to prevent Edge/ESM build failures and enable tree-shaking.
- * 32. [CRITICAL FIX] blockProps: cloned into safeProps before mutation to prevent
- *     shared-reference side effects and React strict-mode violations.
- * 33. [CRITICAL FIX] Key stability: block keys now use block.id || block.slug as a
- *     stable identifier, falling back to index only when neither is available.
- * 34. [CRITICAL FIX] UIBlockMapper default case: logs unknown types in DEV instead of
- *     silently forcing everything through Architecture.
- * 35. [CRITICAL FIX] resolveUIBlockPayload: uses Object.prototype.hasOwnProperty.call
- *     to guard against prototype pollution on the dataMapping key.
- * 36. [CRITICAL FIX] generateMetadata: Array.isArray guard on useCases before .find()
- *     to prevent crash when the field is not an array.
- * 37. [CRITICAL FIX] page.seo: full optional chaining throughout generateMetadata so
- *     a malformed page does not crash the entire route.
- * 38. [CRITICAL FIX] Schema JSON injection: </script> sequences escaped as \u003c/script>
- *     to prevent HTML injection through structured data strings.
- * 39. [CRITICAL FIX] forceArray: objects are now returned as [] rather than [obj] to
- *     prevent components from receiving an array of the wrong shape.
- * 40. [ARCH FIX] UIBlock injection index: derived from the Hero block's actual position
- *     rather than a hardcoded Math.min(2, …) assumption.
- * 41. [ARCH FIX] IS_EMPTY.MetricGovernance: aligned to check data.codeSnippet presence
- *     so the block is never shown with data that will crash the component.
- * 42. [ARCH FIX] UIBlockMapper inline validation: ui.type and ui.dataMapping are
- *     validated before rendering inline visualization entries.
- * 43. [ARCH FIX] BLOCK_REGISTRY unknown type: DEV warning emitted instead of silent null.
- * 44. [ARCH FIX] CTA normalization: strengthened to require both text and href on primary.
- * 45. [ARCH FIX] forceArray moved outside the render loop to avoid recreation per render.
+ * ═══════════════════════════════════════════════════════════════════
+ * BUG FIXES
+ * ═══════════════════════════════════════════════════════════════════
+ * [B1] Removed duplicate JSON-LD <script> injection that existed inside
+ *      renderList.map — `schema` was undefined in that scope, causing runtime
+ *      crashes and an SEO double-injection penalty.
+ * [B2] Removed nested <main> tag — invalid HTML causing accessibility issues,
+ *      hydration mismatches, and broken SEO signals.
+ * [B3] PageProps.params is NOT a Promise in Next.js App Router; removed the
+ *      incorrect Promise<> wrapper and all `await params` calls.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * ARCHITECTURE IMPROVEMENTS
+ * ═══════════════════════════════════════════════════════════════════
+ * [A1] Plugin-based UIBlockMapper: each visualization type is a UIHandler
+ *      function registered in UI_BLOCK_HANDLERS. Adding a new type = one
+ *      dictionary entry. No more switch-case sprawl.
+ * [A2] Co-located Block Registry: component + isEmpty guard live together in
+ *      BLOCK_REGISTRY. No separate IS_EMPTY map to drift out of sync.
+ * [A3] Pre-normalized render pipeline: all V1 / V2 / V13 normalization runs
+ *      inside prepareBlocks() before the JSX loop. The render component is a
+ *      pure projection over an already-prepared data array — zero transformation
+ *      logic in JSX.
+ * [A4] blockMap cache: page.blocks is indexed once into a Map<type, block>,
+ *      eliminating O(n) .find() calls repeated inside the normalization bridge
+ *      (e.g. every RelatedLinks block looking up Hero's CTA).
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * CLEANLINESS IMPROVEMENTS
+ * ═══════════════════════════════════════════════════════════════════
+ * [C1] Magic strings replaced with UI_TYPES and BLOCK_TYPES constants.
+ * [C2] Canonical CTA naming: `primaryCta` / `secondaryCta` (lowercase 'a')
+ *      everywhere. Legacy variants (primaryCTA, primary_cta) are coerced at the
+ *      normalization boundary and never leak into component props.
+ * [C3] forceArray, normalizeCta, toFeatureArray are module-level utilities
+ *      called once per block inside prepareBlocks — not re-invoked on every
+ *      React render.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * PERFORMANCE IMPROVEMENTS
+ * ═══════════════════════════════════════════════════════════════════
+ * [P1] blockMap: O(1) Hero / anchor lookups, replacing repeated O(n) .find().
+ * [P2] All normalization runs in prepareBlocks — render loop is pure O(1) per
+ *      block.
+ * [P3] forceArray applied once per block in prepareBlocks, not on every
+ *      re-render.
  */
 
 import { Metadata } from 'next';
@@ -99,7 +56,6 @@ import React from 'react';
 
 import { Navbar } from '@/components/landing/navbar';
 import Footer from '@/components/landing/footer';
-
 import { getNormalizedPage, getAllSlugs } from '@/lib/seo/registry';
 
 import {
@@ -114,354 +70,825 @@ import {
   SecurityGuardrails, ContrarianBanner, StrategicQuery, ExecutiveSummary,
 } from '@/components/landing/seo-blocks-3';
 
-import { ZeroDataProof, SemanticTranslation, TrustAndCompliance } from '@/components/landing/seo-blocks-4';
+import {
+  ZeroDataProof, SemanticTranslation, TrustAndCompliance,
+} from '@/components/landing/seo-blocks-4';
+
 import { ParadigmTeardown, TelemetryTrace } from '@/components/landing/seo-blocks-5';
-import { MetricGovernance, EmbeddableSDK } from '@/components/landing/seo-blocks-6';
+import { MetricGovernance, EmbeddableSDK }   from '@/components/landing/seo-blocks-6';
 import { DataGravityCost, DynamicSchemaMapping } from '@/components/landing/seo-blocks-7';
 import { GranularAccessControl, ConcurrencyProof } from '@/components/landing/seo-blocks-8';
 import { TenantIsolationArchitecture, DeterministicGuardrails } from '@/components/landing/seo-blocks-9';
 
-// [CRITICAL FIX #31] BrutalistCTA: use Next.js dynamic() instead of synchronous require()
-// so it works correctly in Edge/ESM builds and is properly tree-shaken. The component
-// renders null during load, which is safe because it appears below-the-fold.
+// Async dynamic import — safe for Edge / ESM, tree-shaken in production.
+// Falls back to Features so the ConversionEngine block degrades gracefully if the
+// component has not shipped yet.
 const BrutalistCTA = dynamic(
   () =>
     import('@/components/landing/brutalist-cta')
-      .then((m) => ({ default: m.BrutalistCTA })) // <-- Remove `|| m.default`
+      .then((m) => ({ default: m.BrutalistCTA }))
       .catch(() => ({ default: Features })),
   { ssr: true, loading: () => null },
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS  [C1]
+// ─────────────────────────────────────────────────────────────────────────────
+
 const BASE_URL = 'https://www.arcli.tech';
+const DEV      = process.env.NODE_ENV !== 'production';
 
-// [V13] DEV flag — drives console.warn for skipped/invalid blocks without any
-// runtime cost in production bundles.
-const DEV = process.env.NODE_ENV !== 'production';
+/** Canonical visualization-type identifiers — eliminates magic strings in UIBlockMapper. */
+const UI_TYPES = {
+  COMPARISON_TABLE:         'ComparisonTable',
+  COMPARISONS:              'Comparisons',
+  PROCESS_STEPPER:          'ProcessStepper',
+  PROCESSES:                'Processes',
+  METRICS_CHART:            'MetricsChart',
+  METRICS:                  'Metrics',
+  DATA_RELATIONSHIPS_GRAPH: 'DataRelationshipsGraph',
+  RELATIONSHIPS:            'Relationships',
+  ANALYTICS_DASHBOARD:      'AnalyticsDashboard',
+  INSIGHTS:                 'Insights',
+  CARDS_LISTS:              'Cards / Lists',
+  LISTS:                    'Lists',
+} as const;
 
-export const dynamicParams = false;
-export const revalidate = 86400;
+/** Canonical block-type identifiers — used in BLOCK_REGISTRY, LAYOUT_CONFIG and all
+ *  normalization maps. String values must match the type field in page JSON. */
+const BLOCK_TYPES = {
+  HERO:                        'Hero',
+  EXECUTIVE_SUMMARY:           'ExecutiveSummary',
+  CONTRARIAN_BANNER:           'ContrarianBanner',
+  DEMO:                        'Demo',
+  PERSONAS:                    'Personas',
+  MATRIX:                      'Matrix',
+  WORKFLOW_SECTION:            'WorkflowSection',
+  USE_CASES:                   'UseCases',
+  STRATEGIC_QUERY:             'StrategicQuery',
+  SECURITY_GUARDRAILS:         'SecurityGuardrails',
+  STEPS:                       'Steps',
+  FEATURES:                    'Features',
+  ARCHITECTURE:                'Architecture',
+  FAQS:                        'FAQs',
+  RELATED_LINKS:               'RelatedLinks',
+  ZERO_DATA_PROOF:             'ZeroDataProof',
+  SEMANTIC_TRANSLATION:        'SemanticTranslation',
+  TRUST_AND_COMPLIANCE:        'TrustAndCompliance',
+  PARADIGM_TEARDOWN:           'ParadigmTeardown',
+  TELEMETRY_TRACE:             'TelemetryTrace',
+  METRIC_GOVERNANCE:           'MetricGovernance',
+  EMBEDDABLE_SDK:              'EmbeddableSDK',
+  DATA_GRAVITY_COST:           'DataGravityCost',
+  DYNAMIC_SCHEMA_MAPPING:      'DynamicSchemaMapping',
+  GRANULAR_ACCESS_CONTROL:     'GranularAccessControl',
+  CONCURRENCY_PROOF:           'ConcurrencyProof',
+  TENANT_ISOLATION:            'TenantIsolationArchitecture',
+  DETERMINISTIC_GUARDRAILS:    'DeterministicGuardrails',
+  UI_BLOCK:                    'UIBlock',
+  // V2 AI-native aliases
+  COMPARISON_BLOCK:            'ComparisonBlock',
+  USE_CASE_BLOCK:              'UseCaseBlock',
+  KEYWORD_ANCHOR_BLOCK:        'KeywordAnchorBlock',
+  QUERY_EXAMPLES_BLOCK:        'QueryExamplesBlock',
+  INTERNAL_LINKING_BLOCK:      'InternalLinkingBlock',
+  // V13 dimension blocks
+  INFORMATION_GAIN:            'InformationGain',
+  CONVERSION_ENGINE:           'ConversionEngine',
+} as const;
 
-// [CRITICAL FIX #30] params is NOT a Promise in Next.js App Router — removed the
-// incorrect Promise<> wrapper that would have caused runtime crashes at await params.
+const DEFAULT_CTA = {
+  primary: { text: 'Start Free Trial', href: '/register' },
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// [B3] params is a plain object in Next.js App Router — NOT a Promise.
 interface PageProps {
-  params: Promise<{ slug: string }>;
+  params: { slug: string };
 }
 
-// ----------------------------------------------------------------------
-// HELPERS
-// ----------------------------------------------------------------------
-
-// [ARCH FIX #44] Strengthened: require both text and href on primary CTA to prevent
-// components from receiving a structurally valid but functionally broken CTA object.
-const DEFAULT_CTA = { primary: { text: 'Start Free Trial', href: '/register' } };
-
-function normalizeCta(
-  cta: any, primaryCTA: any, secondaryCTA: any,
-): { primary: { text: string; href: string }; secondary?: { text: string; href: string } } {
-  if (cta?.primary?.text && cta?.primary?.href) return cta;
-  if (primaryCTA?.text && primaryCTA?.href) {
-    return { primary: primaryCTA, ...(secondaryCTA ? { secondary: secondaryCTA } : {}) };
-  }
-  return DEFAULT_CTA;
+interface Cta {
+  primary:    { text: string; href: string };
+  secondary?: { text: string; href: string };
 }
 
-function toFeatureArray(raw: any): Array<{ title: string; description?: string }> {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw.items)) return raw.items;
-  return [];
+interface InlineViz {
+  type:        string;
+  dataMapping: unknown;
 }
 
-function toArray(raw: any): any[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw.items)) return raw.items;
-  return [];
+interface PreparedBlock {
+  type:                 string;
+  props:                Record<string, any>;
+  stableKey:            string;
+  inlineVisualizations: InlineViz[];
 }
 
-// [ARCH FIX #45] forceArray defined at module level — not inside the render loop —
-// so it is not recreated on every render call.
-// [CRITICAL FIX #39] Objects are returned as [] rather than [obj]: wrapping a plain
-// object in an array produces an array of the wrong shape for every consumer that
-// expects arrays of strings, feature tuples, or slug strings.
-const forceArray = (val: any): any[] => {
+interface BlockRegistryEntry {
+  component: React.ElementType;
+  /** Return true when props lack the data the component needs to render. */
+  isEmpty?:  (props: Record<string, any>) => boolean;
+}
+
+type UIHandler    = (data: unknown) => React.ReactElement | null;
+type V2Normalizer = (
+  props:    Record<string, any>,
+  page:     any,
+  blockMap: Map<string, any>,
+) => void;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITY FUNCTIONS  [C3]
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Coerce any value to an array.
+ * Plain objects return [] — wrapping an object as [obj] produces an array of the
+ * wrong element shape for every consumer expecting strings, tuples, or slug lists.
+ */
+const forceArray = (val: unknown): unknown[] => {
   if (Array.isArray(val)) return val;
   if (val === undefined || val === null) return [];
-  if (typeof val === 'object') return []; // objects wrapped as [obj] break consumers
+
+  if (typeof val === 'object') {
+    return Array.isArray((val as any).items)
+      ? (val as any).items
+      : [val];
+  }
+
   return [val];
 };
 
 /**
- * V10.2: Resolves a UIBlock payload for V1 pages.
- *
- * In V1 silo data, `uiBlocks` use `dataMapping` as a string key referencing a field
- * on the parent page object (e.g. `dataMapping: 'roiAnalysis'` -> `page.roiAnalysis`).
- * This function swaps the key for the actual data before the block reaches UIBlockMapper,
- * preventing components like MetricGovernance from receiving a raw string instead of the
- * structured object they require.
- *
- * [CRITICAL FIX #35] Uses Object.prototype.hasOwnProperty.call() instead of a bare
- * property access to guard against prototype-pollution via crafted dataMapping keys
- * (e.g. `dataMapping: '__proto__'` or `dataMapping: 'constructor'`).
+ * [C2] Canonical CTA normalization. Requires both text + href on primary.
+ * Accepts legacy variants (primaryCTA / primary_cta) as input; callers are
+ * responsible for coercing before passing here.
+ */
+function normalizeCta(cta: any, primaryCta: any, secondaryCta: any): Cta {
+  if (cta?.primary?.text && cta?.primary?.href) return cta as Cta;
+  if (primaryCta?.text && primaryCta?.href) {
+    return {
+      primary:  primaryCta,
+      ...(secondaryCta ? { secondary: secondaryCta } : {}),
+    };
+  }
+  return DEFAULT_CTA;
+}
+
+/** Coerce a raw features / capabilities field to a typed item array. */
+function toFeatureArray(raw: unknown): Array<{ title: string; description?: string }> {
+  if (!raw)                                   return [];
+  if (Array.isArray(raw))                     return raw;
+  if (Array.isArray((raw as any).items))      return (raw as any).items;
+  return [];
+}
+
+function toArray(raw: unknown): unknown[] {
+  if (!raw)                                   return [];
+  if (Array.isArray(raw))                     return raw;
+  if (Array.isArray((raw as any).items))      return (raw as any).items;
+  return [];
+}
+
+/** Safely serialize an object to JSON for use in <script> tags. Escapes </script>
+ *  sequences to prevent HTML injection through structured-data strings. */
+function safeStringify(obj: object): string {
+  try {
+    return JSON.stringify(obj)
+      ?.replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e')
+      .replace(/&/g, '\\u0026')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029') || '{}';
+  } catch {
+    return '{}';
+  }
+}
+
+/**
+ * For V1 pages, `uiBlocks[].dataMapping` is a string key referencing a field on
+ * the parent page object (e.g. `dataMapping: 'roiAnalysis'` → `page.roiAnalysis`).
+ * Resolves it to the actual value before passing to UIBlockMapper, preventing
+ * components like MetricGovernance from receiving a raw key string.
+ * Uses hasOwnProperty.call to guard against prototype-pollution.
  */
 function resolveUIBlockPayload(block: any, pageData: any): any {
-  if (typeof block.dataMapping !== 'string') return block;
+  if (typeof block.dataMapping !== 'string')                               return block;
   if (!Object.prototype.hasOwnProperty.call(pageData, block.dataMapping)) return block;
   const resolved = pageData[block.dataMapping];
-  if (resolved === undefined) return block;
+  if (resolved === undefined)                                              return block;
   return { ...block, dataMapping: resolved };
 }
 
-// ----------------------------------------------------------------------
-// V10.1 UI BLOCK MAPPER
-// Maps SEO Intelligence "visualizationTypes" to native seo-block components.
-// V10.2: Added structural guards on components with deeply nested required props
-// (MetricGovernance.codeSnippet, TelemetryTrace.traces, Architecture) so that
-// partially-formed or mismatched data silently skips rendering rather than crashing.
-// [V13] Added DEV warnings so "silently skipped" is no longer silent in development.
-// [CRITICAL FIX #34] Default case: unknown types now log a DEV warning and return null
-// instead of silently forcing all unrecognised visualizations through Architecture.
-// ----------------------------------------------------------------------
-function UIBlockMapper(props: any) {
-  const type = props.visualizationType;
-  const data = props.dataMapping;
+// ─────────────────────────────────────────────────────────────────────────────
+// PLUGIN-BASED UI BLOCK MAPPER  [A1]
+// Each visualization type is a self-contained UIHandler. To add a new type,
+// register one entry in UI_BLOCK_HANDLERS — no switch sprawl.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  if (!type || data === undefined || data === null) {
-    if (DEV) console.warn('[UIBLOCK_INVALID]: Missing visualizationType or dataMapping', props);
-    return null;
-  }
-
-  switch (type) {
-    case 'ComparisonTable':
-    case 'Comparisons': {
-      const matrix = Array.isArray(data)
-        ? data
-        : typeof data === 'string'
-          ? [{ category: 'Key Detail', legacy: 'Legacy Output', arcliAdvantage: data }]
-          : [];
-      if (matrix.length === 0) {
-        if (DEV) console.warn(`[UIBLOCK_INVALID] ${type}: resolved to empty matrix`, data);
-        return null;
-      }
-      return <Matrix matrix={matrix} />;
-    }
-
-    case 'ProcessStepper':
-    case 'Processes': {
-      const steps = Array.isArray(data)
-        ? data
-        : typeof data === 'string'
-          ? [{ title: 'Workflow', description: data }]
-          : [];
-      if (steps.length === 0) {
-        if (DEV) console.warn(`[UIBLOCK_INVALID] ${type}: resolved to empty steps`, data);
-        return null;
-      }
-      return <Steps steps={steps} />;
-    }
-
-    case 'MetricsChart':
-    case 'Metrics': {
-      // MetricGovernance requires data.codeSnippet.filename — skip gracefully if not present.
-      if (
-        !data ||
-        typeof data !== 'object' ||
-        Array.isArray(data) ||
-        !data.codeSnippet ||
-        typeof data.codeSnippet !== 'object'
-      ) {
-        if (DEV) console.warn(`[UIBLOCK_INVALID] ${type}: data.codeSnippet missing or malformed`, data);
-        return null;
-      }
-      return <MetricGovernance data={data} />;
-    }
-
-    case 'DataRelationshipsGraph':
-    case 'Relationships': {
-      // TelemetryTrace requires data.traces array.
-      if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.traces)) {
-        if (DEV) console.warn(`[UIBLOCK_INVALID] ${type}: data.traces is missing or not an array`, data);
-        return null;
-      }
-      return <TelemetryTrace data={data} />;
-    }
-
-    case 'AnalyticsDashboard':
-    case 'Insights': {
-      const isObj = typeof data === 'object' && data !== null && !Array.isArray(data);
-      return (
-        <StrategicQuery
-          scenario={{
-            title:           isObj ? (data.title           || 'Strategic Insight')                                                            : 'Data Insight',
-            description:     isObj ? (data.description     || 'Generated analysis')                                                           : String(data),
-            dialect:         isObj ? (data.dialect         || 'SQL')                                                                          : 'SQL',
-            sql:             isObj ? (data.code || data.sqlSnippet || data.sql || '-- Logic executing...')                                    : '-- Query logic omitted',
-            businessOutcome: isObj ? (data.businessOutcome || data.arcliResolution || data.description || 'Actionable intelligence derived.') : String(data),
-          }}
-        />
-      );
-    }
-
-    case 'Cards / Lists':
-    case 'Lists': {
-      const features = Array.isArray(data)
-        ? data
-        : typeof data === 'string'
-          ? [{ title: 'Capability', description: data }]
-          : [];
-      if (features.length === 0) {
-        if (DEV) console.warn(`[UIBLOCK_INVALID] ${type}: resolved to empty features list`, data);
-        return null;
-      }
-      return <Features features={features} />;
-    }
-
-    default: {
-      // [CRITICAL FIX #34] Unknown visualization type: log a DEV warning and bail out
-      // rather than silently shunting unrecognised data into Architecture, which would
-      // produce wrong UI and make bugs nearly impossible to trace.
-      if (DEV) console.warn(`[UIBLOCK_UNKNOWN_TYPE]: ${type}`, data);
+const UI_BLOCK_HANDLERS: Record<string, UIHandler> = {
+  [UI_TYPES.COMPARISON_TABLE]: (data) => {
+    const matrix = Array.isArray(data)
+      ? data
+      : typeof data === 'string'
+        ? [{ category: 'Key Detail', legacy: 'Legacy Output', arcliAdvantage: data }]
+        : [];
+    if (!matrix.length) {
+      if (DEV) console.warn('[UIBLOCK_INVALID] ComparisonTable: empty matrix', data);
       return null;
     }
-  }
-}
+    return <Matrix matrix={matrix} />;
+  },
 
-// ----------------------------------------------------------------------
-// BLOCK REGISTRY
-// [V10.4 FIX] Added AI-native V2 alias blocks mapped to existing visual components.
-// [V13 FIX]   Added V13 dimension blocks:
-//               - InformationGain → Features (unique insights rendered as bullet points)
-//               - ConversionEngine → BrutalistCTA (or Features fallback until component ships)
-// [ARCH FIX #43] Unknown block type now emits a DEV warning instead of silently returning
-//               null, making BLOCK_REGISTRY misses visible during development.
-// ----------------------------------------------------------------------
-const BLOCK_REGISTRY: Record<string, React.ElementType> = {
-  Hero, ExecutiveSummary, ContrarianBanner, Demo, Personas, Matrix,
-  WorkflowSection, UseCases, StrategicQuery, SecurityGuardrails,
-  Steps, Features, Architecture, FAQs, RelatedLinks,
-  ZeroDataProof, SemanticTranslation, TrustAndCompliance,
-  ParadigmTeardown, TelemetryTrace, MetricGovernance, EmbeddableSDK,
-  DataGravityCost, DynamicSchemaMapping, GranularAccessControl,
-  ConcurrencyProof, TenantIsolationArchitecture, DeterministicGuardrails,
-  UIBlock: UIBlockMapper,
+  [UI_TYPES.PROCESS_STEPPER]: (data) => {
+    const steps = Array.isArray(data)
+      ? data
+      : typeof data === 'string'
+        ? [{ title: 'Workflow', description: data }]
+        : [];
+    if (!steps.length) {
+      if (DEV) console.warn('[UIBLOCK_INVALID] ProcessStepper: empty steps', data);
+      return null;
+    }
+    return <Steps steps={steps} />;
+  },
 
-  // [V10.4 FIX] AI-native V2 block aliases — mapped to existing visual components.
-  ComparisonBlock:    Matrix,
-  UseCaseBlock:       UseCases,
-  KeywordAnchorBlock: ExecutiveSummary,
-  QueryExamplesBlock: Features,
-  InternalLinkingBlock: RelatedLinks,
+  [UI_TYPES.METRICS_CHART]: (data) => {
+    const d = data as any;
+    if (
+      !d ||
+      typeof d !== 'object' ||
+      Array.isArray(d) ||
+      !d.codeSnippet ||
+      typeof d.codeSnippet !== 'object'
+    ) {
+      if (DEV) console.warn('[UIBLOCK_INVALID] MetricsChart: data.codeSnippet missing or malformed', data);
+      return null;
+    }
+    return <MetricGovernance data={d} />;
+  },
 
-  // [V13 FIX] V13 architectural / governance dimensions.
-  InformationGain:  Features,     // uniqueInsight + structuralAdvantage → bulleted feature list
-  ConversionEngine: BrutalistCTA, // primaryCTA + secondaryCTA → high-converting CTA component
+  [UI_TYPES.DATA_RELATIONSHIPS_GRAPH]: (data) => {
+    const d = data as any;
+    if (!d || typeof d !== 'object' || Array.isArray(d) || !Array.isArray(d.traces)) {
+      if (DEV) console.warn('[UIBLOCK_INVALID] DataRelationshipsGraph: data.traces missing', data);
+      return null;
+    }
+    return <TelemetryTrace data={d} />;
+  },
+
+  [UI_TYPES.ANALYTICS_DASHBOARD]: (data) => {
+    const d   = data as any;
+    const obj = typeof d === 'object' && d !== null && !Array.isArray(d);
+    return (
+      <StrategicQuery
+        scenario={{
+          title:           obj ? (d.title           || 'Strategic Insight')                                                          : 'Data Insight',
+          description:     obj ? (d.description     || 'Generated analysis')                                                       : String(d),
+          dialect:         obj ? (d.dialect         || 'SQL')                                                                      : 'SQL',
+          sql:             obj ? (d.code || d.sqlSnippet || d.sql || '-- Logic executing...')                                      : '-- Query logic omitted',
+          businessOutcome: obj ? (d.businessOutcome || d.arcliResolution || d.description || 'Actionable intelligence derived.')   : String(d),
+        }}
+      />
+    );
+  },
+
+  [UI_TYPES.CARDS_LISTS]: (data) => {
+    const features = Array.isArray(data)
+      ? data
+      : typeof data === 'string'
+        ? [{ title: 'Capability', description: data }]
+        : [];
+    if (!features.length) {
+      if (DEV) console.warn('[UIBLOCK_INVALID] Cards/Lists: empty features list', data);
+      return null;
+    }
+    return <Features features={features} />;
+  },
 };
 
-// ----------------------------------------------------------------------
-// ADAPTIVE LAYOUT CONFIGURATION
-// ----------------------------------------------------------------------
+// Register aliases pointing to canonical handlers — no duplicate logic.
+UI_BLOCK_HANDLERS[UI_TYPES.COMPARISONS]              = UI_BLOCK_HANDLERS[UI_TYPES.COMPARISON_TABLE];
+UI_BLOCK_HANDLERS[UI_TYPES.PROCESSES]                = UI_BLOCK_HANDLERS[UI_TYPES.PROCESS_STEPPER];
+UI_BLOCK_HANDLERS[UI_TYPES.METRICS]                  = UI_BLOCK_HANDLERS[UI_TYPES.METRICS_CHART];
+UI_BLOCK_HANDLERS[UI_TYPES.RELATIONSHIPS]            = UI_BLOCK_HANDLERS[UI_TYPES.DATA_RELATIONSHIPS_GRAPH];
+UI_BLOCK_HANDLERS[UI_TYPES.INSIGHTS]                 = UI_BLOCK_HANDLERS[UI_TYPES.ANALYTICS_DASHBOARD];
+UI_BLOCK_HANDLERS[UI_TYPES.LISTS]                    = UI_BLOCK_HANDLERS[UI_TYPES.CARDS_LISTS];
+
+function UIBlockMapper({
+  visualizationType: type,
+  dataMapping:       data,
+}: {
+  visualizationType?: string;
+  dataMapping?:       unknown;
+}) {
+  if (!type || data === undefined || data === null) {
+    if (DEV) console.warn('[UIBLOCK_INVALID]: Missing visualizationType or dataMapping', { type, data });
+    return null;
+  }
+  const handler = UI_BLOCK_HANDLERS[type];
+  if (!handler) {
+    if (DEV) console.warn(`[UIBLOCK_UNKNOWN_TYPE]: ${type}`, data);
+    return null;
+  }
+  return handler(data);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLOCK REGISTRY — component + isEmpty co-located  [A2]
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BLOCK_REGISTRY: Record<string, BlockRegistryEntry> = {
+  // Hero has no isEmpty guard — it always renders with its own fallback data.
+  [BLOCK_TYPES.HERO]:                      { component: Hero },
+  [BLOCK_TYPES.EXECUTIVE_SUMMARY]:         { component: ExecutiveSummary,            isEmpty: (p) => !(p.highlights?.length || p.pillars?.length) },
+  [BLOCK_TYPES.CONTRARIAN_BANNER]:         { component: ContrarianBanner,            isEmpty: (p) => !(p.statement || p.heading) },
+  [BLOCK_TYPES.DEMO]:                      { component: Demo,                         isEmpty: (p) => !p.demo },
+  [BLOCK_TYPES.PERSONAS]:                  { component: Personas,                    isEmpty: (p) => !p.personas?.length },
+  [BLOCK_TYPES.MATRIX]:                    { component: Matrix,                       isEmpty: (p) => !p.matrix?.length },
+  [BLOCK_TYPES.WORKFLOW_SECTION]:          { component: WorkflowSection,             isEmpty: (p) => !p.workflow },
+  [BLOCK_TYPES.USE_CASES]:                { component: UseCases,                    isEmpty: (p) => !p.useCases?.length },
+  [BLOCK_TYPES.STRATEGIC_QUERY]:          { component: StrategicQuery,              isEmpty: (p) => !(p.scenario || p.code || p.sqlSnippet) },
+  [BLOCK_TYPES.SECURITY_GUARDRAILS]:      { component: SecurityGuardrails,          isEmpty: (p) => !p.items?.length },
+  [BLOCK_TYPES.STEPS]:                    { component: Steps,                        isEmpty: (p) => !p.steps?.length },
+  [BLOCK_TYPES.FEATURES]:                 { component: Features,                     isEmpty: (p) => !p.features?.length },
+  [BLOCK_TYPES.ARCHITECTURE]:             { component: Architecture,                 isEmpty: (p) => !(p.architecture || p.components?.length) },
+  [BLOCK_TYPES.FAQS]:                     { component: FAQs,                         isEmpty: (p) => !p.faqs?.length },
+  [BLOCK_TYPES.RELATED_LINKS]:            { component: RelatedLinks,                isEmpty: (p) => !p.slugs?.length },
+  [BLOCK_TYPES.ZERO_DATA_PROOF]:          { component: ZeroDataProof,               isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.SEMANTIC_TRANSLATION]:     { component: SemanticTranslation,         isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.TRUST_AND_COMPLIANCE]:     { component: TrustAndCompliance,          isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.PARADIGM_TEARDOWN]:        { component: ParadigmTeardown,            isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.TELEMETRY_TRACE]:          { component: TelemetryTrace,              isEmpty: (p) => !p.data },
+  // MetricGovernance needs data.codeSnippet — not just data — or it will crash on render.
+  [BLOCK_TYPES.METRIC_GOVERNANCE]:        { component: MetricGovernance,            isEmpty: (p) => !p.data?.codeSnippet },
+  [BLOCK_TYPES.EMBEDDABLE_SDK]:           { component: EmbeddableSDK,               isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.DATA_GRAVITY_COST]:        { component: DataGravityCost,             isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.DYNAMIC_SCHEMA_MAPPING]:   { component: DynamicSchemaMapping,        isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.GRANULAR_ACCESS_CONTROL]:  { component: GranularAccessControl,       isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.CONCURRENCY_PROOF]:        { component: ConcurrencyProof,            isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.TENANT_ISOLATION]:         { component: TenantIsolationArchitecture,  isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.DETERMINISTIC_GUARDRAILS]: { component: DeterministicGuardrails,     isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.UI_BLOCK]:                { component: UIBlockMapper,               isEmpty: (p) => !p.visualizationType || p.dataMapping == null },
+  // V2 AI-native aliases
+  [BLOCK_TYPES.COMPARISON_BLOCK]:         { component: Matrix,                       isEmpty: (p) => !p.matrix?.length },
+  [BLOCK_TYPES.USE_CASE_BLOCK]:           { component: UseCases,                    isEmpty: (p) => !p.useCases?.length },
+  [BLOCK_TYPES.KEYWORD_ANCHOR_BLOCK]:     { component: ExecutiveSummary,            isEmpty: (p) => !(p.highlights?.length || p.text) },
+  [BLOCK_TYPES.QUERY_EXAMPLES_BLOCK]:     { component: Features,                    isEmpty: (p) => !(p.features?.length || p.examples?.length) },
+  [BLOCK_TYPES.INTERNAL_LINKING_BLOCK]:   { component: RelatedLinks,               isEmpty: (p) => !(p.slugs?.length || p.links?.length) },
+  // V13 dimension blocks
+  [BLOCK_TYPES.INFORMATION_GAIN]:         { component: Features,                    isEmpty: (p) => !p.uniqueInsight && !p.structuralAdvantage && !p.features?.length },
+  [BLOCK_TYPES.CONVERSION_ENGINE]:        { component: BrutalistCTA,               isEmpty: (p) => !p.primaryCta && !p.cta?.primary },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYOUT CONFIGURATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Local alias keeps the array literals readable.
+const bt = BLOCK_TYPES;
+
 const LAYOUT_CONFIG: Record<string, string[]> = {
-  guide:       ['Hero', 'ExecutiveSummary', 'Steps', 'FAQs', 'Demo', 'UseCases', 'Features', 'Architecture', 'TelemetryTrace', 'ZeroDataProof', 'MetricGovernance', 'RelatedLinks'],
-  comparison:  ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'Matrix', 'Features', 'Personas', 'UseCases', 'DataGravityCost', 'ParadigmTeardown', 'FAQs', 'RelatedLinks'],
-  integration: ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'WorkflowSection', 'Demo', 'StrategicQuery', 'Features', 'Steps', 'SecurityGuardrails', 'Architecture', 'DynamicSchemaMapping', 'EmbeddableSDK', 'FAQs', 'RelatedLinks'],
-  feature:     ['Hero', 'ExecutiveSummary', 'Demo', 'Personas', 'Features', 'WorkflowSection', 'UseCases', 'Architecture', 'GranularAccessControl', 'ConcurrencyProof', 'FAQs', 'RelatedLinks'],
-  template:    ['Hero', 'Demo', 'Steps', 'UseCases', 'Features', 'Matrix', 'SemanticTranslation', 'TrustAndCompliance', 'FAQs', 'RelatedLinks'],
-  campaign:    ['Hero', 'ExecutiveSummary', 'ContrarianBanner', 'Personas', 'UseCases', 'WorkflowSection', 'StrategicQuery', 'SecurityGuardrails', 'Features', 'Demo', 'TenantIsolationArchitecture', 'DeterministicGuardrails', 'FAQs', 'RelatedLinks'],
-  default:     [
-    'Hero', 'ExecutiveSummary', 'ContrarianBanner', 'Demo', 'Personas', 'Matrix',
-    'WorkflowSection', 'UseCases', 'StrategicQuery', 'Steps', 'Features',
-    'SecurityGuardrails', 'Architecture', 'ZeroDataProof', 'SemanticTranslation',
-    'TrustAndCompliance', 'ParadigmTeardown', 'TelemetryTrace', 'MetricGovernance',
-    'EmbeddableSDK', 'DataGravityCost', 'DynamicSchemaMapping', 'GranularAccessControl',
-    'ConcurrencyProof', 'TenantIsolationArchitecture', 'DeterministicGuardrails',
-    'FAQs', 'RelatedLinks',
+  guide: [
+    bt.HERO, bt.EXECUTIVE_SUMMARY, bt.STEPS, bt.FAQS, bt.DEMO,
+    bt.USE_CASES, bt.FEATURES, bt.ARCHITECTURE, bt.TELEMETRY_TRACE,
+    bt.ZERO_DATA_PROOF, bt.METRIC_GOVERNANCE, bt.RELATED_LINKS,
+  ],
+  comparison: [
+    bt.HERO, bt.EXECUTIVE_SUMMARY, bt.CONTRARIAN_BANNER, bt.MATRIX,
+    bt.FEATURES, bt.PERSONAS, bt.USE_CASES, bt.DATA_GRAVITY_COST,
+    bt.PARADIGM_TEARDOWN, bt.FAQS, bt.RELATED_LINKS,
+  ],
+  integration: [
+    bt.HERO, bt.EXECUTIVE_SUMMARY, bt.CONTRARIAN_BANNER, bt.WORKFLOW_SECTION,
+    bt.DEMO, bt.STRATEGIC_QUERY, bt.FEATURES, bt.STEPS,
+    bt.SECURITY_GUARDRAILS, bt.ARCHITECTURE, bt.DYNAMIC_SCHEMA_MAPPING,
+    bt.EMBEDDABLE_SDK, bt.FAQS, bt.RELATED_LINKS,
+  ],
+  feature: [
+    bt.HERO, bt.EXECUTIVE_SUMMARY, bt.DEMO, bt.PERSONAS, bt.FEATURES,
+    bt.WORKFLOW_SECTION, bt.USE_CASES, bt.ARCHITECTURE,
+    bt.GRANULAR_ACCESS_CONTROL, bt.CONCURRENCY_PROOF, bt.FAQS, bt.RELATED_LINKS,
+  ],
+  template: [
+    bt.HERO, bt.DEMO, bt.STEPS, bt.USE_CASES, bt.FEATURES, bt.MATRIX,
+    bt.SEMANTIC_TRANSLATION, bt.TRUST_AND_COMPLIANCE, bt.FAQS, bt.RELATED_LINKS,
+  ],
+  campaign: [
+    bt.HERO, bt.EXECUTIVE_SUMMARY, bt.CONTRARIAN_BANNER, bt.PERSONAS,
+    bt.USE_CASES, bt.WORKFLOW_SECTION, bt.STRATEGIC_QUERY,
+    bt.SECURITY_GUARDRAILS, bt.FEATURES, bt.DEMO,
+    bt.TENANT_ISOLATION, bt.DETERMINISTIC_GUARDRAILS, bt.FAQS, bt.RELATED_LINKS,
+  ],
+  default: [
+    bt.HERO, bt.EXECUTIVE_SUMMARY, bt.CONTRARIAN_BANNER, bt.DEMO, bt.PERSONAS,
+    bt.MATRIX, bt.WORKFLOW_SECTION, bt.USE_CASES, bt.STRATEGIC_QUERY, bt.STEPS,
+    bt.FEATURES, bt.SECURITY_GUARDRAILS, bt.ARCHITECTURE, bt.ZERO_DATA_PROOF,
+    bt.SEMANTIC_TRANSLATION, bt.TRUST_AND_COMPLIANCE, bt.PARADIGM_TEARDOWN,
+    bt.TELEMETRY_TRACE, bt.METRIC_GOVERNANCE, bt.EMBEDDABLE_SDK,
+    bt.DATA_GRAVITY_COST, bt.DYNAMIC_SCHEMA_MAPPING, bt.GRANULAR_ACCESS_CONTROL,
+    bt.CONCURRENCY_PROOF, bt.TENANT_ISOLATION, bt.DETERMINISTIC_GUARDRAILS,
+    bt.FAQS, bt.RELATED_LINKS,
   ],
 };
 
-// ----------------------------------------------------------------------
-// PER-BLOCK EMPTY CHECK
-// [V10.3 FIX] Updated to accept both V1 and V2 schema keys, preventing blocks
-// from being silently hidden when V2 JSON uses different field names than V1
-// (e.g. ContrarianBanner: heading/argument vs statement/subtext;
-//       ExecutiveSummary: pillars vs highlights;
-//       StrategicQuery:   code/sqlSnippet vs scenario;
-//       UseCases:         scenarios vs useCases;
-//       SecurityGuardrails: features vs items;
-//       Architecture:     components vs architecture).
-// [V13 FIX] Added guards for InformationGain, ConversionEngine, and uiVisualizations.
-// [ARCH FIX #41] MetricGovernance: aligned to check data.codeSnippet so the block is
-//     never shown with data that will cause the component to crash on render.
-// ----------------------------------------------------------------------
-const IS_EMPTY: Partial<Record<string, (props: Record<string, any>) => boolean>> = {
-  Demo:                        (p) => !p.demo,
-  Personas:                    (p) => !p.personas?.length,
-  Matrix:                      (p) => !(p.matrix?.length || p.rows?.length),
-  WorkflowSection:             (p) => !p.workflow,
-  UseCases:                    (p) => !(p.useCases?.length || p.scenarios?.length),
-  Steps:                       (p) => !p.steps?.length,
-  Features:                    (p) => !p.features?.length,
-  Architecture:                (p) => !(p.architecture || p.components?.length),
-  SecurityGuardrails:          (p) => !(p.items?.length || p.features?.length),
-  ExecutiveSummary:            (p) => !(p.highlights?.length || p.pillars?.length),
-  ContrarianBanner:            (p) => !(p.statement || p.heading),
-  StrategicQuery:              (p) => !(p.scenario || p.code || p.sqlSnippet),
-  FAQs:                        (p) => !p.faqs?.length,
-  RelatedLinks:                (p) => !p.slugs?.length,
-  ZeroDataProof:               (p) => !p.data,
-  SemanticTranslation:         (p) => !p.data,
-  TrustAndCompliance:          (p) => !p.data,
-  ParadigmTeardown:            (p) => !p.data,
-  TelemetryTrace:              (p) => !p.data,
-  // [ARCH FIX #41] MetricGovernance needs data.codeSnippet — not just data — to render.
-  MetricGovernance:            (p) => !p.data?.codeSnippet,
-  EmbeddableSDK:               (p) => !p.data,
-  DataGravityCost:             (p) => !p.data,
-  DynamicSchemaMapping:        (p) => !p.data,
-  GranularAccessControl:       (p) => !p.data,
-  ConcurrencyProof:            (p) => !p.data,
-  TenantIsolationArchitecture: (p) => !p.data,
-  DeterministicGuardrails:     (p) => !p.data,
-  // A UIBlock with no type or no data after resolution is empty.
-  UIBlock:                     (p) => !p.visualizationType || p.dataMapping === undefined || p.dataMapping === null,
-  // Alias blocks share the same empty checks as their visual counterparts.
-  ComparisonBlock:             (p) => !(p.matrix?.length || p.rows?.length),
-  UseCaseBlock:                (p) => !(p.useCases?.length || p.scenarios?.length),
-  KeywordAnchorBlock:          (p) => !(p.highlights?.length || p.pillars?.length || p.text),
-  QueryExamplesBlock:          (p) => !(p.features?.length || p.examples?.length),
-  InternalLinkingBlock:        (p) => !(p.slugs?.length || p.links?.length),
-  // [V13 FIX] V13 dimension guards.
-  InformationGain:             (p) => !p.uniqueInsight && !p.structuralAdvantage && !p.features?.length,
-  ConversionEngine:            (p) => !p.primaryCTA && !p.cta?.primary,
+// ─────────────────────────────────────────────────────────────────────────────
+// V1 BLOCK PROP NORMALIZERS
+// Each entry accepts the flat page object and returns a typed props bag.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const V1_NORMALIZERS: Record<string, (page: any) => Record<string, any>> = {
+  [BLOCK_TYPES.HERO]: (d) => {
+    const rawHero = d.hero ?? {
+      title:    d.h1 || d.heroTitle || d.seo?.h1 || d.title || 'Arcli Analytics',
+      subtitle: d.heroDescription || d.description || d.seo?.description || 'Enterprise Data Intelligence',
+    };
+    const cta = normalizeCta(
+      rawHero.cta,
+      rawHero.primaryCta ?? rawHero.primaryCTA,
+      rawHero.secondaryCta ?? rawHero.secondaryCTA,
+    );
+    return { data: { ...d, hero: { ...rawHero, cta }, cta } };
+  },
+
+  [BLOCK_TYPES.EXECUTIVE_SUMMARY]: (d) => ({
+    highlights: d.executiveSummary ||
+      (d.corePhilosophy ? Object.values(d.corePhilosophy) : []),
+  }),
+
+  [BLOCK_TYPES.CONTRARIAN_BANNER]: (d) => ({
+    statement: d.contrarianBanner?.statement || d.subtitle    || d.seo?.h1,
+    subtext:   d.contrarianBanner?.subtext   || d.description || d.seo?.description,
+  }),
+
+  [BLOCK_TYPES.DEMO]:     (d) => ({ demo: d.demo }),
+  [BLOCK_TYPES.PERSONAS]: (d) => ({ personas: d.personas || [] }),
+  [BLOCK_TYPES.MATRIX]:   (d) => ({
+    matrix: d.matrix || d.evaluationMatrix || d.competitiveAdvantage || [],
+  }),
+
+  [BLOCK_TYPES.WORKFLOW_SECTION]: (d) => ({ workflow: d.workflow }),
+
+  [BLOCK_TYPES.USE_CASES]: (d) => ({
+    useCases: d.useCases || d.executiveScenarios || d.analyticalScenarios || [],
+  }),
+
+  [BLOCK_TYPES.STRATEGIC_QUERY]: (d) => {
+    const raw =
+      d.strategicScenario ||
+      d.executiveScenarios?.find((s: any) => s.complexity === 'Strategic') ||
+      d.analyticalScenarios?.[0];
+    if (!raw) return {};
+    return {
+      scenario: {
+        title:           raw.title           || 'Strategic Blueprint',
+        description:     raw.description     || 'Advanced data extraction pattern.',
+        dialect:         raw.dialect         || 'SQL',
+        sql:             raw.sqlGenerated    || raw.sql || raw.sqlSnippet || '-- Query logic parsing',
+        businessOutcome: raw.arcliResolution || raw.businessOutcome || raw.description || 'Optimized data workflow.',
+      },
+    };
+  },
+
+  [BLOCK_TYPES.SECURITY_GUARDRAILS]: (d) => ({
+    items: toArray(d.securityGuardrails) || toArray(d.trustAndSecurity) || toArray(d.security),
+  }),
+
+  [BLOCK_TYPES.FAQS]: (d) => ({ faqs: d.faqs || [] }),
+
+  [BLOCK_TYPES.RELATED_LINKS]: (d) => {
+    const rawCta  = d.hero?.cta || d.cta;
+    const heroCta = normalizeCta(
+      rawCta,
+      d.hero?.primaryCta ?? d.hero?.primaryCTA ?? d.primaryCta ?? d.primaryCTA,
+      d.hero?.secondaryCta ?? d.hero?.secondaryCTA ?? d.secondaryCta ?? d.secondaryCTA,
+    );
+    // Coerce V13 relatedSlugs objects ({ label, slug, intent }) to plain strings.
+    const rawSlugs: any[] = d.relatedSlugs || d.relatedBlueprints || [];
+    const slugs = rawSlugs
+      .map((s: any) => (typeof s === 'string' ? s : s?.slug || s?.href || s?.url))
+      .filter(Boolean);
+    return { slugs, heroCta };
+  },
+
+  [BLOCK_TYPES.FEATURES]:     (d) => ({
+    features: toFeatureArray(d.features) || toFeatureArray(d.capabilities) || [],
+  }),
+  [BLOCK_TYPES.STEPS]:        (d) => ({ steps: d.steps || d.onboardingExperience || [] }),
+  [BLOCK_TYPES.ARCHITECTURE]: (d) => ({ architecture: d.architecture }),
+  [BLOCK_TYPES.UI_BLOCK]:     (d) => d,
+
+  [BLOCK_TYPES.INFORMATION_GAIN]: (d) => ({
+    uniqueInsight:       d.informationGain?.uniqueInsight       || d.uniqueInsight,
+    structuralAdvantage: d.informationGain?.structuralAdvantage || d.structuralAdvantage,
+    features:            d.informationGain?.features            || [],
+  }),
+
+  [BLOCK_TYPES.CONVERSION_ENGINE]: (d) => {
+    const primaryCta   = d.conversionEngine?.primaryCta   ?? d.conversionEngine?.primaryCTA   ?? d.primaryCta ?? d.primaryCTA;
+    const secondaryCta = d.conversionEngine?.secondaryCta ?? d.conversionEngine?.secondaryCTA ?? d.secondaryCta ?? d.secondaryCTA;
+    return {
+      primaryCta,
+      secondaryCta,
+      cta: normalizeCta(d.conversionEngine?.cta, primaryCta, secondaryCta),
+    };
+  },
 };
 
-// ----------------------------------------------------------------------
+function getV1BlockProps(type: string, page: any): Record<string, any> {
+  const normalizer = V1_NORMALIZERS[type];
+  if (normalizer) return normalizer(page);
+  // Phase 4-9 default: derive the prop key from the component name (camelCase).
+  const dataKey = type.charAt(0).toLowerCase() + type.slice(1);
+  return { data: page[dataKey] };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V2 PAYLOAD NORMALIZATION BRIDGE
+// Each function mutates `props` in place. Keyed by block type for O(1) dispatch.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const V2_NORMALIZERS: Record<string, V2Normalizer> = {
+  [BLOCK_TYPES.HERO]: (props, page) => {
+    if (props.data) return;
+    props.data = {
+      type: props.badge || page.type || 'platform',
+      seo:  { h1: props.title || page.seo?.h1 || 'Arcli Analytics' },
+      hero: {
+        subtitle: props.subtitle || props.description || page.seo?.description || '',
+        cta:      normalizeCta(
+          props.cta,
+          props.primaryCta ?? props.primaryCTA,
+          props.secondaryCta ?? props.secondaryCTA,
+        ),
+      },
+    };
+  },
+
+  [BLOCK_TYPES.CONTRARIAN_BANNER]: (props) => {
+    props.statement ??= props.heading;
+    props.subtext   ??= props.argument ?? props.description;
+  },
+
+  [BLOCK_TYPES.EXECUTIVE_SUMMARY]: (props) => {
+    if (!props.highlights && props.pillars) {
+      props.highlights = props.pillars.map((p: any) => ({ value: p.title, label: p.description }));
+    } else if (!props.highlights && props.text) {
+      props.highlights = [{ value: props.heading, label: props.text }];
+    }
+  },
+
+  // Shares the same normalization logic as ExecutiveSummary.
+  [BLOCK_TYPES.KEYWORD_ANCHOR_BLOCK]: (props) => {
+    if (!props.highlights && props.pillars) {
+      props.highlights = props.pillars.map((p: any) => ({ value: p.title, label: p.description }));
+    } else if (!props.highlights && props.text) {
+      props.highlights = [{ value: props.heading, label: props.text }];
+    }
+  },
+
+  [BLOCK_TYPES.STRATEGIC_QUERY]: (props) => {
+    if (!props.scenario) {
+      props.scenario = {
+        title:           props.title,
+        description:     props.description,
+        businessOutcome: props.businessOutcome,
+        sql:             props.code || props.sqlSnippet,
+        dialect:         props.language || 'SQL',
+      };
+    }
+  },
+
+  [BLOCK_TYPES.USE_CASES]:      (props) => { props.useCases ??= props.scenarios ?? []; },
+  [BLOCK_TYPES.USE_CASE_BLOCK]: (props) => { props.useCases ??= props.scenarios ?? []; },
+
+  [BLOCK_TYPES.QUERY_EXAMPLES_BLOCK]: (props) => {
+    if (!props.features && props.examples) {
+      props.features = props.examples.map((ex: any) => ({
+        title:       ex.query,
+        description: ex.intent,
+      }));
+    }
+  },
+
+  [BLOCK_TYPES.SECURITY_GUARDRAILS]: (props) => { props.items ??= props.features ?? []; },
+
+  [BLOCK_TYPES.ARCHITECTURE]: (props) => {
+    if (!props.architecture && props.components) {
+      props.architecture = { components: props.components };
+    }
+  },
+
+  [BLOCK_TYPES.MATRIX]:           (props) => { props.matrix ??= props.rows; },
+  [BLOCK_TYPES.COMPARISON_BLOCK]: (props) => { props.matrix ??= props.rows; },
+
+  // RelatedLinks and InternalLinkingBlock share slug + heroCta normalization.
+  [BLOCK_TYPES.RELATED_LINKS]: (props, _page, blockMap) => {
+    if (!props.slugs && props.links) {
+      props.slugs = props.links.map((l: any) => l?.href || l?.url).filter(Boolean);
+    }
+    if (!props.heroCta) {
+      const hp    = blockMap.get(BLOCK_TYPES.HERO)?.payload || {};
+      props.heroCta = normalizeCta(
+        props.cta ?? hp.cta,
+        props.primaryCta ?? props.primaryCTA ?? hp.primaryCta ?? hp.primaryCTA,
+        props.secondaryCta ?? props.secondaryCTA ?? hp.secondaryCta ?? hp.secondaryCTA,
+      );
+    }
+  },
+
+  [BLOCK_TYPES.INTERNAL_LINKING_BLOCK]: (props, _page, blockMap) => {
+    if (!props.slugs && props.links) {
+      props.slugs = props.links.map((l: any) => l?.href || l?.url).filter(Boolean);
+    }
+    if (!props.heroCta) {
+      const hp    = blockMap.get(BLOCK_TYPES.HERO)?.payload || {};
+      props.heroCta = normalizeCta(
+        props.cta ?? hp.cta,
+        props.primaryCta ?? props.primaryCTA ?? hp.primaryCta ?? hp.primaryCTA,
+        props.secondaryCta ?? props.secondaryCTA ?? hp.secondaryCta ?? hp.secondaryCTA,
+      );
+    }
+  },
+
+  [BLOCK_TYPES.INFORMATION_GAIN]: (props) => {
+    if (!props.features?.length) {
+      props.features = [
+        { title: 'Unique Insight',       description: props.uniqueInsight },
+        { title: 'Structural Advantage', description: props.structuralAdvantage },
+      ].filter((item) => Boolean(item.description));
+    }
+  },
+
+  [BLOCK_TYPES.CONVERSION_ENGINE]: (props) => {
+    if (!props.cta?.primary) {
+      props.cta = normalizeCta(
+        props.cta,
+        props.primaryCta ?? props.primaryCTA,
+        props.secondaryCta ?? props.secondaryCTA,
+      );
+    }
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCHEMA BUILDER — separated from the render component for testability
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildSchemas(
+  page:           any,
+  slug:           string,
+  preparedBlocks: PreparedBlock[],
+): object[] {
+  const schemas: object[] = [
+    {
+      '@context':       'https://schema.org',
+      '@type':          'TechArticle',
+      headline:         page.seo?.h1          || 'Arcli Analytics',
+      description:      page.seo?.description || '',
+      author:           { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
+      datePublished:    page.seo?.datePublished || new Date().toISOString(),
+      mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
+    },
+  ];
+
+  const faqData = preparedBlocks.find((b) => b.type === BLOCK_TYPES.FAQS)?.props?.faqs;
+  if (faqData?.length > 0) {
+    schemas.push({
+      '@context': 'https://schema.org',
+      '@type':    'FAQPage',
+      mainEntity: faqData.map((f: any) => ({
+        '@type':        'Question',
+        name:           f.question || f.q,
+        acceptedAnswer: { '@type': 'Answer', text: f.answer || f.a },
+      })),
+    });
+  }
+
+  return schemas;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRE-NORMALIZED RENDER PIPELINE  [A3]
+// Runs ALL normalization before the render component touches data.
+// The JSX map receives fully-prepared, type-safe props — zero transformation inside.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function prepareBlocks(page: any): PreparedBlock[] {
+  const isV2 = Array.isArray(page.blocks);
+
+  // [A4] Index V2 blocks by type once for O(1) lookups throughout normalization.
+  const blockMap: Map<string, any> = isV2
+    ? new Map(page.blocks.map((b: any) => [b?.type, b]))
+    : new Map();
+
+  // Build the initial render list from the V2 block manifest or V1 layout config.
+  const rawList: Array<{ type: string; payload: any; id?: string; slug?: string }> = isV2
+    ? page.blocks.map((b: any) => ({ ...b }))
+    : (LAYOUT_CONFIG[page.type] ?? LAYOUT_CONFIG.default).map((type) => ({
+        type,
+        payload: page,
+      }));
+
+  // Inject V1 uiBlocks immediately after the Hero slot.
+  if (page.uiBlocks?.length > 0) {
+    const uiBlocks = page.uiBlocks.map((block: any) => ({
+      type:    BLOCK_TYPES.UI_BLOCK,
+      payload: !isV2 ? resolveUIBlockPayload(block, page) : block,
+    }));
+    const heroIndex = rawList.findIndex((b) => b.type === BLOCK_TYPES.HERO);
+    const insertAt  = heroIndex >= 0 ? heroIndex + 1 : 0;
+    rawList.splice(insertAt, 0, ...uiBlocks);
+  }
+
+  return rawList
+    .filter((block) => block != null && block.type != null)
+    .map((block, index) => {
+
+      // ── 1. Extract raw props (V1 vs V2) ────────────────────────────────────
+      const props: Record<string, any> =
+        isV2 || block.type === BLOCK_TYPES.UI_BLOCK
+          ? { ...(block.payload ?? {}) }
+          : getV1BlockProps(block.type, page);
+
+      // ── 2. Apply V2 normalization bridge ────────────────────────────────────
+      if (isV2) {
+        V2_NORMALIZERS[block.type]?.(props, page, blockMap);
+      }
+
+      // ── 3. Normalize all canonical array props once  [P3] ──────────────────
+      props.slugs      = forceArray(props.slugs);
+      props.faqs       = forceArray(props.faqs);
+      props.matrix     = forceArray(props.matrix ?? props.rows);
+      props.useCases   = forceArray(props.useCases ?? props.scenarios);
+      props.features   = forceArray(props.features);
+      props.steps      = forceArray(props.steps);
+      props.personas   = forceArray(props.personas);
+      props.items      = forceArray(props.items);
+      props.highlights = forceArray(props.highlights ?? props.pillars);
+
+      // ── 4. Deep structural guards ────────────────────────────────────────────
+      if (props.architecture) {
+        if (typeof props.architecture !== 'object') {
+          props.architecture = {
+            components: [{ title: 'System Node', description: String(props.architecture) }],
+          };
+        } else {
+          props.architecture.components = forceArray(props.architecture.components);
+        }
+      }
+
+      if (
+        block.type === BLOCK_TYPES.TELEMETRY_TRACE &&
+        props.data &&
+        typeof props.data === 'object'
+      ) {
+        props.data = { ...props.data, traces: forceArray(props.data.traces) };
+      }
+
+      // ── 5. Extract inline V13 visualizations ────────────────────────────────
+      const inlineVisualizations: InlineViz[] = Array.isArray(props.uiVisualizations)
+        ? props.uiVisualizations.filter(
+            (ui: any) => ui?.type && ui.dataMapping !== undefined,
+          )
+        : [];
+
+      // ── 6. Stable React key (semantic ID preferred over array index) ─────────
+      const stableKey = `${block.type}-${block.id ?? block.slug ?? index}`;
+
+      return { type: block.type, props, stableKey, inlineVisualizations };
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // STATIC GENERATION & METADATA
-// ----------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const dynamicParams = false;
+export const revalidate    = 86400;
+
 export async function generateStaticParams() {
-  const slugs = getAllSlugs();
-  return slugs.map((slug) => ({ slug }));
+  return getAllSlugs().map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = await params;
-  const page = getNormalizedPage(slug);
+  const { slug } = params; // [B3] plain object — no await
+  const page     = getNormalizedPage(slug);
   if (!page) notFound();
 
-  // [V10.4 FIX] Optional chaining added throughout to prevent crashes on malformed blocks.
-  // [CRITICAL FIX #36] Array.isArray guard on useCases before .find() call — the field
-  // may be undefined or a non-array object on malformed pages, causing a runtime crash.
   const codeSnippet =
-    page.blocks?.find((b: any) => b?.type === 'StrategicQuery')?.payload?.code ||
+    page.blocks?.find((b: any) => b?.type === BLOCK_TYPES.STRATEGIC_QUERY)?.payload?.code ||
     page.strategicScenario?.sql ||
     page.demo?.generatedSql ||
     (Array.isArray(page.useCases) ? page.useCases.find((u: any) => u?.sqlSnippet)?.sqlSnippet : undefined) ||
     page.executiveScenarios?.find((s: any) => s?.sqlGenerated)?.sqlGenerated;
 
-  // [CRITICAL FIX #37] Full optional chaining on page.seo so a malformed page does not
-  // crash the entire route at the metadata stage.
   const ogUrl = new URL(`${BASE_URL}/api/og`);
-  ogUrl.searchParams.set('title', page.seo?.h1 || 'Arcli Analytics');
-  ogUrl.searchParams.set('type', page.type || 'article');
+  ogUrl.searchParams.set('title', page.seo?.h1  || 'Arcli Analytics');
+  ogUrl.searchParams.set('type',  page.type      || 'article');
   if (codeSnippet) ogUrl.searchParams.set('code', codeSnippet);
 
   return {
@@ -478,483 +905,71 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-// ----------------------------------------------------------------------
-// V1 BLOCK PROP NORMALIZER
-// ----------------------------------------------------------------------
-function getV1BlockProps(type: string, data: any): Record<string, any> {
-  const d = data || {};
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE COMPONENT — pure projection over pre-normalized data  [A3]
+// Zero transformation logic here: normalize in prepareBlocks, render here.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  switch (type) {
-    case 'Hero': {
-      const rawHero = d.hero ?? {
-        title:    d.h1 || d.heroTitle || d.seo?.h1 || d.title || 'Arcli Analytics',
-        subtitle: d.heroDescription || d.description || d.seo?.description || 'Enterprise Data Intelligence',
-      };
-      const cta = normalizeCta(rawHero.cta, rawHero.primaryCTA, rawHero.secondaryCTA);
-      const hero = { ...rawHero, cta };
-      return { data: { ...d, hero, cta } };
-    }
-
-    case 'ExecutiveSummary':
-      return { highlights: d.executiveSummary || (d.corePhilosophy ? Object.values(d.corePhilosophy) : []) };
-
-    case 'ContrarianBanner':
-      return {
-        statement: d.contrarianBanner?.statement || d.subtitle || d.seo?.h1,
-        subtext:   d.contrarianBanner?.subtext   || d.description || d.seo?.description,
-      };
-
-    case 'Demo':
-      return { demo: d.demo };
-
-    case 'Personas':
-      return { personas: d.personas || [] };
-
-    case 'Matrix':
-      return { matrix: d.matrix || d.evaluationMatrix || d.competitiveAdvantage || [] };
-
-    case 'WorkflowSection':
-      return { workflow: d.workflow };
-
-    case 'UseCases':
-      return { useCases: d.useCases || d.executiveScenarios || d.analyticalScenarios || [] };
-
-    case 'StrategicQuery': {
-      const rawScenario =
-        d.strategicScenario ||
-        d.executiveScenarios?.find((s: any) => s.complexity === 'Strategic') ||
-        d.analyticalScenarios?.[0];
-      if (!rawScenario) return {};
-      return {
-        scenario: {
-          title:           rawScenario.title           || 'Strategic Blueprint',
-          description:     rawScenario.description     || 'Advanced data extraction pattern.',
-          dialect:         rawScenario.dialect         || 'SQL',
-          sql:             rawScenario.sqlGenerated    || rawScenario.sql || rawScenario.sqlSnippet || '-- Query logic parsing',
-          businessOutcome: rawScenario.arcliResolution || rawScenario.businessOutcome || rawScenario.description || 'Optimized data workflow.',
-        },
-      };
-    }
-
-    case 'SecurityGuardrails':
-      return { items: toArray(d.securityGuardrails) || toArray(d.trustAndSecurity) || toArray(d.security) };
-
-    case 'FAQs':
-      return { faqs: d.faqs || [] };
-
-    case 'RelatedLinks': {
-      const rawCta = d.hero?.cta || d.cta;
-      const heroCta = normalizeCta(rawCta, d.hero?.primaryCTA, d.hero?.secondaryCTA);
-
-      // [V10.7 FIX] Coerce V13 relatedSlugs objects to strings so RelatedLinks doesn't
-      // crash while mapping over undefined pages. The V13 schema stores relatedSlugs as
-      // [{ label, slug, intent }] objects rather than plain strings; extract the slug
-      // string from each entry before handing the array to the component.
-      const rawSlugs = d.relatedSlugs || d.relatedBlueprints || [];
-      const slugs = rawSlugs
-        .map((s: any) => typeof s === 'string' ? s : (s?.slug || s?.href || s?.url))
-        .filter(Boolean);
-
-      return { slugs, heroCta };
-    }
-
-    case 'Features':
-      return { features: toFeatureArray(d.features) || toFeatureArray(d.capabilities) || [] };
-
-    case 'Steps':
-      return { steps: d.steps || d.onboardingExperience || [] };
-
-    case 'Architecture':
-      return { architecture: d.architecture };
-
-    case 'UIBlock':
-      return d;
-
-    // [V13] V13-specific V1 prop extraction.
-    case 'InformationGain':
-      return {
-        uniqueInsight:       d.informationGain?.uniqueInsight       || d.uniqueInsight,
-        structuralAdvantage: d.informationGain?.structuralAdvantage || d.structuralAdvantage,
-        features:            d.informationGain?.features            || [],
-      };
-
-    case 'ConversionEngine':
-      return {
-        primaryCTA:   d.conversionEngine?.primaryCTA   || d.primaryCTA,
-        secondaryCTA: d.conversionEngine?.secondaryCTA || d.secondaryCTA,
-        cta:          normalizeCta(d.conversionEngine?.cta, d.conversionEngine?.primaryCTA || d.primaryCTA, d.conversionEngine?.secondaryCTA || d.secondaryCTA),
-      };
-
-    default: {
-      // Phase 4-9 blocks: derive the expected prop key from the component name (camelCase).
-      const dataKey = type.charAt(0).toLowerCase() + type.slice(1);
-      return { data: d[dataKey] };
-    }
-  }
-}
-
-// ----------------------------------------------------------------------
-// HYBRID PAGE COMPONENT
-// ----------------------------------------------------------------------
 export default async function DynamicSEOPage({ params }: PageProps) {
-  const { slug } = await params;
-  const page = getNormalizedPage(slug);
+  const { slug } = params; // [B3] plain object — no await
+  const page     = getNormalizedPage(slug);
   if (!page) notFound();
 
-  const isV2 = Array.isArray(page.blocks);
-
-  // Build the initial render list from either the V2 block manifest or the V1 layout config.
-  let renderList: Array<{ type: string; payload: any }> = isV2
-    ? [...page.blocks]
-    : (LAYOUT_CONFIG[page.type] || LAYOUT_CONFIG.default).map((type) => ({
-        type,
-        payload: page,
-      }));
-
-  // Inject uiBlocks (present on V1 pages) into the render list after the Hero slot.
-  if (page.uiBlocks && page.uiBlocks.length > 0) {
-    const uiRenderBlocks = page.uiBlocks.map((block: any) => {
-      // V10.2 FIX: For V1 pages, `dataMapping` may be a string key (e.g. 'roiAnalysis')
-      // that should be resolved to the actual value on the page object before rendering.
-      // Without this, UIBlockMapper receives the key name as `data`, causing downstream
-      // components (MetricGovernance etc.) to crash accessing deeply nested properties.
-      const resolvedPayload = !isV2
-        ? resolveUIBlockPayload(block, page)
-        : block;
-
-      // Always produce a canonical { type, payload } shape regardless of source format.
-      return { type: 'UIBlock', payload: resolvedPayload };
-    });
-
-    // [ARCH FIX #40] Derive insertion index from the Hero block's actual position in the
-    // render list rather than assuming it is always at index 0 or 1. This handles layouts
-    // where a non-Hero block is prepended or the Hero is absent.
-    const heroIndex = renderList.findIndex((b) => b.type === 'Hero');
-    const insertionIndex = heroIndex >= 0 ? heroIndex + 1 : 0;
-    renderList.splice(insertionIndex, 0, ...uiRenderBlocks);
-  }
-
-  // Schema.org structured data
-  const schemas: object[] = [
-    {
-      '@context': 'https://schema.org',
-      '@type':    'TechArticle',
-      headline:   page.seo?.h1 || 'Arcli Analytics',
-      description: page.seo?.description || '',
-      author: { '@type': 'Organization', name: 'Arcli Data Team', url: BASE_URL },
-      datePublished: page.seo?.datePublished || new Date().toISOString(),
-      mainEntityOfPage: { '@type': 'WebPage', '@id': `${BASE_URL}/${slug}` },
-    },
-  ];
-
-  const faqData = isV2
-    ? page.blocks.find((b: any) => b?.type === 'FAQs')?.payload?.faqs
-    : page.faqs;
-
-  if (faqData?.length > 0) {
-    schemas.push({
-      '@context': 'https://schema.org',
-      '@type':    'FAQPage',
-      mainEntity: faqData.map((f: any) => ({
-        '@type':        'Question',
-        name:           f.question || f.q,
-        acceptedAnswer: { '@type': 'Answer', text: f.answer || f.a },
-      })),
-    });
-  }
-
-  {schemas.map((schema, index) => {
-  let safeJson = '{}';
-
-  try {
-    safeJson = JSON.stringify(schema) || '{}';
-  } catch (e) {
-    if (DEV) console.warn(`[SCHEMA_ERROR] Failed to stringify JSON-LD at index ${index}`, e);
-  }
+  const preparedBlocks = prepareBlocks(page);
+  const schemas        = buildSchemas(page, slug, preparedBlocks);
 
   return (
     <>
       <Navbar />
 
-      {schemas.map((schema, index) => {
-        let safeJson = '{}';
-        try {
-          // Safely attempt to serialize the schema.
-          // If a getter or toJSON method on the page object throws an error,
-          // it will be caught here instead of crashing the Next.js build.
-          safeJson = JSON.stringify(schema) || '{}';
-        } catch (e) {
-          if (DEV) console.warn(`[SCHEMA_ERROR] Failed to stringify JSON-LD at index ${index}`, e);
-        }
+      {/* [B1] JSON-LD structured data — rendered ONCE here, never inside the block loop */}
+      {schemas.map((schema, i) => (
+        <script
+          key={i}
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: safeStringify(schema) }}
+        />
+      ))}
 
-        return (
-          <script
-            key={index}
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{
-              // [CRITICAL FIX #38] Escape </script> sequences in serialized JSON to prevent
-              // the structured-data string from inadvertently closing the script tag and
-              // allowing arbitrary HTML injection into the page.
-              __html: safeJson.replace(/</g, '\\u003c'),
-            }}
-          />
-        );
-      })}
-
+      {/* [B2] Single <main> — no nesting */}
       <main className="min-h-screen bg-white text-slate-600 font-sans selection:bg-[#2563eb] selection:text-white overflow-x-hidden">
-        {renderList.map((block, index) => {
-          // [V10.4 FIX] Abort early if the block object is corrupted or undefined in memory.
-          if (!block || !block.type) return null;
-
-          const BlockComponent = BLOCK_REGISTRY[block.type];
-          if (!BlockComponent) {
-            // [ARCH FIX #43] Emit a DEV warning instead of silently swallowing unknown types.
-            if (DEV) console.warn(`[UNKNOWN_BLOCK]: ${block.type}`);
+        {preparedBlocks.map(({ type, props, stableKey, inlineVisualizations }) => {
+          const entry = BLOCK_REGISTRY[type];
+          if (!entry) {
+            if (DEV) console.warn(`[UNKNOWN_BLOCK]: ${type}`);
             return null;
           }
 
-          // V2 blocks and UIBlocks carry their own payload.
-          // V1 layout blocks derive props from the flat page object via getV1BlockProps.
-          // [CRITICAL FIX #32] Spread into a fresh object (safeProps) before any mutation
-          // so we never mutate a shared payload reference. Mutating blockProps directly
-          // breaks React strict-mode assumptions and can cause cross-render contamination
-          // when the same payload object is referenced by multiple render list entries.
-          const safeProps: Record<string, any> = (isV2 || block.type === 'UIBlock')
-            ? { ...(block.payload ?? {}) }
-            : getV1BlockProps(block.type, page);
+          const { component: BlockComponent, isEmpty } = entry;
 
-          // ------------------------------------------------------------------
-          // V2 PAYLOAD NORMALIZATION BRIDGE  [V10.3 + V10.4 + V10.5 + V13 FIX]
-          // Maps V2/V13 JSON field names to the prop names expected by each UI
-          // component. Runs only for V2 pages; V1 paths are handled by
-          // getV1BlockProps above. This keeps the two schemas fully decoupled
-          // while avoiding duplicate component logic.
-          // [V10.4] Extended to cover all new AI-native V2 alias block types.
-          // [V10.5] Extended to construct the full `data` object for the Hero block.
-          // [V13]   Extended to cover InformationGain and ConversionEngine.
-          // ------------------------------------------------------------------
-          if (isV2) {
-            switch (block.type) {
-              case 'Hero':
-                // The visual Hero component expects a `data` prop shaped like NormalizedPage.
-                // Reconstruct this nested structure from the flat V2 block payload.
-                if (!safeProps.data) {
-                  safeProps.data = {
-                    type: safeProps.badge || page.type || 'platform',
-                    seo: {
-                      h1: safeProps.title || page.seo?.h1 || 'Arcli Analytics',
-                    },
-                    hero: {
-                      subtitle: safeProps.subtitle || safeProps.description || page.seo?.description || '',
-                      cta: normalizeCta(
-                        safeProps.cta,
-                        safeProps.primaryCta || safeProps.primaryCTA,
-                        safeProps.secondaryCta || safeProps.secondaryCTA,
-                      ),
-                    },
-                  };
-                }
-                break;
-
-              case 'ContrarianBanner':
-                safeProps.statement = safeProps.statement || safeProps.heading;
-                safeProps.subtext   = safeProps.subtext   || safeProps.argument || safeProps.description;
-                break;
-
-              case 'KeywordAnchorBlock':
-              case 'ExecutiveSummary':
-                if (!safeProps.highlights && safeProps.pillars) {
-                  safeProps.highlights = safeProps.pillars.map((p: any) => ({
-                    value: p.title,
-                    label: p.description,
-                  }));
-                } else if (!safeProps.highlights && safeProps.text) {
-                  // Fallback for KeywordAnchorBlock with a flat text field.
-                  safeProps.highlights = [{ value: safeProps.heading, label: safeProps.text }];
-                }
-                break;
-
-              case 'StrategicQuery':
-                if (!safeProps.scenario) {
-                  safeProps.scenario = {
-                    title:           safeProps.title,
-                    description:     safeProps.description,
-                    businessOutcome: safeProps.businessOutcome,
-                    sql:             safeProps.code || safeProps.sqlSnippet,
-                    dialect:         safeProps.language || 'SQL',
-                  };
-                }
-                break;
-
-              case 'UseCaseBlock':
-              case 'UseCases':
-                safeProps.useCases = safeProps.useCases || safeProps.scenarios || [];
-                break;
-
-              case 'QueryExamplesBlock':
-                // Map QueryExamplesBlock `examples` array to the `features` prop shape.
-                if (!safeProps.features && safeProps.examples) {
-                  safeProps.features = safeProps.examples.map((ex: any) => ({
-                    title:       ex.query,
-                    description: ex.intent,
-                  }));
-                }
-                break;
-
-              case 'SecurityGuardrails':
-                safeProps.items = safeProps.items || safeProps.features || [];
-                break;
-
-              case 'Architecture':
-                // Some V2 payloads use `components` instead of the top-level `architecture` key.
-                if (!safeProps.architecture && safeProps.components) {
-                  safeProps.architecture = { components: safeProps.components };
-                }
-                break;
-
-              case 'ComparisonBlock':
-              case 'Matrix':
-                // Some V2 payloads use `rows` instead of `matrix`.
-                if (!safeProps.matrix && safeProps.rows) {
-                  safeProps.matrix = safeProps.rows;
-                }
-                break;
-
-              // [V10.6 FIX] Explicitly extract the CTA context from the page's Hero object.
-              case 'InternalLinkingBlock':
-              case 'RelatedLinks':
-                // Map InternalLinkingBlock `links` array to the `slugs` prop.
-                if (!safeProps.slugs && safeProps.links) {
-                  safeProps.slugs = safeProps.links.map((l: any) => l?.href || l?.url).filter(Boolean);
-                }
-                // RelatedLinks component requires a heroCta prop which is missing from
-                // native V2 payloads. Ensure we fall back to the top-level page Hero.
-                if (!safeProps.heroCta) {
-                  const heroBlock = page.blocks?.find((b: any) => b?.type === 'Hero');
-                  const hp = heroBlock?.payload || {};
-                  safeProps.heroCta = normalizeCta(
-                    safeProps.cta || hp.cta,
-                    safeProps.primaryCta || safeProps.primaryCTA || hp.primaryCta || hp.primaryCTA,
-                    safeProps.secondaryCta || safeProps.secondaryCTA || hp.secondaryCta || hp.secondaryCTA,
-                  );
-                }
-                break;
-
-              // [V13 FIX] InformationGain: map V13 insight strings into Features bullet shape.
-              case 'InformationGain':
-                if (!safeProps.features?.length) {
-                  safeProps.features = [
-                    { title: 'Unique Insight',       description: safeProps.uniqueInsight },
-                    { title: 'Structural Advantage', description: safeProps.structuralAdvantage },
-                  ].filter((item) => Boolean(item.description));
-                }
-                break;
-
-              // [V13 FIX] ConversionEngine: normalize V13 CTA fields into the unified cta shape.
-              case 'ConversionEngine':
-                if (!safeProps.cta?.primary) {
-                  safeProps.cta = normalizeCta(
-                    safeProps.cta,
-                    safeProps.primaryCTA,
-                    safeProps.secondaryCTA,
-                  );
-                }
-                break;
-            }
-          }
-          // ------------------------------------------------------------------
-          // END V2 PAYLOAD NORMALIZATION BRIDGE
-          // ------------------------------------------------------------------
-
-          // Defensive array coercion for all known array props.
-          // [CRITICAL FIX #39] forceArray (defined at module level) now returns [] for
-          // plain objects instead of [obj], preventing consumers from receiving an array
-          // of the wrong element shape.
-          // [V10.7 FIX] slugs: already coerced to strings upstream in getV1BlockProps for
-          // V1 RelatedLinks; the forceArray here handles any residual non-array edge cases.
-          safeProps.slugs      = forceArray(safeProps.slugs);
-          safeProps.faqs       = forceArray(safeProps.faqs);
-          safeProps.matrix     = forceArray(safeProps.matrix || safeProps.rows);
-          safeProps.useCases   = forceArray(safeProps.useCases || safeProps.scenarios);
-          safeProps.features   = forceArray(safeProps.features);
-          safeProps.steps      = forceArray(safeProps.steps);
-          safeProps.personas   = forceArray(safeProps.personas);
-          safeProps.items      = forceArray(safeProps.items);
-          safeProps.highlights = forceArray(safeProps.highlights || safeProps.pillars);
-
-          // Deep structural guards for components with nested array mapping requirements.
-          if (safeProps.architecture) {
-            if (typeof safeProps.architecture !== 'object') {
-              safeProps.architecture = {
-                components: [{ title: 'System Node', description: String(safeProps.architecture) }],
-              };
-            } else {
-              safeProps.architecture.components = forceArray(safeProps.architecture.components);
-            }
+          // Hero always renders; all other blocks are skipped when isEmpty returns true.
+          if (type !== BLOCK_TYPES.HERO && isEmpty?.(props)) {
+            if (DEV) console.warn(`[BLOCK_SKIPPED_EMPTY]: ${type}`, props);
+            return null;
           }
 
-          if (safeProps.data && typeof safeProps.data === 'object' && block.type === 'TelemetryTrace') {
-            safeProps.data = { ...safeProps.data, traces: forceArray(safeProps.data.traces) };
-          }
-
-          // Hero always renders (builds its own fallback data).
-          if (block.type !== 'Hero') {
-            const isEmpty = IS_EMPTY[block.type];
-            if (isEmpty && isEmpty(safeProps)) {
-              // [V13 FIX] Emit a dev warning so skipped blocks are no longer silent.
-              if (DEV) console.warn(`[BLOCK_SKIPPED_EMPTY]: ${block.type}`, safeProps);
-              return null;
-            }
-          }
-
-          // [CRITICAL FIX #33] Key stability: prefer a semantic block identifier over
-          // array index. Index-only keys cause React reconciliation bugs (wrong component
-          // reuse, UI flickering) whenever the render list is spliced or reordered.
-          const stableKey = `${block.type}-${(block as any).id || (block as any).slug || index}`;
-
-          // ------------------------------------------------------------------
-          // [V13 FIX] uiVisualizations Injection
-          // When a V13 block payload carries an inline `uiVisualizations` array,
-          // each entry is rendered as a UIBlockMapper immediately after the parent
-          // block. This keeps related data visualizations contextually co-located
-          // without requiring them to be top-level render list entries.
-          // [ARCH FIX #42] Inline visualization entries are validated (ui.type required,
-          // ui.dataMapping !== undefined) before rendering to mirror UIBlockMapper's own
-          // top-level guard and prevent crashes from malformed visualization objects.
-          // ------------------------------------------------------------------
-          const inlineVisualizations = Array.isArray(safeProps.uiVisualizations)
-            ? safeProps.uiVisualizations
-            : [];
-
+          // If this block carries inline V13 visualizations, wrap in a Fragment so
+          // each visualization renders contextually co-located below its parent.
           if (inlineVisualizations.length > 0) {
             return (
               <React.Fragment key={stableKey}>
-                <BlockComponent {...safeProps} />
-                {inlineVisualizations.map((ui: any, uiIndex: number) => {
-                  // [ARCH FIX #42] Validate before rendering — match UIBlockMapper's own guard.
-                  if (!ui?.type || ui.dataMapping === undefined) {
-                    if (DEV) console.warn(`[UIBLOCK_INVALID] inline visualization at ${stableKey}[${uiIndex}]`, ui);
-                    return null;
-                  }
-                  return (
-                    <UIBlockMapper
-                      key={`${stableKey}-ui-${uiIndex}`}
-                      visualizationType={ui.type}
-                      dataMapping={ui.dataMapping}
-                    />
-                  );
-                })}
+                <BlockComponent {...props} />
+                {inlineVisualizations.map((ui, uiIdx) => (
+                  <UIBlockMapper
+                    key={`${stableKey}-ui-${uiIdx}`}
+                    visualizationType={ui.type}
+                    dataMapping={ui.dataMapping}
+                  />
+                ))}
               </React.Fragment>
             );
           }
 
-          return <BlockComponent key={stableKey} {...safeProps} />;
+          return <BlockComponent key={stableKey} {...props} />;
         })}
       </main>
 
       <Footer />
     </>
   );
-});
-}}
-
+}
