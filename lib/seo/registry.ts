@@ -82,7 +82,7 @@ const allModules = [
 export const SEO_REGISTRY: Record<string, any> = {};
 
 // [FIX] Helper to ensure safe URL formatting
-const toKebab = (str) => str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+const toKebab = (str: string) => str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, exportValue]) => {

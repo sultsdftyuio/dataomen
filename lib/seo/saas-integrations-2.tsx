@@ -1,345 +1,222 @@
 // lib/seo/saas-integrations-2.tsx
-import React from 'react';
-import { Search, Megaphone } from 'lucide-react';
+
+import { SEOPageData } from './index';
 
 /**
- * V13 ENFORCED: SEOPageData Interface - Application Intelligence Blueprint
- * Upgraded for dominant search visibility and high-converting UX.
+ * V13 ENFORCED: SaaS Integration Campaigns Part 2 (GA4 & HubSpot)
+ * Completely refactored to eliminate local interfaces and enforce the strictly typed UI Block Protocol.
  */
-export interface SEOPageData {
-  type: 'integration';
-  title: string;
-  description: string;
-  h1: string;
-  subtitle: string;
-  icon: React.ReactElement;
-  
-  // 💡 V13: INFORMATION GAIN SYSTEM
-  informationGain: {
-    uniqueInsight: string;
-    structuralAdvantage: string;
-  };
-
-  // 🎯 V13: CONVERSION ENGINE
-  conversionEngine: {
-    primaryCTA: { text: string; href: string };
-    secondaryCTA: { text: string; href: string };
-    contextualCTA?: { text: string; href: string; placement: 'mid-article' | 'conclusion' };
-  };
-
-  // 🧱 V13: UI VISUALIZATION ENGINE
-  uiVisualizations: {
-    type: 'mermaid-architecture' | 'react-vega-chart' | 'sql-diff-viewer' | 'interactive-demo';
-    dataMapping: string;
-    interactionPurpose: string;
-    intentServed: string;
-  }[];
-
-  // 🧬 V13: STRUCTURED DATA LAYER
-  schemaMarkup: {
-    type: 'HowTo' | 'FAQPage' | 'SoftwareApplication';
-    payload: any;
-  };
-
-  quickAnswer?: string;
-  stepByStep?: string[];
-  
-  demoPipeline?: {
-    userPrompt: string;
-    aiInsight: string;
-    generatedSql: string;
-    chartMetric: string;
-  };
-
-  targetPersonas?: {
-    role: string;
-    iconType: 'exec' | 'ops' | 'data';
-    description: string;
-    capabilities: string[];
-  }[];
-
-  comparisonTable?: {
-    feature: string;
-    native: string;
-    arcli: string;
-  }[];
-  
-  features: string[];
-  
-  extractionLifecycle: {
-    phase1: { name: string; description: string };
-    phase2: { name: string; description: string };
-    phase3: { name: string; description: string };
-  };
-  
-  domainSpecificCapabilities: {
-    handlingQuirks: string[];
-    aiAdvantage: string;
-  };
-  
-  bypassingNativeLimits: {
-    legacyLimitations: string[];
-    arcliAcceleration: string[];
-  };
-  
-  analyticalScenarios: {
-    level: 'Basic' | 'Intermediate' | 'Advanced' | 'Strategic';
-    title: string;
-    description: string;
-    exampleQuery: string;
-    exampleSql: string;
-    businessOutcome: string;
-  }[];
-  
-  businessValueAndROI: {
-    metric: string;
-    impact: string;
-    timeframe: string;
-  }[];
-  
-  faqs: {
-    persona: 'CEO' | 'Data Engineer' | 'CISO' | 'RevOps' | 'E-commerce Director' | 'Marketing Director';
-    q: string;
-    a: string;
-  }[];
-  relatedSlugs: string[];
-}
-
 export const saasIntegrationsPart2: Record<string, SEOPageData> = {
   'google-analytics-ai-dashboard': {
     type: 'integration',
-    title: 'Google Analytics 4 AI Dashboard | Arcli Analytics',
-    description: 'Learn how to analyze GA4 data without the UI. Connect BigQuery to Arcli and use generative AI to UNNEST events and track true attribution instantly.',
-    h1: 'How to Analyze Google Analytics 4 (GA4) Data Without the UI',
-    subtitle: 'Query raw BigQuery events, custom funnels, and attribution using conversational AI instead of confusing GA4 reports. Get 100% accurate, unsampled traffic metrics in seconds.',
-    icon: <Search className="w-12 h-12 text-orange-500 mb-6" />,
-    
-    informationGain: {
-      uniqueInsight: "The native GA4 UI heavily samples data on high-traffic queries. Arcli bypasses this entirely by routing natural language intents directly to the raw BigQuery GA4 export, generating complex UNNEST SQL that most marketers cannot write themselves.",
-      structuralAdvantage: "Provides a live comparison of thresholded UI data vs raw BigQuery output, proving the mathematical necessity of an external data engine."
-    },
-
-    conversionEngine: {
-      primaryCTA: { text: 'Connect BigQuery Free', href: '/register' },
-      secondaryCTA: { text: 'See Live Demo', href: '#interactive-demo' },
-      contextualCTA: { text: 'Learn about our BigQuery Zero-Copy Integration', href: '/integrations/bigquery', placement: 'mid-article' }
-    },
-
-    uiVisualizations: [
-      {
-        type: 'interactive-demo',
-        dataMapping: 'GA4 Campaign LTV Pipeline',
-        interactionPurpose: 'Demonstrate how a simple conversational prompt is compiled into massive BigQuery SQL.',
-        intentServed: 'Product Execution Proof'
-      },
-      {
-        type: 'sql-diff-viewer',
-        dataMapping: 'Standard SQL vs BigQuery UNNEST SQL',
-        interactionPurpose: 'Shows data engineers exactly how Arcli handles nested STRUCT arrays natively.',
-        intentServed: 'Technical Validation'
-      }
-    ],
-
-    schemaMarkup: {
-      type: 'HowTo',
-      payload: {
-        "@context": "https://schema.org",
-        "@type": "HowTo",
-        "name": "How to Analyze GA4 Data Without the UI",
-        "description": "Bypass GA4 sampling by querying the raw BigQuery export using AI.",
-        "step": [
-          { "@type": "HowToStep", "text": "Enable the GA4 daily export to Google BigQuery." },
-          { "@type": "HowToStep", "text": "Connect Arcli securely to your BigQuery project via Read-Only Service Account." },
-          { "@type": "HowToStep", "text": "Ask a question in plain English to generate the UNNEST SQL automatically." }
-        ]
-      }
-    },
-
-    demoPipeline: {
-      userPrompt: "Which marketing campaign drove the highest LTV customers last quarter?",
-      aiInsight: "The 'Q3_Enterprise_Webinar' campaign drove customers with a 3x higher LTV ($1,200) compared to our standard Paid Search campaigns.",
-      generatedSql: "SELECT traffic_source.campaign, COUNT(DISTINCT user_id) as users, SUM(user_ltv.revenue) as ltv FROM `events_*` WHERE _TABLE_SUFFIX BETWEEN '20230701' AND '20230930' GROUP BY 1 ORDER BY 3 DESC;",
-      chartMetric: "3x Higher LTV"
-    },
-
-    targetPersonas: [
-      {
-        role: 'For Marketing VPs',
-        iconType: 'exec',
-        description: 'Get an un-manipulated, mathematically precise Return on Ad Spend (ROAS) metric that doesn\'t rely on Google\'s internal algorithms.',
-        capabilities: ['True Cross-Platform ROAS', 'Unsampled Analytics']
-      },
-      {
-        role: 'For Data Engineering',
-        iconType: 'data',
-        description: 'Let Arcli handle the complex BigQuery `UNNEST` logic for deeply nested `event_params` STRUCT arrays automatically.',
-        capabilities: ['Zero-Copy Architecture', 'Partition-Aware Querying']
-      }
-    ],
-
-    quickAnswer: "To effectively analyze GA4 data and bypass UI sampling, connect your Google Analytics BigQuery export to an AI-powered semantic engine like Arcli. This allows you to UNNEST complex event parameters using plain English.",
-    
-    comparisonTable: [
-      { feature: 'Data Accuracy', native: 'Heavily Sampled & Thresholded', arcli: '100% Unsampled Raw BigQuery Data' },
-      { feature: 'Cross-Platform ROI', native: 'Impossible (Walled Garden)', arcli: 'Native (Join GA4 with Stripe/CRM)' }
-    ],
-
-    features: [
-      'Conversational Event Analysis', 
-      'Automated Funnel Drop-off Tracking', 
-      'Zero-Copy BigQuery Architecture'
-    ],
-    
-    extractionLifecycle: {
-      phase1: { name: 'The BigQuery Synchronization', description: 'Authorize Arcli using secure Google Cloud Service Accounts.' },
-      phase2: { name: 'Intelligent Schema Parsing', description: 'Our Semantic Router automatically indexes GA4\'s daily partition tables.' },
-      phase3: { name: 'Conversational Push-Down Compute', description: 'Arcli compiles plain-English into optimized Google Standard SQL.' }
-    },
-
-    domainSpecificCapabilities: {
-      handlingQuirks: [
-        'Natively authors the highly complex SQL required to `UNNEST` GA4\'s deeply nested `event_params`.',
-        'Enforces strict `_TABLE_SUFFIX` partition filters to prevent costly full-table scans.'
+    seo: {
+      title: 'Google Analytics 4 AI Dashboard | Arcli Analytics',
+      description: 'Learn how to analyze GA4 data without the UI. Connect BigQuery to Arcli and use generative AI to UNNEST events and track true attribution instantly.',
+      h1: 'How to Analyze Google Analytics 4 (GA4) Data Without the UI',
+      keywords: [
+        'Analyze GA4 Data',
+        'GA4 BigQuery Unnest',
+        'Bypass GA4 Sampling',
+        'Unsampled GA4 Analytics',
+        'AI Google Analytics Dashboard'
       ],
-      aiAdvantage: 'Arcli natively understands GA4 schema design, translating simple questions directly into BigQuery SQL without hallucinating field names.'
+      intent: 'integration',
+      canonicalDomain: 'https://arcli.tech/integrations/google-analytics'
+    },
+    hero: {
+      badge: 'Marketing Intelligence',
+      title: 'Analyze Google Analytics 4 (GA4) Without the UI',
+      subtitle: 'Query raw BigQuery events, custom funnels, and attribution using conversational AI instead of confusing GA4 reports. Get 100% accurate, unsampled traffic metrics in seconds.',
+      icon: 'Search',
+      primaryCTA: { text: 'Connect BigQuery Free', href: '/register' },
+      secondaryCTA: { text: 'See Live Demo', href: '#interactive-demo' }
     },
 
-    bypassingNativeLimits: {
-      legacyLimitations: ['The native GA4 UI hides real data behind thresholding and aggressive sampling.'],
-      arcliAcceleration: ['Queries the raw BigQuery export directly, guaranteeing 100% unsampled data.']
-    },
-
-    analyticalScenarios: [
+    // STRICT BLOCK ARCHITECTURE (V13 Rule 4)
+    blocks: [
       {
-        level: 'Strategic',
-        title: 'Cross-Platform ROAS Blending',
-        description: 'Merge GA4 acquisition costs with internal Stripe billing data to find true customer value.',
-        exampleQuery: "Join our GA4 user acquisition sources with internal billing to calculate true ROAS.",
-        exampleSql: `WITH GA4_Acquisition AS (SELECT user_id, traffic_source.source FROM \`events_*\` WHERE event_name = 'first_visit')...`,
-        businessOutcome: 'Provides the executive team with a mathematically precise Return on Ad Spend (ROAS) metric.'
+        type: 'ContrarianBanner',
+        statement: 'The native GA4 UI hides your real data behind thresholding and aggressive sampling algorithms.',
+        subtext: 'If you want mathematically accurate data, you must use the BigQuery export. But analyzing that raw data requires writing massive SQL queries to UNNEST complex event_params STRUCT arrays. Arcli bypasses this entirely by routing natural language intents directly to BigQuery.'
+      },
+      {
+        type: 'InformationGain',
+        uniqueInsight: 'Arcli natively understands the GA4 BigQuery schema design. It automatically authors the highly complex SQL required to UNNEST parameters while strictly enforcing `_TABLE_SUFFIX` partition filters to prevent costly full-table scans.',
+        structuralAdvantage: 'Provides a mathematical guarantee of 100% unsampled data, allowing marketers to blend raw GA4 acquisition traffic directly with internal Stripe/CRM revenue for true ROAS.'
+      },
+      {
+        type: 'UIBlock',
+        payload: {
+          type: 'ArchitectureDiagram',
+          // Strict Data Mapping & Nested Array Requirement (V13 Rule 1 & 2)
+          dataMapping: {
+            title: 'The Zero-Copy GA4 Pipeline',
+            steps: [
+              {
+                title: '1. BigQuery Synchronization',
+                description: 'Authorize Arcli using secure Google Cloud Service Accounts to connect to your raw GA4 daily export.'
+              },
+              {
+                title: '2. Intelligent Schema Parsing',
+                description: 'Our Semantic Router automatically indexes GA4\'s daily partition tables and nested STRUCT parameters.'
+              },
+              {
+                title: '3. Conversational Push-Down Compute',
+                description: 'Arcli compiles plain English into optimized Google Standard SQL, executing in milliseconds on your compute.'
+              }
+            ]
+          }
+        }
+      },
+      {
+        type: 'ComparisonMatrix',
+        // Strict Table Requirement (V13 Rule 3)
+        rows: [
+          { category: 'Data Accuracy', arcliAdvantage: '100% Unsampled Raw Export', legacy: 'Heavily Sampled & Thresholded UI' },
+          { category: 'Cross-Platform ROI', arcliAdvantage: 'Native (Join GA4 with Stripe/CRM)', legacy: 'Impossible (Walled Garden)' },
+          { category: 'Query Cost', arcliAdvantage: 'Partition-Aware (Low Cost)', legacy: 'High (Prone to full-table scans)' }
+        ]
+      },
+      {
+        type: 'UIBlock',
+        payload: {
+          type: 'AnalyticsDashboard',
+          // Strict Data Mapping (V13 Rule 1 & 2)
+          dataMapping: {
+            title: 'Cross-Platform ROAS Blending',
+            description: 'Merge GA4 acquisition costs with internal CRM data to find true customer value, completely bypassing the GA4 interface.',
+            dialect: 'Google BigQuery',
+            code: `-- Generated by Arcli Semantic Router
+SELECT 
+  traffic_source.campaign, 
+  COUNT(DISTINCT user_id) as total_users, 
+  SUM(user_ltv.revenue) as true_ltv 
+FROM \`analytics_123456789.events_*\`
+WHERE _TABLE_SUFFIX BETWEEN '20230701' AND '20230930' 
+  AND event_name = 'purchase'
+GROUP BY 1 
+ORDER BY true_ltv DESC;`,
+            businessOutcome: 'Provides the executive team with a mathematically precise Return on Ad Spend (ROAS) metric without relying on Google\'s internal, sampled attribution algorithms.'
+          }
+        }
       }
-    ],
-
-    businessValueAndROI: [
-      { metric: 'Data Engineering Bandwidth', impact: 'Save 20+ hours a month by eliminating manual BigQuery SQL requests.', timeframe: 'First 30 Days' }
     ],
 
     faqs: [
       {
-        persona: 'Data Engineer',
         q: 'How does Arcli handle BigQuery costs and prevent full-table scans?',
-        a: 'Our Contextual RAG routing ensures that every AI-generated query strictly enforces `_TABLE_SUFFIX` partition filters based on the date range requested.'
+        a: 'Our Contextual RAG routing ensures that every AI-generated query strictly enforces `_TABLE_SUFFIX` partition filters based on the date range requested. We prevent the AI from generating queries that scan your entire historical dataset.',
+        persona: 'Data Engineer'
+      },
+      {
+        q: 'Do I need to write the UNNEST SQL myself?',
+        a: 'No. Arcli automatically detects nested `event_params` and `user_properties` arrays and writes the required `UNNEST()` functions directly into the executed query.',
+        persona: 'Marketing Director'
       }
-    ],
-    relatedSlugs: ['data-blending-guide', 'natural-language-to-sql']
+    ]
   },
 
   'analyze-hubspot-data': {
     type: 'integration',
-    title: 'How to Analyze HubSpot Data (Deals, Contacts, Revenue)',
-    description: 'Learn how to analyze HubSpot data beyond the native UI. Connect to Arcli to calculate true pipeline velocity, multi-touch attribution, and custom properties via AI.',
-    h1: 'How to Analyze HubSpot Data (Deals, Contacts, Revenue)',
-    subtitle: 'Stop exporting HubSpot lists to Excel. Connect your raw CRM data to Arcli and ask complex revenue, velocity, and pipeline questions in plain English.',
-    icon: <Megaphone className="w-12 h-12 text-orange-600 mb-6" />,
-    
-    informationGain: {
-      uniqueInsight: "HubSpot's native reporting strictly limits users to 3-object joins (e.g., Contacts + Deals + Companies). Arcli extracts and vectorizes the data into a columnar engine, allowing infinite object joins and dynamic pipeline velocity math.",
-      structuralAdvantage: "Provides a breakdown of how AI automatically maps complex custom HubSpot Association tables without manual dbt modeling."
+    seo: {
+      title: 'How to Analyze HubSpot Data (Deals, Contacts, Revenue) | Arcli',
+      description: 'Learn how to analyze HubSpot data beyond the native UI. Connect to Arcli to calculate true pipeline velocity, multi-touch attribution, and custom properties via AI.',
+      h1: 'How to Analyze HubSpot Data (Deals, Contacts, Revenue)',
+      keywords: [
+        'Analyze HubSpot Data',
+        'HubSpot Pipeline Velocity',
+        'Cross-Object HubSpot Reporting',
+        'HubSpot Custom Objects AI',
+        'RevOps AI Analytics'
+      ],
+      intent: 'integration',
+      canonicalDomain: 'https://arcli.tech/integrations/hubspot'
     },
-
-    conversionEngine: {
+    hero: {
+      badge: 'RevOps Intelligence',
+      title: 'Analyze HubSpot Beyond the Native UI',
+      subtitle: 'Stop exporting HubSpot lists to Excel. Connect your raw CRM data to Arcli and ask complex revenue, velocity, and pipeline questions in plain English.',
+      icon: 'Megaphone',
       primaryCTA: { text: 'Connect HubSpot Free', href: '/register' },
-      secondaryCTA: { text: 'Watch How It Works', href: '#interactive-demo' },
-      contextualCTA: { text: 'See our Zero-Mutation CRM security policy', href: '/security', placement: 'mid-article' }
+      secondaryCTA: { text: 'Watch How It Works', href: '#interactive-demo' }
     },
 
-    uiVisualizations: [
+    blocks: [
       {
-        type: 'interactive-demo',
-        dataMapping: 'HubSpot Deal Velocity Pipeline',
-        interactionPurpose: 'Lets RevOps users experience how natural language replaces complex workflow building.',
-        intentServed: 'Product Execution Proof'
-      }
-    ],
-
-    schemaMarkup: {
-      type: 'SoftwareApplication',
-      payload: {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Arcli HubSpot Analytics Integration",
-        "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Web"
-      }
-    },
-
-    demoPipeline: {
-      userPrompt: "How many days does it take to close Enterprise deals on average?",
-      aiInsight: "Enterprise deals take an average of 42 days to close. However, deals stuck in 'Legal Review' for >5 days have a 60% lower win rate.",
-      generatedSql: "SELECT dealstage, AVG(DATE_PART('day', closedate::timestamp - createdate::timestamp)) as avg_velocity FROM hubspot_deals WHERE deal_type = 'Enterprise' GROUP BY 1;",
-      chartMetric: "42 Days Avg"
-    },
-
-    targetPersonas: [
+        type: 'ContrarianBanner',
+        statement: 'HubSpot\'s native reporting strictly limits users to 3-object joins (e.g., Contacts + Deals + Companies).',
+        subtext: 'If you want to build complex multi-touch attribution models or deeply nested custom object reports, the native UI fails. Arcli extracts and vectorizes the data into a columnar engine, allowing infinite object joins and dynamic pipeline velocity math.'
+      },
       {
-        role: 'For RevOps Teams',
-        iconType: 'ops',
-        description: 'Bypass HubSpot\'s strict 3-object reporting limit. Automatically join Deals, Contacts, Companies, and custom objects seamlessly.',
-        capabilities: ['Multi-Touch Attribution', 'Stage Velocity Math']
-      }
-    ],
-
-    quickAnswer: "To analyze HubSpot data beyond its native limits, extract your objects via API into a columnar database. You can then use AI-powered SQL to effortlessly join unlimited objects and calculate true pipeline velocity.",
-    
-    comparisonTable: [
-      { feature: 'Cross-Object Reporting', native: 'Strictly Limited to 3 Objects', arcli: 'Unlimited Object Joins' },
-      { feature: 'Pipeline Velocity', native: 'Requires complex custom workflows', arcli: 'Native SQL Window Functions' }
-    ],
-
-    features: [
-      'Vectorized Lead Velocity Tracking', 
-      'Dynamic Cross-Object Joins', 
-      'Zero-Mutation Security Guarantee'
-    ],
-    
-    extractionLifecycle: {
-      phase1: { name: 'API Synchronization', description: 'Authorize Arcli using HubSpot OAuth 2.0 protocols for read-only access.' },
-      phase2: { name: 'Automated Property Normalization', description: 'Our Semantic Router automatically indexes every custom field.' },
-      phase3: { name: 'Conversational Sub-Second Compute', description: 'Complex cross-object queries execute in milliseconds.' }
-    },
-
-    domainSpecificCapabilities: {
-      handlingQuirks: ['Native extraction and mapping of HubSpot\'s complex association tables.'],
-      aiAdvantage: 'Arcli’s semantic router embeds your unique HubSpot terminology to prevent hallucinations.'
-    },
-
-    bypassingNativeLimits: {
-      legacyLimitations: ['Native HubSpot custom report builders are extremely rigid.'],
-      arcliAcceleration: ['Generates complex, multi-object analytical logic instantly via conversational prompts.']
-    },
-
-    analyticalScenarios: [
+        type: 'InformationGain',
+        uniqueInsight: 'Arcli handles the hardest part of HubSpot data engineering: mapping complex association tables. The AI automatically understands how Deals link to Contacts via intersection tables, generating flawless cross-object SQL.',
+        structuralAdvantage: 'Bypasses the need to build and maintain expensive dbt models just to report on HubSpot data. Custom properties are embedded into the semantic router instantly.'
+      },
       {
-        level: 'Strategic',
-        title: 'Net Revenue Retention (NRR) via PLG Data Blending',
-        description: 'Predict churn by joining HubSpot deal renewals with external product usage telemetry.',
-        exampleQuery: "Forecast upcoming churn risk by joining HubSpot renewal deals with active user count.",
-        exampleSql: `SELECT c.name, d.amount, p.active_users_30d FROM hubspot_deals d ...`,
-        businessOutcome: 'Alerts Customer Success to high-value accounts with low product adoption.'
+        type: 'UIBlock',
+        payload: {
+          type: 'ArchitectureDiagram',
+          dataMapping: {
+            title: 'HubSpot Extraction Lifecycle',
+            steps: [
+              {
+                title: '1. API Synchronization',
+                description: 'Authorize Arcli using HubSpot OAuth 2.0 protocols for secure, strictly read-only access.'
+              },
+              {
+                title: '2. Automated Property Normalization',
+                description: 'Our Semantic Router automatically indexes every custom field and association table.'
+              },
+              {
+                title: '3. Conversational Sub-Second Compute',
+                description: 'Complex cross-object queries execute in milliseconds on our internal columnar engine.'
+              }
+            ]
+          }
+        }
+      },
+      {
+        type: 'ComparisonMatrix',
+        rows: [
+          { category: 'Cross-Object Reporting', arcliAdvantage: 'Unlimited Object Joins', legacy: 'Strictly Limited to 3 Objects' },
+          { category: 'Pipeline Velocity', arcliAdvantage: 'Native SQL Window Functions', legacy: 'Requires complex custom workflows' },
+          { category: 'Custom Properties', arcliAdvantage: 'Auto-Indexed Instantly', legacy: 'Requires manual mapping' }
+        ]
+      },
+      {
+        type: 'UIBlock',
+        payload: {
+          type: 'AnalyticsDashboard',
+          dataMapping: {
+            title: 'Net Revenue Retention (NRR) via PLG Data Blending',
+            description: 'Predict churn by joining HubSpot deal renewals with external product usage telemetry natively.',
+            dialect: 'PostgreSQL (DuckDB)',
+            code: `-- Generated by Arcli Query Planner
+SELECT 
+  d.dealstage, 
+  AVG(DATE_PART('day', d.closedate::timestamp - d.createdate::timestamp)) as avg_velocity_days 
+FROM hubspot_deals d
+WHERE d.deal_type = 'Enterprise' 
+  AND d.createdate >= CURRENT_DATE - INTERVAL '6 months'
+GROUP BY 1 
+ORDER BY avg_velocity_days DESC;`,
+            businessOutcome: 'Reveals exact bottlenecks in the pipeline. Enterprise deals stuck in Legal Review for >5 days have a 60% lower win rate.'
+          }
+        }
       }
-    ],
-
-    businessValueAndROI: [
-      { metric: 'RevOps Agility', impact: 'Eliminate the 2-week wait time for complex cross-object reporting requests.', timeframe: 'Immediate' }
     ],
 
     faqs: [
       {
-        persona: 'RevOps',
         q: 'Can Arcli handle our hundreds of custom HubSpot properties?',
-        a: 'Yes. Upon connection, Arcli maps your entire metadata structure. Custom properties are embedded into our semantic router instantly.'
+        a: 'Yes. Upon connection, Arcli maps your entire metadata structure. Custom properties and unique Deal Stages are embedded into our semantic router instantly without manual tagging.',
+        persona: 'RevOps'
+      },
+      {
+        q: 'Will querying this data slow down our CRM?',
+        a: 'No. Arcli extracts the data into an isolated columnar structure (Zero-ETL cache) for analytical processing, meaning your complex queries will never impact your operational HubSpot API limits.',
+        persona: 'Data Engineer'
       }
-    ],
-    relatedSlugs: ['sales-dashboard-template', 'natural-language-to-sql']
+    ]
   }
 };

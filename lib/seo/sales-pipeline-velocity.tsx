@@ -24,81 +24,85 @@ export const salesPipelineVelocityData: SEOPageData = {
   hero: {
     badge: "REVOPS & SALES INTELLIGENCE",
     title: "Conversational BI for Modern RevOps.",
-    subtitle: "Salesforce reports are too rigid. Spreadsheets are too slow. Arcli deploys AI data agents that natively join Salesforce and HubSpot data, allowing RevOps to ask complex pipeline questions in plain English and get mathematically governed answers instantly.",
-    primaryCTA: { text: "Connect Your CRM", href: "/register?intent=revops" },
-    secondaryCTA: { text: "View Velocity Architecture", href: "#strategic-query" },
-    trustSignals: [
-      "Native Salesforce (SOQL) & HubSpot API Connectors",
-      "Supports Standard and deeply nested Custom Objects",
-      "Real-time pipeline snapshotting via DuckDB"
-    ]
+    subtitle: "Salesforce reports are too rigid. Spreadsheets are too slow. Arcli deploys AI data agents that natively join Salesforce and HubSpot data, allowing RevOps to ask complex pipeline questions in plain English and get mathematically governed answers instantly."
   },
 
-  executiveSummary: [
-    { value: '40%', label: 'RevOps Time Saved' },
-    { value: '0', label: 'ETL Pipelines Required' },
-    { value: 'Instant', label: 'Cross-Platform Joins' },
-    { value: '100%', label: 'Metric Governance' }
-  ],
-
-  contrarianBanner: {
-    statement: "The RevOps backlog is dead. Let your Sales VPs interrogate the pipeline directly.",
-    subtext: "RevOps teams spend 40% of their week building ad-hoc Salesforce dashboards for Sales Leaders. Arcli eliminates this bottleneck. By establishing a semantic layer over your CRM data, leaders get instant, mathematically accurate answers without filing a JIRA ticket."
-  },
-
-  workflow: {
-    title: "From Cluttered CRM to Governed AI Analytics",
-    description: "How Arcli bypasses Salesforce API limitations to deliver sub-second analytical queries.",
-    steps: [
-      {
-        title: "Incremental Bulk Ingestion",
-        description: "The `salesforce_connector` utilizes the SFDC Bulk API v2 to incrementally sync standard objects (Accounts, Opportunities) and custom objects into a columnar Parquet format without hitting API rate limits.",
-        icon: "Database"
-      },
-      {
-        title: "Cross-Platform Entity Resolution",
-        description: "Arcli automatically resolves the messy reality of B2B sales: merging HubSpot Contact IDs with Salesforce Lead IDs and mapping them to parent Account hierarchies.",
-        icon: "Link"
-      },
-      {
-        title: "Semantic RevOps Layer",
-        description: "Define what 'Qualified Pipeline' actually means to your business in Arcli's governance layer. The AI agent strictly adheres to this definition, preventing hallucinated calculations.",
-        icon: "ShieldCheck"
-      },
-      {
-        title: "Automated Slack Watchdogs",
-        description: "Deploy an agent to monitor the semantic layer. If next quarter's pipeline generation drops below the historical 30-day moving average, it instantly alerts the VP of Sales in Slack.",
-        icon: "Bell"
+  blocks: [
+    {
+      type: 'ContrarianBanner',
+      statement: "The RevOps backlog is dead. Let your Sales VPs interrogate the pipeline directly.",
+      subtext: "RevOps teams spend 40% of their week building ad-hoc Salesforce dashboards for Sales Leaders. Arcli eliminates this bottleneck. By establishing a semantic layer over your CRM data, leaders get instant, mathematically accurate answers without filing a JIRA ticket."
+    },
+    {
+      type: 'InformationGain',
+      uniqueInsight: "Traditional BI forces you to extract SFDC and HubSpot data into a costly external data warehouse before joining it. Arcli uses embedded DuckDB to execute cross-platform joins in-memory, delivering instant velocity metrics without the zero-value ETL overhead.",
+      structuralAdvantage: "A unified AI Semantic Router that natively understands recursive B2B Account hierarchies and automates cross-platform identity resolution."
+    },
+    {
+      type: 'ROIHighlight',
+      metrics: [
+        { value: '40%', label: 'RevOps Time Saved' },
+        { value: '0', label: 'ETL Pipelines Required' },
+        { value: 'Instant', label: 'Cross-Platform Joins' },
+        { value: '100%', label: 'Metric Governance' }
+      ]
+    },
+    {
+      type: 'ArchitectureDiagram',
+      data: {
+        title: "From Cluttered CRM to Governed AI Analytics",
+        steps: [
+          {
+            title: "Incremental Bulk Ingestion",
+            description: "The salesforce_connector utilizes the SFDC Bulk API v2 to incrementally sync standard objects (Accounts, Opportunities) and custom objects into a columnar Parquet format without hitting API rate limits."
+          },
+          {
+            title: "Cross-Platform Entity Resolution",
+            description: "Arcli automatically resolves the messy reality of B2B sales: merging HubSpot Contact IDs with Salesforce Lead IDs and mapping them to parent Account hierarchies."
+          },
+          {
+            title: "Semantic RevOps Layer",
+            description: "Define what 'Qualified Pipeline' actually means to your business in Arcli's governance layer. The AI agent strictly adheres to this definition, preventing hallucinated calculations."
+          },
+          {
+            title: "Automated Slack Watchdogs",
+            description: "Deploy an agent to monitor the semantic layer. If next quarter's pipeline generation drops below the historical 30-day moving average, it instantly alerts the VP of Sales in Slack."
+          }
+        ]
       }
-    ]
-  },
-
-  useCases: {
-    title: "RevOps Conversational Scenarios",
-    items: [
-      {
-        title: "Rep Performance & Quota Attainment",
-        description: "The AI agent aggregates closed-won opportunities, grouping by the Account Executive's team hierarchy, handling complex date-math automatically without requiring a rigid Salesforce report matrix.",
-        icon: "TrendingUp"
-      },
-      {
-        title: "Stalled Deal Identification (Time-in-Stage)",
-        description: "Leveraging Arcli's historical snapshotting, the agent calculates the exact duration a deal has spent in its current stage (e.g., 'Legal Review'), identifying friction points before the deal dies.",
-        icon: "Clock"
-      },
-      {
-        title: "Full-Funnel Velocity by Lead Source",
-        description: "The agent executes a cross-platform JOIN, linking HubSpot campaign attribution data to Salesforce Opportunity data to calculate the four core velocity metrics grouped by marketing origin.",
-        icon: "Filter"
-      }
-    ]
-  },
-
-  strategicScenario: {
-    title: "The Engine Room: Cross-Platform Pipeline Velocity",
-    description: "To calculate true Pipeline Velocity (V = (Number of Ops * Win Rate * Avg Deal Size) / Length of Sales Cycle), Arcli bridges the gap between Marketing (HubSpot) and Sales (Salesforce).",
-    dialect: "DuckDB SQL (Embedded Execution)",
-    sql: `-- Generated by Arcli AI Semantic Router
+    },
+    {
+      type: 'ComparisonMatrix',
+      rows: [
+        {
+          category: "Cross-Platform JOINs",
+          arcliAdvantage: "Native (Embedded DuckDB Engine)",
+          legacy: "Requires Data Warehouse & dbt pipelines"
+        },
+        {
+          category: "Custom Mathematical Metrics",
+          arcliAdvantage: "Natural Language (Semantic Layer)",
+          legacy: "Complex Summary Formulas or DAX expertise"
+        },
+        {
+          category: "Historical Snapshotting",
+          arcliAdvantage: "Automated instantly at ingestion",
+          legacy: "Requires custom 'Reporting Snapshots' setup"
+        },
+        {
+          category: "Executive Accessibility",
+          arcliAdvantage: "Ask natively in Slack / Chat interface",
+          legacy: "Dashboard hunting & filter fatigue"
+        }
+      ]
+    },
+    {
+      type: 'AnalyticsDashboard',
+      data: {
+        title: "The Engine Room: Cross-Platform Pipeline Velocity",
+        description: "To calculate true Pipeline Velocity, Arcli bridges the gap between Marketing (HubSpot) and Sales (Salesforce) dynamically.",
+        dialect: "DuckDB SQL (Embedded Execution)",
+        code: `-- Generated by Arcli AI Semantic Router
 WITH hubspot_attribution AS (
     SELECT 
         hs_contact_id,
@@ -140,56 +144,40 @@ SELECT
 FROM unified_pipeline
 GROUP BY 1 HAVING COUNT(opportunity_id) > 5
 ORDER BY pipeline_velocity_per_day DESC;`,
-    businessOutcome: "Allows Go-To-Market leaders to instantly pivot marketing spend toward the campaigns that generate the fastest revenue, bypassing the need for complex Data Warehouse ETL pipelines."
-  },
-
-  matrix: {
-    title: "Arcli vs Salesforce Native Reporting",
-    description: "Why high-growth RevOps teams are abandoning standard SFDC dashboards.",
-    columns: ["Feature", "Arcli AI Data Agents", "Salesforce Reports & Dashboards", "Traditional BI (Tableau/Looker)"],
-    rows: [
-      {
-        feature: "Cross-Platform JOINs",
-        arcli: "Native (DuckDB engine)",
-        legacyA: "Impossible (SFDC data only)",
-        legacyB: "Requires Data Warehouse & dbt"
-      },
-      {
-        feature: "Custom Mathematical Metrics",
-        arcli: "Natural Language (Semantic Layer)",
-        legacyA: "Complex Summary Formulas (Limited)",
-        legacyB: "Requires SQL/DAX expertise"
-      },
-      {
-        feature: "Historical Snapshotting",
-        arcli: "Automated at ingestion",
-        legacyA: "Requires custom 'Reporting Snapshots'",
-        legacyB: "Depends on complex ETL architecture"
-      },
-      {
-        feature: "Executive Accessibility",
-        arcli: "Ask natively in Slack / Chat",
-        legacyA: "Navigate complex folder structures",
-        legacyB: "Dashboard hunting & filter fatigue"
+        businessOutcome: "Allows Go-To-Market leaders to instantly pivot marketing spend toward the campaigns that generate the fastest revenue, bypassing the need for complex Data Warehouse ETL pipelines."
       }
-    ]
-  },
+    },
+    {
+      type: 'SecurityGuardrails',
+      items: [
+        {
+          title: "Strictly Read-Only Execution",
+          description: "Arcli extracts and analyzes your CRM data to provide insights without any risk of accidentally overwriting or mutating production Salesforce records."
+        },
+        {
+          title: "API Quota Protection",
+          description: "Our connector intelligently utilizes the Salesforce Bulk API v2 for initial loads and relies on the incremental streaming API for updates, ensuring minimal impact on your daily quotas."
+        }
+      ]
+    },
+    {
+      type: 'CTAGroup',
+      primaryCTA: {
+        text: "Connect Your CRM",
+        href: "/register?intent=revops"
+      },
+      secondaryCTA: {
+        text: "View Velocity Architecture",
+        href: "#strategic-query"
+      }
+    }
+  ],
 
   faqs: [
     {
       q: "Does Arcli support Salesforce Custom Objects?",
       a: "Yes. During the connection flow, Arcli dynamically profiles your Salesforce schema, automatically mapping any standard or custom objects (and custom fields with `__c`) into your queryable semantic layer.",
       persona: "RevOps Manager"
-    },
-    {
-      q: "Will Arcli exhaust my Salesforce API limit?",
-      a: "No. Our `salesforce_connector` intelligently utilizes the Salesforce Bulk API v2 for initial loads and relies on the incremental streaming API for updates, ensuring minimal impact on your daily API quotas.",
-      persona: "Data Engineer"
-    },
-    {
-      q: "Can Arcli write data back to Salesforce?",
-      a: "No. Arcli operates strictly with read-only execution guarantees. We extract and analyze the data to provide insights without any risk of accidentally overwriting or mutating your production CRM records.",
-      persona: "CISO"
     },
     {
       q: "How does Arcli handle complex Account hierarchies?",

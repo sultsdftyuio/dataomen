@@ -1,102 +1,74 @@
-// lib/seo/templates-3.tsx
-import React from 'react';
-import type { SEOPageData } from './index';
-import { Megaphone, Headphones, Database, Download, Zap, TrendingUp, AlertOctagon } from 'lucide-react';
+// -----------------------------------------------------------------------------
+// V14 REFACTORED: dashboardTemplatesPart3
+// -----------------------------------------------------------------------------
+import type { Block, TemplateBlueprint } from '@/types/seo-registry'; 
 
-/**
- * SEO Silo: Dashboard Templates (Part 3)
- * Optimized for SERP Realism, Information Gain, and Direct Conversion.
- */
-
-export const dashboardTemplatesPart3: Record<string, SEOPageData> = {
+export const dashboardTemplatesPart3: Record<string, TemplateBlueprint> = {
   'marketing-attribution-blueprint': {
+    id: 'attr-blueprint-005',
     type: 'template',
-    seo: {
+    metadata: {
       title: 'Marketing Attribution Dashboard Template (SQL + ROAS) | Arcli',
       description: 'Blend Meta, Google Ads, and Stripe data instantly. Free DuckDB/Postgres SQL templates to calculate blended CAC, True ROAS, and multi-touch attribution.',
-      h1: 'Marketing Attribution Dashboard (Free SQL Blueprint)',
       canonicalDomain: 'arcli.tech',
       keywords: ['marketing attribution dashboard', 'calculate roas sql', 'blended cac formula', 'meta ads stripe sql', 'google ads roas dashboard duckdb'],
       intent: 'template'
     },
-    hero: {
-      subtitle: 'Stop trusting ad platforms that grade their own homework. Copy-paste these SQL templates to blend Meta, Google, and Stripe data for mathematical ground-truth attribution.',
-      icon: <Megaphone className="w-12 h-12 text-rose-500 mb-6" />
+    schemaOrg: {
+      type: 'SoftwareApplication',
+      primaryEntity: 'Marketing Attribution SQL Blueprints'
     },
-    immediateValue: [
-      'Pre-built SQL for Blended CAC, Platform ROAS, and First-Touch Attribution.',
-      'Instantly join advertising spend with actual captured revenue (Stripe).',
-      'Bypass the 24-48 hour delay of standard marketing ETL pipelines.',
-      'Auditable formulas that finance and marketing can finally agree on.'
-    ],
-    quickStart: {
-      timeToValue: '< 4 minutes',
-      steps: [
-        'Connect Meta Ads, Google Ads, and Stripe via Arcli\'s secure read-only connectors.',
-        'Arcli automatically harmonizes the different timezone and currency schemas using DuckDB.',
-        'Run the cross-platform SQL blueprints below to reveal your true acquisition costs.'
-      ]
-    },
-    conversionRouting: {
-      primaryCTA: { label: 'Connect Ad Platforms & Run SQL', url: '/register?intent=attribution' },
-      secondaryCTA: { label: 'View Live Demo Dashboard', url: '/demo/marketing-attribution' },
-      parentLink: '/templates',
-      internalLinks: ['/templates/saas-metrics-dashboard', '/integrations/stripe']
-    },
-    uiVisualizations: [
+    blocks: [
       {
-        type: 'BarLineChart',
-        dataMapping: { x: 'date', yBar: 'total_spend', yLine: 'blended_cac' },
-        interactionPurpose: 'Track daily ad spend vs real customer acquisition cost',
-        intentServed: 'Executive overview of marketing efficiency'
+        type: 'Hero',
+        data: {
+          h1: 'Marketing Attribution Dashboard (Free SQL Blueprint)',
+          subtitle: 'Stop trusting ad platforms that grade their own homework. Copy-paste these SQL templates to blend Meta, Google, and Stripe data for mathematical ground-truth attribution.',
+          iconName: 'Megaphone' // Strictly serialized
+        }
       },
       {
-        type: 'ROASScatter',
-        dataMapping: { x: 'ad_cost', y: 'true_revenue', bubble: 'campaign_name' },
-        interactionPurpose: 'Identify outlier campaigns burning cash vs generating high LTV',
-        intentServed: 'Granular campaign optimization'
-      }
-    ],
-    assets: [
+        type: 'InformationGain',
+        data: {
+          uniqueInsight: 'Ad networks natively over-report conversions to justify increased spend. Arcli acts as a universal semantic layer to cross-reference spend with actual cash in Stripe.',
+          structuralAdvantage: 'In-Browser WebAssembly Vectorization processes million-row event tables and un-nests UTM parameters without expensive data pipelines.',
+          immediateValue: [
+            'Pre-built SQL for Blended CAC, Platform ROAS, and First-Touch Attribution.',
+            'Instantly join advertising spend with actual captured revenue (Stripe).',
+            'Bypass the 24-48 hour delay of standard marketing ETL pipelines.',
+            'Auditable formulas that finance and marketing can finally agree on.'
+          ]
+        }
+      },
       {
-        type: 'sql',
-        label: 'Download Attribution SQL Library (.sql)',
-        url: '#',
-        icon: <Database className="w-4 h-4 mr-2" />
-      }
-    ],
-    technicalStack: {
-      engine: 'DuckDB',
-      format: 'Parquet',
-      compute: 'In-Browser WebAssembly Vectorization'
-    },
-    performanceMetrics: [
-      'Daily automated currency conversion handling',
-      'Millisecond query execution across million-row event tables',
-      'UTM parameter unnesting and regex parsing via DuckDB macros',
-      'Zero-ETL architecture ensures 100% data freshness'
-    ],
-    strategicContext: {
-      title: 'The Attribution War: Finance vs. Marketing',
-      industrialConstraints: [
-        'Ad networks natively over-report conversions to justify increased spend (the "walled garden" effect).',
-        'Extracting raw ad spend and joining it with Stripe requires brittle Python scripts or expensive tools like Fivetran.',
-        'UTM parameters are frequently malformed, breaking standard BI dashboard filters.'
-      ],
-      arcliEfficiency: 'Arcli acts as a universal semantic layer. It pulls the daily spend from ad networks and cross-references it with your internal database using fast, vectorized SQL. You get a single pane of truth without maintaining data pipelines.'
-    },
-    orchestrationWorkflow: {
-      phase1: { name: 'Multi-Source Ingestion', description: 'Securely authenticate Ad Platforms and Billing engines.' },
-      phase2: { name: 'UTM Normalization', description: 'Automatically extract, lower-case, and clean malformed `utm_source` strings.' },
-      phase3: { name: 'Financial Reconciliation', description: 'Calculate ROAS against *actual cash in bank*.' }
-    },
-    analyticalScenarios: [
+        type: 'ComparisonMatrix',
+        rows: [
+          { category: 'Data Pipeline', legacy: '24-48 hour sync delay (Fivetran/Snowflake)', arcliAdvantage: 'Zero-ETL millisecond execution' },
+          { category: 'Attribution Source', legacy: 'Platform self-reporting (Meta/Google)', arcliAdvantage: 'Ground-truth Stripe verification' },
+          { category: 'UTM Handling', legacy: 'Breaks BI filters on malformed strings', arcliAdvantage: 'Regex parsing via DuckDB macros natively' }
+        ]
+      },
       {
-        level: 'Basic',
-        title: 'Daily Blended CAC',
-        description: 'The ultimate executive metric. Calculate total marketing spend across all platforms divided by total new paying customers.',
-        exampleQuery: "Show me our daily Blended CAC for the last 30 days, combining Google and Meta spend vs Stripe new customers.",
-        exampleSql: `WITH daily_spend AS (
+        type: 'ArchitectureDiagram',
+        data: {
+          title: 'The Attribution Engine',
+          timeToValue: '< 4 minutes',
+          steps: [
+            { title: 'Multi-Source Ingestion', description: 'Securely authenticate Ad Platforms and Billing engines via read-only connectors.' },
+            { title: 'UTM Normalization', description: 'Automatically extract, lower-case, and clean malformed utm_source strings.' },
+            { title: 'Financial Reconciliation', description: 'Calculate ROAS against actual cash in the bank.' }
+          ]
+        }
+      },
+      {
+        type: 'AnalyticsDashboard',
+        data: [
+          {
+            level: 'Basic',
+            title: 'Daily Blended CAC',
+            description: 'The ultimate executive metric. Calculate total marketing spend across all platforms divided by total new paying customers.',
+            dialect: 'postgresql',
+            code: `WITH daily_spend AS (
   SELECT date, SUM(spend) as total_spend
   FROM (
     SELECT date_start AS date, spend FROM meta_ads.campaign_insights
@@ -112,21 +84,19 @@ daily_customers AS (
   GROUP BY 1
 )
 SELECT 
-  s.date,
-  s.total_spend,
-  COALESCE(c.new_customers, 0) as new_customers,
+  s.date, s.total_spend, COALESCE(c.new_customers, 0) as new_customers,
   CASE WHEN c.new_customers > 0 THEN s.total_spend / c.new_customers ELSE 0 END AS blended_cac
 FROM daily_spend s
 LEFT JOIN daily_customers c ON s.date = c.date
 ORDER BY s.date DESC;`,
-        businessOutcome: 'Provides an immediate, tamper-proof view of acquisition efficiency.'
-      },
-      {
-        level: 'Intermediate',
-        title: 'Campaign-Level True ROAS (Stripe Verified)',
-        description: 'Join ad platform campaign names directly to customer events to calculate ROAS using actual Stripe charges.',
-        exampleQuery: "Calculate ROAS by campaign name for Meta Ads, using successfully paid Stripe charges.",
-        exampleSql: `WITH campaign_cost AS (
+            businessOutcome: 'Provides an immediate, tamper-proof view of acquisition efficiency across all channels.'
+          },
+          {
+            level: 'Intermediate',
+            title: 'Campaign-Level True ROAS (Stripe Verified)',
+            description: 'Join ad platform campaign names directly to customer events to calculate ROAS using actual Stripe charges.',
+            dialect: 'postgresql',
+            code: `WITH campaign_cost AS (
   SELECT campaign_name, SUM(spend) as ad_cost
   FROM meta_ads.campaign_insights
   WHERE date_start >= DATE_TRUNC('month', CURRENT_DATE)
@@ -142,116 +112,99 @@ campaign_revenue AS (
   GROUP BY 1
 )
 SELECT 
-  c.campaign_name,
-  c.ad_cost,
-  COALESCE(r.total_revenue, 0) AS true_revenue,
+  c.campaign_name, c.ad_cost, COALESCE(r.total_revenue, 0) AS true_revenue,
   ROUND(COALESCE(r.total_revenue, 0) / NULLIF(c.ad_cost, 0), 2) AS true_roas_multiplier
 FROM campaign_cost c
 LEFT JOIN campaign_revenue r ON c.campaign_name = r.campaign_name
 ORDER BY true_roas_multiplier DESC;`,
-        businessOutcome: 'Reveals which campaigns generate cash flow versus which generate empty clicks.'
+            businessOutcome: 'Reveals which campaigns generate cash flow versus which generate empty clicks.'
+          }
+        ]
+      },
+      {
+        type: 'FAQ',
+        items: [
+          { persona: 'Marketing Director', q: 'Does this replace Google Analytics?', a: 'It acts as backend validation. GA is great for session tracking, but Arcli ties that tracking directly to your production database and billing engine.' },
+          { persona: 'Data Engineer', q: 'How does it handle the schema differences between Google and Meta?', a: 'Arcli utilizes semantic alignment models natively. It understands `metrics_cost_micros` in Google is equivalent to `spend` in Meta.' }
+        ]
+      },
+      {
+        type: 'CTAGroup',
+        data: {
+          primary: { label: 'Connect Ad Platforms & Run SQL', action: 'register', intent: 'Execution' },
+          secondary: { label: 'View Live Demo Dashboard', action: 'demo', intent: 'Exploration' },
+          assets: [
+            { type: 'sql', label: 'Download Attribution SQL Library (.sql)', url: '#', iconName: 'Database' }
+          ]
+        }
       }
-    ],
-    businessValueAndROI: [
-      { metric: 'Ad Spend Optimization', impact: 'Identify and cut campaigns that drive high traffic but zero backend revenue, saving 10-15% of budgets.', timeframe: 'First 14 Days' },
-      { metric: 'Analyst Productivity', impact: 'Eliminate the daily 2-hour task of downloading CSVs and running Excel VLOOKUPs.', timeframe: 'Immediate' }
-    ],
-    structuredData: {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Arcli Marketing Attribution",
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      }
-    },
-    faqs: [
-      { persona: 'Marketing Director', q: 'Does this replace Google Analytics?', a: 'It acts as backend validation. GA is great for session tracking, but Arcli ties that tracking directly to your production database and billing engine.' },
-      { persona: 'Data Engineer', q: 'How does it handle the schema differences between Google and Meta?', a: 'Arcli utilizes semantic alignment models natively. It understands `metrics_cost_micros` in Google is equivalent to `spend` in Meta.' }
-    ],
-    relatedBlueprints: ['saas-metrics-dashboard-template', 'sales-dashboard-template']
+    ]
   },
 
   'support-operations-blueprint': {
+    id: 'supp-blueprint-006',
     type: 'template',
-    seo: {
+    metadata: {
       title: 'Customer Support & CX Operations SQL Templates | Arcli',
       description: 'SQL templates for Zendesk, Intercom, and Jira. Calculate Time-to-Resolution (excluding weekends), SLA breaches, and agent efficiency.',
-      h1: 'Support Operations Dashboard (Zendesk & Intercom SQL)',
       canonicalDomain: 'arcli.tech',
       keywords: ['zendesk sql queries', 'calculate time to resolution excluding weekends sql', 'support SLA dashboard duckdb', 'jira zendesk sql correlation'],
       intent: 'template'
     },
-    hero: {
-      subtitle: 'Measure your CX team\'s true efficiency. Advanced SQL templates to track SLA breaches, calculate business-hour resolution times, and correlate Jira bugs to support ticket volume.',
-      icon: <Headphones className="w-12 h-12 text-violet-500 mb-6" />
+    schemaOrg: {
+      type: 'SoftwareApplication',
+      primaryEntity: 'Support Operations SQL Analytics'
     },
-    immediateValue: [
-      'Pre-built SQL for First Reply Time (FRT) and TTR.',
-      'Advanced logic that automatically excludes weekends and holidays.',
-      'Correlate Engineering deployments with Support ticket spikes.',
-      'Evaluate agent performance without bias.'
-    ],
-    quickStart: {
-      timeToValue: '< 5 minutes',
-      steps: [
-        'Sync your Zendesk, Jira, or Intercom workspace.',
-        'Define your company\'s custom business hours (e.g., 9 AM - 5 PM EST).',
-        'Copy-paste the provided SQL to generate real-time operational charts.'
-      ]
-    },
-    conversionRouting: {
-      primaryCTA: { label: 'Sync Zendesk & Run SQL', url: '/register?intent=support_ops' },
-      secondaryCTA: { label: 'Read the Setup Guide', url: '/docs/integrations/zendesk' },
-      parentLink: '/templates',
-      internalLinks: ['/templates/saas-metrics-dashboard']
-    },
-    uiVisualizations: [
+    blocks: [
       {
-        type: 'HeatMap',
-        dataMapping: { x: 'day_of_week', y: 'hour_of_day', value: 'ticket_volume' },
-        interactionPurpose: 'Identify peak support volume hours for workforce scheduling',
-        intentServed: 'Capacity planning'
+        type: 'Hero',
+        data: {
+          h1: 'Support Operations Dashboard (Zendesk & Intercom SQL)',
+          subtitle: 'Measure your CX team\'s true efficiency. Advanced SQL templates to track SLA breaches, calculate business-hour resolution times, and correlate Jira bugs to support ticket volume.',
+          iconName: 'Headphones'
+        }
       },
       {
-        type: 'ScatterPlot',
-        dataMapping: { x: 'jira_bug_severity', y: 'associated_ticket_count', label: 'jira_issue_key' },
-        interactionPurpose: 'Visualize which software bugs cause the most support load',
-        intentServed: 'Engineering prioritization'
-      }
-    ],
-    assets: [
+        type: 'InformationGain',
+        data: {
+          uniqueInsight: 'Native tools like Zendesk Explore are notoriously slow and fail at correlating bugs to support costs. Calculating "Business Hours" logic in SQL is traditionally very difficult.',
+          structuralAdvantage: 'Advanced Date/Time Arithmetic via DuckDB natively strips out weekends and correlates cross-platform systems instantly.',
+          immediateValue: [
+            'Pre-built SQL for First Reply Time (FRT) and True Time-to-Resolution (TTR).',
+            'Advanced logic that automatically excludes weekends and holidays.',
+            'Correlate Engineering deployments with Support ticket spikes.',
+            'Evaluate agent performance without bias.'
+          ]
+        }
+      },
       {
-        type: 'sql',
-        label: 'Get the CX Operations SQL Pack',
-        url: '#',
-        icon: <Database className="w-4 h-4 mr-2" />
-      }
-    ],
-    technicalStack: {
-      engine: 'DuckDB',
-      format: 'Columnar',
-      compute: 'Advanced Date/Time Arithmetic'
-    },
-    strategicContext: {
-      title: 'Moving Beyond Native Support Analytics',
-      industrialConstraints: [
-        'Native tools like Zendesk Explore are notoriously slow and hard to customize.',
-        'Calculating "Business Hours" logic (excluding weekends) in SQL is traditionally very difficult.',
-        'Support data is siloed from engineering data, making it hard to prove bugs are driving CX costs.'
-      ],
-      arcliEfficiency: 'Arcli offers deep SQL control over ticket data. Our pre-built DuckDB queries handle complex datetime math for business hours automatically.'
-    },
-    analyticalScenarios: [
+        type: 'ComparisonMatrix',
+        rows: [
+          { category: 'Business Hours Logic', legacy: 'Complex Python/Airflow Scripts', arcliAdvantage: 'Native SQL Date/Time Arithmetic' },
+          { category: 'Data Silos', legacy: 'Isolated Zendesk Metrics', arcliAdvantage: 'Correlated Jira + Zendesk Analysis' }
+        ]
+      },
       {
-        level: 'Intermediate',
-        title: 'True Time-to-Resolution (Excluding Weekends)',
-        description: 'Calculate resolution time, stripping out Saturday and Sunday.',
-        exampleQuery: "Calculate average time to resolution in days for tickets closed this month, excluding weekends.",
-        exampleSql: `/* DuckDB Query: Business Days between dates */
+        type: 'ArchitectureDiagram',
+        data: {
+          title: 'CX Operations Setup',
+          timeToValue: '< 5 minutes',
+          steps: [
+            { title: 'Sync Platforms', description: 'Sync your Zendesk, Jira, or Intercom workspace via read-only APIs.' },
+            { title: 'Define Logic', description: 'Define your company\'s custom business hours (e.g., 9 AM - 5 PM EST).' },
+            { title: 'Generate Insights', description: 'Copy-paste the provided SQL to generate real-time operational charts.' }
+          ]
+        }
+      },
+      {
+        type: 'AnalyticsDashboard',
+        data: [
+          {
+            level: 'Intermediate',
+            title: 'True Time-to-Resolution (Excluding Weekends)',
+            description: 'Calculate resolution time, mathematically stripping out Saturday and Sunday penalties.',
+            dialect: 'postgresql',
+            code: `/* DuckDB Query: Business Days between dates */
 SELECT 
   assignee_id,
   COUNT(id) as total_tickets_resolved,
@@ -267,14 +220,14 @@ WHERE status = 'closed'
 GROUP BY 1
 HAVING COUNT(id) > 10
 ORDER BY avg_resolution_business_days ASC;`,
-        businessOutcome: 'Fair agent evaluation without weekend penalties.'
-      },
-      {
-        level: 'Strategic',
-        title: 'Engineering Bug Correlation',
-        description: 'Link customer support ticket volume directly to engineering Jira ticket statuses.',
-        exampleQuery: "Show top 5 Jira tickets 'In Progress' with the highest number of linked Zendesk tickets.",
-        exampleSql: `SELECT 
+            businessOutcome: 'Provides a fair agent evaluation framework without weekend SLA penalties.'
+          },
+          {
+            level: 'Strategic',
+            title: 'Engineering Bug Correlation',
+            description: 'Link customer support ticket volume directly to engineering Jira ticket statuses to prove CX cost.',
+            dialect: 'postgresql',
+            code: `SELECT 
   j.issue_key,
   j.summary AS bug_description,
   COUNT(DISTINCT z.id) AS associated_support_tickets,
@@ -286,17 +239,27 @@ WHERE j.status = 'In Progress'
 GROUP BY 1, 2
 ORDER BY associated_support_tickets DESC
 LIMIT 5;`,
-        businessOutcome: 'Provides quantifiable evidence for engineering to prioritize technical debt eroding margins.'
+            businessOutcome: 'Provides quantifiable evidence for engineering to prioritize technical debt that is eroding margins.'
+          }
+        ]
+      },
+      {
+        type: 'FAQ',
+        items: [
+          { persona: 'RevOps', q: 'Can we calculate First-Reply Time (FRT) within strict business hours?', a: 'Yes. Our templates include CTEs specifically designed to calculate exact minute intervals restricted to operational hours.' },
+          { persona: 'Data Engineer', q: 'Do we need webhooks to stream Zendesk data into Arcli?', a: 'No. Arcli provides a pre-built, zero-ETL connector that handles API pagination and rate limits natively.' }
+        ]
+      },
+      {
+        type: 'CTAGroup',
+        data: {
+          primary: { label: 'Sync Zendesk & Run SQL', action: 'register', intent: 'Execution' },
+          secondary: { label: 'Read the Setup Guide', action: 'view_docs', intent: 'Exploration' },
+          assets: [
+            { type: 'sql', label: 'Get the CX Operations SQL Pack', url: '#', iconName: 'Database' }
+          ]
+        }
       }
-    ],
-    businessValueAndROI: [
-      { metric: 'SLA Compliance Validation', impact: 'Detect breach patterns before enterprise clients churn.', timeframe: 'Ongoing' },
-      { metric: 'Engineering Prioritization', impact: 'Direct engineering to bugs generating the highest ticket volume.', timeframe: 'First 30 Days' }
-    ],
-    faqs: [
-      { persona: 'RevOps', q: 'Can we calculate First-Reply Time (FRT) within strict business hours?', a: 'Yes. Our templates include CTEs specifically designed to calculate exact minute intervals restricted to operational hours.' },
-      { persona: 'Data Engineer', q: 'Do we need webhooks to stream Zendesk data into Arcli?', a: 'No. Arcli provides a pre-built, zero-ETL connector that handles API pagination and rate limits natively.' }
-    ],
-    relatedBlueprints: ['saas-metrics-dashboard-template']
+    ]
   }
 };

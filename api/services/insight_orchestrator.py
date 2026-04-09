@@ -31,6 +31,7 @@ class TrendInsight(BaseModel):
     direction: str
     slope: float
     percentage_change: float
+    r_squared: float = Field(..., description="Statistical strength of the trend (0 to 1)")
     volatility: float = Field(..., description="Stability of the trend (lower is more predictable)")
 
 class CustomerSegment(BaseModel):
@@ -81,17 +82,26 @@ class InsightOrchestrator:
     """
     Phase 3 & 4: The Fully Autonomous Decision Engine.
     
-    Methodology Adherence:
-    ----------------------
-    1. Hybrid Performance: Computation relies entirely on Vectorized Polars/NumPy for C-level speed.
-    2. Dynamic Context: Automatically triggers RFM or Velocity analysis based on schema heuristics.
-    3. Contextual RAG: LLM only receives pre-calculated mathematical facts to prevent hallucination.
+    Methodology Adherence & Scalability Fixes:
+    ------------------------------------------
+    1. Memory Efficiency: Heavy operations pushed down to Polars LazyFrames (lf).
+       Removed all O(N) `.to_dicts()` and `.to_numpy()` materializations.
+    2. Vectorized Math: Trends use Polars native covariance/variance instead of numpy polyfit.
+    3. Token Budgeting: LLM context size strictly controlled by limiting output arrays.
+    4. Robust Heuristics: Improved RFM quantile segmentations and safe null handlings.
     """
 
-    def __init__(self, llm_client: Optional[LLMClient] = None):
+    def __init__(
+        self, 
+        llm_client: Optional[LLMClient] = None,
+        anomaly_z_threshold: float = 2.5,
+        correlation_threshold: float = 0.7,
+        max_rows_context: int = 10
+    ):
         self.llm_client = llm_client or default_llm_client
-        self.ANOMALY_Z_SCORE_THRESHOLD = 2.0 
-        self.STRONG_CORRELATION_THRESHOLD = 0.7
+        self.anomaly_z_score_threshold = anomaly_z_threshold 
+        self.strong_correlation_threshold = correlation_threshold
+        self.max_rows_context = max_rows_context
 
     async def analyze_and_synthesize(self, df: pl.DataFrame, plan: QueryPlan, tenant_id: str) -> InsightPayload:
         """
@@ -115,17 +125,27 @@ class InsightOrchestrator:
         time_col = self._detect_time_column(df)
         identity_col = self._detect_identity_column(df)
         
-        # 2. Vectorized Math Layer (Polars/NumPy)
+        # Performance: Sort once, execute lazily where possible
+        lf = df.lazy()
+        lf_sorted = lf.sort(time_col) if time_col else lf
+        
+        # 2. Vectorized Math Layer (Polars Native)
         raw_corrs = self._find_correlations(df, numeric_cols)
-        trends = self._calculate_trends(df, numeric_cols, time_col) if time_col else []
-        anomalies = self._detect_anomalies(df, numeric_cols, identity_col or df.columns[0], time_col)
+        trends = self._calculate_trends(lf_sorted, numeric_cols, time_col) if time_col else []
+        anomalies = self._detect_anomalies(lf_sorted, numeric_cols, identity_col or df.columns[0], time_col)
         summary_stats = self._calculate_summary_stats(df, numeric_cols)
 
-        # 3. Domain-Specific Business Logic (The Arcli Solutions)
-        customer_segments = self._run_rfm_analysis(df, time_col, identity_col, numeric_cols)
-        velocity_alerts = self._run_velocity_analysis(df, time_col, identity_col, numeric_cols)
+        # 3. Domain-Specific Business Logic
+        customer_segments = self._run_rfm_analysis(lf, df, time_col, identity_col, numeric_cols)
+        velocity_alerts = self._run_velocity_analysis(lf_sorted, time_col, identity_col, numeric_cols)
 
-        primary_driver = max(trends, key=lambda x: abs(x.percentage_change)).column if trends else None
+        # Primary Driver Selection (combining magnitude, statistical fit, and volatility)
+        primary_driver = None
+        if trends:
+            primary_driver = max(
+                trends, 
+                key=lambda x: (abs(x.percentage_change) * x.r_squared) / (x.volatility or 1)
+            ).column
 
         # Link Drivers to Anomalies
         for anomaly in anomalies:
@@ -133,7 +153,7 @@ class InsightOrchestrator:
 
         # 4. Create the Base Mathematical Payload
         payload = InsightPayload(
-            row_count=len(df),
+            row_count=df.height,
             intent_analyzed=plan.intent,
             trends=trends,
             anomalies=anomalies,
@@ -144,7 +164,7 @@ class InsightOrchestrator:
             velocity_alerts=velocity_alerts
         )
 
-        # 5. Phase 4: Strategic Synthesis
+        # 5. Phase 4: Strategic Synthesis (if meaningful data exists)
         if trends or anomalies or customer_segments or velocity_alerts:
             payload.strategic_narrative = await self._generate_strategic_narrative(payload, tenant_id)
 
@@ -157,14 +177,20 @@ class InsightOrchestrator:
     async def _generate_strategic_narrative(self, payload: InsightPayload, tenant_id: str) -> StrategicAdvice:
         """
         Uses Contextual RAG to turn vector math into actionable strategy.
+        Safeguards against token bloat via strict array truncation.
         """
+        # Token Defense: Truncate fact sheet arrays
         fact_sheet = {
             "intent": payload.intent_analyzed,
             "primary_driver": payload.primary_driver,
-            "significant_trends": [t.model_dump() for t in payload.trends if abs(t.percentage_change) > 5],
-            "top_anomalies": [a.model_dump() for a in payload.anomalies[:3]],
+            "significant_trends": [
+                t.model_dump() for t in payload.trends if abs(t.percentage_change) > 5
+            ][:self.max_rows_context],
+            "top_anomalies": [a.model_dump() for a in payload.anomalies][:self.max_rows_context],
             "vip_and_churn_segments": [s.model_dump() for s in (payload.customer_segments or [])],
-            "critical_stockouts": [v.model_dump() for v in (payload.velocity_alerts or []) if v.urgency == 'High']
+            "critical_stockouts": [
+                v.model_dump() for v in (payload.velocity_alerts or []) if v.urgency == 'High'
+            ][:self.max_rows_context]
         }
 
         system_prompt = """
@@ -173,7 +199,7 @@ class InsightOrchestrator:
         
         RULES:
         1. DO NOT HALLUCINATE. Only mention metrics explicitly present in the fact sheet.
-        2. ADDRESS THE BUSINESS PAIN: If VIPs or At-Risk customers are present, tell the user exactly what to do (e.g. 'Send a win-back campaign to the 45 At-Risk customers').
+        2. ADDRESS THE BUSINESS PAIN: If VIPs or At-Risk customers are present, recommend specific tactical actions.
         3. ADDRESS INVENTORY: If stockout risks are high, identify the specific product and advise immediate restock.
         4. BE ACTIONABLE. Recommend a logical, data-driven next step.
         """
@@ -191,9 +217,9 @@ class InsightOrchestrator:
         except Exception as e:
             logger.error(f"[{tenant_id}] Strategic synthesis failed: {e}")
             return StrategicAdvice(
-                summary="Analysis complete but strategic summary failed to generate.",
-                root_cause_hypothesis="Insufficient or malformed data context.",
-                recommended_action="Review raw statistical trends manually.",
+                summary="Analysis complete but strategic summary encountered an error.",
+                root_cause_hypothesis="Insufficient, blocked, or malformed data context.",
+                recommended_action="Review the raw statistical trends manually.",
                 confidence_score=0.0
             )
 
@@ -201,83 +227,110 @@ class InsightOrchestrator:
     # DOMAIN SPECIFIC FRAMEWORKS
     # ==========================================
 
-    def _run_rfm_analysis(self, df: pl.DataFrame, time_col: Optional[str], id_col: Optional[str], num_cols: List[str]) -> Optional[List[CustomerSegment]]:
+    def _run_rfm_analysis(
+        self, lf: pl.LazyFrame, df: pl.DataFrame, time_col: Optional[str], id_col: Optional[str], num_cols: List[str]
+    ) -> Optional[List[CustomerSegment]]:
         """
-        Automatically solves: "I don't know who my best customers are."
-        Executes Vectorized Recency, Frequency, Monetary (RFM) segmentation if customer data is detected.
+        Executes Vectorized Recency, Frequency, Monetary (RFM) segmentation.
         """
-        if not time_col or not id_col or 'customer' not in id_col.lower():
+        if not time_col or not id_col:
+            return None
+        
+        # Safer heuristic for customer identification
+        customer_indicators = ['customer', 'client', 'user', 'account', 'tenant', 'buyer']
+        if not any(k in id_col.lower() for k in customer_indicators):
             return None
             
-        revenue_col = next((c for c in num_cols if any(k in c.lower() for k in ['amount', 'revenue', 'price', 'total'])), None)
+        revenue_col = next((c for c in num_cols if any(k in c.lower() for k in ['amount', 'revenue', 'price', 'total', 'spend'])), None)
         if not revenue_col:
             return None
 
-        # Vectorized RFM calculation
-        max_date = df[time_col].max()
-        rfm = df.group_by(id_col).agg([
-            (max_date - pl.col(time_col).max()).dt.total_days().alias('Recency'),
+        # Calculate max_date eagerly to pass as literal (prevents broadcast issues in lazy groupby)
+        max_date = df.select(pl.col(time_col).max()).item()
+        if not max_date:
+            return None
+
+        # Vectorized RFM calculation (Lazy pushdown)
+        rfm_lf = lf.group_by(id_col).agg([
+            (pl.lit(max_date) - pl.col(time_col).max()).dt.total_days().alias('Recency'),
             pl.col(time_col).count().alias('Frequency'),
             pl.col(revenue_col).sum().alias('Monetary')
         ])
 
-        # Simple heuristic segmentation using Quantiles for performance
-        r_median = rfm['Recency'].median()
-        f_median = rfm['Frequency'].median()
+        rfm = rfm_lf.collect()
+        if rfm.is_empty():
+            return None
+
+        # Robust Quantile-based segmentation
+        r_q33 = rfm.select(pl.col('Recency').quantile(0.33)).item() or 0
+        f_q66 = rfm.select(pl.col('Frequency').quantile(0.66)).item() or 0
+        m_q66 = rfm.select(pl.col('Monetary').quantile(0.66)).item() or 0
         
-        vip_mask = (pl.col('Recency') <= r_median) & (pl.col('Frequency') > f_median)
-        risk_mask = (pl.col('Recency') > r_median) & (pl.col('Frequency') > f_median)
+        vip_mask = (pl.col('Recency') <= r_q33) & (pl.col('Frequency') >= f_q66) & (pl.col('Monetary') >= m_q66)
+        risk_mask = (pl.col('Recency') > r_q33) & (pl.col('Frequency') >= f_q66)
 
         vips = rfm.filter(vip_mask)
         at_risk = rfm.filter(risk_mask)
 
         segments = []
-        if len(vips) > 0:
+        if vips.height > 0:
+            avg_ltv = vips.select(pl.col('Monetary').mean()).item()
             segments.append(CustomerSegment(
                 segment_name="VIP",
-                customer_count=len(vips),
-                average_ltv=round(vips['Monetary'].mean(), 2),
+                customer_count=vips.height,
+                average_ltv=round(avg_ltv, 2) if avg_ltv else 0.0,
                 recommended_action="Invite to loyalty program; prioritize support routing."
             ))
-        if len(at_risk) > 0:
+            
+        if at_risk.height > 0:
+            avg_ltv = at_risk.select(pl.col('Monetary').mean()).item()
             segments.append(CustomerSegment(
                 segment_name="At-Risk (Churn Warning)",
-                customer_count=len(at_risk),
-                average_ltv=round(at_risk['Monetary'].mean(), 2),
+                customer_count=at_risk.height,
+                average_ltv=round(avg_ltv, 2) if avg_ltv else 0.0,
                 recommended_action="Deploy immediate automated win-back email campaign with incentive."
             ))
 
         return segments
 
-    def _run_velocity_analysis(self, df: pl.DataFrame, time_col: Optional[str], id_col: Optional[str], num_cols: List[str]) -> Optional[List[VelocityAlert]]:
+    def _run_velocity_analysis(
+        self, lf_sorted: pl.LazyFrame, time_col: Optional[str], id_col: Optional[str], num_cols: List[str]
+    ) -> Optional[List[VelocityAlert]]:
         """
-        Automatically solves: "I keep running out of my best sellers."
-        Calculates daily burn rate and stockout runway.
+        Calculates daily burn rate and stockout runway using lazy evaluation.
         """
-        if not id_col or ('product' not in id_col.lower() and 'sku' not in id_col.lower()):
+        if not id_col:
             return None
             
-        qty_col = next((c for c in num_cols if any(k in c.lower() for k in ['qty', 'quantity', 'sold', 'sales'])), None)
-        stock_col = next((c for c in num_cols if any(k in c.lower() for k in ['stock', 'inventory', 'on_hand'])), None)
+        product_indicators = ['product', 'sku', 'item', 'variant']
+        if not any(k in id_col.lower() for k in product_indicators):
+            return None
+            
+        qty_col = next((c for c in num_cols if any(k in c.lower() for k in ['qty', 'quantity', 'sold', 'sales', 'units'])), None)
+        stock_col = next((c for c in num_cols if any(k in c.lower() for k in ['stock', 'inventory', 'on_hand', 'available'])), None)
         
         if not qty_col or not stock_col or not time_col:
             return None
 
-        # Sort temporally to calculate burn rates correctly
-        df_sorted = df.sort(time_col)
-        
-        # Calculate daily velocity (last 7 days average) via vectorization
-        velocity = df_sorted.group_by(id_col).agg([
-            pl.col(qty_col).tail(7).mean().alias('daily_burn'),
-            pl.col(stock_col).last().alias('current_stock')
-        ]).filter(pl.col('daily_burn') > 0)
-
-        velocity = velocity.with_columns(
-            (pl.col('current_stock') / pl.col('daily_burn')).cast(pl.Int32).alias('days_to_stockout')
+        # Lazy, vectorized velocity calculation
+        alerts_df = (
+            lf_sorted.group_by(id_col)
+            .agg([
+                pl.col(qty_col).tail(7).mean().alias('daily_burn'),
+                pl.col(stock_col).last().alias('current_stock')
+            ])
+            .filter(pl.col('daily_burn') > 0)
+            .with_columns(
+                (pl.col('current_stock') / pl.col('daily_burn')).cast(pl.Int32).alias('days_to_stockout')
+            )
+            .filter(pl.col('days_to_stockout') <= 14)
+            .sort('days_to_stockout')
+            .limit(self.max_rows_context)
+            .collect()
         )
 
         alerts = []
-        for row in velocity.filter(pl.col('days_to_stockout') <= 14).to_dicts():
+        for row in alerts_df.iter_rows(named=True):
             alerts.append(VelocityAlert(
                 product_identifier=str(row[id_col]),
                 current_stock=round(row['current_stock'], 2),
@@ -286,20 +339,24 @@ class InsightOrchestrator:
                 urgency="High" if row['days_to_stockout'] <= 3 else "Medium"
             ))
 
-        return sorted(alerts, key=lambda x: x.days_to_stockout)
+        return alerts
 
     # ==========================================
     # MATHEMATICAL MODULES (POLARS/NUMPY)
     # ==========================================
 
     def _calculate_summary_stats(self, df: pl.DataFrame, cols: List[str]) -> Dict[str, Dict[str, float]]:
-        if not cols: return {}
+        """Eagerly compute summary stats using a single vectorized pass."""
+        if not cols or df.is_empty(): 
+            return {}
+            
         exprs = []
         for c in cols:
             exprs.extend([
                 pl.col(c).mean().alias(f"{c}_avg"),
                 pl.col(c).std().alias(f"{c}_std")
             ])
+            
         res = df.select(exprs).to_dicts()[0]
         
         return {
@@ -309,75 +366,148 @@ class InsightOrchestrator:
             } for c in cols
         }
 
-    def _detect_anomalies(self, df: pl.DataFrame, cols: List[str], id_col: str, time_col: Optional[str]) -> List[AnomalyInsight]:
+    def _detect_anomalies(
+        self, lf_sorted: pl.LazyFrame, cols: List[str], id_col: str, time_col: Optional[str]
+    ) -> List[AnomalyInsight]:
+        """Detect outliers lazily, bounding memory utilization before materialization."""
         anomalies = []
-        if time_col and df.height >= 5:
-            df_sorted = df.sort(time_col)
-            span = min(7, df_sorted.height - 1)
+        
+        # Need height for logic bounding, easiest to collect count
+        row_count = lf_sorted.select(pl.len()).collect().item()
+        
+        if time_col and row_count >= 5:
+            span = min(7, row_count - 1)
             alpha = 2 / (span + 1)
             
             for c in cols:
-                df_c = df_sorted.select([
-                    id_col, 
-                    c,
-                    pl.col(c).ewm_mean(alpha=alpha).alias("ema"),
-                    pl.col(c).rolling_std(window_size=span).fill_null(strategy="backward").alias("rolling_std")
-                ])
-                z_expr = pl.when(pl.col("rolling_std") > 0).then((pl.col(c) - pl.col("ema")) / pl.col("rolling_std")).otherwise(0).alias("z")
-                outliers = df_c.with_columns(z_expr).filter(pl.col("z").abs() > self.ANOMALY_Z_SCORE_THRESHOLD)
+                # Polars Native Rolling & EWM Math
+                z_expr = (
+                    pl.when(pl.col("rolling_std") > 0)
+                    .then((pl.col(c) - pl.col("ema")) / pl.col("rolling_std"))
+                    .otherwise(0)
+                    .alias("z")
+                )
                 
-                for row in outliers.to_dicts():
+                outliers_df = (
+                    lf_sorted.select([
+                        pl.col(id_col), 
+                        pl.col(c),
+                        pl.col(c).ewm_mean(alpha=alpha, ignore_nulls=True).alias("ema"),
+                        pl.col(c).rolling_std(window_size=span).fill_null(strategy="forward").fill_null(0).alias("rolling_std")
+                    ])
+                    .with_columns(z_expr)
+                    .filter(pl.col("z").abs() > self.anomaly_z_score_threshold)
+                    .sort("z", descending=True)
+                    .limit(self.max_rows_context)
+                    .collect()
+                )
+                
+                for row in outliers_df.iter_rows(named=True):
                     anomalies.append(AnomalyInsight(
-                        column=c, row_identifier=str(row[id_col]), value=round(row[c], 2), z_score=round(abs(row["z"]), 2), is_positive=row["z"] > 0
+                        column=c, 
+                        row_identifier=str(row[id_col]), 
+                        value=round(row[c], 2), 
+                        z_score=round(abs(row["z"]), 2), 
+                        is_positive=row["z"] > 0
                     ))
         else:
+            # Fallback to standard standard-deviation thresholding
             for c in cols:
-                mean, std = df[c].mean(), df[c].std()
-                if not std or std == 0: continue
-                z_scores = ((df[c] - mean) / std).fill_null(0)
-                mask = z_scores.abs() > self.ANOMALY_Z_SCORE_THRESHOLD
-                outliers = df.filter(mask).with_columns(z=z_scores.filter(mask))
-                for row in outliers.to_dicts():
+                # Using standard global mean/std
+                z_expr = ((pl.col(c) - pl.col(c).mean()) / pl.col(c).std().fill_null(1)).fill_null(0)
+                outliers_df = (
+                    lf_sorted.select([pl.col(id_col), pl.col(c)])
+                    .with_columns(z=z_expr)
+                    .filter(pl.col("z").abs() > self.anomaly_z_score_threshold)
+                    .sort("z", descending=True)
+                    .limit(self.max_rows_context)
+                    .collect()
+                )
+                
+                for row in outliers_df.iter_rows(named=True):
                     anomalies.append(AnomalyInsight(
-                        column=c, row_identifier=str(row[id_col]), value=round(row[c], 2), z_score=round(abs(row["z"]), 2), is_positive=row["z"] > 0
+                        column=c, 
+                        row_identifier=str(row[id_col]), 
+                        value=round(row[c], 2), 
+                        z_score=round(abs(row["z"]), 2), 
+                        is_positive=row["z"] > 0
                     ))
+                    
         return sorted(anomalies, key=lambda x: x.z_score, reverse=True)
 
-    def _calculate_trends(self, df: pl.DataFrame, cols: List[str], time_col: str) -> List[TrendInsight]:
+    def _calculate_trends(self, lf_sorted: pl.LazyFrame, cols: List[str], time_col: str) -> List[TrendInsight]:
+        """Calculates linear trends natively in Polars avoiding numpy memory arrays."""
         trends = []
-        sorted_df = df.sort(time_col)
+        
         for c in cols:
-            y = sorted_df[c].drop_nulls().to_numpy()
-            if len(y) < 3: continue
-            slope, _ = np.polyfit(np.arange(len(y)), y, 1)
-            pct = ((y[-1] - y[0]) / (y[0] or 1)) * 100
+            # Drop nulls and assign contiguous index for pure math calculation
+            lf_trend = lf_sorted.select(pl.col(c)).drop_nulls().with_row_index("x")
+            
+            # Execute math directly inside the engine
+            stats = lf_trend.select(
+                slope=(pl.cov("x", c) / pl.var("x").fill_null(1.0)).fill_null(0.0),
+                r_squared=(pl.corr("x", c) ** 2).fill_null(0.0),
+                first_val=pl.col(c).first(),
+                last_val=pl.col(c).last(),
+                mean_val=pl.col(c).mean(),
+                std_val=pl.col(c).std()
+            ).collect()
+            
+            if stats.is_empty():
+                continue
+                
+            row = stats.row(0, named=True)
+            first_val = row["first_val"] or 0
+            mean_val = row["mean_val"] or 0
+            
+            pct = ((row["last_val"] - first_val) / first_val * 100) if first_val != 0 else 0.0
+            volatility = (row["std_val"] / mean_val) if mean_val != 0 else 0.0
+            
             trends.append(TrendInsight(
-                column=c, slope=slope, percentage_change=round(pct, 2),
-                direction="increasing" if slope > 0.05 else "decreasing" if slope < -0.05 else "flat",
-                volatility=round(np.std(y) / (np.mean(y) or 1), 3)
+                column=c, 
+                slope=row["slope"], 
+                percentage_change=round(pct, 2),
+                r_squared=round(row["r_squared"], 3),
+                direction="increasing" if row["slope"] > 0.05 else "decreasing" if row["slope"] < -0.05 else "flat",
+                volatility=round(volatility, 3)
             ))
+            
         return trends
 
     def _find_correlations(self, df: pl.DataFrame, cols: List[str]) -> Dict[str, List[str]]:
-        if len(cols) < 2: return {}
-        corr_matrix = df.select(cols).corr().to_dicts()
+        """Safe extraction of correlation matrix."""
+        if len(cols) < 2 or df.is_empty(): 
+            return {}
+            
+        corr_df = df.select(cols).corr()
         mapping = {c: [] for c in cols}
+        
         for i, col_a in enumerate(cols):
             for j, col_b in enumerate(cols):
-                if i == j: continue
-                coef = corr_matrix[i].get(col_b)
-                if coef and abs(coef) >= self.STRONG_CORRELATION_THRESHOLD:
+                if i == j: 
+                    continue
+                # item() is the canonical Polars way to extract a specific cell
+                coef = corr_df.item(i, j)
+                if coef is not None and abs(coef) >= self.strong_correlation_threshold:
                     mapping[col_a].append(col_b)
+                    
         return mapping
 
     def _detect_time_column(self, df: pl.DataFrame) -> Optional[str]:
         temporal = [c for c in df.columns if df.schema[c] in [pl.Datetime, pl.Date, pl.Time]]
-        if temporal: return temporal[0]
+        if temporal: 
+            return temporal[0]
+            
+        time_heuristics = ["date", "month", "year", "time", "day", "timestamp", "created_at", "updated_at"]
         for c in df.columns:
-            if any(k in c.lower() for k in ["date", "month", "year", "time", "day"]): return c
+            if any(k in c.lower() for k in time_heuristics): 
+                return c
         return None
 
     def _detect_identity_column(self, df: pl.DataFrame) -> Optional[str]:
+        id_heuristics = ['id', 'uuid', 'key', 'email', 'user', 'account', 'sku', 'product', 'customer', 'tenant']
         for c in df.columns:
-            if c.lower() == 'id' or c.lower().endswith('_id'): return c
+            c_lower = c.lower()
+            if c_lower == 'id' or c_lower.endswith('_id') or any(h == c_lower for h in id_heuristics): 
+                return c
         return None
