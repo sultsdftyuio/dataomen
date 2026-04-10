@@ -67,10 +67,30 @@ async def lifespan(app: FastAPI):
     # Force OS to reclaim RAM from massive module imports
     gc.collect()
     logger.info("🧹 Boot-time Garbage Collection complete. Ready for traffic.")
+
+    try:
+        from api.services.agent_memory import build_redis_client, initialize_agent_memory
+
+        app.state.agent_memory = initialize_agent_memory(build_redis_client())
+        logger.info("✅ Agent memory service initialized with app-scoped Redis client.")
+    except Exception as e:
+        app.state.agent_memory = None
+        logger.error(f"⚠️ Agent memory initialization failed: {e}")
     
     yield
     
     logger.info("🔌 Shutting down API... Cleaning up resources.")
+    try:
+        from api.services.agent_memory import reset_agent_memory
+
+        agent_memory_service = getattr(app.state, "agent_memory", None)
+        if agent_memory_service is not None:
+            await agent_memory_service.aclose()
+            logger.info("✅ Agent memory Redis pool closed.")
+
+        reset_agent_memory()
+    except Exception as e:
+        logger.warning(f"⚠️ Agent memory shutdown cleanup failed: {e}")
 
 
 app = FastAPI(
