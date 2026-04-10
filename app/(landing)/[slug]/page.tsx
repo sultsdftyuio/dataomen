@@ -373,6 +373,31 @@ function normalizeSteps(
   );
 }
 
+/** FAQ items: canonicalized to support both q/a and question/answer schemas */
+function normalizeFaqs(
+  raw: any[],
+): Array<{ q: string; a: string; question: string; answer: string; persona?: string }> {
+  if (!raw.length) return [];
+  if (isAlreadyNormalized(raw)) return raw as any;
+
+  return tagNormalized(
+    raw
+      .map((r: any) => {
+        const q = r.q || r.question || r.title || '';
+        const a = r.a || r.answer || r.description || '';
+        if (!q && !a) return null;
+        return {
+          q,
+          a,
+          question: q,
+          answer: a,
+          ...(r.persona ? { persona: r.persona } : {}),
+        };
+      })
+      .filter(Boolean) as Array<{ q: string; a: string; question: string; answer: string; persona?: string }>,
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // [H2] SCHEMA VALIDATORS
 // Run after normalization. Zero-out arrays that still fail the contract.
@@ -405,6 +430,16 @@ function validateFeatures(features: any[]): boolean {
 
 function validateSteps(steps: any[]): boolean {
   return steps.every((s) => typeof s.title === 'string');
+}
+
+function validateFaqs(faqs: any[]): boolean {
+  return faqs.every(
+    (f) =>
+      typeof f.q === 'string' &&
+      typeof f.a === 'string' &&
+      typeof f.question === 'string' &&
+      typeof f.answer === 'string',
+  );
 }
 
 /**
@@ -584,7 +619,21 @@ const BLOCK_REGISTRY: RegistryCheck = {
   [BLOCK_TYPES.TELEMETRY_TRACE]:           { component: TelemetryTrace,              isEmpty: (p) => !p.data },
   [BLOCK_TYPES.METRIC_GOVERNANCE]:         { component: MetricGovernance,            isEmpty: (p) => !p.data?.codeSnippet },
   [BLOCK_TYPES.EMBEDDABLE_SDK]:            { component: EmbeddableSDK,               isEmpty: (p) => !p.data },
-  [BLOCK_TYPES.DATA_GRAVITY_COST]:         { component: DataGravityCost,             isEmpty: (p) => !p.data },
+  [BLOCK_TYPES.DATA_GRAVITY_COST]:         {
+    component: DataGravityCost,
+    isEmpty: (p) => {
+      const d = p.data;
+      if (d && typeof d === 'object') {
+        return !(
+          d.title ||
+          d.description ||
+          d.arcliEfficiency ||
+          (Array.isArray(d.industrialConstraints) && d.industrialConstraints.length > 0)
+        );
+      }
+      return !(p.title || p.description || p.arcliEfficiency || p.industrialConstraints?.length);
+    },
+  },
   [BLOCK_TYPES.DYNAMIC_SCHEMA_MAPPING]:    { component: DynamicSchemaMapping,        isEmpty: (p) => !p.data },
   [BLOCK_TYPES.GRANULAR_ACCESS_CONTROL]:   { component: GranularAccessControl,       isEmpty: (p) => !p.data },
   [BLOCK_TYPES.CONCURRENCY_PROOF]:         { component: ConcurrencyProof,            isEmpty: (p) => !p.data },
@@ -723,7 +772,40 @@ const V1_NORMALIZERS: Record<string, (page: any) => Record<string, any>> = {
     items: toArray(d.securityGuardrails) || toArray(d.trustAndSecurity) || toArray(d.security),
   }),
 
-  [BLOCK_TYPES.FAQS]: (d) => ({ faqs: d.faqs || [] }),
+  [BLOCK_TYPES.FAQS]: (d) => {
+    const raw = forceArray(d.faqs || []);
+    const normalized = normalizeFaqs(raw);
+    return {
+      faqs: safeNormalized(normalized, validateFaqs, 'FAQs.faqs', raw),
+    };
+  },
+
+  [BLOCK_TYPES.DATA_GRAVITY_COST]: (d) => {
+    const source = d.dataGravityCost ?? d.strategicContext ?? d;
+
+    if (typeof source === 'string') {
+      return {
+        data: {
+          title: 'Data Gravity Cost',
+          description: source,
+        },
+      };
+    }
+
+    if (source && typeof source === 'object') {
+      return {
+        data: {
+          title: source.title || source.heading || 'Data Gravity Cost',
+          description: source.description || source.text || '',
+          industrialConstraints: forceArray(source.industrialConstraints || source.constraints || []),
+          arcliEfficiency: source.arcliEfficiency || source.resolution || source.outcome || '',
+          ...source,
+        },
+      };
+    }
+
+    return { data: undefined };
+  },
 
   [BLOCK_TYPES.RELATED_LINKS]: (d) => {
     const rawCta  = d.hero?.cta || d.cta;
@@ -932,6 +1014,46 @@ const V2_NORMALIZERS: Record<string, V2Normalizer> = {
       'V2 Steps.steps',
       raw,
     );
+  },
+
+  [BLOCK_TYPES.FAQS]: (props) => {
+    const raw = forceArray(props.faqs ?? props.items ?? []);
+    props.faqs = safeNormalized(
+      normalizeFaqs(raw),
+      validateFaqs,
+      'V2 FAQs.faqs',
+      raw,
+    );
+  },
+
+  [BLOCK_TYPES.DATA_GRAVITY_COST]: (props) => {
+    if (props.data && typeof props.data === 'object') {
+      props.data = {
+        title: props.data.title || props.data.heading || 'Data Gravity Cost',
+        description: props.data.description || props.data.text || '',
+        industrialConstraints: forceArray(props.data.industrialConstraints || props.data.constraints || []),
+        arcliEfficiency: props.data.arcliEfficiency || props.data.resolution || props.data.outcome || '',
+        ...props.data,
+      };
+      return;
+    }
+
+    if (typeof props.data === 'string') {
+      props.data = {
+        title: 'Data Gravity Cost',
+        description: props.data,
+      };
+      return;
+    }
+
+    if (!props.data && (props.title || props.description || props.text || props.industrialConstraints || props.constraints)) {
+      props.data = {
+        title: props.title || props.heading || 'Data Gravity Cost',
+        description: props.description || props.text || '',
+        industrialConstraints: forceArray(props.industrialConstraints || props.constraints || []),
+        arcliEfficiency: props.arcliEfficiency || props.resolution || props.outcome || '',
+      };
+    }
   },
 
   [BLOCK_TYPES.RELATED_LINKS]: (props, _page, blockMap) => {

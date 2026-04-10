@@ -6,7 +6,9 @@
  * - Added strict null checks (!array || array.length === 0)
  * - Added optional chaining (?.) to all array.map() calls.
  * - Added strict type-guard for Object.keys() in Architecture block.
- * - Added safe fallbacks for nested CTA object traversal.
+ * - Simplified RelatedLinks UI to a clean, minimal list layout.
+ * - Fixed FAQs to seamlessly support both legacy (question/answer) 
+ * and standardized (q/a) schemas without TypeScript compiler errors.
  */
 
 "use client";
@@ -202,58 +204,70 @@ export const Architecture = ({ architecture }: { architecture: NormalizedPage['a
   );
 };
 
-export const RelatedLinks = ({ slugs, heroCta }: { slugs: string[], heroCta: NormalizedPage['hero']['cta'] }) => {
+export const RelatedLinks = ({ slugs, links, heroCta }: { slugs?: string[], links?: any[], heroCta: NormalizedPage['hero']['cta'] }) => {
   const [ref, vis] = useVisible(0.1);
 
-  if (!slugs || slugs.length === 0) return null;
+  const items = links?.length ? links : slugs;
+  if (!items || items.length === 0) return null;
+
   return (
-    <section className="py-24 bg-slate-50 relative overflow-hidden border-t border-slate-200/50">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        <SectionHeading 
-          monoLabel="// RELATED_MODULES"
-          subtitle="Discover specific architectural setups and orchestration patterns."
-        >
-          Explore Deep Dives
-        </SectionHeading>
-        
-        <div ref={ref as React.RefObject<HTMLDivElement>} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {slugs?.map((relatedSlug, i) => {
-            const rawRelated = getPage(relatedSlug) as any;
-            if (!rawRelated) return null;
-            
-            const relatedTitle = rawRelated.type === 'template' 
-              ? rawRelated.hero?.h1 
-              : (rawRelated.h1 || rawRelated.heroTitle || rawRelated.title || relatedSlug);
-            
-            return (
-              <Link 
-                key={relatedSlug}
-                href={`/${relatedSlug}`}
-                style={{ transitionDelay: `${i * 100}ms` }}
-                className={`bg-white p-8 rounded-xl border border-slate-200 shadow-sm hover:border-[#2563eb]/40 hover:shadow-[0_8px_20px_-6px_rgba(37,99,235,0.15)] transition-all duration-700 group flex flex-col justify-between h-full hover:-translate-y-1 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-              >
-                <h3 className="text-[19px] font-bold text-[#0B1221] mb-6 tracking-tight">
-                  {relatedTitle}
-                </h3>
-                <div className="flex items-center justify-between mt-auto">
-                  <span className="font-mono text-[10px] font-bold text-[#2563eb] uppercase tracking-[0.2em]">ACCESS_FILE</span>
-                  <ArrowRight className="w-4 h-4 text-[#2563eb] group-hover:translate-x-1 transition-transform" />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-        
-        {heroCta?.primary && (
-          <div className={`flex justify-center transition-all duration-1000 delay-300 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-            <Link 
-              href={heroCta.primary.href || '#'} 
-              className="group relative flex items-center justify-center gap-2 bg-[#0B1221] text-white px-8 py-4 rounded-xl text-lg font-bold shadow-[0_4px_14px_0_rgb(0,0,0,0.1)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.2)] hover:-translate-y-0.5 transition-all duration-300"
-            >
-              {heroCta.primary.text || 'Get Started'} <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </Link>
+    <section className="py-16 bg-white relative border-t border-slate-100">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
+        <div ref={ref as React.RefObject<HTMLDivElement>} className={`transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
+          <h2 className="text-2xl font-bold text-[#0B1221] tracking-tight mb-6">Related Resources</h2>
+          
+          <div className="flex flex-col gap-2 mb-10">
+            {items?.map((item, i) => {
+              let relatedTitle = item.label || item.title;
+              let description = item.description;
+              let href = item.href || item.url;
+              
+              if (typeof item === 'string') {
+                const rawRelated = getPage(item) as any;
+                if (!rawRelated) return null;
+                relatedTitle = rawRelated.type === 'template' 
+                  ? rawRelated.hero?.h1 
+                  : (rawRelated.h1 || rawRelated.heroTitle || rawRelated.title || item);
+                href = `/${item}`;
+              }
+
+              if (!href) return null;
+
+              return (
+                <Link 
+                  key={href}
+                  href={href}
+                  className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200"
+                >
+                  <div>
+                    <h3 className="text-[16px] font-bold text-[#2563eb] group-hover:text-blue-700 transition-colors">
+                      {relatedTitle}
+                    </h3>
+                    {description && <p className="text-sm text-slate-500 mt-1">{description}</p>}
+                  </div>
+                  <div className="mt-2 sm:mt-0 flex items-center text-sm font-bold text-slate-400 group-hover:text-[#2563eb] transition-colors">
+                    Read <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </Link>
+              );
+            })}
           </div>
-        )}
+          
+          {heroCta?.primary && (
+            <div className="border-t border-slate-100 pt-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h4 className="text-lg font-bold text-[#0B1221]">Ready to dive in?</h4>
+                <p className="text-sm text-slate-500">Get started with Arcli today.</p>
+              </div>
+              <Link 
+                href={heroCta.primary.href || '#'} 
+                className="inline-flex items-center gap-2 bg-[#2563eb] text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors"
+              >
+                {heroCta.primary.text || 'Get Started'}
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -274,20 +288,21 @@ export const FAQs = ({ faqs }: { faqs: NormalizedPage['faqs'] }) => {
         </SectionHeading>
         
         <div ref={ref as React.RefObject<HTMLDivElement>} className="space-y-3">
-          {faqs?.map((faq, i) => (
+          {/* Explicitly cast faq as any here so TypeScript allows .q, .question, .a, .answer simultaneously */}
+          {faqs?.map((faq: any, i) => (
             <details 
               key={i} 
               style={{ transitionDelay: `${i * 100}ms` }}
               className={`group bg-white border border-slate-200 rounded-lg overflow-hidden [&_summary::-webkit-details-marker]:hidden shadow-sm hover:border-slate-300 transition-all duration-700 transform ${vis ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
             >
               <summary className="flex items-center justify-between cursor-pointer p-4 md:p-5 font-bold text-[#0B1221] text-[15px] md:text-[16px] hover:bg-slate-50 transition-colors focus:outline-none tracking-tight">
-                {faq.q}
+                {faq.q || faq.question}
                 <span className="ml-4 flex-shrink-0 transition duration-300 group-open:-rotate-180 bg-slate-50 border border-slate-200 p-1.5 rounded-md text-slate-500 group-hover:bg-[#2563eb] group-hover:text-white group-hover:border-[#2563eb]">
                   <ChevronDown className="w-4 h-4" />
                 </span>
               </summary>
               <div className="p-4 md:p-5 pt-2 text-slate-500 text-[14px] md:text-[15px] leading-relaxed font-medium bg-white border-t border-slate-100">
-                {faq.a}
+                {faq.a || faq.answer}
               </div>
             </details>
           ))}
