@@ -59,7 +59,7 @@ const allModules = [
 export const SEO_REGISTRY: Record<string, any> = {};
 
 // [FIX] Helper to ensure safe URL formatting
-const toKebab = (str) => str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+const toKebab = (str: string) => str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, exportValue]) => {
@@ -70,8 +70,8 @@ allModules.forEach((mod) => {
     const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue || 'h1' in exportValue || 'blocks' in exportValue;
 
     if (isV2) {
-      const fullPath = (exportValue as any).path.replace(/^\\//, '');
-      const slug = fullPath.split('/').pop() || fullPath; 
+      // [FIX] Preserved full path for Next.js [...slug] Catch-All routing
+      const slug = (exportValue as any).path.replace(/^\\//, ''); 
       SEO_REGISTRY[slug] = exportValue;
       return;
     }
@@ -91,8 +91,8 @@ allModules.forEach((mod) => {
       let slug: string;
 
       if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
-        const fullPath = (pageData as any).path.replace(/^\\//, '');
-        slug = fullPath.split('/').pop() || fullPath; 
+        // [FIX] Preserved full path for Next.js [...slug] Catch-All routing
+        slug = (pageData as any).path.replace(/^\\//, '');
       } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData || 'h1' in pageData || 'blocks' in pageData) {
         // [CRITICAL FIX] Converts camelCase properties (e.g., predictiveAnalytics -> predictive-analytics)
         slug = (pageData as any).slug || toKebab(key);
@@ -117,7 +117,7 @@ export function getNormalizedPage(slug: string): any | null {
   // V2 (block architecture)
   if (data.blocks && data.meta) {
     // [FIX] Defensive chaining added: \`b?.type\` instead of \`b.type\`
-    const heroBlock = data.blocks.find((b: any) => b?.type === 'Hero');
+    const heroBlock = data.blocks.find((b: any) => b?.type === 'Hero' || b?.type === 'HeroBlock');
     return {
       ...data,
       seo: {
@@ -167,7 +167,8 @@ export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: s
       // [CRITICAL FIX] Ensure string evaluation before replace() execution
       if (!rawSlug || typeof rawSlug !== 'string') return null;
 
-      const slug = rawSlug.replace(/^\\//, '').split('/').pop() || rawSlug; // Flatten here too for relations
+      // [FIX] Preserved full path for related links rather than stripping down to final segment
+      const slug = rawSlug.replace(/^\\//, ''); 
       const page = SEO_REGISTRY[slug] ?? SEO_REGISTRY[rawSlug];
       if (!page) return null;
 

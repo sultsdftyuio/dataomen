@@ -145,6 +145,12 @@ const BLOCK_TYPES = {
   INTERNAL_LINKING_BLOCK:      'InternalLinkingBlock',
   INFORMATION_GAIN:            'InformationGain',
   CONVERSION_ENGINE:           'ConversionEngine',
+  HERO_BLOCK:                  'HeroBlock',
+  ARCHITECTURE_DIAGRAM:        'ArchitectureDiagram',
+  COMPARISON_MATRIX:           'ComparisonMatrix',
+  ANALYTICS_DASHBOARD:         'AnalyticsDashboard',
+  CTA_GROUP:                   'CTAGroup',
+  INFORMATION_GAIN_BLOCK:      'InformationGainBlock',
 } as const;
 
 const DEFAULT_CTA = {
@@ -156,8 +162,9 @@ const DEFAULT_CTA = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // [B3] params is a plain object in Next.js App Router — NOT a Promise.
+// Catch-all route means slug is an Array of strings.
 interface PageProps {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ slug: string[] }>;
 }
 
 interface Cta {
@@ -647,6 +654,29 @@ const BLOCK_REGISTRY: RegistryCheck = {
   [BLOCK_TYPES.INTERNAL_LINKING_BLOCK]:    { component: RelatedLinks,               isEmpty: (p) => !(p.slugs?.length || p.links?.length) },
   [BLOCK_TYPES.INFORMATION_GAIN]:          { component: Features,                    isEmpty: (p) => !p.uniqueInsight && !p.structuralAdvantage && !p.features?.length },
   [BLOCK_TYPES.CONVERSION_ENGINE]:         { component: BrutalistCTA,               isEmpty: (p) => !p.primaryCta && !p.cta?.primary },
+  [BLOCK_TYPES.HERO_BLOCK]: {
+    component: Hero 
+  },
+  [BLOCK_TYPES.ARCHITECTURE_DIAGRAM]: { 
+    component: Steps, 
+    isEmpty: (p) => !(p.steps?.length || p.data?.steps?.length) 
+  },
+  [BLOCK_TYPES.COMPARISON_MATRIX]: { 
+    component: Matrix, 
+    isEmpty: (p) => !(p.matrix?.length || p.rows?.length || p.data?.rows?.length) 
+  },
+  [BLOCK_TYPES.ANALYTICS_DASHBOARD]: { 
+    component: StrategicQuery, 
+    isEmpty: (p) => !(p.scenario || p.scenarios?.length || p.data?.scenarios?.length) 
+  },
+  [BLOCK_TYPES.CTA_GROUP]: { 
+    component: BrutalistCTA, 
+    isEmpty: (p) => !(p.primaryCta || p.cta?.primary || p.data?.primaryHref) 
+  },
+  [BLOCK_TYPES.INFORMATION_GAIN_BLOCK]: { 
+    component: Features, 
+    isEmpty: (p) => !(p.features?.length || p.bullets?.length || p.data?.bullets?.length) 
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1103,8 +1133,23 @@ const V2_NORMALIZERS: Record<string, V2Normalizer> = {
       );
     }
   },
-};
+[BLOCK_TYPES.ARCHITECTURE_DIAGRAM]: (props) => {
+    const source = props.data?.steps || props.steps || [];
+    props.steps = safeNormalized(normalizeSteps(source), validateSteps, 'V2 ArchitectureDiagram', source);
+  },
+  
+  [BLOCK_TYPES.COMPARISON_MATRIX]: (props) => {
+    const source = props.data?.rows || props.rows || props.matrix || [];
+    props.matrix = safeNormalized(normalizeMatrix(source), validateMatrix, 'V2 ComparisonMatrix', source);
+  },
 
+  [BLOCK_TYPES.INFORMATION_GAIN_BLOCK]: (props) => {
+    const bullets = props.data?.bullets || props.bullets || [];
+    if (!props.features?.length && bullets.length > 0) {
+      props.features = normalizeFeatures(bullets.map((b: string) => ({ title: b, description: '' })));
+    }
+  },
+};
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA BUILDER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1261,13 +1306,14 @@ export const dynamicParams = false;
 export const revalidate    = 86400;
 
 export async function generateStaticParams() {
-  return getAllSlugs().map((slug) => ({ slug }));
+  // Convert full paths like "seo/analytics" into arrays ['seo', 'analytics'] for Next.js.
+  return getAllSlugs().map((slugPath) => ({ slug: slugPath.split('/') }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  // [FIX] Await the params Promise
-  const { slug } = await params; 
-  const page     = getNormalizedPage(slug);
+  const { slug: slugArray } = await params;
+  const fullSlug = slugArray.join('/');
+  const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
 
   const codeSnippet =
@@ -1289,10 +1335,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title:       page.seo?.title       || 'Arcli',
       description: page.seo?.description || '',
       type:  'article',
-      url:   `${BASE_URL}/${slug}`,
+      url:   `${BASE_URL}/${fullSlug}`,
       images: [{ url: ogUrl.toString(), width: 1200, height: 630 }],
     },
-    alternates: { canonical: `${BASE_URL}/${slug}` },
+    alternates: { canonical: `${BASE_URL}/${fullSlug}` },
   };
 }
 
@@ -1301,14 +1347,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function DynamicSEOPage({ params }: PageProps) {
-  // [FIX] Await the params Promise
-  const { slug } = await params;
-  const page     = getNormalizedPage(slug);
+  const { slug: slugArray } = await params;
+  const fullSlug = slugArray.join('/');
+  const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
 
   // [H7] Reuse cached result if generateMetadata already ran prepareBlocks.
-  const preparedBlocks = prepareBlocksCached(page, slug);
-  const schemas        = buildSchemas(page, slug, preparedBlocks);
+  const preparedBlocks = prepareBlocksCached(page, fullSlug);
+  const schemas        = buildSchemas(page, fullSlug, preparedBlocks);
 
   return (
     <>
