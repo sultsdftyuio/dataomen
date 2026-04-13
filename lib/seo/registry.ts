@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/generate-registry.mjs
 //
 // Silos tracked: 36
-// Generated:     2026-04-13T13:59:28.881Z
+// Generated:     2026-04-13T15:20:11.043Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';
@@ -81,26 +81,32 @@ const allModules = [
 
 export const SEO_REGISTRY: Record<string, any> = {};
 
-// [FIX] Helper to ensure safe URL formatting
-const toKebab = (str: string) => str.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+// [CRITICAL FIX] Enterprise Kebab-case: Safely handles acronyms (PredictiveAIAnalytics -> predictive-ai-analytics)
+const toKebab = (str: string) => {
+  return str
+    .replace(/([a-z])([A-Z])/g, '$1-$2')         // camelCase -> camel-Case
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1-$2')    // XMLHttp -> XML-Http
+    .replace(/[\s_]+/g, '-')                    // spaces/underscores to dashes
+    .toLowerCase();
+};
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, exportValue]) => {
     if (!exportValue || typeof exportValue !== 'object' || Array.isArray(exportValue)) return;
 
     const isV2 = 'path' in exportValue && 'meta' in exportValue && 'blocks' in exportValue;
-    // [FIX] Added 'h1' and 'blocks' to catch previously ignored partial V1 pages
+    // Added 'h1' and 'blocks' to catch previously ignored partial V1 pages
     const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue || 'h1' in exportValue || 'blocks' in exportValue;
 
     if (isV2) {
-      // [FIX] Preserved full path for Next.js [...slug] Catch-All routing
+      // Preserved full path for Next.js [...slug] Catch-All routing
       const slug = (exportValue as any).path.replace(/^\//, ''); 
       SEO_REGISTRY[slug] = exportValue;
       return;
     }
 
     if (isV1Page) {
-      // [FIX] Prevent default exports from hijacking the slug as "/default"
+      // Prevent default exports from hijacking the slug as "/default"
       const fallbackSlug = exportName === 'default' ? 'unnamed-silo' : toKebab(exportName);
       const slug = (exportValue as any).slug || fallbackSlug;
       SEO_REGISTRY[slug] = exportValue;
@@ -114,10 +120,10 @@ allModules.forEach((mod) => {
       let slug: string;
 
       if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
-        // [FIX] Preserved full path for Next.js [...slug] Catch-All routing
+        // Preserved full path for Next.js [...slug] Catch-All routing
         slug = (pageData as any).path.replace(/^\//, '');
       } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData || 'h1' in pageData || 'blocks' in pageData) {
-        // [CRITICAL FIX] Converts camelCase properties (e.g., predictiveAnalytics -> predictive-analytics)
+        // Converts camelCase properties safely using enterprise regex
         slug = (pageData as any).slug || toKebab(key);
       } else {
         return; // Still skips invalid shapes
@@ -129,8 +135,7 @@ allModules.forEach((mod) => {
 });
 
 export function getNormalizedPage(slug: string): any | null {
-  // [CRITICAL FIX] Next.js 15+ async params safeguard
-  // Prevents crash when slug evaluates to undefined from un-awaited Promises
+  // Next.js 15+ async params safeguard
   if (!slug || typeof slug !== 'string') return null;
 
   const cleanSlug = slug.replace(/^\//, '');
@@ -139,22 +144,22 @@ export function getNormalizedPage(slug: string): any | null {
 
   // V2 (block architecture)
   if (data.blocks && data.meta) {
-    // [FIX] Defensive chaining added: `b?.type` instead of `b.type`
     const heroBlock = data.blocks.find((b: any) => b?.type === 'Hero' || b?.type === 'HeroBlock');
+    // [CRITICAL FIX] Ensure we pull data from either .data or .payload to prevent skeleton pages
+    const heroData = heroBlock?.data || heroBlock?.payload || {};
+    
     return {
       ...data,
       seo: {
         title:       data.meta.title       || 'Arcli Analytics',
         description: data.meta.description || 'Enterprise Data Platform',
         keywords:    data.meta.keywords    || [],
-        h1:          heroBlock?.payload?.title || data.meta.title || 'Arcli AI Analytics',
+        h1:          heroData.title || data.meta.title || 'Arcli AI Analytics',
       },
     };
   }
 
   // V1 (legacy / flat architecture)
-  // Synthesize 'hero' from flat fields when absent (competitor-comparison schema).
-  // Without this, Hero component crashes: "Cannot read properties of undefined (reading 'subtitle')"
   const hero = data.hero ?? {
     title:    data.h1    || data.title || '',
     subtitle: data.subtitle || data.description || '',
@@ -182,15 +187,14 @@ export function getAllSlugs(): string[] {
 }
 
 export function getRelatedPages(slugs: string[]): Array<{ slug: string; title: string; type: string }> {
-  // [CRITICAL FIX] Next.js 15+ array shape safeguard
+  // Next.js 15+ array shape safeguard
   if (!Array.isArray(slugs)) return [];
 
   return slugs
     .map((rawSlug) => {
-      // [CRITICAL FIX] Ensure string evaluation before replace() execution
       if (!rawSlug || typeof rawSlug !== 'string') return null;
 
-      // [FIX] Preserved full path for related links rather than stripping down to final segment
+      // Preserved full path for related links
       const slug = rawSlug.replace(/^\//, ''); 
       const page = SEO_REGISTRY[slug] ?? SEO_REGISTRY[rawSlug];
       if (!page) return null;

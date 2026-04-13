@@ -1211,7 +1211,7 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
     ? new Map(page.blocks.map((b: any) => [b?.type, b]))
     : new Map();
 
-  const rawList: Array<{ type: string; payload: any; id?: string; slug?: string }> = isV2
+  const rawList: Array<{ type: string; payload?: any; data?: any; id?: string; slug?: string }> = isV2
     ? page.blocks.map((b: any) => ({ ...b }))
     : (LAYOUT_CONFIG[page.type] ?? LAYOUT_CONFIG.default).map((type) => ({
         type,
@@ -1235,7 +1235,7 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
       // ── 1. Extract raw props (V1 vs V2) ──────────────────────────────────
       const props: Record<string, any> =
         isV2 || block.type === BLOCK_TYPES.UI_BLOCK
-          ? { ...(block.payload ?? {}) }
+          ? { ...(block.payload ?? block.data ?? block) }
           : getV1BlockProps(block.type, page);
 
       // ── 2. Apply V2 normalization bridge (includes schema normalizers) ────
@@ -1302,7 +1302,7 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
 // STATIC GENERATION & METADATA
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const dynamicParams = false;
+export const dynamicParams = true; // MUST BE TRUE to prevent false 404s on Catch-All routes
 export const revalidate    = 86400;
 
 export async function generateStaticParams() {
