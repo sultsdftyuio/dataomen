@@ -95,8 +95,13 @@ export default function CustomerAcquisitionHub() {
         ]);
 
         // Step C: Route through the Deterministic Omni-Graph Engine
-        const blendedROAS = OmniGraphEngineV3.computeBlendedROAS(revenueData, [metaSpendData, googleSpendData]);
-        const blendedCAC = OmniGraphEngineV3.computeBlendedCAC(customerData, [metaSpendData, googleSpendData]);
+        const computedKpis = OmniGraphEngineV3.compute({
+          revenue: revenueData,
+          customers: customerData,
+          spend: [...metaSpendData, ...googleSpendData],
+        });
+        const blendedROAS = computedKpis.find((kpi): kpi is KPI => kpi?.id === "blended_roas") ?? null;
+        const blendedCAC = computedKpis.find((kpi): kpi is KPI => kpi?.id === "blended_cac") ?? null;
 
         setKpis({
           roas: blendedROAS,

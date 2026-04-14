@@ -151,6 +151,8 @@ const BLOCK_TYPES = {
   ANALYTICS_DASHBOARD:         'AnalyticsDashboard',
   CTA_GROUP:                   'CTAGroup',
   INFORMATION_GAIN_BLOCK:      'InformationGainBlock',
+  DATA_RELATIONSHIPS_GRAPH:    'DataRelationshipsGraph',
+  METRICS_CHART:               'MetricsChart',
 } as const;
 
 const DEFAULT_CTA = {
@@ -164,7 +166,7 @@ const DEFAULT_CTA = {
 // [B3] params is a plain object in Next.js App Router — NOT a Promise.
 // Catch-all route means slug is an Array of strings.
 interface PageProps {
-  params: Promise<{ slug: string[] }>;
+  params: { slug: string[] };
 }
 
 interface Cta {
@@ -606,14 +608,14 @@ function UIBlockMapper({
 const BLOCK_REGISTRY: RegistryCheck = {
   [BLOCK_TYPES.HERO]:                      { component: Hero },
   [BLOCK_TYPES.EXECUTIVE_SUMMARY]:         { component: ExecutiveSummary,            isEmpty: (p) => !(p.highlights?.length || p.pillars?.length) },
-  [BLOCK_TYPES.CONTRARIAN_BANNER]:         { component: ContrarianBanner,            isEmpty: (p) => !(p.statement || p.heading) },
+  [BLOCK_TYPES.CONTRARIAN_BANNER]:         { component: Features,                    isEmpty: (p) => !(p.title || p.description || p.copy || p.features?.length) },
   [BLOCK_TYPES.DEMO]:                      { component: Demo,                         isEmpty: (p) => !p.demo },
   [BLOCK_TYPES.PERSONAS]:                  { component: Personas,                    isEmpty: (p) => !p.personas?.length },
   [BLOCK_TYPES.MATRIX]:                    { component: Matrix,                       isEmpty: (p) => !p.matrix?.length },
   [BLOCK_TYPES.WORKFLOW_SECTION]:          { component: WorkflowSection,             isEmpty: (p) => !p.workflow },
   [BLOCK_TYPES.USE_CASES]:                 { component: UseCases,                    isEmpty: (p) => !p.useCases?.length },
   [BLOCK_TYPES.STRATEGIC_QUERY]:           { component: StrategicQuery,              isEmpty: (p) => !(p.scenario || p.code || p.sqlSnippet) },
-  [BLOCK_TYPES.SECURITY_GUARDRAILS]:       { component: SecurityGuardrails,          isEmpty: (p) => !p.items?.length },
+  [BLOCK_TYPES.SECURITY_GUARDRAILS]:       { component: Features,                    isEmpty: (p) => !(p.features?.length || p.bullets?.length || p.data?.bullets?.length) },
   [BLOCK_TYPES.STEPS]:                     { component: Steps,                        isEmpty: (p) => !p.steps?.length },
   [BLOCK_TYPES.FEATURES]:                  { component: Features,                     isEmpty: (p) => !p.features?.length },
   [BLOCK_TYPES.ARCHITECTURE]:              { component: Architecture,                 isEmpty: (p) => !(p.architecture || p.components?.length) },
@@ -676,6 +678,14 @@ const BLOCK_REGISTRY: RegistryCheck = {
   [BLOCK_TYPES.INFORMATION_GAIN_BLOCK]: { 
     component: Features, 
     isEmpty: (p) => !(p.features?.length || p.bullets?.length || p.data?.bullets?.length) 
+  },
+  [BLOCK_TYPES.DATA_RELATIONSHIPS_GRAPH]: { 
+    component: TelemetryTrace, 
+    isEmpty: (p) => !p.data 
+  },
+  [BLOCK_TYPES.METRICS_CHART]: { 
+    component: MetricGovernance, 
+    isEmpty: (p) => !p.data 
   },
 };
 
@@ -915,9 +925,18 @@ const V2_NORMALIZERS: Record<string, V2Normalizer> = {
     };
   },
 
+  [BLOCK_TYPES.HERO_BLOCK]: (props) => {
+    props.title = props.title || props.h1 || props.heading || "Arcli AI Analytics";
+    props.subtitle = props.subtitle || props.description || props.copy || "Enterprise Data Platform";
+  },
+
   [BLOCK_TYPES.CONTRARIAN_BANNER]: (props) => {
-    props.statement ??= props.heading;
-    props.subtext   ??= props.argument ?? props.description;
+    if (!props.features) {
+      props.features = [{ 
+        title: props.title || props.h2 || props.heading || "Paradigm Shift", 
+        description: props.description || props.copy || props.text || "" 
+      }];
+    }
   },
 
   [BLOCK_TYPES.EXECUTIVE_SUMMARY]: (props) => {
@@ -1134,19 +1153,21 @@ const V2_NORMALIZERS: Record<string, V2Normalizer> = {
     }
   },
 [BLOCK_TYPES.ARCHITECTURE_DIAGRAM]: (props) => {
-    const source = props.data?.steps || props.steps || [];
+    const source = forceArray(props.data?.steps ?? props.steps ?? []);
     props.steps = safeNormalized(normalizeSteps(source), validateSteps, 'V2 ArchitectureDiagram', source);
   },
   
   [BLOCK_TYPES.COMPARISON_MATRIX]: (props) => {
-    const source = props.data?.rows || props.rows || props.matrix || [];
+    const source = forceArray(props.data?.rows ?? props.rows ?? props.matrix ?? []);
     props.matrix = safeNormalized(normalizeMatrix(source), validateMatrix, 'V2 ComparisonMatrix', source);
   },
 
   [BLOCK_TYPES.INFORMATION_GAIN_BLOCK]: (props) => {
-    const bullets = props.data?.bullets || props.bullets || [];
+    const bullets = forceArray(props.data?.bullets ?? props.bullets ?? []);
     if (!props.features?.length && bullets.length > 0) {
-      props.features = normalizeFeatures(bullets.map((b: string) => ({ title: b, description: '' })));
+      props.features = normalizeFeatures(
+        bullets.map((b) => ({ title: String(b), description: '' })),
+      );
     }
   },
 };
@@ -1311,7 +1332,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug: slugArray } = await params;
+  const { slug: slugArray } = params;
   const fullSlug = slugArray.join('/');
   const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
@@ -1347,7 +1368,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function DynamicSEOPage({ params }: PageProps) {
-  const { slug: slugArray } = await params;
+  const { slug: slugArray } = params;
   const fullSlug = slugArray.join('/');
   const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
@@ -1407,11 +1428,12 @@ export default async function DynamicSEOPage({ params }: PageProps) {
               <React.Fragment key={stableKey}>
                 <BlockComponent {...props} />
                 {inlineVisualizations.map((ui, uiIdx) => (
-                  <UIBlockMapper
-                    key={`${stableKey}-ui-${uiIdx}`}
-                    visualizationType={ui.type}
-                    dataMapping={ui.dataMapping}
-                  />
+                  <React.Fragment key={`${stableKey}-ui-${uiIdx}`}>
+                    {UIBlockMapper({
+                      visualizationType: ui.type,
+                      dataMapping: ui.dataMapping,
+                    })}
+                  </React.Fragment>
                 ))}
               </React.Fragment>
             );

@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // V14 REFACTORED: dashboardTemplatesPart2
 // -----------------------------------------------------------------------------
-import type { Block, TemplateBlueprint } from '@/types/seo-registry'; 
+import type { TemplateBlueprint } from './templates-1';
 
 export const dashboardTemplatesPart2: Record<string, TemplateBlueprint> = {
   'marketing-dashboard-template': {

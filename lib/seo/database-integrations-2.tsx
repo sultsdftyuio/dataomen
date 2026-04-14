@@ -1,5 +1,3 @@
-import React from 'react';
-import { Database, CloudSnow } from 'lucide-react';
 import { SEOPageData } from './database-integrations-1';
 
 /**
@@ -24,7 +22,7 @@ export const databaseIntegrationsPart2: Record<string, SEOPageData> = {
     },
     h1: "Generative AI Designed for Snowflake Economics",
     subtitle: "Maximize the ROI of your Snowflake investment. Empower your team to ask questions in plain English while our platform generates cost-aware, optimized SQL behind the scenes.",
-    icon: <CloudSnow className="w-12 h-12 text-sky-400 mb-6" />,
+    icon: 'CloudSnow',
     contrarianStatement: "Paying premium Snowflake compute prices to power rigid, slow-loading traditional BI dashboards is burning your data budget.",
     
     conversionCTA: {
@@ -167,7 +165,7 @@ ORDER BY total_credits DESC;`
     },
     h1: "Structural AI Intelligence for BigQuery",
     subtitle: "Harness the massive, petabyte-scale power of Google BigQuery. Our AI natively unwraps nested arrays and enforces strict partition scanning guardrails to keep your GCP costs low.",
-    icon: <Database className="w-12 h-12 text-yellow-500 mb-6" />,
+    icon: 'Database',
     contrarianStatement: "If your marketing team has to wait for a data engineer to analyze GA4 exports, your modern data stack is just an expensive bottleneck.",
     
     conversionCTA: {

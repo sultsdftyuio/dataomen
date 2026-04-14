@@ -22,6 +22,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isError = message.status === 'error' || message.status === 'execution_error';
+  const requestedMetrics = message.plan?.requested_governed_metrics ?? [];
   
   // UI State for expandable "Chain of Thought" sections
   const [showSql, setShowSql] = useState(false);
@@ -80,8 +81,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                   <div className="p-4 text-sm text-gray-600 border-t border-gray-100 bg-white space-y-3">
                     <p><strong>Intent:</strong> {message.plan.intent_summary}</p>
                     <p><strong>Strategy:</strong> {message.plan.analytical_strategy}</p>
-                    {message.plan.requested_governed_metrics?.length > 0 && (
-                      <p><strong>Metrics Injected:</strong> {message.plan.requested_governed_metrics.join(', ')}</p>
+                    {requestedMetrics.length > 0 && (
+                      <p><strong>Metrics Injected:</strong> {requestedMetrics.join(', ')}</p>
                     )}
                   </div>
                 )}

@@ -48,14 +48,14 @@ export interface SEOPageData {
   
   title: string;
   description: string;
-  searchIntentMapping: KeywordAnchorBlock;
+  searchIntentMapping?: KeywordAnchorBlock;
   h1: string;
   subtitle: string;
   
   // Expand the allowed icons to cover the new file types and use cases
   icon: 'Database' | 'Server' | 'CloudSnow' | 'Zap' | 'DatabaseZap' | 'TableProperties' | 'FileJson' | 'DatabaseBackup' | 'TrendingUp' | 'FileText';
   
-  blocks: Block[];
+  blocks?: Block[];
   faqs: { q: string; a: string; intent: string; schemaEnabled: boolean }[];
   relatedSlugs: { label: string; slug: string; intent: 'Parent' | 'Supporting' | 'Conversion' }[];
   
@@ -76,6 +76,7 @@ export interface SEOPageData {
   informationGain?: string;
   schemaMarkup?: 'FAQ' | 'HowTo' | 'Article';
   quickAnswer?: string;
+  [key: string]: any;
 }
 
 // --- CONTENT ENGINE EXPORT ---

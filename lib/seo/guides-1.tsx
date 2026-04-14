@@ -1,4 +1,4 @@
-import { SEOPageData } from './seo-schema';
+import { SEOPageData } from './database-integrations-1';
 
 export const howToGuidesPart1: Record<string, SEOPageData> = {
   'how-to-analyze-sales-data': {

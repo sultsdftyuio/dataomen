@@ -115,8 +115,21 @@ export function getNormalizedPage(slug: string): any | null {
   // Next.js 15+ async params safeguard
   if (!slug || typeof slug !== 'string') return null;
 
-  const cleanSlug = slug.replace(/^\\//, '');
-  const data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];
+  const cleanSlug = slug.replace(/^\//, '').toLowerCase();
+
+  // 1. Exact Match
+  let data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];
+
+  // 2. [CRITICAL FIX] Fuzzy Match (Resolves 404s when AI prepends folders like "seo/")
+  if (!data) {
+    const registryKeys = Object.keys(SEO_REGISTRY);
+    const fuzzyKey = registryKeys.find(key => {
+      const lowerKey = key.toLowerCase();
+      return lowerKey === cleanSlug || lowerKey === cleanSlug + '-page' || lowerKey.endsWith('/' + cleanSlug); // Catch "seo/predictive-ai-analytics"
+    });
+    if (fuzzyKey) data = SEO_REGISTRY[fuzzyKey];
+  }
+
   if (!data) return null;
 
   // V2 (block architecture)

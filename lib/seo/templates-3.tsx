@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 // V14 REFACTORED: dashboardTemplatesPart3
 // -----------------------------------------------------------------------------
-import type { Block, TemplateBlueprint } from '@/types/seo-registry'; 
+import type { TemplateBlueprint } from './templates-1';
 
 export const dashboardTemplatesPart3: Record<string, TemplateBlueprint> = {
   'marketing-attribution-blueprint': {
