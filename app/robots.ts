@@ -25,7 +25,8 @@ export default function robots(): MetadataRoute.Robots {
       // Allow indexing of all public-facing landing and SEO hub pages
       allow: [
         '/', 
-        '/_next/static/' // Required for Googlebot to render our JS/CSS architectures
+        '/_next/static/', // Required for Googlebot to render our JS/CSS architectures
+        '/api/og'         // <-- CRITICAL FIX: Allows X/LinkedIn to fetch your dynamic preview cards
       ],
       
       // Strict Disallow definitions to protect compute and tenant isolation
@@ -34,6 +35,7 @@ export default function robots(): MetadataRoute.Robots {
         '/dashboard/',
         
         // Compute Protection: Hard-block APIs to prevent accidental DB usage/token burn
+        // Note: The specific /api/og 'allow' above safely overrides this blanket block.
         '/api/',
         
         // Auth Flow: Keep search results mathematically clean of utility states

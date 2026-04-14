@@ -17,11 +17,37 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Base information
   title: 'Arcli - Your Autonomous Data Department',
   description: 'Stop writing SQL and building messy dashboards. Connect your database, ask questions in plain English, and let autonomous AI agents clean, query, and narrate your business insights instantly.',
   generator: 'Next.js',
-  // Note: We removed the manual 'icons' block. 
-  // Next.js will auto-generate favicons from the 'icon.png' file placed in the app/ directory!
+  metadataBase: new URL('https://arcli.tech'),
+  
+  // Open Graph (Facebook, LinkedIn, Discord, Slack)
+  openGraph: {
+    title: 'Arcli | Your AI Data Analyst',
+    description: 'Autonomous agents that watch your data 24/7.',
+    url: 'https://arcli.tech',
+    siteName: 'Arcli',
+    images: [
+      {
+        url: '/api/og', // Dynamically converted to https://arcli.tech/api/og
+        width: 1200,
+        height: 630,
+        alt: 'Arcli - Autonomous Data Engine',
+      },
+    ],
+    locale: 'en_US',
+    type: 'website',
+  },
+
+  // Twitter/X Card
+  twitter: {
+    card: 'summary_large_image', // Triggers the full-width cinematic preview
+    title: 'Arcli | Your AI Data Analyst',
+    description: 'Autonomous agents that watch your data 24/7.',
+    images: ['/api/og'],
+  },
 }
 
 export default function RootLayout({
