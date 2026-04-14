@@ -78,11 +78,59 @@ import { DataGravityCost, DynamicSchemaMapping }      from '@/components/landing
 import { GranularAccessControl, ConcurrencyProof }    from '@/components/landing/seo-blocks-8';
 import { TenantIsolationArchitecture, DeterministicGuardrails } from '@/components/landing/seo-blocks-9';
 
+const MissingBlockComponent = ({ name }: { name: string }) => (
+  <div className="p-4 border border-red-500 text-red-500">Missing {name} Component</div>
+);
+
 const BrutalistCTA = dynamic(
   () =>
     import('@/components/landing/brutalist-cta')
-      .then((m) => ({ default: m.BrutalistCTA || m.default }))
-      .catch(() => ({ default: Features })),
+      .then((m) => {
+        const mod = m as any;
+        return {
+          default: mod.BrutalistCTA || mod.default || (() => <MissingBlockComponent name="CTA" />),
+        };
+      })
+      .catch(() => ({ default: () => null })),
+  { ssr: true, loading: () => null },
+);
+
+const InformationGain = dynamic(
+  () =>
+    import('@/components/landing/seo-blocks-2')
+      .then((m) => {
+        const mod = m as any;
+        return {
+          default: mod.InformationGain || mod.Features || mod.default || (() => <MissingBlockComponent name="InformationGain" />),
+        };
+      })
+      .catch(() => ({ default: () => null })),
+  { ssr: true, loading: () => null },
+);
+
+const AnalyticsDashboard = dynamic(
+  () =>
+    import('@/components/landing/seo-blocks-3')
+      .then((m) => {
+        const mod = m as any;
+        return {
+          default: mod.AnalyticsDashboard || mod.StrategicQuery || mod.default || (() => <MissingBlockComponent name="AnalyticsDashboard" />),
+        };
+      })
+      .catch(() => ({ default: () => null })),
+  { ssr: true, loading: () => null },
+);
+
+const ComparisonMatrix = dynamic(
+  () =>
+    import('@/components/landing/seo-blocks-1')
+      .then((m) => {
+        const mod = m as any;
+        return {
+          default: mod.ComparisonMatrix || mod.Matrix || mod.default || (() => <MissingBlockComponent name="ComparisonMatrix" />),
+        };
+      })
+      .catch(() => ({ default: () => null })),
   { ssr: true, loading: () => null },
 );
 
@@ -654,7 +702,7 @@ const BLOCK_REGISTRY: RegistryCheck = {
   [BLOCK_TYPES.KEYWORD_ANCHOR_BLOCK]:      { component: ExecutiveSummary,            isEmpty: (p) => !(p.highlights?.length || p.text) },
   [BLOCK_TYPES.QUERY_EXAMPLES_BLOCK]:      { component: Features,                    isEmpty: (p) => !(p.features?.length || p.examples?.length) },
   [BLOCK_TYPES.INTERNAL_LINKING_BLOCK]:    { component: RelatedLinks,               isEmpty: (p) => !(p.slugs?.length || p.links?.length) },
-  [BLOCK_TYPES.INFORMATION_GAIN]:          { component: Features,                    isEmpty: (p) => !p.uniqueInsight && !p.structuralAdvantage && !p.features?.length },
+  [BLOCK_TYPES.INFORMATION_GAIN]:          { component: InformationGain,             isEmpty: (p) => !p.uniqueInsight && !p.structuralAdvantage && !p.features?.length },
   [BLOCK_TYPES.CONVERSION_ENGINE]:         { component: BrutalistCTA,               isEmpty: (p) => !p.primaryCta && !p.cta?.primary },
   [BLOCK_TYPES.HERO_BLOCK]: {
     component: Hero 
@@ -664,11 +712,11 @@ const BLOCK_REGISTRY: RegistryCheck = {
     isEmpty: (p) => !(p.steps?.length || p.data?.steps?.length) 
   },
   [BLOCK_TYPES.COMPARISON_MATRIX]: { 
-    component: Matrix, 
+    component: ComparisonMatrix, 
     isEmpty: (p) => !(p.matrix?.length || p.rows?.length || p.data?.rows?.length) 
   },
   [BLOCK_TYPES.ANALYTICS_DASHBOARD]: { 
-    component: StrategicQuery, 
+    component: AnalyticsDashboard, 
     isEmpty: (p) => !(p.scenario || p.scenarios?.length || p.data?.scenarios?.length) 
   },
   [BLOCK_TYPES.CTA_GROUP]: { 
@@ -676,7 +724,7 @@ const BLOCK_REGISTRY: RegistryCheck = {
     isEmpty: (p) => !(p.primaryCta || p.cta?.primary || p.data?.primaryHref) 
   },
   [BLOCK_TYPES.INFORMATION_GAIN_BLOCK]: { 
-    component: Features, 
+    component: InformationGain, 
     isEmpty: (p) => !(p.features?.length || p.bullets?.length || p.data?.bullets?.length) 
   },
   [BLOCK_TYPES.DATA_RELATIONSHIPS_GRAPH]: { 
@@ -1436,6 +1484,11 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           }
 
           const { component: BlockComponent, isEmpty } = entry;
+
+          if (!BlockComponent) {
+            console.warn(`[SEO SYSTEM] Critical Render Warning: No component mapped for block type "${type}"`);
+            return null;
+          }
 
           // Hero always renders; all other blocks are skipped when isEmpty returns true.
           if (type !== BLOCK_TYPES.HERO && isEmpty?.(props)) {
