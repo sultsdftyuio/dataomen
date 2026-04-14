@@ -243,10 +243,16 @@ class R2StorageManager:
         if not parquet_r2_path.endswith('.parquet'):
             parquet_r2_path = os.path.splitext(parquet_r2_path)[0] + '.parquet'
 
+        lower_path = raw_r2_path.lower()
+
         with self.duckdb_session(db, tenant_id) as con:
             try:
                 # 1. Zero-Copy conversion: Cloud -> Compute -> Cloud
-                if raw_r2_path.lower().endswith('.json'):
+                if lower_path.endswith('.parquet'):
+                    read_query = f"read_parquet('{raw_r2_path}')"
+                elif lower_path.endswith('.ndjson') or lower_path.endswith('.jsonl'):
+                    read_query = f"read_json_auto('{raw_r2_path}', format='newline_delimited')"
+                elif lower_path.endswith('.json'):
                     read_query = f"read_json_auto('{raw_r2_path}', format='auto')"
                 else:
                     read_query = f"read_csv_auto('{raw_r2_path}', normalize_names=True)"

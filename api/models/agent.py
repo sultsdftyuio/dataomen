@@ -1,9 +1,15 @@
 # api/models/agent.py
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
-from typing import Optional
+import re
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
+from typing import Optional, Literal
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import UUID
+
+# Regex for valid SQL identifiers (prevents SQL injection at the edge)
+SQL_IDENTIFIER_REGEX = r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$'
+# Basic Cron validation regex
+CRON_REGEX = r'^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5,7})$'
 
 # ==========================================
 # BASE CONFIGURATION
@@ -15,8 +21,8 @@ class AgentBase(BaseModel):
     Encapsulates core identity and multi-tenant status.
     """
     name: str = Field(..., min_length=1, max_length=100, description="The display name of the agent.")
-    description: Optional[str] = Field(None, description="A short summary of its capabilities.")
-    role_description: Optional[str] = Field(None, description="Detailed instruction set or role-play context for the LLM.")
+    description: Optional[str] = Field(None, max_length=500, description="A short summary of its capabilities.")
+    role_description: Optional[str] = Field(None, max_length=2000, description="Detailed instruction set or role-play context for the LLM.")
     is_active: bool = Field(True, description="Indicates if the agent is currently enabled for processing or chat.")
     temperature: float = Field(0.0, ge=0.0, le=1.0, description="0.0 for strict math/SQL, higher for creative writing.")
 
@@ -35,12 +41,12 @@ class AgentCreate(AgentBase):
     document_id: Optional[UUID] = Field(None, description="UUID of the single allowed unstructured data (Vector RAG).")
 
     @model_validator(mode='after')
-    def check_mutually_exclusive_sources(self) -> 'AgentCreate':
+    def check_exactly_one_source(self) -> 'AgentCreate':
         """
         Security by Design: Prevents the API from ever accepting multiple data sources for a single agent.
         """
-        if self.dataset_id and self.document_id:
-            raise ValueError("Strict 1-to-1 isolation enforced: An agent can only map to ONE data source (dataset or document), not both.")
+        if bool(self.dataset_id) == bool(self.document_id):
+            raise ValueError("Strict 1-to-1 isolation enforced: Agent must have EXACTLY ONE data source (dataset or document).")
         return self
 
 
@@ -53,13 +59,13 @@ class AgentRuleCreate(BaseModel):
     Payload for creating an Autonomous Monitoring Agent (The Watchdog).
     Prioritizes vectorized metric tracking and linear algebra-based anomaly detection.
     """
-    name: str = Field(..., min_length=1, description="The name of the monitoring rule.")
+    name: str = Field(..., min_length=1, max_length=100, description="The name of the monitoring rule.")
     dataset_id: UUID = Field(..., description="The target dataset for continuous evaluation.")
-    metric_column: str = Field(..., description="The specific column name containing the numerical metric.")
-    time_column: str = Field(..., description="The column used for temporal trend analysis (Linear Regression/EMA).")
-    cron_schedule: str = Field("0 * * * *", description="Standard cron expression for execution frequency (Default: Hourly).")
+    metric_column: str = Field(..., pattern=SQL_IDENTIFIER_REGEX, description="Specific column name containing numerical metric.")
+    time_column: str = Field(..., pattern=SQL_IDENTIFIER_REGEX, description="Column used for temporal trend analysis.")
+    cron_schedule: str = Field("0 * * * *", pattern=CRON_REGEX, description="Standard cron expression for execution frequency.")
     sensitivity_threshold: float = Field(2.0, ge=0.1, le=10.0, description="Z-score threshold for anomaly sensitivity.")
-    role_description: Optional[str] = Field("Autonomous metric monitor", description="Context for the notification engine.")
+    role_description: Optional[str] = Field("Autonomous metric monitor", max_length=1000, description="Context for the notification engine.")
 
 
 # ==========================================
@@ -70,11 +76,11 @@ class InvestigationRecordBase(BaseModel):
     """
     The core synthesis of an autonomous anomaly detection event.
     """
-    headline: str = Field(..., description="A punchy, one-sentence TL;DR of the situation.")
-    executive_summary: str = Field(..., description="A concise narrative synthesis of the 'What', 'Why', and 'When'.")
-    severity_level: str = Field(..., description="Low, Medium, or High based on business impact.")
-    recommended_action: str = Field(..., description="A specific, data-backed step for the user to take.")
-    metric_column: Optional[str] = Field(None, description="The metric that triggered this investigation.")
+    headline: str = Field(..., max_length=200, description="A punchy, one-sentence TL;DR of the situation.")
+    executive_summary: str = Field(..., max_length=2000, description="A concise narrative synthesis of the 'What', 'Why', and 'When'.")
+    severity_level: Literal["Low", "Medium", "High"] = Field(..., description="Low, Medium, or High based on business impact.")
+    recommended_action: str = Field(..., max_length=1000, description="A specific, data-backed step for the user to take.")
+    metric_column: Optional[str] = Field(None, pattern=SQL_IDENTIFIER_REGEX, description="The metric that triggered this investigation.")
 
 
 class InvestigationRecordCreate(InvestigationRecordBase):
@@ -91,7 +97,7 @@ class InvestigationRecordResponse(InvestigationRecordBase):
     agent_id: UUID
     dataset_id: Optional[UUID]
     tenant_id: str = Field(..., description="Multi-tenant owner ID ensures strict isolation.")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime
 
 
 # ==========================================
@@ -106,7 +112,7 @@ class AgentResponse(AgentBase):
     """
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID
     tenant_id: str = Field(..., description="Multi-tenant owner ID (Supabase Auth UID).")
     
     # Updated to support 1-to-1 Data Boundaries (Phase 1)
@@ -121,7 +127,6 @@ class AgentResponse(AgentBase):
     last_run_at: Optional[datetime] = None
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
 
 # Alias for backward compatibility with existing service logic
 AgentInDB = AgentResponse

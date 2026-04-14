@@ -1,17 +1,20 @@
 # api/routes/agents.py
 
 import logging
+import os
+import hmac
 from uuid import UUID
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, Field
 
 # Core Database & Models
 from api.database import get_db
-from models import Agent, InvestigationRecord
+from models import Agent, InvestigationRecord, Dataset
 
 # Standardized API Contracts (Phase 1: 1-to-1 Constraint & Memory)
 from api.models.agent import (
@@ -31,6 +34,28 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/agents", tags=["Agents"])
 
+CRON_REGEX = r'^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5,7})$'
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "")
+internal_security = HTTPBearer(auto_error=False)
+
+
+def verify_internal_heartbeat(
+    x_internal_service_key: Optional[str] = Header(default=None, alias="x-internal-service-key"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(internal_security),
+) -> None:
+    token = x_internal_service_key or (credentials.credentials if credentials else None)
+    if not INTERNAL_SERVICE_KEY or not token or not hmac.compare_digest(token, INTERNAL_SERVICE_KEY):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized internal caller.")
+
+
+def _verify_dataset_ownership(db: Session, tenant_id: str, dataset_id: UUID) -> None:
+    owned_dataset = db.query(Dataset.id).filter(
+        Dataset.id == dataset_id,
+        Dataset.tenant_id == tenant_id,
+    ).first()
+    if not owned_dataset:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dataset not found or unauthorized.")
+
 # ------------------------------------------------------------------------------
 # Pydantic Schemas: Local API Contracts
 # ------------------------------------------------------------------------------
@@ -40,22 +65,29 @@ class AgentUpdate(BaseModel):
     Payload for partial updates to an existing agent's configuration.
     Phase 1 Update: Replaced array payloads with singular IDs.
     """
-    name: Optional[str] = None
-    description: Optional[str] = None
-    role_description: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
+    role_description: Optional[str] = Field(None, max_length=2000)
     
     # 1-to-1 strict boundaries
     dataset_id: Optional[UUID] = None
     document_id: Optional[UUID] = None
     
-    temperature: Optional[float] = None
-    cron_schedule: Optional[str] = None
-    sensitivity_threshold: Optional[float] = None
+    temperature: Optional[float] = Field(None, ge=0.0, le=1.0)
+    cron_schedule: Optional[str] = Field(None, pattern=CRON_REGEX)
+    sensitivity_threshold: Optional[float] = Field(None, ge=0.1, le=10.0)
     is_active: Optional[bool] = None
 
     @model_validator(mode='after')
     def check_mutually_exclusive_sources(self) -> 'AgentUpdate':
         """Ensure users cannot patch an agent into a multi-schema state."""
+        if self.name is not None:
+            self.name = self.name.strip()
+        if self.description is not None:
+            self.description = self.description.strip()
+        if self.role_description is not None:
+            self.role_description = self.role_description.strip()
+
         if self.dataset_id and self.document_id:
             raise ValueError("Strict 1-to-1 isolation enforced: An agent can only map to ONE data source.")
         return self
@@ -89,7 +121,7 @@ async def create_chat_agent(
         )
         
         # The agent_service handles validating that the user actually owns this dataset/doc
-        return agent_service.create_agent(db, context.tenant_id, service_payload)
+        return await agent_service.create_agent(db, context.tenant_id, service_payload)
         
     except ValueError as ve:
         logger.warning(f"[{context.tenant_id}] Validation Error: {str(ve)}")
@@ -102,6 +134,8 @@ async def create_chat_agent(
 @router.get("/{agent_id}/memory", response_model=List[InvestigationRecordResponse])
 async def get_agent_memory(
     agent_id: UUID,
+    limit: int = 50,
+    offset: int = 0,
     context: TenantContext = Depends(verify_tenant),
     db: Session = Depends(get_db)
 ):
@@ -120,10 +154,20 @@ async def get_agent_memory(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
         
     # 2. Retrieve chronological deep memory timeline
-    records = db.query(InvestigationRecord).filter(
-        InvestigationRecord.agent_id == agent_id,
-        InvestigationRecord.tenant_id == context.tenant_id
-    ).order_by(InvestigationRecord.created_at.desc()).all()
+    limit = min(max(limit, 1), 500)
+    offset = max(offset, 0)
+
+    records = (
+        db.query(InvestigationRecord)
+        .filter(
+            InvestigationRecord.agent_id == agent_id,
+            InvestigationRecord.tenant_id == context.tenant_id,
+        )
+        .order_by(InvestigationRecord.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
     
     return records
 
@@ -140,20 +184,41 @@ async def create_monitoring_agent(
     """
     logger.info(f"[{context.tenant_id}] Deploying Monitoring Agent: {payload.name}")
     try:
-        return agent_service.create_agent(db, context.tenant_id, payload)
+        return agent_service.create_monitoring_agent(
+            db=db,
+            tenant_id=context.tenant_id,
+            name=payload.name,
+            dataset_id=str(payload.dataset_id),
+            metric_column=payload.metric_column,
+            time_column=payload.time_column,
+            cron_schedule=payload.cron_schedule,
+            sensitivity_threshold=payload.sensitivity_threshold,
+            role_description=payload.role_description,
+        )
     except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
-        logger.error(f"[{context.tenant_id}] Monitoring Deployment Failed: {str(e)}")
+        logger.error(f"[{context.tenant_id}] Monitoring Deployment Failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to deploy autonomous monitor.")
 
 @router.get("/", response_model=List[AgentResponse])
 async def list_agents(
+    limit: int = 50,
+    offset: int = 0,
     context: TenantContext = Depends(verify_tenant),
     db: Session = Depends(get_db)
 ):
     """Retrieves all active agents specifically for the authenticated tenant."""
-    agents = db.query(Agent).filter(Agent.tenant_id == context.tenant_id).all()
+    limit = min(max(limit, 1), 200)
+    offset = max(offset, 0)
+    agents = (
+        db.query(Agent)
+        .filter(Agent.tenant_id == context.tenant_id)
+        .order_by(Agent.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
     return agents
 
 @router.get("/{agent_id}", response_model=AgentResponse)
@@ -182,15 +247,33 @@ async def update_agent(
     
     try:
         update_data = payload.model_dump(exclude_unset=True)
+
+        if "dataset_id" in update_data and update_data["dataset_id"] is not None:
+            _verify_dataset_ownership(db, context.tenant_id, update_data["dataset_id"])
+
+        if "document_id" in update_data and update_data["document_id"] is not None:
+            has_access = await agent_service.verify_document_ownership(
+                context.tenant_id,
+                str(update_data["document_id"]),
+            )
+            if not has_access:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Document not found or unauthorized.",
+                )
+
         for key, value in update_data.items():
             setattr(agent, key, value)
         
         db.commit()
         db.refresh(agent)
         return agent
+    except HTTPException:
+        db.rollback()
+        raise
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"[{context.tenant_id}] Error updating agent {agent_id}: {e}")
+        logger.error(f"[{context.tenant_id}] Error updating agent {agent_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update agent.")
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -210,20 +293,17 @@ async def delete_agent(
         return None
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"[{context.tenant_id}] Error deleting agent {agent_id}: {e}")
+        logger.error(f"[{context.tenant_id}] Error deleting agent {agent_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete agent.")
 
 # ------------------------------------------------------------------------------
 # Autonomous Heartbeat
 # ------------------------------------------------------------------------------
 
-@router.post("/heartbeat", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/heartbeat", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_internal_heartbeat)])
 async def trigger_agent_heartbeat(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
-    # Note: No `verify_tenant` dependency here because this is a system-level
-    # cron trigger (e.g., hit by Cloudflare Workers or Vercel Cron). 
-    # In a production setting, you should protect this with an internal API Key.
 ):
     """
     The Orchestration Trigger.

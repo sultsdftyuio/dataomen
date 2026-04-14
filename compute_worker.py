@@ -188,6 +188,7 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
     from api.services.cache_manager import cache_manager
 
     with SessionLocal() as db:
+        dataset = None
         try:
             dataset = db.query(Dataset).filter(
                 Dataset.id == dataset_id,
@@ -202,6 +203,9 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
             db.commit()
 
             if not dataset.integration_name:
+                if not dataset.file_path:
+                    raise ValueError("Dataset has no file_path for file ingestion.")
+
                 self.update_state(
                     state="PROGRESS",
                     meta={"status": "Vectorising file to Parquet..."},
@@ -251,22 +255,24 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
 
         except SoftTimeLimitExceeded:
             logger.error(f"❌ [{tenant_id}] Task timeout: {dataset_id}")
-            dataset.status = DatasetStatus.FAILED
-            dataset.schema_metadata = {
-                **(dataset.schema_metadata or {}),
-                "error": "Operation timed out.",
-            }
-            db.commit()
+            if dataset is not None:
+                dataset.status = DatasetStatus.FAILED
+                dataset.schema_metadata = {
+                    **(dataset.schema_metadata or {}),
+                    "error": "Operation timed out.",
+                }
+                db.commit()
 
         except Exception as e:
             logger.error(f"❌ [{tenant_id}] Ingestion failed: {dataset_id} | {e}")
             db.rollback()
-            dataset.status = DatasetStatus.FAILED
-            dataset.schema_metadata = {
-                **(dataset.schema_metadata or {}),
-                "error": str(e),
-            }
-            db.commit()
+            if dataset is not None:
+                dataset.status = DatasetStatus.FAILED
+                dataset.schema_metadata = {
+                    **(dataset.schema_metadata or {}),
+                    "error": str(e),
+                }
+                db.commit()
             raise self.retry(exc=e, countdown=60)
 
         finally:

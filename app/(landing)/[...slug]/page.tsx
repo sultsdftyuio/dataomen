@@ -910,16 +910,19 @@ function getV1BlockProps(type: string, page: any): Record<string, any> {
 
 const V2_NORMALIZERS: Record<string, V2Normalizer> = {
   [BLOCK_TYPES.HERO]: (props, page) => {
-    if (props.data) return;
+    const d = props.data || props;
     props.data = {
-      type: props.badge || page.type || 'platform',
-      seo:  { h1: props.title || page.seo?.h1 || 'Arcli Analytics' },
+      type: d.type || page.type || 'platform',
+      seo:  {
+        h1: d.h1 || d.headline || d.title || page.seo?.h1 || 'Arcli Analytics',
+      },
       hero: {
-        subtitle: props.subtitle || props.description || page.seo?.description || '',
-        cta:      normalizeCta(
-          props.cta,
-          props.primaryCta ?? props.primaryCTA,
-          props.secondaryCta ?? props.secondaryCTA,
+        title: d.h1 || d.headline || d.title || page.seo?.h1 || 'Arcli Analytics',
+        subtitle: d.subtitle || d.description || page.seo?.description || '',
+        cta: normalizeCta(
+          d.cta,
+          d.primaryCta ?? d.primaryCTA,
+          d.secondaryCta ?? d.secondaryCTA,
         ),
       },
     };
@@ -1221,6 +1224,16 @@ function prepareBlocksCached(page: any, slug: string): PreparedBlock[] {
   return result;
 }
 
+const BLOCK_TYPE_ALIASES: Record<string, string> = {
+  HeroBlock:              BLOCK_TYPES.HERO,
+  ComparisonMatrix:       BLOCK_TYPES.MATRIX,
+  ArchitectureDiagram:    BLOCK_TYPES.ARCHITECTURE,
+  CTAGroup:               BLOCK_TYPES.CONVERSION_ENGINE,
+  AnalyticsDashboard:     BLOCK_TYPES.UI_BLOCK,
+  MetricsChart:           BLOCK_TYPES.UI_BLOCK,
+  DataRelationshipsGraph: BLOCK_TYPES.UI_BLOCK,
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PRE-NORMALIZED RENDER PIPELINE  [A3]
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1232,17 +1245,17 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
     ? new Map(page.blocks.map((b: any) => [b?.type, b]))
     : new Map();
 
-  const rawList: Array<{ type: string; payload?: any; data?: any; id?: string; slug?: string }> = isV2
+  const rawList: Array<{ type: string; payload: any; id?: string; slug?: string; data?: any }> = isV2
     ? page.blocks.map((b: any) => ({ ...b }))
     : (LAYOUT_CONFIG[page.type] ?? LAYOUT_CONFIG.default).map((type) => ({
         type,
         payload: page,
       }));
 
-  if (page.uiBlocks?.length > 0) {
+  if (page.uiBlocks?.length > 0 && !isV2) {
     const uiBlocks = page.uiBlocks.map((block: any) => ({
       type:    BLOCK_TYPES.UI_BLOCK,
-      payload: !isV2 ? resolveUIBlockPayload(block, page) : block,
+      payload: resolveUIBlockPayload(block, page),
     }));
     const heroIndex = rawList.findIndex((b) => b.type === BLOCK_TYPES.HERO);
     const insertAt  = heroIndex >= 0 ? heroIndex + 1 : 0;
@@ -1253,20 +1266,30 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
     .filter((block) => block != null && block.type != null)
     .map((block, index) => {
 
-      // ── 1. Extract raw props (V1 vs V2) ──────────────────────────────────
-      const props: Record<string, any> =
-        isV2 || block.type === BLOCK_TYPES.UI_BLOCK
-          ? { ...(block.payload ?? block.data ?? block) }
-          : getV1BlockProps(block.type, page);
+      // 1. Map Mega-Blocks to Canonical Internal Blocks
+      const mappedType = BLOCK_TYPE_ALIASES[block.type] || block.type;
+      let payload = block.payload ?? block.data ?? {};
 
-      // ── 2. Apply V2 normalization bridge (includes schema normalizers) ────
-      if (isV2) {
-        V2_NORMALIZERS[block.type]?.(props, page, blockMap);
+      // 2. Wrap UI blocks with the expected handler mapping
+      if (mappedType === BLOCK_TYPES.UI_BLOCK && block.type !== BLOCK_TYPES.UI_BLOCK) {
+        payload = {
+          visualizationType: block.type,
+          dataMapping: payload,
+        };
       }
 
-      // ── 3. Normalize all canonical array props once ───────────────────────
-      //    Schema-normalized arrays are already tagged; forceArray is safe to
-      //    call again — it won't re-wrap them.
+      // 3. Extract raw props
+      const props: Record<string, any> =
+        isV2 || mappedType === BLOCK_TYPES.UI_BLOCK
+          ? { ...payload }
+          : getV1BlockProps(mappedType, page);
+
+      // 4. Apply V2 normalization bridge
+      if (isV2) {
+        V2_NORMALIZERS[mappedType]?.(props, page, blockMap);
+      }
+
+      // 5. Normalize all canonical array props
       props.slugs      = forceArray(props.slugs);
       props.faqs       = forceArray(props.faqs);
       props.matrix     = forceArray(props.matrix ?? props.rows);
@@ -1277,7 +1300,6 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
       props.items      = forceArray(props.items);
       props.highlights = forceArray(props.highlights ?? props.pillars);
 
-      // ── 4. Deep structural guards ─────────────────────────────────────────
       if (props.architecture) {
         if (typeof props.architecture !== 'object') {
           props.architecture = {
@@ -1288,34 +1310,27 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
         }
       }
 
-      if (
-        block.type === BLOCK_TYPES.TELEMETRY_TRACE &&
-        props.data &&
-        typeof props.data === 'object'
-      ) {
+      if (mappedType === BLOCK_TYPES.TELEMETRY_TRACE && props.data && typeof props.data === 'object') {
         props.data = { ...props.data, traces: forceArray(props.data.traces) };
       }
 
-      // ── 5. Extract inline V13 visualizations ─────────────────────────────
       const inlineVisualizations: InlineViz[] = Array.isArray(props.uiVisualizations)
         ? props.uiVisualizations.filter(
             (ui: any) => ui?.type && ui.dataMapping !== undefined,
           )
         : [];
 
-      // ── 6. Stable React key ───────────────────────────────────────────────
-      const stableKey = `${block.type}-${block.id ?? block.slug ?? index}`;
+      const stableKey = `${mappedType}-${block.id ?? block.slug ?? index}`;
 
-      // ── 7. [H8] DEV lineage metadata ─────────────────────────────────────
       if (DEV) {
         props.__source = {
-          blockType:    block.type,
-          slug:         slug ?? 'unknown',
-          originalKeys: Object.keys(block.payload ?? {}),
+          blockType: mappedType,
+          originalType: block.type,
+          slug: slug ?? 'unknown',
         };
       }
 
-      return { type: block.type, props, stableKey, inlineVisualizations };
+      return { type: mappedType, props, stableKey, inlineVisualizations };
     });
 }
 
