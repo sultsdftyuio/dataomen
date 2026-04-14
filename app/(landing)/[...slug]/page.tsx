@@ -163,10 +163,10 @@ const DEFAULT_CTA = {
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// [B3] params is a plain object in Next.js App Router — NOT a Promise.
-// Catch-all route means slug is an Array of strings.
+// [B3] In this deployment target, params is async (Promise) for dynamic routes.
+// Catch-all route means slug resolves to an Array of strings.
 interface PageProps {
-  params: { slug: string[] };
+  params: Promise<{ slug: string[] }>;
 }
 
 interface Cta {
@@ -1332,7 +1332,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug: slugArray } = params;
+  const { slug: slugArray } = await params;
   const fullSlug = slugArray.join('/');
   const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
@@ -1368,7 +1368,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default async function DynamicSEOPage({ params }: PageProps) {
-  const { slug: slugArray } = params;
+  const { slug: slugArray } = await params;
   const fullSlug = slugArray.join('/');
   const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
