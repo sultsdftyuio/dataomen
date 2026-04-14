@@ -7,6 +7,7 @@ import logging
 import gc
 import time
 import psutil
+from threading import BoundedSemaphore, Lock, Thread
 from typing import Dict, Any, Optional
 
 # ------------------------------------------------------------------------------
@@ -19,7 +20,8 @@ if _ROOT_DIR not in sys.path:
 # ------------------------------------------------------------------------------
 # C-Level Thread Guardrails — MUST be set before any native library is imported.
 # ------------------------------------------------------------------------------
-_CPU_THREAD_LIMIT = str(min(4, os.cpu_count() or 2))
+_WORKER_CONCURRENCY = max(1, min(4, os.cpu_count() or 2))
+_CPU_THREAD_LIMIT = str(_WORKER_CONCURRENCY)
 os.environ.setdefault("POLARS_MAX_THREADS", _CPU_THREAD_LIMIT)
 os.environ.setdefault("DUCKDB_NUM_THREADS", _CPU_THREAD_LIMIT)
 os.environ.setdefault("OMP_NUM_THREADS", _CPU_THREAD_LIMIT)
@@ -65,6 +67,12 @@ celery_app.conf.update(
     accept_content=["json"],
     result_serializer="json",
 
+    task_annotations={
+        "process_ingestion_dataset": {"rate_limit": os.getenv("INGESTION_RATE_LIMIT", "30/m")},
+        "execute_heavy_analytical_pipeline": {"rate_limit": os.getenv("HEAVY_PIPELINE_RATE_LIMIT", "6/m")},
+        "run_autonomous_insight_scans": {"rate_limit": os.getenv("AUTONOMOUS_SCAN_RATE_LIMIT", "6/h")},
+    },
+
     # ── Timeouts ─────────────────────────────────────────────────────────────
     task_time_limit=600,        
     task_soft_time_limit=570,   
@@ -83,6 +91,7 @@ celery_app.conf.update(
     },
 
     # ── Worker Hygiene ───────────────────────────────────────────────────────
+    worker_concurrency=_WORKER_CONCURRENCY,
     worker_prefetch_multiplier=1,         
     task_acks_late=True,                  
     worker_max_tasks_per_child=50,        
@@ -119,6 +128,29 @@ def reset_db_connection_pool(**kwargs: Any) -> None:
 # ------------------------------------------------------------------------------
 
 def _run_async(coro: Any) -> Any:
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+
+    if running_loop and running_loop.is_running():
+        result: Dict[str, Any] = {}
+        error: Dict[str, BaseException] = {}
+
+        def _runner() -> None:
+            try:
+                result["value"] = asyncio.run(coro)
+            except BaseException as exc:
+                error["value"] = exc
+
+        thread = Thread(target=_runner, daemon=True)
+        thread.start()
+        thread.join()
+
+        if "value" in error:
+            raise error["value"]
+        return result.get("value")
+
     return asyncio.run(coro)
 
 def _check_memory_pressure(task: Any, threshold: float = 85.0) -> None:
@@ -135,11 +167,28 @@ def _check_memory_pressure(task: Any, threshold: float = 85.0) -> None:
 # Lazy-Loaded Service Accessors & AI Dependency Injection
 # ------------------------------------------------------------------------------
 _singletons: Dict[str, Any] = {}
+_singletons_lock = Lock()
+_heavy_task_semaphore = BoundedSemaphore(value=max(1, min(2, _WORKER_CONCURRENCY)))
 
 def _get_service(key: str, factory: Any) -> Any:
     if key not in _singletons:
-        _singletons[key] = factory()
+        with _singletons_lock:
+            if key not in _singletons:
+                _singletons[key] = factory()
     return _singletons[key]
+
+
+def _acquire_heavy_task_slot(task: Any) -> None:
+    if not _heavy_task_semaphore.acquire(blocking=False):
+        logger.warning("Heavy analytics backpressure activated; re-queuing task.")
+        raise task.retry(countdown=20)
+
+
+def _release_heavy_task_slot() -> None:
+    try:
+        _heavy_task_semaphore.release()
+    except ValueError:
+        pass
 
 
 def _planner() -> Any:
@@ -189,65 +238,112 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
 
     with SessionLocal() as db:
         dataset = None
+        idempotency_key = getattr(getattr(self, "request", None), "id", None) or f"{tenant_id}:{dataset_id}"
         try:
             dataset = db.query(Dataset).filter(
                 Dataset.id == dataset_id,
                 Dataset.tenant_id == tenant_id,
-            ).first()
+            ).with_for_update().first()
 
             if not dataset:
                 logger.error(f"[{tenant_id}] Dataset {dataset_id} not found. Aborting.")
                 return None
 
+            if dataset.status == DatasetStatus.PROCESSING:
+                logger.warning(f"[{tenant_id}] Dataset {dataset_id} is already processing. Skipping duplicate task.")
+                return {"status": "skipped", "dataset_id": dataset_id, "reason": "already_processing"}
+
+            current_metadata = dataset.schema_metadata if isinstance(dataset.schema_metadata, dict) else {}
+            if current_metadata.get("ingestion_completed_key") == idempotency_key:
+                logger.info(f"[{tenant_id}] Idempotent replay detected for dataset {dataset_id}; skipping duplicate ingestion.")
+                return {
+                    "status": "success",
+                    "dataset_id": dataset_id,
+                    "idempotent_replay": True,
+                }
+
+            same_attempt = current_metadata.get("ingestion_inflight_key") == idempotency_key
+            ingestion_stage = current_metadata.get("ingestion_stage") if same_attempt else None
+
             dataset.status = DatasetStatus.PROCESSING
+            dataset.schema_metadata = {
+                **current_metadata,
+                "ingestion_inflight_key": idempotency_key,
+                "ingestion_stage": ingestion_stage or "started",
+                "ingestion_started_at": current_metadata.get("ingestion_started_at", time.time()) if same_attempt else time.time(),
+            }
             db.commit()
 
             if not dataset.integration_name:
                 if not dataset.file_path:
                     raise ValueError("Dataset has no file_path for file ingestion.")
 
-                self.update_state(
-                    state="PROGRESS",
-                    meta={"status": "Vectorising file to Parquet..."},
-                )
-                profile = storage_manager.convert_to_parquet_and_profile(
-                    db, tenant_id, dataset.file_path
-                )
-                dataset.file_path = profile["parquet_path"]
-                dataset.schema_metadata = {
-                    **(dataset.schema_metadata or {}),
-                    "columns": profile.get("columns", []),
-                    "row_count": profile.get("row_count", 0),
-                    "vectorized_at": time.time(),
-                }
+                if ingestion_stage != "file_vectorized":
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={"status": "Vectorising file to Parquet..."},
+                    )
+                    profile = storage_manager.convert_to_parquet_and_profile(
+                        db, tenant_id, dataset.file_path
+                    )
+                    if not isinstance(profile, dict) or not profile.get("parquet_path"):
+                        raise ValueError("Parquet conversion failed to produce a valid parquet_path.")
+                    dataset.file_path = profile["parquet_path"]
+                    dataset.schema_metadata = {
+                        **(dataset.schema_metadata or {}),
+                        "columns": profile.get("columns", []),
+                        "row_count": profile.get("row_count", 0),
+                        "vectorized_at": time.time(),
+                        "ingestion_stage": "file_vectorized",
+                    }
+                    db.commit()
+                    ingestion_stage = "file_vectorized"
 
             else:
-                self.update_state(
-                    state="PROGRESS",
-                    meta={"status": f"Pulling historical data from {dataset.integration_name}..."},
-                )
-                creds = CredentialManager(db).get_integration_credentials(
-                    tenant_id, dataset.integration_name
-                )
-                if not creds:
-                    raise PermissionError(
-                        f"Secure Vault access denied for {dataset.integration_name}"
+                if ingestion_stage != "sync_completed":
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={"status": f"Pulling historical data from {dataset.integration_name}..."},
                     )
+                    creds = CredentialManager(db).get_integration_credentials(
+                        tenant_id, dataset.integration_name
+                    )
+                    if not creds:
+                        raise PermissionError(
+                            f"Secure Vault access denied for {dataset.integration_name}"
+                        )
 
-                sync_engine = get_sync_engine(db)
-                _run_async(sync_engine.run_historical_sync(
-                    tenant_id=tenant_id,
-                    integration_name=dataset.integration_name,
-                    dataset_id=dataset_id,
-                    stream_name=dataset.stream_name or "default",
-                    start_timestamp=dataset.schema_metadata.get(
-                        "start_timestamp", "2024-01-01T00:00:00Z"
-                    ),
-                ))
+                    sync_engine = get_sync_engine(db)
+                    schema_metadata = dataset.schema_metadata if isinstance(dataset.schema_metadata, dict) else {}
+                    _run_async(sync_engine.run_historical_sync(
+                        tenant_id=tenant_id,
+                        integration_name=dataset.integration_name,
+                        dataset_id=dataset_id,
+                        stream_name=dataset.stream_name or "default",
+                        start_timestamp=schema_metadata.get(
+                            "start_timestamp", "2024-01-01T00:00:00Z"
+                        ),
+                    ))
+                    dataset.schema_metadata = {
+                        **(dataset.schema_metadata or {}),
+                        "ingestion_stage": "sync_completed",
+                        "synced_at": time.time(),
+                    }
+                    db.commit()
+                    ingestion_stage = "sync_completed"
 
             dataset.status = DatasetStatus.READY
+            dataset.schema_metadata = {
+                **(dataset.schema_metadata or {}),
+                "ingestion_stage": "completed",
+                "ingestion_completed_key": idempotency_key,
+                "ingestion_completed_at": time.time(),
+            }
             db.commit()
-            _run_async(cache_manager.invalidate_dataset_cache(tenant_id, dataset_id))
+            try:
+                _run_async(cache_manager.invalidate_dataset_cache(tenant_id, dataset_id))
+            except Exception as cache_exc:
+                logger.warning(f"[{tenant_id}] Cache invalidation failed for dataset {dataset_id}: {cache_exc}")
 
             duration = round(time.perf_counter() - start_time, 2)
             logger.info(f"✅ [{tenant_id}] Ingestion complete: {dataset_id} in {duration}s")
@@ -259,6 +355,8 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
                 dataset.status = DatasetStatus.FAILED
                 dataset.schema_metadata = {
                     **(dataset.schema_metadata or {}),
+                    "ingestion_stage": "failed",
+                    "ingestion_failed_key": idempotency_key,
                     "error": "Operation timed out.",
                 }
                 db.commit()
@@ -270,6 +368,8 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
                 dataset.status = DatasetStatus.FAILED
                 dataset.schema_metadata = {
                     **(dataset.schema_metadata or {}),
+                    "ingestion_stage": "failed",
+                    "ingestion_failed_key": idempotency_key,
                     "error": str(e),
                 }
                 db.commit()
@@ -297,6 +397,7 @@ def execute_heavy_analytical_pipeline(
     full_schema: Dict[str, Any],
 ) -> Dict[str, Any]:
     _check_memory_pressure(self)
+    heavy_slot_acquired = False
     logger.info(f"[{tenant_id}] 🧠 Orchestrating Heavy BI Pipeline: {job_id}")
 
     from api.services.compute_engine import compute_engine, DatasetMetadata
@@ -307,6 +408,8 @@ def execute_heavy_analytical_pipeline(
     df = None
 
     try:
+        _acquire_heavy_task_slot(self)
+        heavy_slot_acquired = True
         dataset = DatasetMetadata(**dataset_dict)
 
         self.update_state(
@@ -355,6 +458,8 @@ def execute_heavy_analytical_pipeline(
             datasets=[],
             query=sql_query,
         ))
+        if query_result is None:
+            query_result = []
 
         self.update_state(
             state="PROGRESS",
@@ -380,15 +485,18 @@ def execute_heavy_analytical_pipeline(
             llm_client=llm_client 
         ))
 
-        _run_async(cache_manager.set_cached_insight(
-            tenant_id=tenant_id,
-            dataset_id=dataset.dataset_id,
-            prompt=prompt,
-            sql_query=sql_query,
-            chart_spec=chart_spec,
-            insight_payload=insights,
-            narrative=narrative_obj.model_dump(),
-        ))
+        try:
+            _run_async(cache_manager.set_cached_insight(
+                tenant_id=tenant_id,
+                dataset_id=dataset.dataset_id,
+                prompt=prompt,
+                sql_query=sql_query,
+                chart_spec=chart_spec,
+                insight_payload=insights,
+                narrative=narrative_obj.model_dump(),
+            ))
+        except Exception as cache_exc:
+            logger.warning(f"[{tenant_id}] Failed to cache insight for job {job_id}: {cache_exc}")
 
         logger.info(f"✅ [{tenant_id}] BI Pipeline complete: {job_id}")
         return {
@@ -397,7 +505,7 @@ def execute_heavy_analytical_pipeline(
             "data": query_result,
             "sql_used": sql_query,
             "chart_spec": chart_spec,
-            "row_count": len(query_result),
+            "row_count": len(query_result) if hasattr(query_result, "__len__") else 0,
             "insights": insights.model_dump(),
             "narrative": narrative_obj.model_dump(),
         }
@@ -407,6 +515,8 @@ def execute_heavy_analytical_pipeline(
         return {"status": "error", "message": str(e)}
 
     finally:
+        if heavy_slot_acquired:
+            _release_heavy_task_slot()
         if df is not None:
             del df
         gc.collect()
@@ -432,9 +542,12 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
         watchdog = WatchdogService(db_client=db, llm_client=llm_client)
 
         logger.info("Running pipeline health and dataset staleness audits...")
-        _run_async(watchdog.detect_stale_datasets())
+        try:
+            _run_async(watchdog.detect_stale_datasets())
+        except Exception as stale_exc:
+            logger.error(f"Staleness audit failed: {stale_exc}")
 
-        active_agents = db.query(Agent).filter(Agent.is_active == True).all()
+        active_agents = db.query(Agent).filter(Agent.is_active.is_(True)).all()
 
         if not active_agents:
             logger.info("No active autonomous agents found. Skipping scan.")
@@ -444,6 +557,9 @@ def run_autonomous_insight_scans(self: Any) -> Dict[str, Any]:
 
         for agent in active_agents:
             if not agent.metric_column or not agent.time_column:
+                continue
+            if not agent.dataset_id:
+                logger.warning(f"Agent {agent.id} has no dataset_id. Skipping autonomous run.")
                 continue
 
             try:

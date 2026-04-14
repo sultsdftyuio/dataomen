@@ -160,7 +160,7 @@ function useAsyncGuard() {
 
   useEffect(() => cancelAll, [cancelAll])
 
-  return { createGuard, isStale, cancelAll }
+  return useMemo(() => ({ createGuard, isStale, cancelAll }), [createGuard, isStale, cancelAll])
 }
 
 /**
@@ -229,7 +229,7 @@ function useConnectionLifecycle(
 
           updateContext((prev) => ({ 
             ...prev, 
-            detectedTables: [...prev.detectedTables.map(t => structuredClone(t)), structuredClone(normalizedTable)] 
+            detectedTables: [...prev.detectedTables, normalizedTable] 
           }))
           dispatch({ type: 'TABLE_DETECTED', table: normalizedTable })
         },
@@ -402,10 +402,8 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
       const nextFieldErrors = { ...prev.fieldErrors }
       if (nextFieldErrors[name]) delete nextFieldErrors[name]
 
-      // Deep structural clone to prevent external mutation leaks
-      let nextMeta = typeof structuredClone === 'function' 
-        ? structuredClone(prev.autofillMeta) 
-        : JSON.parse(JSON.stringify(prev.autofillMeta))
+      // Maintain immutability without deep cloning overhead
+      let nextMeta = prev.autofillMeta
 
       if (name.includes('url') || name.includes('host')) {
         try {
@@ -633,7 +631,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
               <DialogHeader className="p-6 pb-5 bg-gradient-to-b from-white to-slate-50/50 border-b border-slate-100">
                 <div className="flex items-center gap-3">
                   <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100/80 rounded-lg"
-                    onClick={() => dispatch({ type: 'BACK_TO_SELECT' })}>
+                    onClick={() => { stopConnection(); dispatch({ type: 'BACK_TO_SELECT' }) }}>
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <div className={`p-1.5 rounded-lg border border-slate-100/80 bg-white shadow-sm ${integration.color}`}>
@@ -721,7 +719,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
 
               <Button variant="ghost" size="sm" 
                 className="mt-4 text-slate-400 hover:text-slate-700 text-[12px] font-bold uppercase tracking-wider" 
-                onClick={() => dispatch({ type: 'BACK_TO_SELECT' })}>
+                onClick={() => { stopConnection(); dispatch({ type: 'BACK_TO_SELECT' }) }}>
                 Cancel Connection
               </Button>
             </div>
@@ -796,7 +794,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
               <ContextualTrustBadge phase={state.type} />
 
               <DialogFooter className="p-5 bg-white border-t border-slate-100 flex items-center justify-between">
-                <Button variant="ghost" onClick={() => dispatch({ type: 'BACK_TO_SELECT' })} className="font-bold text-slate-500 hover:text-slate-800 text-[13px]">
+                <Button variant="ghost" onClick={() => { stopConnection(); dispatch({ type: 'BACK_TO_SELECT' }) }} className="font-bold text-slate-500 hover:text-slate-800 text-[13px]">
                   Disconnect
                 </Button>
                 <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg px-8 shadow-sm text-[13px]">
@@ -868,7 +866,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
 
             <div className="mt-auto flex flex-col sm:flex-row gap-3 pt-2">
               <Button variant="outline" className="flex-1 font-bold border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm rounded-lg text-[13px] h-10" 
-                onClick={() => dispatch({ type: 'BACK_TO_SELECT' })}>
+                onClick={() => { stopConnection(); dispatch({ type: 'BACK_TO_SELECT' }) }}>
                 Change Source
               </Button>
               <Button className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold shadow-sm rounded-lg text-[13px] h-10" 

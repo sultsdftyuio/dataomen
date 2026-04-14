@@ -81,7 +81,7 @@ import { TenantIsolationArchitecture, DeterministicGuardrails } from '@/componen
 const BrutalistCTA = dynamic(
   () =>
     import('@/components/landing/brutalist-cta')
-      .then((m) => ({ default: m.BrutalistCTA }))
+      .then((m) => ({ default: m.BrutalistCTA || m.default }))
       .catch(() => ({ default: Features })),
   { ssr: true, loading: () => null },
 );
@@ -1226,8 +1226,6 @@ function prepareBlocksCached(page: any, slug: string): PreparedBlock[] {
 
 const BLOCK_TYPE_ALIASES: Record<string, string> = {
   HeroBlock:              BLOCK_TYPES.HERO,
-  ComparisonMatrix:       BLOCK_TYPES.MATRIX,
-  ArchitectureDiagram:    BLOCK_TYPES.ARCHITECTURE,
   CTAGroup:               BLOCK_TYPES.CONVERSION_ENGINE,
   AnalyticsDashboard:     BLOCK_TYPES.UI_BLOCK,
   MetricsChart:           BLOCK_TYPES.UI_BLOCK,
@@ -1253,10 +1251,17 @@ function prepareBlocks(page: any, slug?: string): PreparedBlock[] {
       }));
 
   if (page.uiBlocks?.length > 0 && !isV2) {
-    const uiBlocks = page.uiBlocks.map((block: any) => ({
-      type:    BLOCK_TYPES.UI_BLOCK,
-      payload: resolveUIBlockPayload(block, page),
-    }));
+    // SecurityGuardrails is a top-level layout block, not a UI widget.
+    // Filter it from legacy V1 uiBlocks to avoid noisy unknown UI block warnings.
+    const uiBlocks = page.uiBlocks
+      .filter((block: any) => {
+        const candidateType = block?.visualizationType || block?.type;
+        return candidateType !== BLOCK_TYPES.SECURITY_GUARDRAILS;
+      })
+      .map((block: any) => ({
+        type:    BLOCK_TYPES.UI_BLOCK,
+        payload: resolveUIBlockPayload(block, page),
+      }));
     const heroIndex = rawList.findIndex((b) => b.type === BLOCK_TYPES.HERO);
     const insertAt  = heroIndex >= 0 ? heroIndex + 1 : 0;
     rawList.splice(insertAt, 0, ...uiBlocks);
