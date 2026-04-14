@@ -36,3 +36,5 @@ export function BrutalistCTA() {
     </section>
   );
 }
+
+export default BrutalistCTA;

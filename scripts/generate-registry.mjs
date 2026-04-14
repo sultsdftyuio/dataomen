@@ -115,7 +115,7 @@ export function getNormalizedPage(slug: string): any | null {
   // Next.js 15+ async params safeguard
   if (!slug || typeof slug !== 'string') return null;
 
-  const cleanSlug = slug.replace(/^\//, '').toLowerCase();
+  const cleanSlug = slug.replace(/^\\\//, '').toLowerCase();
 
   // 1. Exact Match
   let data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];

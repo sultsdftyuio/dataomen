@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/generate-registry.mjs
 //
 // Silos tracked: 36
-// Generated:     2026-04-13T15:20:11.043Z
+// Generated:     2026-04-14T19:48:14.352Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';
@@ -92,82 +92,93 @@ const toKebab = (str: string) => {
 
 allModules.forEach((mod) => {
   Object.entries(mod).forEach(([exportName, exportValue]) => {
-    if (!exportValue || typeof exportValue !== 'object') return;
+    if (!exportValue || typeof exportValue !== 'object' || Array.isArray(exportValue)) return;
 
-    // 1. Safely handle pages exported within Arrays
-    if (Array.isArray(exportValue)) {
-      exportValue.forEach((pageData, idx) => {
-        if (!pageData || typeof pageData !== 'object') return;
-        const pathStr = (pageData as any).path || (pageData as any).slug || '';
-        const slug = pathStr.replace(/^\//, '').split('/').pop() || `${toKebab(exportName)}-${idx}`;
-        if ((pageData as any).blocks || (pageData as any).seo || (pageData as any).hero || (pageData as any).h1) {
-          SEO_REGISTRY[slug] = pageData;
-        }
-      });
-      return;
-    }
-
-    const isV2 = ('blocks' in exportValue) && ('meta' in exportValue || 'path' in exportValue);
+    const isV2 = 'path' in exportValue && 'meta' in exportValue && 'blocks' in exportValue;
+    // Added 'h1' and 'blocks' to catch previously ignored partial V1 pages
     const isV1Page = 'seo' in exportValue || 'hero' in exportValue || 'type' in exportValue || 'title' in exportValue || 'h1' in exportValue || 'blocks' in exportValue;
 
-    // 2. Safely map direct objects using path fallbacks
-    if (isV2 || isV1Page) {
-      let slug = (exportValue as any).slug;
-      if (!slug && (exportValue as any).path) {
-        slug = (exportValue as any).path.replace(/^\//, '').split('/').pop();
-      }
-      if (!slug) {
-        slug = exportName === 'default' ? 'unnamed-silo' : toKebab(exportName);
-      }
+    if (isV2) {
+      // Preserved full path for Next.js [...slug] Catch-All routing
+      const slug = (exportValue as any).path.replace(/^\//, ''); 
       SEO_REGISTRY[slug] = exportValue;
       return;
     }
 
-    // 3. Fallback for object collections Map<string, PageData>
+    if (isV1Page) {
+      // Prevent default exports from hijacking the slug as "/default"
+      const fallbackSlug = exportName === 'default' ? 'unnamed-silo' : toKebab(exportName);
+      const slug = (exportValue as any).slug || fallbackSlug;
+      SEO_REGISTRY[slug] = exportValue;
+      return;
+    }
+
+    // V1 collection: Record<string, PageData>
     Object.entries(exportValue).forEach(([key, pageData]: [string, any]) => {
       if (!pageData || typeof pageData !== 'object' || Array.isArray(pageData)) return;
 
-      let slug = pageData.slug;
-      if (!slug && pageData.path) {
-        slug = pageData.path.replace(/^\//, '').split('/').pop();
+      let slug: string;
+
+      if ('path' in pageData && 'meta' in pageData && 'blocks' in pageData) {
+        // Preserved full path for Next.js [...slug] Catch-All routing
+        slug = (pageData as any).path.replace(/^\//, '');
+      } else if ('seo' in pageData || 'hero' in pageData || 'type' in pageData || 'title' in pageData || 'h1' in pageData || 'blocks' in pageData) {
+        // Converts camelCase properties safely using enterprise regex
+        slug = (pageData as any).slug || toKebab(key);
+      } else {
+        return; // Still skips invalid shapes
       }
-      if (!slug) {
-        slug = toKebab(key);
-      }
-      if (pageData.blocks || pageData.seo || pageData.hero || pageData.type || pageData.title || pageData.h1) {
-        SEO_REGISTRY[slug] = pageData;
-      }
+
+      SEO_REGISTRY[slug] = pageData;
     });
   });
 });
 
 export function getNormalizedPage(slug: string): any | null {
+  // Next.js 15+ async params safeguard
   if (!slug || typeof slug !== 'string') return null;
 
-  const cleanSlug = slug.replace(/^\//, '');
-  const data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];
+  const cleanSlug = slug.replace(/^\//, '').toLowerCase();
+
+  // 1. Exact Match
+  let data = SEO_REGISTRY[cleanSlug] ?? SEO_REGISTRY[slug];
+
+  // 2. [CRITICAL FIX] Fuzzy Match (Resolves 404s when AI prepends folders like "seo/")
+  if (!data) {
+    const registryKeys = Object.keys(SEO_REGISTRY);
+    const fuzzyKey = registryKeys.find(key => {
+      const lowerKey = key.toLowerCase();
+      return lowerKey === cleanSlug || lowerKey === cleanSlug + '-page' || lowerKey.endsWith('/' + cleanSlug); // Catch "seo/predictive-ai-analytics"
+    });
+    if (fuzzyKey) data = SEO_REGISTRY[fuzzyKey];
+  }
+
   if (!data) return null;
 
   // V2 (block architecture)
-  if (data.blocks && (data.meta || data.seo)) {
+  if (data.blocks && data.meta) {
     const heroBlock = data.blocks.find((b: any) => b?.type === 'Hero' || b?.type === 'HeroBlock');
-    const heroData = heroBlock?.payload || heroBlock?.data || {};
-
+    // [CRITICAL FIX] Ensure we pull data from either .data or .payload to prevent skeleton pages
+    const heroData = heroBlock?.data || heroBlock?.payload || {};
+    
     return {
       ...data,
       seo: {
-        title:       data.meta?.title       || data.seo?.title       || 'Arcli Analytics',
-        description: data.meta?.description || data.seo?.description || 'Enterprise Data Platform',
-        keywords:    data.meta?.keywords    || data.seo?.keywords    || [],
-        h1:          heroData.h1 || heroData.headline || heroData.title || data.meta?.title || 'Arcli AI Analytics',
+        title:       data.meta.title       || 'Arcli Analytics',
+        description: data.meta.description || 'Enterprise Data Platform',
+        keywords:    data.meta.keywords    || [],
+        h1:          heroData.title || data.meta.title || 'Arcli AI Analytics',
       },
     };
   }
 
+  // V1 (legacy / flat architecture)
   const hero = data.hero ?? {
     title:    data.h1    || data.title || '',
     subtitle: data.subtitle || data.description || '',
-    cta: { primary: { href: '/login', text: 'Get Started Free' } },
+    cta: {
+      primary: { href: '/login', text: 'Get Started Free' },
+    },
   };
 
   return {

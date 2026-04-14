@@ -65,7 +65,7 @@ import {
 } from '@/components/landing/seo-blocks-2';
 
 import {
-  SecurityGuardrails, ContrarianBanner, StrategicQuery, ExecutiveSummary,
+  SecurityGuardrails, StrategicQuery, ExecutiveSummary,
 } from '@/components/landing/seo-blocks-3';
 
 import {
@@ -85,52 +85,40 @@ const MissingBlockComponent = ({ name }: { name: string }) => (
 const BrutalistCTA = dynamic(
   () =>
     import('@/components/landing/brutalist-cta')
-      .then((m) => {
-        const mod = m as any;
-        return {
-          default: mod.BrutalistCTA || mod.default || (() => <MissingBlockComponent name="CTA" />),
-        };
-      })
-      .catch(() => ({ default: () => null })),
+      .then((m) => m.default || m.BrutalistCTA || (() => <MissingBlockComponent name="CTA" />))
+      .catch(() => (() => <MissingBlockComponent name="CTA" />)),
+  { ssr: true, loading: () => null },
+);
+
+const ContrarianBannerBlock = dynamic(
+  () =>
+    import('@/components/landing/ContrarianBanner')
+      .then((m) => m.default || m.ContrarianBanner || (() => <MissingBlockComponent name="ContrarianBanner" />))
+      .catch(() => (() => <MissingBlockComponent name="ContrarianBanner" />)),
   { ssr: true, loading: () => null },
 );
 
 const InformationGain = dynamic(
   () =>
-    import('@/components/landing/seo-blocks-2')
-      .then((m) => {
-        const mod = m as any;
-        return {
-          default: mod.InformationGain || mod.Features || mod.default || (() => <MissingBlockComponent name="InformationGain" />),
-        };
-      })
-      .catch(() => ({ default: () => null })),
+    import('@/components/landing/InformationGain')
+      .then((m) => m.default || m.InformationGain || (() => <MissingBlockComponent name="InformationGain" />))
+      .catch(() => (() => <MissingBlockComponent name="InformationGain" />)),
   { ssr: true, loading: () => null },
 );
 
 const AnalyticsDashboard = dynamic(
   () =>
-    import('@/components/landing/seo-blocks-3')
-      .then((m) => {
-        const mod = m as any;
-        return {
-          default: mod.AnalyticsDashboard || mod.StrategicQuery || mod.default || (() => <MissingBlockComponent name="AnalyticsDashboard" />),
-        };
-      })
-      .catch(() => ({ default: () => null })),
+    import('@/components/dashboard/AnalyticsDashboard')
+      .then((m) => m.default || m.AnalyticsDashboard || (() => <MissingBlockComponent name="AnalyticsDashboard" />))
+      .catch(() => (() => <MissingBlockComponent name="AnalyticsDashboard" />)),
   { ssr: true, loading: () => null },
 );
 
 const ComparisonMatrix = dynamic(
   () =>
-    import('@/components/landing/seo-blocks-1')
-      .then((m) => {
-        const mod = m as any;
-        return {
-          default: mod.ComparisonMatrix || mod.Matrix || mod.default || (() => <MissingBlockComponent name="ComparisonMatrix" />),
-        };
-      })
-      .catch(() => ({ default: () => null })),
+    import('@/components/landing/ComparisonMatrix')
+      .then((m) => m.default || m.ComparisonMatrix || (() => <MissingBlockComponent name="ComparisonMatrix" />))
+      .catch(() => (() => <MissingBlockComponent name="ComparisonMatrix" />)),
   { ssr: true, loading: () => null },
 );
 
@@ -656,7 +644,7 @@ function UIBlockMapper({
 const BLOCK_REGISTRY: RegistryCheck = {
   [BLOCK_TYPES.HERO]:                      { component: Hero },
   [BLOCK_TYPES.EXECUTIVE_SUMMARY]:         { component: ExecutiveSummary,            isEmpty: (p) => !(p.highlights?.length || p.pillars?.length) },
-  [BLOCK_TYPES.CONTRARIAN_BANNER]:         { component: Features,                    isEmpty: (p) => !(p.title || p.description || p.copy || p.features?.length) },
+  [BLOCK_TYPES.CONTRARIAN_BANNER]:         { component: ContrarianBannerBlock,       isEmpty: (p) => !(p.statement || p.subtext || p.title || p.description || p.copy || p.features?.length) },
   [BLOCK_TYPES.DEMO]:                      { component: Demo,                         isEmpty: (p) => !p.demo },
   [BLOCK_TYPES.PERSONAS]:                  { component: Personas,                    isEmpty: (p) => !p.personas?.length },
   [BLOCK_TYPES.MATRIX]:                    { component: Matrix,                       isEmpty: (p) => !p.matrix?.length },
@@ -982,10 +970,14 @@ const V2_NORMALIZERS: Record<string, V2Normalizer> = {
   },
 
   [BLOCK_TYPES.CONTRARIAN_BANNER]: (props) => {
-    if (!props.features) {
-      props.features = [{ 
-        title: props.title || props.h2 || props.heading || "Paradigm Shift", 
-        description: props.description || props.copy || props.text || "" 
+    props.statement =
+      props.statement || props.title || props.h2 || props.heading || props.text || props.copy || props.description;
+    props.subtext = props.subtext || props.description || props.copy || props.text;
+
+    if (!props.features && (props.statement || props.subtext)) {
+      props.features = [{
+        title: props.statement || "Paradigm Shift",
+        description: props.subtext || "",
       }];
     }
   },
@@ -1484,11 +1476,31 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           }
 
           const { component: BlockComponent, isEmpty } = entry;
+          const isRenderableComponent =
+            !!BlockComponent &&
+            (typeof BlockComponent === 'function' ||
+              (typeof BlockComponent === 'object' && BlockComponent !== null));
 
-          if (!BlockComponent) {
-            console.warn(`[SEO SYSTEM] Critical Render Warning: No component mapped for block type "${type}"`);
-            return null;
+          if (!isRenderableComponent) {
+            console.error(
+              `[SEO SYSTEM] FATAL: Component for block type "${type}" is undefined or invalid. Check imports and default exports.`,
+            );
+            return (
+              <div
+                key={stableKey}
+                style={{
+                  padding: '20px',
+                  border: '2px solid red',
+                  color: 'red',
+                  margin: '1rem',
+                }}
+              >
+                MISSING COMPONENT: {type}
+              </div>
+            );
           }
+
+          const SafeBlockComponent = BlockComponent as React.ElementType;
 
           // Hero always renders; all other blocks are skipped when isEmpty returns true.
           if (type !== BLOCK_TYPES.HERO && isEmpty?.(props)) {
@@ -1499,7 +1511,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
           if (inlineVisualizations.length > 0) {
             return (
               <React.Fragment key={stableKey}>
-                <BlockComponent {...props} />
+                <SafeBlockComponent {...props} />
                 {inlineVisualizations.map((ui, uiIdx) => (
                   <React.Fragment key={`${stableKey}-ui-${uiIdx}`}>
                     {UIBlockMapper({
@@ -1512,7 +1524,7 @@ export default async function DynamicSEOPage({ params }: PageProps) {
             );
           }
 
-          return <BlockComponent key={stableKey} {...props} />;
+          return <SafeBlockComponent key={stableKey} {...props} />;
         })}
       </main>
 

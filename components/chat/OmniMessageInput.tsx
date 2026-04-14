@@ -13,6 +13,11 @@ import {
   AtSign
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/use-toast";
+
+const MAX_ATTACHMENTS = 8;
+const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = ["csv", "json", "parquet", "pdf", "txt", "md", "docx"] as const;
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -45,6 +50,55 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounter = useRef(0);
+
+  const ingestFiles = useCallback((incomingFiles: File[]) => {
+    if (incomingFiles.length === 0) return;
+
+    const rejectedByType: string[] = [];
+    const rejectedBySize: string[] = [];
+
+    setFiles((prev) => {
+      const next = [...prev];
+
+      for (const file of incomingFiles) {
+        const extension = file.name.includes(".") ? file.name.split(".").pop()!.toLowerCase() : "";
+        if (!ACCEPTED_EXTENSIONS.includes(extension as (typeof ACCEPTED_EXTENSIONS)[number])) {
+          rejectedByType.push(file.name);
+          continue;
+        }
+
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+          rejectedBySize.push(file.name);
+          continue;
+        }
+
+        const duplicate = next.some(
+          (f) => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified,
+        );
+        if (!duplicate) {
+          next.push(file);
+        }
+      }
+
+      return next.slice(0, MAX_ATTACHMENTS);
+    });
+
+    if (rejectedByType.length > 0) {
+      toast({
+        title: "Unsupported file type",
+        description: `Ignored: ${rejectedByType.join(", ")}. Supported: ${ACCEPTED_EXTENSIONS.join(", ")}.`,
+        variant: "destructive",
+      });
+    }
+
+    if (rejectedBySize.length > 0) {
+      toast({
+        title: "File too large",
+        description: `Ignored: ${rejectedBySize.join(", ")}. Max size is 50MB each.`,
+        variant: "destructive",
+      });
+    }
+  }, []);
 
   // 1. Global Drag & Drop Management (Flicker-Free implementation)
   useEffect(() => {
@@ -79,7 +133,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
 
       if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
         const droppedFiles = Array.from(e.dataTransfer.files);
-        setFiles((prev) => [...prev, ...droppedFiles]);
+        ingestFiles(droppedFiles);
       }
     };
 
@@ -101,9 +155,9 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
     if (e.clipboardData.files && e.clipboardData.files.length > 0) {
       e.preventDefault(); 
       const pastedFiles = Array.from(e.clipboardData.files);
-      setFiles((prev) => [...prev, ...pastedFiles]);
+      ingestFiles(pastedFiles);
     }
-  }, []);
+  }, [ingestFiles]);
 
   // 3. Auto-Resizing Textarea & @ Tagging Logic
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -263,6 +317,15 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
                 </div>
               );
             })}
+
+            <button
+              type="button"
+              onClick={() => setFiles([])}
+              disabled={isProcessing}
+              className="ml-auto text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+            >
+              Clear all
+            </button>
           </div>
         )}
 
@@ -285,7 +348,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
             accept=".csv,.json,.parquet,.pdf,.txt,.md,.docx"
             onChange={(e) => {
               if (e.target.files) {
-                setFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                ingestFiles(Array.from(e.target.files));
                 e.target.value = "";
               }
             }}
@@ -320,6 +383,11 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
             )}
           </Button>
         </div>
+      </div>
+
+      <div className="mt-2 px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        <span>Enter to send • Shift+Enter newline • Type @ to route</span>
+        <span>{files.length}/{MAX_ATTACHMENTS} attachments</span>
       </div>
       
     </div>
