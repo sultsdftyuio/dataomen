@@ -18,11 +18,12 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.auth import verify_tenant, TenantContext
 from models import Agent, Dataset, QueryHistory  # Added QueryHistory for telemetry
+from models import SemanticMetric
 
 # The Intelligence & Execution Layers
 from api.services.llm_client import llm_client
 from api.services.query_planner import query_planner
-from api.services.nl2sql_generator import sql_generator
+from api.services.sql_compiler import sql_compiler
 from api.services.execution_engine import execution_engine
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,9 @@ async def ask_data_agent(
                 return
 
             # EXCLUSIVE INJECTION: We only extract the schema for this specific connector.
-            strict_schema_context = dataset.schema_metadata or {}
+            strict_schema_context = {
+                str(dataset.id): dataset.schema_metadata or {}
+            }
 
             # -------------------------------------------------------------------
             # Step 2: The Brain (Planning)
@@ -95,7 +98,7 @@ async def ask_data_agent(
                 tenant_id=tenant_id, 
                 agent=agent, 
                 natural_query=request.message,
-                schema_context=strict_schema_context # Phase 3: Passing isolated schema
+                schema_hints=strict_schema_context # Phase 3: Passing isolated schema
             )
             
             if plan.confidence_score < 0.4:
@@ -103,42 +106,59 @@ async def ask_data_agent(
                 return
 
             # -------------------------------------------------------------------
-            # Step 3: The Compiler (NL2SQL Generation)
+            # Step 3: Typed Compiler Pipeline (AST -> Logical -> Physical -> SQL)
             # -------------------------------------------------------------------
-            yield f"data: {json.dumps({'type': 'status', 'message': 'Compiling analytical query...'})}\n\n"
-            
-            execution_context = await query_planner.get_duckdb_execution_context(db, plan)
-            
-            safe_sql, safe_chart, _ = await sql_generator.generate_sql(
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Compiling typed execution plan...'})}\n\n"
+
+            target_ids = set(plan.target_dataset_ids or [])
+            if not target_ids and agent.dataset_id:
+                target_ids.add(str(agent.dataset_id))
+
+            tenant_datasets = db.query(Dataset).filter(Dataset.tenant_id == tenant_id).all()
+            compile_datasets = [ds for ds in tenant_datasets if str(ds.id) in target_ids]
+
+            if not compile_datasets:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'No authorized datasets available for typed compilation.'})}\n\n"
+                return
+
+            all_metrics = db.query(SemanticMetric).filter(SemanticMetric.tenant_id == tenant_id).all()
+            compile_metrics = [
+                m for m in all_metrics
+                if str(m.dataset_id) in {str(ds.id) for ds in compile_datasets}
+            ]
+
+            compilation_artifact = sql_compiler.compile_artifact(
                 plan=plan,
-                execution_context=execution_context,
-                target_engine="duckdb",
-                tenant_id=tenant_id,
-                agent=agent,
-                history=request.history,
-                schema_context=strict_schema_context 
+                datasets=compile_datasets,
+                governed_metrics=compile_metrics,
+                strict_mode=True,
             )
 
+            safe_sql = compilation_artifact.sql
+            safe_chart = None
+
             # Transmit the underlying code so the UI can render a "Show SQL" button
-            yield f"data: {json.dumps({'type': 'sql_generated', 'sql': safe_sql})}\n\n"
+            yield f"data: {json.dumps({'type': 'sql_generated', 'sql': safe_sql, 'plan_fingerprint': compilation_artifact.plan_fingerprint})}\n\n"
 
             # -------------------------------------------------------------------
             # Step 4: The Engine (DuckDB Execution)
             # -------------------------------------------------------------------
             yield f"data: {json.dumps({'type': 'status', 'message': 'Executing against warehouse...'})}\n\n"
             
-            execution_result = await execution_engine.execute_query(
+            execution_result = await execution_engine.execute_compiled_query(
                 tenant_id=tenant_id,
                 sql_query=safe_sql,
-                chart_spec=safe_chart
+                compilation_meta=compilation_artifact.model_dump(),
+                chart_spec=safe_chart,
+                incremental=True,
             )
 
-            if execution_result.get("status") == "error":
-                yield f"data: {json.dumps({'type': 'error', 'message': f'Execution failed: {execution_result.get("error")}'})}\n\n"
+            if execution_result.status == "error":
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Execution failed: {execution_result.error}'})}\n\n"
                 return
 
             # Push the heavy analytical data payload to the frontend for Vega-Lite rendering
-            yield f"data: {json.dumps({'type': 'data_fetched', 'data': execution_result['data'], 'chart': execution_result.get('chart_spec')})}\n\n"
+            yield f"data: {json.dumps({'type': 'data_fetched', 'data': execution_result.data, 'chart': execution_result.chart_spec, 'preview_data': execution_result.preview_data, 'execution_dag': execution_result.execution_dag})}\n\n"
 
             # -------------------------------------------------------------------
             # Step 5: Grounded Intelligence (Real-time Text Streaming)
@@ -153,9 +173,9 @@ async def ask_data_agent(
             )
             
             # We cap the data preview sent to the LLM to prevent token bloat (DuckDB already did the heavy math)
-            data_preview = execution_result['data'][:20]
-            if len(execution_result['data']) > 20:
-                data_preview.append({"_note": f"... and {len(execution_result['data']) - 20} more rows."})
+            data_preview = execution_result.data[:20]
+            if len(execution_result.data) > 20:
+                data_preview.append({"_note": f"... and {len(execution_result.data) - 20} more rows."})
                 
             user_prompt = f"Question: {request.message}\nData Result: {json.dumps(data_preview)}"
 

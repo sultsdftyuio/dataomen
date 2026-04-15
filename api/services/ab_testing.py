@@ -375,5 +375,5 @@ class ABTestingIntelligence:
             )
             return {"error": str(e)}
 
-# Export an instantiated service boundary default
+# Global singleton
 ab_tester = ABTestingIntelligence()

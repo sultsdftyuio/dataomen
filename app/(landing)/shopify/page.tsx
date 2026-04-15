@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { 
   ArrowRight, 
   MessageSquare, 
@@ -154,6 +154,9 @@ const seoPages: Record<string, SeoPageData> = {
   }
 };
 
+const BASE_URL = 'https://arcli.tech';
+const DEFAULT_SHOPIFY_SLUG = 'analytics-app';
+
 // ============================================================================
 // 2. NEXT.JS DYNAMIC ROUTING & SEO
 // ============================================================================
@@ -164,12 +167,60 @@ export async function generateStaticParams() {
   }));
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const pageData = seoPages[params.slug];
+export async function generateMetadata({ params }: { params?: { slug?: string } }): Promise<Metadata> {
+  const slug = params?.slug;
+
+  if (!slug) {
+    const canonicalUrl = `${BASE_URL}/shopify/${DEFAULT_SHOPIFY_SLUG}`;
+    const ogImageUrl = `${BASE_URL}/api/og?title=Shopify%20AI%20Analytics%20Pages&type=shopify`;
+
+    return {
+      title: 'Shopify AI Analytics | Arcli',
+      description: 'Explore conversion-focused Shopify analytics pages powered by Arcli AI.',
+      alternates: {
+        canonical: canonicalUrl,
+      },
+      openGraph: {
+        title: 'Shopify AI Analytics | Arcli',
+        description: 'Explore conversion-focused Shopify analytics pages powered by Arcli AI.',
+        url: canonicalUrl,
+        siteName: 'Arcli',
+        locale: 'en_US',
+        type: 'website',
+        images: [
+          {
+            url: ogImageUrl,
+            width: 1200,
+            height: 630,
+            alt: 'Shopify AI analytics pages by Arcli',
+          },
+        ],
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: 'Shopify AI Analytics | Arcli',
+        description: 'Explore conversion-focused Shopify analytics pages powered by Arcli AI.',
+        images: [ogImageUrl],
+      },
+    };
+  }
+
+  const pageData = seoPages[slug];
   
   if (!pageData) {
-    return { title: 'Not Found' };
+    return {
+      title: 'Not Found',
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
   }
+
+  const canonicalUrl = `${BASE_URL}/shopify/${slug}`;
+  const ogImageUrl = new URL('/api/og', BASE_URL);
+  ogImageUrl.searchParams.set('title', pageData.title);
+  ogImageUrl.searchParams.set('type', 'shopify');
 
   return {
     title: pageData.title,
@@ -177,13 +228,27 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     openGraph: {
       title: pageData.title,
       description: pageData.metaDescription,
-      url: `https://www.arcli.tech/shopify/${params.slug}`,
+      url: canonicalUrl,
       siteName: 'Arcli',
       locale: 'en_US',
       type: 'website',
+      images: [
+        {
+          url: ogImageUrl.toString(),
+          width: 1200,
+          height: 630,
+          alt: `${pageData.linkTitle} | Arcli`,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: pageData.title,
+      description: pageData.metaDescription,
+      images: [ogImageUrl.toString()],
     },
     alternates: {
-      canonical: `https://www.arcli.tech/shopify/${params.slug}`,
+      canonical: canonicalUrl,
     }
   };
 }
@@ -192,8 +257,13 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 // 3. PAGE COMPONENT
 // ============================================================================
 
-export default function ShopifySeoLandingPage({ params }: { params: { slug: string } }) {
-  const pageData = seoPages[params.slug];
+export default function ShopifySeoLandingPage({ params }: { params?: { slug?: string } }) {
+  const slug = params?.slug;
+  if (!slug) {
+    redirect(`/shopify/${DEFAULT_SHOPIFY_SLUG}`);
+  }
+
+  const pageData = seoPages[slug];
 
   if (!pageData) {
     notFound();

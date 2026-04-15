@@ -1,10 +1,6 @@
 import io
-import sys
-import types
 import uuid
 from datetime import datetime, timezone
-from dataclasses import dataclass
-from enum import Enum
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,101 +8,27 @@ import pytest
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 
-# Minimal models stub for route-level upload testing.
-models_stub = types.ModuleType("models")
+from tests.stub_registry import install_default_import_stubs
 
-
-class _DatasetStatusStub(str, Enum):
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    READY = "READY"
-    FAILED = "FAILED"
-
-
-class _DatasetStub:
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-        self.id = getattr(self, "id", None)
-        self.created_at = getattr(self, "created_at", None)
-
-
-models_stub.Dataset = _DatasetStub
-models_stub.DatasetStatus = _DatasetStatusStub
-sys.modules.setdefault("models", models_stub)
-
-# Preload lightweight stubs so importing the route module does not require full auth stack.
-auth_stub = types.ModuleType("api.auth")
-
-
-@dataclass
-class _TenantContextStub:
-    tenant_id: str
-
-
-def _verify_tenant_stub():
-    raise RuntimeError("verify_tenant should not be called directly in these tests")
-
-
-auth_stub.TenantContext = _TenantContextStub
-auth_stub.verify_tenant = _verify_tenant_stub
-sys.modules.setdefault("api.auth", auth_stub)
-
-database_stub = types.ModuleType("api.database")
-
-
-def _get_db_stub():
-    raise RuntimeError("get_db should not be called directly in these tests")
-
-
-database_stub.get_db = _get_db_stub
-sys.modules.setdefault("api.database", database_stub)
-
-storage_stub = types.ModuleType("api.services.storage_manager")
-
-
-class _StorageManagerStub:
-    async def upload_raw_file_async(self, *_args, **_kwargs):
-        return "s3://stub"
-
-    def delete_file(self, *_args, **_kwargs):
-        return None
-
-
-storage_stub.storage_manager = _StorageManagerStub()
-sys.modules.setdefault("api.services.storage_manager", storage_stub)
-
-cache_stub = types.ModuleType("api.services.cache_manager")
-
-
-class _CacheManagerStub:
-    async def invalidate_dataset_cache(self, *_args, **_kwargs):
-        return None
-
-
-cache_stub.cache_manager = _CacheManagerStub()
-sys.modules.setdefault("api.services.cache_manager", cache_stub)
-
-sync_stub = types.ModuleType("api.services.sync_engine")
-sync_stub.INTEGRATION_REGISTRY = {"stripe": object(), "shopify": object()}
-sys.modules.setdefault("api.services.sync_engine", sync_stub)
-
-worker_stub = types.ModuleType("compute_worker")
-
-
-class _TaskStub:
-    def delay(self, *_args, **_kwargs):
-        return SimpleNamespace(id="job-stub")
-
-
-worker_stub.process_ingestion_dataset = _TaskStub()
-sys.modules.setdefault("compute_worker", worker_stub)
+install_default_import_stubs(ensure_models=True, force_models_stub=True)
 
 from api.routes import datasets as datasets_route
 from models import DatasetStatus
 
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def patch_dataset_route_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DatasetRouteStub:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+            self.id = kwargs.get("id")
+            self.created_at = kwargs.get("created_at")
+
+    monkeypatch.setattr(datasets_route, "Dataset", DatasetRouteStub, raising=False)
 
 
 def _make_upload_file(filename: str, payload: bytes = b"col_a,col_b\n1,2\n") -> UploadFile:

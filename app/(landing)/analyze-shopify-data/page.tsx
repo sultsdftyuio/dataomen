@@ -21,16 +21,36 @@ import {
   BarChart3
 } from 'lucide-react';
 
+const PAGE_URL = 'https://arcli.tech/analyze-shopify-data';
+const OG_IMAGE_URL = 'https://arcli.tech/api/og?title=Analyze%20Shopify%20Data%20Without%20Spreadsheets&type=shopify';
+
 export const metadata: Metadata = {
   title: 'Analyze Shopify Data Without Spreadsheets | Arcli',
   description: 'Connect your Shopify store in 60 seconds. Talk to your store data in plain English to uncover hidden revenue, prevent stockouts, and grow your brand. No tech skills needed.',
+  alternates: {
+    canonical: PAGE_URL,
+  },
   openGraph: {
     title: 'Stop Guessing. Start Knowing Your Shopify Data.',
     description: 'Drowning in data but starving for answers? Ask Arcli questions in plain English and get instant insights to grow your e-commerce revenue.',
-    url: 'https://www.arcli.tech/analyze-shopify-data',
+    url: PAGE_URL,
     siteName: 'Arcli',
     locale: 'en_US',
     type: 'website',
+    images: [
+      {
+        url: OG_IMAGE_URL,
+        width: 1200,
+        height: 630,
+        alt: 'Analyze Shopify data without spreadsheets | Arcli',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Stop Guessing. Start Knowing Your Shopify Data.',
+    description: 'Drowning in data but starving for answers? Ask Arcli questions in plain English and get instant insights to grow your e-commerce revenue.',
+    images: [OG_IMAGE_URL],
   },
 };
 

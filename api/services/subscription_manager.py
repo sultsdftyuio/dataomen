@@ -146,4 +146,5 @@ class SubscriptionManager:
             logger.error(f"[{tenant_id}] Failed to deduct credits: {str(e)}")
             return False, 0.0
 
+# Global singleton
 subscription_manager = SubscriptionManager()

@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import polars as pl
 import duckdb
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import redis.asyncio as redis
 
 # Arcli Infrastructure Services
@@ -40,6 +40,11 @@ class ExecutionResult(BaseModel):
     chart_spec: Optional[Dict[str, Any]] = None
     is_cached: bool = False
     error: Optional[str] = None
+    plan_fingerprint: Optional[str] = None
+    execution_dag: Optional[Dict[str, Any]] = None
+    materialized_nodes: List[str] = Field(default_factory=list)
+    preview_data: List[Dict[str, Any]] = Field(default_factory=list)
+    cache_key: Optional[str] = None
 
 # =====================================================================
 # EXECUTION ENGINE (Phase 1 Omni-Graph Core)
@@ -104,9 +109,18 @@ class ExecutionEngine:
     # PROGRESSIVE HYDRATION (Redis Caching Layer)
     # -----------------------------------------------------------------
 
-    def _generate_cache_key(self, tenant_id: str, sql_query: str) -> str:
+    def _generate_cache_key(
+        self,
+        tenant_id: str,
+        sql_query: str,
+        plan_fingerprint: Optional[str] = None,
+        projection_signature: Optional[str] = None,
+    ) -> str:
         """Creates a deterministic hash for query snapshots."""
-        sig = f"{tenant_id}_v1_{sql_query}"
+        if plan_fingerprint:
+            sig = f"{tenant_id}_v2_plan_{plan_fingerprint}_{projection_signature or 'all'}"
+        else:
+            sig = f"{tenant_id}_v1_{sql_query}"
         return f"arcli:query_cache:{hashlib.sha256(sig.encode()).hexdigest()}"
 
     async def _check_cache(self, cache_key: str) -> Optional[ExecutionResult]:
@@ -125,12 +139,21 @@ class ExecutionEngine:
         sql_query: str, 
         priority: QueryPriority = QueryPriority.P0_INTERACTIVE,
         chart_spec: Optional[Dict[str, Any]] = None,
-        bypass_cache: bool = False
+        bypass_cache: bool = False,
+        plan_fingerprint: Optional[str] = None,
+        execution_dag: Optional[Dict[str, Any]] = None,
+        projection_signature: Optional[str] = None,
+        incremental: bool = False,
     ) -> ExecutionResult:
         """
         The Master Router. Determines execution path based on Priority Tier.
         """
-        cache_key = self._generate_cache_key(tenant_id, sql_query)
+        cache_key = self._generate_cache_key(
+            tenant_id=tenant_id,
+            sql_query=sql_query,
+            plan_fingerprint=plan_fingerprint,
+            projection_signature=projection_signature,
+        )
         
         # 1. Progressive Hydration (Fast Win)
         if not bypass_cache and priority in (QueryPriority.P0_INTERACTIVE, QueryPriority.P1_USER_HEAVY):
@@ -142,19 +165,46 @@ class ExecutionEngine:
         # 2. Priority Routing
         if priority == QueryPriority.P0_INTERACTIVE:
             # Sub-second SLA, execute immediately
-            result = await self._run_physical_compute(tenant_id, sql_query, priority, chart_spec)
+            result = await self._run_physical_compute(
+                tenant_id,
+                sql_query,
+                priority,
+                chart_spec,
+                plan_fingerprint=plan_fingerprint,
+                execution_dag=execution_dag,
+                incremental=incremental,
+                cache_key=cache_key,
+            )
             
         elif priority == QueryPriority.P1_USER_HEAVY:
             # User triggered a heavy cross-join (Omni-Graph). Regulate via Semaphore.
             async with self._p1_semaphore:
                 logger.info(f"⏳ [{tenant_id}] P1 Queue cleared. Initiating heavy Omni-Graph join.")
-                result = await self._run_physical_compute(tenant_id, sql_query, priority, chart_spec)
+                result = await self._run_physical_compute(
+                    tenant_id,
+                    sql_query,
+                    priority,
+                    chart_spec,
+                    plan_fingerprint=plan_fingerprint,
+                    execution_dag=execution_dag,
+                    incremental=incremental,
+                    cache_key=cache_key,
+                )
                 
         elif priority == QueryPriority.P2_BACKGROUND:
             # Pulse agents and LLM background tasks. Throttled to prevent UI starvation.
             async with self._p2_semaphore:
                 logger.info(f"🤖 [{tenant_id}] P2 Background agent compute starting.")
-                result = await self._run_physical_compute(tenant_id, sql_query, priority, chart_spec)
+                result = await self._run_physical_compute(
+                    tenant_id,
+                    sql_query,
+                    priority,
+                    chart_spec,
+                    plan_fingerprint=plan_fingerprint,
+                    execution_dag=execution_dag,
+                    incremental=incremental,
+                    cache_key=cache_key,
+                )
 
         # 3. Snapshotting / State Freeze
         if result.status == "success" and priority != QueryPriority.P2_BACKGROUND:
@@ -163,6 +213,34 @@ class ExecutionEngine:
             await self.redis.setex(cache_key, 900, result.json())
 
         return result
+
+    async def execute_compiled_query(
+        self,
+        tenant_id: str,
+        sql_query: str,
+        compilation_meta: Dict[str, Any],
+        priority: QueryPriority = QueryPriority.P0_INTERACTIVE,
+        chart_spec: Optional[Dict[str, Any]] = None,
+        bypass_cache: bool = False,
+        incremental: bool = True,
+    ) -> ExecutionResult:
+        """Execution entrypoint for typed compiler artifacts."""
+        plan_fingerprint = compilation_meta.get("plan_fingerprint")
+        execution_dag = compilation_meta.get("execution_dag", {})
+        projection_cols = execution_dag.get("lineage_columns", []) if isinstance(execution_dag, dict) else []
+        projection_signature = "|".join(sorted(projection_cols)) if projection_cols else None
+
+        return await self.execute_query(
+            tenant_id=tenant_id,
+            sql_query=sql_query,
+            priority=priority,
+            chart_spec=chart_spec,
+            bypass_cache=bypass_cache,
+            plan_fingerprint=plan_fingerprint,
+            execution_dag=execution_dag,
+            projection_signature=projection_signature,
+            incremental=incremental,
+        )
 
     # -----------------------------------------------------------------
     # THE PHYSICAL COMPUTE ENGINE (Polars + DuckDB)
@@ -173,7 +251,11 @@ class ExecutionEngine:
         tenant_id: str, 
         sql_query: str, 
         priority: QueryPriority,
-        chart_spec: Optional[Dict[str, Any]]
+        chart_spec: Optional[Dict[str, Any]],
+        plan_fingerprint: Optional[str] = None,
+        execution_dag: Optional[Dict[str, Any]] = None,
+        incremental: bool = False,
+        cache_key: Optional[str] = None,
     ) -> ExecutionResult:
         """
         Executes the raw DuckDB compute and vectorizes outputs directly via Polars 
@@ -181,6 +263,7 @@ class ExecutionEngine:
         """
         start_time = time.perf_counter()
         conn = None
+        preview_data: List[Dict[str, Any]] = []
         
         try:
             # DuckDB runs in a thread-pool via asyncio to prevent blocking the FastAPI event loop
@@ -191,9 +274,25 @@ class ExecutionEngine:
             def _sync_execute():
                 return conn.execute(sql_query).pl()
 
+            if incremental:
+                preview_query = f"SELECT * FROM ({sql_query}) AS _arcli_preview LIMIT 100"
+
+                def _sync_execute_preview():
+                    return conn.execute(preview_query).pl()
+
+                preview_df = await asyncio.to_thread(_sync_execute_preview)
+                preview_data = preview_df.to_dicts()
+
             df = await asyncio.to_thread(_sync_execute)
             
             execution_time = round((time.perf_counter() - start_time) * 1000, 2)
+            materialized_nodes = []
+            if isinstance(execution_dag, dict):
+                materialized_nodes = [
+                    str(n.get("id"))
+                    for n in execution_dag.get("nodes", [])
+                    if isinstance(n, dict) and n.get("id")
+                ]
             
             return ExecutionResult(
                 status="success",
@@ -201,7 +300,12 @@ class ExecutionEngine:
                 row_count=df.height,
                 data=df.to_dicts(), # Polars native JSON-ready dictionary output
                 chart_spec=chart_spec,
-                is_cached=False
+                is_cached=False,
+                plan_fingerprint=plan_fingerprint,
+                execution_dag=execution_dag,
+                materialized_nodes=materialized_nodes,
+                preview_data=preview_data,
+                cache_key=cache_key,
             )
             
         except duckdb.Error as e:
@@ -211,7 +315,10 @@ class ExecutionEngine:
                 execution_time_ms=round((time.perf_counter() - start_time) * 1000, 2),
                 row_count=0,
                 data=[],
-                error=f"Analytical Engine Error: {str(e)}"
+                error=f"Analytical Engine Error: {str(e)}",
+                plan_fingerprint=plan_fingerprint,
+                execution_dag=execution_dag,
+                cache_key=cache_key,
             )
         except Exception as e:
             logger.error(f"❌ [{tenant_id}] System Error: {str(e)}")
@@ -220,7 +327,10 @@ class ExecutionEngine:
                 execution_time_ms=round((time.perf_counter() - start_time) * 1000, 2),
                 row_count=0,
                 data=[],
-                error="Internal execution fault."
+                error="Internal execution fault.",
+                plan_fingerprint=plan_fingerprint,
+                execution_dag=execution_dag,
+                cache_key=cache_key,
             )
         finally:
             if conn:

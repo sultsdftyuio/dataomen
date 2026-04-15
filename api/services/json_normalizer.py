@@ -661,6 +661,9 @@ class PolarsNormalizer:
                 str(sorted(contract_items)).encode()
             ).hexdigest()[:16]
 
+        # Backward-compatibility shim for callers expecting DataFrame-only outputs.
+        self._last_lineage: LineageDAG = LineageDAG({})
+
     def _emit_metric(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
         final_tags = tags or {}
         final_tags["tenant"] = self._safe_log_id
@@ -819,15 +822,23 @@ class PolarsNormalizer:
     def normalize_batch(
         self, raw_data: List[Dict[str, Any]],
         requested_fields: Optional[List[FieldRequest]] = None,
-    ) -> Tuple[pl.DataFrame, LineageDAG]:
-        """Normalize a single batch."""
+        include_lineage: bool = False,
+    ) -> Union[pl.DataFrame, Tuple[pl.DataFrame, LineageDAG]]:
+        """Normalize a single batch.
+
+        By default returns only DataFrame for compatibility with existing call sites.
+        Set include_lineage=True to receive (DataFrame, LineageDAG).
+        """
         if not self._circuit_breaker.can_execute():
             raise CircuitBreakerOpenError(
                 f"[{self._safe_log_id}] Circuit OPEN: {self._circuit_breaker.get_stats()}"
             )
 
         if not raw_data:
-            return self._create_empty_audit_df(), LineageDAG({})
+            empty_df = self._create_empty_audit_df()
+            empty_lineage = LineageDAG({})
+            self._last_lineage = empty_lineage
+            return (empty_df, empty_lineage) if include_lineage else empty_df
 
         try:
             plan = self._create_execution_plan(
@@ -838,9 +849,12 @@ class PolarsNormalizer:
             self._emit_metric("schema_width", plan.cost_metrics["columns"])
             self._emit_metric("schema_depth", plan.cost_metrics["struct_depth"])
 
-            result = self._execute_plan(raw_data, plan)
+            result_df, result_lineage = self._execute_plan(raw_data, plan)
+            self._last_lineage = result_lineage
             self._circuit_breaker.record_success()
-            return result
+            if include_lineage:
+                return result_df, result_lineage
+            return result_df
 
         except (SchemaDriftError, SchemaTooWideError, ExecutionTimeoutError) as e:
             ft = FailureType.SCHEMA if isinstance(e, SchemaDriftError) else \
@@ -1452,7 +1466,8 @@ class PolarsNormalizer:
         for op_type, op_val in ops:
             if op_type == "STRUCT_FIELD":
                 field_expr = expr.struct.field(op_val)
-                expr = field_expr.fill_null(None)
+                # `fill_null(None)` is invalid in newer Polars; keep passthrough semantics.
+                expr = field_expr
             elif op_type == "LIST_EVAL":
                 inner_expr = self._build_inner_expression(op_val, pl.element())
                 expr = pl.when(expr.is_not_null()).then(expr.list.eval(inner_expr)).otherwise(None)

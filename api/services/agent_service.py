@@ -356,5 +356,5 @@ class AgentService:
 
             await asyncio.sleep(EDGE_DISPATCH_BACKOFF_SECONDS * (2 ** (attempt - 1)))
 
-# Singleton Export
+# Global singleton
 agent_service = AgentService()

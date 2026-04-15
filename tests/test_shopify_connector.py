@@ -69,6 +69,27 @@ def test_verify_webhook_invalid(connector: ShopifyConnector):
     
     assert connector.verify_webhook(payload, invalid_hmac) is False
 
+
+def test_verify_webhook_rejects_stale_proxy_timestamp(connector: ShopifyConnector):
+    """Replay-protection: valid signature must still fail when proxy timestamp is stale."""
+    payload = b'{"order_id": 12345, "total": 50.0}'
+    secret = os.environ["SHOPIFY_CLIENT_SECRET"].encode("utf-8")
+    digest = hmac.new(secret, payload, hashlib.sha256).digest()
+    valid_hmac = base64.b64encode(digest).decode("utf-8")
+
+    stale_ts = "1"
+    assert connector.verify_webhook(payload, valid_hmac, timestamp_header=stale_ts) is False
+
+
+def test_verify_webhook_accepts_valid_signature_when_timestamp_header_is_malformed(connector: ShopifyConnector):
+    """Edge-case compatibility: malformed proxy timestamps do not bypass signature validation."""
+    payload = b'{"order_id": 12345, "total": 50.0}'
+    secret = os.environ["SHOPIFY_CLIENT_SECRET"].encode("utf-8")
+    digest = hmac.new(secret, payload, hashlib.sha256).digest()
+    valid_hmac = base64.b64encode(digest).decode("utf-8")
+
+    assert connector.verify_webhook(payload, valid_hmac, timestamp_header="not-a-number") is True
+
 # -------------------------------------------------------------------------
 # Unit Tests: Deduplication & Checkpointing (v1.2 Logic)
 # -------------------------------------------------------------------------

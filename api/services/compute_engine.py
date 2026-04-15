@@ -1149,8 +1149,6 @@ class ComputeEngine:
         return clean_records
 
 
-# =========================================================================
-# Singleton export
-# =========================================================================
+# Global singleton
 
 compute_engine = ComputeEngine()

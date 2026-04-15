@@ -511,3 +511,7 @@ class InsightOrchestrator:
             if c_lower == 'id' or c_lower.endswith('_id') or any(h == c_lower for h in id_heuristics): 
                 return c
         return None
+
+
+# Global singleton
+insight_orchestrator = InsightOrchestrator()

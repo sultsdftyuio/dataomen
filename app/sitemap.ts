@@ -2,7 +2,7 @@
 import { MetadataRoute } from 'next';
 import { getAllSlugs, getNormalizedPage } from '@/lib/seo/registry';
 
-const BASE_URL = 'https://www.arcli.tech';
+const BASE_URL = 'https://arcli.tech';
 
 /**
  * Arcli Dynamic Sitemap Generator

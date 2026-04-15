@@ -18,6 +18,7 @@ os.environ["SUPABASE_URL"] = "https://mock.supabase.arcli.tech"
 os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "mock_service_key_do_not_use"
 os.environ["SHOPIFY_CLIENT_SECRET"] = "super_secret_test_key"
 os.environ["SHOPIFY_CLIENT_ID"] = "mock_client_id"
+os.environ["DATA_VAULT_MASTER_KEY"] = "test_master_key_do_not_use"
 
 # -------------------------------------------------------------------------
 # Database & Analytical Engine Fixtures

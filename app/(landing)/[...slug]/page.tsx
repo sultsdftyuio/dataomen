@@ -126,7 +126,7 @@ const ComparisonMatrix = dynamic(
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'https://www.arcli.tech';
+const BASE_URL = 'https://arcli.tech';
 const DEV      = process.env.NODE_ENV !== 'production';
 
 const UI_TYPES = {
@@ -1397,6 +1397,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const page = getNormalizedPage(fullSlug);
   if (!page) notFound();
 
+  const title = page.seo?.title || page.seo?.h1 || 'Arcli Analytics';
+  const description =
+    page.seo?.description || `Explore ${title} with Arcli's autonomous AI analytics platform.`;
+  const canonicalUrl = `${BASE_URL}/${fullSlug}`;
+
   const codeSnippet =
     page.blocks?.find((b: any) => b?.type === BLOCK_TYPES.STRATEGIC_QUERY)?.payload?.code ||
     page.strategicScenario?.sql ||
@@ -1405,21 +1410,36 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     page.executiveScenarios?.find((s: any) => s?.sqlGenerated)?.sqlGenerated;
 
   const ogUrl = new URL(`${BASE_URL}/api/og`);
-  ogUrl.searchParams.set('title', page.seo?.h1  || 'Arcli Analytics');
+  ogUrl.searchParams.set('title', page.seo?.h1  || title);
   ogUrl.searchParams.set('type',  page.type      || 'article');
   if (codeSnippet) ogUrl.searchParams.set('code', codeSnippet);
 
   return {
-    title:       page.seo?.title       || 'Arcli',
-    description: page.seo?.description || '',
+    title,
+    description,
     openGraph: {
-      title:       page.seo?.title       || 'Arcli',
-      description: page.seo?.description || '',
-      type:  'article',
-      url:   `${BASE_URL}/${fullSlug}`,
-      images: [{ url: ogUrl.toString(), width: 1200, height: 630 }],
+      title,
+      description,
+      type: 'article',
+      url: canonicalUrl,
+      siteName: 'Arcli',
+      locale: 'en_US',
+      images: [
+        {
+          url: ogUrl.toString(),
+          width: 1200,
+          height: 630,
+          alt: `${title} | Arcli`,
+        },
+      ],
     },
-    alternates: { canonical: `${BASE_URL}/${fullSlug}` },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [ogUrl.toString()],
+    },
+    alternates: { canonical: canonicalUrl },
   };
 }
 

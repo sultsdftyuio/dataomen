@@ -208,5 +208,5 @@ class TenantSecurityProvider:
             logger.error(f"[{tenant_id}] Contextual execution failed on '{operation_name}': {str(e)}")
             raise e
 
-# Export singleton instance for dependency injection across FastAPI routes
+# Global singleton
 tenant_security = TenantSecurityProvider()

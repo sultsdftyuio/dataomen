@@ -288,5 +288,5 @@ class NotificationRouter:
         logger.debug(f"[{tenant_id}] Alert {anomaly_id} queued for multi-channel background dispatch.")
         return anomaly_id
 
-# Export singleton instance
+# Global singleton
 notification_router = NotificationRouter()

@@ -5,7 +5,9 @@ import sys
 import logging
 import time
 import gc
+import importlib
 from contextlib import asynccontextmanager
+from typing import Callable, Dict, Iterable, Optional
 
 # ==============================================================================
 # 0. C-LEVEL CONTAINER GUARDRAILS (CRITICAL FOR DIGITALOCEAN / CLOUD DEPLOYMENTS)
@@ -43,68 +45,79 @@ logging.basicConfig(
 )
 logger = logging.getLogger("DataOmenAPI")
 
-# ------------------------------------------------------------------------------
-# 2. Lifecycle Management (The Modular Strategy)
-# ------------------------------------------------------------------------------
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Ensures heavy analytical engines spin up cleanly.
-    Forces a deep garbage collection cycle immediately after boot imports to 
-    clear out transient import bloat before accepting traffic.
-    """
-    logger.info("🚀 Data Omen API initializing with Strict Container Guardrails...")
-    
-    try:
-        from api.database import init_db
-        init_db()
-        logger.info("✅ Database infrastructure synchronized.")
-    except Exception as e:
-        logger.error(f"⚠️ Database Sync Failed on Boot: {str(e)}")
-        # We do not exit here; in cloud cold-starts, the database might take 
-        # a few extra seconds to become fully available.
-    
-    # Force OS to reclaim RAM from massive module imports
-    gc.collect()
-    logger.info("🧹 Boot-time Garbage Collection complete. Ready for traffic.")
-
-    try:
-        from api.services.agent_memory import build_redis_client, initialize_agent_memory
-
-        app.state.agent_memory = initialize_agent_memory(build_redis_client())
-        logger.info("✅ Agent memory service initialized with app-scoped Redis client.")
-    except Exception as e:
-        app.state.agent_memory = None
-        logger.error(f"⚠️ Agent memory initialization failed: {e}")
-    
-    yield
-    
-    logger.info("🔌 Shutting down API... Cleaning up resources.")
-    try:
-        from api.services.agent_memory import reset_agent_memory
-
-        agent_memory_service = getattr(app.state, "agent_memory", None)
-        if agent_memory_service is not None:
-            await agent_memory_service.aclose()
-            logger.info("✅ Agent memory Redis pool closed.")
-
-        reset_agent_memory()
-    except Exception as e:
-        logger.warning(f"⚠️ Agent memory shutdown cleanup failed: {e}")
+DEFAULT_ROUTE_MODULES = [
+    "api.routes.agents",
+    "api.routes.datasets",
+    "api.routes.query",
+    "api.routes.narrative",
+    "api.routes.chat",
+    "api.routes.webhooks",
+    "api.routes.billing",
+]
 
 
-app = FastAPI(
-    title="Data Omen API",
-    description="High-performance multi-tenant analytical API engine.",
-    version="2.0.0",
-    lifespan=lifespan
-)
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
 
-# ------------------------------------------------------------------------------
-# 3. Dynamic Health Check (CRITICAL: Must be defined FIRST)
-# ------------------------------------------------------------------------------
-@app.get("/health", tags=["System"])
-@app.get("/api/health", tags=["System"])
+
+def _build_lifespan(skip_startup_init: bool):
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """
+        Ensures heavy analytical engines spin up cleanly.
+        Forces a deep garbage collection cycle immediately after boot imports to
+        clear out transient import bloat before accepting traffic.
+        """
+        if skip_startup_init:
+            logger.info("Startup initialization skipped (APP_SKIP_STARTUP_INIT=true).")
+            yield
+            return
+
+        logger.info("🚀 Data Omen API initializing with Strict Container Guardrails...")
+
+        try:
+            from api.database import init_db
+
+            init_db()
+            logger.info("✅ Database infrastructure synchronized.")
+        except Exception as e:
+            logger.error(f"⚠️ Database Sync Failed on Boot: {str(e)}")
+            # We do not exit here; in cloud cold-starts, the database might take
+            # a few extra seconds to become fully available.
+
+        # Force OS to reclaim RAM from massive module imports
+        gc.collect()
+        logger.info("🧹 Boot-time Garbage Collection complete. Ready for traffic.")
+
+        try:
+            from api.services.agent_memory import build_redis_client, initialize_agent_memory
+
+            app.state.agent_memory = initialize_agent_memory(build_redis_client())
+            logger.info("✅ Agent memory service initialized with app-scoped Redis client.")
+        except Exception as e:
+            app.state.agent_memory = None
+            logger.error(f"⚠️ Agent memory initialization failed: {e}")
+
+        yield
+
+        logger.info("🔌 Shutting down API... Cleaning up resources.")
+        try:
+            from api.services.agent_memory import reset_agent_memory
+
+            agent_memory_service = getattr(app.state, "agent_memory", None)
+            if agent_memory_service is not None:
+                await agent_memory_service.aclose()
+                logger.info("✅ Agent memory Redis pool closed.")
+
+            reset_agent_memory()
+        except Exception as e:
+            logger.warning(f"⚠️ Agent memory shutdown cleanup failed: {e}")
+
+    return lifespan
+
 async def health_check():
     """
     System heartbeat used by DigitalOcean to verify instance stability.
@@ -117,89 +130,169 @@ async def health_check():
         "memory_guardrails_active": True
     }
 
-# ------------------------------------------------------------------------------
-# 4. Security by Design: Dynamic & Multi-Tenant CORS Policy
-# ------------------------------------------------------------------------------
-raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
-origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+def _configure_middleware(fastapi_app: FastAPI) -> None:
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
-# Domain regex ensures future-proof compatibility for multi-tenant subdomains
-# It safely allows: https://arcli.tech, https://app.arcli.tech, https://client1.arcli.tech
-DOMAIN_REGEX = r"^https://([a-zA-Z0-9-]+\.)?arcli\.tech$"
+    # Domain regex ensures future-proof compatibility for multi-tenant subdomains
+    # It safely allows: https://arcli.tech, https://app.arcli.tech, https://client1.arcli.tech
+    domain_regex = r"^https://([a-zA-Z0-9-]+\.)?arcli\.tech$"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=DOMAIN_REGEX,  # Enables zero-config multi-tenant scaling
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
-)
-
-# PERFORMANCE: Compress analytical payloads to reduce latency and egress bandwidth
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-# ------------------------------------------------------------------------------
-# 5. Global Telemetry & Security Middleware
-# ------------------------------------------------------------------------------
-@app.middleware("http")
-async def add_telemetry_and_security_headers(request: Request, call_next):
-    # UPGRADE: time.perf_counter() is strictly better than time.time() for benchmarking compute speed
-    start_time = time.perf_counter()
-    response = await call_next(request)
-    process_time = time.perf_counter() - start_time
-    
-    # Inject execution time for frontend monitoring
-    response.headers["X-Process-Time"] = f"{process_time:.5f}"
-    
-    # Defense-in-depth: Inject modern security headers
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    
-    # Enforce HTTPS on custom domains
-    if os.getenv("ENVIRONMENT") != "development":
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        
-    return response
-
-# ------------------------------------------------------------------------------
-# 6. Global Anomaly Handling
-# ------------------------------------------------------------------------------
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """Prevents raw Python stack traces from leaking to the frontend on 500s."""
-    logger.error(f"❌ Unhandled Exception on {request.method} {request.url.path}: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "An internal system anomaly was detected. Our engineers have been notified."},
+    fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_origin_regex=domain_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["*"],
     )
 
-# ------------------------------------------------------------------------------
-# 7. Defensive Route Orchestration
-# ------------------------------------------------------------------------------
-def register_routes(fastapi_app: FastAPI) -> None:
-    # Lazy-loading routes prevents circular dependencies and isolates import crashes.
-    # Because of our C-level guardrails at the top of the file, these heavy imports 
-    # will no longer spike RAM during the module resolution phase.
-    
-    # FIXED: Removed 'semantic_metrics' which does not exist in api.routes
-    # ADDED: Included 'billing' which is present in the file hierarchy
-    from api.routes import agents, datasets, query, narrative, chat, webhooks, billing
-    
-    fastapi_app.include_router(agents.router)
-    fastapi_app.include_router(datasets.router)
-    fastapi_app.include_router(query.router)
-    fastapi_app.include_router(narrative.router)
-    fastapi_app.include_router(chat.router)
-    fastapi_app.include_router(webhooks.router)
-    fastapi_app.include_router(billing.router)
-    
-    logger.info("🗺️ Modular routes registered successfully.")
+    # PERFORMANCE: Compress analytical payloads to reduce latency and egress bandwidth
+    fastapi_app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-# CRITICAL FIX: If routes fail to load, the app MUST crash so DigitalOcean
-# restarts the container and flags the deployment as failed.
-register_routes(app)
+    @fastapi_app.middleware("http")
+    async def add_telemetry_and_security_headers(request: Request, call_next):
+        # time.perf_counter() is strictly better than time.time() for benchmarking compute speed.
+        start_time = time.perf_counter()
+        response = await call_next(request)
+        process_time = time.perf_counter() - start_time
+
+        # Inject execution time for frontend monitoring.
+        response.headers["X-Process-Time"] = f"{process_time:.5f}"
+
+        # Defense-in-depth: Inject modern security headers.
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Enforce HTTPS on custom domains.
+        if os.getenv("ENVIRONMENT") != "development":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        return response
+
+
+def _configure_exception_handlers(fastapi_app: FastAPI) -> None:
+    @fastapi_app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Prevents raw Python stack traces from leaking to the frontend on 500s."""
+        logger.error(f"❌ Unhandled Exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An internal system anomaly was detected. Our engineers have been notified."},
+        )
+
+
+def register_routes(
+    fastapi_app: FastAPI,
+    *,
+    strict: bool = True,
+    route_modules: Optional[Iterable[str]] = None,
+) -> None:
+    """
+    Registers routers from module paths.
+
+    strict=True (default): any import/registration failure raises and crashes startup.
+    strict=False: failed route modules are skipped, useful for isolated test bootstraps.
+    """
+    modules = list(route_modules or DEFAULT_ROUTE_MODULES)
+    loaded_modules = []
+
+    for module_path in modules:
+        try:
+            module = importlib.import_module(module_path)
+            router = getattr(module, "router", None)
+            if router is None:
+                raise AttributeError(f"Module '{module_path}' has no 'router' attribute.")
+
+            fastapi_app.include_router(router)
+            loaded_modules.append(module_path)
+        except Exception as exc:
+            if strict:
+                raise RuntimeError(f"Failed to register route module '{module_path}': {exc}") from exc
+            logger.warning(f"Skipping route module '{module_path}' due to load error: {exc}")
+
+    logger.info(f"🗺️ Modular routes registered successfully ({len(loaded_modules)}/{len(modules)} modules).")
+
+
+def create_app(
+    *,
+    skip_startup_init: Optional[bool] = None,
+    strict_route_registration: Optional[bool] = None,
+    route_modules: Optional[Iterable[str]] = None,
+) -> FastAPI:
+    """
+    Application factory.
+
+    - skip_startup_init: skips DB/agent-memory startup for deterministic tests.
+      Defaults to APP_SKIP_STARTUP_INIT env flag.
+    - strict_route_registration: crash on route import failures when true.
+      Defaults to APP_ROUTE_IMPORT_STRICT env flag (true by default).
+    - route_modules: optional subset/ordering of route module paths.
+    """
+    resolved_skip_startup = _env_flag("APP_SKIP_STARTUP_INIT", False) if skip_startup_init is None else skip_startup_init
+    resolved_strict_routes = _env_flag("APP_ROUTE_IMPORT_STRICT", True) if strict_route_registration is None else strict_route_registration
+
+    fastapi_app = FastAPI(
+        title="Data Omen API",
+        description="High-performance multi-tenant analytical API engine.",
+        version="2.0.0",
+        lifespan=_build_lifespan(resolved_skip_startup),
+    )
+
+    # Health endpoints are registered first so orchestrators can probe liveness quickly.
+    fastapi_app.add_api_route("/health", health_check, methods=["GET"], tags=["System"])
+    fastapi_app.add_api_route("/api/health", health_check, methods=["GET"], tags=["System"])
+
+    _configure_middleware(fastapi_app)
+    _configure_exception_handlers(fastapi_app)
+    register_routes(
+        fastapi_app,
+        strict=resolved_strict_routes,
+        route_modules=route_modules,
+    )
+
+    fastapi_app.state.app_factory_config = {
+        "skip_startup_init": resolved_skip_startup,
+        "strict_route_registration": resolved_strict_routes,
+    }
+
+    return fastapi_app
+
+
+def apply_dependency_overrides(
+    fastapi_app: FastAPI,
+    overrides: Dict[Callable, Callable],
+) -> None:
+    """Helper for tests to override dependencies in a single call."""
+    fastapi_app.dependency_overrides.update(overrides)
+
+
+def apply_test_overrides(
+    fastapi_app: FastAPI,
+    *,
+    db_override: Optional[Callable] = None,
+    tenant_override: Optional[Callable] = None,
+) -> None:
+    """Convenience helper for common test dependency overrides."""
+    overrides: Dict[Callable, Callable] = {}
+
+    if db_override is not None:
+        from api.database import get_db
+
+        overrides[get_db] = db_override
+
+    if tenant_override is not None:
+        from api.auth import verify_tenant
+
+        overrides[verify_tenant] = tenant_override
+
+    if overrides:
+        apply_dependency_overrides(fastapi_app, overrides)
+
+
+# Default ASGI application instance.
+app = create_app()
 
 # ------------------------------------------------------------------------------
 # Entrypoint (main.py)

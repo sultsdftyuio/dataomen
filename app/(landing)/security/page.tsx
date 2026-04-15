@@ -4,9 +4,37 @@ import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 
+const PAGE_URL = 'https://arcli.tech/security';
+const OG_IMAGE_URL = 'https://arcli.tech/api/og?title=Security%20and%20GDPR%20for%20AI%20Analytics&type=security';
+
 export const metadata: Metadata = {
   title: 'Security & GDPR | Arcli.tech',
   description: 'Learn how Arcli.tech secures your analytical data with ephemeral compute, strict tenant isolation, and GDPR-compliant infrastructure.',
+  alternates: {
+    canonical: PAGE_URL,
+  },
+  openGraph: {
+    title: 'Security & GDPR | Arcli',
+    description: 'Learn how Arcli secures your analytical data with ephemeral compute, strict tenant isolation, and GDPR-compliant infrastructure.',
+    url: PAGE_URL,
+    siteName: 'Arcli',
+    locale: 'en_US',
+    type: 'website',
+    images: [
+      {
+        url: OG_IMAGE_URL,
+        width: 1200,
+        height: 630,
+        alt: 'Arcli Security and GDPR',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Security & GDPR | Arcli',
+    description: 'Learn how Arcli secures your analytical data with ephemeral compute, strict tenant isolation, and GDPR-compliant infrastructure.',
+    images: [OG_IMAGE_URL],
+  },
 };
 
 export default function SecurityPage() {

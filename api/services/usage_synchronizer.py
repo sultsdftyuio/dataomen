@@ -69,5 +69,5 @@ class UsageSynchronizer:
 
         logger.info(f"Usage sync complete. Synced {synced_count} tenants.")
         return synced_count
-
+# Global singleton
 usage_synchronizer = UsageSynchronizer()

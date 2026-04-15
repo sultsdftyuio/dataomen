@@ -942,5 +942,5 @@ class DataIngestionService:
                     if getattr(file, "file", None) and not file.file.closed:
                         file.file.close()
 
-
+# Global singleton
 ingestion_service = DataIngestionService()

@@ -282,5 +282,5 @@ class R2StorageManager:
                 logger.error(f"❌ [{tenant_id}] R2 Pipeline failed for {raw_object_key}: {e}")
                 raise StorageError(f"Engine failed to process raw file: {str(e)}")
 
-# Export singleton instance
+# Global singleton
 storage_manager = R2StorageManager()

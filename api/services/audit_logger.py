@@ -67,5 +67,5 @@ class AuditLogger:
         # Offload the blocking network I/O to a background thread
         await asyncio.to_thread(_sync_insert)
 
-# Export a singleton instance for memory efficiency
+# Global singleton
 audit_logger = AuditLogger()

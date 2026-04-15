@@ -14,6 +14,8 @@ interface SharedDashboardProps {
   };
 }
 
+const BASE_URL = 'https://arcli.tech';
+
 // Helper to safely extract Supabase relations whether TS thinks it's an array or an object
 const extractRelation = (relation: any) => {
   if (!relation) return null;
@@ -39,20 +41,40 @@ export async function generateMetadata({ params }: SharedDashboardProps): Promis
   // FIX: Safely extract the joined organization
   const org = extractRelation(metric.organizations);
   const companyName = org?.name || 'A DataFast Startup';
+  const metricName = metric.name || 'Shared Dashboard';
+  const description = metric.description || `Live SaaS metrics for ${companyName}.`;
+  const canonicalUrl = `${BASE_URL}/share/${params.id}`;
+
+  const ogImageUrl = new URL('/api/og', BASE_URL);
+  ogImageUrl.searchParams.set('title', `${companyName} ${metricName}`);
+  ogImageUrl.searchParams.set('type', 'dashboard');
 
   return {
-    title: `${metric.name} | ${companyName}`,
-    description: metric.description || `Live SaaS metrics for ${companyName}.`,
+    title: `${metricName} | ${companyName}`,
+    description,
     openGraph: {
-      title: `${companyName} is sharing their ${metric.name} publicly!`,
-      description: 'Live Open Startup dashboard powered by DataFast.',
+      title: `${companyName} is sharing their ${metricName} publicly!`,
+      description,
       type: 'website',
-      images: [`/api/og?title=${encodeURIComponent(metric.name)}&company=${encodeURIComponent(companyName)}`],
+      url: canonicalUrl,
+      siteName: 'Arcli',
+      images: [
+        {
+          url: ogImageUrl.toString(),
+          width: 1200,
+          height: 630,
+          alt: `${metricName} dashboard shared by ${companyName}`,
+        },
+      ],
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${companyName}'s Live ${metric.name}`,
-      description: 'Follow their journey. Built with DataFast.',
+      title: `${companyName}'s Live ${metricName}`,
+      description,
+      images: [ogImageUrl.toString()],
+    },
+    alternates: {
+      canonical: canonicalUrl,
     },
   };
 }

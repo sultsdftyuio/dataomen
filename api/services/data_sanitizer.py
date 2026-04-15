@@ -131,7 +131,7 @@ class DataSanitizer:
         }
         return s.replace(unique_map, default=s)
 
-    def sanitize_pii(self, expected_schema: List[ColumnSchema], existing_cols: Set[str]) -> Callable[[pl.LazyFrame], pl.LazyFrame]:
+    def _sanitize_pii_stage(self, expected_schema: List[ColumnSchema], existing_cols: Set[str]) -> Callable[[pl.LazyFrame], pl.LazyFrame]:
         """Stage 1: PII Isolation & Hashing. Uses externally frozen schema snapshot."""
         def _stage(lf: pl.LazyFrame) -> pl.LazyFrame:
             stage_start = time.time()
@@ -148,7 +148,6 @@ class DataSanitizer:
                 # Security Hardening: Strict normalization to avoid hash gaps
                 base_expr = (
                     pl.col(col).cast(pl.String, strict=self.strict_mode)
-                    .fill_null("")
                     .str.strip_chars()
                     .str.to_lowercase()
                     .str.replace_all(WHITESPACE_REGEX, " ")
@@ -156,7 +155,11 @@ class DataSanitizer:
 
                 if self.mode == "fast_analytics_hash":
                     seed = int.from_bytes(self._tenant_key[:8], "little")
-                    expr = base_expr.hash(seed=seed).cast(pl.String, strict=self.strict_mode).alias(col)
+                    expr = pl.when(base_expr.is_null()).then(
+                        pl.lit(None, dtype=pl.String)
+                    ).otherwise(
+                        base_expr.hash(seed=seed).cast(pl.String, strict=self.strict_mode)
+                    ).alias(col)
                 else:
                     expr = base_expr.map_batches(self._pii_hash_batch, return_dtype=pl.String).alias(col)
                     
@@ -173,6 +176,36 @@ class DataSanitizer:
             return lf.with_columns(exprs)
         return _stage
 
+    def sanitize_pii(
+        self,
+        expected_schema: Any,
+        existing_cols: Optional[Set[str]] = None,
+        pii_columns: Optional[List[str]] = None,
+    ) -> Any:
+        """
+        Dual-mode API for backward compatibility.
+
+        New API:
+            sanitize_pii(expected_schema, existing_cols) -> LazyFrame stage callable
+
+        Legacy API:
+            sanitize_pii(df, pii_columns=[...]) -> DataFrame
+        """
+        if isinstance(expected_schema, pl.DataFrame):
+            df = expected_schema
+            pii_set = set(pii_columns or [])
+            legacy_schema = [
+                ColumnSchema(name=col, type="string", nullable=True, pii=(col in pii_set))
+                for col in df.columns
+            ]
+            stage = self._sanitize_pii_stage(legacy_schema, set(df.columns))
+            return stage(df.lazy()).collect(streaming=self.streaming_safe)
+
+        if existing_cols is None:
+            raise ValueError(f"[{self.tenant_id}] sanitize_pii requires existing_cols with schema mode.")
+
+        return self._sanitize_pii_stage(expected_schema, existing_cols)
+
     # ---------------------------------------------------------------------
     # DETERMINISTIC NUMERIC CASCADES
     # ---------------------------------------------------------------------
@@ -182,7 +215,8 @@ class DataSanitizer:
         normalized_str = (
             pl.col(col).cast(pl.String, strict=self.strict_mode)
             .str.replace_all(NUMERIC_CLEANUP_REGEX, "") 
-            .str.replace_all(",", ".")
+            # Compatibility: connectors often emit grouped numerics like "$2,500.00".
+            .str.replace_all(",", "")
         )
         
         if self.strict_mode:
@@ -252,6 +286,46 @@ class DataSanitizer:
         }
         return mapping.get(semantic_type.lower(), pl.String)
 
+    def _normalize_semantic_type(self, semantic_type: str) -> str:
+        """Maps legacy/connector schema aliases into ColumnSchema semantic types."""
+        value = str(semantic_type or "").strip().lower()
+        aliases = {
+            "string": "string",
+            "varchar": "string",
+            "text": "string",
+            "int": "int",
+            "integer": "int",
+            "bigint": "int",
+            "smallint": "int",
+            "float": "float",
+            "double": "float",
+            "double precision": "float",
+            "real": "float",
+            "numeric": "float",
+            "decimal": "float",
+            "bool": "bool",
+            "boolean": "bool",
+            "date": "date",
+            "datetime": "datetime",
+            "timestamp": "datetime",
+            "currency": "currency",
+        }
+        return aliases.get(value, "string")
+
+    def enforce_duckdb_schema(self, df: pl.DataFrame, expected_schema: Dict[str, str]) -> pl.DataFrame:
+        """Legacy compatibility API: enforce schema on an eager DataFrame."""
+        schema_contract = [
+            ColumnSchema(
+                name=col_name,
+                type=self._normalize_semantic_type(col_type),
+                nullable=True,
+                pii=False,
+            )
+            for col_name, col_type in expected_schema.items()
+        ]
+        stage = self.enforce_schema(schema_contract, set(df.columns))
+        return stage(df.lazy()).collect(streaming=self.streaming_safe)
+
     def _schema_column_names(self, schema: Mapping[str, Any]) -> List[str]:
         """Reads schema names from either Polars Schema or mapping snapshots."""
         if hasattr(schema, "names"):
@@ -320,6 +394,26 @@ class DataSanitizer:
             .pipe(self.sanitize_pii(expected_schema, existing_cols))
             .pipe(self.enforce_schema(expected_schema, existing_cols))
         )
+
+    def process_batch(
+        self,
+        df: pl.DataFrame,
+        pii_columns: List[str],
+        expected_schema: Dict[str, str],
+    ) -> pl.DataFrame:
+        """Legacy compatibility API used by SyncEngine."""
+        pii_set = set(pii_columns or [])
+        schema_contract = [
+            ColumnSchema(
+                name=col_name,
+                type=self._normalize_semantic_type(col_type),
+                nullable=True,
+                pii=(col_name in pii_set),
+            )
+            for col_name, col_type in expected_schema.items()
+        ]
+        pipeline = self.build_pipeline(df.lazy(), schema_contract, ingestion_schema=df.schema)
+        return self.execute(pipeline, initial_row_count=df.height, streaming=self.streaming_safe)
 
     def execute(self, lf: pl.LazyFrame, initial_row_count: int, streaming: bool = True) -> pl.DataFrame:
         """
