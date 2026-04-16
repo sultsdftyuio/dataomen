@@ -20,34 +20,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  // Base information
+  metadataBase: new URL('https://arcli.tech'),
   title: 'Arcli - Your Autonomous Data Department',
   description: 'Stop writing SQL and building messy dashboards. Connect your database, ask questions in plain English, and let autonomous AI agents clean, query, and narrate your business insights instantly.',
   generator: 'Next.js',
-  metadataBase: new URL('https://arcli.tech'),
   alternates: {
     canonical: 'https://arcli.tech',
   },
-  
-  // Open Graph (Facebook, LinkedIn, Discord, Slack)
   openGraph: {
+    type: 'website',
+    url: 'https://arcli.tech',
     title: 'Arcli | Your AI Data Analyst',
     description: 'Autonomous agents that watch your data 24/7.',
-    url: 'https://arcli.tech',
     siteName: 'Arcli',
     locale: 'en_US',
-    type: 'website',
-    // Removed explicit images array. Next.js will auto-inject app/opengraph-image.jpg
+    // Next.js automatically finds app/opengraph-image.jpg
   },
-
-  // Twitter/X Card
   twitter: {
-    card: 'summary_large_image', // Triggers the full-width cinematic preview
+    card: 'summary_large_image',
     title: 'Arcli | Your AI Data Analyst',
     description: 'Autonomous agents that watch your data 24/7.',
-    // Removed explicit images array. Next.js will auto-inject app/twitter-image.jpg
+    // Next.js automatically finds app/twitter-image.jpg
   },
-}
+};
 
 export default function RootLayout({
   children,
