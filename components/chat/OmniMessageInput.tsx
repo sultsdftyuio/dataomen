@@ -17,6 +17,7 @@ import { toast } from "@/components/ui/use-toast";
 
 const MAX_ATTACHMENTS = 8;
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+const TEXTAREA_MAX_HEIGHT_PX = 220;
 const ACCEPTED_EXTENSIONS = ["csv", "json", "parquet", "pdf", "txt", "md", "docx"] as const;
 
 // -----------------------------------------------------------------------------
@@ -50,6 +51,16 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounter = useRef(0);
+
+  const resizeTextarea = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    const clampedHeight = Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT_PX);
+    textarea.style.height = `${clampedHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > TEXTAREA_MAX_HEIGHT_PX ? "auto" : "hidden";
+  }, []);
 
   const ingestFiles = useCallback((incomingFiles: File[]) => {
     if (incomingFiles.length === 0) return;
@@ -99,6 +110,10 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
       });
     }
   }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [text, resizeTextarea]);
 
   // 1. Global Drag & Drop Management (Flicker-Free implementation)
   useEffect(() => {
@@ -163,12 +178,6 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setText(newText);
-    
-    // Auto-resize
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-    }
 
     // @ Tagging Detection
     const lastWord = newText.split(/\s+/).pop();
@@ -203,6 +212,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
     setShowTagMenu(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
     }
 
     // Fire to parent orchestrator
@@ -234,45 +244,46 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
   const filteredTags = availableDatasets.filter(ds => ds.name.toLowerCase().includes(tagQuery));
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto pt-0">
+    <div className="relative w-full">
+      <div className="pointer-events-none absolute inset-x-10 -bottom-5 h-8 rounded-full bg-[#11284b]/12 blur-2xl" />
       
       {/* Global Drag Overlay */}
       {isDragging && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm border-[6px] border-dashed border-blue-500/50 rounded-3xl m-6 pointer-events-none transition-all duration-300">
-          <div className="text-center flex flex-col items-center bg-white p-10 rounded-3xl shadow-2xl">
-            <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-blue-100 animate-bounce">
+        <div className="fixed inset-0 z-50 m-6 flex items-center justify-center rounded-3xl border-[3px] border-dashed border-[#1f3a63]/30 bg-slate-900/10 backdrop-blur-sm pointer-events-none transition-all duration-300">
+          <div className="flex flex-col items-center rounded-3xl border border-slate-200/80 bg-white/90 p-10 text-center shadow-md backdrop-blur-xl">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-[#11284b]">
               <Database className="w-10 h-10" />
             </div>
-            <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight drop-shadow-sm">Drop files to add context</h2>
-            <p className="text-slate-500 mt-3 font-medium text-lg">Structured (CSV/Parquet) or Unstructured (PDF/TXT)</p>
+            <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Drop files to add context</h2>
+            <p className="mt-3 text-lg font-medium text-slate-500">Structured (CSV/Parquet) or Unstructured (PDF/TXT)</p>
           </div>
         </div>
       )}
 
       {/* Optimistic UI Progress Stream */}
       {isProcessing && progressStatus && (
-        <div className="absolute -top-10 left-0 right-0 flex items-center justify-center space-x-2 text-[13px] text-blue-600 font-bold tracking-wide uppercase animate-in fade-in slide-in-from-bottom-2">
-          <div className="p-1 bg-blue-100 rounded-full"><Loader2 className="w-3.5 h-3.5 animate-spin" /></div>
+        <div className="absolute -top-10 left-0 right-0 flex items-center justify-center space-x-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[#11284b] animate-in fade-in slide-in-from-bottom-2">
+          <div className="rounded-full bg-blue-100 p-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /></div>
           <span>{progressStatus}</span>
         </div>
       )}
 
       {/* @ Tagging Menu */}
       {showTagMenu && filteredTags.length > 0 && (
-        <div className="absolute bottom-full left-4 mb-2 w-64 max-h-48 overflow-y-auto bg-white border border-gray-200/80 rounded-xl shadow-xl z-10 animate-in fade-in slide-in-from-bottom-2 p-1.5 custom-scrollbar">
-          <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+        <div className="custom-scrollbar absolute bottom-full left-4 z-10 mb-3 max-h-52 w-64 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-md backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
             <AtSign className="w-3 h-3" /> Select a source to route
           </div>
           {filteredTags.map((ds) => (
             <button
               key={ds.id}
               onClick={() => handleTagSelect(ds.name)}
-              className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 rounded-lg flex items-center justify-between group transition-colors"
+              className="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100/90 hover:text-[#11284b] focus:outline-none"
             >
               <span className="truncate pr-4">{ds.name}</span>
               {ds.type === 'structured' 
-                ? <Database className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 shrink-0" />
-                : <FileText className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-500 shrink-0" />
+                ? <Database className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#11284b] shrink-0" />
+                : <FileText className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
               }
             </button>
           ))}
@@ -280,24 +291,24 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
       )}
 
       <div
-        className={`relative flex flex-col w-full bg-white border transition-all duration-300 rounded-[24px] overflow-visible ${
+        className={`relative flex w-full flex-col overflow-visible rounded-2xl border border-slate-200/70 bg-white/75 shadow-sm backdrop-blur-xl transition-all duration-300 ${
           isProcessing 
-            ? "border-blue-300 shadow-[0_0_20px_rgba(59,130,246,0.1)]" 
-            : "border-gray-200/80 hover:border-gray-300 shadow-sm focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:shadow-md"
+            ? "ring-2 ring-blue-500/20"
+            : "hover:border-slate-300/80 focus-within:border-blue-300/80 focus-within:ring-2 focus-within:ring-blue-500/20"
         }`}
       >
         {/* Active File Pills */}
         {files.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-4 pt-4 pb-2 border-b border-gray-100 bg-slate-50/50 rounded-t-[24px]">
+          <div className="flex flex-wrap gap-2 rounded-t-2xl border-b border-slate-200/70 bg-slate-50/70 px-4 pb-2 pt-4">
             {files.map((file, idx) => {
               const isDocument = file.name.match(/\.(pdf|txt|md|docx)$/i);
               
               return (
-                <div key={`${file.name}-${idx}`} className="flex items-center space-x-2 bg-white text-slate-700 text-xs px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm group hover:border-blue-300 transition-colors">
+                <div key={`${file.name}-${idx}`} className="group flex items-center space-x-2 rounded-xl border border-slate-200/80 bg-white/90 px-3 py-1.5 text-xs text-slate-700 transition-colors hover:border-slate-300">
                   {file.type.startsWith("image/") ? (
-                    <ImageIcon className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <ImageIcon className="w-3.5 h-3.5 text-[#11284b] shrink-0" />
                   ) : isDocument ? (
-                    <FileText className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                    <FileText className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   ) : (
                     <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   )}
@@ -310,7 +321,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
                   <button
                     onClick={() => removeFile(idx)}
                     disabled={isProcessing}
-                    className="ml-1 p-0.5 text-slate-400 hover:text-white hover:bg-rose-500 rounded-md transition-colors disabled:opacity-50"
+                    className="ml-1 rounded-md p-0.5 text-slate-400 transition-colors hover:bg-rose-500 hover:text-white disabled:opacity-50"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -322,7 +333,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
               type="button"
               onClick={() => setFiles([])}
               disabled={isProcessing}
-              className="ml-auto text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              className="ml-auto rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
             >
               Clear all
             </button>
@@ -330,11 +341,11 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
         )}
 
         {/* Input Bar */}
-        <div className="flex items-end px-4 py-3.5">
+        <div className="flex items-end gap-1 px-4 py-3.5">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
-            className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors shrink-0 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+            className="shrink-0 rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#11284b] focus:outline-none disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
             title="Attach File"
           >
             <Paperclip className="w-5 h-5" />
@@ -362,7 +373,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
             onPaste={handlePaste}
             placeholder={files.length > 0 ? "Ask a question about these files..." : "Message Arcli, type @ to query a specific dataset..."}
             disabled={isProcessing}
-            className="flex-1 max-h-[250px] min-h-[44px] bg-transparent text-slate-900 placeholder:text-slate-400 resize-none px-3 py-2.5 focus:outline-none focus:ring-0 disabled:opacity-50 text-[15px] font-medium leading-relaxed custom-scrollbar"
+            className="custom-scrollbar flex-1 min-h-[44px] max-h-[220px] resize-none bg-transparent px-3 py-2.5 text-[15px] font-medium leading-relaxed text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-50"
             rows={1}
           />
 
@@ -372,8 +383,8 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
             onClick={handleSubmit}
             className={`shrink-0 ml-3 h-11 w-11 rounded-xl transition-all duration-300 ${
               (!text.trim() && files.length === 0) && !isProcessing
-                ? "bg-slate-100 text-slate-400 hover:bg-slate-200 shadow-none"
-                : "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-500/20"
+                ? "bg-slate-200 text-slate-400 hover:bg-slate-200 shadow-none"
+                : "bg-[#11284b] text-white hover:bg-[#0c1e39] shadow-sm"
             }`}
           >
             {isProcessing ? (
@@ -385,7 +396,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
         </div>
       </div>
 
-      <div className="mt-2 px-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+      <div className="mt-2 flex items-center justify-between px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
         <span>Enter to send • Shift+Enter newline • Type @ to route</span>
         <span>{files.length}/{MAX_ATTACHMENTS} attachments</span>
       </div>

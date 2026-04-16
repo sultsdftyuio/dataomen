@@ -866,54 +866,57 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const SUGGESTIONS = [
     {
       icon: <FileSpreadsheet className="w-4 h-4" />,
-      color: "text-emerald-600 bg-emerald-50 border-emerald-100",
+      color: "text-[#164e63] bg-cyan-50/80 border-cyan-100",
       title: "Analyze a dataset",
       prompt: "I want to analyze a dataset",
     },
     {
       icon: <Database className="w-4 h-4" />,
-      color: "text-blue-600 bg-blue-50 border-blue-100",
+      color: "text-[#11284b] bg-blue-50/80 border-blue-100",
       title: "Query a database",
       prompt: "I want to query a database",
     },
     {
       icon: <TrendingUp className="w-4 h-4" />,
-      color: "text-violet-600 bg-violet-50 border-violet-100",
+      color: "text-slate-700 bg-slate-100 border-slate-200",
       title: "Forecast trends",
       prompt: "I want to forecast trends and predict future metrics",
     },
     {
       icon: <Search className="w-4 h-4" />,
-      color: "text-rose-600 bg-rose-50 border-rose-100",
+      color: "text-amber-700 bg-amber-50/80 border-amber-100",
       title: "Detect anomalies",
       prompt: "I want to detect anomalies in my data",
     },
   ];
 
   return (
-    <div className="flex flex-col h-full w-full relative overflow-hidden bg-[#fafafa] font-sans text-slate-900">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-50 font-sans text-slate-900">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_72%_at_50%_0%,rgba(17,40,75,0.08),transparent_62%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/80 to-transparent" />
+      <div className="relative z-10 flex h-full flex-col">
       
       {/* ── Top Bar ── */}
-      <div className="flex items-center justify-between h-16 px-6 bg-white border-b border-gray-200/80 sticky top-0 z-20 shrink-0 shadow-sm">
+      <div className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/80 px-6 backdrop-blur-xl">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#11284b] shadow-sm">
             <Zap className="w-4 h-4 text-white" />
           </div>
-          <button className="flex items-center gap-1.5 font-extrabold text-[15px] text-slate-900 hover:text-blue-600 transition-colors shrink-0 focus:outline-none">
+          <button className="flex shrink-0 items-center gap-1.5 text-[15px] font-extrabold text-slate-900 transition-colors hover:text-[#11284b] focus:outline-none">
             {agentName}
             <ChevronDown className="w-4 h-4 text-slate-400" />
           </button>
 
           {/* Dataset & Doc Badges */}
           {activeDatasetIds.length > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-[10px] font-bold text-emerald-700 uppercase tracking-widest ml-3 shrink-0 shadow-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="ml-3 flex shrink-0 items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#25436f]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#325c95] animate-pulse" />
               {activeDatasetIds.length} <span className="hidden sm:inline">Dataset{activeDatasetIds.length > 1 ? "s" : ""}</span>
             </div>
           )}
           {activeDocumentIds.length > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 border border-purple-100 text-[10px] font-bold text-purple-700 uppercase tracking-widest ml-2 shrink-0 shadow-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+            <div className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100/90 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
               {activeDocumentIds.length} <span className="hidden sm:inline">Doc{activeDocumentIds.length > 1 ? "s" : ""}</span>
             </div>
           )}
@@ -925,7 +928,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               variant="outline"
               size="sm"
               onClick={stopStreaming}
-              className="h-9 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+              className="h-9 rounded-xl border-rose-200/80 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
             >
               <CircleStop className="w-4 h-4 mr-1.5" />
               Stop
@@ -935,7 +938,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             variant="ghost"
             size="icon"
             onClick={resetConversation}
-            className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl h-9 w-9 transition-colors"
+            className="h-9 w-9 rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
             title="New chat"
           >
             <Plus className="w-4 h-4" />
@@ -944,7 +947,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             variant="ghost"
             size="icon"
             onClick={() => void hydrateAvailableDatasets()}
-            className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl h-9 w-9 transition-colors"
+            className="h-9 w-9 rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
             title="Refresh datasets"
           >
             <Settings2 className="w-4 h-4" />
@@ -953,7 +956,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             variant="ghost"
             size="icon"
             onClick={clearDataContext}
-            className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-xl h-9 w-9 transition-colors"
+            className="h-9 w-9 rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
             title="Clear data context"
           >
             <MoreHorizontal className="w-4 h-4" />
@@ -961,7 +964,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         </div>
       </div>
 
-      <div className="px-6 py-2 bg-white/90 border-b border-gray-100 text-[12px] text-slate-500 flex items-center justify-between">
+      <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/70 px-6 py-2 text-[12px] text-slate-500 backdrop-blur-sm">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
           <span className="font-semibold text-slate-600">
@@ -975,13 +978,13 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Chat Body ── */}
       <ScrollArea className="flex-1">
-        <div className="max-w-4xl mx-auto w-full p-6 pb-24">
+        <div className="mx-auto w-full max-w-3xl px-5 pb-44 pt-10 sm:px-6">
           
           {/* Empty / Welcome State */}
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-in fade-in zoom-in-95 duration-500">
-              <div className="w-14 h-14 bg-white border border-gray-200 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                <Zap className="w-6 h-6 text-blue-500" />
+            <div className="flex min-h-[60vh] flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-500">
+              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 shadow-sm backdrop-blur-sm">
+                <Zap className="w-6 h-6 text-[#11284b]" />
               </div>
               <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">
                 {getGreeting()}
@@ -991,9 +994,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               </p>
 
               <div className="mb-6 flex flex-wrap items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
-                <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">{availableDatasets.length} Sources Ready</span>
-                <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">Shift+Enter for newline</span>
-                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">Drag & drop supported</span>
+                <span className="rounded-full border border-cyan-100 bg-cyan-50/80 px-3 py-1 text-cyan-700">{availableDatasets.length} Sources Ready</span>
+                <span className="rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-[#25436f]">Shift+Enter for newline</span>
+                <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-600">Drag & drop supported</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
@@ -1001,12 +1004,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   <button 
                     key={i} 
                     onClick={() => void handleSendMessage(s.prompt)} 
-                    className="flex items-center gap-4 p-4 bg-white border border-gray-200/80 rounded-2xl hover:border-blue-300 hover:shadow-md transition-all text-left group shadow-sm"
+                    className="group flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/85 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white"
                   >
-                    <div className={`p-2.5 rounded-xl border shadow-sm group-hover:scale-110 transition-transform ${s.color}`}>
+                    <div className={`rounded-xl border p-2.5 shadow-sm transition-transform group-hover:scale-105 ${s.color}`}>
                       {s.icon}
                     </div>
-                    <span className="font-bold text-[14px] text-slate-700 group-hover:text-blue-600 transition-colors">{s.title}</span>
+                    <span className="text-[14px] font-bold text-slate-700 transition-colors group-hover:text-[#11284b]">{s.title}</span>
                   </button>
                 ))}
               </div>
@@ -1068,7 +1071,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                     {msg.content && (
                       <div className="max-w-[90%] sm:max-w-[75%] flex flex-col items-end">
-                        <div className="bg-blue-600 text-white rounded-3xl rounded-br-sm px-5 py-3.5 shadow-sm text-[15px] font-medium leading-relaxed">
+                        <div className="rounded-3xl rounded-br-sm bg-[#11284b] px-5 py-3.5 text-[15px] font-medium leading-relaxed text-white shadow-sm">
                           {msg.content}
                         </div>
                         <div className="text-[11px] font-bold text-slate-400 mt-2 uppercase tracking-wider">
@@ -1082,7 +1085,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 {/* ASSISTANT MESSAGE */}
                 {msg.role === "assistant" && (
                   <div className="flex gap-4 items-start max-w-[95%] sm:max-w-[85%]">
-                    <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0 mt-1">
+                    <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#11284b] shadow-sm">
                       <Zap className="w-4 h-4 text-white" />
                     </div>
 
@@ -1233,8 +1236,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       </ScrollArea>
 
       {/* ── Input Area ── */}
-      <div className="p-4 bg-white border-t border-gray-200/80 shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.02)]">
-        <div className="max-w-4xl mx-auto">
+      <div className="sticky bottom-0 z-20 mt-auto bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent px-4 pb-5 pt-8 backdrop-blur-[2px]">
+        <div className="mx-auto w-full max-w-3xl">
           <OmniMessageInput
             onSendMessage={handleSendMessage}
             isProcessing={isProcessing}
@@ -1245,11 +1248,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Arcli can make mistakes — verify critical outputs</span>
             <span className="text-slate-300">•</span>
-            <a href="mailto:support@arcli.tech" className="hover:text-blue-600 transition-colors">
+            <a href="mailto:support@arcli.tech" className="transition-colors hover:text-[#11284b]">
               Get help
             </a>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
