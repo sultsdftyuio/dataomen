@@ -35,7 +35,7 @@ if not INTERNAL_SERVICE_KEY:
         raise RuntimeError("INTERNAL_SERVICE_KEY is strictly required in production.")
 
 # Initialize API Router for modular registration
-auth_router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
+router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
 # FastAPI security scheme
 security = HTTPBearer()
@@ -193,7 +193,7 @@ def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)
 # ------------------------------------------------------------------------------
 # 4. Endpoints
 # ------------------------------------------------------------------------------
-@auth_router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(payload: RegisterRequest):
     """
     Multi-tenant Registration Endpoint.

@@ -53,6 +53,7 @@ DEFAULT_ROUTE_MODULES = [
     "api.routes.chat",
     "api.routes.webhooks",
     "api.routes.billing",
+    "api.auth",
 ]
 
 
