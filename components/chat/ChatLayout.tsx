@@ -201,16 +201,16 @@ function SimpleMarkdown({ text }: { text: string }) {
 function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
   if (!label) return null;
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 inline-flex items-center gap-2 rounded-full bg-slate-100/80 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-800/70 dark:text-slate-300">
+    <div className="animate-in fade-in slide-in-from-bottom-2 inline-flex items-center gap-2 rounded-full bg-slate-100/80 px-2.5 py-1 text-[11px] font-medium text-slate-500">
       {done ? (
-        <div className="rounded-full bg-slate-200/80 p-0.5 dark:bg-slate-700/80">
-          <svg className="h-3 w-3 text-slate-600 dark:text-slate-300" viewBox="0 0 12 12" fill="none">
+        <div className="rounded-full bg-slate-200/80 p-0.5">
+          <svg className="h-3 w-3 text-slate-600" viewBox="0 0 12 12" fill="none">
             <path d="M3.5 6l2 2 3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
       ) : (
-        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-200/70 dark:bg-slate-700/70">
-          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-slate-500 dark:bg-slate-300" />
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-200/70">
+          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-slate-500" />
         </span>
       )}
       {label}
@@ -274,11 +274,11 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
 function ReasoningBlock({ icon, label, content, mono }: { icon: React.ReactNode; label: string; content: string; mono: boolean; }) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
         {icon} {label}
       </div>
-      <div className={`overflow-x-auto rounded-xl border p-3 ${mono ? 'border-slate-800/70 bg-slate-900/85' : 'border-slate-200/50 bg-slate-50/65 dark:border-slate-800/70 dark:bg-slate-900/45'}`}>
-        <code className={`block whitespace-pre-wrap break-words ${mono ? "font-mono text-[12px] leading-relaxed text-slate-100" : "text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"}`}>
+      <div className={`overflow-x-auto rounded-xl border p-3 ${mono ? 'border-slate-200/70 bg-slate-100/95' : 'border-slate-200/50 bg-slate-50/65'}`}>
+        <code className={`block whitespace-pre-wrap break-words ${mono ? "font-mono text-[12px] leading-relaxed text-slate-700" : "text-[13px] leading-relaxed text-slate-700"}`}>
           {content}
         </code>
       </div>
@@ -296,7 +296,7 @@ function AssistantTextContent({
   const lines = useMemo(() => content.split("\n"), [content]);
 
   return (
-    <div className="prose prose-slate dark:prose-invert max-w-none text-[15px] leading-7 text-slate-900 dark:text-slate-50 prose-p:my-2 prose-p:leading-7 prose-headings:text-slate-900 dark:prose-headings:text-slate-50">
+    <div className="prose prose-slate max-w-none text-[15px] leading-7 text-slate-900 prose-p:my-2 prose-p:leading-7 prose-headings:text-slate-900">
       {lines.map((line, i) => (
         <p key={i} className="min-h-7 transition-opacity duration-200">
           <SimpleMarkdown text={line} />
@@ -951,25 +951,25 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   ];
 
   return (
-    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(15,23,42,0.06),transparent_62%)] dark:bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(148,163,184,0.16),transparent_62%)]" />
-      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-full max-w-[58rem] -translate-x-1/2 bg-gradient-to-b from-white/78 via-white/58 to-white/20 dark:from-slate-950/70 dark:via-slate-950/45 dark:to-transparent" />
+    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(15,23,42,0.06),transparent_62%)]" />
+      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-full max-w-[58rem] -translate-x-1/2 bg-gradient-to-b from-white/78 via-white/58 to-white/20" />
       <div className="relative z-10 flex h-full min-h-0 flex-col">
       
       {/* ── Floating Command Strip ── */}
       <div className={`pointer-events-none sticky z-30 px-4 transition-all duration-300 sm:px-6 ${isCommandStripCompact ? "top-2" : "top-3"}`}>
-        <div className={`pointer-events-auto mx-auto flex w-full items-center justify-between border border-slate-200/55 bg-white/82 shadow-[0_10px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-300 dark:border-slate-800/70 dark:bg-slate-950/78 ${isCommandStripCompact ? "max-w-3xl rounded-xl px-3 py-1.5" : "max-w-4xl rounded-2xl px-3 py-2.5"}`}>
+        <div className={`pointer-events-auto mx-auto flex w-full items-center justify-between border border-slate-200/55 bg-white/82 shadow-[0_10px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-300 ${isCommandStripCompact ? "max-w-3xl rounded-xl px-3 py-1.5" : "max-w-4xl rounded-2xl px-3 py-2.5"}`}>
           <div className="min-w-0 flex items-center gap-2.5">
-            <span className={`inline-flex shrink-0 items-center justify-center bg-slate-100/80 text-slate-600 transition-all duration-300 dark:bg-slate-800/80 dark:text-slate-300 ${isCommandStripCompact ? "h-7 w-7 rounded-lg" : "h-8 w-8 rounded-xl"}`}>
+            <span className={`inline-flex shrink-0 items-center justify-center bg-slate-100/80 text-slate-600 transition-all duration-300 ${isCommandStripCompact ? "h-7 w-7 rounded-lg" : "h-8 w-8 rounded-xl"}`}>
               <Zap className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <button className={`flex max-w-[200px] items-center gap-1 truncate font-semibold text-slate-700 transition-colors hover:text-slate-900 focus:outline-none dark:text-slate-200 dark:hover:text-white sm:max-w-none ${isCommandStripCompact ? "text-[12px]" : "text-[13px]"}`}>
+              <button className={`flex max-w-[200px] items-center gap-1 truncate font-semibold text-slate-700 transition-colors hover:text-slate-900 focus:outline-none sm:max-w-none ${isCommandStripCompact ? "text-[12px]" : "text-[13px]"}`}>
                 <span className="truncate">{agentName}</span>
-                <ChevronDown className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                <ChevronDown className="h-4 w-4 text-slate-400" />
               </button>
               {!isCommandStripCompact && (
-                <p className="truncate text-[10px] font-medium tracking-[0.08em] text-slate-500/90 dark:text-slate-400">
+                <p className="truncate text-[10px] font-medium tracking-[0.08em] text-slate-500/90">
                   {activeDatasetIds.length} dataset{activeDatasetIds.length === 1 ? "" : "s"} · {activeDocumentIds.length} document{activeDocumentIds.length === 1 ? "" : "s"} · {isHydratingDatasets ? "Refreshing sources" : "Type @ to route"}
                 </p>
               )}
@@ -982,7 +982,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={stopStreaming}
-                className={`rounded-full border-slate-200/60 bg-white/80 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700/60 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800 ${isCommandStripCompact ? "h-7 px-2" : "h-8 px-3"}`}
+                className={`rounded-full border-slate-200/60 bg-white/80 text-xs text-slate-600 hover:bg-slate-100 ${isCommandStripCompact ? "h-7 px-2" : "h-8 px-3"}`}
               >
                 <CircleStop className="mr-1.5 h-3.5 w-3.5" />
                 {!isCommandStripCompact && "Stop"}
@@ -992,7 +992,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               variant="ghost"
               size="icon"
               onClick={resetConversation}
-              className={`${isCommandStripCompact ? "h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-200`}
+              className={`${isCommandStripCompact ? "h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700`}
               title="New chat"
             >
               <Plus className="w-4 h-4" />
@@ -1001,7 +1001,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               variant="ghost"
               size="icon"
               onClick={() => void hydrateAvailableDatasets()}
-              className={`${isCommandStripCompact ? "hidden sm:inline-flex h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-200`}
+              className={`${isCommandStripCompact ? "hidden sm:inline-flex h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700`}
               title="Refresh datasets"
             >
               <Settings2 className="w-4 h-4" />
@@ -1010,7 +1010,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               variant="ghost"
               size="icon"
               onClick={clearDataContext}
-              className={`${isCommandStripCompact ? "hidden sm:inline-flex h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-200`}
+              className={`${isCommandStripCompact ? "hidden sm:inline-flex h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700`}
               title="Clear data context"
             >
               <MoreHorizontal className="w-4 h-4" />
@@ -1021,19 +1021,19 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Chat Body ── */}
       <div ref={scrollContainerRef} className="relative -mt-12 min-h-0 flex-1">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-white via-white/80 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-white via-white/80 to-transparent" />
         <ScrollArea className="h-full">
           <div className="mx-auto w-full max-w-4xl px-5 pb-56 pt-20 sm:px-8">
             {/* Empty / Welcome State */}
             {messages.length === 0 && (
               <div className="animate-in fade-in zoom-in-95 flex min-h-[62vh] flex-col items-center justify-center text-center duration-500">
-                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Document Intelligence Workspace
                 </p>
-                <h1 className="mb-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 sm:text-[2.35rem]">
+                <h1 className="mb-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 sm:text-[2.35rem]">
                   {getGreeting()}. What do you want to understand from your data?
                 </h1>
-                <p className="mb-10 max-w-2xl text-[15px] leading-[1.8] text-slate-500 dark:text-slate-400">
+                <p className="mb-10 max-w-2xl text-[15px] leading-[1.8] text-slate-500">
                   Ask in plain English. You can upload files, target datasets with @mentions, and get charts plus executive summaries in one response.
                 </p>
 
@@ -1042,20 +1042,20 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                     <button
                       key={i}
                       onClick={() => void handleSendMessage(s.prompt)}
-                      className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200/60 bg-white/82 px-4 py-3.5 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.9)] transition-all hover:border-slate-300/70 hover:bg-white dark:border-slate-800/70 dark:bg-slate-900/70 dark:hover:border-slate-700/90 dark:hover:bg-slate-900"
+                      className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200/60 bg-white/82 px-4 py-3.5 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.9)] transition-all hover:border-slate-300/70 hover:bg-white"
                     >
-                      <div className={`rounded-xl border border-slate-200/60 p-2.5 transition-transform group-hover:scale-105 dark:border-slate-700/80 ${s.color}`}>
+                      <div className={`rounded-xl border border-slate-200/60 p-2.5 transition-transform group-hover:scale-105 ${s.color}`}>
                         {s.icon}
                       </div>
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="text-[14px] font-semibold text-slate-700 transition-colors group-hover:text-slate-900 dark:text-slate-100 dark:group-hover:text-white">{s.title}</span>
-                        <span className="truncate text-[12px] text-slate-500 dark:text-slate-400">{s.prompt}</span>
+                        <span className="text-[14px] font-semibold text-slate-700 transition-colors group-hover:text-slate-900">{s.title}</span>
+                        <span className="truncate text-[12px] text-slate-500">{s.prompt}</span>
                       </div>
                     </button>
                   ))}
                 </div>
 
-                <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   <span>{availableDatasets.length} sources connected</span>
                   <span>•</span>
                   <span>Shift+Enter for newline</span>
@@ -1072,7 +1072,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowAllMessages((prev) => !prev)}
-                    className="rounded-full border border-slate-200/60 bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700 dark:border-slate-800/70 dark:bg-slate-900/70 dark:text-slate-300"
+                    className="rounded-full border border-slate-200/60 bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700"
                   >
                     {showAllMessages ? "Collapse older messages" : `Show ${hiddenMessageCount} earlier messages`}
                   </button>
@@ -1082,13 +1082,13 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               {groupedVisibleMessages.map((group, groupIndex) => (
                 <section key={`${group.id}-${groupIndex}`} className="flex flex-col gap-3">
                   {group.role === "assistant" && groupIndex === firstAssistantGroupIndex && (
-                    <div className="pl-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                    <div className="pl-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                       {agentName}
                     </div>
                   )}
 
                   {group.role === "user" && (
-                    <div className="flex justify-end pr-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                    <div className="flex justify-end pr-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                       <span>You</span>
                     </div>
                   )}
@@ -1126,7 +1126,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                             {msg.files && msg.files.length > 0 && (
                               <div className="mb-2 flex flex-wrap justify-end gap-2">
                                 {msg.files.map((f, i) => (
-                                  <div key={`${msg.id}-file-${i}`} className="flex items-center gap-2 rounded-full bg-slate-100/75 px-3 py-1.5 text-[11px] text-slate-600 dark:bg-slate-800/70 dark:text-slate-300">
+                                  <div key={`${msg.id}-file-${i}`} className="flex items-center gap-2 rounded-full bg-slate-100/75 px-3 py-1.5 text-[11px] text-slate-600">
                                     <FileText className="h-3.5 w-3.5" />
                                     <span className="max-w-[180px] truncate font-medium">{f.name}</span>
                                   </div>
@@ -1135,12 +1135,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                             )}
 
                             {msg.content && (
-                              <div className="rounded-3xl bg-slate-100/70 px-6 py-4 text-[15px] leading-[1.8] text-slate-800 transition-opacity duration-200 dark:bg-slate-800/45 dark:text-slate-100">
+                              <div className="rounded-3xl bg-slate-100/70 px-6 py-4 text-[15px] leading-[1.8] text-slate-800 transition-opacity duration-200">
                                 {msg.content}
                               </div>
                             )}
 
-                            <div className="mt-1 pr-1 text-right text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                            <div className="mt-1 pr-1 text-right text-[11px] font-medium text-slate-400">
                               {formatTime(msg.timestamp)}
                             </div>
                           </article>
@@ -1171,53 +1171,53 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                           )}
 
                           {msg.hasPayload && payload && (
-                            <div className="animate-in fade-in slide-in-from-bottom-2 mt-6 overflow-hidden rounded-[24px] bg-white/70 p-2 ring-1 ring-slate-200/45 duration-200 dark:bg-slate-950/45 dark:ring-slate-800/65">
+                            <div className="animate-in fade-in slide-in-from-bottom-2 mt-6 overflow-hidden rounded-[24px] bg-white/70 p-2 ring-1 ring-slate-200/45 duration-200">
                               <div className="flex items-center justify-between px-2 py-1.5">
                                 <div className="flex items-center gap-2">
-                                  <Table2 className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                                  <Table2 className="h-4 w-4 text-slate-400" />
+                                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                                     Analysis result
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
                                   <button
                                     type="button"
                                     onClick={() => copyToClipboard(JSON.stringify(payload))}
-                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700"
                                   >
                                     Copy data
                                   </button>
-                                  <span className="text-slate-300 dark:text-slate-600">•</span>
+                                  <span className="text-slate-300">•</span>
                                   <button
                                     type="button"
-                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700"
                                   >
                                     Inspect
                                   </button>
                                 </div>
                               </div>
-                              <div className="overflow-hidden rounded-2xl bg-white/85 p-3 dark:bg-slate-950/75">
+                              <div className="overflow-hidden rounded-2xl bg-white/85 p-3">
                                 <DynamicChartFactory payload={payload} />
                               </div>
                             </div>
                           )}
 
-                          <details className="group/footnote mt-4 overflow-hidden rounded-2xl border border-slate-200/55 bg-white/62 dark:border-slate-800/70 dark:bg-slate-950/45">
-                            <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          <details className="group/footnote mt-4 overflow-hidden rounded-2xl border border-slate-200/55 bg-white/62">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-[11px] font-medium text-slate-500">
                               <span className="uppercase tracking-[0.12em]">Analysis footnote</span>
-                              <span className="text-slate-300 dark:text-slate-600">•</span>
+                              <span className="text-slate-300">•</span>
                               <span className="truncate">{footnoteLabel}</span>
                               <span className="ml-auto text-[11px]">{formatTime(msg.timestamp)}</span>
                               <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open/footnote:rotate-90" />
                             </summary>
 
-                            <div className="space-y-3 border-t border-slate-200/50 px-3.5 py-3 dark:border-slate-800/70">
+                            <div className="space-y-3 border-t border-slate-200/50 px-3.5 py-3">
                               {warningCount > 0 && (
                                 <div className="space-y-2">
                                   {msg.warnings?.map((warning, warningIdx) => (
-                                    <div key={`${msg.id}-warning-${warningIdx}`} className="rounded-xl border-l-2 border-amber-300/80 bg-amber-50/50 py-2 pl-3 pr-2 text-[13px] text-amber-900/80 dark:border-amber-400/60 dark:bg-amber-500/10 dark:text-amber-200/90">
+                                    <div key={`${msg.id}-warning-${warningIdx}`} className="rounded-xl border-l-2 border-amber-300/80 bg-amber-50/50 py-2 pl-3 pr-2 text-[13px] text-amber-900/80">
                                       <div className="flex items-start gap-2">
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600/80 dark:text-amber-300" />
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600/80" />
                                         <span>{warning}</span>
                                       </div>
                                     </div>
@@ -1226,19 +1226,19 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                               )}
 
                               {msg.error && (
-                                <div className="rounded-xl border-l-2 border-rose-300/80 bg-rose-50/55 py-2 pl-3 pr-2 text-[13px] text-rose-900/80 dark:border-rose-400/60 dark:bg-rose-500/10 dark:text-rose-200/90">
+                                <div className="rounded-xl border-l-2 border-rose-300/80 bg-rose-50/55 py-2 pl-3 pr-2 text-[13px] text-rose-900/80">
                                   <div className="flex items-start gap-2">
-                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600/80 dark:text-rose-300" />
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600/80" />
                                     <span>{msg.error}</span>
                                   </div>
                                 </div>
                               )}
 
                               {traceCount > 0 && (
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
                                   {msg.traces?.slice(-5).map((trace, traceIdx) => (
                                     <span key={`${msg.id}-trace-${traceIdx}`} className="inline-flex items-center gap-1.5">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-600" />
+                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
                                       {trace.stage || "Step"}
                                       {typeof trace.execution_time_ms === "number" ? ` | ${Math.round(trace.execution_time_ms)}ms` : ""}
                                     </span>
@@ -1255,24 +1255,24 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                                 />
                               )}
 
-                              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-medium text-slate-500">
                                 <button
                                   type="button"
                                   onClick={() => void copyToClipboard(msg.content || JSON.stringify(payload))}
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
                                 >
                                   Copy response
                                 </button>
                                 <button
                                   type="button"
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
                                   onClick={() => toast({ description: "Thanks. Feedback recorded." })}
                                 >
                                   Helpful
                                 </button>
                                 <button
                                   type="button"
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
                                   onClick={() => toast({ description: "Thanks. We will use this to improve future answers." })}
                                 >
                                   Needs work
@@ -1281,7 +1281,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                                   type="button"
                                   onClick={() => void retryFromAssistant(msg.id)}
                                   disabled={isProcessing}
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   Retry
                                 </button>
@@ -1310,7 +1310,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             progressStatus={progressStatus}
             availableDatasets={availableDatasets}
           />
-          <div className="mt-2 flex items-center justify-center gap-2 text-center text-[10px] font-medium tracking-[0.08em] text-slate-400 dark:text-slate-500">
+          <div className="mt-2 flex items-center justify-center gap-2 text-center text-[10px] font-medium tracking-[0.08em] text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Arcli can make mistakes. Verify critical outputs.</span>
             <span className="text-slate-300">•</span>

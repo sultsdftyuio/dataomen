@@ -14,11 +14,11 @@ export default function DashboardLayout({
   return (
     /* FIX 2: Wrap your layout in the Provider to initialize the context */
     <SidebarProvider>
-      <div className="flex h-screen w-full bg-background overflow-hidden text-foreground">
+      <div className="flex h-screen w-full overflow-hidden bg-white text-slate-900">
         {/* Modular Architecture: The sidebar handles pure navigation and route state isolated from heavy compute tasks. */}
         <DashboardSidebar />
         
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-background">
+        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-white">
           {/* We keep the dynamic children isolated here */}
           {children}
         </main>
