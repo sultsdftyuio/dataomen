@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,17 @@ export default function LoginPage() {
   const [isPending, setIsPending] = useState(false);
   const [isGooglePending, setIsGooglePending] = useState(false);
   const supabase = createClient();
+  const searchParams = useSearchParams();
+
+  const requestedPath = searchParams.get("next");
+  const safeNextPath = requestedPath && requestedPath.startsWith("/") && !requestedPath.startsWith("//")
+    ? requestedPath
+    : "";
+
+  const authError = searchParams.get("error");
+  const showResetMessage = searchParams.get("reset") === "sent";
+  const showOauthError = authError === "oauth_callback_failed";
+  const showSignupLoginRequired = authError === "signup_created_login_required";
 
   const handleEmailSubmit = async (formData: FormData) => {
     setIsPending(true);
@@ -43,10 +55,14 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     setIsGooglePending(true);
     try {
+      const callbackPath = safeNextPath
+        ? `/auth/callback?next=${encodeURIComponent(safeNextPath)}`
+        : "/auth/callback";
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}${callbackPath}`,
         },
       });
       if (error) throw error;
@@ -132,11 +148,31 @@ export default function LoginPage() {
           </div>
 
           <form action={handleEmailSubmit} className="space-y-5">
+            {showResetMessage && (
+              <div className="p-3 text-sm font-medium text-emerald-700 bg-emerald-50 rounded-lg border border-emerald-100">
+                Recovery instructions were sent if the account exists.
+              </div>
+            )}
+
+            {showOauthError && (
+              <div className="p-3 text-sm font-medium text-amber-700 bg-amber-50 rounded-lg border border-amber-100">
+                We couldn't complete sign-in. Please try again.
+              </div>
+            )}
+
+            {showSignupLoginRequired && (
+              <div className="p-3 text-sm font-medium text-sky-700 bg-sky-50 rounded-lg border border-sky-100">
+                Your account was created successfully. Please log in to continue.
+              </div>
+            )}
+
             {state?.error && (
               <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">
                 {state.error}
               </div>
             )}
+
+            <input type="hidden" name="next" value={safeNextPath} />
 
             <div className="space-y-2">
               <Label htmlFor="email" style={{ color: C.navy, fontWeight: 600 }}>Work Email</Label>

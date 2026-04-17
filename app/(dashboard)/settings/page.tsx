@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   User, 
   Lock, 
@@ -31,6 +32,7 @@ type SettingsTab = "profile" | "security" | "notifications" | "developer";
 
 export default function SettingsPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -47,8 +49,28 @@ export default function SettingsPage() {
   // Security & Developer UI State
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [hasCopiedKey, setHasCopiedKey] = useState(false);
+
+  const isRecoveryMode = searchParams.get("recovery") === "1";
+
+  const resolveProfileName = (user: {
+    email?: string | null;
+    user_metadata?: Record<string, any> | null;
+  }) => {
+    const metadata = user.user_metadata || {};
+    const metadataName = metadata.full_name || metadata.name || metadata.preferred_username;
+
+    if (typeof metadataName === "string" && metadataName.trim().length > 0) {
+      return metadataName.trim();
+    }
+
+    const resolvedEmail = user.email || "";
+    return resolvedEmail.includes("@") ? resolvedEmail.split("@")[0] : "User";
+  };
   
   // Developer State
   const [apiKey] = useState("do_live_7x89f2a4c1b3e6d5p0m9n8q7w6e5r4t3y2u1i0o");
@@ -58,9 +80,13 @@ export default function SettingsPage() {
       setIsLoading(true);
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+
         if (user) {
-          setEmail(user.email || "");
-          const name = user.user_metadata?.full_name || "";
+          const resolvedEmail = user.email || "";
+          const name = resolveProfileName(user);
+
+          setEmail(resolvedEmail);
           setFullName(name);
           setInitialFullName(name);
         }
@@ -97,6 +123,83 @@ export default function SettingsPage() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleUpdateCredentials = async () => {
+    if (!newPassword || newPassword.length < 8) {
+      toast({
+        title: "Invalid Password",
+        description: "Your new password must contain at least 8 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!isRecoveryMode && !currentPassword) {
+      toast({
+        title: "Current Password Required",
+        description: "Enter your current password to authorize this security update.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user?.email) {
+        throw new Error("Unable to verify your active session.");
+      }
+
+      if (!isRecoveryMode) {
+        const { error: verifyError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: currentPassword,
+        });
+
+        if (verifyError) {
+          toast({
+            title: "Current Password Incorrect",
+            description: "The current password you entered could not be verified.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      setCurrentPassword("");
+      setNewPassword("");
+      toast({
+        title: "Credentials Updated",
+        description: "Your password has been updated successfully.",
+      });
+
+      if (isRecoveryMode && typeof window !== "undefined") {
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("recovery");
+        window.history.replaceState({}, "", `${nextUrl.pathname}${nextUrl.search}`);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Security Update Failed",
+        description: error?.message || "Unable to update your credentials right now.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -279,27 +382,37 @@ export default function SettingsPage() {
               
               <div className="p-8 lg:px-12 flex-1 overflow-y-auto space-y-8">
                 <div className="max-w-2xl space-y-6">
+
+                  {isRecoveryMode && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                      Recovery session verified. Set a new password to secure your account.
+                    </div>
+                  )}
                   
                   {/* Current Password with Visibility Toggle */}
-                  <div className="space-y-3 relative">
-                    <Label htmlFor="current-password" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
-                      Current Password
-                    </Label>
-                    <div className="relative">
-                      <Input 
-                        id="current-password" 
-                        type={showCurrentPassword ? "text" : "password"} 
-                        className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-11 shadow-sm pr-10" 
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                      >
-                        {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
+                  {!isRecoveryMode && (
+                    <div className="space-y-3 relative">
+                      <Label htmlFor="current-password" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
+                        Current Password
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="current-password"
+                          type={showCurrentPassword ? "text" : "password"}
+                          value={currentPassword}
+                          onChange={(event) => setCurrentPassword(event.target.value)}
+                          className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-11 shadow-sm pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                          {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* New Password with Visibility Toggle */}
                   <div className="space-y-3 relative">
@@ -310,6 +423,8 @@ export default function SettingsPage() {
                       <Input 
                         id="new-password" 
                         type={showNewPassword ? "text" : "password"} 
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
                         className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-11 shadow-sm pr-10" 
                       />
                       <button 
@@ -330,8 +445,13 @@ export default function SettingsPage() {
                   <ShieldCheck className="h-4 w-4 text-slate-400" />
                   Updating credentials will terminate all active sessions.
                 </p>
-                <Button className="bg-[#0A192F] hover:bg-blue-900 text-white shadow-md transition-all active:scale-[0.98] px-6 h-10">
-                  Update Credentials
+                <Button
+                  onClick={handleUpdateCredentials}
+                  disabled={isUpdatingPassword}
+                  className="bg-[#0A192F] hover:bg-blue-900 text-white shadow-md transition-all active:scale-[0.98] px-6 h-10 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none disabled:active:scale-100"
+                >
+                  {isUpdatingPassword && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
+                  {isUpdatingPassword ? "Updating..." : "Update Credentials"}
                 </Button>
               </div>
             </div>

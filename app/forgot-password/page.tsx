@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,8 @@ const C = {
 export default function ForgotPasswordPage() {
   const [state, formAction] = useFormState(resetPassword, {});
   const [isPending, setIsPending] = useState(false);
+  const searchParams = useSearchParams();
+  const showRecoveryLinkError = searchParams.get("error") === "recovery_link_invalid";
 
   const handleSubmit = async (formData: FormData) => {
     setIsPending(true);
@@ -75,6 +78,12 @@ export default function ForgotPasswordPage() {
           style={{ border: `1.5px solid ${C.ruleDark}`, boxShadow: "0 20px 40px rgba(10,22,40,0.06)" }}
         >
           <form action={handleSubmit} className="space-y-6">
+            {showRecoveryLinkError && (
+              <div className="p-3 text-sm font-medium text-amber-700 bg-amber-50 rounded-lg border border-amber-100">
+                Your recovery link is invalid or expired. Request a new one below.
+              </div>
+            )}
+
             {/* Action State Feedback */}
             {state?.error && (
               <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">

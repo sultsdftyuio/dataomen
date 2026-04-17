@@ -20,6 +20,10 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
   // 2. Extract and sanitize credentials
   const email = formData.get('email')?.toString() || '';
   const password = formData.get('password')?.toString() || '';
+  const requestedNextPath = formData.get('next')?.toString() || '';
+  const nextPath = requestedNextPath.startsWith('/') && !requestedNextPath.startsWith('//')
+    ? requestedNextPath
+    : '/chat';
 
   if (!email || !password) {
     return { error: 'Email and password are required to access your workspace.' };
@@ -49,5 +53,5 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
    * Next.js redirect() throws a special error to halt execution and trigger the navigation.
    * It is placed outside the try/catch block to ensure it is not caught and suppressed.
    */
-  redirect('/chat');
+  redirect(nextPath);
 }

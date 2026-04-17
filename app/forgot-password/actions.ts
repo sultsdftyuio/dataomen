@@ -1,10 +1,21 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { createClient } from '@/utils/supabase/server'
 
 export type ActionState = {
   error?: string;
   success?: boolean;
+}
+
+const resolveSiteUrl = () => {
+  const url =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
+    'http://localhost:3000'
+
+  const normalized = url.endsWith('/') ? url.slice(0, -1) : url
+  return normalized.startsWith('http') ? normalized : `https://${normalized}`
 }
 
 /**
@@ -23,17 +34,11 @@ export async function resetPassword(state: ActionState, formData: FormData): Pro
   }
 
   try {
-    // 2. Resolve Core API URL following the platform's orchestration pattern
-    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '')
-    
-    // 3. Trigger recovery flow via the backend orchestration layer
-    // Adheres to "The Modular Strategy" by using the centralized FastAPI auth router
-    const res = await fetch(`${API_URL}/api/v1/auth/forgot-password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email }),
+    const supabase = await createClient()
+    const recoveryNext = '/settings?recovery=1'
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${resolveSiteUrl()}/auth/callback?next=${encodeURIComponent(recoveryNext)}`,
     })
 
     /**
@@ -41,14 +46,9 @@ export async function resetPassword(state: ActionState, formData: FormData): Pro
      * Even if the email is not found in our database, we do not disclose that 
      * to the client. We only return a structural error if the service itself fails.
      */
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      console.error('Core API Forgot Password Failure:', data)
-      
-      // Only return a generic error if it's a structural 5xx failure
-      if (res.status >= 500) {
-        return { error: 'The authentication service is currently unavailable. Please try again later.' }
-      }
+    if (error) {
+      console.error('Supabase Forgot Password Failure:', error)
+      return { error: 'The authentication service is currently unavailable. Please try again later.' }
     }
 
   } catch (error) {

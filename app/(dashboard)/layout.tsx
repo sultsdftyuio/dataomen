@@ -1,9 +1,11 @@
 // app/(dashboard)/layout.tsx
 import React from "react"
+import Link from "next/link"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
 import { OmniscientScratchpad } from "@/components/dashboard/OmniscientScratchpad"
 import { Separator } from "@/components/ui/separator"
+import { createClient } from "@/utils/supabase/server"
 import { 
   Breadcrumb, 
   BreadcrumbItem, 
@@ -14,11 +16,34 @@ import {
 } from "@/components/ui/breadcrumb"
 import { Database, Sparkles } from "lucide-react"
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  const accountEmail = user?.email || "unknown@account"
+  const metadata = (user?.user_metadata || {}) as Record<string, any>
+  const metadataName = metadata.full_name || metadata.name || metadata.preferred_username
+  const accountName =
+    typeof metadataName === "string" && metadataName.trim().length > 0
+      ? metadataName.trim()
+      : accountEmail.includes("@")
+        ? accountEmail.split("@")[0]
+        : "User"
+  const accountInitials =
+    accountName
+      .split(" ")
+      .filter(Boolean)
+      .map((segment) => segment[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "U"
+
   return (
     <SidebarProvider>
       {/* The DashboardSidebar mounts exactly ONCE here. 
@@ -63,10 +88,30 @@ export default function DashboardLayout({
               Engine online
             </div>
 
-            {/* User Avatar Placeholder */}
-            <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-sm border border-slate-800/80 cursor-pointer hover:bg-slate-800 transition-all shadow-sm">
-              AD
-            </div>
+            {/* Signed-in account badge */}
+            <Link
+              href="/settings"
+              className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              aria-label="Open account settings"
+              title="Open account settings"
+            >
+              <div className="h-8 w-8 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-xs border border-slate-800/80">
+                {accountInitials}
+              </div>
+              <div className="max-w-[190px] leading-tight">
+                <p className="truncate text-[12px] font-semibold text-slate-900">{accountName}</p>
+                <p className="truncate text-[11px] text-slate-500">{accountEmail}</p>
+              </div>
+            </Link>
+
+            <Link
+              href="/settings"
+              className="h-9 w-9 sm:hidden rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-sm border border-slate-800/80 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40"
+              aria-label="Open account settings"
+              title={`${accountName} • ${accountEmail}`}
+            >
+              {accountInitials}
+            </Link>
           </div>
         </header>
 

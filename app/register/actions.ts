@@ -20,8 +20,13 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
   const cookieStore = await cookies()
   
   // Strictly parse essential form values
-  const email = formData.get('email')?.toString() || ''
+  const rawEmail = formData.get('email')?.toString() || ''
+  const email = rawEmail.trim().toLowerCase()
   const password = formData.get('password')?.toString() || ''
+
+  if (!email || !password) {
+    return { error: 'Email and password are required.' }
+  }
   
   // Generate smart defaults for backend fields omitted in the UI to reduce friction
   const fallbackName = email.split('@')[0] || 'User'
@@ -66,11 +71,20 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
     )
 
     // 3. Sign in immediately to create the session cookies
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    // Clear any stale browser session so the new user is guaranteed to become the active account.
+    await supabase.auth.signOut()
 
-    if (signInError) {
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+
+    if (signInError || !signInData.user) {
       // If auto-login fails (e.g., email confirmation required), redirect to login
-      redirect('/login')
+      redirect('/login?error=signup_created_login_required')
+    }
+
+    const authenticatedEmail = (signInData.user.email || '').toLowerCase()
+    if (authenticatedEmail !== email) {
+      await supabase.auth.signOut()
+      return { error: 'A different account session was detected. Please log in again.' }
     }
 
   } catch (error) {
