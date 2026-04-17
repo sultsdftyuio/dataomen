@@ -119,7 +119,7 @@ ORDER BY true_ltv DESC;`,
   'analyze-hubspot-data': {
     type: 'integration',
     seo: {
-      title: 'How to Analyze HubSpot Data (Deals, Contacts, Revenue) | Arcli',
+      title: 'Analyze HubSpot Data: Deals, Contacts, Revenue | Arcli',
       description: 'Learn how to analyze HubSpot data beyond the native UI. Connect to Arcli to calculate true pipeline velocity, multi-touch attribution, and custom properties via AI.',
       h1: 'How to Analyze HubSpot Data (Deals, Contacts, Revenue)',
       keywords: [

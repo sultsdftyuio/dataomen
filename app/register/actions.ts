@@ -4,7 +4,41 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
+
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '')
+
+const resolveRegisterEndpointCandidates = (): string[] => {
+  const baseCandidates = [
+    process.env.BACKEND_API_URL,
+    process.env.NEXT_PUBLIC_API_URL,
+    'http://localhost:8000',
+  ]
+
+  const endpoints = new Set<string>()
+
+  for (const baseValue of baseCandidates) {
+    const rawBase = (baseValue || '').trim()
+    if (!rawBase) continue
+
+    const base = trimTrailingSlash(rawBase)
+    if (!ABSOLUTE_HTTP_URL_REGEX.test(base)) continue
+
+    if (/\/api\/v1$/i.test(base)) {
+      endpoints.add(`${base}/auth/register`)
+      continue
+    }
+
+    if (/\/api$/i.test(base)) {
+      endpoints.add(`${base}/v1/auth/register`)
+      continue
+    }
+
+    endpoints.add(`${base}/api/v1/auth/register`)
+  }
+
+  return Array.from(endpoints)
+}
 
 export type ActionState = {
   error?: string;
@@ -31,21 +65,42 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
   // Generate smart defaults for backend fields omitted in the UI to reduce friction
   const fallbackName = email.split('@')[0] || 'User'
   const fallbackCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace'
+  const registerEndpointCandidates = resolveRegisterEndpointCandidates()
 
   try {
     // 1. Register the tenant and user in the Core API
-    const res = await fetch(`${API_URL}/api/v1/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        full_name: fallbackName,
-        company_name: fallbackCompany,
-      }),
-    })
+    if (registerEndpointCandidates.length === 0) {
+      return { error: 'Registration service is not configured.' }
+    }
+
+    let res: Response | null = null
+    let lastNetworkError: unknown = null
+
+    for (const endpoint of registerEndpointCandidates) {
+      try {
+        const attempt = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email,
+            password,
+            full_name: fallbackName,
+            company_name: fallbackCompany,
+          }),
+        })
+
+        res = attempt
+        if (attempt.status !== 404) break
+      } catch (error) {
+        lastNetworkError = error
+      }
+    }
+
+    if (!res) {
+      throw lastNetworkError || new Error('Registration service request failed.')
+    }
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))

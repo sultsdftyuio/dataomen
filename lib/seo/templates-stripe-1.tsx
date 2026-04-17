@@ -11,7 +11,7 @@ export const stripeMrrDashboard: TemplateBlueprint = {
   id: 'stripe-mrr-blueprint-001',
   type: 'template',
   metadata: {
-    title: 'Stripe MRR (Monthly Recurring Revenue) Dashboard Template | Arcli',
+    title: 'Stripe MRR Dashboard Template | Arcli',
     description: 'Instantly deploy an automated Stripe MRR dashboard. Normalize annual and monthly subscriptions into a single source of truth for board-level financial reporting.',
     canonicalDomain: 'arcli.tech',
     primaryKeyword: 'stripe mrr dashboard',
@@ -201,7 +201,7 @@ export const stripeChurnDashboard: TemplateBlueprint = {
   id: 'stripe-churn-blueprint-002',
   type: 'template',
   metadata: {
-    title: 'Stripe Churn Rate Dashboard Template | SaaS Analytics | Arcli',
+    title: 'Stripe Churn Dashboard Template | Arcli',
     description: 'Track SaaS retention health with this Stripe churn dashboard. Automatically split voluntary cancellations from involuntary dunning failures.',
     canonicalDomain: 'arcli.tech',
     primaryKeyword: 'stripe churn dashboard',

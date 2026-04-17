@@ -283,7 +283,7 @@ ORDER BY month DESC LIMIT 1;`
   "looker-vs-ai-analytics": {
     path: "/compare/looker-vs-ai-analytics",
     meta: {
-      title: "Looker vs AI Analytics: Bypassing the LookML Bottleneck | Arcli",
+      title: "Looker vs AI Analytics: Escape LookML Bottlenecks | Arcli",
       description: "Compare Google Looker's rigid LookML modeling against Arcli's dynamic AI schema mapping. Learn how conversational analytics accelerates speed-to-insight.",
       keywords: [
         "LookML bottleneck alternative", 

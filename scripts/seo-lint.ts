@@ -30,7 +30,7 @@ async function runLinter() {
 
     // --- RULE 1: Title Character Limits (Hard SEO Limit) ---
     // Target: Max 60 characters to prevent SERP truncation
-    const title = page.seo?.title || page.title;
+    const title = page.seo?.title || page.meta?.title || page.metadata?.title || page.title;
     if (!title) {
       errorsForPage.push('Missing SEO Title.');
     } else if (title.length > 60) {
@@ -39,7 +39,7 @@ async function runLinter() {
 
     // --- RULE 2: Cannibalization & Duplicate Content Check ---
     // Target: Descriptions must be unique to prevent Google from clustering distinct pages
-    const description = page.seo?.description || page.description;
+    const description = page.seo?.description || page.meta?.description || page.metadata?.description || page.description;
     if (!description) {
       errorsForPage.push('Missing SEO Description.');
     } else {

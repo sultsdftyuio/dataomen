@@ -10,7 +10,7 @@ export const saasIntegrationsPart1: Record<string, SEOPageData> = {
   'analyze-salesforce-data': {
     type: 'integration',
     seo: {
-      title: 'Analyze Salesforce Data with AI | Zero-ETL CRM Analytics | Arcli',
+      title: 'Analyze Salesforce Data with AI | CRM Analytics | Arcli',
       description: 'Connect Salesforce to Arcli. Bypass rigid native reports and use generative AI to track pipeline velocity, cross-object joins, and rep performance instantly.',
       h1: 'How to Analyze Salesforce Data (Without SOQL)',
       keywords: [

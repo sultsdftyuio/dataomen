@@ -8,7 +8,7 @@ export const dashboardTemplatesPart3: Record<string, TemplateBlueprint> = {
     id: 'attr-blueprint-005',
     type: 'template',
     metadata: {
-      title: 'Marketing Attribution Dashboard Template (SQL + ROAS) | Arcli',
+      title: 'Marketing Attribution Dashboard: SQL & ROAS | Arcli',
       description: 'Blend Meta, Google Ads, and Stripe data instantly. Free DuckDB/Postgres SQL templates to calculate blended CAC, True ROAS, and multi-touch attribution.',
       canonicalDomain: 'arcli.tech',
       keywords: ['marketing attribution dashboard', 'calculate roas sql', 'blended cac formula', 'meta ads stripe sql', 'google ads roas dashboard duckdb'],

@@ -1,7 +1,7 @@
 export const zendeskSupportAnalyticsData = {
   path: "/integrations/zendesk-support-analytics",
   meta: {
-    title: "AI Analytics for Zendesk | Automate CX & Support Insights | Arcli",
+    title: "Zendesk AI Analytics for CX & Support Ops | Arcli",
     description: "Connect Zendesk to Arcli's AI agents. Automatically parse nested ticket JSON arrays, extract sentiment, and join support data with Stripe revenue to identify true churn risks.",
     keywords: [
       "Zendesk AI analytics", 

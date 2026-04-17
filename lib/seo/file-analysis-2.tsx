@@ -164,7 +164,7 @@ export const fileAnalysisPart2: Record<string, SEOPageData> = {
   'json-data-analysis-ai': {
     type: 'guide',
     title: 'Analyze Complex JSON Exports with AI | Arcli',
-    description: 'Stop writing custom Python scripts to parse JSON files. Upload nested application logs or API exports and let Arcli flatten and analyze them conversationally.',
+        description: 'Turn raw JSON exports into query-ready tables with AI. Arcli auto-flattens nested logs so teams can investigate errors and product usage without writing scripts.',
     metaKeywords: ['JSON Data Analysis', 'Parse JSON AI', 'Analyze API Exports', 'Log File Analytics', 'Flatten JSON', 'JSON to SQL'],
     
     // 🔥 FIX: Added the strictly required V13 mapping block

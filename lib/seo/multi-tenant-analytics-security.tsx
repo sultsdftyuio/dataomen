@@ -9,7 +9,7 @@ import { SEOPageData } from './index';
 export const multiTenantAnalyticsSecurityData: SEOPageData = {
   type: 'guide',
   seo: {
-    title: 'Multi-Tenant Analytics Security & Row-Level Security (RLS) | Arcli',
+    title: 'Multi-Tenant Analytics Security & RLS Guide | Arcli',
     description: 'Embed AI analytics with zero risk of cross-tenant data leakage. Arcli enforces strict Row-Level Security, ephemeral query isolation, and immutable audit logging.',
     h1: 'Zero-Trust Multi-Tenant Analytics & Row-Level Security',
     keywords: [

@@ -29,7 +29,15 @@ export function createClient() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error("Supabase Initialization Error: Missing Environment Variables");
+    // During static prerender on the server, client components can be evaluated.
+    // Return a harmless placeholder client so build-time rendering does not crash.
+    if (typeof window === "undefined") {
+      return createBrowserClient("https://placeholder.supabase.co", "public-anon-key", {
+        isSingleton: true,
+      })
+    }
+
+    console.error("Supabase Initialization Error: Missing Environment Variables")
     throw new Error(
       "Supabase Environment Variables are missing. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set."
     )

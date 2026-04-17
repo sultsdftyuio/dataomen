@@ -112,7 +112,7 @@ export interface SEOPageData {
 export const textToSqlFeaturesPart1: Record<string, SEOPageData> = {
   'natural-language-to-sql': {
     type: 'feature',
-    title: 'Enterprise Natural Language to SQL Generator | Arcli Analytics',
+    title: 'Enterprise Natural Language SQL Generator | Arcli',
     description: 'Convert plain English into deterministic, hallucination-free SQL. Evaluate Arcli\'s Schema-Grounded generation engine, AST validation, and secure push-down architecture.',
     
     searchIntent: {

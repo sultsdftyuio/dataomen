@@ -5,7 +5,7 @@ import { SEOPageData } from './index';
 export const salesPipelineVelocityData: SEOPageData = {
   type: 'integration',
   seo: {
-    title: "AI Analytics for Salesforce & HubSpot | Pipeline Velocity | Arcli",
+    title: "Salesforce + HubSpot Pipeline Velocity Analytics | Arcli",
     description: "Stop wrestling with rigid Salesforce reports. Arcli's AI agents automatically join HubSpot lead data with Salesforce opportunities to calculate true pipeline velocity in real-time.",
     h1: "Calculate True Pipeline Velocity with AI",
     keywords: [

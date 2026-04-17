@@ -2,7 +2,7 @@
 // Regenerate with: node scripts/generate-registry.mjs
 //
 // Silos tracked: 36
-// Generated:     2026-04-17T11:38:19.696Z
+// Generated:     2026-04-17T11:52:34.177Z
 import * as silo_0 from './ab-testing-diagnostics';
 import * as silo_1 from './ai-agents-anomaly-detection';
 import * as silo_2 from './blended-roas-analytics';

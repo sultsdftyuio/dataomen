@@ -10,7 +10,7 @@ import { TemplateBlueprint } from './index';
 export const shopifyLtvDashboard: TemplateBlueprint = {
   type: 'template',
   seo: {
-    title: 'Shopify Customer Lifetime Value (LTV) Dashboard Template | Arcli',
+    title: 'Shopify LTV Dashboard Template | Arcli',
     description: 'Instantly deploy a comprehensive Shopify LTV dashboard. Track historical lifetime value, predict future revenue, and optimize your CAC with pre-built analytics.',
     h1: 'Shopify Customer Lifetime Value (LTV) Dashboard Template',
     keywords: [

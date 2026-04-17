@@ -142,7 +142,7 @@ FROM cohort_spend s CROSS JOIN cohort_customers c;`,
     id: 'ecom-blueprint-004',
     type: 'template',
     metadata: {
-      title: 'Shopify Analytics Dashboard Template (SQL + Profit Tracking) | Arcli',
+      title: 'Shopify Dashboard Template: SQL + Profit Tracking | Arcli',
       description: 'Track true profit, LTV, and inventory in Shopify. Free SQL templates for net margin, repeat purchase rates, and stock forecasting.',
       canonicalDomain: 'arcli.tech',
       keywords: ['shopify analytics dashboard template', 'ecommerce sql queries', 'how to calculate true net margin shopify', 'inventory forecasting sql'],

@@ -66,7 +66,7 @@ export type SEOPageData = {
 export const competitorComparisonsPart2: Record<string, SEOPageData> = {
   'looker-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Looker vs AI Analytics: Escaping the LookML Bottleneck | Arcli',
+    title: 'Looker vs AI Analytics: Break the LookML Bottleneck | Arcli',
     description: 'Compare Looker\'s rigid LookML modeling with Arcli\'s dynamic AI routing. Learn how to decouple semantic definitions from the physical data layer for instant ad-hoc insights.',
     metaKeywords: ['Looker Alternative', 'LookML vs dynamic SQL', 'Looker vs Arcli', 'Enterprise Semantic Layer', 'AI Data Modeling', 'Looker pricing vs AI'],
     searchIntent: {
@@ -312,7 +312,7 @@ export const competitorComparisonsPart2: Record<string, SEOPageData> = {
 
   'superset-vs-ai-analytics': {
     type: 'comparison',
-    title: 'Apache Superset vs AI Analytics: The Hidden Cost of OSS | Arcli',
+    title: 'Superset vs AI Analytics: Hidden OSS Costs | Arcli',
     description: 'Compare Apache Superset to Arcli. Evaluate the total cost of ownership of self-hosted open-source BI versus serverless, conversational AI analytics.',
     metaKeywords: ['Superset Alternative', 'Preset vs Arcli', 'Apache Superset TCO', 'Open Source BI limitations', 'Managed AI Analytics'],
     searchIntent: {

@@ -5,7 +5,7 @@ import { SEOPageData } from './index';
 export const semanticMetricGovernanceData: SEOPageData = {
   type: 'guide',
   seo: {
-    title: "Semantic Metric Governance & LLM Hallucination Prevention | Arcli",
+    title: "Semantic Metric Governance for Reliable AI SQL | Arcli",
     description: "Eliminate Text-to-SQL hallucinations. Arcli's embedded semantic layer standardizes enterprise metrics, ensuring AI data agents always query governed definitions.",
     h1: "Semantic Metric Governance & LLM Hallucination Prevention",
     keywords: [

@@ -11,7 +11,7 @@ import { SEOPageData } from './index';
 export const snowflakeIntegrationPillar: SEOPageData = {
   type: 'integration',
   seo: {
-    title: 'Snowflake AI Analytics: Zero-Data Movement & Native Compute | Arcli',
+    title: 'Snowflake AI Analytics: Zero Data Movement | Arcli',
     description: 'Architecturally impossible to mutate your Snowflake data. Arcli generates optimized Snowflake SQL and executes entirely within your VPC. No reverse ETL. No semantic layer hallucinations.',
     h1: 'Snowflake AI Analytics Without Data Movement',
     keywords: [
