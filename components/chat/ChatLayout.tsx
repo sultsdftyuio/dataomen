@@ -60,6 +60,39 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set(["csv", "json", "parquet", "pdf", "txt
 const SYSTEM_HISTORY_LIMIT = 2;
 const CONVERSATION_HISTORY_LIMIT = 8;
 const MAX_RENDERED_MESSAGES = 40;
+const BOTTOM_SCROLL_THRESHOLD_PX = 72;
+
+type MessageGroup = {
+  id: string;
+  role: UIMessage["role"];
+  items: UIMessage[];
+};
+
+function groupMessagesByRole(source: UIMessage[]): MessageGroup[] {
+  if (source.length === 0) return [];
+
+  const groups: MessageGroup[] = [];
+  for (const message of source) {
+    const previousGroup = groups[groups.length - 1];
+    if (previousGroup && previousGroup.role === message.role) {
+      previousGroup.items.push(message);
+      continue;
+    }
+
+    groups.push({
+      id: message.id,
+      role: message.role,
+      items: [message],
+    });
+  }
+
+  return groups;
+}
+
+function isViewportNearBottom(viewport: HTMLElement): boolean {
+  const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+  return distanceFromBottom <= BOTTOM_SCROLL_THRESHOLD_PX;
+}
 
 function appendMessagesCapped<T>(prev: T[], ...incoming: T[]): T[] {
   return [...prev, ...incoming].slice(-MAX_MESSAGE_HISTORY);
@@ -151,7 +184,7 @@ function SimpleMarkdown({ text }: { text: string }) {
           return (
             <code
               key={i}
-              className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-gray-200 text-[13px] font-mono font-bold text-rose-600"
+              className="rounded-md border border-slate-200/60 bg-slate-100 px-1.5 py-0.5 text-[13px] font-mono font-semibold text-slate-700"
             >
               {part.slice(1, -1)}
             </code>
@@ -169,16 +202,16 @@ function SimpleMarkdown({ text }: { text: string }) {
 function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
   if (!label) return null;
   return (
-    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-200 bg-white text-[12px] font-bold text-slate-500 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+    <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-1.5 text-[12px] font-semibold text-slate-500 shadow-sm animate-in fade-in slide-in-from-bottom-2">
       {done ? (
-        <div className="p-0.5 bg-emerald-100 rounded-full">
-          <svg className="w-3 h-3 text-emerald-600" viewBox="0 0 12 12" fill="none">
+        <div className="rounded-full bg-blue-100 p-0.5">
+          <svg className="h-3 w-3 text-blue-600" viewBox="0 0 12 12" fill="none">
             <path d="M3.5 6l2 2 3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
       ) : (
-        <span className="w-3.5 h-3.5 flex items-center justify-center bg-blue-50 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-50">
+          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
         </span>
       )}
       {label}
@@ -203,25 +236,25 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   if (!hasContent) return null;
 
   return (
-    <div className="mt-4 border border-gray-200/80 rounded-2xl overflow-hidden bg-white shadow-sm transition-all duration-300">
+    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/60 bg-white/80 shadow-sm transition-all duration-300">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer text-left"
+        className="flex w-full cursor-pointer items-center gap-3 bg-slate-50/70 px-4 py-3 text-left transition-colors hover:bg-slate-100/70"
       >
-        <div className="p-1.5 bg-white border border-gray-200 rounded-lg shadow-sm">
+        <div className="rounded-lg border border-slate-200/60 bg-white p-1.5 shadow-sm">
           <BrainCircuit className="w-4 h-4 text-blue-500" />
         </div>
-        <span className="font-bold text-xs uppercase tracking-widest text-slate-600">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
           Engine Execution Trace
         </span>
         <ChevronRight className={`w-4 h-4 text-slate-400 ml-auto transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
       </button>
 
       {open && (
-        <div className="p-5 flex flex-col gap-5 border-t border-gray-100 bg-white animate-in fade-in slide-in-from-top-1">
+        <div className="animate-in fade-in slide-in-from-top-1 flex flex-col gap-5 border-t border-slate-200/60 bg-white p-5">
           {plan && (
             <ReasoningBlock
-              icon={<FlaskConical className="w-3.5 h-3.5 text-indigo-500" />}
+              icon={<FlaskConical className="h-3.5 w-3.5 text-slate-500" />}
               label="Semantic Plan"
               content={planText}
               mono={false}
@@ -229,7 +262,7 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
           )}
           {sql && (
             <ReasoningBlock
-              icon={<Code2 className="w-3.5 h-3.5 text-emerald-500" />}
+              icon={<Code2 className="h-3.5 w-3.5 text-slate-500" />}
               label="Compiled DuckDB SQL"
               content={sql}
               mono
@@ -237,7 +270,7 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
           )}
           {insights && (
             <ReasoningBlock
-              icon={<Sparkles className="w-3.5 h-3.5 text-amber-500" />}
+              icon={<Sparkles className="h-3.5 w-3.5 text-slate-500" />}
               label="Statistical Insights"
               content={insightsText}
               mono={false}
@@ -245,7 +278,7 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
           )}
           {diagnostics && (
             <ReasoningBlock
-              icon={<Activity className="w-3.5 h-3.5 text-rose-500" />}
+              icon={<Activity className="h-3.5 w-3.5 text-slate-500" />}
               label="Diagnostics"
               content={diagnosticsText}
               mono
@@ -260,11 +293,11 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
 function ReasoningBlock({ icon, label, content, mono }: { icon: React.ReactNode; label: string; content: string; mono: boolean; }) {
   return (
     <div>
-      <div className="flex items-center gap-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-2">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
         {icon} {label}
       </div>
-      <div className={`rounded-xl overflow-x-auto shadow-inner border ${mono ? 'bg-slate-900 border-slate-800 p-4' : 'bg-slate-50 border-gray-200 p-4'}`}>
-        <code className={`whitespace-pre-wrap break-words block ${mono ? "text-[12px] font-mono text-emerald-400 leading-relaxed" : "text-[13px] font-medium text-slate-700 leading-relaxed"}`}>
+      <div className={`overflow-x-auto rounded-xl border border-slate-200/60 p-4 ${mono ? 'bg-slate-900' : 'bg-slate-50/70'}`}>
+        <code className={`block whitespace-pre-wrap break-words ${mono ? "font-mono text-[12px] leading-relaxed text-slate-100" : "text-[13px] font-medium leading-relaxed text-slate-700"}`}>
           {content}
         </code>
       </div>
@@ -282,12 +315,12 @@ function AssistantTextContent({
   const lines = useMemo(() => content.split("\n"), [content]);
 
   return (
-    <div className="text-[15px] leading-relaxed text-slate-700 space-y-4">
+    <div className="prose prose-slate dark:prose-invert max-w-none text-[15px] leading-7 text-slate-900 dark:text-slate-50 prose-p:my-2 prose-p:leading-7 prose-headings:text-slate-900 dark:prose-headings:text-slate-50">
       {lines.map((line, i) => (
-        <p key={i}>
+        <p key={i} className="min-h-7 transition-opacity duration-200">
           <SimpleMarkdown text={line} />
           {showStreamingCaret && i === lines.length - 1 && (
-            <span className="inline-block w-1.5 h-4 ml-1 bg-blue-500 animate-pulse align-middle rounded-full" />
+            <span className="inline-block h-4 w-1.5 ml-1 rounded-full bg-blue-500/90 align-middle animate-pulse" />
           )}
         </p>
       ))}
@@ -343,11 +376,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     () => (showAllMessages ? messages : messages.slice(-MAX_RENDERED_MESSAGES)),
     [messages, showAllMessages],
   );
+  const groupedVisibleMessages = useMemo(() => groupMessagesByRole(visibleMessages), [visibleMessages]);
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   const messagesRef = useRef<UIMessage[]>([]);
   const messageDataStoreRef = useRef<Record<string, HeavyMessageData>>({});
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const previousRenderedMessageCountRef = useRef(0);
   const sendLockRef = useRef(false);
   const lastRawStatusRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -406,7 +443,37 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   }, []);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const viewport = container.querySelector<HTMLElement>("[data-slot='scroll-area-viewport']");
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      isAtBottomRef.current = isViewportNearBottom(viewport);
+    };
+
+    handleScroll();
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      viewport.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAtBottomRef.current) {
+      previousRenderedMessageCountRef.current = messages.length;
+      return;
+    }
+
+    const hasNewMessage = messages.length !== previousRenderedMessageCountRef.current;
+    previousRenderedMessageCountRef.current = messages.length;
+
+    scrollAnchorRef.current?.scrollIntoView({
+      behavior: hasNewMessage ? "smooth" : "auto",
+      block: "end",
+    });
   }, [messages, progressStatus, isProcessing]);
 
   useEffect(() => {
@@ -866,56 +933,56 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const SUGGESTIONS = [
     {
       icon: <FileSpreadsheet className="w-4 h-4" />,
-      color: "text-[#164e63] bg-cyan-50/80 border-cyan-100",
+      color: "text-slate-600 bg-white border-slate-200/60",
       title: "Analyze a dataset",
       prompt: "I want to analyze a dataset",
     },
     {
       icon: <Database className="w-4 h-4" />,
-      color: "text-[#11284b] bg-blue-50/80 border-blue-100",
+      color: "text-blue-600 bg-blue-50/70 border-blue-100/80",
       title: "Query a database",
       prompt: "I want to query a database",
     },
     {
       icon: <TrendingUp className="w-4 h-4" />,
-      color: "text-slate-700 bg-slate-100 border-slate-200",
+      color: "text-slate-700 bg-slate-100 border-slate-200/60",
       title: "Forecast trends",
       prompt: "I want to forecast trends and predict future metrics",
     },
     {
       icon: <Search className="w-4 h-4" />,
-      color: "text-amber-700 bg-amber-50/80 border-amber-100",
+      color: "text-slate-600 bg-white border-slate-200/60",
       title: "Detect anomalies",
       prompt: "I want to detect anomalies in my data",
     },
   ];
 
   return (
-    <div className="relative flex h-full w-full flex-col overflow-hidden bg-slate-50 font-sans text-slate-900">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_72%_at_50%_0%,rgba(17,40,75,0.08),transparent_62%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/80 to-transparent" />
-      <div className="relative z-10 flex h-full flex-col">
+    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-slate-50 text-slate-900">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_72%_at_50%_0%,rgba(15,23,42,0.06),transparent_64%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/85 to-transparent" />
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
       
       {/* ── Top Bar ── */}
-      <div className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/80 px-6 backdrop-blur-xl">
+      <div className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/60 bg-white/80 px-4 sm:px-6 lg:px-8 backdrop-blur-xl">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#11284b] shadow-sm">
-            <Zap className="w-4 h-4 text-white" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200/60 bg-white shadow-sm">
+            <Zap className="h-4 w-4 text-slate-700" />
           </div>
-          <button className="flex shrink-0 items-center gap-1.5 text-[15px] font-extrabold text-slate-900 transition-colors hover:text-[#11284b] focus:outline-none">
+          <button className="flex shrink-0 items-center gap-1.5 text-[15px] font-bold text-slate-900 transition-colors hover:text-blue-600 focus:outline-none">
             {agentName}
             <ChevronDown className="w-4 h-4 text-slate-400" />
           </button>
 
           {/* Dataset & Doc Badges */}
           {activeDatasetIds.length > 0 && (
-            <div className="ml-3 flex shrink-0 items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-[#25436f]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#325c95] animate-pulse" />
+            <div className="ml-3 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
               {activeDatasetIds.length} <span className="hidden sm:inline">Dataset{activeDatasetIds.length > 1 ? "s" : ""}</span>
             </div>
           )}
           {activeDocumentIds.length > 0 && (
-            <div className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100/90 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+            <div className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
               <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
               {activeDocumentIds.length} <span className="hidden sm:inline">Doc{activeDocumentIds.length > 1 ? "s" : ""}</span>
             </div>
@@ -928,7 +995,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               variant="outline"
               size="sm"
               onClick={stopStreaming}
-              className="h-9 rounded-xl border-rose-200/80 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+              className="h-9 rounded-xl border-slate-200/60 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
             >
               <CircleStop className="w-4 h-4 mr-1.5" />
               Stop
@@ -964,9 +1031,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-b border-slate-200/70 bg-white/70 px-6 py-2 text-[12px] text-slate-500 backdrop-blur-sm">
+      <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/70 px-4 py-2 text-[12px] text-slate-500 backdrop-blur-sm sm:px-6 lg:px-8">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />
           <span className="font-semibold text-slate-600">
             Context: {activeDatasetIds.length} dataset{activeDatasetIds.length === 1 ? "" : "s"} and {activeDocumentIds.length} document{activeDocumentIds.length === 1 ? "" : "s"}
           </span>
@@ -977,266 +1044,269 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       </div>
 
       {/* ── Chat Body ── */}
-      <ScrollArea className="flex-1">
-        <div className="mx-auto w-full max-w-3xl px-5 pb-44 pt-10 sm:px-6">
-          
-          {/* Empty / Welcome State */}
-          {messages.length === 0 && (
-            <div className="flex min-h-[60vh] flex-col items-center justify-center text-center animate-in fade-in zoom-in-95 duration-500">
-              <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 shadow-sm backdrop-blur-sm">
-                <Zap className="w-6 h-6 text-[#11284b]" />
-              </div>
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mb-2">
-                {getGreeting()}
-              </h1>
-              <p className="text-slate-500 font-medium max-w-md mb-10 leading-relaxed text-[15px]">
-                Ask in plain English. You can upload files, target datasets with @mentions, and get charts plus executive summaries in one response.
-              </p>
+      <div ref={scrollContainerRef} className="relative flex-1 min-h-0">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-slate-50 via-slate-50/80 to-transparent" />
+        <ScrollArea className="h-full">
+          <div className="mx-auto w-full max-w-3xl px-4 pb-36 pt-8 sm:px-6 lg:px-8">
+            {/* Empty / Welcome State */}
+            {messages.length === 0 && (
+              <div className="animate-in fade-in zoom-in-95 flex min-h-[60vh] flex-col items-center justify-center text-center duration-500">
+                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200/60 bg-white/80 shadow-sm backdrop-blur-sm">
+                  <Zap className="h-6 w-6 text-slate-700" />
+                </div>
+                <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-slate-900">
+                  {getGreeting()}
+                </h1>
+                <p className="mb-10 max-w-md text-[15px] font-medium leading-relaxed text-slate-500">
+                  Ask in plain English. You can upload files, target datasets with @mentions, and get charts plus executive summaries in one response.
+                </p>
 
-              <div className="mb-6 flex flex-wrap items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
-                <span className="rounded-full border border-cyan-100 bg-cyan-50/80 px-3 py-1 text-cyan-700">{availableDatasets.length} Sources Ready</span>
-                <span className="rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-[#25436f]">Shift+Enter for newline</span>
-                <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-600">Drag & drop supported</span>
-              </div>
+                <div className="mb-6 flex flex-wrap items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
+                  <span className="rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-slate-600">{availableDatasets.length} sources ready</span>
+                  <span className="rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-slate-600">Shift+Enter for newline</span>
+                  <span className="rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-slate-600">Drag and drop supported</span>
+                </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
-                {SUGGESTIONS.map((s, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => void handleSendMessage(s.prompt)} 
-                    className="group flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-white/85 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white"
-                  >
-                    <div className={`rounded-xl border p-2.5 shadow-sm transition-transform group-hover:scale-105 ${s.color}`}>
-                      {s.icon}
-                    </div>
-                    <span className="text-[14px] font-bold text-slate-700 transition-colors group-hover:text-[#11284b]">{s.title}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Message Thread */}
-          <div className="flex flex-col gap-8">
-            {hiddenMessageCount > 0 && (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => setShowAllMessages((prev) => !prev)}
-                  className="text-[12px] font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 bg-white"
-                >
-                  {showAllMessages ? "Collapse older messages" : `Show ${hiddenMessageCount} earlier messages`}
-                </button>
+                <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+                  {SUGGESTIONS.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => void handleSendMessage(s.prompt)}
+                      className="group flex items-center gap-4 rounded-2xl border border-slate-200/60 bg-white/80 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300/60 hover:bg-white"
+                    >
+                      <div className={`rounded-xl border border-slate-200/60 p-2.5 shadow-sm transition-transform group-hover:scale-105 ${s.color}`}>
+                        {s.icon}
+                      </div>
+                      <span className="text-[14px] font-bold text-slate-700 transition-colors group-hover:text-blue-600">{s.title}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            {visibleMessages.map((msg) => {
-              const messageData = messageDataStoreRef.current[msg.id] || {};
-              const payload = messageData.payload;
-              const plan = messageData.plan;
-              const sql = messageData.sql;
-              const insights = messageData.insights;
-              const diagnostics = messageData.diagnostics;
-              const isLatestMessage = msg.id === messages[messages.length - 1]?.id;
+            {/* Message Thread */}
+            <div className="flex flex-col gap-8">
+              {hiddenMessageCount > 0 && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMessages((prev) => !prev)}
+                    className="rounded-lg border border-slate-200/60 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-500 hover:text-slate-700"
+                  >
+                    {showAllMessages ? "Collapse older messages" : `Show ${hiddenMessageCount} earlier messages`}
+                  </button>
+                </div>
+              )}
 
-              return (
-              <div
-                key={msg.id}
-                className="animate-in fade-in slide-in-from-bottom-2 duration-300"
-                onMouseEnter={() => setHoveredMsgId(msg.id)}
-                onMouseLeave={() => setHoveredMsgId(null)}
-              >
-                
-                {/* USER MESSAGE */}
-                {msg.role === "user" && (
-                  <div className="flex flex-col items-end gap-2">
-                    {msg.files && msg.files.length > 0 && (
-                      <div className="flex flex-wrap gap-2 justify-end mb-1">
-                        {msg.files.map((f, i) => {
-                          const isDoc = f.name.match(/\.(pdf|txt|md|docx)$/i) !== null;
-                          return (
-                            <div key={i} className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl p-2.5 shadow-sm">
-                              <div className={`p-2 rounded-lg border ${isDoc ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                                <FileText className="w-4 h-4" />
-                              </div>
-                              <div className="flex flex-col text-left mr-2">
-                                <span className="text-xs font-bold text-slate-700 max-w-[160px] truncate">{f.name}</span>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {msg.content && (
-                      <div className="max-w-[90%] sm:max-w-[75%] flex flex-col items-end">
-                        <div className="rounded-3xl rounded-br-sm bg-[#11284b] px-5 py-3.5 text-[15px] font-medium leading-relaxed text-white shadow-sm">
-                          {msg.content}
-                        </div>
-                        <div className="text-[11px] font-bold text-slate-400 mt-2 uppercase tracking-wider">
-                          {formatTime(msg.timestamp)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ASSISTANT MESSAGE */}
-                {msg.role === "assistant" && (
-                  <div className="flex gap-4 items-start max-w-[95%] sm:max-w-[85%]">
-                    <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#11284b] shadow-sm">
-                      <Zap className="w-4 h-4 text-white" />
+              {groupedVisibleMessages.map((group, groupIndex) => (
+                <section key={`${group.id}-${groupIndex}`} className="flex flex-col gap-2">
+                  {group.role === "assistant" && (
+                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200/60 bg-white shadow-sm">
+                        <Zap className="h-3.5 w-3.5 text-slate-700" />
+                      </span>
+                      <span>{agentName}</span>
                     </div>
+                  )}
 
-                    <div className="flex-1 min-w-0">
-                      {/* Streaming Status Pills */}
-                      {isProcessing && isLatestMessage && (
-                        <div className="flex flex-wrap gap-2 mb-4 pt-1">
-                          {completedSteps.map((step) => (
-                            <ThinkingStep key={step} label={step} done />
-                          ))}
-                          {progressStatus && !completedSteps.includes(progressStatus) && (
-                            <ThinkingStep label={progressStatus} done={false} />
+                  {group.role === "user" && (
+                    <div className="flex justify-end text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      <span>You</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    {group.items.map((msg) => {
+                      const messageData = messageDataStoreRef.current[msg.id] || {};
+                      const payload = messageData.payload;
+                      const plan = messageData.plan;
+                      const sql = messageData.sql;
+                      const insights = messageData.insights;
+                      const diagnostics = messageData.diagnostics;
+                      const isLatestMessage = msg.id === messages[messages.length - 1]?.id;
+
+                      if (msg.role === "system") {
+                        return (
+                          <div key={msg.id} className="mx-auto text-center text-[13px] font-medium text-slate-500">
+                            {msg.content}
+                          </div>
+                        );
+                      }
+
+                      if (msg.role === "user") {
+                        return (
+                          <article key={msg.id} className="ml-auto w-full max-w-[90%] sm:max-w-[82%]">
+                            {msg.files && msg.files.length > 0 && (
+                              <div className="mb-2 flex flex-wrap justify-end gap-2">
+                                {msg.files.map((f, i) => (
+                                  <div key={`${msg.id}-file-${i}`} className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 shadow-sm">
+                                    <FileText className="h-3.5 w-3.5 text-slate-500" />
+                                    <span className="max-w-[160px] truncate text-[12px] font-semibold text-slate-700">{f.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {msg.content && (
+                              <div className="rounded-xl bg-slate-50/50 px-4 py-3 text-[15px] leading-7 text-slate-900 transition-opacity duration-200 dark:bg-slate-800/30 dark:text-slate-50">
+                                {msg.content}
+                              </div>
+                            )}
+
+                            <div className="mt-1 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                              {formatTime(msg.timestamp)}
+                            </div>
+                          </article>
+                        );
+                      }
+
+                      return (
+                        <article
+                          key={msg.id}
+                          className="group/message w-full animate-in fade-in duration-200"
+                          onMouseEnter={() => setHoveredMsgId(msg.id)}
+                          onMouseLeave={() => setHoveredMsgId(null)}
+                        >
+                          {isProcessing && isLatestMessage && (
+                            <div className="mb-2 flex flex-wrap gap-2">
+                              {completedSteps.map((step) => (
+                                <ThinkingStep key={step} label={step} done />
+                              ))}
+                              {progressStatus && !completedSteps.includes(progressStatus) && (
+                                <ThinkingStep label={progressStatus} done={false} />
+                              )}
+                            </div>
                           )}
-                        </div>
-                      )}
 
-                      {msg.warnings && msg.warnings.length > 0 && (
-                        <div className="mb-3 space-y-2">
-                          {msg.warnings.map((warning, warningIdx) => (
-                            <div key={`${msg.id}-warning-${warningIdx}`} className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 text-[13px]">
-                              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                              <span>{warning}</span>
+                          {msg.warnings && msg.warnings.length > 0 && (
+                            <div className="mb-2 space-y-2">
+                              {msg.warnings.map((warning, warningIdx) => (
+                                <div key={`${msg.id}-warning-${warningIdx}`} className="flex items-start gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 text-[13px] text-slate-600">
+                                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                                  <span>{warning}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      )}
+                          )}
 
-                      {msg.error && (
-                        <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700 text-[13px] flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                          <span>{msg.error}</span>
-                        </div>
-                      )}
-
-                      {/* Text content */}
-                      {msg.content && (
-                        <AssistantTextContent
-                          content={msg.content}
-                          showStreamingCaret={isProcessing && isLatestMessage}
-                        />
-                      )}
-
-                      {msg.traces && msg.traces.length > 0 && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {msg.traces.slice(-3).map((trace, traceIdx) => (
-                            <span key={`${msg.id}-trace-${traceIdx}`} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                              {trace.stage || "Step"}
-                              {typeof trace.execution_time_ms === "number" ? ` · ${Math.round(trace.execution_time_ms)}ms` : ""}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Chain-of-thought Reasoning Panel */}
-                      {(msg.hasPlan || msg.hasSql || msg.hasInsights || msg.hasDiagnostics) && (
-                        <ReasoningPanel
-                          plan={plan}
-                          sql={sql}
-                          insights={insights}
-                          diagnostics={diagnostics}
-                        />
-                      )}
-
-                      {/* Chart / Data Payload */}
-                      {msg.hasPayload && payload && (
-                        <div className="mt-5 bg-white border border-gray-200/80 rounded-2xl shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4">
-                          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 bg-slate-50/50">
-                            <div className="flex items-center gap-2">
-                              <Table2 className="w-4 h-4 text-slate-400" />
-                              <span className="text-[12px] font-extrabold text-slate-600 uppercase tracking-widest">
-                                Analysis Result
-                              </span>
+                          {msg.error && (
+                            <div className="mb-2 flex items-start gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 text-[13px] text-slate-700">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+                              <span>{msg.error}</span>
                             </div>
-                            <div className="flex gap-2">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900 rounded-lg" onClick={() => copyToClipboard(JSON.stringify(payload))}>
-                                <Copy className="w-3.5 h-3.5" />
+                          )}
+
+                          {msg.content && (
+                            <AssistantTextContent
+                              content={msg.content}
+                              showStreamingCaret={isProcessing && isLatestMessage}
+                            />
+                          )}
+
+                          {msg.traces && msg.traces.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {msg.traces.slice(-3).map((trace, traceIdx) => (
+                                <span key={`${msg.id}-trace-${traceIdx}`} className="inline-flex items-center gap-1 rounded-full border border-slate-200/60 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+                                  <CheckCircle2 className="h-3 w-3 text-blue-500" />
+                                  {trace.stage || "Step"}
+                                  {typeof trace.execution_time_ms === "number" ? ` | ${Math.round(trace.execution_time_ms)}ms` : ""}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {(msg.hasPlan || msg.hasSql || msg.hasInsights || msg.hasDiagnostics) && (
+                            <ReasoningPanel
+                              plan={plan}
+                              sql={sql}
+                              insights={insights}
+                              diagnostics={diagnostics}
+                            />
+                          )}
+
+                          {msg.hasPayload && payload && (
+                            <div className="mt-5 overflow-hidden rounded-2xl bg-white/80 ring-1 ring-slate-200/50 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
+                              <div className="flex items-center justify-between border-b border-slate-200/50 px-5 py-3 bg-slate-50/40">
+                                <div className="flex items-center gap-2">
+                                  <Table2 className="h-4 w-4 text-slate-400" />
+                                  <span className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">
+                                    Analysis result
+                                  </span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900" onClick={() => copyToClipboard(JSON.stringify(payload))}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900">
+                                    <MoreHorizontal className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className="p-5">
+                                <DynamicChartFactory payload={payload} />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className={`mt-2 flex items-center justify-between transition-opacity duration-200 ${hoveredMsgId === msg.id || isLatestMessage ? "opacity-100" : "opacity-70 sm:opacity-0"}`}>
+                            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                              {formatTime(msg.timestamp)}
+                            </div>
+                            <div className="flex gap-1.5">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                onClick={() => void copyToClipboard(msg.content || JSON.stringify(payload))}
+                                title="Copy"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-slate-900 rounded-lg">
-                                <MoreHorizontal className="w-3.5 h-3.5" />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Good response"
+                                onClick={() => toast({ description: "Thanks. Feedback recorded." })}
+                              >
+                                <ThumbsUp className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                title="Bad response"
+                                onClick={() => toast({ description: "Thanks. We will use this to improve future answers." })}
+                              >
+                                <ThumbsDown className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600"
+                                title="Retry"
+                                onClick={() => void retryFromAssistant(msg.id)}
+                                disabled={isProcessing}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
                               </Button>
                             </div>
                           </div>
-                          <div className="p-5">
-                            <DynamicChartFactory payload={payload} />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Timestamp + Action bar */}
-                      <div
-                        className={`flex items-center justify-between mt-3 transition-opacity duration-200 ${hoveredMsgId === msg.id || isLatestMessage ? 'opacity-100' : 'opacity-70 sm:opacity-0'}`}
-                      >
-                        <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                          {formatTime(msg.timestamp)}
-                        </div>
-                        <div className="flex gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"
-                            onClick={() => void copyToClipboard(msg.content || JSON.stringify(payload))}
-                            title="Copy"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg"
-                            title="Good response"
-                            onClick={() => toast({ description: "Thanks. Feedback recorded." })}
-                          >
-                            <ThumbsUp className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg"
-                            title="Bad response"
-                            onClick={() => toast({ description: "Thanks. We will use this to improve future answers." })}
-                          >
-                            <ThumbsDown className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                            title="Retry"
-                            onClick={() => void retryFromAssistant(msg.id)}
-                            disabled={isProcessing}
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                        </article>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-              );
-            })}
-            
-            {/* Scroll anchor */}
-            <div ref={scrollAnchorRef} className="h-4" />
+                </section>
+              ))}
+
+              <div ref={scrollAnchorRef} className="h-4 w-full" />
+            </div>
           </div>
-        </div>
-      </ScrollArea>
+        </ScrollArea>
+      </div>
 
       {/* ── Input Area ── */}
-      <div className="sticky bottom-0 z-20 mt-auto bg-gradient-to-t from-slate-50 via-slate-50/95 to-transparent px-4 pb-5 pt-8 backdrop-blur-[2px]">
+      <div className="sticky bottom-0 z-20 mt-auto border-t border-slate-200/60 bg-white/70 px-4 pb-5 pt-4 backdrop-blur-xl sm:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-3xl">
           <OmniMessageInput
             onSendMessage={handleSendMessage}
@@ -1244,11 +1314,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
             progressStatus={progressStatus}
             availableDatasets={availableDatasets}
           />
-          <div className="text-center mt-3 text-[11px] font-bold text-slate-400 uppercase tracking-widest flex justify-center items-center gap-2">
+          <div className="mt-3 flex items-center justify-center gap-2 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Arcli can make mistakes — verify critical outputs</span>
+            <span>Arcli can make mistakes. Verify critical outputs.</span>
             <span className="text-slate-300">•</span>
-            <a href="mailto:support@arcli.tech" className="transition-colors hover:text-[#11284b]">
+            <a href="mailto:support@arcli.tech" className="transition-colors hover:text-blue-600">
               Get help
             </a>
           </div>

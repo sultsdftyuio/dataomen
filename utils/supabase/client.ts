@@ -1,7 +1,6 @@
 // utils/supabase/client.ts
 
 import { createBrowserClient } from '@supabase/ssr'
-import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
  * Utility to resolve the absolute site URL for OAuth redirects.
@@ -20,21 +19,12 @@ export const getURL = () => {
   return url.includes('http') ? url : `https://${url}`
 }
 
-// Memory allocation for the Singleton instance.
-// This prevents React from thrashing the GoTrue Auth state during concurrent renders.
-let browserClient: SupabaseClient | undefined
-
 /**
  * High-performance Supabase browser client.
- * Implements a strict Singleton pattern to resolve "Multiple GoTrueClient instances" errors.
+ * Uses Supabase native singleton mode to resolve "Multiple GoTrueClient instances" errors.
  * Uses 100% Functional pattern for usage within React hooks.
  */
 export function createClient() {
-  // 1. Analytical Efficiency: Return cached instance if it already exists
-  if (browserClient) {
-    return browserClient
-  }
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -45,10 +35,10 @@ export function createClient() {
     )
   }
 
-  // 2. Engineering Excellence: Instantiate and cache the client for all subsequent calls
-  browserClient = createBrowserClient(supabaseUrl, supabaseAnonKey)
-  
-  return browserClient
+  // Use native singleton handling from Supabase to prevent multiple GoTrue instances.
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    isSingleton: true,
+  })
 }
 
 /**

@@ -20,7 +20,31 @@ const resolveApiUrl = () => {
   return url;
 };
 
-const API_BASE_URL = resolveApiUrl();
+const API_BASE_URL = resolveApiUrl().replace(/\/$/, '');
+
+const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
+
+const isInternalNextApiRoute = (path: string) => path === '/api' || path.startsWith('/api/');
+
+const buildRequestUrl = (endpoint: string) => {
+  if (ABSOLUTE_URL_REGEX.test(endpoint)) {
+    return endpoint;
+  }
+
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+  // Internal Next.js App Router API routes should be called exactly as provided.
+  if (isInternalNextApiRoute(cleanEndpoint)) {
+    return cleanEndpoint;
+  }
+
+  // External API routes keep strict trailing slash behavior to avoid redirect/header issues.
+  const [pathPart, queryPart] = cleanEndpoint.split('?', 2);
+  const securePath = pathPart.endsWith('/') ? pathPart : `${pathPart}/`;
+  const finalEndpoint = queryPart ? `${securePath}?${queryPart}` : securePath;
+
+  return `${API_BASE_URL}${finalEndpoint}`;
+};
 
 interface FetchOptions extends RequestInit {
   requireAuth?: boolean;
@@ -59,21 +83,8 @@ export class ApiClient {
       headers.set('Authorization', `Bearer ${session.access_token}`)
     }
 
-    // 3. Construct URL & Enforce FastAPI Strict Routing
-    // Prevents DigitalOcean Load Balancers from issuing HTTP 307 redirects 
-    // which strip headers and cause CORS/Mixed Content failures.
-    let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
-    
-    // Split query params to safely append trailing slash to the exact path sequence
-    const [pathPart, queryPart] = cleanEndpoint.split('?', 2)
-    
-    let securePath = pathPart
-    if (!securePath.endsWith('/')) {
-      securePath += '/'
-    }
-
-    const finalEndpoint = queryPart ? `${securePath}?${queryPart}` : securePath
-    const url = `${API_BASE_URL}${finalEndpoint}`
+    // 3. Construct URL with internal-route bypass and external strict routing
+    const url = buildRequestUrl(endpoint)
 
     // 4. Execute Network Call
     const response = await fetch(url, {

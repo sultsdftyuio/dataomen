@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { 
   Paperclip, 
-  Send, 
+  ArrowUp,
   X, 
   Loader2, 
   Image as ImageIcon, 
@@ -241,17 +241,17 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
   };
 
   // Filter datasets for the @ menu
-  const filteredTags = availableDatasets.filter(ds => ds.name.toLowerCase().includes(tagQuery));
+  const filteredTags = availableDatasets.filter((ds) => ds.name.toLowerCase().includes(tagQuery));
+  const hasText = text.trim().length > 0;
+  const canSubmit = hasText || files.length > 0;
 
   return (
-    <div className="relative w-full">
-      <div className="pointer-events-none absolute inset-x-10 -bottom-5 h-8 rounded-full bg-[#11284b]/12 blur-2xl" />
-      
+    <div className="sticky bottom-0 w-full">
       {/* Global Drag Overlay */}
       {isDragging && (
-        <div className="fixed inset-0 z-50 m-6 flex items-center justify-center rounded-3xl border-[3px] border-dashed border-[#1f3a63]/30 bg-slate-900/10 backdrop-blur-sm pointer-events-none transition-all duration-300">
-          <div className="flex flex-col items-center rounded-3xl border border-slate-200/80 bg-white/90 p-10 text-center shadow-md backdrop-blur-xl">
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-[#11284b]">
+        <div className="pointer-events-none fixed inset-0 z-50 m-6 flex items-center justify-center rounded-3xl border-[3px] border-dashed border-slate-300/70 bg-slate-900/10 backdrop-blur-sm transition-all duration-300">
+          <div className="flex flex-col items-center rounded-3xl border border-slate-200/60 bg-white/90 p-10 text-center shadow-md backdrop-blur-xl">
+            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl border border-slate-200/60 bg-white text-slate-700">
               <Database className="w-10 h-10" />
             </div>
             <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">Drop files to add context</h2>
@@ -262,7 +262,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
 
       {/* Optimistic UI Progress Stream */}
       {isProcessing && progressStatus && (
-        <div className="absolute -top-10 left-0 right-0 flex items-center justify-center space-x-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[#11284b] animate-in fade-in slide-in-from-bottom-2">
+        <div className="animate-in fade-in slide-in-from-bottom-2 absolute -top-10 left-0 right-0 flex items-center justify-center space-x-2 text-[12px] font-bold uppercase tracking-[0.12em] text-slate-600">
           <div className="rounded-full bg-blue-100 p-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /></div>
           <span>{progressStatus}</span>
         </div>
@@ -270,7 +270,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
 
       {/* @ Tagging Menu */}
       {showTagMenu && filteredTags.length > 0 && (
-        <div className="custom-scrollbar absolute bottom-full left-4 z-10 mb-3 max-h-52 w-64 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-md backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2">
+        <div className="custom-scrollbar animate-in fade-in slide-in-from-bottom-2 absolute bottom-full left-4 z-10 mb-3 max-h-52 w-64 overflow-y-auto rounded-2xl border border-slate-200/60 bg-white/90 p-1.5 shadow-md backdrop-blur-xl">
           <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
             <AtSign className="w-3 h-3" /> Select a source to route
           </div>
@@ -278,11 +278,11 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
             <button
               key={ds.id}
               onClick={() => handleTagSelect(ds.name)}
-              className="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100/90 hover:text-[#11284b] focus:outline-none"
+              className="group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100/90 hover:text-blue-600 focus:outline-none"
             >
               <span className="truncate pr-4">{ds.name}</span>
               {ds.type === 'structured' 
-                ? <Database className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#11284b] shrink-0" />
+                ? <Database className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
                 : <FileText className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 shrink-0" />
               }
             </button>
@@ -291,26 +291,26 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
       )}
 
       <div
-        className={`relative flex w-full flex-col overflow-visible rounded-2xl border border-slate-200/70 bg-white/75 shadow-sm backdrop-blur-xl transition-all duration-300 ${
+        className={`relative flex w-full flex-col overflow-visible rounded-3xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl transition-all duration-300 ${
           isProcessing 
-            ? "ring-2 ring-blue-500/20"
-            : "hover:border-slate-300/80 focus-within:border-blue-300/80 focus-within:ring-2 focus-within:ring-blue-500/20"
+            ? "border-blue-300/70 shadow-md"
+            : "hover:border-slate-300/70 focus-within:border-blue-300/70 focus-within:shadow-md"
         }`}
       >
         {/* Active File Pills */}
         {files.length > 0 && (
-          <div className="flex flex-wrap gap-2 rounded-t-2xl border-b border-slate-200/70 bg-slate-50/70 px-4 pb-2 pt-4">
+          <div className="flex flex-wrap gap-2 rounded-t-3xl border-b border-slate-200/60 bg-slate-50/60 px-4 pb-2 pt-4">
             {files.map((file, idx) => {
               const isDocument = file.name.match(/\.(pdf|txt|md|docx)$/i);
               
               return (
-                <div key={`${file.name}-${idx}`} className="group flex items-center space-x-2 rounded-xl border border-slate-200/80 bg-white/90 px-3 py-1.5 text-xs text-slate-700 transition-colors hover:border-slate-300">
+                <div key={`${file.name}-${idx}`} className="group flex items-center space-x-2 rounded-xl border border-slate-200/60 bg-white/90 px-3 py-1.5 text-xs text-slate-700 shadow-sm transition-colors hover:border-slate-300">
                   {file.type.startsWith("image/") ? (
-                    <ImageIcon className="w-3.5 h-3.5 text-[#11284b] shrink-0" />
+                    <ImageIcon className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   ) : isDocument ? (
                     <FileText className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   ) : (
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   )}
                   
                   <span className="max-w-[140px] truncate font-bold text-[13px]">{file.name}</span>
@@ -321,7 +321,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
                   <button
                     onClick={() => removeFile(idx)}
                     disabled={isProcessing}
-                    className="ml-1 rounded-md p-0.5 text-slate-400 transition-colors hover:bg-rose-500 hover:text-white disabled:opacity-50"
+                    className="ml-1 rounded-md p-0.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -341,11 +341,11 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
         )}
 
         {/* Input Bar */}
-        <div className="flex items-end gap-1 px-4 py-3.5">
+        <div className="flex items-end gap-2 px-3 py-3">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isProcessing}
-            className="shrink-0 rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#11284b] focus:outline-none disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+            className="shrink-0 rounded-2xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-blue-600 focus:outline-none disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
             title="Attach File"
           >
             <Paperclip className="w-5 h-5" />
@@ -379,18 +379,18 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
 
           <Button
             size="icon"
-            disabled={isProcessing || (!text.trim() && files.length === 0)}
+            disabled={isProcessing || !canSubmit}
             onClick={handleSubmit}
-            className={`shrink-0 ml-3 h-11 w-11 rounded-xl transition-all duration-300 ${
-              (!text.trim() && files.length === 0) && !isProcessing
+            className={`ml-1 h-11 w-11 shrink-0 rounded-full transition-all duration-300 ${
+              !hasText && !isProcessing
                 ? "bg-slate-200 text-slate-400 hover:bg-slate-200 shadow-none"
-                : "bg-[#11284b] text-white hover:bg-[#0c1e39] shadow-sm"
+                : "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
             }`}
           >
             {isProcessing ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              <Send className="w-5 h-5 ml-0.5" />
+              <ArrowUp className="w-5 h-5" />
             )}
           </Button>
         </div>
@@ -400,7 +400,7 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
         <span>Enter to send • Shift+Enter newline • Type @ to route</span>
         <span>{files.length}/{MAX_ATTACHMENTS} attachments</span>
       </div>
-      
+
     </div>
   );
 };
