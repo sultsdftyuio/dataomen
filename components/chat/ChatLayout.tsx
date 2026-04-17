@@ -8,12 +8,11 @@ import { ExecutionPayload } from "@/lib/chart-engine";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Settings2, Sparkles, FileText,
-  FileSpreadsheet, Database, LineChart, Activity,
-  Copy, ThumbsUp, ThumbsDown, RotateCcw,
+  FileSpreadsheet, Database, Activity,
   Plus, ChevronDown, MoreHorizontal,
   Table2, TrendingUp, Search, Zap,
-  ChevronRight, Code2, BrainCircuit, FlaskConical,
-  ShieldCheck, CircleStop, AlertTriangle, CheckCircle2,
+  ChevronRight, Code2, FlaskConical,
+  ShieldCheck, CircleStop, AlertTriangle,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -202,16 +201,16 @@ function SimpleMarkdown({ text }: { text: string }) {
 function ThinkingStep({ label, done }: { label: string; done?: boolean }) {
   if (!label) return null;
   return (
-    <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-1.5 text-[12px] font-semibold text-slate-500 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+    <div className="animate-in fade-in slide-in-from-bottom-2 inline-flex items-center gap-2 rounded-full bg-slate-100/80 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-800/70 dark:text-slate-300">
       {done ? (
-        <div className="rounded-full bg-blue-100 p-0.5">
-          <svg className="h-3 w-3 text-blue-600" viewBox="0 0 12 12" fill="none">
+        <div className="rounded-full bg-slate-200/80 p-0.5 dark:bg-slate-700/80">
+          <svg className="h-3 w-3 text-slate-600 dark:text-slate-300" viewBox="0 0 12 12" fill="none">
             <path d="M3.5 6l2 2 3-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
       ) : (
-        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-50">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-200/70 dark:bg-slate-700/70">
+          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-slate-500 dark:bg-slate-300" />
         </span>
       )}
       {label}
@@ -228,7 +227,6 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   insights?: any;
   diagnostics?: any;
 }) {
-  const [open, setOpen] = useState(false);
   const hasContent = plan || sql || insights || diagnostics;
   const planText = useMemo(() => (plan ? safePrettyJson(plan) : ""), [plan]);
   const insightsText = useMemo(() => (insights ? safePrettyJson(insights) : ""), [insights]);
@@ -236,55 +234,38 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
   if (!hasContent) return null;
 
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/60 bg-white/80 shadow-sm transition-all duration-300">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full cursor-pointer items-center gap-3 bg-slate-50/70 px-4 py-3 text-left transition-colors hover:bg-slate-100/70"
-      >
-        <div className="rounded-lg border border-slate-200/60 bg-white p-1.5 shadow-sm">
-          <BrainCircuit className="w-4 h-4 text-blue-500" />
-        </div>
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-600">
-          Engine Execution Trace
-        </span>
-        <ChevronRight className={`w-4 h-4 text-slate-400 ml-auto transition-transform duration-200 ${open ? "rotate-90" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="animate-in fade-in slide-in-from-top-1 flex flex-col gap-5 border-t border-slate-200/60 bg-white p-5">
-          {plan && (
-            <ReasoningBlock
-              icon={<FlaskConical className="h-3.5 w-3.5 text-slate-500" />}
-              label="Semantic Plan"
-              content={planText}
-              mono={false}
-            />
-          )}
-          {sql && (
-            <ReasoningBlock
-              icon={<Code2 className="h-3.5 w-3.5 text-slate-500" />}
-              label="Compiled DuckDB SQL"
-              content={sql}
-              mono
-            />
-          )}
-          {insights && (
-            <ReasoningBlock
-              icon={<Sparkles className="h-3.5 w-3.5 text-slate-500" />}
-              label="Statistical Insights"
-              content={insightsText}
-              mono={false}
-            />
-          )}
-          {diagnostics && (
-            <ReasoningBlock
-              icon={<Activity className="h-3.5 w-3.5 text-slate-500" />}
-              label="Diagnostics"
-              content={diagnosticsText}
-              mono
-            />
-          )}
-        </div>
+    <div className="flex flex-col gap-3">
+      {plan && (
+        <ReasoningBlock
+          icon={<FlaskConical className="h-3.5 w-3.5 text-slate-500" />}
+          label="Semantic Plan"
+          content={planText}
+          mono={false}
+        />
+      )}
+      {sql && (
+        <ReasoningBlock
+          icon={<Code2 className="h-3.5 w-3.5 text-slate-500" />}
+          label="Compiled DuckDB SQL"
+          content={sql}
+          mono
+        />
+      )}
+      {insights && (
+        <ReasoningBlock
+          icon={<Sparkles className="h-3.5 w-3.5 text-slate-500" />}
+          label="Statistical Insights"
+          content={insightsText}
+          mono={false}
+        />
+      )}
+      {diagnostics && (
+        <ReasoningBlock
+          icon={<Activity className="h-3.5 w-3.5 text-slate-500" />}
+          label="Diagnostics"
+          content={diagnosticsText}
+          mono
+        />
       )}
     </div>
   );
@@ -293,11 +274,11 @@ function ReasoningPanel({ plan, sql, insights, diagnostics }: {
 function ReasoningBlock({ icon, label, content, mono }: { icon: React.ReactNode; label: string; content: string; mono: boolean; }) {
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
         {icon} {label}
       </div>
-      <div className={`overflow-x-auto rounded-xl border border-slate-200/60 p-4 ${mono ? 'bg-slate-900' : 'bg-slate-50/70'}`}>
-        <code className={`block whitespace-pre-wrap break-words ${mono ? "font-mono text-[12px] leading-relaxed text-slate-100" : "text-[13px] font-medium leading-relaxed text-slate-700"}`}>
+      <div className={`overflow-x-auto rounded-xl border p-3 ${mono ? 'border-slate-800/70 bg-slate-900/85' : 'border-slate-200/50 bg-slate-50/65 dark:border-slate-800/70 dark:bg-slate-900/45'}`}>
+        <code className={`block whitespace-pre-wrap break-words ${mono ? "font-mono text-[12px] leading-relaxed text-slate-100" : "text-[13px] leading-relaxed text-slate-700 dark:text-slate-200"}`}>
           {content}
         </code>
       </div>
@@ -369,14 +350,18 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const [activeDocumentIds, setActiveDocumentIds] = useState<string[]>([]);
   const [availableDatasets, setAvailableDatasets] = useState<Array<{ id: string; name: string; type: "structured" | "unstructured" }>>([]);
   const [isHydratingDatasets, setIsHydratingDatasets] = useState(false);
-  const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
   const [showAllMessages, setShowAllMessages] = useState(false);
+  const [isCommandStripCompact, setIsCommandStripCompact] = useState(false);
 
   const visibleMessages = useMemo(
     () => (showAllMessages ? messages : messages.slice(-MAX_RENDERED_MESSAGES)),
     [messages, showAllMessages],
   );
   const groupedVisibleMessages = useMemo(() => groupMessagesByRole(visibleMessages), [visibleMessages]);
+  const firstAssistantGroupIndex = useMemo(
+    () => groupedVisibleMessages.findIndex((group) => group.role === "assistant"),
+    [groupedVisibleMessages],
+  );
   const hiddenMessageCount = messages.length - visibleMessages.length;
 
   const messagesRef = useRef<UIMessage[]>([]);
@@ -451,6 +436,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
     const handleScroll = () => {
       isAtBottomRef.current = isViewportNearBottom(viewport);
+      const shouldCompact = viewport.scrollTop > 28;
+      setIsCommandStripCompact((prev) => (prev === shouldCompact ? prev : shouldCompact));
     };
 
     handleScroll();
@@ -460,6 +447,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       viewport.removeEventListener("scroll", handleScroll);
     };
   }, []);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setIsCommandStripCompact(false);
+    }
+  }, [messages.length]);
 
   useEffect(() => {
     if (!isAtBottomRef.current) {
@@ -958,140 +951,128 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   ];
 
   return (
-    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-slate-50 text-slate-900">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_72%_at_50%_0%,rgba(15,23,42,0.06),transparent_64%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/85 to-transparent" />
+    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-[#f6f7f8] text-slate-900 dark:bg-[#020617] dark:text-slate-100">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(15,23,42,0.09),transparent_62%)] dark:bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(148,163,184,0.16),transparent_62%)]" />
+      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-full max-w-[58rem] -translate-x-1/2 bg-gradient-to-b from-white/78 via-white/58 to-white/20 dark:from-slate-950/70 dark:via-slate-950/45 dark:to-transparent" />
       <div className="relative z-10 flex h-full min-h-0 flex-col">
       
-      {/* ── Top Bar ── */}
-      <div className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-slate-200/60 bg-white/80 px-4 sm:px-6 lg:px-8 backdrop-blur-xl">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-slate-200/60 bg-white shadow-sm">
-            <Zap className="h-4 w-4 text-slate-700" />
+      {/* ── Floating Command Strip ── */}
+      <div className={`pointer-events-none sticky z-30 px-4 transition-all duration-300 sm:px-6 ${isCommandStripCompact ? "top-2" : "top-3"}`}>
+        <div className={`pointer-events-auto mx-auto flex w-full items-center justify-between border border-slate-200/55 bg-white/82 shadow-[0_10px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-300 dark:border-slate-800/70 dark:bg-slate-950/78 ${isCommandStripCompact ? "max-w-3xl rounded-xl px-3 py-1.5" : "max-w-4xl rounded-2xl px-3 py-2.5"}`}>
+          <div className="min-w-0 flex items-center gap-2.5">
+            <span className={`inline-flex shrink-0 items-center justify-center bg-slate-100/80 text-slate-600 transition-all duration-300 dark:bg-slate-800/80 dark:text-slate-300 ${isCommandStripCompact ? "h-7 w-7 rounded-lg" : "h-8 w-8 rounded-xl"}`}>
+              <Zap className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <button className={`flex max-w-[200px] items-center gap-1 truncate font-semibold text-slate-700 transition-colors hover:text-slate-900 focus:outline-none dark:text-slate-200 dark:hover:text-white sm:max-w-none ${isCommandStripCompact ? "text-[12px]" : "text-[13px]"}`}>
+                <span className="truncate">{agentName}</span>
+                <ChevronDown className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+              </button>
+              {!isCommandStripCompact && (
+                <p className="truncate text-[10px] font-medium tracking-[0.08em] text-slate-500/90 dark:text-slate-400">
+                  {activeDatasetIds.length} dataset{activeDatasetIds.length === 1 ? "" : "s"} · {activeDocumentIds.length} document{activeDocumentIds.length === 1 ? "" : "s"} · {isHydratingDatasets ? "Refreshing sources" : "Type @ to route"}
+                </p>
+              )}
+            </div>
           </div>
-          <button className="flex shrink-0 items-center gap-1.5 text-[15px] font-bold text-slate-900 transition-colors hover:text-blue-600 focus:outline-none">
-            {agentName}
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          </button>
 
-          {/* Dataset & Doc Badges */}
-          {activeDatasetIds.length > 0 && (
-            <div className="ml-3 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-              {activeDatasetIds.length} <span className="hidden sm:inline">Dataset{activeDatasetIds.length > 1 ? "s" : ""}</span>
-            </div>
-          )}
-          {activeDocumentIds.length > 0 && (
-            <div className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-500" />
-              {activeDocumentIds.length} <span className="hidden sm:inline">Doc{activeDocumentIds.length > 1 ? "s" : ""}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {isProcessing && (
+          <div className="flex shrink-0 items-center gap-1">
+            {isProcessing && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={stopStreaming}
+                className={`rounded-full border-slate-200/60 bg-white/80 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700/60 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800 ${isCommandStripCompact ? "h-7 px-2" : "h-8 px-3"}`}
+              >
+                <CircleStop className="mr-1.5 h-3.5 w-3.5" />
+                {!isCommandStripCompact && "Stop"}
+              </Button>
+            )}
             <Button
-              variant="outline"
-              size="sm"
-              onClick={stopStreaming}
-              className="h-9 rounded-xl border-slate-200/60 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+              variant="ghost"
+              size="icon"
+              onClick={resetConversation}
+              className={`${isCommandStripCompact ? "h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-200`}
+              title="New chat"
             >
-              <CircleStop className="w-4 h-4 mr-1.5" />
-              Stop
+              <Plus className="w-4 h-4" />
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={resetConversation}
-            className="h-9 w-9 rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            title="New chat"
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => void hydrateAvailableDatasets()}
-            className="h-9 w-9 rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            title="Refresh datasets"
-          >
-            <Settings2 className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={clearDataContext}
-            className="h-9 w-9 rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            title="Clear data context"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => void hydrateAvailableDatasets()}
+              className={`${isCommandStripCompact ? "hidden sm:inline-flex h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-200`}
+              title="Refresh datasets"
+            >
+              <Settings2 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={clearDataContext}
+              className={`${isCommandStripCompact ? "hidden sm:inline-flex h-7 w-7" : "h-8 w-8"} rounded-full text-slate-400 transition-colors hover:bg-slate-100/80 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800/80 dark:hover:text-slate-200`}
+              title="Clear data context"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between border-b border-slate-200/60 bg-white/70 px-4 py-2 text-[12px] text-slate-500 backdrop-blur-sm sm:px-6 lg:px-8">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />
-          <span className="font-semibold text-slate-600">
-            Context: {activeDatasetIds.length} dataset{activeDatasetIds.length === 1 ? "" : "s"} and {activeDocumentIds.length} document{activeDocumentIds.length === 1 ? "" : "s"}
-          </span>
-        </div>
-        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          {isHydratingDatasets ? "Refreshing sources..." : "Type @ to target a source"}
-        </span>
       </div>
 
       {/* ── Chat Body ── */}
-      <div ref={scrollContainerRef} className="relative flex-1 min-h-0">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-slate-50 via-slate-50/80 to-transparent" />
+      <div ref={scrollContainerRef} className="relative -mt-12 min-h-0 flex-1">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-[#f6f7f8] via-[#f6f7f8]/80 to-transparent dark:from-[#020617] dark:via-[#020617]/80" />
         <ScrollArea className="h-full">
-          <div className="mx-auto w-full max-w-3xl px-4 pb-36 pt-8 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-4xl px-5 pb-56 pt-20 sm:px-8">
             {/* Empty / Welcome State */}
             {messages.length === 0 && (
-              <div className="animate-in fade-in zoom-in-95 flex min-h-[60vh] flex-col items-center justify-center text-center duration-500">
-                <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200/60 bg-white/80 shadow-sm backdrop-blur-sm">
-                  <Zap className="h-6 w-6 text-slate-700" />
-                </div>
-                <h1 className="mb-2 text-2xl font-extrabold tracking-tight text-slate-900">
-                  {getGreeting()}
+              <div className="animate-in fade-in zoom-in-95 flex min-h-[62vh] flex-col items-center justify-center text-center duration-500">
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
+                  Document Intelligence Workspace
+                </p>
+                <h1 className="mb-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 sm:text-[2.35rem]">
+                  {getGreeting()}. What do you want to understand from your data?
                 </h1>
-                <p className="mb-10 max-w-md text-[15px] font-medium leading-relaxed text-slate-500">
+                <p className="mb-10 max-w-2xl text-[15px] leading-[1.8] text-slate-500 dark:text-slate-400">
                   Ask in plain English. You can upload files, target datasets with @mentions, and get charts plus executive summaries in one response.
                 </p>
 
-                <div className="mb-6 flex flex-wrap items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-wider">
-                  <span className="rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-slate-600">{availableDatasets.length} sources ready</span>
-                  <span className="rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-slate-600">Shift+Enter for newline</span>
-                  <span className="rounded-full border border-slate-200/60 bg-white/80 px-3 py-1 text-slate-600">Drag and drop supported</span>
-                </div>
-
-                <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="w-full max-w-2xl space-y-2.5">
                   {SUGGESTIONS.map((s, i) => (
                     <button
                       key={i}
                       onClick={() => void handleSendMessage(s.prompt)}
-                      className="group flex items-center gap-4 rounded-2xl border border-slate-200/60 bg-white/80 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300/60 hover:bg-white"
+                      className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200/60 bg-white/82 px-4 py-3.5 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.9)] transition-all hover:border-slate-300/70 hover:bg-white dark:border-slate-800/70 dark:bg-slate-900/70 dark:hover:border-slate-700/90 dark:hover:bg-slate-900"
                     >
-                      <div className={`rounded-xl border border-slate-200/60 p-2.5 shadow-sm transition-transform group-hover:scale-105 ${s.color}`}>
+                      <div className={`rounded-xl border border-slate-200/60 p-2.5 transition-transform group-hover:scale-105 dark:border-slate-700/80 ${s.color}`}>
                         {s.icon}
                       </div>
-                      <span className="text-[14px] font-bold text-slate-700 transition-colors group-hover:text-blue-600">{s.title}</span>
+                      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="text-[14px] font-semibold text-slate-700 transition-colors group-hover:text-slate-900 dark:text-slate-100 dark:group-hover:text-white">{s.title}</span>
+                        <span className="truncate text-[12px] text-slate-500 dark:text-slate-400">{s.prompt}</span>
+                      </div>
                     </button>
                   ))}
+                </div>
+
+                <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+                  <span>{availableDatasets.length} sources connected</span>
+                  <span>•</span>
+                  <span>Shift+Enter for newline</span>
+                  <span>•</span>
+                  <span>Drag and drop supported</span>
                 </div>
               </div>
             )}
 
             {/* Message Thread */}
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-14">
               {hiddenMessageCount > 0 && (
                 <div className="flex justify-center">
                   <button
                     type="button"
                     onClick={() => setShowAllMessages((prev) => !prev)}
-                    className="rounded-lg border border-slate-200/60 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-500 hover:text-slate-700"
+                    className="rounded-full border border-slate-200/60 bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700 dark:border-slate-800/70 dark:bg-slate-900/70 dark:text-slate-300"
                   >
                     {showAllMessages ? "Collapse older messages" : `Show ${hiddenMessageCount} earlier messages`}
                   </button>
@@ -1099,18 +1080,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               )}
 
               {groupedVisibleMessages.map((group, groupIndex) => (
-                <section key={`${group.id}-${groupIndex}`} className="flex flex-col gap-2">
-                  {group.role === "assistant" && (
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200/60 bg-white shadow-sm">
-                        <Zap className="h-3.5 w-3.5 text-slate-700" />
-                      </span>
-                      <span>{agentName}</span>
+                <section key={`${group.id}-${groupIndex}`} className="flex flex-col gap-3">
+                  {group.role === "assistant" && groupIndex === firstAssistantGroupIndex && (
+                    <div className="pl-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                      {agentName}
                     </div>
                   )}
 
                   {group.role === "user" && (
-                    <div className="flex justify-end text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <div className="flex justify-end pr-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
                       <span>You</span>
                     </div>
                   )}
@@ -1124,6 +1102,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                       const insights = messageData.insights;
                       const diagnostics = messageData.diagnostics;
                       const isLatestMessage = msg.id === messages[messages.length - 1]?.id;
+                      const warningCount = msg.warnings?.length || 0;
+                      const traceCount = msg.traces?.length || 0;
+                      const hasReasoning = Boolean(msg.hasPlan || msg.hasSql || msg.hasInsights || msg.hasDiagnostics);
+                      const footnoteSegments: string[] = [];
+                      if (hasReasoning) footnoteSegments.push("analysis");
+                      if (traceCount > 0) footnoteSegments.push(`${traceCount} trace${traceCount > 1 ? "s" : ""}`);
+                      if (warningCount > 0) footnoteSegments.push(`${warningCount} warning${warningCount > 1 ? "s" : ""}`);
+                      if (msg.error) footnoteSegments.push("error flagged");
+                      const footnoteLabel = footnoteSegments.length > 0 ? footnoteSegments.join(" · ") : "response tools";
 
                       if (msg.role === "system") {
                         return (
@@ -1135,25 +1122,25 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
                       if (msg.role === "user") {
                         return (
-                          <article key={msg.id} className="ml-auto w-full max-w-[90%] sm:max-w-[82%]">
+                          <article key={msg.id} className="ml-auto w-full max-w-[46rem] pl-10 sm:pl-24">
                             {msg.files && msg.files.length > 0 && (
                               <div className="mb-2 flex flex-wrap justify-end gap-2">
                                 {msg.files.map((f, i) => (
-                                  <div key={`${msg.id}-file-${i}`} className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 shadow-sm">
-                                    <FileText className="h-3.5 w-3.5 text-slate-500" />
-                                    <span className="max-w-[160px] truncate text-[12px] font-semibold text-slate-700">{f.name}</span>
+                                  <div key={`${msg.id}-file-${i}`} className="flex items-center gap-2 rounded-full bg-slate-100/75 px-3 py-1.5 text-[11px] text-slate-600 dark:bg-slate-800/70 dark:text-slate-300">
+                                    <FileText className="h-3.5 w-3.5" />
+                                    <span className="max-w-[180px] truncate font-medium">{f.name}</span>
                                   </div>
                                 ))}
                               </div>
                             )}
 
                             {msg.content && (
-                              <div className="rounded-xl bg-slate-50/50 px-4 py-3 text-[15px] leading-7 text-slate-900 transition-opacity duration-200 dark:bg-slate-800/30 dark:text-slate-50">
+                              <div className="rounded-3xl bg-slate-100/70 px-6 py-4 text-[15px] leading-[1.8] text-slate-800 transition-opacity duration-200 dark:bg-slate-800/45 dark:text-slate-100">
                                 {msg.content}
                               </div>
                             )}
 
-                            <div className="mt-1 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                            <div className="mt-1 pr-1 text-right text-[11px] font-medium text-slate-400 dark:text-slate-500">
                               {formatTime(msg.timestamp)}
                             </div>
                           </article>
@@ -1164,8 +1151,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                         <article
                           key={msg.id}
                           className="group/message w-full animate-in fade-in duration-200"
-                          onMouseEnter={() => setHoveredMsgId(msg.id)}
-                          onMouseLeave={() => setHoveredMsgId(null)}
                         >
                           {isProcessing && isLatestMessage && (
                             <div className="mb-2 flex flex-wrap gap-2">
@@ -1178,24 +1163,6 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                             </div>
                           )}
 
-                          {msg.warnings && msg.warnings.length > 0 && (
-                            <div className="mb-2 space-y-2">
-                              {msg.warnings.map((warning, warningIdx) => (
-                                <div key={`${msg.id}-warning-${warningIdx}`} className="flex items-start gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 text-[13px] text-slate-600">
-                                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-                                  <span>{warning}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {msg.error && (
-                            <div className="mb-2 flex items-start gap-2 rounded-xl border border-slate-200/60 bg-white/80 px-3 py-2 text-[13px] text-slate-700">
-                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-                              <span>{msg.error}</span>
-                            </div>
-                          )}
-
                           {msg.content && (
                             <AssistantTextContent
                               content={msg.content}
@@ -1203,95 +1170,124 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                             />
                           )}
 
-                          {msg.traces && msg.traces.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {msg.traces.slice(-3).map((trace, traceIdx) => (
-                                <span key={`${msg.id}-trace-${traceIdx}`} className="inline-flex items-center gap-1 rounded-full border border-slate-200/60 bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
-                                  <CheckCircle2 className="h-3 w-3 text-blue-500" />
-                                  {trace.stage || "Step"}
-                                  {typeof trace.execution_time_ms === "number" ? ` | ${Math.round(trace.execution_time_ms)}ms` : ""}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {(msg.hasPlan || msg.hasSql || msg.hasInsights || msg.hasDiagnostics) && (
-                            <ReasoningPanel
-                              plan={plan}
-                              sql={sql}
-                              insights={insights}
-                              diagnostics={diagnostics}
-                            />
-                          )}
-
                           {msg.hasPayload && payload && (
-                            <div className="mt-5 overflow-hidden rounded-2xl bg-white/80 ring-1 ring-slate-200/50 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
-                              <div className="flex items-center justify-between border-b border-slate-200/50 px-5 py-3 bg-slate-50/40">
+                            <div className="animate-in fade-in slide-in-from-bottom-2 mt-6 overflow-hidden rounded-[24px] bg-white/70 p-2 ring-1 ring-slate-200/45 duration-200 dark:bg-slate-950/45 dark:ring-slate-800/65">
+                              <div className="flex items-center justify-between px-2 py-1.5">
                                 <div className="flex items-center gap-2">
-                                  <Table2 className="h-4 w-4 text-slate-400" />
-                                  <span className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">
+                                  <Table2 className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
                                     Analysis result
                                   </span>
                                 </div>
-                                <div className="flex gap-2">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900" onClick={() => copyToClipboard(JSON.stringify(payload))}>
-                                    <Copy className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900">
-                                    <MoreHorizontal className="h-3.5 w-3.5" />
-                                  </Button>
+                                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(JSON.stringify(payload))}
+                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  >
+                                    Copy data
+                                  </button>
+                                  <span className="text-slate-300 dark:text-slate-600">•</span>
+                                  <button
+                                    type="button"
+                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  >
+                                    Inspect
+                                  </button>
                                 </div>
                               </div>
-                              <div className="p-5">
+                              <div className="overflow-hidden rounded-2xl bg-white/85 p-3 dark:bg-slate-950/75">
                                 <DynamicChartFactory payload={payload} />
                               </div>
                             </div>
                           )}
 
-                          <div className={`mt-2 flex items-center justify-between transition-opacity duration-200 ${hoveredMsgId === msg.id || isLatestMessage ? "opacity-100" : "opacity-70 sm:opacity-0"}`}>
-                            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                              {formatTime(msg.timestamp)}
+                          <details className="group/footnote mt-4 overflow-hidden rounded-2xl border border-slate-200/55 bg-white/62 dark:border-slate-800/70 dark:bg-slate-950/45">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                              <span className="uppercase tracking-[0.12em]">Analysis footnote</span>
+                              <span className="text-slate-300 dark:text-slate-600">•</span>
+                              <span className="truncate">{footnoteLabel}</span>
+                              <span className="ml-auto text-[11px]">{formatTime(msg.timestamp)}</span>
+                              <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open/footnote:rotate-90" />
+                            </summary>
+
+                            <div className="space-y-3 border-t border-slate-200/50 px-3.5 py-3 dark:border-slate-800/70">
+                              {warningCount > 0 && (
+                                <div className="space-y-2">
+                                  {msg.warnings?.map((warning, warningIdx) => (
+                                    <div key={`${msg.id}-warning-${warningIdx}`} className="rounded-xl border-l-2 border-amber-300/80 bg-amber-50/50 py-2 pl-3 pr-2 text-[13px] text-amber-900/80 dark:border-amber-400/60 dark:bg-amber-500/10 dark:text-amber-200/90">
+                                      <div className="flex items-start gap-2">
+                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600/80 dark:text-amber-300" />
+                                        <span>{warning}</span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {msg.error && (
+                                <div className="rounded-xl border-l-2 border-rose-300/80 bg-rose-50/55 py-2 pl-3 pr-2 text-[13px] text-rose-900/80 dark:border-rose-400/60 dark:bg-rose-500/10 dark:text-rose-200/90">
+                                  <div className="flex items-start gap-2">
+                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600/80 dark:text-rose-300" />
+                                    <span>{msg.error}</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {traceCount > 0 && (
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                  {msg.traces?.slice(-5).map((trace, traceIdx) => (
+                                    <span key={`${msg.id}-trace-${traceIdx}`} className="inline-flex items-center gap-1.5">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-300 dark:bg-slate-600" />
+                                      {trace.stage || "Step"}
+                                      {typeof trace.execution_time_ms === "number" ? ` | ${Math.round(trace.execution_time_ms)}ms` : ""}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {hasReasoning && (
+                                <ReasoningPanel
+                                  plan={plan}
+                                  sql={sql}
+                                  insights={insights}
+                                  diagnostics={diagnostics}
+                                />
+                              )}
+
+                              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                <button
+                                  type="button"
+                                  onClick={() => void copyToClipboard(msg.content || JSON.stringify(payload))}
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                >
+                                  Copy response
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  onClick={() => toast({ description: "Thanks. Feedback recorded." })}
+                                >
+                                  Helpful
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                  onClick={() => toast({ description: "Thanks. We will use this to improve future answers." })}
+                                >
+                                  Needs work
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void retryFromAssistant(msg.id)}
+                                  disabled={isProcessing}
+                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                >
+                                  Retry
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex gap-1.5">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                onClick={() => void copyToClipboard(msg.content || JSON.stringify(payload))}
-                                title="Copy"
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                title="Good response"
-                                onClick={() => toast({ description: "Thanks. Feedback recorded." })}
-                              >
-                                <ThumbsUp className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                title="Bad response"
-                                onClick={() => toast({ description: "Thanks. We will use this to improve future answers." })}
-                              >
-                                <ThumbsDown className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600"
-                                title="Retry"
-                                onClick={() => void retryFromAssistant(msg.id)}
-                                disabled={isProcessing}
-                              >
-                                <RotateCcw className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </div>
+                          </details>
                         </article>
                       );
                     })}
@@ -1306,15 +1302,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       </div>
 
       {/* ── Input Area ── */}
-      <div className="sticky bottom-0 z-20 mt-auto border-t border-slate-200/60 bg-white/70 px-4 pb-5 pt-4 backdrop-blur-xl sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-3xl">
+      <div className="relative z-20 mt-auto px-4 pb-6 pt-2 sm:px-6">
+        <div className="mx-auto w-full max-w-4xl">
           <OmniMessageInput
             onSendMessage={handleSendMessage}
             isProcessing={isProcessing}
             progressStatus={progressStatus}
             availableDatasets={availableDatasets}
           />
-          <div className="mt-3 flex items-center justify-center gap-2 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <div className="mt-2 flex items-center justify-center gap-2 text-center text-[10px] font-medium tracking-[0.08em] text-slate-400 dark:text-slate-500">
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Arcli can make mistakes. Verify critical outputs.</span>
             <span className="text-slate-300">•</span>

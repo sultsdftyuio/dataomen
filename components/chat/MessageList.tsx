@@ -82,10 +82,10 @@ export function MessageList({ messages, onSuggestionClick }: MessageListProps) {
   }, [messages]);
 
   return (
-    <div ref={scrollContainerRef} className="relative h-full w-full">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-12 bg-gradient-to-b from-slate-50 via-slate-50/80 to-transparent" />
-      <ScrollArea className="h-full w-full bg-slate-50">
-        <div className="mx-auto w-full max-w-3xl px-4 pb-32 pt-8 sm:px-6 lg:px-8">
+    <div ref={scrollContainerRef} className="relative h-full w-full bg-white dark:bg-slate-950">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-white via-white/85 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
+      <ScrollArea className="h-full w-full bg-white dark:bg-slate-950">
+        <div className="mx-auto w-full max-w-3xl px-4 pb-48 pt-10 sm:px-6">
         {/* --- EMPTY / WELCOME STATE --- */}
         {messages.length === 0 ? (
           <div className="animate-in zoom-in-95 fade-in flex min-h-[60vh] flex-col items-center justify-center px-4 text-center duration-500">
@@ -128,7 +128,7 @@ export function MessageList({ messages, onSuggestionClick }: MessageListProps) {
           </div>
         ) : (
           /* --- MESSAGE THREAD --- */
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-10">
             {groupedMessages.map((group) => (
               <section key={group.id} className="flex flex-col gap-2">
                 {group.items.map((msg, idx) => (
