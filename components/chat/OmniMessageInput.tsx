@@ -244,9 +244,10 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
   const filteredTags = availableDatasets.filter((ds) => ds.name.toLowerCase().includes(tagQuery));
   const hasText = text.trim().length > 0;
   const canSubmit = hasText || files.length > 0;
+  const showComposerHint = !hasText && files.length === 0 && !isProcessing;
 
   return (
-    <div className="sticky bottom-0 z-30 w-full bg-gradient-to-t from-[#f6f7f8]/95 via-[#f6f7f8]/80 to-transparent pb-2 pt-3 dark:from-[#020617]/95 dark:via-[#020617]/80">
+    <div className="sticky bottom-0 z-30 w-full bg-gradient-to-t from-white/95 via-white/80 to-transparent pb-2 pt-3 dark:from-slate-950/95 dark:via-slate-950/80">
       {/* Global Drag Overlay */}
       {isDragging && (
         <div className="pointer-events-none fixed inset-0 z-50 m-6 flex items-center justify-center rounded-3xl border-[3px] border-dashed border-slate-300/70 bg-slate-900/10 backdrop-blur-sm transition-all duration-300">
@@ -371,9 +372,9 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={files.length > 0 ? "Ask a question about these files..." : "Message Arcli, type @ to query a specific dataset..."}
+            placeholder={files.length > 0 ? "Ask about these files" : "Ask anything"}
             disabled={isProcessing}
-            className="custom-scrollbar flex-1 min-h-[46px] max-h-[220px] resize-none bg-transparent px-2 py-2.5 pr-14 text-[15px] font-medium leading-relaxed text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-50 dark:text-slate-100 dark:placeholder:text-slate-500"
+            className="custom-scrollbar flex-1 min-h-[46px] max-h-[220px] resize-none bg-transparent px-2 py-2.5 pr-14 text-[15px] leading-relaxed text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0 disabled:opacity-50 dark:text-slate-100 dark:placeholder:text-slate-500"
             rows={1}
           />
 
@@ -396,10 +397,11 @@ export const OmniMessageInput: React.FC<OmniMessageInputProps> = ({
         </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
-        <span>Enter to send • Shift+Enter newline • @ routes context</span>
-        <span>{files.length}/{MAX_ATTACHMENTS} attachments</span>
-      </div>
+      {showComposerHint && (
+        <div className="mt-2 flex items-center justify-center text-[10px] font-medium tracking-[0.04em] text-slate-400 dark:text-slate-500">
+          Shift + Enter for new line
+        </div>
+      )}
 
     </div>
   );

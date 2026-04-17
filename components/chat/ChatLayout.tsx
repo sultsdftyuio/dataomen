@@ -951,8 +951,8 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   ];
 
   return (
-    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-[#f6f7f8] text-slate-900 dark:bg-[#020617] dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(15,23,42,0.09),transparent_62%)] dark:bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(148,163,184,0.16),transparent_62%)]" />
+    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(15,23,42,0.06),transparent_62%)] dark:bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(148,163,184,0.16),transparent_62%)]" />
       <div className="pointer-events-none absolute left-1/2 top-0 h-full w-full max-w-[58rem] -translate-x-1/2 bg-gradient-to-b from-white/78 via-white/58 to-white/20 dark:from-slate-950/70 dark:via-slate-950/45 dark:to-transparent" />
       <div className="relative z-10 flex h-full min-h-0 flex-col">
       
@@ -1021,7 +1021,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Chat Body ── */}
       <div ref={scrollContainerRef} className="relative -mt-12 min-h-0 flex-1">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-[#f6f7f8] via-[#f6f7f8]/80 to-transparent dark:from-[#020617] dark:via-[#020617]/80" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-white via-white/80 to-transparent dark:from-slate-950 dark:via-slate-950/80" />
         <ScrollArea className="h-full">
           <div className="mx-auto w-full max-w-4xl px-5 pb-56 pt-20 sm:px-8">
             {/* Empty / Welcome State */}

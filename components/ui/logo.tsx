@@ -14,7 +14,7 @@ interface LogoProps extends React.SVGProps<SVGSVGElement> {
  */
 export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
   return (
-    <div className={cn("flex items-center gap-3 select-none", className)}>
+    <div className={cn("flex items-center select-none", !iconOnly && "gap-3", className)}>
       {/* Icon: The Arc & Axis */}
       <div className="relative flex-shrink-0">
         <svg
@@ -57,7 +57,7 @@ export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
       {/* Wordmark: ARCLI */}
       {!iconOnly && (
         <div className="flex flex-col leading-none justify-center">
-          <span className="text-2xl font-extrabold tracking-[-0.03em] text-black dark:text-white uppercase">
+          <span className="text-2xl font-extrabold tracking-[-0.03em] text-slate-900 dark:text-white uppercase">
             ARCLI<span className="text-blue-500">.</span>
           </span>
         </div>

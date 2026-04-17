@@ -12,7 +12,7 @@ import {
   BreadcrumbPage, 
   BreadcrumbSeparator 
 } from "@/components/ui/breadcrumb"
-import { Database, Search } from "lucide-react"
+import { Database, Sparkles } from "lucide-react"
 
 export default function DashboardLayout({
   children,
@@ -27,15 +27,15 @@ export default function DashboardLayout({
       <DashboardSidebar />
       
       {/* SidebarInset ensures the main content area adjusts perfectly to the sidebar's state */}
-      <SidebarInset className="bg-[#fafafa] flex flex-col min-h-[100dvh]">
+      <SidebarInset className="bg-white flex flex-col min-h-[100dvh]">
         
         {/* Persistent Global Header */}
-        <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200/80 bg-white/80 backdrop-blur-md px-6 sticky top-0 z-20 transition-all shadow-sm">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/92 px-6 backdrop-blur-md transition-all">
           
           {/* Left Side: Navigation & Context */}
           <div className="flex items-center gap-3">
-            <SidebarTrigger className="-ml-2 text-slate-500 hover:text-blue-600 transition-colors" />
-            <Separator orientation="vertical" className="h-5 bg-gray-200" />
+            <SidebarTrigger className="-ml-2 text-slate-500 hover:text-slate-900 transition-colors" />
+            <Separator orientation="vertical" className="h-5 bg-slate-200" />
             
             {/* Contextual Breadcrumbs */}
             <Breadcrumb>
@@ -56,22 +56,15 @@ export default function DashboardLayout({
             </Breadcrumb>
           </div>
           
-          {/* Right Side: Omniscient Trigger Hint & User Profile */}
-          <div className="flex items-center gap-5">
-            
-            {/* Visual hint for the Cmd+K Omniscient Scratchpad */}
-            <div className="hidden lg:flex items-center gap-3 px-3 py-1.5 bg-slate-50 border border-gray-200 rounded-lg text-sm text-slate-400 font-medium shadow-inner cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition-colors pointer-events-none">
-              <Search className="h-4 w-4" />
-              <span>Global deep dive...</span>
-              <kbd className="inline-flex items-center gap-1 rounded bg-white px-1.5 font-mono text-[10px] font-bold text-slate-500 border border-gray-200 shadow-sm ml-4">
-                <span className="text-xs">⌘</span>K
-              </kbd>
+          {/* Right Side: Product Status + User Profile */}
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-500">
+              <Sparkles className="h-3.5 w-3.5 text-blue-500" />
+              Engine online
             </div>
 
-            <Separator orientation="vertical" className="h-5 bg-gray-200 hidden lg:block" />
-
             {/* User Avatar Placeholder */}
-            <div className="h-9 w-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-700 font-extrabold text-sm border border-blue-100 cursor-pointer hover:bg-blue-600 hover:text-white transition-all shadow-sm">
+            <div className="h-9 w-9 rounded-xl bg-slate-900 flex items-center justify-center text-white font-bold text-sm border border-slate-800/80 cursor-pointer hover:bg-slate-800 transition-all shadow-sm">
               AD
             </div>
           </div>

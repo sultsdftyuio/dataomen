@@ -241,6 +241,10 @@
   50% { opacity: 0.06; }
   100% { opacity: 0.03; }
 }
+@keyframes skeleton-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
 
 .anim-float-1 { animation: float1 6s ease-in-out infinite; }
 .anim-float-2 { animation: float2 7s ease-in-out infinite reverse; }
