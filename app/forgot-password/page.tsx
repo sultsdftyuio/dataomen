@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2, MailCheck } from "lucide-react";
@@ -27,7 +27,7 @@ const C = {
  * Optimized for clarity and brand consistency. 
  * Replaces generic "DataOmen" branding with "arcli".
  */
-export default function ForgotPasswordPage() {
+function ForgotPasswordForm() {
   const [state, formAction] = useFormState(resetPassword, {});
   const [isPending, setIsPending] = useState(false);
   const searchParams = useSearchParams();
@@ -136,5 +136,17 @@ export default function ForgotPasswordPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#F6FAFE]">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      </div>
+    }>
+      <ForgotPasswordForm />
+    </Suspense>
   );
 }

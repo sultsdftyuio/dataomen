@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
@@ -26,7 +26,7 @@ const C = {
  * LoginPage Component
  * Simplified branding to "arcli" to match the streamlined user experience.
  */
-export default function LoginPage() {
+function LoginForm() {
   const [state, formAction] = useFormState(loginAction, {});
   const [isPending, setIsPending] = useState(false);
   const [isGooglePending, setIsGooglePending] = useState(false);
@@ -235,5 +235,17 @@ export default function LoginPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#F6FAFE]">
+        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
