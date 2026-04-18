@@ -7,43 +7,64 @@
 
 import { createClient } from '@/utils/supabase/client'
 
-// Security by Design: Resolve base URL and strictly enforce HTTPS for external domains
-// This definitively prevents Browser Mixed Content blocks when communicating with DigitalOcean
-// Load Balancers over direct URLs, while falling back gracefully to the Next.js rewrite proxy.
+// Resolve base URL safely.
 const resolveApiUrl = () => {
-  const url = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
-  
-  // Force protocol upgrade if an insecure absolute URL leaked into the environment
-  if (url.startsWith('http://') && !url.includes('localhost')) {
-    return url.replace('http://', 'https://');
-  }
-  return url;
+  return process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 };
 
 const API_BASE_URL = resolveApiUrl().replace(/\/$/, '');
 
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
+const INTERNAL_NEXT_API_PREFIXES = [
+  '/api/chat',
+  '/api/insights',
+  '/api/og',
+];
+const ABSOLUTE_API_ORIGIN = ABSOLUTE_URL_REGEX.test(API_BASE_URL)
+  ? new URL(API_BASE_URL).origin
+  : null;
 
-const isInternalNextApiRoute = (path: string) => path === '/api' || path.startsWith('/api/');
+// Strictly match local Next.js route handlers and avoid catching FastAPI routes like /api/v1/*.
+const isInternalNextApiRoute = (path: string) => {
+  return INTERNAL_NEXT_API_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`)
+  );
+};
+
+const upgradeExternalUrlToHttps = (url: string) => {
+  if (url.startsWith('http://') && !url.includes('localhost')) {
+    return url.replace('http://', 'https://');
+  }
+
+  return url;
+};
 
 const buildRequestUrl = (endpoint: string) => {
-  if (ABSOLUTE_URL_REGEX.test(endpoint)) {
-    return endpoint;
+  let finalUrl = endpoint;
+
+  if (!ABSOLUTE_URL_REGEX.test(endpoint)) {
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+    // Internal Next.js App Router API routes should be called relative to hit local handlers.
+    if (isInternalNextApiRoute(cleanEndpoint)) {
+      return cleanEndpoint;
+    }
+
+    // External API routes keep strict trailing slash behavior to avoid redirect/header issues.
+    const [pathPart, queryPart] = cleanEndpoint.split('?', 2);
+    const securePath = pathPart.endsWith('/') ? pathPart : `${pathPart}/`;
+    const finalEndpoint = queryPart ? `${securePath}?${queryPart}` : securePath;
+
+    // If caller already provides an /api/* path, do not re-prefix API_BASE_URL.
+    if (pathPart.startsWith('/api/')) {
+      finalUrl = ABSOLUTE_API_ORIGIN ? `${ABSOLUTE_API_ORIGIN}${finalEndpoint}` : finalEndpoint;
+    } else {
+      finalUrl = `${API_BASE_URL}${finalEndpoint}`;
+    }
   }
 
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-
-  // Internal Next.js App Router API routes should be called exactly as provided.
-  if (isInternalNextApiRoute(cleanEndpoint)) {
-    return cleanEndpoint;
-  }
-
-  // External API routes keep strict trailing slash behavior to avoid redirect/header issues.
-  const [pathPart, queryPart] = cleanEndpoint.split('?', 2);
-  const securePath = pathPart.endsWith('/') ? pathPart : `${pathPart}/`;
-  const finalEndpoint = queryPart ? `${securePath}?${queryPart}` : securePath;
-
-  return `${API_BASE_URL}${finalEndpoint}`;
+  // Force protocol upgrade on all outgoing external URLs, including absolute inputs.
+  return upgradeExternalUrlToHttps(finalUrl);
 };
 
 interface FetchOptions extends RequestInit {

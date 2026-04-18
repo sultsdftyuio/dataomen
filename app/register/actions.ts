@@ -1,18 +1,87 @@
 'use server'
 
 import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
+const ROOT_RELATIVE_URL_REGEX = /^\//
+const LOCAL_BACKEND_FALLBACK = 'http://localhost:8080'
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '')
 
-const resolveRegisterEndpointCandidates = (): string[] => {
+const isNextRedirectError = (error: unknown): boolean => {
+  if (error instanceof Error && error.message === 'NEXT_REDIRECT') {
+    return true
+  }
+
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  const digest = (error as { digest?: unknown }).digest
+  return typeof digest === 'string' && digest.startsWith('NEXT_REDIRECT')
+}
+
+const resolveRequestOrigin = async (): Promise<string | null> => {
+  const headerStore = await headers()
+  const host = headerStore.get('x-forwarded-host') || headerStore.get('host')
+
+  if (!host) {
+    return null
+  }
+
+  const forwardedProto = headerStore.get('x-forwarded-proto')
+  const isLocalHost = host.includes('localhost') || host.startsWith('127.0.0.1')
+  const protocol = forwardedProto || (isLocalHost ? 'http' : 'https')
+
+  return `${protocol}://${host}`
+}
+
+const resolveRegisterEndpoint = (rawBase: string, requestOrigin: string | null): string | null => {
+  const trimmedBase = trimTrailingSlash(rawBase.trim())
+  if (!trimmedBase) return null
+
+  let base = trimmedBase
+  if (ROOT_RELATIVE_URL_REGEX.test(base)) {
+    if (!requestOrigin) {
+      return null
+    }
+
+    base = `${trimTrailingSlash(requestOrigin)}${base}`
+  } else if (!ABSOLUTE_HTTP_URL_REGEX.test(base)) {
+    return null
+  }
+
+  const lowerBase = base.toLowerCase()
+
+  if (lowerBase.endsWith('/api/v1/auth/register') || lowerBase.endsWith('/v1/auth/register')) {
+    return base
+  }
+
+  if (lowerBase.endsWith('/api/v1/auth') || lowerBase.endsWith('/v1/auth')) {
+    return `${base}/register`
+  }
+
+  if (lowerBase.endsWith('/api/v1') || lowerBase.endsWith('/v1')) {
+    return `${base}/auth/register`
+  }
+
+  if (lowerBase.endsWith('/api')) {
+    return `${base}/v1/auth/register`
+  }
+
+  return `${base}/api/v1/auth/register`
+}
+
+const resolveRegisterEndpointCandidates = async (): Promise<string[]> => {
+  const requestOrigin = await resolveRequestOrigin()
   const baseCandidates = [
     process.env.BACKEND_API_URL,
     process.env.NEXT_PUBLIC_API_URL,
-    'http://localhost:8000',
+    LOCAL_BACKEND_FALLBACK,
+    '/api/v1',
+    '/api',
   ]
 
   const endpoints = new Set<string>()
@@ -21,20 +90,10 @@ const resolveRegisterEndpointCandidates = (): string[] => {
     const rawBase = (baseValue || '').trim()
     if (!rawBase) continue
 
-    const base = trimTrailingSlash(rawBase)
-    if (!ABSOLUTE_HTTP_URL_REGEX.test(base)) continue
+    const endpoint = resolveRegisterEndpoint(rawBase, requestOrigin)
+    if (!endpoint) continue
 
-    if (/\/api\/v1$/i.test(base)) {
-      endpoints.add(`${base}/auth/register`)
-      continue
-    }
-
-    if (/\/api$/i.test(base)) {
-      endpoints.add(`${base}/v1/auth/register`)
-      continue
-    }
-
-    endpoints.add(`${base}/api/v1/auth/register`)
+    endpoints.add(endpoint)
   }
 
   return Array.from(endpoints)
@@ -65,7 +124,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
   // Generate smart defaults for backend fields omitted in the UI to reduce friction
   const fallbackName = email.split('@')[0] || 'User'
   const fallbackCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace'
-  const registerEndpointCandidates = resolveRegisterEndpointCandidates()
+  const registerEndpointCandidates = await resolveRegisterEndpointCandidates()
 
   try {
     // 1. Register the tenant and user in the Core API
@@ -143,7 +202,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
     }
 
   } catch (error) {
-    if ((error as Error).message === 'NEXT_REDIRECT') throw error
+    if (isNextRedirectError(error)) throw error
     console.error('Registration/Auto-login error:', error)
     return { error: 'Could not complete registration flow.' }
   }
