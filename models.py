@@ -216,6 +216,23 @@ class SemanticMetric(Base, TenantAwareMixin):
     dataset: Mapped["Dataset"] = relationship("Dataset", back_populates="semantic_metrics")
 
 
+class SyncJob(Base):
+    """
+    Async sync idempotency ledger used by SyncEngine and Celery workers.
+    """
+    __tablename__ = "sync_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    idempotency_key: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    celery_task_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 # ==========================================
 # AGENTS & AUTONOMOUS INSIGHTS
 # ==========================================

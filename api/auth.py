@@ -3,6 +3,8 @@
 import os
 import json
 import logging
+import re
+import time
 import jwt  # Requires: pip install PyJWT
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
@@ -190,23 +192,156 @@ def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)
     """
     return tenant_context.tenant_id
 
+
+def _coerce_http_status(value: Any) -> Optional[int]:
+    """Best-effort conversion of status-like values into a valid HTTP status code."""
+    if isinstance(value, int) and 100 <= value <= 599:
+        return value
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            numeric = int(stripped)
+            if 100 <= numeric <= 599:
+                return numeric
+
+    return None
+
+
+def _extract_supabase_error_context(exc: Exception) -> Dict[str, Any]:
+    """Extract structured details from Supabase/Gotrue exceptions when available."""
+    error_text = str(exc).strip() or exc.__class__.__name__
+    error_lower = error_text.lower()
+
+    status_code = _coerce_http_status(getattr(exc, "status_code", None))
+    if status_code is None:
+        status_code = _coerce_http_status(getattr(exc, "status", None))
+    if status_code is None:
+        status_code = _coerce_http_status(getattr(exc, "code", None))
+
+    response = getattr(exc, "response", None)
+    if status_code is None and response is not None:
+        status_code = _coerce_http_status(getattr(response, "status_code", None))
+    if status_code is None and response is not None:
+        status_code = _coerce_http_status(getattr(response, "status", None))
+
+    parsed_payload: Optional[Dict[str, Any]] = None
+    if error_text.startswith("{") and error_text.endswith("}"):
+        try:
+            maybe_payload = json.loads(error_text)
+            if isinstance(maybe_payload, dict):
+                parsed_payload = maybe_payload
+        except Exception:
+            parsed_payload = None
+
+    if parsed_payload:
+        payload_message = (
+            parsed_payload.get("msg")
+            or parsed_payload.get("message")
+            or parsed_payload.get("error_description")
+            or parsed_payload.get("error")
+            or parsed_payload.get("detail")
+        )
+        if payload_message:
+            error_text = str(payload_message)
+            error_lower = error_text.lower()
+
+        if status_code is None:
+            status_code = _coerce_http_status(parsed_payload.get("status"))
+        if status_code is None:
+            status_code = _coerce_http_status(parsed_payload.get("status_code"))
+        if status_code is None:
+            status_code = _coerce_http_status(parsed_payload.get("code"))
+
+    if status_code is None:
+        status_match = re.search(r"\b(?:status(?:_code)?\s*[:=]?\s*|http\s+)([45]\d\d)\b", error_lower)
+        if status_match:
+            status_code = int(status_match.group(1))
+
+    return {
+        "status_code": status_code,
+        "error_text": error_text,
+        "error_lower": error_lower,
+    }
+
+
+def _map_register_exception_to_http(exc: Exception) -> HTTPException:
+    """Map Supabase registration errors into stable frontend-facing HTTP responses."""
+    context = _extract_supabase_error_context(exc)
+    status_code = context["status_code"]
+    error_text = context["error_text"]
+    error_lower = context["error_lower"]
+
+    if status_code == status.HTTP_409_CONFLICT or "already registered" in error_lower or "user already exists" in error_lower:
+        logger.warning("[DEBUG-API] Conflict: User already exists.")
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists.")
+
+    if (
+        status_code in {status.HTTP_400_BAD_REQUEST, status.HTTP_422_UNPROCESSABLE_ENTITY}
+        and "password" in error_lower
+    ) or ("password" in error_lower and any(token in error_lower for token in ["weak", "characters", "at least", "minimum"])):
+        logger.warning(f"[DEBUG-API] Bad Request: Password policy violation -> {error_text}")
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Password error: {error_text}")
+
+    if status_code == status.HTTP_429_TOO_MANY_REQUESTS or "rate limit" in error_lower or "too many requests" in error_lower:
+        logger.warning("[DEBUG-API] Rate limit hit on Supabase.")
+        return HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded. Try again later.")
+
+    if (
+        status_code in {status.HTTP_400_BAD_REQUEST, status.HTTP_422_UNPROCESSABLE_ENTITY}
+        and "email" in error_lower
+        and "invalid" in error_lower
+    ) or "invalid email" in error_lower:
+        logger.warning(f"[DEBUG-API] Bad Request: Invalid email rejected by Supabase -> {error_text}")
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid email: {error_text}")
+
+    if "supabase url or key is missing" in error_lower or "missing from environment" in error_lower:
+        logger.error("[DEBUG-API] CONFIG ERROR: Missing Supabase environment variables.")
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Backend configuration error: Supabase URL/keys are missing in environment variables.",
+        )
+
+    if status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN} or any(
+        token in error_lower for token in ["forbidden", "unauthorized", "jwt", "service role"]
+    ):
+        logger.error("[DEBUG-API] CONFIG ERROR: The SUPABASE_SERVICE_ROLE_KEY is likely missing or invalid.")
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Backend configuration error: Supabase Admin permissions denied. Check backend Environment Variables.",
+        )
+
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Backend creation failed: {error_text}",
+    )
+
 # ------------------------------------------------------------------------------
 # 4. Endpoints
 # ------------------------------------------------------------------------------
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register_user(payload: RegisterRequest):
     """
-    Multi-tenant Registration Endpoint.
-    1. Creates the user in Supabase Auth bypassing email checks (for immediate frontend login).
-    2. Maps the user to their organizational domain tenant.
+    Multi-tenant Registration Endpoint with granular debugging and typed error mapping.
     """
+    request_id = f"reg-{int(time.time() * 1000)}-{os.getpid()}"
+    request_start = time.perf_counter()
+
+    logger.info(f"[DEBUG-API][{request_id}] === Incoming Registration for: {payload.email} ===")
+    logger.info(
+        f"[DEBUG-API][{request_id}] Payload snapshot: "
+        f"full_name={payload.full_name!r}, company_name={payload.company_name!r}, password_length={len(payload.password)}"
+    )
+
     try:
         client = get_supabase_client()
-        
-        # Extract domain from email for the initial tenant assignment
         extracted_domain = payload.email.split("@")[1].lower() if "@" in payload.email else payload.email
 
-        # Security by Design: We use the admin API to create the user and auto-confirm them.
+        logger.info(
+            f"[DEBUG-API][{request_id}] Attempting Supabase Admin user creation. "
+            f"target_tenant={extracted_domain}"
+        )
+
         response = client.auth.admin.create_user({
             "email": payload.email,
             "password": payload.password,
@@ -214,23 +349,41 @@ async def register_user(payload: RegisterRequest):
             "user_metadata": {
                 "full_name": payload.full_name,
                 "company_name": payload.company_name,
-                "tenant_id": extracted_domain  # Zero-config tenant assignment
+                "tenant_id": extracted_domain
             }
         })
-        
-        # Next Step: Trigger your Database Service here to create the physical 
-        # multi-tenant schema/rows, e.g., `db.create_tenant(extracted_domain)`
-        
+
+        created_user = getattr(response, "user", None)
+        created_user_id = getattr(created_user, "id", None) if created_user else None
+        if not created_user_id:
+            logger.error(f"[DEBUG-API][{request_id}] Supabase response did not include a created user ID.")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase returned an invalid user creation response.",
+            )
+
+        duration_ms = int((time.perf_counter() - request_start) * 1000)
+
+        logger.info(
+            f"[DEBUG-API][{request_id}] Supabase Admin creation SUCCESS. "
+            f"user_id={created_user_id}, tenant_id={extracted_domain}, duration_ms={duration_ms}"
+        )
+
         return {
             "status": "success", 
             "message": "User and tenant successfully provisioned.",
-            "user_id": response.user.id,
+            "user_id": created_user_id,
             "tenant_id": extracted_domain
         }
-        
+
+    except HTTPException:
+        raise
+
     except Exception as e:
-        logger.error(f"Registration Failed for {payload.email}: {str(e)}")
-        if "already registered" in str(e).lower():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists.")
-            
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create user account.")
+        context = _extract_supabase_error_context(e)
+        duration_ms = int((time.perf_counter() - request_start) * 1000)
+        logger.error(
+            f"[DEBUG-API][{request_id}] CRITICAL Supabase Registration Error after {duration_ms}ms: "
+            f"status={context['status_code']}, message={context['error_text']}, exception_type={type(e).__name__}"
+        )
+        raise _map_register_exception_to_http(e)

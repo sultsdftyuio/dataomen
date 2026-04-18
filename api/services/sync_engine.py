@@ -252,7 +252,12 @@ class DistributedSemaphore:
         self.name = f"dist_semaphore_zset:{name}"
         self.max_concurrent = max_concurrent
         self.token_ttl_seconds = token_ttl_seconds
-        self._owner_prefix = f"{os.getpid()}:{asyncio.current_task().get_name() if asyncio.current_task() else 'unknown'}"
+        try:
+            current_task = asyncio.current_task()
+        except RuntimeError:
+            current_task = None
+        task_name = current_task.get_name() if current_task else "unknown"
+        self._owner_prefix = f"{os.getpid()}:{task_name}"
 
     def _make_owner(self) -> str:
         """Generate unique owner identifier."""

@@ -34,11 +34,12 @@ sentence-transformers>=2.5.0
 tiktoken>=0.6.0
 chromadb>=0.4.24
 faiss-cpu>=1.8.0              # Fixed for native Python 3.12 support
-
+qdrant-client>=1.7.0
 # --- Database & Multi-Tenant Infrastructure ---
 supabase>=2.4.0               # Auth and DB management
 postgrest>=0.10.0
 psycopg2-binary>=2.9.9        # Postgres adapter
+asyncpg>=0.29.0               # Async SQLAlchemy adapter for sync_engine and agent_memory
 sqlalchemy>=2.0.27            # ORM for models.py
 pgvector>=0.2.5               # Required for Vector type in models.py
 pydantic[email]>=2.6.0        # CRITICAL FIX: Added [email] for RegisterRequest validation

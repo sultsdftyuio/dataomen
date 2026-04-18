@@ -24,9 +24,14 @@ from sqlalchemy.orm import Session
 
 # Modular infrastructure components
 from api.services.storage_manager import storage_manager
-from api.services.vector_service import vector_service
+from api.services.vector_service import (
+    vector_service,
+    PointStruct,
+    VectorParams,
+    Distance,
+    PointIdsList,
+)
 from api.services.llm_client import llm_client
-from qdrant_client.models import PointStruct, VectorParams, Distance, PointIdsList
 
 # -----------------------------------------------------------------------------
 # Observability & Metrics
@@ -277,6 +282,15 @@ class DataIngestionService:
             'application/json': ['json'],
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['docx']
         }
+
+    def _require_vector_runtime(self) -> None:
+        if vector_service.client is None:
+            raise HTTPException(status_code=503, detail="Vector service unavailable.")
+        if any(symbol is None for symbol in (PointStruct, VectorParams, Distance, PointIdsList)):
+            raise HTTPException(
+                status_code=503,
+                detail="qdrant-client dependency is not installed on this runtime.",
+            )
 
     def _get_cb(self, tenant_id: str, cb_type: str) -> CircuitBreaker:
         key = f"{cb_type}_{tenant_id}"
@@ -561,8 +575,7 @@ class DataIngestionService:
         return f"{self.DOCUMENT_COLLECTION_PREFIX}_dim{dimension}"
 
     async def _ensure_document_collection(self, trace_adapter: TraceContextAdapter, dimension: int):
-        if not vector_service.client:
-            raise HTTPException(status_code=500, detail="Vector service unavailable.")
+        self._require_vector_runtime()
 
         collection_name = self._get_collection_name(dimension)
 
@@ -592,6 +605,8 @@ class DataIngestionService:
         embed_semaphore: asyncio.Semaphore, collection_name: str
     ) -> Dict[str, Any]:
         """Process a batch of chunks with embeddings and Qdrant upsert."""
+        self._require_vector_runtime()
+
         async with embed_semaphore:
             embeddings = await self._with_retry(
                 llm_client.embed_batch, self.LLM_RETRIES, self._get_cb(tenant_id, "llm"),
@@ -651,6 +666,8 @@ class DataIngestionService:
         """Batched rollback for backpressure protection."""
         if not written_ids:
             return
+
+        self._require_vector_runtime()
 
         collection_name = self._get_collection_name(dimension)
         trace_adapter.warning("Tolerance breached. Rolling back partial Qdrant writes.")

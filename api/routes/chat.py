@@ -109,46 +109,56 @@ async def orchestrate_chat(
 
     # 2. SEMANTIC INTENT ROUTING
     # Use the lightweight LLM capability to determine if this requires data processing
-    route_decision = await semantic_router.route_query(request.prompt)
+    route_decision, _routing_trace = await semantic_router.route_query(
+        request.prompt,
+        tenant_id=tenant_id,
+    )
 
     # ------------------------------------------------------------------
-    # PATH A: Conversational Assistant (Educational /# Build contextually aware system prompt
+    # PATH A: Conversational Assistant (Educational / Exploratory)
+    # ------------------------------------------------------------------
+    if route_decision.destination in {"CONVERSATIONAL", "CLARIFICATION_REQUIRED"}:
+        logger.info(f"[{tenant_id}] Routing to Conversational Assistant.")
+
+        async def generate_conversational_stream():
+            # Build contextually aware system prompt
             system_prompt = """
             You are DataOmen AI, an expert business analyst and friendly assistant.
             You are helping a non-technical founder understand data concepts, business metrics, or navigating the platform.
-            
+
             Current Context: The user is asking a general question, not requesting a specific chart from their database.
             Instruction: Be concise, encouraging, and avoid overly technical jargon.
             """
 
-            # Enforce Specialized Agent Persona if one is active
+            # Enforce specialized agent persona if one is active
             if request.agent_id:
                 from models import Agent
+
                 agent = db.query(Agent).filter(
-                    Agent.id == request.agent_id, 
-                    Agent.tenant_id == tenant_id
+                    Agent.id == request.agent_id,
+                    Agent.tenant_id == tenant_id,
                 ).first()
-                
+
                 if agent and agent.role_description:
                     system_prompt = agent.role_description
-            
+
             # Yield an initial status update for the UI
             yield f"data: {json.dumps({'type': 'status', 'content': 'Thinking...'})}\n\n"
-            
+
             try:
                 # Stream the text response using the singleton LLM client
-                async for chunk in llm_client.stream_response(
+                async for chunk in llm_client.stream_text(
+                    system_prompt=system_prompt,
                     prompt=request.prompt,
-                    system_instructions=system_prompt,
-                    history=[h.model_dump() for h in request.history[-5:]] # Keep history tight
+                    history=[h.model_dump() for h in (request.history or [])[-5:]],
                 ):
                     yield f"data: {json.dumps({'type': 'narrative_chunk', 'content': chunk})}\n\n"
-                
+
                 # Signal completion
                 yield f"data: {json.dumps({'type': 'done', 'content': 'Complete'})}\n\n"
-                
+
             except Exception as e:
-                logger.error(f"[{tenant_id}] Conversational Streaming Error: {str(e)}")
+                logger.error(f"[{tenant_id}] Conversational streaming error: {e}")
                 yield f"data: {json.dumps({'type': 'error', 'content': 'I encountered an error while thinking.'})}\n\n"
 
         return StreamingResponse(
@@ -158,8 +168,8 @@ async def orchestrate_chat(
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
-                "Content-Type": "text/event-stream"
-            }
+                "Content-Type": "text/event-stream",
+            },
         )
 
     # ------------------------------------------------------------------

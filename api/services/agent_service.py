@@ -11,7 +11,6 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, Field
-from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 # Models and Security
 from models import Agent, Dataset
@@ -78,10 +77,12 @@ class AgentService:
         if not candidate_collections:
             return False
 
-        doc_filter = Filter(must=[
-            FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
-            FieldCondition(key="document_id", match=MatchValue(value=document_id)),
-        ])
+        doc_filter = {
+            "must": [
+                {"key": "tenant_id", "match": {"value": tenant_id}},
+                {"key": "document_id", "match": {"value": document_id}},
+            ]
+        }
 
         for collection_name in candidate_collections:
             try:

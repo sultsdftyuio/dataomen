@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from api.services.query_planner import QueryPlan
 from api.services.insight_orchestrator import InsightPayload
 from api.services.llm_client import llm_client
-from utils.supabase.server import create_client
+from api.auth import get_supabase_client
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,11 @@ class NarrativeService:
 
     def __init__(self):
         # Multi-tenant state isolation
-        self.supabase = create_client()
+        try:
+            self.supabase = get_supabase_client()
+        except Exception as exc:
+            self.supabase = None
+            logger.warning("Supabase snapshot persistence disabled: %s", exc)
 
     async def generate_executive_summary(
         self, 
@@ -166,6 +170,9 @@ THE COMMANDMENTS (STRICT):
         Persists the snapshot reference. Because we store the hash of the facts 
         rather than raw parquet data, storage costs remain sub-linear.
         """
+        if self.supabase is None:
+            return
+
         try:
             snapshot = NarrativeSnapshot(
                 tenant_id=tenant_id,

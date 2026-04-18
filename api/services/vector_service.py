@@ -7,17 +7,30 @@ import asyncio
 from typing import Dict, List, Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
-from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import (
-    Distance, 
-    VectorParams, 
-    PointStruct, 
-    Filter, 
-    FieldCondition, 
-    MatchValue,
-    MatchAny,
-    Range
-)
+try:
+    from qdrant_client import AsyncQdrantClient
+    from qdrant_client.models import (
+        Distance,
+        VectorParams,
+        PointStruct,
+        Filter,
+        FieldCondition,
+        MatchValue,
+        MatchAny,
+        Range,
+    )
+    _QDRANT_IMPORT_ERROR: Optional[Exception] = None
+except ModuleNotFoundError as exc:
+    AsyncQdrantClient = None
+    Distance = None
+    VectorParams = None
+    PointStruct = None
+    Filter = None
+    FieldCondition = None
+    MatchValue = None
+    MatchAny = None
+    Range = None
+    _QDRANT_IMPORT_ERROR = exc
 
 from api.services.llm_client import llm_client
 
@@ -73,8 +86,14 @@ class VectorService:
         self.qdrant_url = os.getenv("QDRANT_URL")
         self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
         self.active_model_version = "v1" # Controls target collection routing
-        
-        if not self.qdrant_url:
+
+        if _QDRANT_IMPORT_ERROR is not None:
+            logger.warning(
+                "qdrant-client is not installed (%s). Semantic RAG operations offline.",
+                _QDRANT_IMPORT_ERROR,
+            )
+            self.client = None
+        elif not self.qdrant_url:
             logger.warning("QDRANT_URL missing. Semantic RAG operations offline.")
             self.client = None
         else:
