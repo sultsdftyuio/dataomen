@@ -48,7 +48,7 @@ export const CheckoutButton: React.FC<CheckoutButtonProps> = ({
       }
 
       // 2. Request a secure, tenant-bound checkout URL from the Render backend
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/billing/checkout`, {
+      const response = await fetch('/api/billing/checkout', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

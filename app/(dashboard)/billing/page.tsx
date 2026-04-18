@@ -10,7 +10,6 @@ import { useToast } from "@/components/ui/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Check, Zap, HardDrive, Activity, Loader2, Clock, ShieldAlert, TerminalSquare } from "lucide-react";
-import { ApiClient } from "@/lib/api-client";
 
 // --- TypeScript Interfaces ---
 interface UsageMetrics {
@@ -50,8 +49,21 @@ export default function BillingPage() {
 
   const fetchUsageMetrics = async () => {
     try {
-      // Replaced raw fetch with the hardened ApiClient abstraction
-      const data = await ApiClient.get<UsageMetrics>("organizations/me");
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/organizations/me", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session && { "Authorization": `Bearer ${session.access_token}` }),
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || "Failed to fetch usage metrics.");
+      }
+
+      const data = (await response.json()) as UsageMetrics;
       setUsage(data);
     } catch (error: any) {
       toast({
@@ -83,13 +95,38 @@ export default function BillingPage() {
     }
   };
 
-  const handleUpgrade = async (priceId: string) => {
+  const handleUpgrade = async (variantId: string) => {
     setIsCheckoutLoading(true);
     try {
-      // Replaced raw fetch with ApiClient abstraction
-      const { url } = await ApiClient.post<{ url?: string }>("stripe/create-checkout-session", { priceId });
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error("Authentication required. Please sign in again.");
+      }
 
-      if (url) window.location.href = url;
+      const response = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          variant_id: variantId,
+          redirect_url: `${window.location.origin}/dashboard?upgrade=success`,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.error || "Could not initialize checkout.");
+      }
+
+      const { checkout_url } = (await response.json()) as { checkout_url?: string };
+
+      if (checkout_url) {
+        window.location.href = checkout_url;
+      } else {
+        throw new Error("Checkout URL missing from billing server response.");
+      }
     } catch (error: any) {
       toast({
         title: "Checkout Dispatch Failed",

@@ -59,7 +59,7 @@ export function InsightsFeed() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      const response = await fetch("/api/insights/priority?limit=5", {
+      const response = await fetch("/api/insights?limit=5", {
         headers: {
           'Content-Type': 'application/json',
           ...(session && { 'Authorization': `Bearer ${session.access_token}` })
@@ -68,8 +68,13 @@ export function InsightsFeed() {
       
       if (response.ok) {
         const data = await response.json();
+        const insightList: Insight[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.insights)
+          ? data.insights
+          : [];
         // Ensure deterministic sorting: Highest impact score first
-        const sortedData = (data.insights || []).sort((a: Insight, b: Insight) => b.impact_score - a.impact_score);
+        const sortedData = insightList.sort((a: Insight, b: Insight) => b.impact_score - a.impact_score);
         setInsights(sortedData);
       } else {
         setInsights([]); 

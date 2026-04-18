@@ -78,10 +78,15 @@ const nextConfig = {
       {
         /**
          * System Override for Compute/Orchestration.
-         * Explicitly excludes auth and webhooks to maintain Edge isolation.
+         * Explicitly excludes local App Router handlers so they are not
+         * shadowed by backend rewrites.
          */
-        source: '/api/:path((?!auth|webhooks|chat/orchestrate|og).*)',
-        destination: `${backendUrl}/api/:path*`,
+        source: '/api/:path((?!auth|webhooks|chat|insights|og).*)/:rest*',
+        destination: `${backendUrl}/api/:path/:rest*`,
+      },
+      {
+        source: '/api/:path((?!auth|webhooks|chat|insights|og).*)',
+        destination: `${backendUrl}/api/:path`,
       }
     ]
   },

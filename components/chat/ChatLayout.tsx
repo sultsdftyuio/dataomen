@@ -493,7 +493,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     if (isHydratingDatasets) return;
     setIsHydratingDatasets(true);
     try {
-      const res = await fetch("/api/datasets", { method: "GET" });
+      const res = await fetch("/api/datasets/", { method: "GET" });
       if (!res.ok) return;
       const payload = await res.json();
       const list = Array.isArray(payload) ? payload : [];

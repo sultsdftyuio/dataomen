@@ -163,8 +163,8 @@ export default function AgentsPage() {
         const headers: HeadersInit | undefined = session ? { 'Authorization': `Bearer ${session.access_token}` } : undefined
 
         const [agentsRes, datasetsRes] = await Promise.all([
-          fetch('/api/agents', { headers }),
-          fetch('/api/datasets', { headers })
+          fetch('/api/agents/', { headers }),
+          fetch('/api/datasets/', { headers })
         ]);
         
         if (agentsRes.ok) setAgents(await agentsRes.json());

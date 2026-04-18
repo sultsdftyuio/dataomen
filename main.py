@@ -53,6 +53,7 @@ DEFAULT_ROUTE_MODULES = [
     "api.routes.chat",
     "api.routes.webhooks",
     "api.routes.billing",
+    "api.routes.organizations",
     "api.auth",
 ]
 
@@ -135,9 +136,9 @@ def _configure_middleware(fastapi_app: FastAPI) -> None:
     raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
     origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
-    # Domain regex ensures future-proof compatibility for multi-tenant subdomains
-    # It safely allows: https://arcli.tech, https://app.arcli.tech, https://client1.arcli.tech
-    domain_regex = r"^https://([a-zA-Z0-9-]+\.)?arcli\.tech$"
+    # Domain regex supports both production custom domains and Vercel preview URLs.
+    # Examples: https://arcli.tech, https://app.arcli.tech, https://preview-id.vercel.app
+    domain_regex = r"^https://([a-zA-Z0-9-]+\.)*(arcli\.tech|vercel\.app)$"
 
     fastapi_app.add_middleware(
         CORSMiddleware,

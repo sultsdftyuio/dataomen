@@ -103,7 +103,7 @@ export default function SyncDashboard() {
       
       if (!session) return;
 
-      const response = await fetch('/api/datasets', {
+      const response = await fetch('/api/datasets/', {
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 

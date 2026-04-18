@@ -62,6 +62,16 @@ const PayloadSchema = z.object({
   ab_test_config: z.any().optional(),
 });
 
+export async function GET() {
+  return NextResponse.json(
+    {
+      status: "ok",
+      message: "Orchestration endpoint is online. Use POST to start a stream.",
+    },
+    { status: 200 }
+  );
+}
+
 export async function POST(req: NextRequest, context: any) {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
