@@ -1,3 +1,4 @@
+// components/landing/hero.tsx
 "use client";
 
 import { ArrowRight, Sparkles } from "lucide-react";
@@ -33,20 +34,20 @@ export function Hero() {
           }}>
             <Sparkles size={14} color={C.blue} />
             <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>
-              Business intelligence without the SQL
+              The Unified Data Infrastructure
             </span>
           </div>
 
           <h1
             className="pfd hero-text"
-            style={{ fontSize: 76, color: C.navy, lineHeight: 1.05, letterSpacing: "-0.04em", maxWidth: 820, margin: "0 auto 24px" }}
+            style={{ fontSize: 76, color: C.navy, lineHeight: 1.05, letterSpacing: "-0.04em", maxWidth: 900, margin: "0 auto 24px" }}
           >
-            Your AI Data Analyst.<br />
-            <span style={{ color: C.blue }}>Ask anything. Get charts instantly.</span>
+            The Intelligent Data Operating System.<br />
+            <span style={{ color: C.blue }}>Connect, govern, and automate.</span>
           </h1>
 
-          <p style={{ fontSize: 20, color: C.muted, lineHeight: 1.6, maxWidth: 620, margin: "0 auto 48px" }}>
-            Connect Stripe, Postgres, or Snowflake in seconds. Ask Arcli questions in plain English, and deploy autonomous AI agents to watch your metrics 24/7. No SQL. No tickets. No waiting.
+          <p style={{ fontSize: 20, color: C.muted, lineHeight: 1.6, maxWidth: 660, margin: "0 auto 48px" }}>
+            Connect your entire stack, govern your metrics, and let AI automate your insights. From raw integrations to proactive intelligence—all in one unified platform.
           </p>
 
           {/* CTAs */}
