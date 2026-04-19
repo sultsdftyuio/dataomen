@@ -1,7 +1,7 @@
 // components/landing/hero.tsx
 "use client";
 
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
@@ -25,19 +25,6 @@ export function Hero() {
           className={`fu ${vis ? "vis" : ""}`}
           ref={ref as React.RefObject<HTMLDivElement>}
         >
-          {/* Eyebrow badge */}
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            background: "#fff", border: `1px solid ${C.ruleDark}`,
-            padding: "6px 16px", borderRadius: 30, marginBottom: 32,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.03)"
-          }}>
-            <Sparkles size={14} color={C.blue} />
-            <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>
-              Business intelligence without the SQL
-            </span>
-          </div>
-
           <h1
             className="pfd hero-text"
             style={{ fontSize: 76, color: C.navy, lineHeight: 1.05, letterSpacing: "-0.04em", maxWidth: 900, margin: "0 auto 24px" }}
