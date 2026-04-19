@@ -93,6 +93,59 @@ class CacheManager:
         query_hash = hashlib.sha256(normalized_prompt.encode()).hexdigest()
         return f"dataomen:cache:{tenant_id}:{dataset_id}:{query_hash}"
 
+    def _generate_generic_key(self, key: str) -> str:
+        """Namespaced key for generic router/state cache entries."""
+        return f"dataomen:generic:{key}"
+
+    async def get(self, key: str) -> Optional[Any]:
+        """
+        Generic cache get used by routing/state services.
+        Returns deserialized JSON payload when available.
+        """
+        namespaced_key = self._generate_generic_key(key)
+
+        if self._is_redis_healthy():
+            try:
+                cached_data = await self.redis.get(namespaced_key)
+                if cached_data is not None:
+                    try:
+                        return json.loads(cached_data)
+                    except Exception:
+                        return cached_data
+            except RedisError as e:
+                self._trip_circuit(e)
+
+        cached_local = self._local_cache.get(namespaced_key)
+        if cached_local:
+            if time.time() < cached_local["expires_at"]:
+                return cached_local["data"]
+            del self._local_cache[namespaced_key]
+
+        return None
+
+    async def set(self, key: str, value: Any, ttl_seconds: Optional[int] = None) -> None:
+        """
+        Generic cache set used by routing/state services.
+        Defaults to global TTL when `ttl_seconds` is not provided.
+        """
+        ttl = ttl_seconds or self.DEFAULT_TTL_SECONDS
+        namespaced_key = self._generate_generic_key(key)
+
+        self._local_cache[namespaced_key] = {
+            "expires_at": time.time() + ttl,
+            "data": value,
+        }
+
+        if self._is_redis_healthy():
+            try:
+                await self.redis.setex(
+                    name=namespaced_key,
+                    time=ttl,
+                    value=json.dumps(value, default=str),
+                )
+            except RedisError as e:
+                self._trip_circuit(e)
+
     async def get_cached_insight(self, tenant_id: str, dataset_id: str, prompt: str) -> Optional[Dict[str, Any]]:
         """
         Action 4.1: Retrieve the entire execution pipeline in O(1) time.

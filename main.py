@@ -57,6 +57,8 @@ DEFAULT_ROUTE_MODULES = [
     "api.auth",
 ]
 
+ROUTER_OPTIONAL_MODULES = {"api.auth"}
+
 
 def _env_flag(name: str, default: bool) -> bool:
     value = os.getenv(name)
@@ -205,6 +207,9 @@ def register_routes(
             module = importlib.import_module(module_path)
             router = getattr(module, "router", None)
             if router is None:
+                if module_path in ROUTER_OPTIONAL_MODULES:
+                    logger.warning(f"Skipping route module '{module_path}' because no router was found.")
+                    continue
                 raise AttributeError(f"Module '{module_path}' has no 'router' attribute.")
 
             fastapi_app.include_router(router)

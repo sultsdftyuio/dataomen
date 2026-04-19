@@ -20,13 +20,13 @@ export interface Attachment {
 export interface QueryPlan {
   execution_intent: "ANALYTICAL" | "DOCUMENT_RAG" | "HYBRID";
   intent_summary: string;
-  analytical_strategy: string;
-  primary_dataset_ids: string[];
-  primary_document_ids: string[];
+  analytical_strategy: Array<Record<string, any>>;
+  target_dataset_ids: string[];
+  document_ids: string[];
+  context_filters?: Record<string, any>;
   requested_governed_metrics?: string[];
   confidence_score: number;
-  is_achievable?: boolean;
-  missing_data_reason?: string;
+  is_budget_exceeded?: boolean;
 }
 
 /**
@@ -82,7 +82,7 @@ export interface Message {
 export interface ChatThread {
   id: string;
   tenantId: string;
-  agentId: string; 
+  agentId?: string;
   title: string;
   messages: Message[];
   updatedAt: string | Date;
@@ -94,9 +94,9 @@ export interface ChatThread {
 // ------------------------------------------------------------------
 
 export interface ChatRequestPayload {
-  agent_id: string;
+  agent_id?: string;
   prompt: string;
-  history: { role: string; content: string }[];
+  history: { role: "user" | "assistant" | "system" | "data" | "agent" | "ai"; content: string }[];
   active_dataset_ids?: string[];
   active_document_ids?: string[];
   stream?: boolean;

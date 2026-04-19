@@ -3,14 +3,19 @@ export interface Agent {
   tenant_id: string;
   name: string;
   description: string | null;
-  system_prompt: string;
-  dataset_ids: string[];
+  role_description: string | null;
+  dataset_id: string | null;
+  document_id: string | null;
+  temperature: number;
+  is_active: boolean;
   created_at: string;
 }
 
 export interface AgentCreatePayload {
   name: string;
   description?: string;
-  system_prompt: string;
-  dataset_ids: string[];
+  role_description: string;
+  dataset_id?: string | null;
+  document_id?: string | null;
+  temperature: number;
 }

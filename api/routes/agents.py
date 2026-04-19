@@ -264,6 +264,19 @@ async def update_agent(
 
         for key, value in update_data.items():
             setattr(agent, key, value)
+
+            # Preserve strict 1-to-1 boundary integrity on partial PATCH updates.
+            if key == "dataset_id" and value is not None:
+                agent.document_id = None
+            elif key == "document_id" and value is not None:
+                agent.dataset_id = None
+
+        # Defensive invariant check in case of pre-existing data corruption.
+        if agent.dataset_id and agent.document_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Invalid agent state: both dataset_id and document_id are set.",
+            )
         
         db.commit()
         db.refresh(agent)

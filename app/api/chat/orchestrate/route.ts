@@ -34,6 +34,9 @@ const withTimeout = async <T>(promise: Promise<T>, ms: number = 300): Promise<T>
 type StreamPacket = 
   | { type: "status"; content: string }
   | { type: "reasoning"; content: string }
+  | { type: "warning"; content: string }
+  | { type: "technical_trace"; content: any }
+  | { type: "narrative"; content: any }
   | { type: "narrative_chunk"; content: string }
   | { type: "data"; content: any }
   | { type: "sql"; content: string }
@@ -50,16 +53,23 @@ type StreamPacket =
 // Strict Gateway Schema (Frontend -> Next.js)
 // ---------------------------------------------------------------------------
 const PayloadSchema = z.object({
-  prompt: z.string().min(1, "Prompt cannot be empty.").max(3000, "Prompt exceeds maximum allowed length."),
+  prompt: z.string().min(1, "Prompt cannot be empty.").max(3000, "Prompt exceeds maximum allowed length.").optional(),
+  query: z.string().min(1, "Prompt cannot be empty.").max(3000, "Prompt exceeds maximum allowed length.").optional(),
   agent_id: z.string().optional(),
   active_dataset_ids: z.array(z.string().uuid("Invalid Dataset ID.")).max(10).optional().default([]),
   active_document_ids: z.array(z.string().uuid("Invalid Document ID.")).max(20).optional().default([]),
   history: z.array(z.object({
-    role: z.enum(["user", "assistant", "system", "data"]),
+    role: z.enum(["user", "assistant", "system", "data", "agent", "ai"]),
     content: z.any()
   })).max(20).optional().default([]), 
   predictive_config: z.any().optional(),
   ab_test_config: z.any().optional(),
+}).refine((value) => {
+  const promptCandidate = (value.prompt ?? value.query ?? "").trim();
+  return promptCandidate.length > 0;
+}, {
+  message: "Prompt cannot be empty.",
+  path: ["prompt"],
 });
 
 export async function GET() {
@@ -126,13 +136,202 @@ export async function POST(req: NextRequest, context: any) {
     const access_token = session.access_token;
     const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
 
-    const validationResult = PayloadSchema.safeParse(rawBody);
+    const normalizedBody = {
+      ...rawBody,
+      prompt: rawBody?.prompt ?? rawBody?.query,
+    };
+
+    const validationResult = PayloadSchema.safeParse(normalizedBody);
     if (!validationResult.success) {
       return NextResponse.json({ type: "error", message: "Invalid schema.", details: validationResult.error.errors }, { status: 400, headers: { "X-Request-ID": requestId } });
     }
 
     const parsedPayload = validationResult.data;
-    const { agent_id, prompt, active_dataset_ids, active_document_ids, history } = parsedPayload;
+    const { agent_id, active_dataset_ids, active_document_ids, history } = parsedPayload;
+    const prompt = (parsedPayload.prompt ?? parsedPayload.query ?? "").trim();
+    const normalizedHistory = (history || []).map((item) => ({
+      role: item.role === "agent" || item.role === "ai"
+        ? "assistant"
+        : item.role === "data"
+          ? "system"
+          : item.role,
+      content: typeof item.content === "string" ? item.content : JSON.stringify(item.content),
+    }));
+    const legacyJsonMode = Boolean(
+      rawBody?.query ||
+      rawBody?.context ||
+      rawBody?.context_snapshot ||
+      rawBody?.contextId ||
+      rawBody?.context_id
+    );
+
+    if (legacyJsonMode) {
+      log("info", "legacy_json_compat_mode");
+
+      try {
+        const backendResponse = await fetch(`${BACKEND_URL}/api/chat/orchestrate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${access_token}`,
+            "X-Tenant-ID": tenant_id,
+            "X-Request-ID": requestId,
+            "X-Forwarded-For": clientIp,
+            "Connection": "keep-alive"
+          },
+          body: JSON.stringify({
+            prompt,
+            agent_id: agent_id || null,
+            active_dataset_ids,
+            active_document_ids,
+            history: normalizedHistory,
+            stream: true,
+          }),
+          signal: req.signal,
+        });
+
+        if (!backendResponse.ok || !backendResponse.body) {
+          const errData = await backendResponse.text().catch(() => "Unknown error");
+          return NextResponse.json(
+            { type: "error", message: `Analysis Error: ${errData}` },
+            { status: backendResponse.status || 502, headers: { "X-Request-ID": requestId } }
+          );
+        }
+
+        const reader = backendResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let streamCompleted = false;
+        let streamError: string | null = null;
+
+        const compatPayload: {
+          reply: string;
+          content: string;
+          sql_used?: string;
+          plan?: any;
+          insights?: any;
+          diagnostics?: any;
+          payload?: any;
+          narrative?: any;
+        } = {
+          reply: "",
+          content: "",
+        };
+
+        while (!streamCompleted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          let boundary;
+          while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+            const rawChunk = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 2);
+            if (!rawChunk) continue;
+
+            let jsonStr = rawChunk;
+            if (jsonStr.startsWith("data:")) {
+              jsonStr = jsonStr.substring(5).trim();
+            }
+
+            let packet: any;
+            try {
+              packet = JSON.parse(jsonStr);
+            } catch {
+              buffer = rawChunk + "\n\n" + buffer;
+              break;
+            }
+
+            const packetType = String(packet?.type || "");
+            const packetContent = packet?.content ?? packet?.message;
+
+            switch (packetType) {
+              case "plan":
+                compatPayload.plan = packetContent;
+                break;
+              case "sql":
+                compatPayload.sql_used = typeof packetContent === "string" ? packetContent : undefined;
+                break;
+              case "insights":
+                compatPayload.insights = packetContent;
+                break;
+              case "diagnostics":
+                compatPayload.diagnostics = packetContent;
+                break;
+              case "narrative":
+                compatPayload.narrative = packetContent;
+                if (typeof packetContent?.executive_summary === "string") {
+                  compatPayload.reply += packetContent.executive_summary;
+                } else if (typeof packetContent === "string") {
+                  compatPayload.reply += packetContent;
+                }
+                break;
+              case "narrative_chunk":
+                compatPayload.reply += String(packetContent || "");
+                break;
+              case "data":
+                compatPayload.payload = packetContent;
+                if (!compatPayload.reply && typeof packetContent?.answer === "string") {
+                  compatPayload.reply = packetContent.answer;
+                }
+                break;
+              case "cache_hit": {
+                const cached = packetContent || {};
+                compatPayload.sql_used = compatPayload.sql_used || cached.sql_query;
+                compatPayload.insights = compatPayload.insights || cached.insight_payload;
+                compatPayload.narrative = compatPayload.narrative || cached.narrative;
+                compatPayload.payload = compatPayload.payload || cached.payload || {
+                  chart_spec: cached.chart_spec,
+                  sql_query: cached.sql_query,
+                  insight_payload: cached.insight_payload,
+                  narrative: cached.narrative,
+                  is_cached: true,
+                };
+
+                if (!compatPayload.reply) {
+                  if (typeof cached?.narrative?.executive_summary === "string") {
+                    compatPayload.reply = cached.narrative.executive_summary;
+                  } else if (typeof cached?.narrative === "string") {
+                    compatPayload.reply = cached.narrative;
+                  }
+                }
+                break;
+              }
+              case "error":
+                streamError = String(packetContent || "Unknown error");
+                streamCompleted = true;
+                break;
+              case "done":
+                streamCompleted = true;
+                break;
+              default:
+                break;
+            }
+          }
+        }
+
+        if (streamError && !compatPayload.reply) {
+          return NextResponse.json(
+            { type: "error", message: streamError },
+            { status: 502, headers: { "X-Request-ID": requestId } }
+          );
+        }
+
+        compatPayload.content = compatPayload.reply || compatPayload.content;
+
+        return NextResponse.json(compatPayload, {
+          status: 200,
+          headers: { "X-Request-ID": requestId },
+        });
+      } catch (compatError: any) {
+        log("error", "legacy_json_compat_failure", { error: String(compatError) });
+        return NextResponse.json(
+          { type: "error", message: "A compatibility-mode routing error occurred." },
+          { status: 500, headers: { "X-Request-ID": requestId } }
+        );
+      }
+    }
 
     // 3. Semantic Interception (Edge Fast-Path for Greetings)
     const normalizedPrompt = prompt.trim().toLowerCase();
@@ -217,7 +416,7 @@ export async function POST(req: NextRequest, context: any) {
                 agent_id: agent_id || null, // Explicitly pass agent_id for Persona constraints
                 active_dataset_ids,         // Required for Semantic Router target boundaries
                 active_document_ids,
-                history,                    // Enables multi-turn memory
+                history: normalizedHistory, // Enables multi-turn memory
                 stream: true, 
               }),
               signal: combinedController.signal,

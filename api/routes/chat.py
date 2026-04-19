@@ -67,6 +67,7 @@ class OrchestrateRequest(BaseModel):
     prompt: str = Field(..., description="User's natural language query or conversational message.")
     agent_id: Optional[str] = Field(default=None, description="UUID of the specific AI Agent handling the query.")
     active_dataset_ids: Optional[List[str]] = Field(default_factory=list, description="Dataset UUIDs to include (e.g., Shopify Data).")
+    active_document_ids: Optional[List[str]] = Field(default_factory=list, description="Document UUIDs to include for vector RAG context.")
     history: Optional[List[HistoryMessage]] = Field(default_factory=list, description="Recent conversation context.")
     context_id: Optional[str] = Field(default=None, description="Optional link to a specific anomaly or alert.")
 
@@ -179,10 +180,10 @@ async def orchestrate_chat(
 
     # Only enforce dataset selection if there isn't a pre-configured Agent
     # (Agents have their own hardcoded Memory Boundaries / dataset_ids)
-    if not request.active_dataset_ids and not request.agent_id:
+    if not request.active_dataset_ids and not request.active_document_ids and not request.agent_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This question requires data analysis. Please select at least one dataset or activate an Agent."
+            detail="This question requires data analysis. Please select at least one dataset, one document, or activate an Agent."
         )
 
     try:
@@ -194,6 +195,7 @@ async def orchestrate_chat(
             prompt=request.prompt,
             agent_id=request.agent_id,                                # Connects to Persona/RAG boundaries
             active_dataset_ids=request.active_dataset_ids,            # Passes user's active Shopify data selection
+            active_document_ids=request.active_document_ids,          # Passes active document boundaries for vector RAG
             history=[h.model_dump() for h in request.history[-10:]]   # Passes history for multi-turn SQL queries
         )
 

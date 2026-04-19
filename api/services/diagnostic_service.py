@@ -153,8 +153,11 @@ class DiagnosticService:
         dataset_ids = [d.id for d in datasets]
         schema_dump = json.dumps({str(d_id): schema.get(str(d_id), {}) for d_id in dataset_ids}, indent=2)
         
-        # Determine the target engine dialect based on the first dataset
-        dialect = datasets[0].location.value if datasets else "duckdb"
+        # Determine target dialect safely; ORM Dataset objects may not expose `location`.
+        dialect = "duckdb"
+        if datasets:
+            location = getattr(datasets[0], "location", None)
+            dialect = getattr(location, "value", "duckdb") if location is not None else "duckdb"
 
         system_prompt = f"""
         You are an autonomous Senior Data Analyst. An anomaly was detected in a dataset.

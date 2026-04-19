@@ -4,7 +4,9 @@ import logging
 import time
 import json
 import asyncio
+import hashlib
 import polars as pl
+from types import SimpleNamespace
 from typing import Dict, Any, List, AsyncGenerator, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session
 # Core Modular Services
 from api.services.query_planner import QueryPlanner, QueryPlan
 from api.services.nl2sql_generator import NL2SQLGenerator
-from api.services.compute_engine import ComputeEngine, DatasetMetadata
+from api.services.compute_engine import ComputeEngine
 from api.services.insight_orchestrator import InsightOrchestrator, InsightPayload
 from api.services.diagnostic_service import DiagnosticService
 from api.services.narrative_service import NarrativeService
@@ -22,6 +24,7 @@ from api.services.duckdb_validator import DuckDBValidator
 # Infrastructure Singletons
 from api.services.cache_manager import cache_manager
 from api.services.llm_client import LLMClient
+from api.services.vector_service import vector_service
 
 # Database Models
 from models import Agent, Dataset
@@ -77,6 +80,7 @@ class AnalyticalOrchestrator:
         self.router = router
         self.llm_client = llm_client or LLMClient()
         self.validator = DuckDBValidator()
+        self.background_tasks: set[asyncio.Task] = set()
         
         # Enterprise boundary: Hard timeout for physical compute to prevent node starvation
         self.COMPUTE_TIMEOUT_SECONDS = 30.0
@@ -123,20 +127,33 @@ class AnalyticalOrchestrator:
             # STAGE 0: Identity & Boundary Validation
             # -------------------------------------------------------
             persona_instructions = None
+            agent = None
             allowed_datasets = set(active_dataset_ids or [])
+            allowed_documents = set(active_document_ids or [])
 
             if agent_id and agent_id != "default-router":
                 agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == tenant_id).first()
                 if agent:
                     persona_instructions = agent.role_description
-                    if agent.dataset_ids:
-                        allowed_datasets.update(agent.dataset_ids)
+                    if agent.dataset_id:
+                        allowed_datasets.add(str(agent.dataset_id))
+                    if agent.document_id:
+                        allowed_documents.add(str(agent.document_id))
 
-            if not allowed_datasets:
+            if not allowed_datasets and not allowed_documents:
                 yield self._packet("error", "Security Exception: No data sources authorized in current memory boundary.")
                 return
 
-            yield _trace("Boundary Validation", stage_start, meta={"authorized_sources": len(allowed_datasets)})
+            boundary_cache_id = self._build_boundary_cache_id(allowed_datasets, allowed_documents)
+            yield _trace(
+                "Boundary Validation",
+                stage_start,
+                meta={
+                    "authorized_datasets": len(allowed_datasets),
+                    "authorized_documents": len(allowed_documents),
+                    "boundary_cache_id": boundary_cache_id,
+                },
+            )
 
             # -------------------------------------------------------
             # STAGE 1: Progressive Hydration (Cache Hit Check)
@@ -150,12 +167,78 @@ class AnalyticalOrchestrator:
             except Exception as e:
                 logger.warning(f"[{tenant_id}] Embedding fault, bypassing semantic cache: {e}")
 
-            cached = await cache_manager.get_cached_insight(tenant_id, "multi_dataset", prompt)
+            cached = await cache_manager.get_cached_insight(tenant_id, boundary_cache_id, prompt)
             
             if cached:
                 cached["execution_time_ms"] = round((time.time() - start_time) * 1000, 2)
                 yield _trace("Cache Retrieval", stage_start, meta={"cache_hit": True})
                 yield self._packet("cache_hit", cached)
+                return
+
+            if not allowed_datasets and allowed_documents:
+                yield self._packet("status", "🔎 Searching document vectors inside your secure boundary...")
+                doc_stage_start = time.time()
+
+                if prompt_embedding is None:
+                    try:
+                        prompt_embedding = await self.llm_client.embed(prompt)
+                    except Exception as e:
+                        logger.warning(f"[{tenant_id}] Document embedding failed: {e}")
+
+                if prompt_embedding is None:
+                    yield self._packet("error", "Document retrieval engine is unavailable right now.")
+                    return
+
+                chunks = await vector_service.search_documents(
+                    tenant_id=tenant_id,
+                    document_ids=sorted(allowed_documents),
+                    prompt_embedding=prompt_embedding,
+                    top_k=8,
+                )
+
+                if not chunks:
+                    yield self._packet("error", "No relevant document context was found for this request.")
+                    return
+
+                system_prompt = (
+                    persona_instructions
+                    or "You are a precise document analyst. Answer only from provided evidence chunks."
+                )
+                rag_context = "\n\n".join(chunks)
+                rag_prompt = (
+                    f"User Question: {prompt}\n\n"
+                    f"Retrieved Evidence:\n{rag_context}\n\n"
+                    "Return a concise, grounded answer. If evidence is insufficient, say so clearly."
+                )
+
+                answer_parts: List[str] = []
+                async for chunk in self.llm_client.stream_text(
+                    system_prompt=system_prompt,
+                    prompt=rag_prompt,
+                    history=history,
+                    temperature=0.0,
+                ):
+                    answer_parts.append(chunk)
+                    yield self._packet("narrative_chunk", chunk)
+
+                yield _trace(
+                    "Document RAG",
+                    doc_stage_start,
+                    meta={
+                        "documents_scanned": len(allowed_documents),
+                        "chunks_used": len(chunks),
+                    },
+                )
+                yield self._packet(
+                    "data",
+                    {
+                        "type": "document_rag",
+                        "answer": "".join(answer_parts).strip(),
+                        "documents_scanned": len(allowed_documents),
+                        "chunks_used": len(chunks),
+                        "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                    },
+                )
                 return
 
             # -------------------------------------------------------
@@ -164,20 +247,24 @@ class AnalyticalOrchestrator:
             yield self._packet("status", "🧠 Semantic Routing: Mapping intent to secure partitions...")
             stage_start = time.time()
 
-            routed_datasets = await self.router.route_datasets(
-                db=db, 
-                tenant_id=tenant_id, 
-                prompt=prompt, 
-                embedding=prompt_embedding, 
-                allowed_dataset_ids=list(allowed_datasets)
+            route_decision, routing_trace = await self.router.route_query(
+                prompt=prompt,
+                tenant_id=tenant_id,
+            )
+
+            routed_datasets, routing_trace = await self.router.route_datasets(
+                db=db,
+                trace=routing_trace,
+                decision=route_decision,
+                embedding=prompt_embedding,
+                allowed_dataset_ids=list(allowed_datasets),
             )
 
             if not routed_datasets:
                 yield self._packet("error", "Intent mismatch: Request could not be mathematically grounded in available data.")
                 return
 
-            dataset_meta = [DatasetMetadata.from_model(d) for d in routed_datasets]
-            full_schema = {str(d.id): d.schema_definition for d in routed_datasets}
+            full_schema = {str(d.id): (d.schema_metadata or {}) for d in routed_datasets}
             
             yield _trace("Semantic Routing", stage_start, meta={"datasets_routed": len(routed_datasets)})
 
@@ -187,15 +274,26 @@ class AnalyticalOrchestrator:
             yield self._packet("status", "⚡ Architecting vectorized execution strategy...")
             stage_start = time.time()
 
-            plan: QueryPlan = await self.planner.generate_plan(
-                prompt=prompt, 
-                full_schema=full_schema, 
-                tenant_id=tenant_id, 
-                history=history
+            planner_agent = agent or SimpleNamespace(
+                id="default-router",
+                role_description=persona_instructions or "Data Assistant",
+                dataset_id=routed_datasets[0].id if routed_datasets else None,
+                document_id=None,
             )
 
-            if not plan.is_achievable:
-                yield self._packet("error", plan.missing_data_reason)
+            plan: QueryPlan = await self.planner.plan_execution(
+                db=db,
+                tenant_id=tenant_id,
+                agent=planner_agent,
+                natural_query=prompt,
+                schema_hints=full_schema,
+            )
+
+            if plan.confidence_score < 0.4:
+                yield self._packet(
+                    "error",
+                    "I do not have enough trusted data in the active memory boundary to answer that confidently.",
+                )
                 return
 
             yield self._packet("plan", plan.model_dump())
@@ -205,14 +303,20 @@ class AnalyticalOrchestrator:
             # STAGE 4: Secure AST Compilation
             # -------------------------------------------------------
             stage_start = time.time()
-            target_engine = dataset_meta[0].location.value
+            execution_context = await self.planner.get_duckdb_execution_context(
+                db=db,
+                tenant_id=tenant_id,
+                plan=plan,
+            )
 
-            sql_query, chart_spec = await self.generator.generate_sql(
-                plan=plan, 
-                full_schema=full_schema, 
-                datasets=dataset_meta, 
-                target_engine=target_engine, 
-                tenant_id=tenant_id
+            sql_query, chart_spec, _compilation_trace = await self.generator.generate_sql(
+                plan=plan,
+                execution_context=execution_context,
+                target_engine="duckdb",
+                tenant_id=tenant_id,
+                agent=agent,
+                history=history,
+                schema_context=full_schema,
             )
 
             self.validator.validate_sql(sql_query) # Security boundary
@@ -222,35 +326,27 @@ class AnalyticalOrchestrator:
             # -------------------------------------------------------
             # STAGE 5: THE FAIL-SAFE (Partial Success Compute)
             # -------------------------------------------------------
-            yield self._packet("status", f"🚀 Executing distributed query across {len(dataset_meta)} boundary datasets...")
+            yield self._packet("status", f"🚀 Executing query across {len(routed_datasets)} authorized datasets...")
             stage_start = time.time()
 
-            compute_tasks = [
-                asyncio.wait_for(
-                    self.compute_engine.execute_query_async(sql_query, dataset, tenant_id),
-                    timeout=self.COMPUTE_TIMEOUT_SECONDS
+            try:
+                combined_data = await asyncio.wait_for(
+                    self.compute_engine.execute_read_only(
+                        db=db,
+                        tenant_id=tenant_id,
+                        datasets=routed_datasets,
+                        query=sql_query,
+                    ),
+                    timeout=self.COMPUTE_TIMEOUT_SECONDS,
                 )
-                for dataset in dataset_meta
-            ]
+            except Exception as compute_error:
+                yield _trace("Compute", stage_start, status="failed", err=str(compute_error))
+                yield self._packet("error", f"Execution failed: {compute_error}")
+                return
 
-            results = await asyncio.gather(*compute_tasks, return_exceptions=True)
-
-            combined_data: List[Dict[str, Any]] = []
-            total_rows = 0
-            degraded_sources = []
-
-            for i, result in enumerate(results):
-                ds_name = dataset_meta[i].integration_name or dataset_meta[i].dataset_id
-                
-                if isinstance(result, Exception):
-                    # Phase 6 Graceful Degradation Strategy
-                    logger.warning(f"[{tenant_id}] Partial Success Fallback: Node {ds_name} failed. Error: {str(result)}")
-                    degraded_sources.append(ds_name)
-                    yield _trace(f"Compute: {ds_name}", stage_start, status="failed", err=str(result))
-                elif result and result.data:
-                    combined_data.extend(result.data)
-                    total_rows += result.row_count
-                    yield _trace(f"Compute: {ds_name}", stage_start, meta={"rows": result.row_count})
+            total_rows = len(combined_data)
+            degraded_sources: List[str] = []
+            yield _trace("Compute", stage_start, meta={"rows": total_rows})
 
             if not combined_data:
                 yield self._packet("error", "Execution failed: No mathematical bounds returned from any authorized source.")
@@ -279,15 +375,31 @@ class AnalyticalOrchestrator:
                 anomaly = insights.anomalies[0]
                 yield self._packet("status", f"🕵️ Investigating sub-layer anomaly in {anomaly.column}...")
 
-                diagnostic = await self.diagnostic_service.investigate_anomaly(
-                    anomaly=anomaly,
-                    datasets=dataset_meta,
-                    full_schema=full_schema,
-                    tenant_id=tenant_id
-                )
+                diagnostic_schema: Dict[str, Dict[str, str]] = {}
+                for routed_dataset in routed_datasets:
+                    metadata = routed_dataset.schema_metadata or {}
+                    cols = metadata.get("columns", metadata)
+                    if isinstance(cols, dict):
+                        normalized_cols: Dict[str, str] = {}
+                        for col_name, col_meta in cols.items():
+                            if isinstance(col_meta, dict):
+                                normalized_cols[col_name] = str(col_meta.get("type") or col_meta.get("dtype") or "TEXT")
+                            else:
+                                normalized_cols[col_name] = str(col_meta)
+                        diagnostic_schema[str(routed_dataset.id)] = normalized_cols
 
-                if diagnostic:
-                    yield self._packet("diagnostics", diagnostic.model_dump())
+                try:
+                    diagnostic = await self.diagnostic_service.investigate_anomaly(
+                        anomaly=anomaly,
+                        datasets=routed_datasets,
+                        full_schema=diagnostic_schema,
+                        tenant_id=tenant_id,
+                        db=db,
+                    )
+                    if diagnostic:
+                        yield self._packet("diagnostics", diagnostic.model_dump())
+                except Exception as diagnostic_error:
+                    logger.warning(f"[{tenant_id}] Diagnostic branch degraded safely: {diagnostic_error}")
 
             # -------------------------------------------------------
             # STAGE 8: Narrative Synthesis (Time-Travel Hash)
@@ -325,7 +437,13 @@ class AnalyticalOrchestrator:
             yield self._packet("data", execution_payload)
 
             self._trigger_background_cache(
-                tenant_id, prompt, sql_query, chart_spec, insights, narrative.model_dump()
+                tenant_id,
+                boundary_cache_id,
+                prompt,
+                sql_query,
+                chart_spec,
+                insights,
+                narrative.model_dump(),
             )
 
         except Exception as e:
@@ -346,8 +464,21 @@ class AnalyticalOrchestrator:
             logger.error(f"Serialization fault: {str(e)}")
             return f"data: {json.dumps({'type': 'error', 'content': 'JSON state serialization failure'})}\n\n"
 
+    @staticmethod
+    def _build_boundary_cache_id(allowed_datasets: set, allowed_documents: set) -> str:
+        """Builds a deterministic cache namespace from active secure memory boundaries."""
+        dataset_part = ",".join(sorted(str(dataset_id) for dataset_id in allowed_datasets if dataset_id))
+        document_part = ",".join(sorted(str(document_id) for document_id in allowed_documents if document_id))
+        boundary_signature = f"datasets:{dataset_part}|documents:{document_part}"
+        digest = hashlib.sha256(boundary_signature.encode("utf-8")).hexdigest()
+        return f"boundary_{digest[:32]}"
+
     def _trigger_background_cache(
-        self, tenant_id: str, prompt: str, sql_query: str, 
+        self,
+        tenant_id: str,
+        boundary_cache_id: str,
+        prompt: str,
+        sql_query: str,
         chart_spec: Optional[Dict[str, Any]], insights: InsightPayload, narrative: Dict[str, Any]
     ) -> None:
         """Asynchronous execution bounds for cache hydration, preventing API request starvation."""
@@ -360,7 +491,7 @@ class AnalyticalOrchestrator:
         task = asyncio.create_task(
             cache_manager.set_cached_insight(
                 tenant_id=tenant_id, 
-                dataset_id="multi_dataset", 
+                dataset_id=boundary_cache_id,
                 prompt=prompt, 
                 sql_query=sql_query, 
                 chart_spec=chart_spec, 
@@ -368,4 +499,6 @@ class AnalyticalOrchestrator:
                 narrative=narrative
             )
         )
+        self.background_tasks.add(task)
+        task.add_done_callback(self.background_tasks.discard)
         task.add_done_callback(_err_handler)

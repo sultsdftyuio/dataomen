@@ -21,6 +21,8 @@ interface AnomalyState {
   id: string;
   metric: string;
   agent_name: string;
+  agent_id?: string;
+  dataset_id?: string | null;
   created_at: string;
   temporal_context: string; // Maps to `headline`
   root_cause: string;       // Maps to `executive_summary`
@@ -66,11 +68,15 @@ export default function InvestigationDashboard() {
         const data = await response.json();
 
         if (isMounted) {
+          const inferredDatasetId = data.dataset_id || data.payload?.dataset_id || data.payload?.datasetId || null;
+
           // Map the database `InvestigationRecord` schema to the UI AnomalyState
           setAnomaly({
             id: data.id || anomalyId,
             metric: data.metric_column || data.metric_name || 'Governed Metric',
             agent_name: data.agent?.name || 'Autonomous Watchdog',
+            agent_id: data.agent?.id || data.agent_id || undefined,
+            dataset_id: inferredDatasetId,
             created_at: data.created_at || new Date().toISOString(),
             variance_pct: data.payload?.variance_pct || data.impact_score || 0,
             temporal_context: data.headline || 'Anomaly context retrieved successfully.',
@@ -110,12 +116,19 @@ export default function InvestigationDashboard() {
     setIsQuerying(true);
 
     try {
+      const datasetIdRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      const scopedDatasetId = anomaly?.dataset_id && datasetIdRegex.test(anomaly.dataset_id)
+        ? anomaly.dataset_id
+        : undefined;
+
       // Send the analytical intent directly to the Semantic Router / Orchestrator
       const res = await fetch('/api/chat/orchestrate', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt: newMsg.content, 
+          agent_id: anomaly?.agent_id,
+          active_dataset_ids: scopedDatasetId ? [scopedDatasetId] : undefined,
           contextId: anomalyId,
           history: messages.slice(-4) // Pass sliding window of context
         }) 
