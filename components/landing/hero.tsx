@@ -1,7 +1,7 @@
 // components/landing/hero.tsx
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
@@ -11,7 +11,7 @@ export function Hero() {
   return (
     <section
       className="dot-grid"
-      style={{ paddingTop: 180, paddingBottom: 0, background: C.offWhite, position: "relative", overflow: "hidden" }}
+      style={{ paddingTop: 180, paddingBottom: 100, background: C.offWhite, position: "relative", overflow: "hidden" }}
     >
       {/* Background blobs */}
       <div style={{ position: "absolute", top: "10%", left: "5%", width: 400, height: 400, background: C.bluePale, borderRadius: "50%", filter: "blur(100px)", opacity: 0.6, zIndex: 0 }} />
@@ -21,10 +21,46 @@ export function Hero() {
 
         {/* ── Headline Block ── */}
         <div
-          style={{ textAlign: "center", marginBottom: 60 }}
+          style={{ textAlign: "center", marginBottom: 40 }}
           className={`fu ${vis ? "vis" : ""}`}
           ref={ref as React.RefObject<HTMLDivElement>}
         >
+          
+          {/* Dynamic Search/Query UI Pill */}
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 12,
+            background: "rgba(255, 255, 255, 0.9)",
+            backdropFilter: "blur(12px)",
+            border: `1px solid ${C.ruleDark}`,
+            borderRadius: 100,
+            padding: "8px 24px 8px 8px",
+            marginBottom: 36,
+            boxShadow: "0 8px 32px rgba(27, 110, 191, 0.08)",
+            transform: vis ? "translateY(0)" : "translateY(10px)",
+            opacity: vis ? 1 : 0,
+            transition: "all 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s"
+          }}>
+            <div style={{
+              background: C.blueTint,
+              borderRadius: 100,
+              padding: "6px 12px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              color: C.blue,
+              fontSize: 13,
+              fontWeight: 600
+            }}>
+              <Search size={14} strokeWidth={2.5} /> Ask AI
+            </div>
+            <span style={{ fontSize: 15, color: C.navyMid, letterSpacing: "-0.01em" }}>
+              Graph Shopify sales by region...
+            </span>
+            <div style={{ width: 2, height: 18, background: C.blue }} className="animate-pulse" />
+          </div>
+
           <h1
             className="pfd hero-text"
             style={{ fontSize: 76, color: C.navy, lineHeight: 1.05, letterSpacing: "-0.04em", maxWidth: 900, margin: "0 auto 24px" }}
@@ -48,39 +84,6 @@ export function Hero() {
           <p style={{ marginTop: 0, fontSize: 13, color: C.faint, fontWeight: 600 }}>
             14-day free trial · No credit card · Setup in 5 minutes
           </p>
-        </div>
-
-        {/* ── Product Interface Teaser ── */}
-        <div 
-          className={`fu ${vis ? "vis" : ""}`}
-          style={{ transitionDelay: "150ms", margin: "0 auto", maxWidth: 1000, perspective: 1000 }}
-        >
-          <div style={{
-            background: "rgba(255, 255, 255, 0.7)",
-            backdropFilter: "blur(20px)",
-            border: `1px solid ${C.rule}`,
-            borderBottom: "none",
-            borderTopLeftRadius: 16,
-            borderTopRightRadius: 16,
-            boxShadow: "0 -10px 40px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.6)",
-            height: 300, /* Peeking over the edge */
-            overflow: "hidden",
-            position: "relative",
-            transform: "rotateX(2deg)",
-            transformOrigin: "bottom"
-          }}>
-            {/* Mockup Top Bar */}
-            <div style={{ height: 48, borderBottom: `1px solid ${C.rule}`, display: "flex", alignItems: "center", padding: "0 16px", gap: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#E5E7EB" }} />
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#E5E7EB" }} />
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#E5E7EB" }} />
-            </div>
-            {/* Mockup Content Area */}
-            <div style={{ padding: 32, display: "flex", gap: 24, opacity: 0.5 }}>
-              <div style={{ flex: 1, height: 120, background: `linear-gradient(to bottom, ${C.bluePale}, transparent)`, borderRadius: 8 }} />
-              <div style={{ flex: 2, height: 180, background: `linear-gradient(to bottom, #F3F4F6, transparent)`, borderRadius: 8 }} />
-            </div>
-          </div>
         </div>
 
       </div>
