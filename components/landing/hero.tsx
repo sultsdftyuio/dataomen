@@ -34,7 +34,7 @@ export function Hero() {
           }}>
             <Sparkles size={14} color={C.blue} />
             <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>
-              The Unified Data Infrastructure
+              Business intelligence without the SQL
             </span>
           </div>
 
@@ -42,12 +42,12 @@ export function Hero() {
             className="pfd hero-text"
             style={{ fontSize: 76, color: C.navy, lineHeight: 1.05, letterSpacing: "-0.04em", maxWidth: 900, margin: "0 auto 24px" }}
           >
-            The Intelligent Data Operating System.<br />
-            <span style={{ color: C.blue }}>Connect, govern, and automate.</span>
+            Autonomous<br />
+            <span style={{ color: C.blue }}>Business Intelligence.</span>
           </h1>
 
-          <p style={{ fontSize: 20, color: C.muted, lineHeight: 1.6, maxWidth: 660, margin: "0 auto 48px" }}>
-            Connect your entire stack, govern your metrics, and let AI automate your insights. From raw integrations to proactive intelligence—all in one unified platform.
+          <p style={{ fontSize: 20, color: C.muted, lineHeight: 1.6, maxWidth: 600, margin: "0 auto 48px" }}>
+            Stop querying. Start knowing. Connect your data stack and let AI agents uncover insights, track anomalies, and build reports automatically.
           </p>
 
           {/* CTAs */}
