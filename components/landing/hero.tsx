@@ -11,7 +11,7 @@ export function Hero() {
   return (
     <section
       className="dot-grid"
-      style={{ paddingTop: 180, paddingBottom: 60, background: C.offWhite, position: "relative", overflow: "hidden" }}
+      style={{ paddingTop: 180, paddingBottom: 0, background: C.offWhite, position: "relative", overflow: "hidden" }}
     >
       {/* Background blobs */}
       <div style={{ position: "absolute", top: "10%", left: "5%", width: 400, height: 400, background: C.bluePale, borderRadius: "50%", filter: "blur(100px)", opacity: 0.6, zIndex: 0 }} />
@@ -38,17 +38,51 @@ export function Hero() {
           </p>
 
           {/* CTAs */}
-          <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", marginBottom: 24 }}>
             <a href="/register" className="btn-blue" style={{ padding: "18px 44px", fontSize: 16 }}>
               Start Free Trial <ArrowRight size={18} />
             </a>
           </div>
 
           {/* Social nudge */}
-          <p style={{ marginTop: 20, fontSize: 13, color: C.faint, fontWeight: 600 }}>
+          <p style={{ marginTop: 0, fontSize: 13, color: C.faint, fontWeight: 600 }}>
             14-day free trial · No credit card · Setup in 5 minutes
           </p>
         </div>
+
+        {/* ── Product Interface Teaser ── */}
+        <div 
+          className={`fu ${vis ? "vis" : ""}`}
+          style={{ transitionDelay: "150ms", margin: "0 auto", maxWidth: 1000, perspective: 1000 }}
+        >
+          <div style={{
+            background: "rgba(255, 255, 255, 0.7)",
+            backdropFilter: "blur(20px)",
+            border: `1px solid ${C.rule}`,
+            borderBottom: "none",
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+            boxShadow: "0 -10px 40px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.6)",
+            height: 300, /* Peeking over the edge */
+            overflow: "hidden",
+            position: "relative",
+            transform: "rotateX(2deg)",
+            transformOrigin: "bottom"
+          }}>
+            {/* Mockup Top Bar */}
+            <div style={{ height: 48, borderBottom: `1px solid ${C.rule}`, display: "flex", alignItems: "center", padding: "0 16px", gap: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#E5E7EB" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#E5E7EB" }} />
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#E5E7EB" }} />
+            </div>
+            {/* Mockup Content Area */}
+            <div style={{ padding: 32, display: "flex", gap: 24, opacity: 0.5 }}>
+              <div style={{ flex: 1, height: 120, background: `linear-gradient(to bottom, ${C.bluePale}, transparent)`, borderRadius: 8 }} />
+              <div style={{ flex: 2, height: 180, background: `linear-gradient(to bottom, #F3F4F6, transparent)`, borderRadius: 8 }} />
+            </div>
+          </div>
+        </div>
+
       </div>
     </section>
   );
