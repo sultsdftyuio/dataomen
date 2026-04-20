@@ -1,7 +1,7 @@
 // app/(dashboard)/settings/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { 
   User, 
@@ -30,7 +30,19 @@ import { toast } from "@/components/ui/use-toast";
 
 type SettingsTab = "profile" | "security" | "notifications" | "developer";
 
-export default function SettingsPage() {
+function SettingsPageFallback() {
+  return (
+    <div className="flex flex-col flex-1 h-full w-full p-6 animate-in fade-in">
+      <div className="space-y-2 mb-8">
+        <Skeleton className="h-8 w-48 rounded-md bg-slate-200" />
+        <Skeleton className="h-4 w-96 rounded-md bg-slate-100" />
+      </div>
+      <Skeleton className="flex-1 w-full rounded-xl bg-slate-50 border border-slate-100" />
+    </div>
+  );
+}
+
+function SettingsPageContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
@@ -227,15 +239,7 @@ export default function SettingsPage() {
   ] as const;
 
   if (isLoading) {
-    return (
-      <div className="flex flex-col flex-1 h-full w-full p-6 animate-in fade-in">
-        <div className="space-y-2 mb-8">
-          <Skeleton className="h-8 w-48 rounded-md bg-slate-200" />
-          <Skeleton className="h-4 w-96 rounded-md bg-slate-100" />
-        </div>
-        <Skeleton className="flex-1 w-full rounded-xl bg-slate-50 border border-slate-100" />
-      </div>
-    );
+    return <SettingsPageFallback />;
   }
 
   return (
@@ -582,5 +586,13 @@ export default function SettingsPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsPageFallback />}>
+      <SettingsPageContent />
+    </Suspense>
   );
 }

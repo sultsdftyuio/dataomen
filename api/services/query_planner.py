@@ -9,7 +9,8 @@ import ast
 import json
 import time
 import asyncio
-from typing import List, Dict, Any, Optional
+import re
+from typing import List, Dict, Any, Optional, Set, Tuple
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -19,6 +20,28 @@ from api.services.llm_client import LLMClient, llm_client as default_llm
 from models import Dataset, Agent, SemanticMetric
 
 logger = logging.getLogger(__name__)
+
+_SIMPLE_COLUMN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$")
+_EXPLANATION_INTENT_MARKERS = (
+    "explain",
+    "why",
+    "reason",
+    "root cause",
+    "what happened",
+    "how come",
+    "driver",
+    "narrative",
+    "summarize",
+    "summary",
+)
+_AGGREGATION_INTENT_MARKERS = (
+    " rate",
+    " ratio",
+    " percentage",
+    " percent ",
+    " average ",
+    " avg",
+)
 
 # -------------------------------------------------------------------------
 # DATA CONTRACTS
@@ -111,6 +134,538 @@ class QueryPlanner:
         self.MAX_SCHEMA_TOKENS = 8000
         self.MAX_JOIN_DEPTH = 2
         self.MAX_DATASETS = 3
+        self.MAX_COMPLEXITY_SCORE = self._resolve_planner_complexity_limit()
+
+    def _resolve_planner_complexity_limit(self) -> float:
+        """Best-effort alignment with compiler-side complexity limits."""
+        try:
+            from api.services.metric_governance import TenantTier, _TIER_LIMITS  # type: ignore
+
+            limits = _TIER_LIMITS.get(TenantTier.ENTERPRISE)
+            if isinstance(limits, tuple) and len(limits) >= 3:
+                return float(limits[2])
+        except Exception:
+            pass
+
+        # Compiler currently defaults tenants to ENTERPRISE.
+        return 999.0
+
+    def _complexity_score(
+        self,
+        total_rows: int,
+        num_joins: int,
+        num_subqueries: int,
+        num_datasets: int,
+    ) -> float:
+        """Uses the compiler cost model when available with a safe local fallback."""
+        try:
+            from api.services.metric_governance import _complexity_score as shared_complexity_score  # type: ignore
+
+            return float(
+                shared_complexity_score(
+                    total_rows=total_rows,
+                    num_joins=num_joins,
+                    num_subqueries=num_subqueries,
+                    num_datasets=num_datasets,
+                )
+            )
+        except Exception:
+            return (
+                total_rows * 1e-6
+                + num_joins * 25.0
+                + num_subqueries * 40.0
+                + max(0, num_datasets - 1) * 10.0
+            )
+
+    def _normalize_identifier(self, value: Any) -> str:
+        return "".join(c for c in str(value).strip().lower() if c.isalnum() or c in {"_", "-"})
+
+    def _build_dataset_alias_index(self, schema_context: Dict[str, Any]) -> Dict[str, str]:
+        alias_index: Dict[str, str] = {}
+        for ds_id, ds_meta in schema_context.items():
+            ds_id_str = str(ds_id)
+            alias_index[self._normalize_identifier(ds_id_str)] = ds_id_str
+
+            if not isinstance(ds_meta, dict):
+                continue
+
+            for key in (
+                "name",
+                "dataset_name",
+                "table_name",
+                "table",
+                "source_table",
+                "source_name",
+                "integration_name",
+                "slug",
+                "alias",
+            ):
+                raw = ds_meta.get(key)
+                if isinstance(raw, str) and raw.strip():
+                    alias_key = self._normalize_identifier(raw)
+                    alias_index.setdefault(alias_key, ds_id_str)
+
+        return alias_index
+
+    def _resolve_dataset_id(
+        self,
+        value: Any,
+        alias_index: Dict[str, str],
+        authorized_ids: Set[str],
+    ) -> Optional[str]:
+        if value is None:
+            return None
+
+        candidate = str(value).strip()
+        if candidate in authorized_ids:
+            return candidate
+
+        alias_key = self._normalize_identifier(candidate)
+        resolved = alias_index.get(alias_key)
+        if resolved in authorized_ids:
+            return resolved
+
+        return None
+
+    def _build_schema_column_index(
+        self,
+        schema_context: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        index: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        for ds_id, ds_meta in schema_context.items():
+            ds_index: Dict[str, Dict[str, Any]] = {}
+
+            if isinstance(ds_meta, dict):
+                cols = ds_meta.get("columns", {})
+                if isinstance(cols, dict):
+                    for col_name, col_meta in cols.items():
+                        key = str(col_name).strip().lower()
+                        if isinstance(col_meta, dict):
+                            ds_index[key] = col_meta
+                        else:
+                            ds_index[key] = {"type": str(col_meta)}
+
+            index[str(ds_id)] = ds_index
+
+        return index
+
+    def _split_column_reference(
+        self,
+        raw_column: str,
+        alias_index: Dict[str, str],
+        authorized_ids: Set[str],
+    ) -> Tuple[Optional[str], str]:
+        token = str(raw_column).strip()
+        if "." in token:
+            qualifier, column = token.split(".", 1)
+            resolved = self._resolve_dataset_id(qualifier, alias_index, authorized_ids)
+            return resolved, column.strip().lower()
+        return None, token.lower()
+
+    def _column_reference_exists(
+        self,
+        raw_column: str,
+        schema_index: Dict[str, Dict[str, Dict[str, Any]]],
+        alias_index: Dict[str, str],
+        dataset_scope: Set[str],
+    ) -> bool:
+        if not raw_column:
+            return False
+
+        column = str(raw_column).strip()
+        if column == "*":
+            return True
+
+        authorized_ids = set(schema_index.keys())
+        dataset_hint, col_name = self._split_column_reference(column, alias_index, authorized_ids)
+        if not col_name:
+            return False
+
+        if dataset_hint:
+            return col_name in schema_index.get(dataset_hint, {})
+
+        scope = dataset_scope or authorized_ids
+        for ds_id in scope:
+            if col_name in schema_index.get(ds_id, {}):
+                return True
+        return False
+
+    def _column_type(
+        self,
+        schema_index: Dict[str, Dict[str, Dict[str, Any]]],
+        dataset_id: str,
+        column: str,
+    ) -> Optional[str]:
+        col_meta = schema_index.get(dataset_id, {}).get(column.lower())
+        if not col_meta:
+            return None
+
+        for key in ("type", "dtype", "data_type"):
+            value = col_meta.get(key)
+            if value:
+                return str(value)
+
+        return None
+
+    def _join_types_compatible(self, left_type: Optional[str], right_type: Optional[str]) -> bool:
+        def _family(raw: Optional[str]) -> str:
+            if not raw:
+                return "unknown"
+            lowered = str(raw).lower()
+
+            if any(k in lowered for k in ("int", "decimal", "numeric", "float", "double", "real", "number")):
+                return "numeric"
+            if "bool" in lowered:
+                return "bool"
+            if "uuid" in lowered:
+                return "uuid"
+            if any(k in lowered for k in ("date", "time", "timestamp")):
+                return "temporal"
+            if any(k in lowered for k in ("char", "text", "string", "varchar")):
+                return "string"
+            return "unknown"
+
+        left_family = _family(left_type)
+        right_family = _family(right_type)
+
+        if "unknown" in {left_family, right_family}:
+            return True
+        if left_family == right_family:
+            return True
+        if {left_family, right_family} == {"uuid", "string"}:
+            return True
+
+        return False
+
+    def _count_join_steps(self, plan: QueryPlan) -> int:
+        return sum(1 for step in plan.analytical_strategy if str(step.op or "").lower() == "join")
+
+    def _apply_execution_intent_heuristics(self, natural_query: str, plan: QueryPlan) -> None:
+        lowered_query = natural_query.lower()
+        has_explanatory_intent = any(marker in lowered_query for marker in _EXPLANATION_INTENT_MARKERS)
+
+        if has_explanatory_intent and plan.target_dataset_ids:
+            plan.execution_intent = "HYBRID"
+
+        if plan.requested_governed_metrics and plan.target_dataset_ids and plan.execution_intent == "DOCUMENT_RAG":
+            plan.execution_intent = "ANALYTICAL"
+
+    def _enforce_governed_metric_usage(self, plan: QueryPlan) -> None:
+        if not plan.requested_governed_metrics:
+            return
+
+        aggregate_steps = [
+            step for step in plan.analytical_strategy if str(step.op or "").lower() == "aggregate"
+        ]
+
+        for step in aggregate_steps:
+            metrics_payload = step.args.get("metrics") if isinstance(step.args, dict) else None
+            if isinstance(metrics_payload, list) and metrics_payload:
+                # Force semantic catalog usage instead of planner-invented raw formulas.
+                step.args["metrics"] = []
+
+        if not aggregate_steps:
+            plan.analytical_strategy.append(
+                StrategyStep(
+                    op="aggregate",
+                    args={"group_by": [], "metrics": []},
+                    description="Auto-inserted to materialize governed metrics via semantic catalog.",
+                )
+            )
+
+    def _validate_strategy_structure(self, plan: QueryPlan) -> None:
+        allowed_ops = {"scan", "project", "join", "filter", "aggregate", "sort", "limit", "fallback"}
+
+        for idx, step in enumerate(plan.analytical_strategy, start=1):
+            op = str(step.op or "").strip().lower()
+            if op not in allowed_ops:
+                raise ValueError(f"Invalid strategy op at step {idx}: {step.op}")
+
+            if op in {"project", "aggregate"}:
+                if not isinstance(step.args, dict):
+                    raise ValueError(f"Step {idx} ({op}) requires object args.")
+
+            if op == "join":
+                target = step.args.get("target_dataset_id") if isinstance(step.args, dict) else None
+                condition = step.args.get("condition") if isinstance(step.args, dict) else None
+                if not target or not isinstance(condition, dict):
+                    raise ValueError(f"Join step {idx} must include target_dataset_id and condition.")
+                if not condition.get("source_column") or not condition.get("target_column"):
+                    raise ValueError(f"Join step {idx} condition requires source_column and target_column.")
+
+            if op == "filter":
+                expression = step.args.get("expression") if isinstance(step.args, dict) else None
+                if expression is not None and not isinstance(expression, dict):
+                    raise ValueError(f"Filter step {idx} must provide typed expression payload.")
+
+            if op == "sort":
+                keys = step.args.get("keys") if isinstance(step.args, dict) else None
+                if keys is not None and not isinstance(keys, list):
+                    raise ValueError(f"Sort step {idx} keys payload must be a list.")
+
+            if op == "limit":
+                value = step.args.get("value") if isinstance(step.args, dict) else None
+                if value is not None:
+                    try:
+                        int(value)
+                    except Exception as exc:
+                        raise ValueError(f"Limit step {idx} must provide integer value.") from exc
+
+    def _validate_columns(
+        self,
+        plan: QueryPlan,
+        schema_context: Dict[str, Any],
+        alias_index: Dict[str, str],
+    ) -> None:
+        schema_index = self._build_schema_column_index(schema_context)
+        dataset_scope = set(plan.target_dataset_ids) or set(schema_index.keys())
+
+        def _ensure_column(column_name: str, step_idx: int, op_name: str) -> None:
+            if not _SIMPLE_COLUMN_RE.match(column_name.strip()):
+                return
+            if not self._column_reference_exists(column_name, schema_index, alias_index, dataset_scope):
+                raise ValueError(
+                    f"Unknown column '{column_name}' in {op_name} step {step_idx}."
+                )
+
+        for idx, step in enumerate(plan.analytical_strategy, start=1):
+            op = str(step.op or "").lower()
+            if op == "project":
+                for column in step.args.get("columns", []):
+                    if isinstance(column, str):
+                        _ensure_column(column, idx, op)
+
+            elif op == "filter":
+                expr = step.args.get("expression", {})
+                predicates = expr.get("predicates", []) if isinstance(expr, dict) else []
+                for predicate in predicates:
+                    if not isinstance(predicate, dict):
+                        continue
+                    left = predicate.get("left", {})
+                    if isinstance(left, dict) and isinstance(left.get("column"), str):
+                        _ensure_column(left["column"], idx, op)
+
+                    right = predicate.get("right", {})
+                    if isinstance(right, dict) and isinstance(right.get("column"), str):
+                        _ensure_column(right["column"], idx, op)
+
+            elif op == "aggregate":
+                for column in step.args.get("group_by", []):
+                    if isinstance(column, str):
+                        _ensure_column(column, idx, op)
+
+                metrics = step.args.get("metrics", [])
+                if isinstance(metrics, list):
+                    for metric in metrics:
+                        if not isinstance(metric, dict):
+                            continue
+                        metric_col = metric.get("column")
+                        if isinstance(metric_col, str):
+                            _ensure_column(metric_col, idx, op)
+
+            elif op == "sort":
+                keys = step.args.get("keys", [])
+                if isinstance(keys, list):
+                    for key in keys:
+                        if not isinstance(key, dict):
+                            continue
+                        if isinstance(key.get("column"), str):
+                            _ensure_column(key["column"], idx, op)
+
+    def _build_join_edge_index(
+        self,
+        join_hints: List[Dict[str, Any]],
+        alias_index: Dict[str, str],
+        authorized_ids: Set[str],
+    ) -> Set[Tuple[str, str, str, str]]:
+        edge_index: Set[Tuple[str, str, str, str]] = set()
+
+        for hint in join_hints:
+            if not isinstance(hint, dict):
+                continue
+
+            source_dataset_id = self._resolve_dataset_id(
+                hint.get("from_dataset_id"), alias_index, authorized_ids
+            )
+            target_dataset_id = self._resolve_dataset_id(
+                hint.get("target_dataset_id") or hint.get("target_table"),
+                alias_index,
+                authorized_ids,
+            )
+
+            source_column = str(hint.get("source_column") or "").strip().lower()
+            target_column = str(hint.get("target_column") or "").strip().lower()
+
+            if source_dataset_id and target_dataset_id and source_column and target_column:
+                edge_index.add((source_dataset_id, source_column, target_dataset_id, target_column))
+
+        return edge_index
+
+    def _validate_joins(
+        self,
+        plan: QueryPlan,
+        schema_context: Dict[str, Any],
+        join_hints: List[Dict[str, Any]],
+        alias_index: Dict[str, str],
+    ) -> None:
+        join_steps = [
+            step for step in plan.analytical_strategy if str(step.op or "").lower() == "join"
+        ]
+
+        if len(join_steps) > self.MAX_JOIN_DEPTH:
+            raise ValueError(
+                f"Join depth {len(join_steps)} exceeds planner cap {self.MAX_JOIN_DEPTH}."
+            )
+
+        if not join_steps:
+            return
+
+        schema_index = self._build_schema_column_index(schema_context)
+        authorized_ids = set(schema_index.keys())
+        edge_index = self._build_join_edge_index(join_hints, alias_index, authorized_ids)
+
+        base_dataset = plan.target_dataset_ids[0] if plan.target_dataset_ids else None
+        resolved_base = self._resolve_dataset_id(base_dataset, alias_index, authorized_ids)
+        active_datasets: Set[str] = {resolved_base} if resolved_base else set()
+
+        for idx, step in enumerate(join_steps, start=1):
+            target_raw = step.args.get("target_dataset_id")
+            target_dataset = self._resolve_dataset_id(target_raw, alias_index, authorized_ids)
+            if not target_dataset:
+                raise ValueError(f"Join step {idx} references unauthorized target dataset '{target_raw}'.")
+
+            step.args["target_dataset_id"] = target_dataset
+            if target_dataset not in plan.target_dataset_ids:
+                plan.target_dataset_ids.append(target_dataset)
+
+            condition = step.args.get("condition", {})
+            if not isinstance(condition, dict):
+                raise ValueError(f"Join step {idx} condition payload must be an object.")
+
+            source_col = str(condition.get("source_column") or "").strip().lower()
+            target_col = str(condition.get("target_column") or "").strip().lower()
+            if not source_col or not target_col:
+                raise ValueError(f"Join step {idx} is missing source/target columns.")
+
+            if target_col not in schema_index.get(target_dataset, {}):
+                raise ValueError(
+                    f"Join step {idx} target column '{target_col}' does not exist in dataset '{target_dataset}'."
+                )
+
+            candidate_sources = set(active_datasets) if active_datasets else set(plan.target_dataset_ids)
+            candidate_sources.discard(target_dataset)
+
+            source_candidates = [
+                ds_id for ds_id in candidate_sources if source_col in schema_index.get(ds_id, {})
+            ]
+
+            if not source_candidates:
+                raise ValueError(
+                    f"Join step {idx} source column '{source_col}' is not available in active join scope."
+                )
+
+            has_pair_hints = False
+            matched_join_hint = False
+            for source_dataset in source_candidates:
+                pair_has_hint = any(
+                    (e_src == source_dataset and e_tgt == target_dataset)
+                    or (e_src == target_dataset and e_tgt == source_dataset)
+                    for e_src, _, e_tgt, _ in edge_index
+                )
+                has_pair_hints = has_pair_hints or pair_has_hint
+
+                if (
+                    (source_dataset, source_col, target_dataset, target_col) in edge_index
+                    or (target_dataset, target_col, source_dataset, source_col) in edge_index
+                ):
+                    matched_join_hint = True
+                    break
+
+            if has_pair_hints and not matched_join_hint:
+                raise ValueError(
+                    f"Join step {idx} violates trusted join graph: {source_col} -> {target_col}."
+                )
+
+            if not matched_join_hint:
+                target_type = self._column_type(schema_index, target_dataset, target_col)
+                type_compatible = any(
+                    self._join_types_compatible(
+                        self._column_type(schema_index, source_dataset, source_col),
+                        target_type,
+                    )
+                    for source_dataset in source_candidates
+                )
+                if not type_compatible:
+                    raise ValueError(
+                        f"Join step {idx} failed type compatibility check: {source_col} -> {target_col}."
+                    )
+
+            active_datasets.add(target_dataset)
+
+    def _validate_aggregation_intent(self, natural_query: str, plan: QueryPlan) -> None:
+        lowered = f" {natural_query.lower()} "
+        requires_group_by = " per " in lowered
+        requires_aggregation = requires_group_by or any(marker in lowered for marker in _AGGREGATION_INTENT_MARKERS)
+
+        aggregate_steps = [
+            step for step in plan.analytical_strategy if str(step.op or "").lower() == "aggregate"
+        ]
+
+        if plan.execution_intent in {"ANALYTICAL", "HYBRID"} and requires_aggregation:
+            if not aggregate_steps and not plan.requested_governed_metrics:
+                raise ValueError(
+                    "Aggregation intent detected but planner did not produce aggregate semantics."
+                )
+
+        if requires_group_by:
+            has_grouping = False
+            for step in aggregate_steps:
+                group_by = step.args.get("group_by", []) if isinstance(step.args, dict) else []
+                if isinstance(group_by, list) and len(group_by) > 0:
+                    has_grouping = True
+                    break
+
+            if not has_grouping:
+                raise ValueError("Query implies grouped aggregation ('per ...') but no GROUP BY keys were generated.")
+
+    def _estimate_effective_rows(
+        self,
+        plan: QueryPlan,
+        trusted_registry: Dict[str, Any],
+    ) -> int:
+        total_effective_rows = 0
+        filters_keys = [str(k).lower() for k in plan.context_filters.keys()]
+
+        has_partition_filter = any(
+            key in ["date", "time", "timestamp", "created_at"] for key in filters_keys
+        )
+        has_index_filter = any("id" in key or "uuid" in key for key in filters_keys)
+
+        for ds_id in plan.target_dataset_ids:
+            ds = trusted_registry.get(ds_id, {})
+            if not isinstance(ds, dict):
+                ds = {}
+            row_cnt = int(ds.get("row_count", 0) or 1000)
+            col_cnt = max(len(ds.get("columns", {})), 1)
+
+            avg_selectivity = ds.get("avg_selectivity")
+            if isinstance(avg_selectivity, (int, float)):
+                base_selectivity = max(0.01, min(float(avg_selectivity), 1.0))
+            else:
+                density = col_cnt / max(row_cnt, 1)
+                base_selectivity = max(0.05, min(density, 1.0))
+
+            filter_factor = 1.0
+            if has_partition_filter:
+                filter_factor *= 0.5
+            if has_index_filter:
+                filter_factor *= 0.25
+
+            selectivity = max(0.01, min(base_selectivity * filter_factor, 1.0))
+            effective_rows = max(1, int(row_cnt * selectivity))
+            total_effective_rows += effective_rows
+
+        return total_effective_rows
 
     def _sanitize_text(self, val: str) -> str:
         """Prevents Prompt Injection via dirty schema strings."""
@@ -212,6 +767,9 @@ class QueryPlanner:
         ]
 
         # 4. Inject Structured Join Path Reasoning (Only from Trusted Registry)
+        alias_index = self._build_dataset_alias_index(trusted_registry)
+        authorized_ids = {str(ds_id) for ds_id in trusted_registry.keys()}
+
         join_hints = []
         seen_join_hints = set()
         for ds_id, ds in trusted_registry.items():
@@ -256,6 +814,12 @@ class QueryPlanner:
                 if not src_col or not target_table:
                     continue
 
+                resolved_target_dataset_id = self._resolve_dataset_id(
+                    target_table,
+                    alias_index,
+                    authorized_ids,
+                )
+
                 hint_key = (str(ds_id), str(src_col), str(target_table), str(target_col))
                 if hint_key in seen_join_hints:
                     continue
@@ -264,6 +828,11 @@ class QueryPlanner:
                 join_hints.append({
                     "from": f"{ds_id}.{src_col}",
                     "to": f"{target_table}.{target_col}",
+                    "from_dataset_id": str(ds_id),
+                    "source_column": str(src_col),
+                    "target_dataset_id": resolved_target_dataset_id,
+                    "target_table": str(target_table),
+                    "target_column": str(target_col),
                     "confidence": 1.0,  # Derived from trusted metadata
                 })
 
@@ -285,51 +854,61 @@ class QueryPlanner:
 
         # 6. Zero-Trust Output Validation & Selectivity-Aware Budgeting
         plan = self._normalize_strategy_steps(plan)
-        
-        # Hard filter datasets against explicitly authorized inputs
-        plan.target_dataset_ids = [ds_id for ds_id in plan.target_dataset_ids if ds_id in trusted_registry]
-        
+
+        # Hard filter datasets against explicitly authorized inputs (supports alias normalization)
+        normalized_target_ids: List[str] = []
+        for raw_target in plan.target_dataset_ids:
+            resolved = self._resolve_dataset_id(raw_target, alias_index, authorized_ids)
+            if resolved and resolved not in normalized_target_ids:
+                normalized_target_ids.append(resolved)
+        plan.target_dataset_ids = normalized_target_ids
+
         # Always enforce the agent's core dataset if applicable
         if agent.dataset_id and str(agent.dataset_id) not in plan.target_dataset_ids:
-            plan.target_dataset_ids.append(str(agent.dataset_id))
-            
-        # Selectivity-Aware Cost Modeling (Index & Partition awareness)
-        estimated_cost = 0
-        for ds_id in plan.target_dataset_ids:
-            ds = trusted_registry.get(ds_id, {})
-            row_cnt = int(ds.get("row_count", 0) or 1000)
-            col_cnt = max(len(ds.get("columns", {})), 1)
+            if str(agent.dataset_id) in trusted_registry:
+                plan.target_dataset_ids.append(str(agent.dataset_id))
 
-            filters_keys = [k.lower() for k in plan.context_filters.keys()]
+        # Step-level guardrails before compiler handoff.
+        self._apply_execution_intent_heuristics(natural_query, plan)
+        self._enforce_governed_metric_usage(plan)
 
-            has_partition_filter = any(key in ['date', 'time', 'timestamp', 'created_at'] for key in filters_keys)
-            has_index_filter = any('id' in key or 'uuid' in key for key in filters_keys)
+        try:
+            self._validate_strategy_structure(plan)
+            self._validate_columns(plan, trusted_registry, alias_index)
+            self._validate_joins(plan, trusted_registry, join_hints, alias_index)
+            self._validate_aggregation_intent(natural_query, plan)
+        except ValueError as validation_error:
+            logger.warning(
+                f"[{tenant_id}] Planner guardrail rejected strategy: {validation_error}. Returning fallback plan."
+            )
+            fallback = self._generate_fallback_plan(agent)
+            fallback.intent_summary = plan.intent_summary or fallback.intent_summary
+            fallback.context_filters = dict(plan.context_filters)
+            fallback.requested_governed_metrics = list(plan.requested_governed_metrics)
+            fallback.confidence_score = min(0.25, max(0.05, plan.confidence_score * 0.5))
+            fallback.is_budget_exceeded = True
+            return fallback
 
-            avg_selectivity = ds.get("avg_selectivity")
-            if isinstance(avg_selectivity, (int, float)):
-                base_selectivity = max(0.01, min(float(avg_selectivity), 1.0))
-            else:
-                density = col_cnt / max(row_cnt, 1)
-                base_selectivity = max(0.05, min(density, 1.0))
+        join_steps = self._count_join_steps(plan)
+        effective_rows = self._estimate_effective_rows(plan, trusted_registry)
+        complexity_score = self._complexity_score(
+            total_rows=effective_rows,
+            num_joins=join_steps,
+            num_subqueries=0,
+            num_datasets=len(plan.target_dataset_ids),
+        )
 
-            filter_factor = 1.0
-            if has_partition_filter:
-                filter_factor *= 0.5
-            if has_index_filter:
-                filter_factor *= 0.25
-
-            selectivity = max(0.01, min(base_selectivity * filter_factor, 1.0))
-
-            # Penalize multi-way joins
-            join_penalty = 1.0 + (0.5 * len(plan.target_dataset_ids))
-            effective_rows = max(1, row_cnt * selectivity)
-            
-            estimated_cost += (effective_rows * col_cnt * join_penalty)
-
-        if estimated_cost > 1e8 or len(plan.target_dataset_ids) > self.MAX_DATASETS:
+        if (
+            complexity_score > self.MAX_COMPLEXITY_SCORE
+            or len(plan.target_dataset_ids) > self.MAX_DATASETS
+            or join_steps > self.MAX_JOIN_DEPTH
+        ):
             plan.is_budget_exceeded = True
             plan.confidence_score *= 0.7
-            logger.warning(f"[{tenant_id}] Execution cost exceeded (Cost: {estimated_cost:.0f}). Confidence penalized.")
+            logger.warning(
+                f"[{tenant_id}] Planner budget exceeded (score={complexity_score:.1f}, "
+                f"limit={self.MAX_COMPLEXITY_SCORE:.1f}, joins={join_steps}, datasets={len(plan.target_dataset_ids)})."
+            )
 
         if not plan.target_dataset_ids:
             plan.confidence_score *= 0.5
@@ -337,8 +916,10 @@ class QueryPlanner:
         if plan.execution_intent not in ["ANALYTICAL", "DOCUMENT_RAG", "HYBRID"]:
             plan.confidence_score = 0.0
 
-        # Intent Validation Layer: Downgrade analytical intent if no datasets present
+        # Intent Validation Layer: keep intent/dataset boundary coherent.
         if plan.execution_intent == "ANALYTICAL" and not plan.target_dataset_ids:
+            plan.execution_intent = "DOCUMENT_RAG"
+        elif plan.execution_intent == "HYBRID" and not plan.target_dataset_ids:
             plan.execution_intent = "DOCUMENT_RAG"
 
         duration = time.perf_counter() - start_time
@@ -575,14 +1156,15 @@ COMMANDMENTS:
 1. CLASSIFICATION: 
    - 'ANALYTICAL': Math, revenue, time-series, or multi-source correlations.
    - 'DOCUMENT_RAG': Explanations, text synthesis.
-2. GOLDEN METRICS OVER RAW SQL: If an intent matches a Semantic Metric, list it in `requested_governed_metrics`.
+    - 'HYBRID': The user asks for explanation + quantitative analysis over structured datasets.
+2. GOLDEN METRICS OVER RAW SQL: If intent matches a Semantic Metric, list it in `requested_governed_metrics` and avoid redefining that metric via raw aggregate formulas.
 3. GLOBAL FILTERS: Extract overarching constraints (e.g., 'Only show US data') into `context_filters`.
-4. OMNI-GRAPH AWARENESS: Utilize provided JOIN HINTS if multi-schema correlation is required.
+4. OMNI-GRAPH AWARENESS: Utilize provided JOIN HINTS if multi-schema correlation is required. Prefer target_dataset_id as UUID and only valid FK-aligned joins.
 5. DETERMINISTIC STRATEGY: Create explicit logic steps using this strict shape:
     - `op`: one of scan|project|join|filter|aggregate|sort|limit
     - `args`: typed payload for that op
     - `output_schema`: optional array of output columns
-    - JOIN args format: {{"target_dataset_id":"<uuid>","condition":{{"source_column":"customer_id","target_column":"id","join_type":"LEFT"}}}}
+     - JOIN args format: {{"target_dataset_id":"<uuid>","condition":{{"source_column":"customer_id","target_column":"id","join_type":"LEFT"}}}}
     - FILTER args format: {{"expression":{{"combinator":"AND","predicates":[{{"left":{{"column":"status"}},"operator":"=","right":{{"value":"active"}}}}]}}}}
     - AGGREGATE args format: {{"group_by":["region"],"metrics":[{{"name":"total_revenue","function":"SUM","column":"revenue"}}]}}
 6. BOUNDARY ENFORCEMENT: Never invent tables or columns. Drop confidence < 0.4 if the schema cannot fulfill the request.
