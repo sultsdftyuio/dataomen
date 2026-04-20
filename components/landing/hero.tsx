@@ -32,23 +32,22 @@ export function Hero() {
           ref={ref as React.RefObject<HTMLDivElement>}
         >
           <h1
-            className="pfd"
             style={{
-              fontSize: "clamp(40px, 6vw, 54px)",
+              fontSize: 44,
               fontWeight: 600,
               color: C.navy,
-              lineHeight: 1.04,
-              letterSpacing: "-0.02em",
-              maxWidth: 860,
-              margin: "0 auto 20px"
+              lineHeight: 1.05,
+              letterSpacing: "-0.04em",
+              maxWidth: 800,
+              margin: "0 auto 16px",
+              fontFamily: "var(--font-geist-sans)"
             }}
           >
-            Autonomous<br />
-            <span style={{ color: C.blue }}>Business Intelligence.</span>
+            Autonomous business intelligence infrastructure.
           </h1>
 
-          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-            Stop querying. Start knowing. Connect your data stack and let AI agents uncover insights, track anomalies, and build reports automatically.
+          <p style={{ fontSize: 15, color: C.muted, lineHeight: 1.5, maxWidth: 500, margin: "0 auto 32px", fontWeight: 400 }}>
+            Stop querying and start knowing. Connect your data stack and let specialized AI agents uncover insights automatically.
           </p>
 
           {/* CTAs */}
