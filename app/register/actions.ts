@@ -234,7 +234,6 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
       }
     )
 
-    await supabase.auth.signOut()
     console.log(`[DEBUG-UI][${flowId}] Attempting signInWithPassword...`)
 
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })

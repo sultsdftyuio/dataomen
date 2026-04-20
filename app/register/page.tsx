@@ -6,7 +6,7 @@ import { ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useFormState } from "react-dom";
+import { useFormState, useFormStatus } from "react-dom";
 import { registerAction } from "./actions";
 import { createClient } from "@/utils/supabase/client";
 import { Logo } from "@/components/ui/logo";
@@ -22,6 +22,25 @@ const C = {
   green: "#10B981",
 };
 
+function SubmitButton({ isGooglePending }: { isGooglePending: boolean }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button
+      type="submit"
+      className="w-full h-12 text-base font-bold transition-all mt-6"
+      style={{ backgroundColor: C.blue, color: "#fff" }}
+      disabled={pending || isGooglePending}
+    >
+      {pending ? (
+        <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating Account...</>
+      ) : (
+        <>Create Account <ArrowRight className="ml-2 h-5 w-5" /></>
+      )}
+    </Button>
+  );
+}
+
 /**
  * RegisterPage Component
  * Optimized for high conversion by reducing friction. 
@@ -29,18 +48,8 @@ const C = {
  */
 export default function RegisterPage() {
   const [state, formAction] = useFormState(registerAction, {});
-  const [isPending, setIsPending] = useState(false);
   const [isGooglePending, setIsGooglePending] = useState(false);
   const supabase = createClient();
-
-  const handleEmailSubmit = async (formData: FormData) => {
-    setIsPending(true);
-    try {
-      await formAction(formData);
-    } finally {
-      setIsPending(false);
-    }
-  };
 
   const handleGoogleLogin = async () => {
     setIsGooglePending(true);
@@ -97,7 +106,7 @@ export default function RegisterPage() {
             variant="outline"
             className="w-full h-12 mb-6 font-semibold flex items-center justify-center gap-3 border-2"
             onClick={handleGoogleLogin}
-            disabled={isPending || isGooglePending}
+            disabled={isGooglePending}
           >
             {isGooglePending ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -133,7 +142,7 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <form action={handleEmailSubmit} className="space-y-5">
+          <form action={formAction} className="space-y-5">
             {state?.error && (
               <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">
                 {state.error}
@@ -148,7 +157,7 @@ export default function RegisterPage() {
                 type="email"
                 placeholder="name@company.com"
                 required
-                disabled={isPending || isGooglePending}
+                disabled={isGooglePending}
                 className="h-11 bg-slate-50/50"
                 style={{ borderColor: C.rule }}
               />
@@ -162,24 +171,13 @@ export default function RegisterPage() {
                 type="password"
                 placeholder="••••••••"
                 required
-                disabled={isPending || isGooglePending}
+                disabled={isGooglePending}
                 className="h-11 bg-slate-50/50"
                 style={{ borderColor: C.rule }}
               />
             </div>
 
-            <Button
-              type="submit"
-              className="w-full h-12 text-base font-bold transition-all mt-6"
-              style={{ backgroundColor: C.blue, color: "#fff" }}
-              disabled={isPending || isGooglePending}
-            >
-              {isPending ? (
-                <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating Account...</>
-              ) : (
-                <>Create Account <ArrowRight className="ml-2 h-5 w-5" /></>
-              )}
-            </Button>
+            <SubmitButton isGooglePending={isGooglePending} />
 
             <div className="pt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium" style={{ color: C.muted }}>
               <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> 3-day free trial</span>
