@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import "../styles/globals.css";
 
 import { Navbar } from "@/components/landing/navbar";
@@ -12,6 +13,7 @@ import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsec
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
 import Footer from "@/components/landing/footer";
+import { createClient } from "@/utils/supabase/client";
 
 /**
  * Arcli Landing Page
@@ -29,6 +31,20 @@ import Footer from "@/components/landing/footer";
  * Footer                 <- Global directory and legal
  */
 export default function Page() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    const redirectAuthenticatedUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.replace("/chat");
+      }
+    };
+
+    void redirectAuthenticatedUser();
+  }, [router, supabase]);
+
   return (
     <main className="bg-neutral-950 text-slate-50 antialiased selection:bg-blue-500/30">
       <Navbar />

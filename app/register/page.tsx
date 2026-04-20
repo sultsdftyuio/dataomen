@@ -111,15 +111,13 @@ export default function RegisterPage() {
       }
 
       setIsAutoSigningIn(true);
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-      if (error || !data.user) {
-        router.replace('/login?error=signup_created_login_required');
-        return;
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData.session) {
+      if (!loginResponse.ok) {
         router.replace('/login?error=signup_created_login_required');
         return;
       }
