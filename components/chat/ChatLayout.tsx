@@ -336,6 +336,12 @@ function toFriendlyStatus(rawStatus: string): string {
   return matched?.label || normalized;
 }
 
+function toTimeOfDayGreeting(hour: number): string {
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -354,6 +360,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const [isHydratingDatasets, setIsHydratingDatasets] = useState(false);
   const [showAllMessages, setShowAllMessages] = useState(false);
   const [isCommandStripCompact, setIsCommandStripCompact] = useState(false);
+  const [greeting, setGreeting] = useState("Hello");
 
   const visibleMessages = useMemo(
     () => (showAllMessages ? messages : messages.slice(-MAX_RENDERED_MESSAGES)),
@@ -531,12 +538,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     void hydrateAvailableDatasets();
   }, []);
 
-  const getGreeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return "Good morning";
-    if (h < 18) return "Good afternoon";
-    return "Good evening";
-  };
+  useEffect(() => {
+    setGreeting(toTimeOfDayGreeting(new Date().getHours()));
+  }, []);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -1051,7 +1055,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   Document Intelligence Workspace
                 </p>
                 <h1 className="mb-3 max-w-3xl text-3xl font-semibold tracking-tight text-slate-900 sm:text-[2.35rem]">
-                  {getGreeting()}. What do you want to understand from your data?
+                  {greeting}. What do you want to understand from your data?
                 </h1>
                 <p className="mb-10 max-w-2xl text-[15px] leading-[1.8] text-slate-500">
                   Ask in plain English. You can upload files, target datasets with @mentions, and get charts plus executive summaries in one response.

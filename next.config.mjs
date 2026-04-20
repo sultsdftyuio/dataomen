@@ -4,6 +4,36 @@
  * Support: support@arcli.tech
  */
 
+const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i;
+
+const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
+
+const normalizeBackendBase = (rawValue) => {
+  const candidate = trimTrailingSlash((rawValue || '').trim());
+  if (!candidate || !ABSOLUTE_HTTP_URL_REGEX.test(candidate)) return null;
+
+  try {
+    const parsed = new URL(candidate);
+    const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+
+    if (!normalizedPath || normalizedPath === '/' || normalizedPath === '/api' || normalizedPath === '/api/v1' || normalizedPath === '/v1') {
+      return parsed.origin;
+    }
+
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return null;
+  }
+};
+
+const resolveBackendRewriteBase = () => {
+  return (
+    normalizeBackendBase(process.env.BACKEND_API_URL) ||
+    normalizeBackendBase(process.env.NEXT_PUBLIC_API_URL) ||
+    'https://data-omen-api-tnps9.ondigitalocean.app'
+  );
+};
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // 1. Analytical Efficiency: In-Process Engine Preparation
@@ -64,7 +94,7 @@ const nextConfig = {
   // 5. Hybrid Performance Paradigm: Deterministic API Routing
   // Maps Vercel Edge requests to DigitalOcean App Platform clusters.
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'https://data-omen-api-tnps9.ondigitalocean.app';
+    const backendUrl = resolveBackendRewriteBase();
 
     return {
       // Fallback rewrites run only when no local route handler/page matches.

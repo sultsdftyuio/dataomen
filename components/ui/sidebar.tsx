@@ -623,15 +623,19 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<'div'> & {
   showIcon?: boolean
 }) {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+  const skeletonId = React.useId()
 
-  // Staggers skeleton shimmer so each row does not pulse in lockstep.
-  const animationDelay = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 5) * 70}ms`
-  }, [])
+  // Derive deterministic visual variance so SSR and hydration output always match.
+  const seed = React.useMemo(() => {
+    let hash = 0
+    for (const char of skeletonId) {
+      hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+    }
+    return hash
+  }, [skeletonId])
+
+  const width = `${50 + (seed % 40)}%`
+  const animationDelay = `${(seed % 5) * 70}ms`
 
   return (
     <div

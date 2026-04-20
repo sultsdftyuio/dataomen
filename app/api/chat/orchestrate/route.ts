@@ -7,7 +7,43 @@ import { z } from "zod";
 export const runtime = "edge"; // Maximize performance & minimize latency
 export const dynamic = "force-dynamic";
 
-const BACKEND_URL = process.env.BACKEND_API_URL || "https://api.arcli.tech";
+const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i;
+
+const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+
+const normalizeBackendBase = (rawBase?: string): string | null => {
+  const candidate = trimTrailingSlash((rawBase || "").trim());
+  if (!candidate || !ABSOLUTE_HTTP_URL_REGEX.test(candidate)) return null;
+
+  try {
+    const parsed = new URL(candidate);
+    const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+
+    if (
+      !normalizedPath ||
+      normalizedPath === "/" ||
+      normalizedPath === "/api" ||
+      normalizedPath === "/api/v1" ||
+      normalizedPath === "/v1"
+    ) {
+      return parsed.origin;
+    }
+
+    return `${parsed.origin}${normalizedPath}`;
+  } catch {
+    return null;
+  }
+};
+
+const resolveBackendUrl = () => {
+  return (
+    normalizeBackendBase(process.env.BACKEND_API_URL) ||
+    normalizeBackendBase(process.env.NEXT_PUBLIC_API_URL) ||
+    "https://data-omen-api-tnps9.ondigitalocean.app"
+  );
+};
+
+const BACKEND_URL = resolveBackendUrl();
 
 // ---------------------------------------------------------------------------
 // Context Typing for Edge Runtime (App Router)
