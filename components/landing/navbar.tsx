@@ -40,9 +40,10 @@ export function Navbar() {
         right: 0, 
         zIndex: 100, 
         transition: "all 0.2s ease",
-        backgroundColor: scrolled ? "rgba(255, 255, 255, 0.94)" : "transparent",
+        backgroundColor: scrolled ? "rgba(255, 255, 255, 0.9)" : "transparent",
         backdropFilter: scrolled ? "blur(12px)" : "none",
-        borderBottom: scrolled ? "1px solid rgba(0,0,0,0.08)" : "1px solid transparent"
+        borderBottom: scrolled ? "1px solid rgba(27,110,191,0.16)" : "1px solid transparent",
+        boxShadow: scrolled ? "0 1px 3px rgba(10,22,40,0.08)" : "none"
       }}
     >
       <div style={{
@@ -72,11 +73,12 @@ export function Navbar() {
               href={n.href}
               style={{ 
                 textDecoration: "none", 
-                color: scrolled ? C.navy : C.muted, 
+                color: scrolled ? C.navy : C.navySoft, 
                 fontWeight: 600, 
                 fontSize: 13,
                 transition: "color 0.2s",
-                letterSpacing: "0.02em"
+                letterSpacing: "0.04em",
+                textTransform: "uppercase"
               }}
               onMouseOver={e => (e.currentTarget.style.color = C.blue)}
               onMouseOut={e  => (e.currentTarget.style.color = scrolled ? C.navy : C.muted)}
@@ -93,14 +95,16 @@ export function Navbar() {
             href="/login" 
             className="hide-mobile" 
             style={{ 
-              fontSize: 14, 
+              fontSize: 13,
               fontWeight: 600,
-              color: C.muted, 
+              color: scrolled ? C.muted : C.navySoft,
               textDecoration: "none", 
               marginRight: 8,
               display: "inline-flex",
               alignItems: "center",
-              gap: 6
+              gap: 6,
+              letterSpacing: "0.03em",
+              textTransform: "uppercase"
             }}
           >
             <User size={14} /> Log In
@@ -114,15 +118,26 @@ export function Navbar() {
               fontSize: 14, 
               fontWeight: 600,
               borderRadius: 8,
-              border: "1px solid rgba(0,0,0,0.08)",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              background: C.navy,
+              border: "1px solid rgba(27,110,191,0.36)",
+              boxShadow: "0 6px 14px rgba(27,110,191,0.22)",
+              background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
               textDecoration: "none",
               color: "white",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
-              whiteSpace: "nowrap"
+              whiteSpace: "nowrap",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease",
+              letterSpacing: "0.03em",
+              textTransform: "uppercase"
+            }}
+            onMouseOver={e => {
+              (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-1px)";
+              (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 8px 16px rgba(27,110,191,0.28)";
+            }}
+            onMouseOut={e => {
+              (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
+              (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 6px 14px rgba(27,110,191,0.22)";
             }}
           >
             Start Free Trial

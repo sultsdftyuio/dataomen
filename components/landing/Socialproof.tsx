@@ -64,11 +64,12 @@ export function SocialProof() {
   const [ref, vis] = useVisible(0.1);
   const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
+  const statColors = [C.blue, C.navySoft, C.green, C.blueMid];
 
   return (
     <section 
       aria-labelledby="social-proof-heading"
-      style={{ padding: "120px 24px", background: "#fff", borderBottom: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}
+      style={{ padding: "120px 24px", background: "linear-gradient(180deg, #FFFFFF 0%, #F6FAFE 100%)", borderBottom: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}
     >
       <div style={{ maxWidth: 1240, margin: "0 auto" }} ref={ref as React.RefObject<HTMLDivElement>}>
         <h2 id="social-proof-heading" className="sr-only">Social Proof and Statistics</h2>
@@ -80,8 +81,8 @@ export function SocialProof() {
             display: "grid", 
             gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
             gap: 1, 
-            background: "rgba(0,0,0,0.08)", 
-            border: surfaceBorder, 
+            background: "rgba(27,110,191,0.14)", 
+            border: "1px solid rgba(27,110,191,0.2)", 
             borderRadius: 8, 
             overflow: "hidden", 
             marginBottom: 88,
@@ -89,8 +90,8 @@ export function SocialProof() {
           }}
         >
           {stats.map((s, i) => (
-            <div key={i} style={{ background: "#fff", padding: "32px 20px", textAlign: "center" }}>
-              <div style={{ fontSize: 44, fontWeight: 700, color: C.navy, marginBottom: 6, letterSpacing: "-0.02em", lineHeight: 1.05 }}>
+            <div key={i} style={{ background: "#fff", padding: "32px 20px", textAlign: "center", borderTop: `2px solid ${statColors[i % statColors.length]}` }}>
+              <div style={{ fontSize: 44, fontWeight: 700, color: statColors[i % statColors.length], marginBottom: 6, letterSpacing: "-0.02em", lineHeight: 1.05 }}>
                 {s.value}
               </div>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
@@ -123,22 +124,22 @@ export function SocialProof() {
               <div
                 key={i}
                 style={{
-                  background: "#FAFAFA", 
-                  border: surfaceBorder,
+                  background: "#FFFFFF", 
+                  border: "1px solid rgba(27,110,191,0.16)",
                   borderRadius: 8,
                   padding: "24px 20px", 
                   display: "flex", 
                   flexDirection: "column", 
                   gap: 16,
                   transition: "all 0.2s ease",
-                  boxShadow: surfaceShadow,
+                  boxShadow: "0 6px 14px rgba(10,22,40,0.08)",
                 }}
                 onMouseOver={e => {
-                  e.currentTarget.style.boxShadow = surfaceShadow;
+                  e.currentTarget.style.boxShadow = "0 10px 20px rgba(10,22,40,0.12)";
                   e.currentTarget.style.transform = "translateY(-1px)";
                 }}
                 onMouseOut={e => {
-                  e.currentTarget.style.boxShadow = surfaceShadow;
+                  e.currentTarget.style.boxShadow = "0 6px 14px rgba(10,22,40,0.08)";
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
@@ -153,7 +154,7 @@ export function SocialProof() {
                   "{t.quote}"
                 </blockquote>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 12, borderTop: surfaceBorder, paddingTop: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, borderTop: "1px solid rgba(27,110,191,0.16)", paddingTop: 14 }}>
                   <div style={{
                     width: 40,
                     height: 40,

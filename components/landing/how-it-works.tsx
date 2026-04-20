@@ -24,13 +24,13 @@ export function HowItWorks() {
           ref={ref0 as React.RefObject<HTMLDivElement>}
           style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 120px" }}
         >
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 600, fontSize: 12, letterSpacing: "0.06em", marginBottom: 14 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", marginBottom: 14, textTransform: "uppercase" }}>
             <Database size={14} /> THE PIPELINE
           </div>
-          <h2 style={{ fontSize: 40, color: C.navy, marginBottom: 20, lineHeight: 1.12, letterSpacing: "-0.02em", fontWeight: 700 }}>
+          <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
             How DataOmen thinks.
           </h2>
-          <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.55 }}>
+          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
             A seamless transition from raw, disjointed data to proactive business intelligence. Built for velocity, engineered for absolute precision.
           </p>
         </div>
@@ -38,18 +38,18 @@ export function HowItWorks() {
         {/* ── Step 1: Connect & Harmonize ── */}
         <div className="grid-2" style={{ marginBottom: 160 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 600, fontSize: 12, marginBottom: 14, letterSpacing: "0.05em" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 01
             </div>
-            <h2 style={{ fontSize: 36, color: C.navy, marginBottom: 20, lineHeight: 1.12, letterSpacing: "-0.02em", fontWeight: 700 }}>
+            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
               Connect & Harmonize
             </h2>
-            <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.55, marginBottom: 28 }}>
+            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               Plug in your tools in seconds. DataOmen’s semantic engine automatically maps chaotic, disjointed API fields into a unified, strictly-typed business layer. Zero rigid ETL pipelines required.
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
               {["1-Click OAuth integrations", "Automatic schema resolution", "Real-time data syncing"].map((item, i) => (
-                <li key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, color: C.navy }}>
+                <li key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, fontWeight: 600, color: C.navy }}>
                   <CheckCircle2 size={16} color={C.blue} /> {item}
                 </li>
               ))}
@@ -103,13 +103,13 @@ export function HowItWorks() {
         {/* ── Step 2: Explore & Ask (AI Analyst) ── */}
         <div className="grid-2" style={{ marginBottom: 160 }} ref={ref2 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 2 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 600, fontSize: 12, marginBottom: 14, letterSpacing: "0.05em" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 02
             </div>
-            <h2 style={{ fontSize: 36, color: C.navy, marginBottom: 20, lineHeight: 1.12, letterSpacing: "-0.02em", fontWeight: 700 }}>
+            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
               Bypass the SQL editor.
             </h2>
-            <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.55, marginBottom: 28 }}>
+            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               DataOmen's AI understands your unique schema. Simply type your question in plain English, and it instantly translates it into perfectly optimized SQL, generating presentation-ready charts on the fly.
             </p>
             <a
@@ -123,10 +123,11 @@ export function HowItWorks() {
                 background: C.blue,
                 color: "#fff",
                 fontSize: 14,
-                fontWeight: 600,
+                fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
-                textDecoration: "none"
+                textDecoration: "none",
+                letterSpacing: "0.02em"
               }}
             >
               Try the AI Analyst
@@ -159,13 +160,13 @@ export function HowItWorks() {
         {/* ── Step 3: Automate & Guard (Watchdogs) ── */}
         <div className="grid-2" ref={ref3 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis3 ? "vis" : ""}`} style={{ order: 1 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.red, fontWeight: 600, fontSize: 12, marginBottom: 14, letterSpacing: "0.05em" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.red, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 03
             </div>
-            <h2 style={{ fontSize: 36, color: C.navy, marginBottom: 20, lineHeight: 1.12, letterSpacing: "-0.02em", fontWeight: 700 }}>
+            <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
               Automate & Guard
             </h2>
-            <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.55, marginBottom: 28 }}>
+            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               Don't just stare at dashboards waiting for lines to drop. DataOmen continuously monitors your metrics 24/7. If conversion rates dip or API errors spike, you get an immediate alert with the root cause already diagnosed.
             </p>
             <a
@@ -179,10 +180,11 @@ export function HowItWorks() {
                 background: "#FFFFFF",
                 color: C.navy,
                 fontSize: 14,
-                fontWeight: 600,
+                fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
-                textDecoration: "none"
+                textDecoration: "none",
+                letterSpacing: "0.02em"
               }}
             >
               Explore AI Watchdogs

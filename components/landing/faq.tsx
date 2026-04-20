@@ -34,7 +34,7 @@ export function FAQ() {
   return (
     <section style={{ padding: "100px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
-        <h2 style={{ fontSize: "clamp(32px, 5vw, 44px)", textAlign: "center", marginBottom: 44, color: C.navy, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
+        <h2 className="pfd" style={{ fontSize: "clamp(36px, 5vw, 48px)", textAlign: "center", marginBottom: 44, color: C.navy, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
           Frequently Asked Questions
         </h2>
 
@@ -60,7 +60,7 @@ export function FAQ() {
                   transition: "background 0.2s",
                 }}
               >
-                <span style={{ fontWeight: 600, color: C.navy, fontSize: 14, lineHeight: 1.5, paddingRight: 16 }}>
+                <span style={{ fontWeight: 600, color: C.navy, fontSize: 15, lineHeight: 1.55, paddingRight: 16 }}>
                   {item.q}
                 </span>
                 <span style={{ color: open === i ? C.blue : C.muted, fontSize: 18, fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>
@@ -69,7 +69,7 @@ export function FAQ() {
               </button>
 
               {open === i && (
-                <div style={{ padding: "0 16px 14px", color: C.muted, lineHeight: 1.6, fontSize: 14 }}>
+                <div style={{ padding: "0 16px 14px", color: C.navySoft, lineHeight: 1.65, fontSize: 15 }}>
                   {item.a}
                 </div>
               )}

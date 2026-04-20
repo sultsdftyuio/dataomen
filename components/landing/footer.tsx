@@ -17,7 +17,7 @@ export default function Footer() {
   return (
     <footer
       className="bg-white text-gray-600 py-16 md:py-24 border-t"
-      style={{ borderColor: "rgba(0,0,0,0.08)", fontFamily: "var(--font-geist-sans), sans-serif" }}
+      style={{ borderColor: "rgba(27,110,191,0.16)", fontFamily: "var(--font-geist-sans), sans-serif", background: "linear-gradient(180deg, #FFFFFF 0%, #F6FAFE 100%)" }}
     >
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
         
@@ -29,18 +29,18 @@ export default function Footer() {
               {/* Removed the text span since the Logo already contains "Arcli" */}
               <Logo className="h-7 w-auto group-hover:scale-[1.02] transition-transform" />
             </Link>
-            <p className="text-gray-600 mb-8 max-w-md text-[14px] leading-relaxed">
+            <p className="text-slate-600 mb-8 max-w-md text-[14px] leading-relaxed">
               The AI data analyst for modern teams. Stop writing SQL and wrestling with Excel. 
               Ask questions in plain English, get instant charts, and deploy agents securely.
             </p>
             <div className="flex items-center gap-4">
-              <a href="https://twitter.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-white border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+              <a href="https://twitter.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-[#F0F7FF] border border-[#DDE8F2] flex items-center justify-center text-[#1B6EBF] hover:bg-[#E6F1FC] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <Twitter className="w-4 h-4" />
               </a>
-              <a href="https://github.com/dataomen" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-white border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+              <a href="https://github.com/dataomen" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-[#F0F7FF] border border-[#DDE8F2] flex items-center justify-center text-[#1B6EBF] hover:bg-[#E6F1FC] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <Github className="w-4 h-4" />
               </a>
-              <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-white border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+              <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-[#F0F7FF] border border-[#DDE8F2] flex items-center justify-center text-[#1B6EBF] hover:bg-[#E6F1FC] transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <Linkedin className="w-4 h-4" />
               </a>
             </div>
@@ -164,16 +164,16 @@ export default function Footer() {
         </div>
 
         {/* Bottom Section: Copyright */}
-        <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: "rgba(0,0,0,0.08)" }}>
-          <p className="text-sm text-gray-500">
+        <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
+          <p className="text-sm text-slate-500">
             &copy; {currentYear} Arcli Analytics. All rights reserved.
           </p>
-          <div className="flex items-center gap-6 text-sm text-gray-500">
+          <div className="flex items-center gap-6 text-sm text-slate-500">
             <span className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
               All Systems Operational
             </span>
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-gray-900 transition-colors flex items-center gap-2">
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-[#1B6EBF] transition-colors flex items-center gap-2">
               <Mail className="w-4 h-4" />
               {SUPPORT_EMAIL}
             </a>

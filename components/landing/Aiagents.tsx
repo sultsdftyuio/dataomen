@@ -77,12 +77,12 @@ export function AIAgents() {
             marginBottom: 18, color: C.blueLight, border: "1px solid rgba(96,165,250,0.28)", boxShadow: surfaceShadow,
           }}>
             <Workflow size={14} />
-            <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em" }}>THE SUPERVISOR ARCHITECTURE</span>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>THE SUPERVISOR ARCHITECTURE</span>
           </div>
-          <h2 style={{ fontSize: "clamp(34px, 5vw, 48px)", color: "#FFFFFF", marginBottom: 20, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
+          <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 52px)", color: "#FFFFFF", marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
             Don't just query your data.<br />Hire an AI team to watch it.
           </h2>
-          <p style={{ color: C.faint, fontSize: 16, maxWidth: 680, margin: "0 auto", lineHeight: 1.55 }}>
+          <p style={{ color: C.faint, fontSize: 17, maxWidth: 700, margin: "0 auto", lineHeight: 1.62 }}>
             Unlike standard BI dashboards that require you to actively hunt for problems, Arcli uses an advanced multi-agent orchestration pattern to proactively detect, diagnose, and predict outcomes for you.
           </p>
         </div>
@@ -143,12 +143,12 @@ export function AIAgents() {
                     </div>
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                        <h3 style={{ fontSize: 16, fontWeight: 600, color: "#FFFFFF" }}>{step.name}</h3>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: C.blueLight, background: "rgba(59,154,232,0.14)", border: "1px solid rgba(96,165,250,0.28)", padding: "3px 8px", borderRadius: 6 }}>
+                        <h3 style={{ fontSize: 17, fontWeight: 700, color: "#FFFFFF", letterSpacing: "-0.01em" }}>{step.name}</h3>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.blueLight, background: "rgba(59,154,232,0.14)", border: "1px solid rgba(96,165,250,0.28)", padding: "3px 8px", borderRadius: 6, letterSpacing: "0.03em" }}>
                           {step.role}
                         </span>
                       </div>
-                      <p style={{ color: C.faint, fontSize: 14, lineHeight: 1.55 }}>{step.desc}</p>
+                      <p style={{ color: C.faint, fontSize: 15, lineHeight: 1.62 }}>{step.desc}</p>
                     </div>
                   </div>
                 </div>

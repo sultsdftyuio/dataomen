@@ -31,10 +31,10 @@ export function IntegrationsAndSecurity() {
 
         {/* Header Block */}
         <div className={`fu ${vis ? "vis" : ""}`} style={{ textAlign: "center", marginBottom: 60 }}>
-          <h2 style={{ fontSize: "clamp(34px, 5vw, 44px)", color: C.navy, marginBottom: 18, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
+          <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 48px)", color: C.navy, marginBottom: 18, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
             Connect your data. Secure your insights.
           </h2>
-          <p style={{ color: C.muted, fontSize: 16, maxWidth: 640, margin: "0 auto", lineHeight: 1.55 }}>
+          <p style={{ color: C.navySoft, fontSize: 17, maxWidth: 660, margin: "0 auto", lineHeight: 1.62 }}>
             No engineering tickets or ETL pipelines required. Arcli securely authenticates with your tools 
             and automatically maps your metadata for instant conversational analysis.
           </p>
@@ -56,6 +56,7 @@ export function IntegrationsAndSecurity() {
                 borderRadius: 8,
                 fontWeight: 600,
                 fontSize: 14,
+                letterSpacing: "0.02em",
                 color: C.navy,
                 boxShadow: surfaceShadow,
                 transition: "all 0.2s",
@@ -98,12 +99,12 @@ export function IntegrationsAndSecurity() {
             boxShadow: surfaceShadow,
           }}>
             <Shield size={16} color={C.blueLight} style={{ marginBottom: 14 }} />
-            <h3 style={{ fontSize: 28, marginBottom: 12, fontWeight: 700, letterSpacing: "-0.02em" }}>Security by Design</h3>
-            <p style={{ color: C.faint, fontSize: 14, lineHeight: 1.55, maxWidth: 560, marginBottom: 18 }}>
+            <h3 className="pfd" style={{ fontSize: 30, marginBottom: 12, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.08 }}>Security by Design</h3>
+            <p style={{ color: C.faint, fontSize: 15, lineHeight: 1.62, maxWidth: 560, marginBottom: 18 }}>
               Your raw data never leaves your infrastructure. Arcli connects via 100% read-only credentials, 
               and our AI agents only process metadata to generate queries—ensuring row-level privacy at every step.
             </p>
-            <a href="/security" style={{ height: 40, padding: "0 14px", borderRadius: 8, border: darkSurfaceBorder, boxShadow: surfaceShadow, color: "#FFFFFF", fontWeight: 600, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", background: "rgba(255,255,255,0.12)" }}>
+            <a href="/security" style={{ height: 40, padding: "0 14px", borderRadius: 8, border: darkSurfaceBorder, boxShadow: surfaceShadow, color: "#FFFFFF", fontWeight: 700, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", background: "rgba(255,255,255,0.12)", letterSpacing: "0.02em" }}>
               Explore our Security Architecture <ArrowRight size={14} />
             </a>
           </div>
@@ -120,7 +121,7 @@ export function IntegrationsAndSecurity() {
             justifyContent: "center",
           }}>
             <Lock size={16} color={C.navy} style={{ marginBottom: 12 }} />
-            <h3 style={{ fontSize: 18, color: C.navy, marginBottom: 14, fontWeight: 700 }}>Infrastructure Guardrails</h3>
+            <h3 className="pfd" style={{ fontSize: 24, color: C.navy, marginBottom: 14, fontWeight: 600, lineHeight: 1.1 }}>Infrastructure Guardrails</h3>
             <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
               {[
                 "Strict Tenant Isolation",     // Enforced via context wrappers
@@ -130,7 +131,7 @@ export function IntegrationsAndSecurity() {
                 "Immutable Audit Logging",     // Full prompt and SQL transparency
                 "Automated Schema Jailing"     // Drops unauthorized data on ingestion
               ].map((item, i) => (
-                <li key={i} style={{ display: "flex", gap: 8, alignItems: "center", color: C.muted, fontSize: 14, fontWeight: 500 }}>
+                <li key={i} style={{ display: "flex", gap: 8, alignItems: "center", color: C.muted, fontSize: 14, fontWeight: 600 }}>
                   <CheckCircle2 size={14} color={C.blue} style={{ flexShrink: 0 }} /> {item}
                 </li>
               ))}

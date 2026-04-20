@@ -19,13 +19,13 @@ export function DeepDiveFeatures() {
         <div className="grid-2" style={{ marginBottom: 160 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
 
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 600, fontSize: 12, marginBottom: 14, letterSpacing: "0.05em" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               <LayoutDashboard size={14} /> THE SMART GRID
             </div>
-            <h2 style={{ fontSize: 40, color: C.navy, marginBottom: 20, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
+            <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
               Dashboards that actually<br />answer the next question.
             </h2>
-            <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.55, marginBottom: 26 }}>
+            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Stop building brittle dashboards that break when you filter them. The Smart Grid dynamically joins data across your platforms (Stripe + Shopify + Zendesk) into fluid, interactive canvases. 
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -34,7 +34,7 @@ export function DeepDiveFeatures() {
                 "Progressive widget hydration", 
                 "1-Click metric lineage & provenance"
               ].map((item, i) => (
-                <li key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, fontWeight: 600, color: C.navy }}>
+                <li key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, fontWeight: 600, color: C.navy }}>
                   <CheckCircle2 size={16} color={C.blue} /> {item}
                 </li>
               ))}
@@ -111,13 +111,13 @@ export function DeepDiveFeatures() {
         <div className="grid-2" ref={ref2 as React.RefObject<HTMLDivElement>}>
 
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 2 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 600, fontSize: 12, marginBottom: 14, letterSpacing: "0.05em" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               <Presentation size={14} /> NARRATIVE SYNTHESIS
             </div>
-            <h2 style={{ fontSize: 40, color: C.navy, marginBottom: 20, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
+            <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
               Charts are nice.<br />Answers are better.
             </h2>
-            <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.55, marginBottom: 26 }}>
+            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Stop pasting screenshots into Slack. With one click, generate a presentation-ready executive summary of your board. We freeze the data state, giving you a "Time-Travel" hash so your team sees exactly what you saw.
             </p>
             <div style={{ display: "flex", gap: 12 }}>
@@ -132,10 +132,11 @@ export function DeepDiveFeatures() {
                   background: C.blue,
                   color: "#fff",
                   fontSize: 14,
-                  fontWeight: 600,
+                  fontWeight: 700,
                   display: "inline-flex",
                   alignItems: "center",
-                  textDecoration: "none"
+                  textDecoration: "none",
+                  letterSpacing: "0.02em"
                 }}
               >
                 Generate Brief

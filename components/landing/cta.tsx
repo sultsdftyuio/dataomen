@@ -22,10 +22,10 @@ export function CTA() {
       <div style={{ position: "absolute", bottom: "-12%", right: "-8%", width: 320, height: 320, background: "rgba(99,91,255,0.22)", borderRadius: "50%", opacity: 0.85, filter: "blur(80px)" }} />
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto" }}>
-        <h2 style={{ fontSize: "clamp(34px, 5vw, 48px)", marginBottom: 14, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
+        <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 54px)", marginBottom: 14, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
           Stop guessing.<br />Start knowing.
         </h2>
-        <p style={{ fontSize: 16, marginBottom: 30, color: "rgba(255,255,255,0.88)", lineHeight: 1.55 }}>
+        <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
           Connect your first data source and deploy your first autonomous AI agent in under 5 minutes.
         </p>
 
@@ -47,6 +47,7 @@ export function CTA() {
               border: "1px solid rgba(255,255,255,0.2)",
               background: "#FFFFFF",
               color: C.blue,
+              letterSpacing: "0.02em",
             }}
           >
             Initialize Agent <ArrowRight size={14} />
@@ -67,6 +68,7 @@ export function CTA() {
               border: "1px solid rgba(255,255,255,0.22)",
               background: "rgba(255,255,255,0.12)",
               color: "#FFFFFF",
+              letterSpacing: "0.02em",
             }}
           >
             <Play size={14} /> Try the Playground
@@ -74,7 +76,7 @@ export function CTA() {
         </div>
 
         {/* Trust nudges */}
-        <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.8)", flexWrap: "wrap", justifyContent: "center" }}>
+        <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: "0.03em", textTransform: "uppercase", flexWrap: "wrap", justifyContent: "center" }}>
           {["14-day free trial", "No credit card required", "Setup in 5 minutes"].map((t, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <CheckCircle2 size={14} /> {t}

@@ -54,10 +54,10 @@
 }
 
 @theme {
-  /* Homogenized typography: Forcing Next.js Geist across the board */
+  /* Typography system: Geist for UI, Playfair for display headlines */
   --font-sans: var(--font-geist-sans), 'sans-serif';
   --font-mono: var(--font-geist-mono), 'monospace';
-  --font-serif: var(--font-geist-sans), 'serif'; /* Replaced Playfair */
+  --font-serif: var(--font-playfair), 'serif';
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -116,7 +116,13 @@
 }
 
 /* ── Typography & UI Helpers ─────────────────────────── */
-.pfd { font-family: var(--font-geist-sans), sans-serif; } /* Fallback normalized */
+.pfd {
+  font-family: var(--font-playfair), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
 .jbm { font-family: var(--font-geist-mono), monospace; } /* Fallback normalized */
 
 .nav-scrolled {

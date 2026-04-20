@@ -32,13 +32,13 @@ export function Hero() {
           ref={ref as React.RefObject<HTMLDivElement>}
         >
           <h1
+            className="pfd"
             style={{
-              fontFamily: "var(--font-geist-sans), sans-serif",
-              fontSize: "clamp(36px, 6vw, 48px)",
-              fontWeight: 700,
+              fontSize: "clamp(40px, 6vw, 54px)",
+              fontWeight: 600,
               color: C.navy,
-              lineHeight: 1.08,
-              letterSpacing: "-0.03em",
+              lineHeight: 1.04,
+              letterSpacing: "-0.02em",
               maxWidth: 860,
               margin: "0 auto 20px"
             }}
@@ -47,7 +47,7 @@ export function Hero() {
             <span style={{ color: C.blue }}>Business Intelligence.</span>
           </h1>
 
-          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 16, color: C.muted, lineHeight: 1.55, maxWidth: 620, margin: "0 auto 36px" }}>
+          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
             Stop querying. Start knowing. Connect your data stack and let AI agents uncover insights, track anomalies, and build reports automatically.
           </p>
 
@@ -65,13 +65,14 @@ export function Hero() {
                 color: "#fff",
                 fontFamily: "var(--font-geist-sans), sans-serif",
                 fontSize: 14,
-                fontWeight: 600,
+                fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 8,
                 textDecoration: "none",
-                whiteSpace: "nowrap"
+                whiteSpace: "nowrap",
+                letterSpacing: "0.02em"
               }}
             >
               Start Free Trial <ArrowRight size={16} />
@@ -79,7 +80,7 @@ export function Hero() {
           </div>
 
           {/* Social nudge */}
-          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", marginTop: 0, fontSize: 12, color: C.faint, fontWeight: 600 }}>
+          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", marginTop: 0, fontSize: 12, color: C.faint, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
             14-day free trial · No credit card · Setup in 5 minutes
           </p>
         </div>
