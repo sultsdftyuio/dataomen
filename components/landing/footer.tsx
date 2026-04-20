@@ -15,7 +15,10 @@ export default function Footer() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-white text-gray-600 py-16 md:py-24 border-t border-gray-200">
+    <footer
+      className="bg-white text-gray-600 py-16 md:py-24 border-t"
+      style={{ borderColor: "rgba(0,0,0,0.08)", fontFamily: "var(--font-geist-sans), sans-serif" }}
+    >
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
         
         {/* Top Section: Brand & Newsletter / CTA */}
@@ -24,20 +27,20 @@ export default function Footer() {
           <div className="lg:col-span-2">
             <Link href="/" className="inline-flex items-center gap-2 text-gray-900 mb-6 group">
               {/* Removed the text span since the Logo already contains "Arcli" */}
-              <Logo className="h-8 w-auto group-hover:scale-105 transition-transform" />
+              <Logo className="h-7 w-auto group-hover:scale-[1.02] transition-transform" />
             </Link>
-            <p className="text-gray-600 mb-8 max-w-md leading-relaxed">
+            <p className="text-gray-600 mb-8 max-w-md text-[14px] leading-relaxed">
               The AI data analyst for modern teams. Stop writing SQL and wrestling with Excel. 
               Ask questions in plain English, get instant charts, and deploy agents securely.
             </p>
             <div className="flex items-center gap-4">
-              <a href="https://twitter.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-[#1DA1F2] hover:text-white transition-colors shadow-sm">
+              <a href="https://twitter.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-white border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <Twitter className="w-4 h-4" />
               </a>
-              <a href="https://github.com/dataomen" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-900 hover:text-white transition-colors shadow-sm">
+              <a href="https://github.com/dataomen" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-white border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <Github className="w-4 h-4" />
               </a>
-              <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-[#0A66C2] hover:text-white transition-colors shadow-sm">
+              <a href="https://linkedin.com" target="_blank" rel="noreferrer" className="w-10 h-10 rounded-md bg-white border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                 <Linkedin className="w-4 h-4" />
               </a>
             </div>
@@ -48,8 +51,8 @@ export default function Footer() {
             
             {/* Column 1: Core Platform (SEO Hub) */}
             <div>
-              <h3 className="text-gray-900 font-bold mb-6 tracking-wide text-sm">Platform</h3>
-              <ul className="space-y-4">
+              <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Platform</h3>
+              <ul className="space-y-3">
                 <li>
                   <Link href="/ai-data-analysis" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                     Conversational BI
@@ -80,8 +83,8 @@ export default function Footer() {
 
             {/* Column 2: Integrations (SEO Hub) */}
             <div>
-              <h3 className="text-gray-900 font-bold mb-6 tracking-wide text-sm">Integrations</h3>
-              <ul className="space-y-4">
+              <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Integrations</h3>
+              <ul className="space-y-3">
                 <li>
                   <Link href="/analyze-shopify-data" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                     Shopify Analytics
@@ -105,7 +108,7 @@ export default function Footer() {
                 <li>
                   <Link href="/integrations" className="text-sm text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-1 group">
                     View All Connectors 
-                    <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                   </Link>
                 </li>
               </ul>
@@ -114,12 +117,12 @@ export default function Footer() {
             {/* Column 3: Resources & Legal */}
             <div className="col-span-2 md:col-span-1 grid grid-cols-2 md:grid-cols-1 gap-8">
               <div>
-                <h3 className="text-gray-900 font-bold mb-6 tracking-wide text-sm">Resources</h3>
-                <ul className="space-y-4">
+                <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Resources</h3>
+                <ul className="space-y-3">
                   <li>
                     <Link href="/chat/demo" className="text-sm text-gray-600 hover:text-blue-600 transition-colors flex items-center gap-2">
                       Interactive Demo
-                      <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded font-bold">NEW</span>
+                      <span className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-md border border-black/10 font-semibold">NEW</span>
                     </Link>
                   </li>
                   <li>
@@ -136,8 +139,8 @@ export default function Footer() {
               </div>
 
               <div>
-                <h3 className="text-gray-900 font-bold mb-6 tracking-wide text-sm">Legal</h3>
-                <ul className="space-y-4">
+                <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Legal</h3>
+                <ul className="space-y-3">
                   <li>
                     <Link href="/privacy" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                       Privacy Policy
@@ -161,7 +164,7 @@ export default function Footer() {
         </div>
 
         {/* Bottom Section: Copyright */}
-        <div className="pt-8 border-t border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: "rgba(0,0,0,0.08)" }}>
           <p className="text-sm text-gray-500">
             &copy; {currentYear} Arcli Analytics. All rights reserved.
           </p>

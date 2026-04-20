@@ -39,32 +39,33 @@ export function Navbar() {
         left: 0, 
         right: 0, 
         zIndex: 100, 
-        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-        backgroundColor: scrolled ? "rgba(255, 255, 255, 0.9)" : "transparent",
+        transition: "all 0.2s ease",
+        backgroundColor: scrolled ? "rgba(255, 255, 255, 0.94)" : "transparent",
         backdropFilter: scrolled ? "blur(12px)" : "none",
-        borderBottom: scrolled ? `1px solid ${C.rule}` : "1px solid transparent"
+        borderBottom: scrolled ? "1px solid rgba(0,0,0,0.08)" : "1px solid transparent"
       }}
     >
       <div style={{
         maxWidth: 1240, 
         margin: "0 auto", 
         padding: "0 24px",
-        height: 80, 
+        height: 72,
         display: "flex", 
         alignItems: "center", 
-        justifyContent: "space-between"
+        justifyContent: "space-between",
+        fontFamily: "var(--font-geist-sans), sans-serif"
       }}>
         {/* Logo Section - UPDATED: Replaced window.scrollTo with Next.js Link for cross-page routing */}
         <Link 
           href="/"
-          className="transition-transform hover:scale-105"
+          className="transition-transform hover:scale-[1.02]"
           style={{ display: "flex", alignItems: "center", cursor: "pointer", textDecoration: "none" }}
         >
-          <Logo className="h-8 w-auto" />
+          <Logo className="h-7 w-auto" />
         </Link>
 
         {/* Navigation Links */}
-        <div className="hide-mobile" style={{ display: "flex", gap: 32 }}>
+        <div className="hide-mobile" style={{ display: "flex", gap: 24 }}>
           {navLinks.map(n => (
             <Link
               key={n.name}
@@ -73,7 +74,7 @@ export function Navbar() {
                 textDecoration: "none", 
                 color: scrolled ? C.navy : C.muted, 
                 fontWeight: 600, 
-                fontSize: 14, 
+                fontSize: 13,
                 transition: "color 0.2s",
                 letterSpacing: "0.02em"
               }}
@@ -93,7 +94,7 @@ export function Navbar() {
             className="hide-mobile" 
             style={{ 
               fontSize: 14, 
-              fontWeight: 700, 
+              fontWeight: 600,
               color: C.muted, 
               textDecoration: "none", 
               marginRight: 8,
@@ -102,20 +103,26 @@ export function Navbar() {
               gap: 6
             }}
           >
-            <User size={16} /> Log In
+            <User size={14} /> Log In
           </Link>
 
           <Link 
             href="/register" 
-            className="btn-navy" 
             style={{ 
-              padding: "12px 24px", 
+              height: 40,
+              padding: "0 16px",
               fontSize: 14, 
-              fontWeight: 800, 
-              borderRadius: 10,
-              boxShadow: scrolled ? "0 4px 12px rgba(10, 22, 40, 0.2)" : "none",
+              fontWeight: 600,
+              borderRadius: 8,
+              border: "1px solid rgba(0,0,0,0.08)",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              background: C.navy,
               textDecoration: "none",
-              color: "white"
+              color: "white",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              whiteSpace: "nowrap"
             }}
           >
             Start Free Trial

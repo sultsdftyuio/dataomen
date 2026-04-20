@@ -183,7 +183,7 @@ function SimpleMarkdown({ text }: { text: string }) {
           return (
             <code
               key={i}
-              className="rounded-md border border-slate-200/60 bg-slate-100 px-1.5 py-0.5 text-[13px] font-mono font-semibold text-slate-700"
+              className="rounded-md bg-slate-100/90 px-1.5 py-0.5 font-mono text-[13px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.2)]"
             >
               {part.slice(1, -1)}
             </code>
@@ -277,7 +277,7 @@ function ReasoningBlock({ icon, label, content, mono }: { icon: React.ReactNode;
       <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
         {icon} {label}
       </div>
-      <div className={`overflow-x-auto rounded-xl border p-3 ${mono ? 'border-slate-200/70 bg-slate-100/95' : 'border-slate-200/50 bg-slate-50/65'}`}>
+      <div className={`overflow-x-auto rounded-xl p-3 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.2)] ${mono ? "bg-slate-100/95" : "bg-slate-50/70"}`}>
         <code className={`block whitespace-pre-wrap break-words ${mono ? "font-mono text-[12px] leading-relaxed text-slate-700" : "text-[13px] leading-relaxed text-slate-700"}`}>
           {content}
         </code>
@@ -926,39 +926,39 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const SUGGESTIONS = [
     {
       icon: <FileSpreadsheet className="w-4 h-4" />,
-      color: "text-slate-600 bg-white border-slate-200/60",
+      color: "bg-slate-100/80 text-slate-700",
       title: "Analyze a dataset",
       prompt: "I want to analyze a dataset",
     },
     {
       icon: <Database className="w-4 h-4" />,
-      color: "text-blue-600 bg-blue-50/70 border-blue-100/80",
+      color: "bg-blue-50/80 text-blue-700",
       title: "Query a database",
       prompt: "I want to query a database",
     },
     {
       icon: <TrendingUp className="w-4 h-4" />,
-      color: "text-slate-700 bg-slate-100 border-slate-200/60",
+      color: "bg-slate-100/90 text-slate-700",
       title: "Forecast trends",
       prompt: "I want to forecast trends and predict future metrics",
     },
     {
       icon: <Search className="w-4 h-4" />,
-      color: "text-slate-600 bg-white border-slate-200/60",
+      color: "bg-slate-100/80 text-slate-700",
       title: "Detect anomalies",
       prompt: "I want to detect anomalies in my data",
     },
   ];
 
   return (
-    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-white text-slate-900">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(110%_75%_at_50%_-10%,rgba(15,23,42,0.06),transparent_62%)]" />
-      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-full max-w-[58rem] -translate-x-1/2 bg-gradient-to-b from-white/78 via-white/58 to-white/20" />
+    <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-gradient-to-b from-slate-50 via-white to-slate-50/70 text-slate-900">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(115%_78%_at_50%_-8%,rgba(15,23,42,0.1),transparent_64%)]" />
+      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-full max-w-[58rem] -translate-x-1/2 bg-gradient-to-b from-slate-50/80 via-white/60 to-slate-50/35" />
       <div className="relative z-10 flex h-full min-h-0 flex-col">
       
       {/* ── Floating Command Strip ── */}
       <div className={`pointer-events-none sticky z-30 px-4 transition-all duration-300 sm:px-6 ${isCommandStripCompact ? "top-2" : "top-3"}`}>
-        <div className={`pointer-events-auto mx-auto flex w-full items-center justify-between border border-slate-200/55 bg-white/82 shadow-[0_10px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur-xl transition-all duration-300 ${isCommandStripCompact ? "max-w-3xl rounded-xl px-3 py-1.5" : "max-w-4xl rounded-2xl px-3 py-2.5"}`}>
+        <div className={`pointer-events-auto mx-auto flex w-full items-center justify-between bg-white/82 shadow-[0_12px_44px_-30px_rgba(15,23,42,0.55),inset_0_0_0_1px_rgba(148,163,184,0.2)] backdrop-blur-xl transition-all duration-300 ${isCommandStripCompact ? "max-w-3xl rounded-xl px-3 py-1.5" : "max-w-4xl rounded-2xl px-3 py-2.5"}`}>
           <div className="min-w-0 flex items-center gap-2.5">
             <span className={`inline-flex shrink-0 items-center justify-center bg-slate-100/80 text-slate-600 transition-all duration-300 ${isCommandStripCompact ? "h-7 w-7 rounded-lg" : "h-8 w-8 rounded-xl"}`}>
               <Zap className="h-4 w-4" />
@@ -979,10 +979,10 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
           <div className="flex shrink-0 items-center gap-1">
             {isProcessing && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={stopStreaming}
-                className={`rounded-full border-slate-200/60 bg-white/80 text-xs text-slate-600 hover:bg-slate-100 ${isCommandStripCompact ? "h-7 px-2" : "h-8 px-3"}`}
+                className={`rounded-full bg-slate-100/85 text-xs text-slate-700 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.25)] hover:bg-slate-200/70 ${isCommandStripCompact ? "h-7 px-2" : "h-8 px-3"}`}
               >
                 <CircleStop className="mr-1.5 h-3.5 w-3.5" />
                 {!isCommandStripCompact && "Stop"}
@@ -1021,9 +1021,10 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
       {/* ── Chat Body ── */}
       <div ref={scrollContainerRef} className="relative -mt-12 min-h-0 flex-1">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-white via-white/80 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-slate-100/90 via-white/70 to-transparent" />
         <ScrollArea className="h-full">
-          <div className="mx-auto w-full max-w-4xl px-5 pb-56 pt-20 sm:px-8">
+          <div className="max-w-4xl mx-auto w-full">
+            <div className="px-5 pb-56 pt-20 sm:px-8">
             {/* Empty / Welcome State */}
             {messages.length === 0 && (
               <div className="animate-in fade-in zoom-in-95 flex min-h-[62vh] flex-col items-center justify-center text-center duration-500">
@@ -1042,9 +1043,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                     <button
                       key={i}
                       onClick={() => void handleSendMessage(s.prompt)}
-                      className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200/60 bg-white/82 px-4 py-3.5 text-left shadow-[0_14px_32px_-28px_rgba(15,23,42,0.9)] transition-all hover:border-slate-300/70 hover:bg-white"
+                      className="group flex w-full items-center gap-4 rounded-2xl bg-white/82 px-4 py-3.5 text-left shadow-[0_14px_32px_-30px_rgba(15,23,42,0.5),inset_0_0_0_1px_rgba(148,163,184,0.2)] transition-all hover:bg-white hover:shadow-[0_18px_36px_-30px_rgba(15,23,42,0.5),inset_0_0_0_1px_rgba(100,116,139,0.26)]"
                     >
-                      <div className={`rounded-xl border border-slate-200/60 p-2.5 transition-transform group-hover:scale-105 ${s.color}`}>
+                      <div className={`rounded-xl p-2.5 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.22)] transition-transform group-hover:scale-105 ${s.color}`}>
                         {s.icon}
                       </div>
                       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -1072,7 +1073,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowAllMessages((prev) => !prev)}
-                    className="rounded-full border border-slate-200/60 bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:text-slate-700"
+                    className="rounded-full bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.24)] hover:text-slate-700"
                   >
                     {showAllMessages ? "Collapse older messages" : `Show ${hiddenMessageCount} earlier messages`}
                   </button>
@@ -1202,7 +1203,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                             </div>
                           )}
 
-                          <details className="group/footnote mt-4 overflow-hidden rounded-2xl border border-slate-200/55 bg-white/62">
+                          <details className="group/footnote mt-4 overflow-hidden rounded-2xl bg-white/62 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.22)]">
                             <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-[11px] font-medium text-slate-500">
                               <span className="uppercase tracking-[0.12em]">Analysis footnote</span>
                               <span className="text-slate-300">•</span>
@@ -1211,11 +1212,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                               <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open/footnote:rotate-90" />
                             </summary>
 
-                            <div className="space-y-3 border-t border-slate-200/50 px-3.5 py-3">
+                            <div className="space-y-3 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(148,163,184,0.22)]">
                               {warningCount > 0 && (
                                 <div className="space-y-2">
                                   {msg.warnings?.map((warning, warningIdx) => (
-                                    <div key={`${msg.id}-warning-${warningIdx}`} className="rounded-xl border-l-2 border-amber-300/80 bg-amber-50/50 py-2 pl-3 pr-2 text-[13px] text-amber-900/80">
+                                    <div key={`${msg.id}-warning-${warningIdx}`} className="rounded-xl bg-amber-50/50 py-2 pl-3 pr-2 text-[13px] text-amber-900/80 shadow-[inset_3px_0_0_rgba(252,211,77,0.85)]">
                                       <div className="flex items-start gap-2">
                                         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600/80" />
                                         <span>{warning}</span>
@@ -1226,7 +1227,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                               )}
 
                               {msg.error && (
-                                <div className="rounded-xl border-l-2 border-rose-300/80 bg-rose-50/55 py-2 pl-3 pr-2 text-[13px] text-rose-900/80">
+                                <div className="rounded-xl bg-rose-50/55 py-2 pl-3 pr-2 text-[13px] text-rose-900/80 shadow-[inset_3px_0_0_rgba(251,113,133,0.8)]">
                                   <div className="flex items-start gap-2">
                                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600/80" />
                                     <span>{msg.error}</span>
@@ -1296,6 +1297,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
               ))}
 
               <div ref={scrollAnchorRef} className="h-4 w-full" />
+            </div>
             </div>
           </div>
         </ScrollArea>

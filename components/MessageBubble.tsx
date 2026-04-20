@@ -28,7 +28,7 @@ interface MessageBubbleProps {
 }
 
 const PROSE_CLASSNAME =
-  'prose prose-slate dark:prose-invert max-w-none text-[15px] leading-relaxed sm:text-base prose-p:my-2 prose-p:leading-[1.75] prose-headings:mb-2 prose-headings:mt-5 prose-headings:font-semibold prose-headings:tracking-tight prose-headings:text-slate-900 dark:prose-headings:text-slate-50 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-slate-900 dark:prose-strong:text-slate-50 prose-code:rounded-md prose-code:bg-slate-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:text-slate-700 dark:prose-code:bg-slate-800 dark:prose-code:text-slate-200 prose-code:before:content-none prose-code:after:content-none prose-table:my-4 prose-table:w-full prose-thead:border-b prose-thead:border-slate-200/60 prose-th:bg-slate-50/70 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:text-[11px] prose-th:font-semibold prose-th:uppercase prose-th:tracking-wider prose-th:text-slate-500 prose-td:border-b prose-td:border-slate-200/40 prose-td:px-4 prose-td:py-2 prose-td:text-slate-700 dark:prose-td:text-slate-200';
+  'prose prose-slate dark:prose-invert max-w-none text-[15px] leading-7 sm:text-base prose-p:my-2 prose-p:leading-7 prose-headings:mb-1.5 prose-headings:mt-4 prose-headings:font-semibold prose-headings:leading-tight prose-headings:tracking-tight prose-headings:text-slate-900 dark:prose-headings:text-slate-50 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-slate-900 dark:prose-strong:text-slate-50 prose-code:rounded-md prose-code:bg-slate-100/90 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:text-slate-700 dark:prose-code:bg-slate-800 dark:prose-code:text-slate-200 prose-code:before:content-none prose-code:after:content-none prose-table:my-4 prose-table:w-full prose-th:bg-slate-50/70 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:text-[11px] prose-th:font-semibold prose-th:uppercase prose-th:tracking-wider prose-th:text-slate-500 prose-td:px-4 prose-td:py-2 prose-td:text-slate-700 dark:prose-td:text-slate-200';
 
 function getCodeLanguage(className?: string): string {
   if (!className) return 'code';
@@ -50,8 +50,8 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   };
 
   return (
-    <div className="group/code my-4 overflow-hidden rounded-xl bg-slate-950/95 ring-1 ring-slate-200/20 shadow-sm">
-      <div className="flex items-center justify-between border-b border-slate-700/50 bg-slate-900/80 px-3 py-1.5">
+    <div className="group/code my-4 overflow-hidden rounded-xl bg-slate-950/95 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.8),inset_0_0_0_1px_rgba(148,163,184,0.2)]">
+      <div className="flex items-center justify-between bg-slate-900/80 px-3 py-1.5 shadow-[inset_0_-1px_0_rgba(148,163,184,0.25)]">
         <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{language}</span>
         <button
           type="button"
@@ -79,6 +79,19 @@ function formatMessageTime(message: Message): string {
   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function toDisplayText(value: unknown): string {
+  if (value === null || value === undefined) return 'N/A';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   showAvatar = true,
@@ -97,8 +110,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   const markdownClassName = useMemo(
     () =>
       cn(PROSE_CLASSNAME, {
-        'prose-p:text-slate-900 dark:prose-p:text-slate-50': !isUser,
-        'prose-p:text-slate-800 dark:prose-p:text-slate-100': isUser,
+        'prose-p:text-slate-700 dark:prose-p:text-slate-50': !isUser,
+        'prose-p:text-slate-900 dark:prose-p:text-slate-100': isUser,
       }),
     [isUser],
   );
@@ -107,7 +120,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   if (isSystem) {
     return (
       <div className="my-2 flex w-full justify-center">
-        <div className="flex items-center gap-2 rounded-full border border-slate-200/60 bg-white/80 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm">
+        <div className="flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-xs font-medium text-slate-600 shadow-[0_10px_24px_-20px_rgba(15,23,42,0.35),inset_0_0_0_1px_rgba(148,163,184,0.2)]">
           <AlertCircle size={14} />
           {message.content}
         </div>
@@ -134,14 +147,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         <div className={cn('min-w-0', isUser ? 'w-full max-w-[46rem]' : 'flex-1')}>
           {showAvatar && (
-            <div className={cn('mb-1.5 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400', isUser ? 'justify-end' : 'justify-start')}>
+            <div className={cn('mb-1.5 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider', isUser ? 'justify-end text-slate-600' : 'justify-start text-slate-400')}>
               <span>{isUser ? 'You' : 'Arcli'}</span>
               {isUser && <UserRound size={13} className="text-slate-400" aria-hidden="true" />}
             </div>
           )}
 
           <div className={cn('flex min-w-0 flex-col', isGroupedWithPrevious ? 'gap-2' : 'gap-2.5')}>
-            <div className={cn('min-w-0', isUser ? 'ml-auto max-w-[42rem] rounded-2xl bg-slate-50/50 px-5 py-3.5 dark:bg-slate-800/30' : 'w-full')}>
+            <div className={cn('min-w-0', isUser ? 'ml-auto max-w-[42rem] rounded-2xl bg-gradient-to-b from-slate-100/75 to-slate-50/65 px-5 py-3.5 text-slate-900 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.35),inset_0_0_0_1px_rgba(148,163,184,0.2)] dark:from-slate-800/55 dark:to-slate-800/35' : 'w-full')}>
               {message.content ? (
                 <div className={markdownClassName}>
                   <ReactMarkdown
@@ -185,7 +198,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             {!isUser && !isError && (
               <div className="mt-2 flex w-full flex-col gap-2">
               {message.plan && (
-                <div className="overflow-hidden rounded-2xl border border-slate-200/50 bg-white/60 shadow-none dark:border-slate-800/70 dark:bg-slate-900/40">
+                <div className="overflow-hidden rounded-2xl bg-white/62 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.38),inset_0_0_0_1px_rgba(148,163,184,0.2)] dark:bg-slate-900/40">
                   <button
                     onClick={() => setShowPlan(!showPlan)}
                     className="flex w-full items-center justify-between px-3.5 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100/50 dark:text-slate-300 dark:hover:bg-slate-800/50"
@@ -197,9 +210,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     {showPlan ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
                   </button>
                   {showPlan && (
-                    <div className="space-y-3 border-t border-slate-200/50 px-4 py-4 text-sm text-slate-600 dark:border-slate-800/70 dark:text-slate-300">
-                      <p><strong>Intent:</strong> {message.plan.intent_summary}</p>
-                      <p><strong>Strategy:</strong> {message.plan.analytical_strategy}</p>
+                    <div className="space-y-3 px-4 py-4 text-sm text-slate-600 shadow-[inset_0_1px_0_rgba(148,163,184,0.22)] dark:text-slate-300">
+                      <p><strong>Intent:</strong> {toDisplayText(message.plan.intent_summary)}</p>
+                      <p><strong>Strategy:</strong> {toDisplayText(message.plan.analytical_strategy)}</p>
                       {requestedMetrics.length > 0 && (
                         <p><strong>Metrics Injected:</strong> {requestedMetrics.join(', ')}</p>
                       )}
@@ -209,7 +222,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               )}
 
               {message.insights && (
-                <div className="rounded-2xl border border-slate-200/50 bg-white/60 p-4 text-sm text-slate-700 shadow-none dark:border-slate-800/70 dark:bg-slate-900/40 dark:text-slate-200">
+                <div className="rounded-2xl bg-white/62 p-4 text-sm text-slate-700 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.38),inset_0_0_0_1px_rgba(148,163,184,0.2)] dark:bg-slate-900/40 dark:text-slate-200">
                   <h4 className="mb-2 flex items-center gap-2 font-semibold tracking-tight text-slate-600 dark:text-slate-300">
                     <Lightbulb size={16} /> Data Engine Insights
                   </h4>
@@ -218,7 +231,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               )}
 
               {message.diagnostics && (
-                <div className="overflow-hidden rounded-2xl border border-slate-200/50 bg-white/60 shadow-none dark:border-slate-800/70 dark:bg-slate-900/40">
+                <div className="overflow-hidden rounded-2xl bg-white/62 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.38),inset_0_0_0_1px_rgba(148,163,184,0.2)] dark:bg-slate-900/40">
                   <button
                     onClick={() => setShowDiagnostics(!showDiagnostics)}
                     className="flex w-full items-center justify-between px-3.5 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100/50 dark:text-slate-300 dark:hover:bg-slate-800/50"
@@ -230,8 +243,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     {showDiagnostics ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   </button>
                   {showDiagnostics && (
-                    <div className="space-y-2 border-t border-slate-200/50 p-4 text-sm text-slate-700 dark:border-slate-800/70 dark:text-slate-200">
-                      <p><strong>Analysis:</strong> {message.diagnostics.root_cause_analysis}</p>
+                    <div className="space-y-2 p-4 text-sm text-slate-700 shadow-[inset_0_1px_0_rgba(148,163,184,0.22)] dark:text-slate-200">
+                      <p><strong>Analysis:</strong> {toDisplayText(message.diagnostics.root_cause_analysis)}</p>
                       {message.diagnostics.recommended_actions?.length > 0 && (
                         <ul className="mt-2 list-disc space-y-1 pl-5">
                           {message.diagnostics.recommended_actions.map((act: string, i: number) => (
@@ -251,13 +264,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
               {message.data && message.data.length > 0 && (
                 <div className="w-full">
                   {message.chartSpec ? (
-                    <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200/40 shadow-none dark:ring-slate-800/60">
+                    <div className="overflow-hidden rounded-2xl shadow-[0_12px_28px_-24px_rgba(15,23,42,0.38),inset_0_0_0_1px_rgba(148,163,184,0.2)]">
                       <VegaChart spec={message.chartSpec} data={message.data} />
                     </div>
                   ) : (
-                    <div className="overflow-x-auto rounded-2xl bg-white/60 ring-1 ring-slate-200/40 shadow-none dark:bg-slate-900/35 dark:ring-slate-800/60">
+                    <div className="overflow-x-auto rounded-2xl bg-white/62 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.38),inset_0_0_0_1px_rgba(148,163,184,0.2)] dark:bg-slate-900/35">
                       <table className="w-full text-left text-sm text-slate-600">
-                        <thead className="border-b border-slate-200/60 bg-slate-50/70 text-xs uppercase tracking-wider text-slate-500">
+                        <thead className="bg-slate-50/70 text-xs uppercase tracking-wider text-slate-500 shadow-[inset_0_-1px_0_rgba(148,163,184,0.24)]">
                           <tr>
                             {Object.keys(message.data[0]).map((key) => (
                               <th key={key} className="whitespace-nowrap px-4 py-2 font-semibold">
@@ -266,9 +279,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             ))}
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200/40">
+                        <tbody>
                           {message.data.slice(0, 5).map((row, idx) => (
-                            <tr key={idx} className="transition-colors hover:bg-slate-50/60">
+                            <tr key={idx} className="transition-colors hover:bg-slate-50/60 shadow-[inset_0_-1px_0_rgba(148,163,184,0.18)]">
                               {Object.values(row).map((val: any, i) => (
                                 <td key={i} className="whitespace-nowrap px-4 py-2">
                                   {val === null ? (
@@ -285,7 +298,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         </tbody>
                       </table>
                       {message.data.length > 5 && (
-                        <div className="w-full border-t border-slate-200/40 bg-slate-50/60 p-3 text-center text-xs font-medium text-slate-500">
+                        <div className="w-full bg-slate-50/60 p-3 text-center text-xs font-medium text-slate-500 shadow-[inset_0_1px_0_rgba(148,163,184,0.2)]">
                           Showing top 5 of {message.data.length} rows.
                         </div>
                       )}

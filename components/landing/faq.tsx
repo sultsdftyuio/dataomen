@@ -28,45 +28,48 @@ const items = [
 
 export function FAQ() {
   const [open, setOpen] = useState<number | null>(0);
+  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section style={{ padding: "100px 24px", background: C.offWhite, borderTop: `1px solid ${C.rule}` }}>
+    <section style={{ padding: "100px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
-        <h2 className="pfd" style={{ fontSize: 38, textAlign: "center", marginBottom: 64, color: C.navy }}>
+        <h2 style={{ fontSize: "clamp(32px, 5vw, 44px)", textAlign: "center", marginBottom: 44, color: C.navy, lineHeight: 1.1, letterSpacing: "-0.02em", fontWeight: 700 }}>
           Frequently Asked Questions
         </h2>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {items.map((item, i) => (
             <div
               key={i}
               style={{
-                border: `1px solid ${open === i ? C.blueLight : C.ruleDark}`,
-                borderRadius: 16, overflow: "hidden",
+                border: open === i ? "1px solid rgba(37,99,235,0.45)" : surfaceBorder,
+                borderRadius: 8,
+                overflow: "hidden",
                 transition: "all 0.2s", background: "#fff",
-                boxShadow: open === i ? "0 8px 24px rgba(27,110,191,0.07)" : "none",
+                boxShadow: surfaceShadow,
               }}
             >
               <button
                 onClick={() => setOpen(open === i ? null : i)}
                 style={{
-                  width: "100%", padding: "26px 28px",
+                  width: "100%", padding: "14px 16px",
                   display: "flex", justifyContent: "space-between", alignItems: "center",
-                  background: open === i ? C.bluePale : "transparent",
+                  background: open === i ? "#F8FAFC" : "transparent",
                   border: "none", cursor: "pointer", textAlign: "left",
                   transition: "background 0.2s",
                 }}
               >
-                <span style={{ fontWeight: 700, color: C.navy, fontSize: 16, paddingRight: 24 }}>
+                <span style={{ fontWeight: 600, color: C.navy, fontSize: 14, lineHeight: 1.5, paddingRight: 16 }}>
                   {item.q}
                 </span>
-                <span style={{ color: open === i ? C.blue : C.muted, fontSize: 22, fontWeight: 300, flexShrink: 0 }}>
+                <span style={{ color: open === i ? C.blue : C.muted, fontSize: 18, fontWeight: 600, lineHeight: 1, flexShrink: 0 }}>
                   {open === i ? "−" : "+"}
                 </span>
               </button>
 
               {open === i && (
-                <div style={{ padding: "0 28px 28px", color: C.muted, lineHeight: 1.75, fontSize: 15 }}>
+                <div style={{ padding: "0 16px 14px", color: C.muted, lineHeight: 1.6, fontSize: 14 }}>
                   {item.a}
                 </div>
               )}

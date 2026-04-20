@@ -62,11 +62,13 @@ const testimonials: Testimonial[] = [
 
 export function SocialProof() {
   const [ref, vis] = useVisible(0.1);
+  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
     <section 
       aria-labelledby="social-proof-heading"
-      style={{ padding: "120px 24px", background: "#fff", borderBottom: `1px solid ${C.rule}` }}
+      style={{ padding: "120px 24px", background: "#fff", borderBottom: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}
     >
       <div style={{ maxWidth: 1240, margin: "0 auto" }} ref={ref as React.RefObject<HTMLDivElement>}>
         <h2 id="social-proof-heading" className="sr-only">Social Proof and Statistics</h2>
@@ -78,20 +80,20 @@ export function SocialProof() {
             display: "grid", 
             gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
             gap: 1, 
-            background: C.rule, 
-            border: `1px solid ${C.rule}`, 
-            borderRadius: 24, 
+            background: "rgba(0,0,0,0.08)", 
+            border: surfaceBorder, 
+            borderRadius: 8, 
             overflow: "hidden", 
-            marginBottom: 100,
-            boxShadow: "0 10px 30px rgba(10,22,40,0.04)"
+            marginBottom: 88,
+            boxShadow: surfaceShadow
           }}
         >
           {stats.map((s, i) => (
-            <div key={i} style={{ background: "#fff", padding: "48px 32px", textAlign: "center" }}>
-              <div className="pfd" style={{ fontSize: 52, fontWeight: 900, color: C.navy, marginBottom: 8, letterSpacing: "-0.03em" }}>
+            <div key={i} style={{ background: "#fff", padding: "32px 20px", textAlign: "center" }}>
+              <div style={{ fontSize: 44, fontWeight: 700, color: C.navy, marginBottom: 6, letterSpacing: "-0.02em", lineHeight: 1.05 }}>
                 {s.value}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {s.label}
               </div>
             </div>
@@ -102,12 +104,12 @@ export function SocialProof() {
         <div className={`fu ${vis ? "vis" : ""}`} style={{ transitionDelay: "150ms" }}>
           <p style={{ 
             textAlign: "center", 
-            fontSize: 14, 
-            fontWeight: 800, 
+            fontSize: 12,
+            fontWeight: 600,
             color: C.muted, 
             textTransform: "uppercase", 
-            letterSpacing: "0.15em", 
-            marginBottom: 48 
+            letterSpacing: "0.12em", 
+            marginBottom: 36 
           }}>
             Powered by Arcli's Multi-Agent Engine
           </p>
@@ -115,61 +117,63 @@ export function SocialProof() {
           <div style={{ 
             display: "grid", 
             gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", 
-            gap: 32 
+            gap: 16
           }}>
             {testimonials.map((t, i) => (
               <div
                 key={i}
                 style={{
-                  background: C.offWhite, 
-                  border: `1px solid ${C.rule}`, 
-                  borderRadius: 24,
-                  padding: "48px 40px", 
+                  background: "#FAFAFA", 
+                  border: surfaceBorder,
+                  borderRadius: 8,
+                  padding: "24px 20px", 
                   display: "flex", 
                   flexDirection: "column", 
-                  gap: 28,
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                  gap: 16,
+                  transition: "all 0.2s ease",
+                  boxShadow: surfaceShadow,
                 }}
                 onMouseOver={e => {
-                  e.currentTarget.style.boxShadow = "0 24px 48px rgba(10,22,40,0.08)";
-                  e.currentTarget.style.transform = "translateY(-4px)";
+                  e.currentTarget.style.boxShadow = surfaceShadow;
+                  e.currentTarget.style.transform = "translateY(-1px)";
                 }}
                 onMouseOut={e => {
-                  e.currentTarget.style.boxShadow = "none";
+                  e.currentTarget.style.boxShadow = surfaceShadow;
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
                 {/* Visual Trust Indicator (Stars) */}
                 <div style={{ display: "flex", gap: 4 }}>
                   {[1, 2, 3, 4, 5].map(s => (
-                    <div key={s} style={{ fontSize: 18, color: C.amber }}>★</div>
+                    <div key={s} style={{ fontSize: 14, color: C.amber }}>★</div>
                   ))}
                 </div>
 
-                <blockquote style={{ fontSize: 18, color: C.navy, lineHeight: 1.7, fontStyle: "italic", flex: 1, margin: 0 }}>
+                <blockquote style={{ fontSize: 16, color: C.navy, lineHeight: 1.55, fontStyle: "normal", flex: 1, margin: 0 }}>
                   "{t.quote}"
                 </blockquote>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 16, borderTop: `1px solid ${C.rule}`, paddingTop: 24 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, borderTop: surfaceBorder, paddingTop: 14 }}>
                   <div style={{
-                    width: 48, 
-                    height: 48, 
-                    borderRadius: 14,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
                     background: t.color,
+                    border: surfaceBorder,
                     display: "flex", 
                     alignItems: "center", 
                     justifyContent: "center",
                     color: "#fff", 
-                    fontWeight: 800, 
-                    fontSize: 15, 
+                    fontWeight: 700,
+                    fontSize: 13,
                     flexShrink: 0,
-                    boxShadow: `0 8px 16px ${t.color}33`
+                    boxShadow: surfaceShadow
                   }}>
                     {t.initials}
                   </div>
                   <div style={{ display: "flex", flexDirection: "column" }}>
-                    <cite style={{ fontWeight: 800, color: C.navy, fontSize: 15, fontStyle: "normal" }}>{t.name}</cite>
-                    <span style={{ fontSize: 13, color: C.muted, fontWeight: 500 }}>{t.role} · {t.company}</span>
+                    <cite style={{ fontWeight: 600, color: C.navy, fontSize: 14, fontStyle: "normal" }}>{t.name}</cite>
+                    <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>{t.role} · {t.company}</span>
                   </div>
                 </div>
               </div>

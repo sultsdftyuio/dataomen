@@ -80,19 +80,27 @@ export function InteractiveDemo() {
   }, []);
 
   return (
-    <section id="demo" className="py-24 px-6 bg-slate-50 border-y border-slate-200">
+    <section
+      id="demo"
+      className="py-24 px-6 border-y"
+      style={{
+        background: "#FAFAFA",
+        borderColor: "rgba(0,0,0,0.08)",
+        fontFamily: "var(--font-geist-sans), sans-serif"
+      }}
+    >
       <div className="max-w-6xl mx-auto" ref={secRef as React.RefObject<HTMLDivElement>}>
         
         {/* Header Section */}
-        <header className={`text-center mb-14 transition-all duration-700 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
-          <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 px-4 py-1.5 rounded-full mb-6 text-blue-600">
-            <Sparkles size={14} className="animate-pulse" /> 
-            <span className="text-sm font-bold tracking-wide uppercase">Interactive Playground</span>
+        <header className={`text-center mb-10 transition-all duration-700 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
+          <div className="inline-flex items-center gap-2 bg-white border border-black/10 px-3 py-1 rounded-md mb-4 text-slate-700 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+            <Sparkles size={14} className="text-blue-600" /> 
+            <span className="text-xs font-semibold tracking-[0.08em] uppercase">Interactive Playground</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-4 leading-tight uppercase tracking-tighter">
+          <h2 style={{ fontSize: "clamp(34px, 5vw, 44px)", fontWeight: 700, color: "#0F172A", marginBottom: 12, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
             Stop Guessing. <br className="hidden md:block" /> Ask Arcli.
           </h2>
-          <p className="text-slate-600 text-lg max-w-xl mx-auto">
+          <p className="text-slate-600 text-base max-w-xl mx-auto leading-relaxed">
             Experience the power of our AI Data Analyst. Click an example question below to see Arcli generate insights in real-time.
           </p>
         </header>
@@ -101,15 +109,15 @@ export function InteractiveDemo() {
         <div className={`transition-all duration-700 delay-150 transform ${secVis ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}>
           
           {/* Suggestion Chips */}
-          <div className="flex flex-wrap gap-3 justify-center mb-10" role="group" aria-label="Demo Queries">
+          <div className="flex flex-wrap gap-2 justify-center mb-7" role="group" aria-label="Demo Queries">
             {QUERIES.map((q, i) => (
               <button
                 key={i}
                 onClick={() => runQuery(i)}
-                className={`px-5 py-2.5 rounded-full font-bold text-sm transition-all duration-200 border-2 
+                className={`h-10 px-4 rounded-md font-semibold text-sm transition-all duration-200 border 
                   ${activeIdx === i 
-                    ? "border-blue-600 bg-blue-50 text-blue-700 shadow-md" 
-                    : "border-slate-200 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600"
+                    ? "border-blue-600 bg-white text-blue-700 shadow-[0_1px_3px_rgba(0,0,0,0.08)]" 
+                    : "border-black/10 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
                   }`}
               >
                 {q.q}
@@ -118,85 +126,85 @@ export function InteractiveDemo() {
           </div>
 
           {/* App Window */}
-          <div className="bg-white border-2 border-slate-900 rounded-2xl overflow-hidden shadow-[12px_12px_0px_0px_rgba(15,23,42,1)] min-h-[500px] flex flex-col">
+          <div className="bg-white border border-black/10 rounded-lg overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.08)] min-h-[440px] flex flex-col">
             
             {/* Browser Chrome */}
-            <div className="h-12 bg-slate-100 border-b-2 border-slate-900 flex items-center px-5 gap-2">
+            <div className="h-11 bg-slate-50 border-b border-black/10 flex items-center px-4 gap-2">
               <div className="flex gap-2">
-                {[1, 2, 3].map(i => <div key={i} className="w-3 h-3 rounded-full bg-slate-300 border border-slate-400" />)}
+                {[1, 2, 3].map(i => <div key={i} className="w-2.5 h-2.5 rounded-full bg-slate-300 border border-slate-400/50" />)}
               </div>
-              <div className="flex-1 h-8 bg-white rounded border border-slate-300 ml-5 flex items-center px-3 gap-2">
+              <div className="flex-1 h-8 bg-white rounded-md border border-black/10 ml-4 flex items-center px-3 gap-2">
                 <Search size={14} className="text-slate-400 shrink-0" />
-                <span className="text-sm text-slate-900 font-mono truncate">
+                <span className="text-sm text-slate-900 truncate">
                   {inputVal || "Initialize a query to see the engine in action..."}
                 </span>
               </div>
             </div>
 
             {/* Response Area */}
-            <div className="p-8 md:p-12 flex-1 flex flex-col" aria-live="polite">
+            <div className="p-6 md:p-8 flex-1 flex flex-col" aria-live="polite">
               
               {!typing && !result && (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-center">
-                  <BarChart2 size={64} className="mb-4 opacity-20" />
-                  <p className="text-lg font-bold uppercase tracking-widest opacity-50">Awaiting Input Signal</p>
+                  <BarChart2 size={36} className="mb-3 opacity-30" />
+                  <p className="text-sm font-semibold uppercase tracking-[0.08em] opacity-60">Awaiting Input Signal</p>
                 </div>
               )}
 
               {typing && (
-                <div className="flex-1 flex flex-col items-center justify-center gap-6">
+                <div className="flex-1 flex flex-col items-center justify-center gap-5">
                   <div className="flex gap-2">
                     {[0, 1, 2].map((i) => (
                       <div key={i} className="w-3 h-3 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                     ))}
                   </div>
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-blue-600 text-xs font-black uppercase tracking-widest">Supervisor Engine Active</span>
-                    <span className="text-slate-400 text-sm font-mono">Scanning schema and calculating variance...</span>
+                    <span className="text-blue-600 text-xs font-semibold uppercase tracking-[0.08em]">Supervisor Engine Active</span>
+                    <span className="text-slate-500 text-sm">Scanning schema and calculating variance...</span>
                   </div>
                 </div>
               )}
 
               {!typing && result && (
                 <div className="w-full animate-in slide-in-from-bottom-4 fade-in duration-500">
-                  <div className="flex gap-6 items-start mb-10">
-                    <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center shrink-0 border-2 border-blue-500">
-                      <Sparkles size={28} className="text-blue-400" />
+                  <div className="flex gap-4 items-start mb-7">
+                    <div className="w-10 h-10 rounded-md bg-slate-900 flex items-center justify-center shrink-0 border border-black/10 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+                      <Sparkles size={16} className="text-blue-300" />
                     </div>
                     <div>
-                      <h4 className="text-2xl md:text-3xl font-black text-slate-900 mb-2 uppercase tracking-tighter">
+                      <h4 className="text-[24px] md:text-[28px] font-bold text-slate-900 mb-2 leading-tight tracking-tight">
                         {result.headline}
                       </h4>
-                      <p className="text-slate-600 text-lg leading-relaxed max-w-2xl">
+                      <p className="text-slate-600 text-sm md:text-base leading-relaxed max-w-2xl">
                         {result.detail}
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* Visual Result */}
-                    <div className="bg-slate-50 rounded-2xl p-8 border-2 border-slate-200">
-                      <div className="flex justify-between items-center mb-8">
-                        <div className="text-4xl font-black text-slate-900 tracking-tighter">
+                    <div className="bg-slate-50 rounded-lg p-5 border border-black/10 shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+                      <div className="flex justify-between items-center mb-5 gap-3">
+                        <div className="text-[30px] font-bold text-slate-900 tracking-tight leading-none">
                           {result.metric}
                         </div>
-                        <div className={`flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-full border-2 ${
-                          result.positive ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-blue-700 bg-blue-50 border-blue-200"
+                        <div className={`h-8 inline-flex items-center gap-1.5 font-semibold text-xs px-3 rounded-md border ${
+                          result.positive ? "text-emerald-700 bg-white border-emerald-200" : "text-blue-700 bg-white border-blue-200"
                         }`}>
-                          {result.positive ? <TrendingUp size={16} /> : <TrendingDown size={16} />} 
+                          {result.positive ? <TrendingUp size={14} /> : <TrendingDown size={14} />} 
                           {result.delta}
                         </div>
                       </div>
                       
-                      <div className="flex items-end gap-2 h-40">
+                      <div className="flex items-end gap-1.5 h-32">
                         {result.bars.map((height, i) => (
                           <div key={i} className="flex-1 h-full flex items-end group relative">
-                            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 font-mono">
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] py-1 px-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
                               Val: {height}%
                             </div>
                             <div 
                               className={`w-full rounded-t-sm transition-all duration-1000 ease-out border-x border-t border-slate-900/10 ${
-                                i > 8 ? "bg-blue-600" : "bg-slate-200"
+                                i > 8 ? "bg-blue-600" : "bg-slate-300"
                               }`}
                               style={{ height: `${height}%` }}
                             />
@@ -206,19 +214,19 @@ export function InteractiveDemo() {
                     </div>
 
                     {/* Logic Result (Generated SQL) */}
-                    <div className="bg-slate-900 rounded-2xl p-8 border-2 border-slate-700 flex flex-col">
+                    <div className="bg-slate-900 rounded-lg p-5 border border-slate-700 shadow-[0_1px_3px_rgba(0,0,0,0.08)] flex flex-col">
                       <div className="flex items-center gap-2 mb-4">
-                        <Code size={16} className="text-blue-400" />
-                        <span className="text-blue-400 text-xs font-black uppercase tracking-widest">Logic Generation</span>
+                        <Code size={14} className="text-blue-300" />
+                        <span className="text-blue-300 text-xs font-semibold uppercase tracking-[0.08em]">Logic Generation</span>
                       </div>
-                      <div className="font-mono text-sm text-slate-300 leading-relaxed flex-1 flex items-center italic opacity-80">
+                      <div className="text-sm text-slate-300 leading-relaxed flex-1 flex items-center opacity-90">
                          {result.sql}
                       </div>
                       <div className="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between">
-                         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                         <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-[0.08em] flex items-center gap-2">
                            <Terminal size={12} /> Compute Layer: DuckDB
                          </span>
-                         <span className="text-[10px] text-emerald-500 font-black uppercase">Optimized</span>
+                         <span className="text-[10px] text-emerald-400 font-semibold uppercase">Optimized</span>
                       </div>
                     </div>
                   </div>
@@ -230,9 +238,9 @@ export function InteractiveDemo() {
           <div className="text-center mt-12">
             <a 
               href="/register" 
-              className="inline-flex items-center justify-center gap-4 bg-slate-900 text-white font-black text-lg px-10 py-5 rounded-xl hover:bg-blue-600 transition-all border-2 border-slate-900 shadow-[6px_6px_0px_0px_rgba(59,154,232,1)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none"
+              className="inline-flex h-10 items-center justify-center gap-2 bg-slate-900 text-white font-semibold text-sm px-4 rounded-md hover:bg-slate-800 transition-all border border-black/10 shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
             >
-              INITIALIZE YOUR AGENT <ArrowRight size={20} />
+              Initialize Your Agent <ArrowRight size={14} />
             </a>
           </div>
         </div>
