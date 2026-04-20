@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useFormState, useFormStatus } from "react-dom";
-import { registerAction } from "./actions";
 import { createClient } from "@/utils/supabase/client";
 import { Logo } from "@/components/ui/logo";
 
@@ -22,17 +21,16 @@ const C = {
   green: "#10B981",
 };
 
-function SubmitButton({ isGooglePending }: { isGooglePending: boolean }) {
-  const { pending } = useFormStatus();
+function SubmitButton({ isGooglePending, isAutoSigningIn, isPending }: { isGooglePending: boolean; isAutoSigningIn: boolean; isPending: boolean }) {
 
   return (
     <Button
       type="submit"
       className="w-full h-12 text-base font-bold transition-all mt-6"
       style={{ backgroundColor: C.blue, color: "#fff" }}
-      disabled={pending || isGooglePending}
+      disabled={isPending || isGooglePending || isAutoSigningIn}
     >
-      {pending ? (
+      {isPending || isAutoSigningIn ? (
         <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating Account...</>
       ) : (
         <>Create Account <ArrowRight className="ml-2 h-5 w-5" /></>
@@ -47,9 +45,93 @@ function SubmitButton({ isGooglePending }: { isGooglePending: boolean }) {
  * Only captures essential credentials (Email/Password) and provides Google OAuth.
  */
 export default function RegisterPage() {
-  const [state, formAction] = useFormState(registerAction, {});
+  const router = useRouter();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
   const [isGooglePending, setIsGooglePending] = useState(false);
-  const supabase = createClient();
+  const [isAutoSigningIn, setIsAutoSigningIn] = useState(false);
+  const [emailValue, setEmailValue] = useState("");
+  const [passwordValue, setPasswordValue] = useState("");
+  const supabase = useMemo(() => createClient(), []);
+
+  const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isPending || isGooglePending || isAutoSigningIn) return;
+
+    const email = emailValue.trim().toLowerCase();
+    const password = passwordValue;
+
+    if (!email || !password) {
+      setErrorMessage("Email and password are required.");
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsPending(true);
+
+    const fallbackName = email.split("@")[0] || "User";
+    const fallbackCompany = email.includes("@") ? email.split("@")[1].split(".")[0] : "Workspace";
+
+    try {
+      const registerResponse = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          full_name: fallbackName,
+          company_name: fallbackCompany,
+        }),
+      });
+
+      if (!registerResponse.ok) {
+        const text = await registerResponse.text().catch(() => '');
+        let message = 'Registration failed';
+
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (Array.isArray(data?.detail)) {
+            message = data.detail.map((e: any) => `${e.loc?.join('.') || 'detail'} - ${e.msg || JSON.stringify(e)}`).join(' | ');
+          } else if (data?.detail) {
+            message = String(data.detail);
+          } else if (data?.message) {
+            message = String(data.message);
+          } else if (data?.error) {
+            message = String(data.error);
+          }
+        } catch {
+          if (text) {
+            message = text;
+          }
+        }
+
+        setErrorMessage(message);
+        setIsPending(false);
+        return;
+      }
+
+      setIsAutoSigningIn(true);
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error || !data.user) {
+        router.replace('/login?error=signup_created_login_required');
+        return;
+      }
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        router.replace('/login?error=signup_created_login_required');
+        return;
+      }
+
+      window.location.assign('/chat');
+    } catch {
+      setErrorMessage('Could not complete registration flow. Please try again.');
+    } finally {
+      setIsPending(false);
+      setIsAutoSigningIn(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setIsGooglePending(true);
@@ -106,7 +188,7 @@ export default function RegisterPage() {
             variant="outline"
             className="w-full h-12 mb-6 font-semibold flex items-center justify-center gap-3 border-2"
             onClick={handleGoogleLogin}
-            disabled={isGooglePending}
+            disabled={isPending || isGooglePending || isAutoSigningIn}
           >
             {isGooglePending ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -142,10 +224,16 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <form action={formAction} className="space-y-5">
-            {state?.error && (
+          <form onSubmit={handleEmailSubmit} className="space-y-5">
+            {isAutoSigningIn && (
+              <div className="p-3 text-sm font-medium text-sky-700 bg-sky-50 rounded-lg border border-sky-100">
+                Finalizing your session and redirecting to chat...
+              </div>
+            )}
+
+            {errorMessage && (
               <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">
-                {state.error}
+                {errorMessage}
               </div>
             )}
 
@@ -157,7 +245,9 @@ export default function RegisterPage() {
                 type="email"
                 placeholder="name@company.com"
                 required
-                disabled={isGooglePending}
+                value={emailValue}
+                onChange={(event) => setEmailValue(event.target.value)}
+                disabled={isPending || isGooglePending || isAutoSigningIn}
                 className="h-11 bg-slate-50/50"
                 style={{ borderColor: C.rule }}
               />
@@ -171,13 +261,19 @@ export default function RegisterPage() {
                 type="password"
                 placeholder="••••••••"
                 required
-                disabled={isGooglePending}
+                value={passwordValue}
+                onChange={(event) => setPasswordValue(event.target.value)}
+                disabled={isPending || isGooglePending || isAutoSigningIn}
                 className="h-11 bg-slate-50/50"
                 style={{ borderColor: C.rule }}
               />
             </div>
 
-            <SubmitButton isGooglePending={isGooglePending} />
+            <SubmitButton
+              isGooglePending={isGooglePending}
+              isAutoSigningIn={isAutoSigningIn}
+              isPending={isPending}
+            />
 
             <div className="pt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium" style={{ color: C.muted }}>
               <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> 3-day free trial</span>

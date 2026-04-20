@@ -86,6 +86,7 @@ export default async function proxy(request: NextRequest) {
   const publicApiRoutes = [
     '/api/webhooks',
     '/api/health',
+    '/api/auth/register',
     '/api/v1/auth/register',
   ]
   const isPublicApiRoute = publicApiRoutes.some(route => pathname.startsWith(route))

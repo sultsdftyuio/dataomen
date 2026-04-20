@@ -1,19 +1,10 @@
 'use server'
 
-import { createServerClient } from '@supabase/ssr'
-import { cookies, headers } from 'next/headers'
-import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
 const ROOT_RELATIVE_URL_REGEX = /^\//
 const LOCAL_BACKEND_FALLBACKS = ['http://localhost:8000', 'http://localhost:8080']
-
-const isNextRedirectError = (error: unknown): boolean => {
-  if (!error || typeof error !== 'object') return false
-
-  const digest = (error as { digest?: unknown }).digest
-  return typeof digest === 'string' && digest.startsWith('NEXT_REDIRECT')
-}
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '')
 
@@ -103,7 +94,6 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
   const flowStart = Date.now()
 
   console.log(`[DEBUG-UI][${flowId}] === Starting Registration Flow ===`)
-  const cookieStore = await cookies()
   
   const rawEmail = formData.get('email')?.toString() || ''
   const email = rawEmail.trim().toLowerCase()
@@ -217,53 +207,11 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
     }
 
     console.log(`[DEBUG-UI][${flowId}] Backend registration SUCCESS. Data:`, backendSuccessData)
-
-    console.log(`[DEBUG-UI][${flowId}] Initializing Supabase for Auto-Login...`)
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return cookieStore.getAll() },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-            } catch { }
-          },
-        },
-      }
-    )
-
-    console.log(`[DEBUG-UI][${flowId}] Attempting signInWithPassword...`)
-
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-
-    if (signInError) {
-      console.error(`[DEBUG-UI][${flowId}] Supabase Auto-login FAILED:`, signInError)
-      redirect('/login?error=signup_created_login_required')
-    }
-
-    if (!signInData.user) {
-      console.error(`[DEBUG-UI][${flowId}] Supabase Auto-login FAILED: No user object returned.`)
-      redirect('/login?error=signup_created_login_required')
-    }
-
-    const authenticatedEmail = (signInData.user.email || '').toLowerCase()
-    if (authenticatedEmail && authenticatedEmail !== email) {
-      console.error(`[DEBUG-UI][${flowId}] Session mismatch detected. Expected ${email}, got ${authenticatedEmail}.`)
-      await supabase.auth.signOut()
-      return { error: 'A different account session was detected. Please log in again.' }
-    }
-
-    console.log(`[DEBUG-UI][${flowId}] Auto-login SUCCESS. User ID:`, signInData.user.id)
     console.log(`[DEBUG-UI][${flowId}] Total flow duration: ${Date.now() - flowStart}ms`)
+    return { success: true }
 
   } catch (error) {
-    if (isNextRedirectError(error)) throw error
     console.error(`[DEBUG-UI][${flowId}] UNCAUGHT EXCEPTION in registration flow:`, error)
     return { error: 'Could not complete registration flow. Check logs.' }
   }
-
-  console.log(`[DEBUG-UI][${flowId}] Redirecting to /chat...`)
-  redirect('/chat')
 }
