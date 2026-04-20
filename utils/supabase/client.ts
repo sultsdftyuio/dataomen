@@ -34,6 +34,11 @@ export function createClient() {
     if (typeof window === "undefined") {
       return createBrowserClient("https://placeholder.supabase.co", "public-anon-key", {
         isSingleton: true,
+        auth: {
+          detectSessionInUrl: false,
+          persistSession: true,
+          autoRefreshToken: true,
+        },
       })
     }
 
@@ -46,6 +51,13 @@ export function createClient() {
   // Use native singleton handling from Supabase to prevent multiple GoTrue instances.
   return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     isSingleton: true,
+    auth: {
+      // OAuth/session exchange is handled in app/auth/callback/route.ts.
+      // Disabling browser URL exchange avoids duplicate PKCE exchanges (422) in Chrome.
+      detectSessionInUrl: false,
+      persistSession: true,
+      autoRefreshToken: true,
+    },
   })
 }
 
