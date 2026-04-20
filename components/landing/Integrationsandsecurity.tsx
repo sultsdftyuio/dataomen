@@ -23,6 +23,7 @@ export function IntegrationsAndSecurity() {
   const [ref, vis] = useVisible(0.1);
   const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
+  const darkSurfaceBorder = "1px solid rgba(255,255,255,0.12)";
 
   return (
     <section id="integrations" style={{ padding: "140px 24px", background: "#fff", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
@@ -87,22 +88,22 @@ export function IntegrationsAndSecurity() {
 
           {/* Main security card */}
           <div className={`fu ${vis ? "vis" : ""}`} style={{
-            background: "#fff",
+            background: C.navy,
             borderRadius: 8,
             padding: 28,
-            color: C.navy,
+            color: "#FFFFFF",
             position: "relative",
             overflow: "hidden",
-            border: surfaceBorder,
+            border: darkSurfaceBorder,
             boxShadow: surfaceShadow,
           }}>
-            <Shield size={16} color={C.blue} style={{ marginBottom: 14 }} />
+            <Shield size={16} color={C.blueLight} style={{ marginBottom: 14 }} />
             <h3 style={{ fontSize: 28, marginBottom: 12, fontWeight: 700, letterSpacing: "-0.02em" }}>Security by Design</h3>
-            <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.55, maxWidth: 560, marginBottom: 18 }}>
+            <p style={{ color: C.faint, fontSize: 14, lineHeight: 1.55, maxWidth: 560, marginBottom: 18 }}>
               Your raw data never leaves your infrastructure. Arcli connects via 100% read-only credentials, 
               and our AI agents only process metadata to generate queries—ensuring row-level privacy at every step.
             </p>
-            <a href="/security" style={{ height: 40, padding: "0 14px", borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, color: C.navy, fontWeight: 600, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", background: "#FAFAFA" }}>
+            <a href="/security" style={{ height: 40, padding: "0 14px", borderRadius: 8, border: darkSurfaceBorder, boxShadow: surfaceShadow, color: "#FFFFFF", fontWeight: 600, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", background: "rgba(255,255,255,0.12)" }}>
               Explore our Security Architecture <ArrowRight size={14} />
             </a>
           </div>

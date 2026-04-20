@@ -14,14 +14,14 @@ export function Hero() {
       style={{
         paddingTop: 168,
         paddingBottom: 112,
-        background: "#FAFAFA",
+        background: "linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%)",
         position: "relative",
         overflow: "hidden"
       }}
     >
       {/* Subtle atmosphere accents */}
-      <div style={{ position: "absolute", top: "10%", left: "5%", width: 360, height: 360, background: "rgba(0,0,0,0.03)", borderRadius: "50%", filter: "blur(80px)", opacity: 0.5, zIndex: 0 }} />
-      <div style={{ position: "absolute", top: "30%", right: "-5%", width: 440, height: 440, background: "rgba(0,0,0,0.02)", borderRadius: "50%", filter: "blur(100px)", opacity: 0.8, zIndex: 0 }} />
+      <div style={{ position: "absolute", top: "10%", left: "5%", width: 360, height: 360, background: "rgba(59,154,232,0.16)", borderRadius: "50%", filter: "blur(80px)", opacity: 0.7, zIndex: 0 }} />
+      <div style={{ position: "absolute", top: "30%", right: "-5%", width: 440, height: 440, background: "rgba(99,91,255,0.12)", borderRadius: "50%", filter: "blur(100px)", opacity: 0.7, zIndex: 0 }} />
 
       <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
 

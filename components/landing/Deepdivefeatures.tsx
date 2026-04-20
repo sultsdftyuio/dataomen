@@ -103,7 +103,7 @@ export function DeepDiveFeatures() {
             </div>
             
             {/* Offset Background Accent */}
-            <div style={{ position: "absolute", top: 12, left: 12, right: -12, bottom: -12, background: "#F3F4F6", borderRadius: 8, zIndex: 1, opacity: 1, border: surfaceBorder }} />
+            <div style={{ position: "absolute", top: 12, left: 12, right: -12, bottom: -12, background: "rgba(59,154,232,0.12)", borderRadius: 8, zIndex: 1, opacity: 1, border: surfaceBorder }} />
           </div>
         </div>
 
@@ -144,60 +144,60 @@ export function DeepDiveFeatures() {
           </div>
 
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 1, position: "relative" }}>
-            <div style={{ background: "#FFFFFF", borderRadius: 8, padding: 24, position: "relative", zIndex: 2, color: C.navy, boxShadow: surfaceShadow, border: surfaceBorder }}>
+            <div style={{ background: C.navy, borderRadius: 8, padding: 24, position: "relative", zIndex: 2, color: "#FFFFFF", boxShadow: surfaceShadow, border: "1px solid rgba(255,255,255,0.12)" }}>
               
               {/* Report Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: "rgba(59,154,232,0.12)", border: surfaceBorder, display: "flex", alignItems: "center", justifyContent: "center", color: C.blue }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: "rgba(59,154,232,0.18)", border: "1px solid rgba(96,165,250,0.28)", display: "flex", alignItems: "center", justifyContent: "center", color: C.blueLight }}>
                       <Sparkles size={14} />
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: C.blue, letterSpacing: "0.05em" }}>EXECUTIVE BRIEF</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.blueLight, letterSpacing: "0.05em" }}>EXECUTIVE BRIEF</span>
                   </div>
                   <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0, lineHeight: 1.2 }}>Q3 Pipeline Synthesis</h3>
                 </div>
-                <div style={{ background: "#FAFAFA", border: surfaceBorder, padding: "6px 10px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", boxShadow: surfaceShadow }}>
-                  <Share2 size={14} color={C.muted} />
-                  <span style={{ fontSize: 12, fontWeight: 600, color: C.muted }}>Share</span>
+                <div style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.12)", padding: "6px 10px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", boxShadow: surfaceShadow }}>
+                  <Share2 size={14} color={C.faint} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.faint }}>Share</span>
                 </div>
               </div>
 
               {/* Report Body */}
-              <div style={{ background: "#FAFAFA", border: surfaceBorder, borderRadius: 8, padding: 16, marginBottom: 14 }}>
+              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: 16, marginBottom: 14 }}>
                 
                 {/* Micro Chart inside Report */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, paddingBottom: 14, borderBottom: surfaceBorder }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(16,185,129,0.12)", border: surfaceBorder, display: "flex", alignItems: "center", justifyContent: "center", color: "#10B981" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(16,185,129,0.16)", border: "1px solid rgba(16,185,129,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#34D399" }}>
                     <LineChart size={16} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Enterprise LTV Growth</div>
-                    <div style={{ fontSize: 13, color: "#10B981", fontWeight: 700 }}>+24% vs Prev Quarter</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#E2E8F0" }}>Enterprise LTV Growth</div>
+                    <div style={{ fontSize: 13, color: "#34D399", fontWeight: 700 }}>+24% vs Prev Quarter</div>
                   </div>
                 </div>
 
                 {/* AI Text Block */}
-                <div style={{ fontSize: 14, color: C.muted, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 14, color: C.faint, lineHeight: 1.6 }}>
                   <p style={{ marginBottom: 12 }}>
                     Based on the current Omni-Graph state, Enterprise LTV has driven the majority of Q3 growth, directly correlated with the introduction of the new Zendesk integration.
                   </p>
                   <p>
-                    <span style={{ color: C.navy, fontWeight: 600 }}>Recommendation:</span> Increase allocation to the Enterprise outbound campaign, as CAC payback period has shortened to 4.2 months.
+                    <span style={{ color: "#E2E8F0", fontWeight: 600 }}>Recommendation:</span> Increase allocation to the Enterprise outbound campaign, as CAC payback period has shortened to 4.2 months.
                   </p>
                 </div>
               </div>
 
               {/* Time Travel Hash Footer */}
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#FFFFFF", border: surfaceBorder, boxShadow: surfaceShadow, padding: "8px 12px", borderRadius: 8, fontSize: 11, color: C.faint, fontWeight: 600 }}>
-                STATE HASH: <span style={{ color: C.blue, fontWeight: 600 }}>#A7F92B</span>
-                <span style={{ margin: "0 6px", color: "rgba(0,0,0,0.2)" }}>|</span>
-                FROZEN: <span style={{ color: C.muted }}>OCT 24, 14:00 UTC</span>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#0B1120", border: "1px solid rgba(255,255,255,0.14)", boxShadow: surfaceShadow, padding: "8px 12px", borderRadius: 8, fontSize: 11, color: "#64748B", fontWeight: 600 }}>
+                STATE HASH: <span style={{ color: C.blueLight, fontWeight: 600 }}>#A7F92B</span>
+                <span style={{ margin: "0 6px", color: "rgba(255,255,255,0.2)" }}>|</span>
+                FROZEN: <span style={{ color: C.faint }}>OCT 24, 14:00 UTC</span>
               </div>
 
             </div>
             {/* Offset Background Accent */}
-            <div style={{ position: "absolute", top: -12, left: -12, right: 12, bottom: 12, background: "#F3F4F6", borderRadius: 8, zIndex: 1, opacity: 1, border: surfaceBorder }} />
+            <div style={{ position: "absolute", top: -12, left: -12, right: 12, bottom: 12, background: "rgba(59,154,232,0.16)", borderRadius: 8, zIndex: 1, opacity: 1, border: surfaceBorder }} />
           </div>
         </div>
 
