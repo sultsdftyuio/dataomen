@@ -83,7 +83,11 @@ export default async function proxy(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api')
   
   // Define public APIs that bypass Edge Auth (e.g., Stripe Webhooks, Render Health Checks)
-  const publicApiRoutes = ['/api/webhooks', '/api/health']
+  const publicApiRoutes = [
+    '/api/webhooks',
+    '/api/health',
+    '/api/v1/auth/register',
+  ]
   const isPublicApiRoute = publicApiRoutes.some(route => pathname.startsWith(route))
 
   // 7. Access Control Execution
