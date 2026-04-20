@@ -66,29 +66,21 @@ const nextConfig = {
   async rewrites() {
     const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'https://data-omen-api-tnps9.ondigitalocean.app';
 
-    return [
-      {
-        /**
-         * Source: /api/v1/:path*
-         * Maps versioned frontend calls to the internal FastAPI structure.
-         */
-        source: '/api/v1/:path*',
-        destination: `${backendUrl}/api/v1/:path*`,
-      },
-      {
-        /**
-         * System Override for Compute/Orchestration.
-         * Explicitly excludes local App Router handlers so they are not
-         * shadowed by backend rewrites.
-         */
-        source: '/api/:path((?!auth|webhooks|chat|insights|og).*)/:rest*',
-        destination: `${backendUrl}/api/:path/:rest*`,
-      },
-      {
-        source: '/api/:path((?!auth|webhooks|chat|insights|og).*)',
-        destination: `${backendUrl}/api/:path`,
-      }
-    ]
+    return {
+      // Fallback rewrites run only when no local route handler/page matches.
+      // This guarantees local App Router endpoints like /api/chat/* and
+      // /api/insights remain first-class and never get shadowed.
+      fallback: [
+        {
+          source: '/api/v1/:path*',
+          destination: `${backendUrl}/api/v1/:path*`,
+        },
+        {
+          source: '/api/:path*',
+          destination: `${backendUrl}/api/:path*`,
+        },
+      ],
+    }
   },
 
   // 6. Runtime Optimizations

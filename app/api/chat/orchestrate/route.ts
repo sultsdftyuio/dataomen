@@ -82,6 +82,19 @@ export async function GET() {
   );
 }
 
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      Allow: "GET,HEAD,POST,OPTIONS",
+    },
+  });
+}
+
 export async function POST(req: NextRequest, context: any) {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();

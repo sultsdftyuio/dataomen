@@ -270,7 +270,7 @@ const useDatasets = () => {
     if (!isSilent) setIsLoading(true);
     try {
       const token = await getSessionToken();
-      const response = await fetch('/api/v1/datasets', {
+      const response = await fetch('/api/datasets/', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -279,7 +279,7 @@ const useDatasets = () => {
         throw new Error("Unable to reach the synchronization engine.");
       }
       const data = await response.json();
-      setDatasets(data.datasets || []);
+      setDatasets(Array.isArray(data) ? data : (data.datasets || []));
     } catch (err: any) {
       console.warn("Dataset retrieval caught:", err.message);
       setDatasets([]);
@@ -530,7 +530,7 @@ function FileUploadZone({ onUploadComplete }: FileUploadZoneProps) {
 // IMPROVEMENT 2 Helper: Wired Disconnect — calls backend which scrubs Qdrant
 // -----------------------------------------------------------------------------
 /**
- * Calls DELETE /api/v1/datasets/:id on the backend.
+ * Calls DELETE /api/datasets/:id on the backend.
  *
  * For document assets (is_document === true), the backend MUST invoke:
  *   await vector_service.delete_asset_index(tenant_id, asset_id)
@@ -543,7 +543,7 @@ function FileUploadZone({ onUploadComplete }: FileUploadZoneProps) {
 async function callDisconnectApi(datasetId: string): Promise<void> {
   const token = await getSessionToken();
 
-  const response = await fetch(`/api/v1/datasets/${datasetId}`, {
+  const response = await fetch(`/api/datasets/${datasetId}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -648,7 +648,7 @@ export default function IntegrationsHubPage() {
     toast({ title: "Sync Initiated", description: `Pulling the latest data from ${dataset.name}…` });
     try {
       const token = await getSessionToken();
-      await fetch(`/api/v1/datasets/${dataset.id}/sync`, {
+      await fetch(`/api/datasets/${dataset.id}/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       });

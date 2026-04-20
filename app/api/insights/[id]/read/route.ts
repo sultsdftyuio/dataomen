@@ -4,10 +4,10 @@ import { createClient } from "@/utils/supabase/server";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const insightId = params.id;
+    const { id: insightId } = await context.params;
     
     // FIX: Add 'await' here
     const supabase = await createClient();

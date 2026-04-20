@@ -187,7 +187,7 @@ const useDatasets = () => {
       const { data: { session }, error: authError } = await supabase.auth.getSession();
       if (authError || !session) throw new Error("Authentication required.");
 
-      const response = await fetch('/api/v1/datasets', {
+      const response = await fetch('/api/datasets/', {
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 
@@ -196,7 +196,7 @@ const useDatasets = () => {
          throw new Error("Unable to reach the synchronization engine.");
       }
       const data = await response.json();
-      setDatasets(data.datasets || []);
+      setDatasets(Array.isArray(data) ? data : (data.datasets || []));
     } catch (err: any) {
       console.warn("Dataset retrieval caught:", err.message);
       setDatasets([]);
@@ -313,7 +313,7 @@ export default function KnowledgeHubPage() {
       const { data: { session } } = await supabase.auth.getSession();
       
       // Wire this to your backend endpoint that calls vector_service.delete_asset_index()
-      const res = await fetch(`/api/v1/datasets/${datasetId}`, {
+      const res = await fetch(`/api/datasets/${datasetId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });

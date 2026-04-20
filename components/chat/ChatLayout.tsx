@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/utils/supabase/client";
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -342,6 +343,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   agentId = "default-router",
   agentName = "Arcli",
 }) => {
+  const supabase = useMemo(() => createClient(), []);
   const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressStatus, setProgressStatus] = useState("");
@@ -493,7 +495,15 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     if (isHydratingDatasets) return;
     setIsHydratingDatasets(true);
     try {
-      const res = await fetch("/api/datasets/", { method: "GET" });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      const res = await fetch("/api/datasets/", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
       if (!res.ok) return;
       const payload = await res.json();
       const list = Array.isArray(payload) ? payload : [];
@@ -568,6 +578,12 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const handleHybridUpload = async (file: File): Promise<{ id: string; isDoc: boolean }> => {
     validateUploadFile(file);
     setProgressStatus(`Ingesting ${file.name}…`);
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      throw new Error("Authentication required for dataset upload.");
+    }
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("dataset_name", file.name);
@@ -579,6 +595,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     try {
       uploadRes = await fetch("/api/datasets/upload", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: formData,
         signal: uploadController.signal,
       });

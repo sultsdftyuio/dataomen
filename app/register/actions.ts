@@ -3,11 +3,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { isRedirectError } from 'next/dist/client/components/redirect'
 
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
 const ROOT_RELATIVE_URL_REGEX = /^\//
 const LOCAL_BACKEND_FALLBACKS = ['http://localhost:8000', 'http://localhost:8080']
+
+const isNextRedirectError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false
+
+  const digest = (error as { digest?: unknown }).digest
+  return typeof digest === 'string' && digest.startsWith('NEXT_REDIRECT')
+}
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '')
 
@@ -254,7 +260,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
     console.log(`[DEBUG-UI][${flowId}] Total flow duration: ${Date.now() - flowStart}ms`)
 
   } catch (error) {
-    if (isRedirectError(error)) throw error
+    if (isNextRedirectError(error)) throw error
     console.error(`[DEBUG-UI][${flowId}] UNCAUGHT EXCEPTION in registration flow:`, error)
     return { error: 'Could not complete registration flow. Check logs.' }
   }

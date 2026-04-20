@@ -5,6 +5,7 @@ import os
 import hmac
 from uuid import UUID
 from typing import List, Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -55,6 +56,35 @@ def _verify_dataset_ownership(db: Session, tenant_id: str, dataset_id: UUID) -> 
     ).first()
     if not owned_dataset:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dataset not found or unauthorized.")
+
+
+def _safe_agent_response(agent: Agent, tenant_id: str) -> AgentResponse:
+    """
+    Normalize potentially legacy/nullable rows into a stable response contract.
+    Prevents response validation crashes from bringing down /api/agents.
+    """
+    try:
+        return AgentResponse.model_validate(agent, from_attributes=True)
+    except Exception:
+        # Defensive fallback for legacy rows with partial/null values.
+        safe_payload = {
+            "id": agent.id,
+            "tenant_id": str(getattr(agent, "tenant_id", None) or tenant_id),
+            "name": (getattr(agent, "name", None) or "Untitled Agent").strip() or "Untitled Agent",
+            "description": getattr(agent, "description", None),
+            "role_description": getattr(agent, "role_description", None),
+            "is_active": True if getattr(agent, "is_active", None) is None else bool(agent.is_active),
+            "temperature": 0.0 if getattr(agent, "temperature", None) is None else float(agent.temperature),
+            "dataset_id": getattr(agent, "dataset_id", None),
+            "document_id": getattr(agent, "document_id", None),
+            "cron_schedule": getattr(agent, "cron_schedule", None),
+            "metric_column": getattr(agent, "metric_column", None),
+            "time_column": getattr(agent, "time_column", None),
+            "sensitivity_threshold": getattr(agent, "sensitivity_threshold", None),
+            "last_run_at": getattr(agent, "last_run_at", None),
+            "created_at": getattr(agent, "created_at", None) or datetime.now(timezone.utc),
+        }
+        return AgentResponse.model_validate(safe_payload)
 
 # ------------------------------------------------------------------------------
 # Pydantic Schemas: Local API Contracts
@@ -211,15 +241,29 @@ async def list_agents(
     """Retrieves all active agents specifically for the authenticated tenant."""
     limit = min(max(limit, 1), 200)
     offset = max(offset, 0)
-    agents = (
-        db.query(Agent)
-        .filter(Agent.tenant_id == context.tenant_id)
-        .order_by(Agent.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    return agents
+    try:
+        agents = (
+            db.query(Agent)
+            .filter(Agent.tenant_id == context.tenant_id)
+            .order_by(Agent.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+    except SQLAlchemyError as e:
+        logger.error(f"[{context.tenant_id}] Failed to list agents: {e}", exc_info=True)
+        return []
+
+    response: List[AgentResponse] = []
+    for agent in agents:
+        try:
+            response.append(_safe_agent_response(agent, context.tenant_id))
+        except Exception as e:
+            logger.warning(
+                f"[{context.tenant_id}] Skipping malformed agent row {getattr(agent, 'id', 'unknown')}: {e}"
+            )
+
+    return response
 
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(
@@ -231,7 +275,7 @@ async def get_agent(
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.tenant_id == context.tenant_id).first()
     if not agent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
-    return agent
+    return _safe_agent_response(agent, context.tenant_id)
 
 @router.patch("/{agent_id}", response_model=AgentResponse)
 async def update_agent(
@@ -280,7 +324,7 @@ async def update_agent(
         
         db.commit()
         db.refresh(agent)
-        return agent
+        return _safe_agent_response(agent, context.tenant_id)
     except HTTPException:
         db.rollback()
         raise

@@ -142,8 +142,8 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({
         const response: any = await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           
-          // 🚀 ROUTING FIX: Synchronized with the v1 API prefix
-          xhr.open('POST', '/api/v1/datasets/upload', true);
+          // Route to the backend datasets upload endpoint.
+          xhr.open('POST', '/api/datasets/upload', true);
           
           // Inject dynamic token
           xhr.setRequestHeader('Authorization', `Bearer ${activeToken}`);
