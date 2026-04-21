@@ -44,6 +44,27 @@ const resolveBackendUrl = () => {
 };
 
 const BACKEND_URL = resolveBackendUrl();
+const ROUTE_LAYER = "next-app-router";
+const ROUTE_HANDLER = "/api/chat/orchestrate";
+
+const withRouteTraceHeaders = (headers: Record<string, string> = {}) => ({
+  "X-Route-Layer": ROUTE_LAYER,
+  "X-Route-Handler": ROUTE_HANDLER,
+  ...headers,
+});
+
+const logRouteTrace = (event: string, data: Record<string, unknown> = {}) => {
+  console.info(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      event,
+      layer: ROUTE_LAYER,
+      handler: ROUTE_HANDLER,
+      ...data,
+    })
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Context Typing for Edge Runtime (App Router)
@@ -109,25 +130,28 @@ const PayloadSchema = z.object({
 });
 
 export async function GET() {
+  logRouteTrace("route_trace", { method: "GET", status: 200 });
   return NextResponse.json(
     {
       status: "ok",
       message: "Orchestration endpoint is online. Use POST to start a stream.",
     },
-    { status: 200 }
+    { status: 200, headers: withRouteTraceHeaders() }
   );
 }
 
 export async function HEAD() {
-  return new NextResponse(null, { status: 200 });
+  logRouteTrace("route_trace", { method: "HEAD", status: 200 });
+  return new NextResponse(null, { status: 200, headers: withRouteTraceHeaders() });
 }
 
 export async function OPTIONS() {
+  logRouteTrace("route_trace", { method: "OPTIONS", status: 204 });
   return new NextResponse(null, {
     status: 204,
-    headers: {
+    headers: withRouteTraceHeaders({
       Allow: "GET,HEAD,POST,OPTIONS",
-    },
+    }),
   });
 }
 
@@ -135,10 +159,26 @@ export async function POST(req: NextRequest, context: any) {
   const requestId = crypto.randomUUID();
   const startTime = Date.now();
   let tenant_id = "anonymous";
+
+  const withRequestTraceHeaders = (headers: Record<string, string> = {}) =>
+    withRouteTraceHeaders({ "X-Request-ID": requestId, ...headers });
   
   const log = (level: "info" | "warn" | "error", event: string, data: any = {}) => {
-    console[level](JSON.stringify({ timestamp: new Date().toISOString(), level, requestId, tenant_id, event, ...data }));
+    console[level](
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level,
+        requestId,
+        tenant_id,
+        layer: ROUTE_LAYER,
+        handler: ROUTE_HANDLER,
+        event,
+        ...data,
+      })
+    );
   };
+
+  log("info", "route_trace", { method: req.method });
 
   try {
     // 1. STRICT INTERNAL SECURITY GUARD
@@ -147,14 +187,14 @@ export async function POST(req: NextRequest, context: any) {
       log("error", "critical_startup_failure", { error: "Missing INTERNAL_SERVICE_KEY" });
       return NextResponse.json(
         { type: "error", message: "Critical configuration error. Aborting to prevent unauthenticated calls. Please contact support@arcli.tech." },
-        { status: 500, headers: { "X-Request-ID": requestId } }
+        { status: 500, headers: withRequestTraceHeaders() }
       );
     }
 
     // Header Payload Shedding
     const contentLength = req.headers.get("content-length");
     if (contentLength && parseInt(contentLength, 10) > 25000) { 
-      return NextResponse.json({ type: "error", message: "Payload too large." }, { status: 413, headers: { "X-Request-ID": requestId } });
+      return NextResponse.json({ type: "error", message: "Payload too large." }, { status: 413, headers: withRequestTraceHeaders() });
     }
 
     // 2. Parallel Preflight (Auth & Parsing)
@@ -171,11 +211,11 @@ export async function POST(req: NextRequest, context: any) {
 
     if (authResult.status === "rejected") {
       log("warn", "unauthorized_access_attempt");
-      return NextResponse.json({ type: "error", message: "Unauthorized: Session expired or invalid." }, { status: 401, headers: { "X-Request-ID": requestId } });
+      return NextResponse.json({ type: "error", message: "Unauthorized: Session expired or invalid." }, { status: 401, headers: withRequestTraceHeaders() });
     }
     if (bodyResult.status === "rejected") {
       log("warn", "malformed_json_payload");
-      return NextResponse.json({ type: "error", message: "Invalid JSON payload sent to orchestration layer." }, { status: 400, headers: { "X-Request-ID": requestId } });
+      return NextResponse.json({ type: "error", message: "Invalid JSON payload sent to orchestration layer." }, { status: 400, headers: withRequestTraceHeaders() });
     }
 
     const { user, session } = authResult.value;
@@ -192,7 +232,7 @@ export async function POST(req: NextRequest, context: any) {
 
     const validationResult = PayloadSchema.safeParse(normalizedBody);
     if (!validationResult.success) {
-      return NextResponse.json({ type: "error", message: "Invalid schema.", details: validationResult.error.errors }, { status: 400, headers: { "X-Request-ID": requestId } });
+      return NextResponse.json({ type: "error", message: "Invalid schema.", details: validationResult.error.errors }, { status: 400, headers: withRequestTraceHeaders() });
     }
 
     const parsedPayload = validationResult.data;
@@ -243,7 +283,7 @@ export async function POST(req: NextRequest, context: any) {
           const errData = await backendResponse.text().catch(() => "Unknown error");
           return NextResponse.json(
             { type: "error", message: `Analysis Error: ${errData}` },
-            { status: backendResponse.status || 502, headers: { "X-Request-ID": requestId } }
+            { status: backendResponse.status || 502, headers: withRequestTraceHeaders() }
           );
         }
 
@@ -363,7 +403,7 @@ export async function POST(req: NextRequest, context: any) {
         if (streamError && !compatPayload.reply) {
           return NextResponse.json(
             { type: "error", message: streamError },
-            { status: 502, headers: { "X-Request-ID": requestId } }
+            { status: 502, headers: withRequestTraceHeaders() }
           );
         }
 
@@ -371,13 +411,13 @@ export async function POST(req: NextRequest, context: any) {
 
         return NextResponse.json(compatPayload, {
           status: 200,
-          headers: { "X-Request-ID": requestId },
+          headers: withRequestTraceHeaders(),
         });
       } catch (compatError: any) {
         log("error", "legacy_json_compat_failure", { error: String(compatError) });
         return NextResponse.json(
           { type: "error", message: "A compatibility-mode routing error occurred." },
-          { status: 500, headers: { "X-Request-ID": requestId } }
+          { status: 500, headers: withRequestTraceHeaders() }
         );
       }
     }
@@ -411,7 +451,13 @@ export async function POST(req: NextRequest, context: any) {
           controller.close();
         }
       });
-      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "X-Request-ID": requestId } });
+      return new Response(stream, {
+        headers: withRequestTraceHeaders({
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        }),
+      });
     }
 
     // 4. HEAVY PIPELINE (Gateway Orchestrator & Polling)
@@ -613,13 +659,12 @@ export async function POST(req: NextRequest, context: any) {
     });
 
     return new Response(stream, {
-      headers: {
+      headers: withRequestTraceHeaders({
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
-        "X-Request-ID": requestId
-      },
+      }),
     });
 
   } catch (error: any) {
@@ -627,7 +672,7 @@ export async function POST(req: NextRequest, context: any) {
 
     return NextResponse.json(
       { type: "error", message: "A critical error occurred in the orchestration gateway. Contact support@arcli.tech." }, 
-      { status: 500, headers: { "X-Request-ID": requestId } }
+      { status: 500, headers: withRequestTraceHeaders() }
     );
   }
 }

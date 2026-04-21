@@ -3,7 +3,7 @@
 import logging
 import json
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -70,6 +70,51 @@ class OrchestrateRequest(BaseModel):
     active_document_ids: Optional[List[str]] = Field(default_factory=list, description="Document UUIDs to include for vector RAG context.")
     history: Optional[List[HistoryMessage]] = Field(default_factory=list, description="Recent conversation context.")
     context_id: Optional[str] = Field(default=None, description="Optional link to a specific anomaly or alert.")
+
+
+@router.get("/orchestrate")
+async def orchestrate_chat_health() -> Dict[str, str]:
+    return {
+        "status": "ok",
+        "message": "Orchestration endpoint is online. Use POST to start a stream.",
+    }
+
+
+@router.head("/orchestrate", include_in_schema=False)
+async def orchestrate_chat_head() -> Response:
+    return Response(status_code=200)
+
+
+@router.options("/orchestrate", include_in_schema=False)
+async def orchestrate_chat_options() -> Response:
+    return Response(status_code=204, headers={"Allow": "GET,HEAD,POST,OPTIONS"})
+
+
+@router.options("/orchestrate/workspace/metrics", include_in_schema=False)
+async def workspace_metrics_options() -> Response:
+    return Response(status_code=204, headers={"Allow": "GET,OPTIONS"})
+
+
+@router.get("/orchestrate/workspace/metrics")
+async def get_workspace_metrics(
+    context: TenantContext = Depends(verify_tenant),
+):
+    """
+    Backend parity endpoint for Next.js workspace metrics route.
+    Returns a safe default payload when no tenant-specific aggregates are precomputed.
+    """
+    logger.info(f"[{context.tenant_id}] Workspace metrics requested.")
+    return {
+        "metrics": {
+            "totalDatasets": 0,
+            "activeAgents": 0,
+            "queriesRun": 0,
+            "healthScore": 100,
+        },
+        "chartData": [],
+        "agents": [],
+        "alerts": [],
+    }
 
 # ------------------------------------------------------------------
 # Main Copilot Endpoint (Dual-Mode Streaming)

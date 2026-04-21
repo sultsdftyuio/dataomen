@@ -5,11 +5,32 @@ import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "edge"; // Maximize performance & minimize latency
 export const dynamic = "force-dynamic";
+const ROUTE_LAYER = "next-app-router";
+const ROUTE_HANDLER = "/api/chat/orchestrate/workspace/metrics";
+
+const routeTraceHeaders = {
+  "X-Route-Layer": ROUTE_LAYER,
+  "X-Route-Handler": ROUTE_HANDLER,
+};
+
+const logRouteTrace = (event: string, data: Record<string, unknown> = {}) => {
+  console.info(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      event,
+      layer: ROUTE_LAYER,
+      handler: ROUTE_HANDLER,
+      ...data,
+    })
+  );
+};
 
 // Optional: Point to your Python backend when you are ready to wire up DuckDB/Supabase
 // const BACKEND_URL = process.env.BACKEND_API_URL || "http://127.0.0.1:8000";
 
 export async function GET(req: NextRequest) {
+  logRouteTrace("route_trace", { method: req.method });
   try {
     // 1. Security by Design: Cryptographic Authentication & Tenant Isolation
     // CRITICAL: We use getUser() instead of getSession() to guarantee the JWT 
@@ -20,7 +41,7 @@ export async function GET(req: NextRequest) {
     if (authError || !user) {
       return NextResponse.json(
         { error: "Unauthorized: Token verification failed or expired." }, 
-        { status: 401 }
+        { status: 401, headers: routeTraceHeaders }
       );
     }
 
@@ -44,13 +65,13 @@ export async function GET(req: NextRequest) {
     };
 
     // 3. Return Clean JSON
-    return NextResponse.json(payload, { status: 200 });
+    return NextResponse.json(payload, { status: 200, headers: routeTraceHeaders });
 
   } catch (error: any) {
     console.error("[Workspace Metrics] Edge Route Error:", error);
     return NextResponse.json(
       { error: "A critical error occurred while fetching workspace metrics." },
-      { status: 500 }
+      { status: 500, headers: routeTraceHeaders }
     );
   }
 }

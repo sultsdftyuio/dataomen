@@ -48,6 +48,7 @@ logger = logging.getLogger("DataOmenAPI")
 DEFAULT_ROUTE_MODULES = [
     "api.routes.agents",
     "api.routes.datasets",
+    "api.routes.insights",
     "api.routes.query",
     "api.routes.narrative",
     "api.routes.chat",
@@ -172,6 +173,21 @@ def _configure_middleware(fastapi_app: FastAPI) -> None:
         # Enforce HTTPS on custom domains.
         if os.getenv("ENVIRONMENT") != "development":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        # Route diagnostics: identify backend-served API responses in browser/devtools.
+        if request.url.path.startswith("/api/"):
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", request.url.path)
+
+            if "X-Route-Layer" not in response.headers:
+                response.headers["X-Route-Layer"] = "fastapi-backend"
+            if "X-Route-Handler" not in response.headers:
+                response.headers["X-Route-Handler"] = f"fastapi:{route_path}"
+
+            logger.info(
+                f"[ROUTE_TRACE] layer=fastapi-backend method={request.method} "
+                f"path={request.url.path} route={route_path} status={response.status_code}"
+            )
 
         return response
 

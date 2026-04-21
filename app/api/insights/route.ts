@@ -3,8 +3,29 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
+const ROUTE_LAYER = "next-app-router";
+const ROUTE_HANDLER = "/api/insights";
+
+const routeTraceHeaders = {
+  "X-Route-Layer": ROUTE_LAYER,
+  "X-Route-Handler": ROUTE_HANDLER,
+};
+
+const logRouteTrace = (event: string, data: Record<string, unknown> = {}) => {
+  console.info(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      event,
+      layer: ROUTE_LAYER,
+      handler: ROUTE_HANDLER,
+      ...data,
+    })
+  );
+};
 
 export async function GET(request: Request) {
+  logRouteTrace("route_trace", { method: "GET" });
   try {
     const supabase = await createClient();
     
@@ -13,7 +34,7 @@ export async function GET(request: Request) {
     if (authError || !user) {
       return NextResponse.json(
         { error: "Unauthorized: Invalid or missing session." }, 
-        { status: 401 }
+        { status: 401, headers: routeTraceHeaders }
       );
     }
 
@@ -56,18 +77,18 @@ export async function GET(request: Request) {
       console.error("[Insights API] Database retrieval error:", insightsError);
       return NextResponse.json(
         { error: "Failed to fetch autonomous insights from the engine." }, 
-        { status: 500 }
+        { status: 500, headers: routeTraceHeaders }
       );
     }
 
     // Return the payload (ensuring an empty array is returned instead of null on zero results)
-    return NextResponse.json(insights || [], { status: 200 });
+    return NextResponse.json(insights || [], { status: 200, headers: routeTraceHeaders });
     
   } catch (error) {
     console.error("[Insights API] Critical Exception:", error);
     return NextResponse.json(
       { error: "Internal Server Error during insight generation." }, 
-      { status: 500 }
+      { status: 500, headers: routeTraceHeaders }
     );
   }
 }

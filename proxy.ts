@@ -10,6 +10,21 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const EDGE_LAYER = 'next-edge-middleware'
+
+  const logRouteTrace = (event: string, data: Record<string, unknown> = {}) => {
+    console.info(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        event,
+        layer: EDGE_LAYER,
+        path: pathname,
+        method: request.method,
+        ...data,
+      })
+    )
+  }
 
   // 1. Diagnostic Metadata: Capture Vercel Trace ID for Cloudflare/Vercel debugging
   const requestId = request.headers.get('x-vercel-id') || 'local-dev'
@@ -95,6 +110,7 @@ export default async function proxy(request: NextRequest) {
 
   // Always allow CORS preflight checks to reach route handlers/rewrite targets.
   if (isApiPreflight) {
+    logRouteTrace('route_trace', { handler: 'proxy-preflight-pass', status: 204 })
     return NextResponse.next()
   }
 
@@ -112,13 +128,20 @@ export default async function proxy(request: NextRequest) {
     // B. Unauthenticated users attempting to hit internal APIs -> Hard block at Edge
     // This prevents malicious traffic from waking up your Render backend
     if (isApiRoute && !isPublicApiRoute) {
+      logRouteTrace('route_trace', { handler: 'proxy-auth-gate', status: 401, trace_id: requestId })
       return NextResponse.json(
         { 
           error: 'Unauthorized access.', 
           message: 'Edge Security prevented access to this resource.',
           trace_id: requestId 
         }, 
-        { status: 401 }
+        {
+          status: 401,
+          headers: {
+            'X-Route-Layer': EDGE_LAYER,
+            'X-Route-Handler': 'proxy-auth-gate',
+          },
+        }
       )
     }
   } else {
