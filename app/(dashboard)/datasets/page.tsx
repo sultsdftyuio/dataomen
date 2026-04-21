@@ -270,7 +270,7 @@ const useDatasets = () => {
     if (!isSilent) setIsLoading(true);
     try {
       const token = await getSessionToken();
-      const response = await fetch('/api/datasets/', {
+      const response = await fetch('/api/datasets', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 

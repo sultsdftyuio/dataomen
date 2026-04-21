@@ -98,7 +98,7 @@ export function InsightsFeed() {
     // Background API call (fire and forget)
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch(`/api/insights/${id}/dismiss`, { 
+      await fetch(`/api/insights/${id}/read`, { 
         method: "PATCH",
         headers: {
           'Content-Type': 'application/json',

@@ -286,7 +286,7 @@ async def create_dataset(
         raise HTTPException(status_code=500, detail="Failed to register dataset.")
 
 
-@router.get("/", response_model=List[DatasetResponse])
+@router.get("", response_model=List[DatasetResponse])
 async def list_datasets(
     limit: int = 50,
     offset: int = 0,

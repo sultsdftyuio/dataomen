@@ -96,6 +96,19 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
     icon: 'Database',
     blocks: [
       {
+        type: 'HeroBlock',
+        data: {
+          title: 'Conversational Intelligence for PostgreSQL',
+          subtitle: 'Securely connect your Postgres read-replica. Empower your entire executive team to answer their own data questions instantly without waiting for data engineering.',
+          primaryCta: {
+            label: 'Connect PostgreSQL',
+            href: '/register?intent=postgres_integration'
+          }
+        },
+        purpose: 'Establish highly-specific technical context',
+        intentServed: 'Informational'
+      },
+      {
         type: 'ContrarianBanner',
         data: {
           statement: "If your team is exporting live Postgres data into Excel just to build a pivot table, your modern data stack is acting as a bottleneck, not an enabler."
@@ -231,6 +244,19 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
     icon: 'Database',
     blocks: [
       {
+        type: 'HeroBlock',
+        data: {
+          title: 'Relational Agility for MySQL',
+          subtitle: 'Provide your organization with secure, conversational access to your MySQL databases. Automate complex table joins and aggregations without writing a single line of code.',
+          primaryCta: {
+            label: 'Automate MySQL Reporting',
+            href: '/register?intent=mysql_integration'
+          }
+        },
+        purpose: 'Establish highly-specific technical context',
+        intentServed: 'Informational'
+      },
+      {
         type: 'ContrarianBanner',
         data: {
           statement: "Moving highly normalized MySQL data into a rigid dashboard doesn't solve data literacy—it just creates a new bottleneck for your engineering team."
@@ -361,6 +387,19 @@ export const databaseIntegrationsPart1: Record<string, SEOPageData> = {
     subtitle: 'Unlock the power of your Microsoft SQL Server. Give your business leaders secure, conversational access to enterprise data without relying on rigid dashboards.',
     icon: 'Server',
     blocks: [
+      {
+        type: 'HeroBlock',
+        data: {
+          title: 'Conversational T-SQL Generation',
+          subtitle: 'Unlock the power of your Microsoft SQL Server. Give your business leaders secure, conversational access to enterprise data without relying on rigid dashboards.',
+          primaryCta: {
+            label: 'Generate T-SQL Instantly',
+            href: '/register?intent=sqlserver_integration'
+          }
+        },
+        purpose: 'Establish highly-specific technical context',
+        intentServed: 'Informational'
+      },
       {
         type: 'ContrarianBanner',
         data: {

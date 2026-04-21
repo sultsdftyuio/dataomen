@@ -184,7 +184,7 @@ export default function AgentMemoryPage() {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) { router.push('/login'); return; }
 
-          const dsRes = await fetch('/api/datasets/', {
+          const dsRes = await fetch('/api/datasets', {
             headers: { 'Authorization': `Bearer ${session.access_token}` }
           });
           

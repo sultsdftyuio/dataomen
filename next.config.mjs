@@ -5,6 +5,7 @@
  */
 
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i;
+const LEGACY_BACKEND_HOSTS = new Set(['api.arcli.tech']);
 
 const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
 
@@ -26,12 +27,24 @@ const normalizeBackendBase = (rawValue) => {
   }
 };
 
+const isLegacyBackend = (urlValue) => {
+  try {
+    const hostname = new URL(urlValue).hostname.toLowerCase();
+    return LEGACY_BACKEND_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+};
+
 const resolveBackendRewriteBase = () => {
-  return (
-    normalizeBackendBase(process.env.BACKEND_API_URL) ||
-    normalizeBackendBase(process.env.NEXT_PUBLIC_API_URL) ||
-    'https://data-omen-api-tnps9.ondigitalocean.app'
-  );
+  const candidates = [
+    normalizeBackendBase(process.env.BACKEND_API_URL),
+    normalizeBackendBase(process.env.NEXT_PUBLIC_API_URL),
+    'https://data-omen-api-tnps9.ondigitalocean.app',
+  ].filter(Boolean);
+
+  const preferred = candidates.find((urlValue) => !isLegacyBackend(urlValue));
+  return preferred || candidates[0];
 };
 
 /** @type {import('next').NextConfig} */

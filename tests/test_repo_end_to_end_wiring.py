@@ -661,7 +661,7 @@ def test_main_application_wires_routes_and_health(monkeypatch: pytest.MonkeyPatc
     assert "/health" in route_paths
     assert "/api/health" in route_paths
     assert "/api/agents/" in route_paths
-    assert "/api/datasets/" in route_paths
+    assert "/api/datasets" in route_paths
     assert "/api/query/persistent" in route_paths
     assert "/api/narrative/generate" in route_paths
     assert "/api/webhooks/lemonsqueezy" in route_paths

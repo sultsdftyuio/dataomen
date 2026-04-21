@@ -187,7 +187,7 @@ const useDatasets = () => {
       const { data: { session }, error: authError } = await supabase.auth.getSession();
       if (authError || !session) throw new Error("Authentication required.");
 
-      const response = await fetch('/api/datasets/', {
+      const response = await fetch('/api/datasets', {
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 

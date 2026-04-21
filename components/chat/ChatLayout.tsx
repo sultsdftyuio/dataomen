@@ -505,7 +505,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
 
-      const res = await fetch("/api/datasets/", {
+      const res = await fetch("/api/datasets", {
         method: "GET",
         headers: {
           Authorization: `Bearer ${session.access_token}`,

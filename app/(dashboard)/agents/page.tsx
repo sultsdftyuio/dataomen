@@ -164,7 +164,7 @@ export default function AgentsPage() {
 
         const [agentsRes, datasetsRes] = await Promise.all([
           fetch('/api/agents/', { headers }),
-          fetch('/api/datasets/', { headers })
+          fetch('/api/datasets', { headers })
         ]);
         
         if (agentsRes.ok) setAgents(await agentsRes.json());

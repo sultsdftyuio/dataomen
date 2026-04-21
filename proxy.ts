@@ -81,6 +81,7 @@ export default async function proxy(request: NextRequest) {
 
   // API Routing Management (Crucial for Vercel -> Render Next.js Rewrites)
   const isApiRoute = pathname.startsWith('/api')
+  const isApiPreflight = isApiRoute && request.method === 'OPTIONS'
   
   // Define public APIs that bypass Edge Auth (e.g., Stripe Webhooks, Render Health Checks)
   const publicApiRoutes = [
@@ -91,6 +92,11 @@ export default async function proxy(request: NextRequest) {
     '/api/v1/auth/register',
   ]
   const isPublicApiRoute = publicApiRoutes.some(route => pathname.startsWith(route))
+
+  // Always allow CORS preflight checks to reach route handlers/rewrite targets.
+  if (isApiPreflight) {
+    return NextResponse.next()
+  }
 
   // 7. Access Control Execution
   if (!user) {
