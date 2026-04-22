@@ -90,14 +90,14 @@ interface UploadOptions {
 }
 
 interface UploadTransport {
-  upload(file: File, url: string, options: UploadOptions): Promise<void>;
+  upload(file: File | Blob, url: string, options: UploadOptions): Promise<void>;
   abort(): void;
 }
 
 class XHRTransport implements UploadTransport {
   private xhr?: XMLHttpRequest;
   
-  upload(file: File, url: string, options: UploadOptions): Promise<void> {
+  upload(file: File | Blob, url: string, options: UploadOptions): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       this.xhr = xhr;
@@ -158,7 +158,7 @@ class MultipartTransport implements UploadTransport {
     private chunkSize: number
   ) {}
   
-  async upload(file: File, _url: string, options: UploadOptions): Promise<void> {
+  async upload(file: File | Blob, _url: string, options: UploadOptions): Promise<void> {
     const totalChunks = Math.ceil(file.size / this.chunkSize);
     const parts: { ETag: string; PartNumber: number }[] = [];
     
