@@ -3,9 +3,13 @@
 # Strategy: Maintain Edge isolation by ignoring non-frontend assets.
 
 # Backend Source
-api/
-tests/
-scripts/
+/api/
+/tests/
+/scripts/
+
+# Explicitly keep Next.js App Router API handlers in deployment artifacts.
+!/app/api/
+!/app/api/**
 
 # Infrastructure & Orchestration
 Dockerfile
