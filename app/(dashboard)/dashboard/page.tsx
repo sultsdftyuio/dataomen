@@ -12,7 +12,8 @@ import {
   Pin,
   Bot,
   MessageSquare,
-  BarChart3
+  BarChart3,
+  ChevronRight
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -206,21 +207,21 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
 
   if (data.length === 0) {
     return (
-      <Card className="border border-dashed border-gray-300 bg-slate-50/50 col-span-1 md:col-span-2 lg:col-span-4 h-[320px] flex flex-col items-center justify-center text-center rounded-2xl shadow-sm">
-        <div className="p-4 bg-white border border-gray-200 rounded-2xl shadow-sm mb-4">
+      <Card className="border border-slate-200/60 bg-gradient-to-b from-slate-50/50 to-white col-span-1 md:col-span-2 lg:col-span-4 h-[320px] flex flex-col items-center justify-center text-center rounded-2xl shadow-sm">
+        <div className="p-4 bg-white border border-slate-200/80 rounded-2xl shadow-sm mb-4">
           <BarChart3 className="h-8 w-8 text-slate-300" />
         </div>
-        <h3 className="font-bold text-slate-900">No Telemetry Available</h3>
-        <p className="text-sm text-slate-500 font-medium mt-1">Deploy an agent to begin streaming analytical data.</p>
+        <h3 className="font-extrabold tracking-tight text-slate-900">No Telemetry Available</h3>
+        <p className="text-[13px] text-slate-500 font-medium mt-1">Deploy an agent to begin streaming analytical data.</p>
       </Card>
     );
   }
 
   return (
-    <Card className="border-gray-200/80 shadow-sm bg-gradient-to-b from-white to-slate-50/30 col-span-1 md:col-span-2 lg:col-span-4 rounded-2xl overflow-hidden flex flex-col hover:border-blue-200 hover:shadow-[0_8px_30px_-10px_rgba(37,99,235,0.1)] transition-all duration-500">
-      <CardHeader className="flex flex-row items-center justify-between pb-4 pt-5 px-6 border-b border-gray-100 shrink-0">
+    <Card className="border-slate-200/80 shadow-sm bg-gradient-to-b from-white to-slate-50/30 col-span-1 md:col-span-2 lg:col-span-4 rounded-2xl overflow-hidden flex flex-col hover:border-blue-200/80 hover:shadow-[0_8px_30px_-10px_rgba(37,99,235,0.1)] transition-all duration-500">
+      <CardHeader className="flex flex-row items-center justify-between pb-4 pt-5 px-6 border-b border-slate-100 shrink-0">
         <div>
-          <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
+          <CardTitle className="text-lg font-extrabold tracking-tight flex items-center gap-2 text-slate-900">
             <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg border border-blue-100/50">
               <BarChart3 className="h-4 w-4" />
             </div>
@@ -228,7 +229,7 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
           </CardTitle>
           <CardDescription className="text-slate-500 font-medium mt-1">Real-time analytical telemetry across connected datasets.</CardDescription>
         </div>
-        <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm py-1 px-2.5 font-bold">
+        <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-wider bg-emerald-50/80 text-emerald-700 border border-emerald-200/50 shadow-sm py-1 px-2.5 font-bold">
           <RefreshCw className="h-3 w-3 mr-1.5 inline animate-spin" /> Live Engine
         </Badge>
       </CardHeader>
@@ -317,7 +318,7 @@ export default function DashboardOverviewPage() {
           <AlertCircle className="h-10 w-10 text-rose-500" />
         </div>
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900">Engine Connection Failed</h2>
+          <h2 className="text-xl font-extrabold tracking-tight text-slate-900">Engine Connection Failed</h2>
           <p className="text-slate-500 font-medium max-w-md mt-1">{error}</p>
         </div>
         <Button onClick={fetchRealData} className="rounded-xl px-8 font-bold bg-slate-900 hover:bg-slate-800 shadow-sm">
@@ -331,34 +332,34 @@ export default function DashboardOverviewPage() {
     <div className="flex flex-col gap-8 h-full animate-in fade-in slide-in-from-bottom-4 duration-700 pb-12 bg-[#fafafa] min-h-screen px-4 md:px-8 pt-6">
       
       {/* C-Level Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 pb-5 border-b border-gray-200/60">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 pb-5 border-b border-slate-200/60">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Command Center</h1>
+            <h1 className="text-3xl font-extrabold tracking-tighter text-slate-900">Command Center</h1>
             {!isLoading && (
               isAdmin ? (
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 shadow-sm px-2.5 py-0.5 font-bold uppercase tracking-wider text-[10px]">
+                <Badge variant="outline" className="bg-blue-50/50 text-blue-700 border-blue-200 shadow-sm px-2.5 py-0.5 font-bold uppercase tracking-wider text-[10px]">
                   <ShieldCheck className="h-3 w-3 mr-1.5" /> Admin
                 </Badge>
               ) : (
-                <Badge variant="outline" className="bg-white text-slate-600 border-gray-200 shadow-sm px-2.5 py-0.5 font-bold uppercase tracking-wider text-[10px]">
+                <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 shadow-sm px-2.5 py-0.5 font-bold uppercase tracking-wider text-[10px]">
                   <Lock className="h-3 w-3 mr-1.5" /> Standard
                 </Badge>
               )
             )}
           </div>
-          <p className="text-slate-500 mt-2 text-sm font-medium flex items-center gap-2">
-            Operational orchestration for <span className="text-slate-900 font-bold bg-slate-100 px-2 py-0.5 rounded-md text-xs border border-slate-200">arcli.tech</span>
+          <p className="text-slate-500 mt-2 text-[13px] font-medium flex items-center gap-2">
+            Operational orchestration for <span className="text-slate-900 font-bold bg-slate-100 px-2 py-0.5 rounded-md text-xs border border-slate-200/60 shadow-sm">arcli.tech</span>
           </p>
         </div>
         <div className="flex gap-3 items-center">
-          <Button variant="outline" size="icon" onClick={fetchRealData} disabled={isLoading} className="text-slate-500 hover:text-blue-600 rounded-xl border-gray-200 shadow-sm bg-white">
+          <Button variant="outline" size="icon" onClick={fetchRealData} disabled={isLoading} className="text-slate-500 hover:text-blue-600 rounded-xl border-slate-200/80 shadow-sm bg-white transition-all hover:shadow-md">
             <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
           </Button>
-          <Button variant="outline" className="rounded-xl font-bold bg-white shadow-sm border-gray-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50" asChild>
+          <Button variant="outline" className="rounded-xl font-bold bg-white shadow-sm border-slate-200/80 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-all hover:shadow-md" asChild>
             <Link href="/datasets"><Database className="mr-2 h-4 w-4 text-blue-500" />Sources</Link>
           </Button>
-          <Button className="rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 transition-all" asChild>
+          <Button className="rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-[0_8px_16px_-6px_rgba(37,99,235,0.4)] hover:shadow-[0_12px_20px_-6px_rgba(37,99,235,0.5)] transition-all hover:-translate-y-0.5" asChild>
             <Link href="/agents/create"><Sparkles className="mr-2 h-4 w-4" />Deploy</Link>
           </Button>
         </div>
@@ -379,14 +380,14 @@ export default function DashboardOverviewPage() {
         
         {/* Left Priority Column: The Executive Insight Wall */}
         <div className="xl:col-span-2 space-y-6">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-200/80">
-            <h2 className="text-xl font-extrabold flex items-center gap-2 text-slate-900">
-              <div className="p-1.5 bg-rose-50 text-rose-500 rounded-lg shadow-sm">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200/60">
+            <h2 className="text-lg font-extrabold tracking-tight flex items-center gap-2 text-slate-900">
+              <div className="p-1.5 bg-rose-50 text-rose-500 rounded-lg border border-rose-100/50 shadow-sm">
                 <Pin className="h-4 w-4" />
               </div>
               Pinned Executive Insights
             </h2>
-            <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 border-none">
+            <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-transparent border border-slate-200 shadow-sm">
               Auto-updating
             </Badge>
           </div>
@@ -396,50 +397,58 @@ export default function DashboardOverviewPage() {
 
         {/* Right Supporting Column: Operations & Workforce */}
         <div className="space-y-6">
-          <Card className="border-gray-200/80 shadow-sm h-full flex flex-col bg-white rounded-2xl overflow-hidden">
-            <CardHeader className="border-b border-gray-100 bg-slate-900 pb-4 pt-5 px-6">
-              <CardTitle className="flex items-center justify-between text-base text-white font-bold">
-                <span className="flex items-center gap-2">
-                  <Bot className="h-5 w-5 text-blue-400" />
+          <Card className="border-slate-200/80 shadow-sm h-full flex flex-col bg-white rounded-2xl overflow-hidden">
+            {/* Redesigned Header: Crisp, white, editorial */}
+            <CardHeader className="border-b border-slate-100 bg-white/50 backdrop-blur-md pb-4 pt-5 px-6">
+              <CardTitle className="flex items-center justify-between text-[15px] text-slate-900 font-extrabold tracking-tight">
+                <span className="flex items-center gap-2.5">
+                  <div className="p-1.5 bg-violet-50 text-violet-600 rounded-lg border border-violet-100/50 shadow-sm">
+                    <Bot className="h-4 w-4" />
+                  </div>
                   Agent Workforce
                 </span>
-                <Badge variant="outline" className="text-[10px] font-bold tracking-wider uppercase border-slate-700 bg-slate-800 text-slate-300">
+                <Badge variant="secondary" className="text-[10px] font-bold tracking-wider uppercase border-emerald-200/50 bg-emerald-50 text-emerald-700 shadow-sm">
                   {agents.length} Online
                 </Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="flex-1 p-5 bg-slate-50/50">
+            <CardContent className="flex-1 p-0 bg-slate-50/30">
               {!isLoading && agents.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center h-full">
-                  <div className="p-4 bg-white border border-gray-200 shadow-sm rounded-full mb-4">
-                    <Bot className="h-8 w-8 text-slate-300" />
+                <div className="flex flex-col items-center justify-center py-14 text-center h-full px-6">
+                  <div className="p-4 bg-white border border-slate-200/80 shadow-sm rounded-2xl mb-4">
+                    <Bot className="h-8 w-8 text-slate-300 stroke-[1.5]" />
                   </div>
-                  <h3 className="font-extrabold text-slate-900 text-base">No agents deployed</h3>
-                  <p className="text-sm text-slate-500 font-medium mt-1 mb-5 max-w-[200px] leading-relaxed">Start by deploying an autonomous monitor.</p>
-                  <Button size="sm" variant="outline" className="rounded-xl font-bold bg-white border-gray-200 shadow-sm hover:text-blue-600" asChild>
+                  <h3 className="font-extrabold tracking-tight text-slate-900 text-base">No agents deployed</h3>
+                  <p className="text-[13px] text-slate-500 font-medium mt-1 mb-6 max-w-[220px] leading-relaxed">Start by deploying an autonomous monitor to watch your metrics.</p>
+                  <Button size="sm" variant="outline" className="rounded-xl font-bold bg-white border-slate-200 shadow-sm hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50/50 transition-all" asChild>
                     <Link href="/agents/create">Deploy Agent</Link>
                   </Button>
                 </div>
               ) : (
-                <div className="grid gap-3 sm:grid-cols-1">
+                /* Redesigned List: Seamless, elegant divide, soft hover states */
+                <div className="flex flex-col divide-y divide-slate-100/80">
                   {agents.map((agent) => (
-                    <div key={agent.id} className="p-4 border border-gray-200 rounded-xl bg-white shadow-sm hover:border-blue-300 hover:shadow-md transition-all group">
-                      <div className="flex justify-between items-center mb-2">
-                        <Badge variant="secondary" className="text-[9px] font-bold font-mono uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">
+                    <div key={agent.id} className="p-5 hover:bg-slate-50/80 transition-colors group relative flex flex-col cursor-pointer">
+                      <div className="flex justify-between items-center mb-2.5">
+                        <Badge variant="secondary" className="text-[9px] font-bold font-mono uppercase tracking-widest bg-slate-100 text-slate-500 border border-slate-200/60 shadow-sm">
                           {agent.role}
                         </Badge>
                         <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1.5 uppercase tracking-wider">
-                          <span className="relative flex h-2 w-2">
+                          <span className="relative flex h-1.5 w-1.5">
                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                           </span>
                           {agent.status}
                         </span>
                       </div>
-                      <Link href={`/agents/${agent.id}`}>
-                        <h3 className="font-extrabold text-sm text-slate-900 mb-1 group-hover:text-blue-600 transition-colors">{agent.name}</h3>
+                      <Link href={`/agents/${agent.id}`} className="absolute inset-0 z-10">
+                        <span className="sr-only">View Agent {agent.name}</span>
                       </Link>
-                      <p className="text-xs text-slate-500 font-medium line-clamp-2 leading-relaxed">{agent.description}</p>
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-extrabold tracking-tight text-[14px] text-slate-900 mb-0.5 group-hover:text-blue-600 transition-colors">{agent.name}</h3>
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+                      </div>
+                      <p className="text-[12px] text-slate-500 font-medium line-clamp-1 leading-relaxed pr-6">{agent.description}</p>
                     </div>
                   ))}
                 </div>
@@ -447,17 +456,17 @@ export default function DashboardOverviewPage() {
             </CardContent>
           </Card>
 
-          {/* Quick Action: Chat */}
-          <Card className="border-blue-200 bg-blue-50/50 shadow-sm rounded-2xl overflow-hidden group hover:bg-blue-50 transition-colors">
+          {/* Redesigned Quick Action: Elegant glowing callout */}
+          <Card className="border-blue-100/80 bg-gradient-to-br from-blue-50/80 to-indigo-50/40 shadow-sm rounded-2xl overflow-hidden group hover:shadow-md hover:border-blue-200 transition-all duration-300">
             <CardContent className="p-5 flex items-center justify-between">
               <div>
-                <h4 className="font-extrabold text-sm flex items-center gap-2 text-blue-950">
-                  <MessageSquare className="h-4 w-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                <h4 className="font-extrabold tracking-tight text-[14px] flex items-center gap-2 text-blue-950">
+                  <MessageSquare className="h-4 w-4 text-blue-600 group-hover:scale-110 transition-transform duration-300" />
                   Manual Query
                 </h4>
-                <p className="text-xs text-blue-700/70 font-medium mt-1">Talk to your data directly.</p>
+                <p className="text-[12px] text-blue-800/70 font-medium mt-0.5">Talk to your data directly.</p>
               </div>
-              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-sm" asChild>
+              <Button size="sm" className="bg-white text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200 shadow-sm font-bold rounded-xl transition-all" asChild>
                 <Link href="/chat">Open Chat</Link>
               </Button>
             </CardContent>
