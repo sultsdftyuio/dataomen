@@ -97,6 +97,21 @@ export default async function proxy(request: NextRequest) {
   // API Routing Management (Crucial for Vercel -> Render Next.js Rewrites)
   const isApiRoute = pathname.startsWith('/api')
   const isApiPreflight = isApiRoute && request.method === 'OPTIONS'
+  const authHeader = request.headers.get('authorization') || ''
+  const hasBearerToken = authHeader.toLowerCase().startsWith('bearer ')
+
+  const buildApiCorsHeaders = () => {
+    const origin = request.headers.get('origin') || '*'
+    const requestedHeaders = request.headers.get('access-control-request-headers') || 'Authorization, Content-Type'
+
+    return {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Allow-Methods': 'GET,HEAD,POST,PUT,DELETE,PATCH,OPTIONS',
+      'Access-Control-Allow-Headers': requestedHeaders,
+      'Vary': 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method',
+    }
+  }
   
   // Define public APIs that bypass Edge Auth (e.g., Stripe Webhooks, Render Health Checks)
   const publicApiRoutes = [
@@ -110,7 +125,21 @@ export default async function proxy(request: NextRequest) {
 
   // Always allow CORS preflight checks to reach route handlers/rewrite targets.
   if (isApiPreflight) {
-    logRouteTrace('route_trace', { handler: 'proxy-preflight-pass', status: 204 })
+    logRouteTrace('route_trace', { handler: 'proxy-preflight-terminate', status: 204 })
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        ...buildApiCorsHeaders(),
+        'X-Route-Layer': EDGE_LAYER,
+        'X-Route-Handler': 'proxy-preflight-terminate',
+        'Allow': 'GET,HEAD,POST,PUT,DELETE,PATCH,OPTIONS',
+      },
+    })
+  }
+
+  // Permit token-authenticated API requests even when cookie session hydration is flaky.
+  if (isApiRoute && hasBearerToken) {
+    logRouteTrace('route_trace', { handler: 'proxy-bearer-pass', status: 200 })
     return NextResponse.next()
   }
 
@@ -138,6 +167,7 @@ export default async function proxy(request: NextRequest) {
         {
           status: 401,
           headers: {
+            ...buildApiCorsHeaders(),
             'X-Route-Layer': EDGE_LAYER,
             'X-Route-Handler': 'proxy-auth-gate',
           },
