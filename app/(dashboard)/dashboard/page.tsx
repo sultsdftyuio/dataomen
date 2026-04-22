@@ -3,19 +3,16 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { 
-  Activity, 
   Database, 
-  Bot, 
-  MessageSquare, 
   Sparkles,
-  Zap,
-  BrainCircuit,
-  BarChart3,
   ShieldCheck,
   Lock,
   RefreshCw,
   AlertCircle,
-  Pin
+  Pin,
+  Bot,
+  MessageSquare,
+  BarChart3
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -26,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from '@/utils/supabase/client'
 import { InsightsFeed } from "@/components/dashboard/InsightsFeed"
+import { cn } from "@/lib/utils"
 
 // -----------------------------------------------------------------------------
 // Type Definitions
@@ -53,7 +51,47 @@ interface TimeSeriesDataPoint {
 }
 
 // -----------------------------------------------------------------------------
-// Modular Stat Card (Engineered Design)
+// Bespoke Duotone Icons (Replacing Generic Lucide)
+// -----------------------------------------------------------------------------
+const IconSources = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className}>
+    <rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.3" />
+    <path d="M8 8h8v2H8z" fill="currentColor" />
+    <path d="M8 14h5v2H8z" fill="currentColor" />
+    <path d="M3 10h18" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.15" />
+    <circle cx="18" cy="15" r="1.5" fill="currentColor" />
+  </svg>
+)
+
+const IconAgents = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M12 4L4 8l8 4 8-4-8-4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    <path d="M4 12l8 4 8-4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeOpacity="0.3" />
+    <path d="M4 16l8 4 8-4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeOpacity="0.15" />
+    <circle cx="12" cy="12" r="2" fill="currentColor" />
+  </svg>
+)
+
+const IconQueries = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M4 20h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.3" />
+    <rect x="6" y="12" width="4" height="8" rx="1" fill="currentColor" fillOpacity="0.3" />
+    <rect x="14" y="6" width="4" height="14" rx="1" fill="currentColor" />
+    <path d="M4 14l5-5 4 3 6-7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="19" cy="5" r="1.5" fill="currentColor" />
+  </svg>
+)
+
+const IconHealth = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeOpacity="0.2" />
+    <path d="M8 11.5L11 14l5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="12" cy="12" r="8" fill="currentColor" fillOpacity="0.08" />
+  </svg>
+)
+
+// -----------------------------------------------------------------------------
+// Modular Stat Card (Refined Product-Grade UI)
 // -----------------------------------------------------------------------------
 const StatCard = ({ 
   title, 
@@ -68,27 +106,88 @@ const StatCard = ({
   isLoading: boolean,
   accent?: "default" | "blue" | "emerald" | "purple" | "amber"
 }) => {
-  const accentColors = {
-    default: "text-slate-500 bg-slate-50 border-slate-200",
-    blue: "text-blue-600 bg-blue-50 border-blue-100",
-    emerald: "text-emerald-600 bg-emerald-50 border-emerald-100",
-    purple: "text-violet-600 bg-violet-50 border-violet-100",
-    amber: "text-amber-600 bg-amber-50 border-amber-100"
+  const accents = {
+    default: {
+      iconText: "text-slate-600",
+      iconBg: "bg-slate-50/50 border-slate-200/60",
+      glow: "group-hover:shadow-[0_8px_24px_-6px_rgba(100,116,139,0.12)]",
+      borderHover: "hover:border-slate-300",
+      bgGradient: "bg-gradient-to-br from-white to-slate-50/50",
+      lineGradient: "from-slate-200/0 via-slate-400/20 to-slate-200/0"
+    },
+    blue: {
+      iconText: "text-blue-600",
+      iconBg: "bg-blue-50/50 border-blue-100",
+      glow: "group-hover:shadow-[0_8px_24px_-6px_rgba(37,99,235,0.15)]",
+      borderHover: "hover:border-blue-300",
+      bgGradient: "bg-gradient-to-br from-white via-white to-blue-50/30",
+      lineGradient: "from-blue-200/0 via-blue-500/20 to-blue-200/0"
+    },
+    emerald: {
+      iconText: "text-emerald-600",
+      iconBg: "bg-emerald-50/50 border-emerald-100",
+      glow: "group-hover:shadow-[0_8px_24px_-6px_rgba(16,185,129,0.15)]",
+      borderHover: "hover:border-emerald-300",
+      bgGradient: "bg-gradient-to-br from-white via-white to-emerald-50/30",
+      lineGradient: "from-emerald-200/0 via-emerald-500/20 to-emerald-200/0"
+    },
+    purple: {
+      iconText: "text-violet-600",
+      iconBg: "bg-violet-50/50 border-violet-100",
+      glow: "group-hover:shadow-[0_8px_24px_-6px_rgba(139,92,246,0.15)]",
+      borderHover: "hover:border-violet-300",
+      bgGradient: "bg-gradient-to-br from-white via-white to-violet-50/30",
+      lineGradient: "from-violet-200/0 via-violet-500/20 to-violet-200/0"
+    },
+    amber: {
+      iconText: "text-amber-600",
+      iconBg: "bg-amber-50/50 border-amber-100",
+      glow: "group-hover:shadow-[0_8px_24px_-6px_rgba(245,158,11,0.15)]",
+      borderHover: "hover:border-amber-300",
+      bgGradient: "bg-gradient-to-br from-white via-white to-amber-50/30",
+      lineGradient: "from-amber-200/0 via-amber-500/20 to-amber-200/0"
+    }
   };
 
+  const style = accents[accent];
+
   return (
-    <Card className="border-gray-200/80 shadow-sm bg-white hover:border-blue-300 hover:shadow-md transition-all duration-300 rounded-2xl overflow-hidden group">
-      <CardHeader className="flex flex-row items-center justify-between pb-2 pt-5 px-6">
-        <CardTitle className="text-xs font-bold uppercase tracking-widest text-slate-500">{title}</CardTitle>
-        <div className={`p-2 rounded-xl border ${accentColors[accent]} transition-transform group-hover:scale-110`}>
-          <Icon className="h-4 w-4" />
+    <Card className={cn(
+      "relative overflow-hidden transition-all duration-500 ease-out",
+      "border border-slate-200/80 shadow-sm rounded-2xl group cursor-default",
+      style.bgGradient,
+      style.borderHover,
+      style.glow
+    )}>
+      {/* Subtle top illuminating edge on hover */}
+      <div className={cn(
+        "absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500",
+        style.lineGradient
+      )} />
+
+      <CardHeader className="flex flex-row items-center justify-between pb-2 pt-6 px-6">
+        <CardTitle className="text-[11px] font-extrabold uppercase tracking-widest text-slate-500 group-hover:text-slate-600 transition-colors">
+          {title}
+        </CardTitle>
+        <div className={cn(
+          "p-2 rounded-xl border transition-all duration-500 ease-out",
+          "group-hover:scale-[1.08] group-hover:-translate-y-[2px] shadow-sm",
+          style.iconBg,
+          style.iconText
+        )}>
+          <Icon className="h-5 w-5" />
         </div>
       </CardHeader>
-      <CardContent className="px-6 pb-5">
+      
+      <CardContent className="px-6 pb-6">
         {isLoading ? (
-          <Skeleton className="h-8 w-24 rounded-lg" />
+          <Skeleton className="h-10 w-24 rounded-lg bg-slate-100" />
         ) : (
-          <div className="text-3xl font-extrabold text-slate-900 tracking-tight">{value}</div>
+          <div className="flex items-baseline gap-2">
+            <div className="text-4xl font-extrabold text-slate-900 tracking-tighter tabular-nums drop-shadow-sm">
+              {value}
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -103,7 +202,7 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
     return data.length > 0 ? Math.max(...data.map(d => d.revenue), 1) : 1;
   }, [data]);
   
-  if (isLoading) return <Skeleton className="w-full h-[320px] rounded-2xl col-span-1 md:col-span-2 lg:col-span-4" />;
+  if (isLoading) return <Skeleton className="w-full h-[320px] rounded-2xl col-span-1 md:col-span-2 lg:col-span-4 bg-slate-100" />;
 
   if (data.length === 0) {
     return (
@@ -118,11 +217,11 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
   }
 
   return (
-    <Card className="border-gray-200/80 shadow-sm bg-white col-span-1 md:col-span-2 lg:col-span-4 rounded-2xl overflow-hidden flex flex-col">
+    <Card className="border-gray-200/80 shadow-sm bg-gradient-to-b from-white to-slate-50/30 col-span-1 md:col-span-2 lg:col-span-4 rounded-2xl overflow-hidden flex flex-col hover:border-blue-200 hover:shadow-[0_8px_30px_-10px_rgba(37,99,235,0.1)] transition-all duration-500">
       <CardHeader className="flex flex-row items-center justify-between pb-4 pt-5 px-6 border-b border-gray-100 shrink-0">
         <div>
           <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
-            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg border border-blue-100/50">
               <BarChart3 className="h-4 w-4" />
             </div>
             30-Day Executive Pulse
@@ -133,19 +232,18 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
           <RefreshCw className="h-3 w-3 mr-1.5 inline animate-spin" /> Live Engine
         </Badge>
       </CardHeader>
-      <CardContent className="pt-6 px-6 pb-6 flex-1 bg-slate-50/30">
+      <CardContent className="pt-6 px-6 pb-6 flex-1">
         <div className="h-[200px] w-full flex items-end gap-1.5 mt-2">
           {data.map((point, i) => (
             <div key={i} className="relative flex-1 group h-full flex items-end">
               <div 
-                className="w-full bg-blue-200/50 group-hover:bg-blue-600 transition-all duration-300 rounded-t-sm cursor-pointer shadow-[inset_0_-2px_4px_rgba(0,0,0,0.05)] group-hover:shadow-[0_0_10px_rgba(37,99,235,0.4)]"
+                className="w-full bg-blue-100/70 border border-blue-200/50 group-hover:bg-blue-600 group-hover:border-blue-500 transition-all duration-300 rounded-t-sm cursor-pointer shadow-[inset_0_-2px_4px_rgba(0,0,0,0.02)] group-hover:shadow-[0_4px_16px_rgba(37,99,235,0.4)]"
                 style={{ height: `${Math.max((point.revenue / maxRevenue) * 100, 2)}%` }}
               >
                 {/* Executive Hover Tooltip */}
-                <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-3 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 whitespace-nowrap shadow-xl border border-slate-800">
+                <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-3 py-2 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 translate-y-2 group-hover:translate-y-0 pointer-events-none z-10 whitespace-nowrap shadow-xl border border-slate-800">
                   <span className="font-bold text-slate-400 block mb-0.5 text-[10px] uppercase tracking-widest">{point.date}</span>
                   <div className="font-mono font-bold text-sm text-emerald-400">${point.revenue.toLocaleString()}</div>
-                  {/* Tooltip Arrow */}
                   <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
                 </div>
               </div>
@@ -163,7 +261,6 @@ const MasterTrendChart = ({ data, isLoading }: { data: TimeSeriesDataPoint[], is
 export default function DashboardOverviewPage() {
   const router = useRouter();
   
-  // FIX 1: Memoize Supabase Client to prevent multiple instances & memory leaks on re-renders
   const supabase = useMemo(() => createClient(), []);
   
   const [metrics, setMetrics] = useState<WorkspaceMetrics | null>(null);
@@ -188,7 +285,6 @@ export default function DashboardOverviewPage() {
 
       const { data: { session } } = await supabase.auth.getSession();
       
-      // FIX 2: Point to the correct physical routing architecture
       const response = await fetch('/api/chat/orchestrate/workspace/metrics', {
         method: 'GET',
         headers: {
@@ -257,7 +353,7 @@ export default function DashboardOverviewPage() {
         </div>
         <div className="flex gap-3 items-center">
           <Button variant="outline" size="icon" onClick={fetchRealData} disabled={isLoading} className="text-slate-500 hover:text-blue-600 rounded-xl border-gray-200 shadow-sm bg-white">
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
           </Button>
           <Button variant="outline" className="rounded-xl font-bold bg-white shadow-sm border-gray-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50" asChild>
             <Link href="/datasets"><Database className="mr-2 h-4 w-4 text-blue-500" />Sources</Link>
@@ -268,12 +364,12 @@ export default function DashboardOverviewPage() {
         </div>
       </div>
 
-      {/* Bird's Eye Metrics */}
+      {/* Bird's Eye Metrics (Upgraded to Product-Grade UI with Bespoke Icons) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        <StatCard title="Connected Sources" value={metrics?.totalDatasets ?? 0} icon={Database} isLoading={isLoading} accent="blue" />
-        <StatCard title="Active Agents" value={metrics?.activeAgents ?? 0} icon={BrainCircuit} isLoading={isLoading} accent="purple" />
-        <StatCard title="Total Queries" value={(metrics?.queriesRun ?? 0).toLocaleString()} icon={Activity} isLoading={isLoading} accent="amber" />
-        <StatCard title="System Health" value={`${metrics?.healthScore ?? 0}%`} icon={Zap} isLoading={isLoading} accent="emerald" />
+        <StatCard title="Connected Sources" value={metrics?.totalDatasets ?? 0} icon={IconSources} isLoading={isLoading} accent="blue" />
+        <StatCard title="Active Agents" value={metrics?.activeAgents ?? 0} icon={IconAgents} isLoading={isLoading} accent="purple" />
+        <StatCard title="Total Queries" value={(metrics?.queriesRun ?? 0).toLocaleString()} icon={IconQueries} isLoading={isLoading} accent="amber" />
+        <StatCard title="System Health" value={`${metrics?.healthScore ?? 0}%`} icon={IconHealth} isLoading={isLoading} accent="emerald" />
         
         <MasterTrendChart data={chartData} isLoading={isLoading} />
       </div>
