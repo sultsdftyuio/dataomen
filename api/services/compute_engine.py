@@ -480,7 +480,21 @@ class ComputeEngine:
     ) -> str:
         if not injected_views:
             return physical_query
-        return physical_query
+        
+        try:
+            ast = sqlglot.parse_one(physical_query, read="duckdb")
+            for view_sql in injected_views:
+                try:
+                    view_ast = sqlglot.parse_one(view_sql, read="duckdb")
+                    if view_ast.args.get("with"):
+                        for cte in view_ast.args["with"].expressions:
+                            ast = ast.with_(cte.alias, as_=cte.this)
+                except Exception as e:
+                    logger.warning(f"Skipping malformed semantic view: {e}")
+            return ast.sql(dialect="duckdb")
+        except Exception as e:
+            logger.error(f"Failed to inject semantic views: {e}")
+            return physical_query
 
     # ------------------------------------------------------------------
     # FIX #4 — Enforce result size limit on any SQL string

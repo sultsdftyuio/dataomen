@@ -4,6 +4,7 @@ Component: Omni-Graph Query Planner & Semantic Budget Governor
 Strategy: Semantic Routing, Schema Pruning, Contextual RAG & Semantic Budgeting
 """
 
+import tiktoken
 import logging
 import ast
 import json
@@ -17,6 +18,7 @@ from sqlalchemy import or_
 
 # Arcli Core Infrastructure
 from api.services.llm_client import LLMClient, llm_client as default_llm
+from api.services.join_graph_validator import join_graph_validator
 from models import Dataset, Agent, SemanticMetric
 
 logger = logging.getLogger(__name__)
@@ -131,10 +133,15 @@ class QueryPlanner:
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm_client = llm_client or default_llm
-        self.MAX_SCHEMA_TOKENS = 8000
+        self.MAX_SCHEMA_TOKENS = 6000
         self.MAX_JOIN_DEPTH = 2
         self.MAX_DATASETS = 3
         self.MAX_COMPLEXITY_SCORE = self._resolve_planner_complexity_limit()
+        try:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            logger.warning("tiktoken not found, falling back to character-based token estimation.")
+            self.tokenizer = None
 
     def _resolve_planner_complexity_limit(self) -> float:
         """Best-effort alignment with compiler-side complexity limits."""
@@ -743,15 +750,25 @@ class QueryPlanner:
             self._fetch_trusted_registry, db, tenant_id, target_ids
         )
 
-        # 2. Semantic Budgeting (Token Efficiency & Pruning against Ground-Truth)
-        schema_string = json.dumps(trusted_registry, separators=(',', ':'))
-        estimated_tokens = len(schema_string) / 4.0 
-        
-        if estimated_tokens > self.MAX_SCHEMA_TOKENS:
-            logger.warning(f"[{tenant_id}] Schema Context ({estimated_tokens:.0f} tokens). Enforcing progressive pruning.")
-            active_schema_context = self._prune_schema(trusted_registry, max_cols=150)
-        else:
-            active_schema_context = trusted_registry
+        # 2. Graph-Aware Schema Expansion
+        alias_index = self._build_dataset_alias_index(trusted_registry)
+        expanded_target_ids = await self._expand_targets_with_join_graph(
+            initial_target_ids=target_ids,
+            trusted_registry=trusted_registry,
+            alias_index=alias_index,
+        )
+        # Filter the registry to only include the expanded set of tables
+        graph_aware_registry = {
+            ds_id: ds_meta
+            for ds_id, ds_meta in trusted_registry.items()
+            if ds_id in expanded_target_ids
+        }
+
+        # 3. Semantic Budgeting (Token Efficiency & Pruning against Ground-Truth)
+        active_schema_context = self._prune_schema_for_llm_context(graph_aware_registry, max_tokens=self.MAX_SCHEMA_TOKENS)
+        schema_string = json.dumps(active_schema_context, separators=(',', ':'))
+        estimated_tokens = len(self.tokenizer.encode(schema_string)) if self.tokenizer else len(schema_string) / 4
+        logger.info(f"[{tenant_id}] Final schema context size: {estimated_tokens:.0f} tokens.")
 
         # 3. Extract Governed Metrics Safely (Offload sync DB I/O)
         governed_metrics = await asyncio.to_thread(
@@ -766,7 +783,7 @@ class QueryPlanner:
             } for m in governed_metrics
         ]
 
-        # 4. Inject Structured Join Path Reasoning (Only from Trusted Registry)
+        # 4. Inject Structured Join Path Reasoning (from the expanded graph-aware registry)
         alias_index = self._build_dataset_alias_index(trusted_registry)
         authorized_ids = {str(ds_id) for ds_id in trusted_registry.keys()}
 

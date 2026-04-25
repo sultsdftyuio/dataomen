@@ -1708,29 +1708,27 @@ RULES:
 
             standardized = ast.sql(dialect=self.DIALECT, pretty=True)
 
-            import duckdb
-            sandbox_conn = duckdb.connect(database=":memory:")
             try:
-                sandbox_conn.execute(
-                    "PRAGMA memory_limit='1GB'; PRAGMA threads=1;"
-                )
-                for alias, path in dataset_paths.items():
-                    sandbox_conn.execute(
-                        f"CREATE VIEW {alias} AS SELECT * FROM read_parquet('{path}')"
-                    )
-                sandbox_conn.execute(f"EXPLAIN {standardized}")
-                return {
-                    "is_valid":            True,
-                    "sql":                 standardized,
-                    "ast_node_complexity": node_count,
-                }
-            except duckdb.Error as plan_error:
+                with SessionLocal() as db_session:
+                    with storage_manager.duckdb_session(db_session, tenant_id) as sandbox_conn:
+                        sandbox_conn.execute(
+                            "PRAGMA memory_limit='1GB'; PRAGMA threads=1;"
+                        )
+                        for alias, path in dataset_paths.items():
+                            sandbox_conn.execute(
+                                f"CREATE VIEW {alias} AS SELECT * FROM read_parquet('{path}')"
+                            )
+                        sandbox_conn.execute(f"EXPLAIN {standardized}")
+                        return {
+                            "is_valid":            True,
+                            "sql":                 standardized,
+                            "ast_node_complexity": node_count,
+                        }
+            except Exception as plan_error:
                 return {
                     "is_valid": False,
                     "error":    f"Physical optimizer check failed: {plan_error}",
                 }
-            finally:
-                sandbox_conn.close()
 
         except sqlglot.errors.ParseError as e:
             return {"is_valid": False, "error": f"AST parse error: {e}"}

@@ -134,22 +134,13 @@ def _run_async(coro: Any) -> Any:
         running_loop = None
 
     if running_loop and running_loop.is_running():
-        result: Dict[str, Any] = {}
-        error: Dict[str, BaseException] = {}
+        import concurrent.futures
 
-        def _runner() -> None:
-            try:
-                result["value"] = asyncio.run(coro)
-            except BaseException as exc:
-                error["value"] = exc
-
-        thread = Thread(target=_runner, daemon=True)
-        thread.start()
-        thread.join()
-
-        if "value" in error:
-            raise error["value"]
-        return result.get("value")
+        def _runner() -> Any:
+            return asyncio.run(coro)
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(_runner).result()
 
     return asyncio.run(coro)
 
@@ -351,27 +342,32 @@ def process_ingestion_dataset(self: Any, dataset_id: str, tenant_id: str) -> Opt
 
         except SoftTimeLimitExceeded:
             logger.error(f"❌ [{tenant_id}] Task timeout: {dataset_id}")
+            db.rollback()
             if dataset is not None:
-                dataset.status = DatasetStatus.FAILED
-                dataset.schema_metadata = {
-                    **(dataset.schema_metadata or {}),
-                    "ingestion_stage": "failed",
-                    "ingestion_failed_key": idempotency_key,
-                    "error": "Operation timed out.",
-                }
+                db.query(Dataset).filter(Dataset.id == dataset_id).update({
+                    "status": DatasetStatus.FAILED,
+                    "schema_metadata": {
+                        **(dataset.schema_metadata or {}),
+                        "ingestion_stage": "failed",
+                        "ingestion_failed_key": idempotency_key,
+                        "error": "Operation timed out.",
+                    }
+                })
                 db.commit()
 
         except Exception as e:
             logger.error(f"❌ [{tenant_id}] Ingestion failed: {dataset_id} | {e}")
             db.rollback()
             if dataset is not None:
-                dataset.status = DatasetStatus.FAILED
-                dataset.schema_metadata = {
-                    **(dataset.schema_metadata or {}),
-                    "ingestion_stage": "failed",
-                    "ingestion_failed_key": idempotency_key,
-                    "error": str(e),
-                }
+                db.query(Dataset).filter(Dataset.id == dataset_id).update({
+                    "status": DatasetStatus.FAILED,
+                    "schema_metadata": {
+                        **(dataset.schema_metadata or {}),
+                        "ingestion_stage": "failed",
+                        "ingestion_failed_key": idempotency_key,
+                        "error": str(e),
+                    }
+                })
                 db.commit()
             raise self.retry(exc=e, countdown=60)
 
@@ -466,7 +462,10 @@ def execute_heavy_analytical_pipeline(
             meta={"status": "Running mathematical insight gauntlet..."},
         )
         import polars as pl
-        df = pl.DataFrame(query_result)
+        if isinstance(query_result, list) and len(query_result) > 0 and isinstance(query_result[0], dict):
+            df = pl.from_dicts(query_result, infer_schema_length=500)
+        else:
+            df = pl.DataFrame(query_result)
         insights = _insight_engine().analyze_dataframe(df, plan, tenant_id)
 
         del df
@@ -502,7 +501,7 @@ def execute_heavy_analytical_pipeline(
         return {
             "status": "success",
             "type": "chart" if chart_spec else "table",
-            "data": query_result,
+            "data": query_result[:1000] if isinstance(query_result, list) else query_result,
             "sql_used": sql_query,
             "chart_spec": chart_spec,
             "row_count": len(query_result) if hasattr(query_result, "__len__") else 0,

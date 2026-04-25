@@ -160,7 +160,13 @@ export interface IntegrationField {
   options?: { label: string; value: string }[]
   validationHint?: string
   autofillSource?: boolean
-  autoDetectPattern?: RegExp
+  /**
+   * @deprecated Do NOT set this. Auto-detection must only trigger on explicit
+   * paste events, never on onChange (which would behave like a keylogger for
+   * sensitive credentials). Use `detectIntegrationFromInput()` in
+   * connection-service.ts for the safe paste-gated alternative.
+   */
+  autoDetectPattern?: never
 }
 
 export interface PhaseMeta {

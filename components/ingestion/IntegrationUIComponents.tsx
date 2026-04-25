@@ -14,21 +14,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 import type { 
   IntegrationConfig, DetectedTable, ConnectionError, FirstInsight, 
   BackendPhaseKey, ConfidenceLevel, ConnectionResult 
 } from '@/types/integration'
 import { PHASE_META } from '@/lib/integration-config'
-
-// Mock Framer Motion for zero-dependency compatibility (replace with actual framer-motion if installed)
-interface AnimatePresenceProps { children: React.ReactNode; mode?: 'wait' | 'sync' | 'popLayout' }
-const AnimatePresence: React.FC<React.PropsWithChildren<AnimatePresenceProps>> = ({ children }) => <>{children}</>
-const motion = {
-  div: ({ children, initial, animate, exit, transition, ...props }: any) => <div {...props}>{children}</div>,
-  button: ({ children, initial, animate, exit, transition, ...props }: any) => <button {...props}>{children}</button>,
-}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SHARED UTILITIES & SMALL COMPONENTS
@@ -55,36 +47,38 @@ export function PasswordInput({ id, name, placeholder, disabled, onChange, value
 
 export function WhyTooltip({ text }: { text: string }) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button type="button" className="ml-1.5 text-slate-400 hover:text-blue-500 transition-colors inline-flex items-center">
-            <Info className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right" className="max-w-[240px] text-xs leading-relaxed font-medium bg-slate-900 text-white border-slate-800 p-3">
-          <span className="font-bold text-blue-300 block mb-1">Why we need this</span>
-          {text}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className="ml-1.5 text-slate-400 hover:text-blue-500 transition-colors inline-flex items-center">
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" className="max-w-[240px] text-xs leading-relaxed font-medium bg-slate-900 text-white border-slate-800 p-3">
+        <span className="font-bold text-blue-300 block mb-1">Why we need this</span>
+        {text}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
+const CONFIDENCE_STYLES = { 
+  high: 'bg-emerald-100 text-emerald-700 border-emerald-200', 
+  medium: 'bg-amber-100 text-amber-700 border-amber-200', 
+  low: 'bg-slate-100 text-slate-600 border-slate-200' 
+}
+
 export function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
-  const styles = { high: 'bg-emerald-100 text-emerald-700 border-emerald-200', medium: 'bg-amber-100 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' }
-  return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${styles[level]}`}>{level} confidence</span>
+  return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${CONFIDENCE_STYLES[level]}`}>{level} confidence</span>
 }
 
 export function AutoDetectionToast({ integrationName, onAccept, onDismiss }: { integrationName: string; onAccept: () => void; onDismiss: () => void }) {
   return (
-    <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
-      className="absolute top-4 left-4 right-4 z-10 bg-slate-900 text-white rounded-xl p-3 flex items-center gap-3 shadow-xl">
+    <div className="absolute top-4 left-4 right-4 z-10 bg-slate-900 text-white rounded-xl p-3 flex items-center gap-3 shadow-xl animate-in slide-in-from-top-4 fade-in duration-300">
       <Sparkles className="h-4 w-4 text-blue-400" />
       <span className="text-sm">Detected <span className="font-bold">{integrationName}</span></span>
       <button onClick={onDismiss} className="ml-auto text-xs font-bold text-slate-400 hover:text-white px-2">No thanks</button>
       <button onClick={onAccept} className="text-xs font-bold bg-blue-500 hover:bg-blue-600 px-3 py-1.5 rounded-lg transition-colors">Use This</button>
-    </motion.div>
+    </div>
   )
 }
 
@@ -121,13 +115,21 @@ export function GuidedStepIndicator({ steps, currentStep }: { steps: { id: strin
 
 export function PhaseProgressPanel({ phase, detectedTables }: { phase: BackendPhaseKey; detectedTables: DetectedTable[] }) {
   const meta = PHASE_META[phase]
-  if (!meta) return null
-  const Icon = meta.icon
-  const recentTables = detectedTables.slice(-3)
+  if (!meta) {
+    console.warn(`Unknown phase: ${phase}`)
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400 mx-auto mb-2" />
+        <p className="text-sm font-bold text-slate-600">Processing...</p>
+      </div>
+    )
+  }
   
+  const Icon = meta.icon
+  const recentTables = React.useMemo(() => detectedTables.slice(-3), [detectedTables])
+
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 overflow-hidden">
+    <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50/80 to-indigo-50/80 overflow-hidden animate-in slide-in-from-bottom-2 fade-in duration-300">
       <div className="p-5">
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-xl bg-white shadow-sm ${meta.color}`}>
@@ -142,44 +144,39 @@ export function PhaseProgressPanel({ phase, detectedTables }: { phase: BackendPh
           </div>
         </div>
         <div className="mt-4 h-2 bg-slate-200/50 rounded-full overflow-hidden">
-          <motion.div initial={{ width: 0 }} animate={{ width: `${meta.progress}%` }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-            className={`h-full rounded-full ${phase === 'error' ? 'bg-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} />
+          <div style={{ width: `${meta.progress}%` }}
+            className={`h-full rounded-full transition-all duration-500 ease-out ${phase === 'error' ? 'bg-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'}`} />
         </div>
         {detectedTables.length > 0 && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-            className="mt-4 pt-4 border-t border-blue-100/50">
+          <div className="mt-4 pt-4 border-t border-blue-100/50 animate-in fade-in duration-300">
             <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Activity className="h-3 w-3" /> Live Detection
             </p>
             <div className="space-y-1.5">
-              <AnimatePresence>
-                {recentTables.map((table) => (
-                  <motion.div key={table.name} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                    className="flex items-center justify-between text-xs py-1.5 px-2 bg-white/50 rounded-lg">
+                {recentTables.map((table, i) => (
+                  <div key={`${table.name}-${table.rowCount}`} style={{ animationDelay: `${i * 50}ms` }}
+                    className="flex items-center justify-between text-xs py-1.5 px-2 bg-white/50 rounded-lg animate-in slide-in-from-left-2 fade-in duration-300 fill-mode-both">
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
                       <span className="font-mono font-medium text-slate-700">{table.name}</span>
                     </div>
                     <span className="text-slate-400 font-medium">{table.rowCount} rows</span>
-                  </motion.div>
+                  </div>
                 ))}
-              </AnimatePresence>
               {detectedTables.length > 3 && (
                 <p className="text-[10px] text-slate-400 pl-5.5">+{detectedTables.length - 3} more tables detected</p>
               )}
             </div>
-          </motion.div>
+          </div>
         )}
       </div>
-    </motion.div>
+    </div>
   )
 }
 
 export function OAuthPreEducation({ providerName, permissions }: { providerName: string; permissions: string[] }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-blue-100 bg-blue-50/50 overflow-hidden mb-6">
+    <div className="rounded-2xl border border-blue-100 bg-blue-50/50 overflow-hidden mb-6 animate-in slide-in-from-bottom-2 fade-in duration-300">
       <div className="px-4 py-3 border-b border-blue-100 flex items-center gap-2">
         <Shield className="h-4 w-4 text-blue-500" />
         <span className="text-sm font-bold text-blue-800">What happens next</span>
@@ -213,19 +210,34 @@ export function OAuthPreEducation({ providerName, permissions }: { providerName:
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
-export function EnhancedSecurityProofPanel() {
-  const proofs = [
-    { icon: KeyRound, label: 'Credentials encrypted', detail: 'AES-256-GCM via HashiCorp Vault', badge: 'Enterprise-grade' },
-    { icon: Shield, label: 'Access scoped read-only', detail: 'No INSERT, UPDATE, or DELETE permissions', badge: 'Zero risk' },
-    { icon: Wifi, label: 'Connection via TLS 1.3', detail: 'End-to-end encryption enforced', badge: 'Secure' },
-    { icon: Fingerprint, label: 'No data stored', detail: 'Only metadata & schema cached', badge: 'Privacy-first' },
-    { icon: FileCheck, label: 'SOC 2 Type II Certified', detail: 'Annual security audits', badge: 'Compliant' },
-    { icon: Ban, label: 'Revoke anytime', detail: 'One-click disconnect in settings', badge: 'You control' },
-  ]
+export interface SecurityConfig {
+  encrypted?: boolean;
+  readOnly?: boolean;
+  tls?: boolean;
+  noDataStored?: boolean;
+  soc2?: boolean;
+  revokable?: boolean;
+}
+
+const ALL_PROOFS = {
+  encrypted: { icon: KeyRound, label: 'Credentials encrypted', detail: 'AES-256-GCM via HashiCorp Vault', badge: 'Enterprise-grade' },
+  readOnly: { icon: Shield, label: 'Access scoped read-only', detail: 'No INSERT, UPDATE, or DELETE permissions', badge: 'Zero risk' },
+  tls: { icon: Wifi, label: 'Connection via TLS 1.3', detail: 'End-to-end encryption enforced', badge: 'Secure' },
+  noDataStored: { icon: Fingerprint, label: 'No data stored', detail: 'Only metadata & schema cached', badge: 'Privacy-first' },
+  soc2: { icon: FileCheck, label: 'SOC 2 Type II Certified', detail: 'Annual security audits', badge: 'Compliant' },
+  revokable: { icon: Ban, label: 'Revoke anytime', detail: 'One-click disconnect in settings', badge: 'You control' }
+};
+
+export function EnhancedSecurityProofPanel({ config = { encrypted: true, readOnly: true, tls: true, noDataStored: true, revokable: true } }: { config?: SecurityConfig }) {
+  const activeProofs = Object.entries(config)
+    .filter(([_, enabled]) => enabled)
+    .map(([key]) => ALL_PROOFS[key as keyof typeof ALL_PROOFS])
+    .filter(Boolean);
+
   return (
     <div className="rounded-2xl border border-slate-100 bg-slate-50/50 overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
@@ -233,7 +245,7 @@ export function EnhancedSecurityProofPanel() {
         <span className="text-sm font-bold text-slate-800">Security & Privacy</span>
       </div>
       <div className="divide-y divide-slate-100">
-        {proofs.map(p => (
+        {activeProofs.map(p => (
           <div key={p.label} className="flex items-center gap-3 px-4 py-3 group hover:bg-slate-50 transition-colors">
             <div className="p-1.5 bg-emerald-50 rounded-lg flex-shrink-0 group-hover:scale-110 transition-transform">
               <p.icon className="h-3.5 w-3.5 text-emerald-600" />
@@ -253,11 +265,16 @@ export function EnhancedSecurityProofPanel() {
   )
 }
 
+const ANALYSIS_QUALITY_COLORS = { 
+  excellent: 'bg-emerald-100 text-emerald-600', 
+  good: 'bg-blue-100 text-blue-600', 
+  fair: 'bg-amber-100 text-amber-600', 
+  poor: 'bg-red-100 text-red-600' 
+}
+
 export function AIAnalysisPanel({ analysis }: { analysis: NonNullable<ConnectionResult['aiAnalysis']> }) {
-  const qualityColors = { excellent: 'bg-emerald-100 text-emerald-600', good: 'bg-blue-100 text-blue-600', fair: 'bg-amber-100 text-amber-600', poor: 'bg-red-100 text-red-600' }
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-pink-50/80 overflow-hidden mb-6">
+    <div className="rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-pink-50/80 overflow-hidden mb-6 animate-in slide-in-from-bottom-2 fade-in duration-300">
       <div className="px-4 py-3 border-b border-purple-100 flex items-center gap-2">
         <Brain className="h-4 w-4 text-purple-500" />
         <span className="text-sm font-bold text-purple-800">AI-Powered Analysis</span>
@@ -265,7 +282,7 @@ export function AIAnalysisPanel({ analysis }: { analysis: NonNullable<Connection
       </div>
       <div className="p-4 space-y-4">
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-xl ${qualityColors[analysis.dataQuality]}`}>
+          <div className={`p-2 rounded-xl ${ANALYSIS_QUALITY_COLORS[analysis.dataQuality]}`}>
             <Activity className="h-4 w-4" />
           </div>
           <div>
@@ -296,19 +313,19 @@ export function AIAnalysisPanel({ analysis }: { analysis: NonNullable<Connection
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
+const getStatusIcon = (s: DetectedTable['mappingStatus']) => {
+  if (s === 'ok') return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+  if (s === 'warning') return <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+  return <XCircle className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
+}
+
 export function EnhancedSchemaPreview({ tables, integration }: { tables: DetectedTable[]; integration: IntegrationConfig }) {
-  const statusIcon = (s: DetectedTable['mappingStatus']) => {
-    if (s === 'ok') return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
-    if (s === 'warning') return <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-    return <XCircle className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
-  }
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-emerald-100 bg-emerald-50/50 overflow-hidden mb-6">
+    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/50 overflow-hidden mb-6 animate-in slide-in-from-bottom-2 fade-in duration-300">
       <div className="px-4 py-3 border-b border-emerald-100 flex items-center gap-2">
         <Table2 className="h-4 w-4 text-emerald-600" />
         <span className="text-sm font-bold text-emerald-800">Detected Tables</span>
@@ -318,11 +335,11 @@ export function EnhancedSchemaPreview({ tables, integration }: { tables: Detecte
         {tables.map((t, index) => {
           const insight = integration.tableInsights?.[t.name]
           return (
-            <motion.div key={t.name} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.05 }}
-              className="px-4 py-3 group hover:bg-emerald-50/80 transition-colors">
+            <div key={`${t.name}-${t.rowCount}`} style={{ animationDelay: `${index * 50}ms` }}
+              className="px-4 py-3 group hover:bg-emerald-50/80 transition-colors animate-in slide-in-from-left-2 fade-in duration-300 fill-mode-both">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {statusIcon(t.mappingStatus)}
+                  {getStatusIcon(t.mappingStatus)}
                   <span className="text-sm font-mono font-bold text-slate-700">{t.name}</span>
                   {t.mappingStatus === 'warning' && (
                     <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">partial</span>
@@ -341,18 +358,17 @@ export function EnhancedSchemaPreview({ tables, integration }: { tables: Detecte
                   </div>
                 </div>
               )}
-            </motion.div>
+            </div>
           )
         })}
       </div>
-    </motion.div>
+    </div>
   )
 }
 
 export function ActionableErrorPanel({ error, onRetry }: { error: ConnectionError; onRetry: () => void }) {
   return (
-    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-      className="rounded-2xl border border-red-100 bg-red-50 overflow-hidden mb-6">
+    <div className="rounded-2xl border border-red-100 bg-red-50 overflow-hidden mb-6 animate-in zoom-in-95 fade-in duration-300">
       <div className="p-5">
         <div className="flex items-start gap-3">
           <div className="p-2 bg-red-100 rounded-xl flex-shrink-0">
@@ -377,15 +393,14 @@ export function ActionableErrorPanel({ error, onRetry }: { error: ConnectionErro
           </div>
         </div>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
 export function DebugPanel({ error, onClose }: { error: ConnectionError; onClose: () => void }) {
   if (!error.debugInfo) return null
   return (
-    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-      className="mt-4 rounded-xl border border-slate-200 bg-slate-900 overflow-hidden">
+    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-900 overflow-hidden animate-in fade-in duration-300">
       <div className="px-4 py-2 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bug className="h-4 w-4 text-amber-500" />
@@ -409,7 +424,7 @@ export function DebugPanel({ error, onClose }: { error: ConnectionError; onClose
           ))}
         </div>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -417,8 +432,8 @@ export function FirstInsightCard({ insight }: { insight: FirstInsight }) {
   const Icon = insight.icon
   const isPositive = insight.change.direction === 'up' && insight.change.value > 0
   return (
-    <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-      className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div 
+      className="animate-in zoom-in-95 fade-in duration-300 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between mb-3">
         <div className={`p-2 rounded-lg ${insight.color}`}><Icon className="h-5 w-5" /></div>
         <div className={`flex items-center gap-1 text-sm font-bold ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
@@ -428,14 +443,13 @@ export function FirstInsightCard({ insight }: { insight: FirstInsight }) {
       </div>
       <div className="text-2xl font-black text-slate-900">{insight.value}</div>
       <div className="text-sm font-medium text-slate-500">{insight.label}</div>
-    </motion.div>
+    </div>
   )
 }
 
 export function MomentumCTAPanel({ dashboards, onSelect }: { dashboards: { name: string; icon: React.ElementType; description: string; color: string }[]; onSelect: (name: string) => void }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 overflow-hidden">
+    <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 overflow-hidden animate-in slide-in-from-bottom-2 fade-in duration-300">
       <div className="px-4 py-3 border-b border-blue-100">
         <p className="text-sm font-bold text-blue-800 flex items-center gap-2">
           <Rocket className="h-4 w-4" /> What would you like to explore?
@@ -443,18 +457,18 @@ export function MomentumCTAPanel({ dashboards, onSelect }: { dashboards: { name:
       </div>
       <div className="p-3 grid gap-2">
         {dashboards.map((d, i) => (
-          <motion.button key={d.name} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
+          <button key={d.name} style={{ animationDelay: `${i * 100}ms` }}
             onClick={() => onSelect(d.name)}
-            className="flex items-center gap-3 p-3 bg-white hover:bg-blue-50 border border-blue-100 hover:border-blue-200 rounded-xl transition-all group text-left">
+            className="flex items-center gap-3 p-3 bg-white hover:bg-blue-50 border border-blue-100 hover:border-blue-200 rounded-xl transition-all group text-left animate-in slide-in-from-left-2 fade-in duration-300 fill-mode-both">
             <div className={`p-2 rounded-lg ${d.color}`}><d.icon className="h-4 w-4" /></div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-slate-800 group-hover:text-blue-700 transition-colors">{d.name}</p>
               <p className="text-[11px] text-slate-500">{d.description}</p>
             </div>
             <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-          </motion.button>
+          </button>
         ))}
       </div>
-    </motion.div>
+    </div>
   )
 }

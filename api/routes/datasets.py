@@ -16,7 +16,7 @@ from api.database import get_db
 from models import Dataset, DatasetStatus
 
 # Infrastructure Services
-from api.services.storage_manager import storage_manager
+from api.services.storage_manager import storage_manager, FatalStorageError, TransientStorageError
 from api.services.cache_manager import cache_manager
 from api.services.sync_engine import INTEGRATION_REGISTRY
 
@@ -101,6 +101,14 @@ class SyncTriggerResponse(BaseModel):
     message: str
     job_id: str
 
+class PresignRequest(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=255, description="Sanitized filename")
+    content_type: str = Field("application/octet-stream", description="MIME type for validation")
+
+class PresignResponse(BaseModel):
+    upload_url: str
+    file_path: str
+
 # -----------------------------------------------------------------------------
 # Background Cleanup Helpers
 # -----------------------------------------------------------------------------
@@ -126,6 +134,46 @@ async def _cleanup_dataset_resources(tenant_id: str, dataset_id: str, file_path:
 # API Routes
 # -----------------------------------------------------------------------------
 
+@router.post("/presign", status_code=status.HTTP_200_OK)
+async def generate_presigned_url(
+    request: PresignRequest,
+    context: TenantContext = Depends(verify_tenant)
+):
+    """
+    Phase 1: Generates a secure, short-lived Edge Storage (R2/S3) upload URL.
+    Enforces strict tenant isolation and delegates binary handling to the edge.
+    """
+    tenant_id = context.tenant_id
+    logger.info(f"[{tenant_id}] Requesting presigned URL for {request.filename}")
+
+    try:
+        # Leverages the hardened R2StorageManager (Handles path injection & capacity limits)
+        presign_data = storage_manager.generate_presigned_upload_url(
+            tenant_id=tenant_id,
+            filename=request.filename,
+            content_type=request.content_type,
+            expires_in=3600, # 1 hour TTL
+            max_bytes=MAX_UPLOAD_BYTES
+        )
+        
+        # Transform boto3's response to match the frontend's expected schema
+        return {
+            "upload_url": presign_data["upload_post"]["url"],
+            "file_path": presign_data["file_path"],
+            "fields": presign_data["upload_post"]["fields"] # Required for S3/R2 POST auth
+        }
+
+    except FatalStorageError as e:
+        logger.error(f"[{tenant_id}] Security/Validation rejection during presign: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except TransientStorageError as e:
+        logger.warning(f"[{tenant_id}] Transient storage error during presign: {e}")
+        raise HTTPException(status_code=503, detail="Storage gateway temporarily unavailable. Retry.")
+    except Exception as e:
+        logger.error(f"[{tenant_id}] Unexpected error generating presigned URL: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error.")
+
+
 @router.post("/upload", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
 async def upload_dataset(
     name: str = Form(..., description="A friendly name for the dataset."),
@@ -134,8 +182,8 @@ async def upload_dataset(
     db: Session = Depends(get_db)
 ):
     """
-    Handles direct file uploads (multipart/form-data).
-    Uploads the file securely to Cloud Storage (R2/S3) and dispatches the background worker.
+    Legacy Handler: Handles direct file uploads (multipart/form-data).
+    Maintained for backwards compatibility for small files that pass through Vercel.
     """
     tenant_id = context.tenant_id
     file_path: Optional[str] = None
@@ -230,7 +278,8 @@ async def create_dataset(
     db: Session = Depends(get_db)
 ):
     """
-    Registers a new SaaS integration dataset and INSTANTLY dispatches the background worker.
+    Registers a new dataset (SaaS integration OR completed Presigned File Upload)
+    and INSTANTLY dispatches the background worker.
     """
     tenant_id = context.tenant_id
     logger.info(f"[{tenant_id}] Creating new SaaS dataset: {request.name}")
@@ -243,6 +292,15 @@ async def create_dataset(
         raise HTTPException(status_code=403, detail="file_path must point to tenant-owned storage.")
 
     try:
+        # Determine appropriate metadata based on dataset type
+        schema_metadata = {}
+        if request.file_path:
+            # Extract the raw filename from the deterministic path for the UI
+            extracted_filename = request.file_path.split("/")[-1].split("_", 1)[-1]
+            schema_metadata = {"original_filename": extracted_filename}
+        else:
+            schema_metadata = {"start_timestamp": "2024-01-01T00:00:00Z"} # Default historical sync window
+
         # 1. Create the Database Record (Starts in PENDING state)
         new_dataset = Dataset(
             tenant_id=tenant_id,
@@ -251,7 +309,7 @@ async def create_dataset(
             integration_name=request.integration_name,
             stream_name=request.stream_name,
             file_path=request.file_path,
-            schema_metadata={"start_timestamp": "2024-01-01T00:00:00Z"} # Default historical sync window
+            schema_metadata=schema_metadata 
         )
         
         db.add(new_dataset)

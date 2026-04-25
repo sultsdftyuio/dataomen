@@ -54,6 +54,7 @@ from urllib.parse import urlparse
 import boto3
 import duckdb
 import polars as pl
+import redis
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
@@ -1137,14 +1138,37 @@ def _default_antivirus_scan(client: Any, bucket: str, key: str) -> _ScanResult:
     return _ScanResult.UNKNOWN
 
 
-def _default_rate_limiter(tenant_id: str, operation: str) -> None:
-    """Placeholder rate-limit hook (#26). Wire in Redis / token-bucket here."""
-    pass
+_redis_client = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
 
+def _redis_rate_limiter(tenant_id: str, operation: str) -> None:
+    """
+    Production Redis-backed sliding window rate limiter.
+    Prevents tenant saturation attacks on expensive storage operations.
+    """
+    # Limits: 50 presigns per minute per tenant
+    LIMIT = 50
+    WINDOW_SEC = 60
+    
+    key = f"rate_limit:{tenant_id}:{operation}"
+    current_time = int(time.time())
+    # Include a UUID so concurrent requests in the same second don't overwrite each other
+    member = f"{current_time}:{uuid.uuid4().hex}"
+    
+    pipeline = _redis_client.pipeline()
+    pipeline.zremrangebyscore(key, 0, current_time - WINDOW_SEC)
+    pipeline.zcard(key)
+    pipeline.zadd(key, {member: current_time})
+    pipeline.expire(key, WINDOW_SEC)
+    
+    _, req_count, _, _ = pipeline.execute()
+    
+    if req_count >= LIMIT:
+        metrics.increment("rate_limit.exceeded", {"tenant": tenant_id, "operation": operation})
+        raise TransientStorageError(f"Rate limit exceeded for {operation}. Maximum {LIMIT} requests per minute.")
 
 content_type_gate = _default_content_type_gate
 antivirus_scan    = _default_antivirus_scan
-rate_limiter      = _default_rate_limiter
+rate_limiter      = _redis_rate_limiter
 
 
 # ---------------------------------------------------------------------------

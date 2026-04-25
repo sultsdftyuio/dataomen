@@ -1038,17 +1038,37 @@ CHARTING RULES (Vega-Lite):
         timeout: int = _PROBE_TIMEOUT_SECONDS,
     ) -> Tuple[bool, Optional[str]]:
         """
-        Execute probe query with timeout. [FIX-V4-6]
-
-        Returns (success, error_message).
+        Executes a zero-cost semantic binding check against DuckDB.
+        Validates that tables, columns, and functions actually exist without scanning data.
         """
-        # This is a placeholder - actual implementation would call the DB
-        # For now, we just validate the SQL can be parsed
-        try:
-            sqlglot.parse(probe_sql)
+        if not probe_sql:
             return True, None
+            
+        def _sync_validate():
+            import duckdb
+            # We use a completely in-memory, transient DuckDB instance just for the compiler
+            with duckdb.connect(":memory:") as con:
+                # We don't want to fetch data, we just want DuckDB to bind the schema.
+                # Wrapping it in a LIMIT 0 ensures zero-byte data scans while forcing validation.
+                validation_query = f"SELECT * FROM (\n{probe_sql}\n) AS _dry_run LIMIT 0"
+                con.execute(validation_query)
+
+        try:
+            # Run in a thread to prevent blocking the async event loop during remote parquet header reads
+            await asyncio.wait_for(
+                asyncio.to_thread(_sync_validate),
+                timeout=timeout
+            )
+            return True, None
+        except asyncio.TimeoutError:
+            return False, "Probe timeout: Parquet headers took too long to resolve."
         except Exception as e:
-            return False, str(e)
+            # This will catch duckdb.BinderException for hallucinated columns!
+            error_str = str(e)
+            # Clean up the error so the LLM doesn't get confused by the wrapper
+            if "in query" in error_str:
+                error_str = error_str.split("in query")[0].strip()
+            return False, error_str
 
     # -----------------------------------------------------------------------
     # Query Plan Verification [FIX-V4-7]
