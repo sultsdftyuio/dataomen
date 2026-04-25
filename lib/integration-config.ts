@@ -451,7 +451,7 @@ for (const key of integrationKeys) {
 
 // Safe composition of domain structure + presentation layer + strictly typed validation
 export const INTEGRATIONS: IntegrationConfig[] = integrationKeys.map(key => {
-  const domain = INTEGRATION_DOMAIN[key]
+  const domain = INTEGRATION_DOMAIN[key] as DomainConfig
   const ui = INTEGRATION_UI[key]
   const validation = Validation[key] as z.ZodObject<any>
 

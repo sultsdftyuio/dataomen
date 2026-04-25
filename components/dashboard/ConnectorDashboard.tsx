@@ -1,17 +1,15 @@
-// components/dashboard/ConnectorDashboard.tsx
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Activity, AlertCircle, RefreshCw, Database } from "lucide-react";
 import { DynamicChartFactory } from "@/components/dashboard/DynamicChartFactory";
 import { ExecutiveKPICard } from "@/components/dashboard/ExecutiveKPICard";
 import { InsightsFeed } from "@/components/dashboard/InsightsFeed";
-import { ApiClient } from "@/lib/api-client";
 import { KPIEngine, KPI } from "@/lib/intelligence/kpi-engine";
 import { ChartOrchestrator, ChartJob } from "@/lib/intelligence/chart-orchestrator";
 
 // -----------------------------------------------------------------------------
-// Type Definitions
+// Type Definitions & Error Boundary
 // -----------------------------------------------------------------------------
 interface MetricView {
   id: string;
@@ -24,81 +22,189 @@ interface ConnectorDashboardProps {
   integrationName: string;
 }
 
+// Extending ChartJob locally to enforce session tracking type safety
+type SessionChartJob = ChartJob & { runId?: number };
+
+class ChartErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("[ChartErrorBoundary] Render crash protected:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white border border-rose-200/80 rounded-2xl p-5 shadow-sm h-[380px] flex flex-col items-center justify-center text-center">
+          <AlertCircle className="w-8 h-8 text-rose-400 mb-3" />
+          <h3 className="text-sm font-extrabold text-slate-900">Visualization Crashed</h3>
+          <p className="text-xs text-slate-500 mt-1">An unexpected error occurred while rendering this metric.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Helper to prevent regex recompilation on every execution
+const getIntegrationTitleRegex = (integrationName: string) => 
+  new RegExp(`^vw_${integrationName.toLowerCase()}_`, "i");
+
+const normalizeMetricName = (name: string, regex: RegExp) => {
+  return name.replace(regex, "").replace(/_/g, " ").trim().toUpperCase();
+};
+
 // -----------------------------------------------------------------------------
-// Core Smart Hub Orchestrator (Phase 4 Finalization)
+// Core Smart Hub Orchestrator (Phase 7 - Hardened Session Architecture)
 // -----------------------------------------------------------------------------
 export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrationName }) => {
   const [metrics, setMetrics] = useState<MetricView[]>([]);
   const [kpis, setKpis] = useState<Record<string, KPI>>({});
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(true);
 
-  // 1. Initialize the Execution Orchestrator (Singleton per hub instance)
-  const orchestrator = useMemo(() => new ChartOrchestrator(
-    async (query, params, signal) => {
-      // In a real app, ensure ApiClient supports passing the AbortSignal
-      const response = await fetch('/api/query/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: query }),
-        signal 
-      });
-      
-      if (!response.ok) throw new Error("Failed to execute canonical view");
-      const result = await response.json();
-      return result.data;
-    },
-    { maxConcurrency: 3, maxRetries: 2 }
-  ), []);
+  // 1. Core State Refs for Deterministic Execution Tracking
+  const sessionRunId = useRef(0);
+  const metricHashes = useRef<Map<string, string>>(new Map());
+  const metricSubscriptions = useRef<Map<string, () => void>>(new Map());
 
-  // 2. Fetch Semantic Models (Phase 1 Foundation)
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      setIsLoadingMetadata(true);
-      try {
-        const res = await fetch(`/api/insights/metrics?integration=${integrationName}`);
-        if (!res.ok) throw new Error("Failed to fetch metrics");
+  // 2. Initialize Execution Orchestrator with Execution-Level Session Guard
+  const orchestrator = useMemo(() => {
+    return new ChartOrchestrator(
+      async (query, params, signal) => {
+        // Capture exact run ID at the absolute start of execution attempt
+        const executionRunId = sessionRunId.current;
         
+        const response = await fetch("/api/query/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sql: query }),
+          signal,
+        });
+
+        // HARD CANCEL BOUNDARY: If session advanced while waiting for network, throw instantly
+        if (sessionRunId.current !== executionRunId) {
+          throw new Error("Execution aborted: Session advanced during flight");
+        }
+
+        if (!response.ok) throw new Error("Failed to execute canonical view");
+        const result = await response.json();
+        return result.data;
+      },
+      { maxConcurrency: 3, maxRetries: 2 }
+    );
+  }, []); 
+
+  const titleRegex = useMemo(() => getIntegrationTitleRegex(integrationName), [integrationName]);
+
+  // ---------------------------------------------------------------------------
+  // EFFECT 1: Strict Session Reset Boundary
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    sessionRunId.current += 1;
+    
+    orchestrator.flush();
+    setKpis({});
+    setMetrics([]);
+    setIsLoadingMetadata(true);
+    
+    metricHashes.current.clear();
+    metricSubscriptions.current.forEach((unsub) => unsub());
+    metricSubscriptions.current.clear();
+
+    return () => {
+      orchestrator.flush();
+      metricSubscriptions.current.forEach((unsub) => unsub());
+      metricSubscriptions.current.clear();
+    };
+  }, [integrationName, orchestrator]);
+
+  // ---------------------------------------------------------------------------
+  // EFFECT 2: Semantic Model Data Fetching
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const currentRunId = sessionRunId.current;
+    const controller = new AbortController();
+
+    const fetchMetrics = async () => {
+      try {
+        const res = await fetch(`/api/insights/metrics?integration=${integrationName}`, {
+          signal: controller.signal,
+        });
+        
+        if (!res.ok) throw new Error("Failed to fetch metrics");
         const data = await res.json();
-        setMetrics(data.metrics || []);
-      } catch (error) {
-        console.error(`[SmartHub] Error fetching ${integrationName} semantic models:`, error);
+        
+        if (sessionRunId.current === currentRunId) {
+          setMetrics(data.metrics || []);
+        }
+      } catch (error: any) {
+        if (error.name !== "AbortError" && sessionRunId.current === currentRunId) {
+          console.error(`[SmartHub] Error fetching ${integrationName} semantic models:`, error);
+        }
       } finally {
-        setIsLoadingMetadata(false);
+        if (sessionRunId.current === currentRunId) {
+          setIsLoadingMetadata(false);
+        }
       }
     };
 
     fetchMetrics();
+    return () => controller.abort();
+  }, [integrationName]);
 
-    // Cleanup: Flush queue if user unmounts/switches connectors
-    return () => orchestrator.flush();
-  }, [integrationName, orchestrator]);
-
-  // 3. Queue Jobs & Extract Intelligence
+  // ---------------------------------------------------------------------------
+  // EFFECT 3: Job Queueing & Incremental Diffing Engine
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (metrics.length === 0) return;
+    const currentRunId = sessionRunId.current;
+    const activeMetricIds = new Set<string>();
 
     metrics.forEach((metric) => {
-      const isRevenue = metric.metric_name.toLowerCase().includes("revenue") || metric.metric_name.toLowerCase().includes("mrr");
+      activeMetricIds.add(metric.id);
       
-      // Queue the job with calculated priority
+      // Strict Fingerprint: Hash includes structural components, not just ID
+      const fingerprint = `${metric.id}|${metric.compiled_sql}|${metric.metric_name}|${metric.description}`;
+      if (metricHashes.current.get(metric.id) === fingerprint) return;
+      
+      // Pre-cleanup if we are recalculating an existing metric ID with a new fingerprint
+      if (metricSubscriptions.current.has(metric.id)) {
+        metricSubscriptions.current.get(metric.id)?.();
+        metricSubscriptions.current.delete(metric.id);
+      }
+
+      metricHashes.current.set(metric.id, fingerprint);
+
+      const isRevenue =
+        metric.metric_name.toLowerCase().includes("revenue") ||
+        metric.metric_name.toLowerCase().includes("mrr");
+
+      // Inject deterministic run ID into the job packet
       orchestrator.addJob({
         id: metric.id,
         query: metric.compiled_sql,
-        priority: isRevenue ? 100 : 50, // Prioritize financial data
-        group: isRevenue ? "financials" : "engagement"
-      });
+        priority: isRevenue ? 100 : 50,
+        group: isRevenue ? "financials" : "engagement",
+        runId: currentRunId,
+      } as any);
 
-      // Synchronously subscribe to the orchestrator to extract KPIs as soon as data arrives
-      const unsubscribe = orchestrator.subscribe(metric.id, (job) => {
+      const unsubscribe = orchestrator.subscribe(metric.id, (job: SessionChartJob) => {
+        // Subscription-Level Hard Boundary Check
+        if (job.runId !== undefined && job.runId !== sessionRunId.current) return;
+
         if (job.status === "ready" && job.result) {
           const extractedKpi = KPIEngine.extract(job.result, {
             id: metric.id,
-            label: metric.metric_name.replace(/^vw_[^_]+_/i, '').replace(/_/g, ' ').toUpperCase(),
+            label: normalizeMetricName(metric.metric_name, titleRegex),
             timeColumn: "created_at",
-            valueColumn: "value",      
+            valueColumn: "value",
             formatType: isRevenue ? "currency" : "number",
             polarity: metric.metric_name.toLowerCase().includes("churn") ? "positive_down" : "positive_up",
-            source: integrationName
+            source: integrationName,
           });
 
           if (extractedKpi) {
@@ -107,47 +213,55 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
         }
       });
 
-      return () => unsubscribe();
+      metricSubscriptions.current.set(metric.id, unsubscribe);
     });
-  }, [metrics, integrationName, orchestrator]);
+
+    // Post-computation sweep: Remove deleted metrics from memory pools
+    for (const id of metricHashes.current.keys()) {
+      if (!activeMetricIds.has(id)) {
+        metricSubscriptions.current.get(id)?.();
+        metricSubscriptions.current.delete(id);
+        metricHashes.current.delete(id);
+      }
+    }
+
+  }, [metrics, integrationName, orchestrator, titleRegex]);
+
+  const topMetrics = useMemo(() => metrics.slice(0, 4), [metrics]);
 
   return (
     <div className="flex flex-col space-y-8 w-full max-w-[1600px] mx-auto pb-24 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      
-      {/* 1. SMART HUB HEADER */}
       <SmartHubHeader integrationName={integrationName} orchestrator={orchestrator} />
 
-      {/* 2. EXECUTIVE KPI STRIP (Progressive Rendering) */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {isLoadingMetadata ? (
-           Array(4).fill(0).map((_, i) => <ExecutiveKPICard key={i} kpi={{} as any} isLoading />)
+           Array.from({ length: 4 }).map((_, i) => <ExecutiveKPICard key={`skeleton-${i}`} kpi={{} as any} isLoading />)
         ) : (
-           metrics.slice(0, 4).map((metric) => (
+           topMetrics.map((metric) => (
              <ProgressiveKPICard key={metric.id} metricId={metric.id} kpis={kpis} />
            ))
         )}
       </section>
 
-      {/* 3. MIDDLE TIER: ANALYTICAL GRID & INSIGHTS FEED */}
       <section className="grid grid-cols-1 xl:grid-cols-4 gap-8">
         <div className="xl:col-span-3">
           <AnalyticalGrid 
             integrationName={integrationName} 
             metrics={metrics} 
+            titleRegex={titleRegex}
             orchestrator={orchestrator}
             isLoadingMetadata={isLoadingMetadata} 
+            sessionRunIdRef={sessionRunId}
           />
         </div>
-        
         <div className="xl:col-span-1">
           <InsightsFeed />
         </div>
       </section>
 
-      {/* 4. OMNISCIENT SCRATCHPAD SLOT */}
       <div className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-slate-900 shadow-xl flex items-center justify-center group hover:w-56 hover:rounded-2xl transition-all duration-300 cursor-pointer z-50">
-        <Activity className="w-5 h-5 text-blue-400 group-hover:mr-3" />
-        <span className="text-[10px] font-bold font-mono text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+        <Activity className="w-5 h-5 text-blue-400 group-hover:mr-3 shrink-0" />
+        <span className="text-[10px] font-bold font-mono text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity truncate max-w-[180px]">
           Omniscient Scratchpad
         </span>
       </div>
@@ -156,10 +270,10 @@ export const ConnectorDashboard: React.FC<ConnectorDashboardProps> = ({ integrat
 };
 
 // -----------------------------------------------------------------------------
-// Sub-Components (Orchestrator Pub/Sub Bindings)
+// Sub-Components
 // -----------------------------------------------------------------------------
 
-const SmartHubHeader = ({ integrationName, orchestrator }: { integrationName: string, orchestrator: ChartOrchestrator }) => (
+const SmartHubHeader = ({ integrationName, orchestrator }: { integrationName: string; orchestrator: ChartOrchestrator }) => (
   <header className="flex items-center justify-between pb-6 border-b border-slate-200/80">
     <div className="flex items-center gap-4">
       <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center border border-slate-200 shadow-sm">
@@ -182,8 +296,12 @@ const SmartHubHeader = ({ integrationName, orchestrator }: { integrationName: st
     </div>
     <div className="flex items-center gap-3">
       <button 
-        onClick={() => window.location.reload()} 
+        onClick={() => {
+          orchestrator.flush();
+          window.location.reload();
+        }} 
         className="p-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-500 transition-colors border border-slate-200 shadow-sm"
+        title="Force Refresh Data"
       >
         <RefreshCw className="w-4 h-4" />
       </button>
@@ -191,13 +309,21 @@ const SmartHubHeader = ({ integrationName, orchestrator }: { integrationName: st
   </header>
 );
 
-const ProgressiveKPICard = ({ metricId, kpis }: { metricId: string, kpis: Record<string, KPI> }) => {
+const ProgressiveKPICard = React.memo(({ metricId, kpis }: { metricId: string; kpis: Record<string, KPI> }) => {
   const kpi = kpis[metricId];
   if (!kpi) return <ExecutiveKPICard kpi={{} as any} isLoading />;
   return <ExecutiveKPICard kpi={kpi} />;
-};
+});
+ProgressiveKPICard.displayName = "ProgressiveKPICard";
 
-const AnalyticalGrid = ({ integrationName, metrics, orchestrator, isLoadingMetadata }: any) => {
+const AnalyticalGrid = ({ integrationName, metrics, titleRegex, orchestrator, isLoadingMetadata, sessionRunIdRef }: {
+  integrationName: string;
+  metrics: MetricView[];
+  titleRegex: RegExp;
+  orchestrator: ChartOrchestrator;
+  isLoadingMetadata: boolean;
+  sessionRunIdRef: React.MutableRefObject<number>;
+}) => {
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-extrabold tracking-tight text-slate-900">Analytical Grid</h2>
@@ -213,13 +339,15 @@ const AnalyticalGrid = ({ integrationName, metrics, orchestrator, isLoadingMetad
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {metrics.map((metric: any) => (
-            <ProgressiveChartCard 
-              key={metric.id} 
-              metric={metric} 
-              orchestrator={orchestrator} 
-              integrationName={integrationName}
-            />
+          {metrics.map((metric) => (
+            <ChartErrorBoundary key={metric.id}>
+              <ProgressiveChartCard 
+                metric={metric} 
+                titleRegex={titleRegex}
+                orchestrator={orchestrator} 
+                sessionRunIdRef={sessionRunIdRef}
+              />
+            </ChartErrorBoundary>
           ))}
         </div>
       )}
@@ -227,19 +355,26 @@ const AnalyticalGrid = ({ integrationName, metrics, orchestrator, isLoadingMetad
   );
 };
 
-// Isolated Component that subscribes solely to its own chart execution job
-const ProgressiveChartCard = ({ metric, orchestrator, integrationName }: { metric: any, orchestrator: ChartOrchestrator, integrationName: string }) => {
+const ProgressiveChartCard = React.memo(({ metric, titleRegex, orchestrator, sessionRunIdRef }: { 
+  metric: MetricView; 
+  titleRegex: RegExp;
+  orchestrator: ChartOrchestrator; 
+  sessionRunIdRef: React.MutableRefObject<number>;
+}) => {
   const [jobState, setJobState] = useState<ChartJob | null>(null);
-  const titleRegex = new RegExp(`vw_${integrationName.toLowerCase()}_`, 'i');
-  const cleanTitle = metric.metric_name.replace(titleRegex, '').replace(/_/g, ' ').toUpperCase();
+  const cleanTitle = useMemo(() => normalizeMetricName(metric.metric_name, titleRegex), [metric.metric_name, titleRegex]);
 
   useEffect(() => {
-    // Native pub/sub subscription for React rendering
-    const unsubscribe = orchestrator.subscribe(metric.id, (state) => {
+    if (!metric?.id) return;
+
+    const unsubscribe = orchestrator.subscribe(metric.id, (state: SessionChartJob) => {
+      // ⚠️ Real-Time Execution Guard: Using mutable ref guarantees absolute freshness
+      if (state.runId !== undefined && state.runId !== sessionRunIdRef.current) return;
       setJobState(state);
     });
+    
     return () => unsubscribe();
-  }, [metric.id, orchestrator]);
+  }, [metric?.id, orchestrator, sessionRunIdRef]);
 
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm hover:border-blue-200 transition-all flex flex-col group h-[380px]">
@@ -249,9 +384,8 @@ const ProgressiveChartCard = ({ metric, orchestrator, integrationName }: { metri
             <h3 className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{cleanTitle}</h3>
             <p className="text-sm text-slate-900 font-medium mt-1.5 line-clamp-1">{metric.description}</p>
           </div>
-          {/* Status Indicators */}
-          {jobState?.status === "idle" && <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md">Queued</span>}
-          {jobState?.status === "loading" && <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-md animate-pulse">Computing</span>}
+          {jobState?.status === "idle" && <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md shrink-0">Queued</span>}
+          {jobState?.status === "loading" && <span className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded-md animate-pulse shrink-0">Computing</span>}
         </div>
       </div>
       
@@ -271,4 +405,5 @@ const ProgressiveChartCard = ({ metric, orchestrator, integrationName }: { metri
       </div>
     </div>
   );
-};
+});
+ProgressiveChartCard.displayName = "ProgressiveChartCard";
