@@ -968,7 +968,7 @@ class SyncEngine:
                 logger.warning("[%s] Empty DataFrame for %s", tenant_id, integration_name)
                 return df
 
-            df = sanitizer.process_batch(df, pii_columns=pii_columns, expected_schema=expected_schema)
+            df, _metrics = sanitizer.process_batch(df, pii_columns=pii_columns, expected_schema=expected_schema)
 
             with DuckDBValidator(tenant_id, integration_name) as validator:
                 validator.validate_batch(df, expected_schema)

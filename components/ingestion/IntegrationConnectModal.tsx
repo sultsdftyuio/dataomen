@@ -24,7 +24,7 @@ import { PasswordInput, OAuthPreEducation, EnhancedSchemaPreview } from './Integ
 import { ContextualTrustBadge, ErrorGuidance } from './IntegrationContextualUI'
 import { 
   useIntegrationOrchestrator, Telemetry, 
-  PASTE_DETECTION_THRESHOLD, PROCESSING_MESSAGES 
+  PASTE_DETECTION_THRESHOLD 
 } from '@/hooks/useIntegrationOrchestrator'
 
 // =============================================================================
@@ -123,6 +123,31 @@ function normalizeError(err: unknown): AppError {
   }
 
   return { type: 'unknown', message: 'An unknown anomaly occurred during execution.' }
+}
+
+type ErrorGuidanceError = NonNullable<React.ComponentProps<typeof ErrorGuidance>['error']>
+
+function toErrorGuidanceError(error: AppError): ErrorGuidanceError {
+  if (error.type === 'timeout') {
+    return { type: 'timeout', message: error.message }
+  }
+
+  if (error.type === 'auth') {
+    return { type: 'invalid_credentials', message: error.message }
+  }
+
+  if (error.type === 'network') {
+    const msg = error.message.toLowerCase()
+    if (msg.includes('ssl') || msg.includes('certificate')) {
+      return { type: 'ssl_error', message: error.message }
+    }
+    if (msg.includes('allowlist') || msg.includes('whitelist') || msg.includes('ip')) {
+      return { type: 'ip_allowlist', message: error.message }
+    }
+    return { type: 'unknown', message: error.message }
+  }
+
+  return { type: 'unknown', message: error.message }
 }
 
 
@@ -361,18 +386,6 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
   const [detectedIntegration, setDetectedIntegration] = useState<{ id: IntegrationType, source: string } | null>(null)
   const [focusedField, setFocusedField] = useState<string | null>(null)
   const [showAdvancedReview, setShowAdvancedReview] = useState(false)
-  const [processingMessageIdx, setProcessingMessageIdx] = useState(0)
-
-  // Dynamic UI Messaging
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (['verifying', 'mapping', 'analyzing'].includes(state.type)) {
-      interval = setInterval(() => {
-        setProcessingMessageIdx(prev => (prev + 1) % PROCESSING_MESSAGES.length)
-      }, 2500)
-    }
-    return () => clearInterval(interval)
-  }, [state.type])
 
   // Safe Integration Access
   const getIntegration = useCallback((id?: string): IntegrationConfig | null => {
@@ -694,22 +707,28 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
               
               <div>
                 <h3 className="text-[16px] font-extrabold text-slate-900 tracking-tight">
-                  {PROCESSING_MESSAGES[processingMessageIdx]}
+                  {state.type === 'verifying' && 'Authenticating...'}
+                  {state.type === 'mapping' && 'Connection Established...'}
+                  {state.type === 'analyzing' && 'Analyzing Schema...'}
                 </h3>
                 <p className="text-[13px] text-slate-500 font-medium mt-1">
-                  {context.detectedTables.length > 0 
-                    ? `Mapped ${context.detectedTables.length} tables securely...` 
-                    : "Establishing secure encrypted tunnel..."}
+                  {state.type === 'verifying' && 'Testing credentials.'}
+                  {state.type === 'mapping' && 'Securely linked. Mapping topology...'}
+                  {state.type === 'analyzing' && `Modeled ${context.detectedTables.length} core tables securely.`}
                 </p>
               </div>
 
-              <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3">
-                <div className="flex items-center gap-3 text-[12px] font-semibold text-slate-400">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Connecting securely
+              <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-3 text-left">
+                <div className="flex items-center gap-3 text-[12px] font-semibold text-slate-500">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Tunnel secured
                 </div>
                 <div className={`flex items-center gap-3 text-[12px] font-semibold ${state.type !== 'verifying' ? 'text-slate-400' : 'text-slate-800'}`}>
                    {state.type !== 'verifying' ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Loader2 className="h-4 w-4 animate-spin text-blue-500" />} 
                    Testing authorization
+                </div>
+                <div className={`flex items-center gap-3 text-[12px] font-semibold ${state.type === 'mapping' ? 'text-slate-800' : state.type === 'analyzing' ? 'text-slate-400' : 'text-slate-300'}`}>
+                   {state.type === 'mapping' ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> : state.type === 'analyzing' ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <div className="h-4 w-4 rounded-full border-2 border-slate-200" />} 
+                   Mapping schema topology
                 </div>
                 <div className={`flex items-center gap-3 text-[12px] font-semibold ${state.type === 'analyzing' ? 'text-slate-800' : 'text-slate-300'}`}>
                    {state.type === 'analyzing' ? <Loader2 className="h-4 w-4 animate-spin text-blue-500" /> : <div className="h-4 w-4 rounded-full border-2 border-slate-200" />} 
@@ -862,7 +881,7 @@ export function IntegrationConnectModal({ isOpen, onClose, onSuccess }: Props) {
               <p className="text-[13px] font-medium text-slate-600 mt-2 leading-relaxed">{state.error.message}</p>
             </div>
 
-            <ErrorGuidance error={state.error as AppError} />
+            <ErrorGuidance error={toErrorGuidanceError(state.error)} />
 
             <div className="mt-auto flex flex-col sm:flex-row gap-3 pt-2">
               <Button variant="outline" className="flex-1 font-bold border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm rounded-lg text-[13px] h-10" 
