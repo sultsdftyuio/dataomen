@@ -72,7 +72,13 @@ from tenacity import (
     RetryCallState,
 )
 
-from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
+from api.services.integrations.base_integration import (
+    BaseIntegration,
+    IntegrationConfig,
+    RawStorageSink,
+    MAX_BATCH_BYTES,
+    estimate_record_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +125,10 @@ DEFAULT_SEMAPHORE_LIMIT: int = int(os.environ.get("STRIPE_SEMAPHORE_LIMIT", "5")
 
 # FIX #4: Rewind window (seconds) for Events API to handle late arrivals.
 _EVENTS_REWIND_SECS: int = int(os.environ.get("STRIPE_EVENTS_REWIND_SECS", "60"))
+
+# FIX #4 (v7): Nightly reconciliation — streams to re-sync and lookback depth.
+_RECONCILIATION_STREAMS: List[str] = ["charges", "subscriptions", "invoices"]
+_RECONCILIATION_LOOKBACK_HOURS: int = int(os.environ.get("STRIPE_RECONCILIATION_LOOKBACK_HOURS", "48"))
 
 
 # ---------------------------------------------------------------------------
@@ -1151,6 +1161,20 @@ class StripeConnector(BaseIntegration):
         batch: List[Dict[str, Any]] = []
         seen_ids: Set[str] = set()  # Within-page dedup only (bounded by page size).
 
+        # FIX #5 (cold storage): Archive raw records before transformation
+        if self.raw_storage_sink and items:
+            try:
+                import asyncio
+                loop = asyncio.get_running_loop()
+                loop.create_task(
+                    self.raw_storage_sink.write_raw(
+                        self.tenant_id, "stripe", stream_name, items
+                    )
+                )
+            except RuntimeError:
+                # No running event loop — skip cold storage silently
+                pass
+
         for raw in items:
             # FIX #6: Deterministic sampling — same record always in or always out.
             if self._sampling_rate is not None:
@@ -1336,6 +1360,77 @@ class StripeConnector(BaseIntegration):
             metrics.to_log_dict(),
         )
         self._active_metrics = None
+
+    # -----------------------------------------------------------------------
+    # FIX #4 (v7): Nightly Reconciliation Sync
+    # -----------------------------------------------------------------------
+
+    async def sync_reconciliation(
+        self,
+        lookback_hours: int = _RECONCILIATION_LOOKBACK_HOURS,
+        streams: Optional[List[str]] = None,
+    ) -> AsyncGenerator[SyncBatch, None]:
+        """
+        Hybrid "Reconciliation" Pattern for Stripe CDC late arrivals.
+
+        Runs a standard sync_historical call for mutable financial streams
+        (charges, subscriptions, invoices) using `created[gte] = NOW() - lookback`.
+        Default lookback is 48 hours.
+
+        Because _synced_at and upsert logic `_meta: {op: upsert}` are idempotent,
+        this safely "patches" any financial data that arrived late or was dropped
+        by the events stream, without duplicating rows in the warehouse.
+
+        Intended to be triggered once every 24 hours by the orchestrator/scheduler.
+
+        Parameters
+        ----------
+        lookback_hours:  How far back to look for late-arriving mutations (default: 48h).
+        streams:         Override which streams to reconcile. Defaults to
+                         charges, subscriptions, invoices.
+        """
+        target_streams = streams or _RECONCILIATION_STREAMS
+        now_ts = int(datetime.now(tz=timezone.utc).timestamp())
+        reconcile_floor = now_ts - (lookback_hours * 3600)
+        start_iso = datetime.fromtimestamp(reconcile_floor, tz=timezone.utc).isoformat()
+
+        logger.info(
+            "[%s] Starting Stripe reconciliation sync | streams=%s lookback=%dh floor=%s",
+            self.tenant_id, target_streams, lookback_hours, start_iso,
+        )
+
+        for stream_name in target_streams:
+            if stream_name not in _STREAM_MAPPERS:
+                logger.warning(
+                    "[%s] Reconciliation: skipping unsupported stream '%s'",
+                    self.tenant_id, stream_name,
+                )
+                continue
+
+            try:
+                async for batch in self.sync_historical(
+                    stream_name=stream_name,
+                    start_timestamp=start_iso,
+                    checkpoint=None,  # Fresh pull, no checkpoint resume
+                ):
+                    yield batch
+
+                logger.info(
+                    "[%s] Reconciliation complete for '%s'",
+                    self.tenant_id, stream_name,
+                )
+            except Exception as exc:
+                logger.error(
+                    "[%s] Reconciliation failed for '%s': %s",
+                    self.tenant_id, stream_name, exc,
+                )
+                # Continue with remaining streams — don't let one failure block others
+                continue
+
+        logger.info(
+            "[%s] ✅ Stripe reconciliation sync complete for all streams",
+            self.tenant_id,
+        )
 
     async def replay_event(
         self,

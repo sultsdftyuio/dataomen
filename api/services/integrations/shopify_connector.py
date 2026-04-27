@@ -27,6 +27,7 @@ import hashlib
 import base64
 import logging
 import asyncio
+import sys
 import time
 import contextlib
 import random
@@ -36,7 +37,13 @@ from typing import Dict, Any, List, AsyncGenerator, Optional, Tuple
 import httpx
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
-from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
+from api.services.integrations.base_integration import (
+    BaseIntegration,
+    IntegrationConfig,
+    IntegrationSchemaDriftError,
+    MAX_BATCH_BYTES,
+    estimate_record_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -474,6 +481,21 @@ class ShopifyConnector(BaseIntegration):
             yield payload
 
         elapsed = time.time() - start_time
+
+        # FIX #3 (v1.3): DLQ circuit breaker — halt the sync if too many records
+        # are failing schema validation, which indicates upstream schema drift.
+        total_processed = self.sync_metrics["rows_processed"]
+        total_dlq = self.sync_metrics["dlq_events"]
+
+        if total_processed > 1000 and total_dlq > 0:
+            dlq_rate = total_dlq / total_processed
+            if dlq_rate > 0.05:
+                raise IntegrationSchemaDriftError(
+                    f"[{self.tenant_id}] Schema drift detected on '{stream_name}'. "
+                    f"DLQ rate {dlq_rate * 100:.1f}% exceeds 5% threshold "
+                    f"({total_dlq}/{total_processed} records failed validation)."
+                )
+
         logger.info(
             "[%s] Sync complete for %s. rows=%d dlq=%d cost=%d lag_ms=%d time=%.2fs",
             self.tenant_id, stream_name,
@@ -535,6 +557,8 @@ class ShopifyConnector(BaseIntegration):
                 page_info   = stream_data.get("pageInfo", {})
 
                 batch = []
+                current_batch_bytes = 0  # FIX #1: byte-aware accumulator
+
                 for edge in edges:
                     node   = edge.get("node", {})
                     cursor = edge.get("cursor")
@@ -552,15 +576,33 @@ class ShopifyConnector(BaseIntegration):
                         continue
 
                     try:
+                        # FIX #5 (cold storage): archive raw node before flatten
+                        if self.raw_storage_sink:
+                            await self.raw_storage_sink.write_raw(
+                                self.tenant_id, "shopify", stream_name, [node]
+                            )
+
                         extracted = self._flatten(node, stream_name)
-                        batch.extend(extracted)
+
+                        for item in extracted:
+                            batch.append(item)
+                            current_batch_bytes += estimate_record_bytes(item)
+
+                            # FIX #1: flush on row count OR byte limit
+                            if len(batch) >= self.chunk_size or current_batch_bytes >= MAX_BATCH_BYTES:
+                                yield self._emit_batch(batch)
+                                batch = []
+                                current_batch_bytes = 0
+                                if self.batch_sleep_ms > 0:
+                                    await asyncio.sleep(self.batch_sleep_ms / 1000)
+
                         self._update_checkpoint(node_updated_ms, node_id, cursor)
                     except Exception as e:
                         self._send_to_dlq(node, f"Flatten failure: {e}")
 
+                # Flush remaining records in the page batch
                 if batch:
                     yield self._emit_batch(batch)
-                    # ADD #5: configurable backpressure between batches
                     if self.batch_sleep_ms > 0:
                         await asyncio.sleep(self.batch_sleep_ms / 1000)
 
@@ -581,7 +623,9 @@ class ShopifyConnector(BaseIntegration):
     )
     async def _stream_jsonl(self, url: str, stream: str) -> AsyncGenerator[Dict[str, Any], None]:
         batch: List[Dict[str, Any]] = []
+        current_batch_bytes: int = 0  # FIX #1: byte-aware accumulator
         download_timeout = httpx.Timeout(connect=10.0, read=300.0, write=None, pool=5.0)
+        raw_buffer: List[Dict[str, Any]] = []  # FIX #5: cold storage buffer
 
         async with httpx.AsyncClient(timeout=download_timeout) as dl:
             async with dl.stream("GET", url) as r:
@@ -609,14 +653,28 @@ class ShopifyConnector(BaseIntegration):
                         continue
 
                     try:
+                        # FIX #5 (cold storage): buffer raw nodes for archival
+                        if self.raw_storage_sink:
+                            raw_buffer.append(node)
+
                         extracted = self._flatten(node, stream, is_bulk=True)
 
-                        # Flush per-item to avoid memory spikes
+                        # FIX #1: byte-aware flush — check both row count AND byte size
                         for item in extracted:
                             batch.append(item)
-                            if len(batch) >= self.chunk_size:
+                            current_batch_bytes += estimate_record_bytes(item)
+
+                            if len(batch) >= self.chunk_size or current_batch_bytes >= MAX_BATCH_BYTES:
+                                # FIX #5: flush raw buffer to cold storage before emitting
+                                if self.raw_storage_sink and raw_buffer:
+                                    await self.raw_storage_sink.write_raw(
+                                        self.tenant_id, "shopify", stream, raw_buffer
+                                    )
+                                    raw_buffer = []
+
                                 yield self._emit_batch(batch)
                                 batch = []
+                                current_batch_bytes = 0
                                 if self.batch_sleep_ms > 0:
                                     await asyncio.sleep(self.batch_sleep_ms / 1000)
 
@@ -631,7 +689,12 @@ class ShopifyConnector(BaseIntegration):
                     except Exception as e:
                         self._send_to_dlq(node, f"Flatten failure: {e}")
 
+        # Flush remaining records
         if batch:
+            if self.raw_storage_sink and raw_buffer:
+                await self.raw_storage_sink.write_raw(
+                    self.tenant_id, "shopify", stream, raw_buffer
+                )
             yield self._emit_batch(batch)
 
     # -------------------------------------------------------------------------

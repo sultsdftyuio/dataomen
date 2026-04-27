@@ -112,12 +112,23 @@ def _install_import_stubs() -> None:
             "organization_id": "tenant_abc123",
         }
 
+    async def _verify_internal_service_stub(header: str = "Bearer internal-test-key") -> bool:
+        expected_key = getattr(auth_module, "INTERNAL_SERVICE_KEY", "internal-test-key")
+        token = (header or "").strip()
+        if token.startswith("Bearer "):
+            token = token[7:].strip()
+        if token != expected_key:
+            raise HTTPException(status_code=403, detail="Invalid Internal Service Signature")
+        return True
+
     if not hasattr(auth_module, "TenantContext"):
         auth_module.TenantContext = _TenantContextStub
     if not hasattr(auth_module, "verify_tenant"):
         auth_module.verify_tenant = _verify_tenant_stub
     if not hasattr(auth_module, "get_current_user"):
         auth_module.get_current_user = _get_current_user_stub
+    if not hasattr(auth_module, "verify_internal_service"):
+        auth_module.verify_internal_service = _verify_internal_service_stub
 
     if "supabase" not in sys.modules:
         supabase_module = types.ModuleType("supabase")
@@ -1060,12 +1071,11 @@ async def test_agents_create_list_and_heartbeat_flow(monkeypatch: pytest.MonkeyP
     assert listed[0].id == agent.id
     _assert_system_invariants(db, tenant.tenant_id)
 
-    monkeypatch.setattr(agents_route, "INTERNAL_SERVICE_KEY", "internal-test-key")
-    agents_route.verify_internal_heartbeat(x_internal_service_key="internal-test-key", credentials=None)
+    await agents_route.verify_internal_service(header="Bearer internal-test-key")
 
     with pytest.raises(HTTPException) as exc_info:
-        agents_route.verify_internal_heartbeat(x_internal_service_key="wrong-key", credentials=None)
-    assert exc_info.value.status_code == 401
+        await agents_route.verify_internal_service(header="Bearer wrong-key")
+    assert exc_info.value.status_code == 403
 
     monkeypatch.setattr(
         agents_route.agent_service,

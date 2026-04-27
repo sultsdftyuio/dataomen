@@ -5,11 +5,13 @@ import json
 import logging
 import re
 import time
+import hmac
 import jwt  # Requires: pip install PyJWT
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, EmailStr, Field
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -41,6 +43,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
 # FastAPI security scheme
 security = HTTPBearer()
+internal_auth_header = APIKeyHeader(name="Authorization", auto_error=True)
 
 # Singleton placeholder for the Supabase client
 _supabase_client: Optional[Client] = None
@@ -191,6 +194,21 @@ def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)
     Convenience Dependency: Instantly extracts the tenant_id for rapid API route filtering.
     """
     return tenant_context.tenant_id
+
+
+async def verify_internal_service(header: str = Security(internal_auth_header)) -> bool:
+    """Reusable dependency for machine-to-machine internal endpoints."""
+    token = (header or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    if not INTERNAL_SERVICE_KEY or not token or not hmac.compare_digest(token, INTERNAL_SERVICE_KEY):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid Internal Service Signature",
+        )
+
+    return True
 
 
 def _coerce_http_status(value: Any) -> Optional[int]:

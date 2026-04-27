@@ -70,7 +70,7 @@ from api.services.notification_router import notification_router
 from api.worker import celery_app
 
 # Integration Registry
-from api.services.integrations.base_integration import BaseIntegration
+from api.services.integrations.base_integration import BaseIntegration, IntegrationSchemaDriftError, RawStorageSink
 from api.services.integrations.bigquery_connector import BigQueryConnector
 from api.services.integrations.google_ads_connector import GoogleAdsConnector
 from api.services.integrations.hubspot_connector import HubSpotConnector
@@ -1236,6 +1236,25 @@ class SyncEngine:
                 insight_summary=f"Circuit breaker open for `{integration_name}` — too many failures",
             )
 
+        except IntegrationSchemaDriftError as drift_exc:
+            # FIX #3: DLQ circuit breaker tripped — schema drift detected
+            safe_msg = _sanitize_log_message(str(drift_exc))
+            _log_error("[%s] Schema drift detected for %s: %s", tenant_id, dataset_id, safe_msg)
+            await db.rollback()
+            await self._update_dataset_status(
+                db, dataset_id, DatasetStatus.FAILED,
+                error_msg=f"Schema drift: {safe_msg}",
+            )
+            await notification_router.dispatch_alert(
+                tenant_id=tenant_id,
+                agent_name=f"{integration_name.capitalize()} Schema Drift Alert",
+                insight_summary=(
+                    f"🚨 **Schema drift detected** in `{integration_name}` sync. "
+                    f"DLQ rate exceeded 5% — sync has been halted to prevent data corruption. "
+                    f"Engineering review required."
+                ),
+            )
+
         except Exception as exc:
             safe_msg = _sanitize_log_message(str(exc))
             _log_error("[%s] Sync failed for %s: %s", tenant_id, dataset_id, safe_msg, exc_info=True)
@@ -1436,6 +1455,106 @@ def celery_run_historical_sync(
                     await _complete_db_idempotency(
                         db, idempotency_key, "failed", {"error": str(exc)}
                     )
+                raise
+
+    return anyio.run(_run)
+
+
+# ---------------------------------------------------------------------------
+# FIX #4: Stripe CDC Nightly Reconciliation (Celery Task)
+# ---------------------------------------------------------------------------
+
+@celery_app.task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=600,
+    max_retries=2,
+    name="sync_engine.run_stripe_reconciliation",
+)
+def celery_run_stripe_reconciliation(
+    self,
+    tenant_id: str,
+    dataset_id: str,
+    lookback_hours: int = 48,
+) -> Dict[str, Any]:
+    """
+    Nightly Stripe Reconciliation Task.
+
+    Designed to be triggered by celery-beat on a 24-hour cron. Re-syncs
+    charges, subscriptions, and invoices with a 48-hour lookback to catch
+    late-arriving events that the real-time CDC stream may have missed
+    during Stripe outages or network partitions.
+
+    Because all Stripe records carry `_synced_at` and upsert metadata
+    `_meta: {op: upsert}`, this is fully idempotent — duplicate records
+    are safely merged without creating warehouse duplicates.
+
+    Example celery-beat config:
+        'stripe-reconciliation': {
+            'task': 'sync_engine.run_stripe_reconciliation',
+            'schedule': crontab(hour=3, minute=0),  # 3 AM UTC daily
+            'kwargs': {'tenant_id': '<id>', 'dataset_id': '<id>'},
+        }
+    """
+    import anyio
+
+    async def _run() -> Dict[str, Any]:
+        async with AsyncSessionLocal() as db:
+            try:
+                norm_name = "stripe"
+                cred_manager = CredentialManager(db)
+                api_keys = await cred_manager.get_integration_credentials_async(tenant_id, norm_name)
+
+                if not api_keys:
+                    logger.warning("[%s] Reconciliation skipped: no Stripe credentials", tenant_id)
+                    return {"status": "skipped", "reason": "no_credentials"}
+
+                connector = StripeConnector(tenant_id=tenant_id, credentials=api_keys)
+                connector.data_sanitizer = DataSanitizer(tenant_id, norm_name)
+
+                engine = get_sync_engine()
+                total_rows = 0
+
+                async for batch in connector.sync_reconciliation(lookback_hours=lookback_hours):
+                    records = batch.get("records", [])
+                    if not records:
+                        continue
+
+                    # Run the QA pipeline on reconciliation data
+                    raw_schema_map = await connector.fetch_schema()
+                    stream_name = batch.get("source_stream", "charges")
+                    stream_schema_key = f"stripe_{stream_name}"
+                    flat_schema = _parse_and_validate_schema(
+                        raw_schema_map.get(stream_schema_key, {}), stream_name
+                    )
+                    pii_columns = getattr(connector, "PII_COLUMNS", [])
+
+                    df = await engine._run_qa_pipeline_chunk(
+                        tenant_id=tenant_id,
+                        integration_name=norm_name,
+                        chunk=records,
+                        expected_schema=flat_schema,
+                        pii_columns=pii_columns,
+                    )
+
+                    if df.height > 0:
+                        target_partition = PartitionManager.get_optimal_partition(
+                            f"sync/{norm_name}/{stream_name}", False
+                        )
+                        await _blocking_write_dataframe(tenant_id, target_partition, df)
+                        total_rows += df.height
+
+                    _clear_dataframe(df)
+
+                logger.info(
+                    "[%s] ✅ Stripe reconciliation complete | rows_patched=%d lookback=%dh",
+                    tenant_id, total_rows, lookback_hours,
+                )
+                return {"status": "success", "rows_patched": total_rows}
+
+            except Exception as exc:
+                logger.error("[%s] Stripe reconciliation failed: %s", tenant_id, exc, exc_info=True)
                 raise
 
     return anyio.run(_run)

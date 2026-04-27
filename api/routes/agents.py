@@ -1,14 +1,11 @@
 # api/routes/agents.py
 
 import logging
-import os
-import hmac
 from uuid import UUID
 from typing import List, Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel, model_validator, Field
@@ -26,7 +23,7 @@ from api.models.agent import (
 )
 
 # Core Security & SaaS Identity
-from api.auth import verify_tenant, TenantContext
+from api.auth import verify_tenant, TenantContext, verify_internal_service
 
 # Core Services
 from api.services.agent_service import agent_service, AgentCreatePayload
@@ -36,17 +33,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agents", tags=["Agents"])
 
 CRON_REGEX = r'^((((\d+,)+\d+|(\d+(\/|-)\d+)|\d+|\*) ?){5,7})$'
-INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "")
-internal_security = HTTPBearer(auto_error=False)
-
-
-def verify_internal_heartbeat(
-    x_internal_service_key: Optional[str] = Header(default=None, alias="x-internal-service-key"),
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(internal_security),
-) -> None:
-    token = x_internal_service_key or (credentials.credentials if credentials else None)
-    if not INTERNAL_SERVICE_KEY or not token or not hmac.compare_digest(token, INTERNAL_SERVICE_KEY):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized internal caller.")
 
 
 def _verify_dataset_ownership(db: Session, tenant_id: str, dataset_id: UUID) -> None:
@@ -357,7 +343,7 @@ async def delete_agent(
 # Autonomous Heartbeat
 # ------------------------------------------------------------------------------
 
-@router.post("/heartbeat", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_internal_heartbeat)])
+@router.post("/heartbeat", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(verify_internal_service)])
 async def trigger_agent_heartbeat(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)

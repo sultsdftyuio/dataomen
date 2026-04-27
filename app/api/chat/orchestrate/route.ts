@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { buildWorkspaceWidgets, saveWorkspaceDocument } from "@/lib/workspace-store";
 import { z } from "zod";
 
 export const runtime = "edge"; // Maximize performance & minimize latency
@@ -106,6 +107,131 @@ type StreamPacket =
   | { type: "done"; content: string; usage?: { tokens: number } }
   | { type: "cache_hit"; content: any };
 
+type CompatPayload = {
+  reply: string;
+  content: string;
+  sql_used?: string;
+  plan?: any;
+  insights?: any;
+  diagnostics?: any;
+  payload?: any;
+  narrative?: any;
+};
+
+const readCompatPayload = async (
+  backendResponse: Response
+): Promise<{ compatPayload: CompatPayload; streamError: string | null }> => {
+  if (!backendResponse.body) {
+    throw new Error("Missing backend stream body.");
+  }
+
+  const reader = backendResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let streamCompleted = false;
+  let streamError: string | null = null;
+
+  const compatPayload: CompatPayload = {
+    reply: "",
+    content: "",
+  };
+
+  while (!streamCompleted) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const rawChunk = buffer.slice(0, boundary).trim();
+      buffer = buffer.slice(boundary + 2);
+      if (!rawChunk) continue;
+
+      let jsonStr = rawChunk;
+      if (jsonStr.startsWith("data:")) {
+        jsonStr = jsonStr.substring(5).trim();
+      }
+
+      let packet: any;
+      try {
+        packet = JSON.parse(jsonStr);
+      } catch {
+        buffer = rawChunk + "\n\n" + buffer;
+        break;
+      }
+
+      const packetType = String(packet?.type || "");
+      const packetContent = packet?.content ?? packet?.message;
+
+      switch (packetType) {
+        case "plan":
+          compatPayload.plan = packetContent;
+          break;
+        case "sql":
+          compatPayload.sql_used = typeof packetContent === "string" ? packetContent : undefined;
+          break;
+        case "insights":
+          compatPayload.insights = packetContent;
+          break;
+        case "diagnostics":
+          compatPayload.diagnostics = packetContent;
+          break;
+        case "narrative":
+          compatPayload.narrative = packetContent;
+          if (typeof packetContent?.executive_summary === "string") {
+            compatPayload.reply += packetContent.executive_summary;
+          } else if (typeof packetContent === "string") {
+            compatPayload.reply += packetContent;
+          }
+          break;
+        case "narrative_chunk":
+          compatPayload.reply += String(packetContent || "");
+          break;
+        case "data":
+          compatPayload.payload = packetContent;
+          if (!compatPayload.reply && typeof packetContent?.answer === "string") {
+            compatPayload.reply = packetContent.answer;
+          }
+          break;
+        case "cache_hit": {
+          const cached = packetContent || {};
+          compatPayload.sql_used = compatPayload.sql_used || cached.sql_query;
+          compatPayload.insights = compatPayload.insights || cached.insight_payload;
+          compatPayload.narrative = compatPayload.narrative || cached.narrative;
+          compatPayload.payload = compatPayload.payload || cached.payload || {
+            chart_spec: cached.chart_spec,
+            sql_query: cached.sql_query,
+            insight_payload: cached.insight_payload,
+            narrative: cached.narrative,
+            is_cached: true,
+          };
+
+          if (!compatPayload.reply) {
+            if (typeof cached?.narrative?.executive_summary === "string") {
+              compatPayload.reply = cached.narrative.executive_summary;
+            } else if (typeof cached?.narrative === "string") {
+              compatPayload.reply = cached.narrative;
+            }
+          }
+          break;
+        }
+        case "error":
+          streamError = String(packetContent || "Unknown error");
+          streamCompleted = true;
+          break;
+        case "done":
+          streamCompleted = true;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  return { compatPayload, streamError };
+};
+
 // ---------------------------------------------------------------------------
 // Strict Gateway Schema (Frontend -> Next.js)
 // ---------------------------------------------------------------------------
@@ -119,6 +245,8 @@ const PayloadSchema = z.object({
     role: z.enum(["user", "assistant", "system", "data", "agent", "ai"]),
     content: z.any()
   })).max(20).optional().default([]), 
+  stream: z.boolean().optional().default(true),
+  compact_response: z.boolean().optional().default(false),
   predictive_config: z.any().optional(),
   ab_test_config: z.any().optional(),
 }).refine((value) => {
@@ -236,7 +364,14 @@ export async function POST(req: NextRequest, context: any) {
     }
 
     const parsedPayload = validationResult.data;
-    const { agent_id, active_dataset_ids, active_document_ids, history } = parsedPayload;
+    const {
+      agent_id,
+      active_dataset_ids,
+      active_document_ids,
+      history,
+      stream: streamRequested,
+      compact_response: compactResponseRequested,
+    } = parsedPayload;
     const prompt = (parsedPayload.prompt ?? parsedPayload.query ?? "").trim();
     const normalizedHistory = (history || []).map((item) => ({
       role: item.role === "agent" || item.role === "ai"
@@ -287,118 +422,7 @@ export async function POST(req: NextRequest, context: any) {
           );
         }
 
-        const reader = backendResponse.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let streamCompleted = false;
-        let streamError: string | null = null;
-
-        const compatPayload: {
-          reply: string;
-          content: string;
-          sql_used?: string;
-          plan?: any;
-          insights?: any;
-          diagnostics?: any;
-          payload?: any;
-          narrative?: any;
-        } = {
-          reply: "",
-          content: "",
-        };
-
-        while (!streamCompleted) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-
-          let boundary;
-          while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-            const rawChunk = buffer.slice(0, boundary).trim();
-            buffer = buffer.slice(boundary + 2);
-            if (!rawChunk) continue;
-
-            let jsonStr = rawChunk;
-            if (jsonStr.startsWith("data:")) {
-              jsonStr = jsonStr.substring(5).trim();
-            }
-
-            let packet: any;
-            try {
-              packet = JSON.parse(jsonStr);
-            } catch {
-              buffer = rawChunk + "\n\n" + buffer;
-              break;
-            }
-
-            const packetType = String(packet?.type || "");
-            const packetContent = packet?.content ?? packet?.message;
-
-            switch (packetType) {
-              case "plan":
-                compatPayload.plan = packetContent;
-                break;
-              case "sql":
-                compatPayload.sql_used = typeof packetContent === "string" ? packetContent : undefined;
-                break;
-              case "insights":
-                compatPayload.insights = packetContent;
-                break;
-              case "diagnostics":
-                compatPayload.diagnostics = packetContent;
-                break;
-              case "narrative":
-                compatPayload.narrative = packetContent;
-                if (typeof packetContent?.executive_summary === "string") {
-                  compatPayload.reply += packetContent.executive_summary;
-                } else if (typeof packetContent === "string") {
-                  compatPayload.reply += packetContent;
-                }
-                break;
-              case "narrative_chunk":
-                compatPayload.reply += String(packetContent || "");
-                break;
-              case "data":
-                compatPayload.payload = packetContent;
-                if (!compatPayload.reply && typeof packetContent?.answer === "string") {
-                  compatPayload.reply = packetContent.answer;
-                }
-                break;
-              case "cache_hit": {
-                const cached = packetContent || {};
-                compatPayload.sql_used = compatPayload.sql_used || cached.sql_query;
-                compatPayload.insights = compatPayload.insights || cached.insight_payload;
-                compatPayload.narrative = compatPayload.narrative || cached.narrative;
-                compatPayload.payload = compatPayload.payload || cached.payload || {
-                  chart_spec: cached.chart_spec,
-                  sql_query: cached.sql_query,
-                  insight_payload: cached.insight_payload,
-                  narrative: cached.narrative,
-                  is_cached: true,
-                };
-
-                if (!compatPayload.reply) {
-                  if (typeof cached?.narrative?.executive_summary === "string") {
-                    compatPayload.reply = cached.narrative.executive_summary;
-                  } else if (typeof cached?.narrative === "string") {
-                    compatPayload.reply = cached.narrative;
-                  }
-                }
-                break;
-              }
-              case "error":
-                streamError = String(packetContent || "Unknown error");
-                streamCompleted = true;
-                break;
-              case "done":
-                streamCompleted = true;
-                break;
-              default:
-                break;
-            }
-          }
-        }
+        const { compatPayload, streamError } = await readCompatPayload(backendResponse);
 
         if (streamError && !compatPayload.reply) {
           return NextResponse.json(
@@ -417,6 +441,97 @@ export async function POST(req: NextRequest, context: any) {
         log("error", "legacy_json_compat_failure", { error: String(compatError) });
         return NextResponse.json(
           { type: "error", message: "A compatibility-mode routing error occurred." },
+          { status: 500, headers: withRequestTraceHeaders() }
+        );
+      }
+    }
+
+    if (compactResponseRequested || !streamRequested) {
+      log("info", "compact_workspace_response_mode");
+
+      try {
+        const backendResponse = await fetch(`${BACKEND_URL}/api/chat/orchestrate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${access_token}`,
+            "X-Tenant-ID": tenant_id,
+            "X-Request-ID": requestId,
+            "X-Forwarded-For": clientIp,
+            "Connection": "keep-alive"
+          },
+          body: JSON.stringify({
+            prompt,
+            agent_id: agent_id || null,
+            active_dataset_ids,
+            active_document_ids,
+            history: normalizedHistory,
+            stream: true,
+          }),
+          signal: req.signal,
+        });
+
+        if (!backendResponse.ok || !backendResponse.body) {
+          const errData = await backendResponse.text().catch(() => "Unknown error");
+          return NextResponse.json(
+            { type: "error", message: `Analysis Error: ${errData}` },
+            { status: backendResponse.status || 502, headers: withRequestTraceHeaders() }
+          );
+        }
+
+        const { compatPayload, streamError } = await readCompatPayload(backendResponse);
+        if (streamError && !compatPayload.reply) {
+          return NextResponse.json(
+            { type: "error", message: streamError },
+            { status: 502, headers: withRequestTraceHeaders() }
+          );
+        }
+
+        const content = (compatPayload.reply || compatPayload.content || "Analysis complete.").trim();
+        const widgets = buildWorkspaceWidgets(compatPayload.payload, compatPayload.sql_used);
+
+        const hasPersistableWorkspaceState =
+          widgets.length > 0 ||
+          compatPayload.payload !== undefined ||
+          compatPayload.plan !== undefined ||
+          compatPayload.insights !== undefined ||
+          compatPayload.diagnostics !== undefined;
+
+        let workspaceId: string | null = null;
+        if (hasPersistableWorkspaceState) {
+          workspaceId = crypto.randomUUID();
+          await saveWorkspaceDocument({
+            id: workspaceId,
+            tenantId: tenant_id,
+            prompt,
+            narrative: content,
+            widgets,
+            plan: compatPayload.plan,
+            sql: compatPayload.sql_used,
+            insights: compatPayload.insights,
+            diagnostics: compatPayload.diagnostics,
+            rawPayload: compatPayload.payload,
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        return NextResponse.json(
+          {
+            role: "assistant",
+            content,
+            workspaceId,
+            dashboardId: workspaceId,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            status: 200,
+            headers: withRequestTraceHeaders(),
+          }
+        );
+      } catch (compactError: any) {
+        log("error", "compact_workspace_mode_failure", { error: String(compactError) });
+        return NextResponse.json(
+          { type: "error", message: "A compact-mode routing error occurred." },
           { status: 500, headers: withRequestTraceHeaders() }
         );
       }

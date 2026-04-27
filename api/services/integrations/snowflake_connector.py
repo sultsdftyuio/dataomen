@@ -2,8 +2,15 @@
 ARCLI.TECH - SaaS Integration Module
 Connector: Snowflake (Enterprise Data Warehouse)
 Strategy: Compute Pushdown, Vectorized Pandas Extraction, & Async Threading
+
+Changelog v1.1:
+- [FIX] Thread pool exhaustion: Dedicated CapacityLimiter(10) isolates Snowflake's
+  blocking C-extensions from the global anyio thread pool.
+- [FIX] Hung query protection: asyncio.timeout wraps every threaded call with a
+  hard kill at QUERY_TIMEOUT_SECONDS + 300s.
 """
 
+import asyncio
 import logging
 import contextlib
 import time
@@ -11,6 +18,7 @@ from datetime import datetime
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
 import anyio
+from anyio import CapacityLimiter, to_thread
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
 try:
@@ -27,6 +35,13 @@ except ImportError:
 from api.services.integrations.base_integration import BaseIntegration, IntegrationConfig
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# FIX: Dedicated capacity limiter — prevents Snowflake's blocking C-extensions
+# from starving the global anyio thread pool. Exactly 10 concurrent Snowflake
+# threads system-wide, isolated from FastAPI worker threads.
+# ---------------------------------------------------------------------------
+_snowflake_limiter = CapacityLimiter(10)
 
 
 class SnowflakeConnector(BaseIntegration):
@@ -56,6 +71,9 @@ class SnowflakeConnector(BaseIntegration):
         )
         super().__init__(config)
 
+        # Hard timeout = query timeout + 5 min buffer for connection + result transfer
+        self._thread_timeout_seconds = self.QUERY_TIMEOUT_SECONDS + 300
+
         if not SNOWFLAKE_AVAILABLE:
             raise ImportError("snowflake-connector-python and pandas are required")
 
@@ -65,6 +83,20 @@ class SnowflakeConnector(BaseIntegration):
     # ---------------------------------------------------------------------
     # Connection Management
     # ---------------------------------------------------------------------
+
+    # -----------------------------------------------------------------
+    # FIX: Isolated thread execution with hard timeout
+    # -----------------------------------------------------------------
+
+    async def _execute_with_timeout(self, func, *args):
+        """
+        Run a blocking function in the dedicated Snowflake thread pool with
+        a hard asyncio timeout. This prevents:
+        1. Snowflake's C-extensions from starving the global anyio pool.
+        2. A hung query from blocking the FastAPI worker indefinitely.
+        """
+        async with asyncio.timeout(self._thread_timeout_seconds):
+            return await to_thread.run_sync(func, *args, limiter=_snowflake_limiter)
 
     @contextlib.asynccontextmanager
     async def _get_client(self):
@@ -94,11 +126,11 @@ class SnowflakeConnector(BaseIntegration):
         def _connect_retry():
             return _connect()
 
-        conn = await anyio.to_thread.run_sync(_connect_retry)
+        conn = await self._execute_with_timeout(_connect_retry)
         try:
             yield conn
         finally:
-            await anyio.to_thread.run_sync(conn.close)
+            await self._execute_with_timeout(conn.close)
 
     async def test_connection(self) -> bool:
         """Lightweight check invoked by the orchestrator to verify credentials."""
@@ -108,7 +140,10 @@ class SnowflakeConnector(BaseIntegration):
                     with conn.cursor() as cur:
                         cur.execute("SELECT 1")
                         return cur.fetchone() is not None
-                return await anyio.to_thread.run_sync(_test)
+                return await self._execute_with_timeout(_test)
+        except asyncio.TimeoutError:
+            logger.error("[%s] Snowflake connection test timed out after %ds", self.tenant_id, self._thread_timeout_seconds)
+            return False
         except Exception as e:
             logger.error("[%s] Snowflake connection failed: %s", self.tenant_id, str(e))
             return False
@@ -174,7 +209,7 @@ class SnowflakeConnector(BaseIntegration):
             return schema
 
         async with self._get_client() as conn:
-            schema = await anyio.to_thread.run_sync(_introspect, conn)
+            schema = await self._execute_with_timeout(_introspect, conn)
 
         self._schema_cache = schema
         self._schema_cache_time = now
@@ -247,14 +282,16 @@ class SnowflakeConnector(BaseIntegration):
             finally:
                 cur.close()
 
-        # Isolate blocking generator iteration to a worker thread
+        # Isolate blocking generator iteration to the dedicated Snowflake thread pool.
+        # Each call is wrapped in asyncio.timeout to prevent hung queries from
+        # blocking the FastAPI worker indefinitely.
         async with self._get_client() as conn:
-            iterator = await anyio.to_thread.run_sync(_execute_and_fetch, conn)
+            iterator = await self._execute_with_timeout(_execute_and_fetch, conn)
             
             while True:
                 try:
-                    # Pull next chunk from the thread
-                    batch = await anyio.to_thread.run_sync(next, iterator)
+                    # Pull next chunk from the dedicated thread pool
+                    batch = await self._execute_with_timeout(next, iterator)
                     
                     # Security boundary: Mask PII before yielding to async application space
                     batch = self._mask_pii(batch)
@@ -263,7 +300,12 @@ class SnowflakeConnector(BaseIntegration):
                     
                     # Yield event loop
                     await anyio.sleep(0)
-                except StopIteration:
+                except (StopIteration, asyncio.TimeoutError) as exc:
+                    if isinstance(exc, asyncio.TimeoutError):
+                        logger.error(
+                            "[%s] Snowflake query timed out after %ds during batch iteration",
+                            self.tenant_id, self._thread_timeout_seconds,
+                        )
                     break
 
     # ---------------------------------------------------------------------

@@ -385,12 +385,17 @@ def install_default_import_stubs(
             "organization_id": "tenant_abc123",
         }
 
+    async def _verify_internal_service_stub(*_args: Any, **_kwargs: Any) -> bool:
+        return True
+
     if not hasattr(auth_module, "TenantContext"):
         auth_module.TenantContext = _TenantContextStub
     if not hasattr(auth_module, "verify_tenant"):
         auth_module.verify_tenant = _verify_tenant_stub
     if not hasattr(auth_module, "get_current_user"):
         auth_module.get_current_user = _get_current_user_stub
+    if not hasattr(auth_module, "verify_internal_service"):
+        auth_module.verify_internal_service = _verify_internal_service_stub
 
     if "api.database" not in modules:
         database_module = types.ModuleType("api.database")
