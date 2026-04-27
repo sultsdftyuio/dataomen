@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 // -----------------------------------------------------------------------------
 interface AnalyticalGridProps {
   orchestrator: ChartOrchestrator;
-  jobs: Omit<ChartJob, "status" | "result" | "error">[];
+  jobs: Omit<ChartJob, "status" | "result" | "error" | "retryCount">[];
 }
 
 type ViewMode = "chart" | "table" | "sql";

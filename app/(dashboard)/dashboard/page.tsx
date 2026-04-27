@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, LayoutDashboard, Loader2, RefreshCw } from "lucide-react";
 
@@ -30,7 +30,7 @@ interface WorkspaceLayoutResponse {
 
 type GridJobInput = Omit<ChartJob, "status" | "result" | "error" | "retryCount">;
 
-export default function DashboardOverviewPage() {
+function DashboardOverviewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspace");
@@ -257,5 +257,19 @@ export default function DashboardOverviewPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function DashboardOverviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full w-full flex-1 items-center justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        </div>
+      }
+    >
+      <DashboardOverviewContent />
+    </Suspense>
   );
 }
