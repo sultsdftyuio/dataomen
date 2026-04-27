@@ -2,8 +2,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { OmniMessageInput } from "@/components/chat/OmniMessageInput";
-import { DynamicChartFactory } from "@/components/dashboard/DynamicChartFactory";
+import { MessageList } from "@/components/chat/MessageList";
 import { ExecutionPayload } from "@/lib/chart-engine";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -13,6 +15,7 @@ import {
   Table2, TrendingUp, Search, Zap,
   ChevronRight, Code2, FlaskConical,
   ShieldCheck, CircleStop, AlertTriangle,
+  ArrowDown, Copy, Check,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
@@ -169,32 +172,49 @@ function buildConversationHistory(messages: UIMessage[], promptText: string): Ar
 }
 
 // -----------------------------------------------------------------------------
-// Markdown-lite renderer (Engineered Typography)
+// Markdown Code Block (with copy-to-clipboard)
 // -----------------------------------------------------------------------------
-function SimpleMarkdown({ text }: { text: string }) {
-  if (!text) return null;
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+function getCodeLanguage(className?: string): string {
+  if (!className) return "code";
+  const langMatch = className.match(/language-([\w-]+)/);
+  return langMatch?.[1] || "code";
+}
+
+function MarkdownCodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
-    <>
-      {parts.map((part, i) => {
-        if (part.startsWith("**") && part.endsWith("**")) {
-          return <strong key={i} className="font-extrabold text-slate-900">{part.slice(2, -2)}</strong>;
-        }
-        if (part.startsWith("`") && part.endsWith("`")) {
-          return (
-            <code
-              key={i}
-              className="rounded-md bg-slate-100/90 px-1.5 py-0.5 font-mono text-[13px] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.2)]"
-            >
-              {part.slice(1, -1)}
-            </code>
-          );
-        }
-        return <span key={i}>{part}</span>;
-      })}
-    </>
+    <div className="group/code my-4 overflow-hidden rounded-xl bg-slate-950/95 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.8),inset_0_0_0_1px_rgba(148,163,184,0.2)]">
+      <div className="flex items-center justify-between bg-slate-900/80 px-3 py-1.5 shadow-[inset_0_-1px_0_rgba(148,163,184,0.25)]">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{language}</span>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex h-6 items-center gap-1 rounded-md px-2 text-[10px] font-semibold text-slate-300 opacity-0 transition-opacity hover:bg-slate-800/70 group-hover/code:opacity-100"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre className="m-0 overflow-x-auto px-4 py-3 text-[13px] leading-6 text-slate-100">
+        <code>{code}</code>
+      </pre>
+    </div>
   );
 }
+
+const PROSE_CLASSNAME =
+  "prose prose-slate max-w-none text-[15px] leading-7 text-slate-900 prose-p:my-2 prose-p:leading-7 prose-headings:mb-1.5 prose-headings:mt-4 prose-headings:font-semibold prose-headings:leading-tight prose-headings:tracking-tight prose-headings:text-slate-900 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:text-slate-900 prose-code:rounded-md prose-code:bg-slate-100/90 prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:text-slate-700 prose-code:before:content-none prose-code:after:content-none prose-table:my-4 prose-table:w-full prose-th:bg-slate-50/70 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:text-[11px] prose-th:font-semibold prose-th:uppercase prose-th:tracking-wider prose-th:text-slate-500 prose-td:px-4 prose-td:py-2 prose-td:text-slate-700";
 
 // -----------------------------------------------------------------------------
 // Step / Thinking Pill
@@ -287,6 +307,11 @@ function ReasoningBlock({ icon, label, content, mono }: { icon: React.ReactNode;
   );
 }
 
+// -----------------------------------------------------------------------------
+// Full-Fidelity Streaming Markdown Renderer (react-markdown + remarkGfm)
+// Renders streamed content through react-markdown with GFM table support
+// and syntax-highlighted code blocks.  Includes a streaming caret.
+// -----------------------------------------------------------------------------
 function AssistantTextContent({
   content,
   showStreamingCaret,
@@ -294,18 +319,70 @@ function AssistantTextContent({
   content: string;
   showStreamingCaret: boolean;
 }) {
-  const lines = useMemo(() => content.split("\n"), [content]);
-
   return (
-    <div className="prose prose-slate max-w-none text-[15px] leading-7 text-slate-900 prose-p:my-2 prose-p:leading-7 prose-headings:text-slate-900">
-      {lines.map((line, i) => (
-        <p key={i} className="min-h-7 transition-opacity duration-200">
-          <SimpleMarkdown text={line} />
-          {showStreamingCaret && i === lines.length - 1 && (
-            <span className="inline-block h-4 w-1.5 ml-1 rounded-full bg-blue-500/90 align-middle animate-pulse" />
-          )}
-        </p>
-      ))}
+    <div className={PROSE_CLASSNAME}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ className, children, ...props }) {
+            const rawCode = String(children).replace(/\n$/, "");
+            const isInline = !className;
+            if (isInline) {
+              return (
+                <code
+                  className="rounded-md bg-slate-100/90 px-1.5 py-0.5 font-mono text-[0.85em] font-semibold text-slate-700 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.2)]"
+                  {...props}
+                >
+                  {children}
+                </code>
+              );
+            }
+            return <MarkdownCodeBlock code={rawCode} language={getCodeLanguage(className)} />;
+          },
+          table({ children }) {
+            return (
+              <div className="my-4 overflow-x-auto rounded-xl bg-white/62 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.38),inset_0_0_0_1px_rgba(148,163,184,0.2)]">
+                <table className="w-full text-left text-sm text-slate-600">
+                  {children}
+                </table>
+              </div>
+            );
+          },
+          thead({ children }) {
+            return (
+              <thead className="bg-slate-50/70 text-xs uppercase tracking-wider text-slate-500 shadow-[inset_0_-1px_0_rgba(148,163,184,0.24)]">
+                {children}
+              </thead>
+            );
+          },
+          th({ children }) {
+            return (
+              <th className="whitespace-nowrap px-4 py-2 font-semibold">
+                {children}
+              </th>
+            );
+          },
+          td({ children }) {
+            return (
+              <td className="whitespace-nowrap px-4 py-2">
+                {children}
+              </td>
+            );
+          },
+          tr({ children }) {
+            return (
+              <tr className="transition-colors hover:bg-slate-50/60 shadow-[inset_0_-1px_0_rgba(148,163,184,0.18)]">
+                {children}
+              </tr>
+            );
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+      {showStreamingCaret && (
+        <span className="inline-block h-4 w-1.5 ml-1 rounded-full bg-blue-500/90 align-middle animate-pulse" />
+      )}
     </div>
   );
 }
@@ -382,6 +459,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
   const sendLockRef = useRef(false);
   const lastRawStatusRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const uploadControllersRef = useRef<Set<AbortController>>(new Set());
   const bufferedContentRef = useRef("");
   const bufferedAssistantIdRef = useRef<string | null>(null);
@@ -436,6 +514,9 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     bufferedAssistantIdRef.current = null;
   }, []);
 
+  // ── Smart Auto-Scroll: scroll event listener ──────────────────────
+  // If the user scrolls up even 1px during generation, auto-scroll is
+  // disabled to prevent hijacking their reading experience.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -447,6 +528,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       isAtBottomRef.current = isViewportNearBottom(viewport);
       const shouldCompact = viewport.scrollTop > 28;
       setIsCommandStripCompact((prev) => (prev === shouldCompact ? prev : shouldCompact));
+      setShowScrollToBottom(!isAtBottomRef.current && messages.length > 0);
     };
 
     handleScroll();
@@ -454,6 +536,31 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
 
     return () => {
       viewport.removeEventListener("scroll", handleScroll);
+    };
+  }, [messages.length]);
+
+  // ── Smart Auto-Scroll: ResizeObserver ──────────────────────────────
+  // Fires whenever the content wrapper's height changes (new tokens arrive
+  // during streaming).  Only scrolls if the user is at the bottom.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const viewport = container.querySelector<HTMLElement>("[data-slot='scroll-area-viewport']");
+    if (!viewport) return;
+
+    const target = viewport.firstElementChild ?? viewport;
+
+    const observer = new ResizeObserver(() => {
+      if (isAtBottomRef.current) {
+        scrollAnchorRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      }
+    });
+
+    observer.observe(target);
+
+    return () => {
+      observer.disconnect();
     };
   }, []);
 
@@ -567,14 +674,50 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
     toast({ description: "Data context cleared. Next question starts fresh." });
   };
 
-  const stopStreaming = () => {
+  const stopStreaming = useCallback(async () => {
     if (!isProcessing && !sendLockRef.current) return;
+
+    // 1. Flush any buffered content before aborting
+    flushBufferedContentToState();
+
+    // 2. Sever the HTTP connection immediately
     abortInFlightOperations();
     sendLockRef.current = false;
     setProgressStatus("Stopped by you");
     setIsProcessing(false);
-    toast({ description: "Generation stopped." });
-  };
+    toast({ description: "Generation stopped. Partial response saved." });
+
+    // 3. Save the partial chunk to the database (non-blocking)
+    // This uses the session API to persist whatever was generated before the
+    // user hit stop, so the conversation context is never lost.
+    try {
+      const lastAssistant = messagesRef.current.filter((m) => m.role === "assistant").pop();
+      if (lastAssistant?.content && lastAssistant.content.trim().length > 0) {
+        const supabaseClient = createClient();
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.access_token) {
+          // Fire-and-forget: don't block the UI for persistence
+          fetch("/api/chat/sessions/partial-save", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              role: "assistant",
+              content: lastAssistant.content,
+              isPartial: true,
+              metadata: { aborted: true, timestamp: new Date().toISOString() },
+            }),
+          }).catch(() => {
+            // Non-critical: partial save is best-effort
+          });
+        }
+      }
+    } catch {
+      // Silently ignore partial save failures
+    }
+  }, [isProcessing, flushBufferedContentToState, abortInFlightOperations]);
 
   // ---------------------------------------------------------------------------
   // Upgraded Hybrid Upload Pipeline
@@ -1045,11 +1188,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
       {/* ── Chat Body ── */}
       <div ref={scrollContainerRef} className="relative -mt-12 min-h-0 flex-1">
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-20 bg-gradient-to-b from-slate-100/90 via-white/70 to-transparent" />
+        {messages.length === 0 ? (
         <ScrollArea className="h-full">
           <div className="max-w-4xl mx-auto w-full">
             <div className="px-5 pb-56 pt-20 sm:px-8">
             {/* Empty / Welcome State */}
-            {messages.length === 0 && (
               <div className="animate-in fade-in zoom-in-95 flex min-h-[62vh] flex-col items-center justify-center text-center duration-500">
                 <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                   Document Intelligence Workspace
@@ -1087,243 +1230,25 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({
                   <span>Drag and drop supported</span>
                 </div>
               </div>
-            )}
-
-            {/* Message Thread */}
-            <div className="flex flex-col gap-14">
-              {hiddenMessageCount > 0 && (
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setShowAllMessages((prev) => !prev)}
-                    className="rounded-full bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.24)] hover:text-slate-700"
-                  >
-                    {showAllMessages ? "Collapse older messages" : `Show ${hiddenMessageCount} earlier messages`}
-                  </button>
-                </div>
-              )}
-
-              {groupedVisibleMessages.map((group, groupIndex) => (
-                <section key={`${group.id}-${groupIndex}`} className="flex flex-col gap-3">
-                  {group.role === "assistant" && groupIndex === firstAssistantGroupIndex && (
-                    <div className="pl-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      {agentName}
-                    </div>
-                  )}
-
-                  {group.role === "user" && (
-                    <div className="flex justify-end pr-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      <span>You</span>
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-2">
-                    {group.items.map((msg) => {
-                      const messageData = messageDataStoreRef.current[msg.id] || {};
-                      const payload = messageData.payload;
-                      const plan = messageData.plan;
-                      const sql = messageData.sql;
-                      const insights = messageData.insights;
-                      const diagnostics = messageData.diagnostics;
-                      const isLatestMessage = msg.id === messages[messages.length - 1]?.id;
-                      const warningCount = msg.warnings?.length || 0;
-                      const traceCount = msg.traces?.length || 0;
-                      const hasReasoning = Boolean(msg.hasPlan || msg.hasSql || msg.hasInsights || msg.hasDiagnostics);
-                      const footnoteSegments: string[] = [];
-                      if (hasReasoning) footnoteSegments.push("analysis");
-                      if (traceCount > 0) footnoteSegments.push(`${traceCount} trace${traceCount > 1 ? "s" : ""}`);
-                      if (warningCount > 0) footnoteSegments.push(`${warningCount} warning${warningCount > 1 ? "s" : ""}`);
-                      if (msg.error) footnoteSegments.push("error flagged");
-                      const footnoteLabel = footnoteSegments.length > 0 ? footnoteSegments.join(" · ") : "response tools";
-
-                      if (msg.role === "system") {
-                        return (
-                          <div key={msg.id} className="mx-auto text-center text-[13px] font-medium text-slate-500">
-                            {msg.content}
-                          </div>
-                        );
-                      }
-
-                      if (msg.role === "user") {
-                        return (
-                          <article key={msg.id} className="ml-auto w-full max-w-[46rem] pl-10 sm:pl-24">
-                            {msg.files && msg.files.length > 0 && (
-                              <div className="mb-2 flex flex-wrap justify-end gap-2">
-                                {msg.files.map((f, i) => (
-                                  <div key={`${msg.id}-file-${i}`} className="flex items-center gap-2 rounded-full bg-slate-100/75 px-3 py-1.5 text-[11px] text-slate-600">
-                                    <FileText className="h-3.5 w-3.5" />
-                                    <span className="max-w-[180px] truncate font-medium">{f.name}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {msg.content && (
-                              <div className="rounded-3xl bg-slate-100/70 px-6 py-4 text-[15px] leading-[1.8] text-slate-800 transition-opacity duration-200">
-                                {msg.content}
-                              </div>
-                            )}
-
-                            <div className="mt-1 pr-1 text-right text-[11px] font-medium text-slate-400">
-                              {formatTime(msg.timestamp)}
-                            </div>
-                          </article>
-                        );
-                      }
-
-                      return (
-                        <article
-                          key={msg.id}
-                          className="group/message w-full animate-in fade-in duration-200"
-                        >
-                          {isProcessing && isLatestMessage && (
-                            <div className="mb-2 flex flex-wrap gap-2">
-                              {completedSteps.map((step) => (
-                                <ThinkingStep key={step} label={step} done />
-                              ))}
-                              {progressStatus && !completedSteps.includes(progressStatus) && (
-                                <ThinkingStep label={progressStatus} done={false} />
-                              )}
-                            </div>
-                          )}
-
-                          {msg.content && (
-                            <AssistantTextContent
-                              content={msg.content}
-                              showStreamingCaret={isProcessing && isLatestMessage}
-                            />
-                          )}
-
-                          {msg.hasPayload && payload && (
-                            <div className="animate-in fade-in slide-in-from-bottom-2 mt-6 overflow-hidden rounded-[24px] bg-white/70 p-2 ring-1 ring-slate-200/45 duration-200">
-                              <div className="flex items-center justify-between px-2 py-1.5">
-                                <div className="flex items-center gap-2">
-                                  <Table2 className="h-4 w-4 text-slate-400" />
-                                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                                    Analysis result
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500">
-                                  <button
-                                    type="button"
-                                    onClick={() => copyToClipboard(JSON.stringify(payload))}
-                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                                  >
-                                    Copy data
-                                  </button>
-                                  <span className="text-slate-300">•</span>
-                                  <button
-                                    type="button"
-                                    className="rounded-full px-2 py-0.5 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                                  >
-                                    Inspect
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="overflow-hidden rounded-2xl bg-white/85 p-3">
-                                <DynamicChartFactory payload={payload} />
-                              </div>
-                            </div>
-                          )}
-
-                          <details className="group/footnote mt-4 overflow-hidden rounded-2xl bg-white/62 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.22)]">
-                            <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-[11px] font-medium text-slate-500">
-                              <span className="uppercase tracking-[0.12em]">Analysis footnote</span>
-                              <span className="text-slate-300">•</span>
-                              <span className="truncate">{footnoteLabel}</span>
-                              <span className="ml-auto text-[11px]">{formatTime(msg.timestamp)}</span>
-                              <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform duration-200 group-open/footnote:rotate-90" />
-                            </summary>
-
-                            <div className="space-y-3 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(148,163,184,0.22)]">
-                              {warningCount > 0 && (
-                                <div className="space-y-2">
-                                  {msg.warnings?.map((warning, warningIdx) => (
-                                    <div key={`${msg.id}-warning-${warningIdx}`} className="rounded-xl bg-amber-50/50 py-2 pl-3 pr-2 text-[13px] text-amber-900/80 shadow-[inset_3px_0_0_rgba(252,211,77,0.85)]">
-                                      <div className="flex items-start gap-2">
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600/80" />
-                                        <span>{warning}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {msg.error && (
-                                <div className="rounded-xl bg-rose-50/55 py-2 pl-3 pr-2 text-[13px] text-rose-900/80 shadow-[inset_3px_0_0_rgba(251,113,133,0.8)]">
-                                  <div className="flex items-start gap-2">
-                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600/80" />
-                                    <span>{msg.error}</span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {traceCount > 0 && (
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                                  {msg.traces?.slice(-5).map((trace, traceIdx) => (
-                                    <span key={`${msg.id}-trace-${traceIdx}`} className="inline-flex items-center gap-1.5">
-                                      <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-                                      {trace.stage || "Step"}
-                                      {typeof trace.execution_time_ms === "number" ? ` | ${Math.round(trace.execution_time_ms)}ms` : ""}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-
-                              {hasReasoning && (
-                                <ReasoningPanel
-                                  plan={plan}
-                                  sql={sql}
-                                  insights={insights}
-                                  diagnostics={diagnostics}
-                                />
-                              )}
-
-                              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-medium text-slate-500">
-                                <button
-                                  type="button"
-                                  onClick={() => void copyToClipboard(msg.content || JSON.stringify(payload))}
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                                >
-                                  Copy response
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                                  onClick={() => toast({ description: "Thanks. Feedback recorded." })}
-                                >
-                                  Helpful
-                                </button>
-                                <button
-                                  type="button"
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700"
-                                  onClick={() => toast({ description: "Thanks. We will use this to improve future answers." })}
-                                >
-                                  Needs work
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void retryFromAssistant(msg.id)}
-                                  disabled={isProcessing}
-                                  className="rounded-full px-2.5 py-1 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  Retry
-                                </button>
-                              </div>
-                            </div>
-                          </details>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-
-              <div ref={scrollAnchorRef} className="h-4 w-full" />
-            </div>
             </div>
           </div>
         </ScrollArea>
+        ) : (
+          <MessageList
+            messages={visibleMessages}
+            messageDataStore={messageDataStoreRef.current}
+            agentName={agentName}
+            isProcessing={isProcessing}
+            progressStatus={toFriendlyStatus(progressStatus)}
+            completedSteps={completedSteps}
+            scrollAnchorRef={scrollAnchorRef}
+            onRetry={(msgId) => void retryFromAssistant(msgId)}
+            onCopy={(text) => void copyToClipboard(text)}
+            onFeedback={(type) => {
+              toast({ description: type === "helpful" ? "Thanks. Feedback recorded." : "Thanks. We will use this to improve future answers." });
+            }}
+          />
+        )}
       </div>
 
       {/* ── Input Area ── */}

@@ -26,6 +26,16 @@ from api.services.cache_manager import cache_manager
 from api.services.llm_client import LLMClient
 from api.services.vector_service import vector_service
 
+# Phase 3.1: Workspace Persistence (decoupled payload routing)
+from api.services.workspace_persistence import (
+    WorkspacePayload,
+    save_workspace,
+    generate_workspace_id,
+)
+
+# Phase 4.1: Context Governance (token budget & sliding window)
+from api.services.context_governor import context_governor
+
 # Database Models
 from models import Agent, Dataset
 
@@ -118,6 +128,30 @@ class AnalyticalOrchestrator:
             )
             traces.append(trace)
             return self._packet("technical_trace", trace.model_dump())
+
+        # -------------------------------------------------------
+        # Phase 4.1: Context Governance — Sliding Window Truncation
+        # Apply deterministic token budgeting BEFORE any LLM calls.
+        # The system prompt budget is enforced inside planner/generator;
+        # here we truncate the conversation history.
+        # -------------------------------------------------------
+        raw_history = history or []
+        governed = context_governor.prepare_llm_context(
+            system_prompt="",  # Actual system prompt is built per-stage
+            history=raw_history,
+            current_prompt=prompt,
+        )
+        history = governed["history"]
+
+        if governed["messages_dropped"] > 0:
+            logger.info(
+                f"[{tenant_id}] Context Governor: kept {governed['messages_included']} messages, "
+                f"dropped {governed['messages_dropped']}, ~{governed['total_tokens']} tokens"
+            )
+
+        # Phase 4.2: If compression is recommended, schedule it async
+        if governed["compression_recommended"]:
+            self._trigger_history_compression(tenant_id, raw_history)
 
         try:
             yield self._packet("status", "🔍 Securing tenant execution boundaries...")
@@ -421,7 +455,48 @@ class AnalyticalOrchestrator:
             yield _trace("Narrative Synthesis", stage_start, meta={"snapshot_hash": snap_hash})
 
             # -------------------------------------------------------
-            # STAGE 9: Delivery & Asynchronous Cache Commit
+            # STAGE 9: Workspace Persistence (Phase 3.1 Spatial Bridge)
+            #
+            # When a chart/grid is generated, save the heavy payload
+            # (VegaLite spec, SQL AST, insight data, raw rows) to
+            # Redis/Postgres under a new UUID.  The SSE stream receives
+            # ONLY the workspace_id + a short summary, keeping the chat
+            # feed lightweight.  The frontend <DashboardCard /> reads
+            # this UUID and navigates to /dashboard?workspace=UUID.
+            # -------------------------------------------------------
+            workspace_id = None
+            narrative_dict = narrative.model_dump()
+            executive_summary = getattr(narrative, 'executive_summary', '') or ''
+            if not executive_summary and isinstance(narrative_dict, dict):
+                executive_summary = narrative_dict.get('executive_summary', '') or narrative_dict.get('summary', '')
+
+            # Only persist a workspace if we have visualizable data
+            has_viz_payload = chart_spec or (combined_data and total_rows > 0)
+            if has_viz_payload:
+                stage_start = time.time()
+                workspace_id = generate_workspace_id()
+                workspace_payload = WorkspacePayload(
+                    workspace_id=workspace_id,
+                    tenant_id=tenant_id,
+                    prompt=prompt,
+                    summary=executive_summary[:500] if executive_summary else "Analysis complete.",
+                    chart_spec=chart_spec,
+                    sql_query=sql_query,
+                    insight_payload=insights.model_dump(),
+                    narrative=narrative_dict,
+                    data_snapshot=combined_data,
+                )
+                # Non-blocking persist — failures are logged but never block the stream
+                try:
+                    await save_workspace(workspace_payload)
+                except Exception as ws_err:
+                    logger.warning(f"[{tenant_id}] Workspace persistence degraded: {ws_err}")
+                    workspace_id = None
+
+                yield _trace("Workspace Persist", stage_start, meta={"workspace_id": workspace_id})
+
+            # -------------------------------------------------------
+            # STAGE 10: Delivery & Asynchronous Cache Commit
             # -------------------------------------------------------
             execution_payload = {
                 "type": "chart" if chart_spec else "table",
@@ -431,7 +506,9 @@ class AnalyticalOrchestrator:
                 "row_count": total_rows,
                 "execution_time_ms": round((time.time() - start_time) * 1000, 2),
                 "is_partial_success": len(degraded_sources) > 0,
-                "degraded_sources": degraded_sources
+                "degraded_sources": degraded_sources,
+                # Phase 3.1: Include workspace UUID for frontend DashboardCard handoff
+                "dashboard_workspace_id": workspace_id,
             }
 
             yield self._packet("data", execution_payload)
@@ -443,7 +520,7 @@ class AnalyticalOrchestrator:
                 sql_query,
                 chart_spec,
                 insights,
-                narrative.model_dump(),
+                narrative_dict,
             )
 
         except Exception as e:
@@ -502,3 +579,33 @@ class AnalyticalOrchestrator:
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
         task.add_done_callback(_err_handler)
+
+    def _trigger_history_compression(
+        self,
+        tenant_id: str,
+        raw_history: List[Dict[str, str]],
+    ) -> None:
+        """
+        Phase 4.2: Schedule an async Celery task to compress old conversation
+        history into a dense summary using a cheaper model.
+        """
+        try:
+            from compute_worker import celery_app
+            from api.services.context_governor import COMPRESSION_MESSAGE_COUNT
+
+            messages_to_compress = raw_history[:COMPRESSION_MESSAGE_COUNT]
+            if len(messages_to_compress) < 3:
+                return  # Not enough content to justify compression
+
+            celery_app.send_task(
+                "compress_session_history",
+                kwargs={
+                    "tenant_id": tenant_id,
+                    "messages": messages_to_compress,
+                },
+                queue="analytics",
+            )
+            logger.info(f"[{tenant_id}] Triggered async history compression for {len(messages_to_compress)} messages")
+        except Exception as e:
+            # Non-critical — compression is an optimization, not a requirement
+            logger.warning(f"[{tenant_id}] Failed to trigger history compression: {e}")

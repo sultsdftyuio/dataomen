@@ -20,11 +20,20 @@ export interface ChartConfig {
 }
 
 export interface ExecutionPayload {
-  type: "chart" | "table" | "ml_result" | "error" | "text";
+  type: "chart" | "table" | "ml_result" | "error" | "text" | "document_rag";
   data?: Record<string, any>[];
   message?: string;
   sql_used?: string;
   chart_spec?: ChartConfig; 
+  // Phase 3.1: Workspace persistence fields from orchestrator STAGE 10
+  dashboard_workspace_id?: string | null;
+  row_count?: number;
+  execution_time_ms?: number;
+  is_partial_success?: boolean;
+  degraded_sources?: string[];
+  // Narrative fields (may be present on cache_hit payloads)
+  executive_summary?: string;
+  answer?: string;
 }
 
 export interface AnomalyInsight {

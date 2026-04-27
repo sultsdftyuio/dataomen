@@ -116,6 +116,42 @@ async def get_workspace_metrics(
         "alerts": [],
     }
 
+
+# ------------------------------------------------------------------
+# Phase 3.1: Workspace Fetch (Spatial Bridge Backend)
+# ------------------------------------------------------------------
+
+@router.get("/orchestrate/workspace/{workspace_id}")
+async def get_workspace_payload(
+    workspace_id: str,
+    context: TenantContext = Depends(verify_tenant),
+):
+    """
+    Fetch a persisted workspace payload by UUID.
+
+    The AnalyticsDashboard calls this endpoint when a user navigates to
+    /dashboard?workspace=UUID.  Returns the full visualization payload
+    (VegaLite spec, SQL, insight data, row snapshot) that was saved by
+    the orchestrator during STAGE 9.
+    """
+    from api.services.workspace_persistence import load_workspace
+
+    tenant_id = context.tenant_id
+    logger.info(f"[{tenant_id}] Workspace fetch requested: {workspace_id}")
+
+    workspace = await load_workspace(workspace_id)
+
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found or expired.")
+
+    # Security: Ensure the workspace belongs to the requesting tenant
+    if workspace.tenant_id != tenant_id:
+        logger.warning(f"[{tenant_id}] Workspace {workspace_id} belongs to {workspace.tenant_id}")
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+
+    return workspace.to_dict()
+
+
 # ------------------------------------------------------------------
 # Main Copilot Endpoint (Dual-Mode Streaming)
 # ------------------------------------------------------------------
@@ -192,11 +228,21 @@ async def orchestrate_chat(
             yield f"data: {json.dumps({'type': 'status', 'content': 'Thinking...'})}\n\n"
 
             try:
+                # Phase 4.1: Apply context governance to conversational history
+                from api.services.context_governor import context_governor as cg
+                raw_convo_history = [h.model_dump() for h in (request.history or [])]
+                governed_ctx = cg.prepare_llm_context(
+                    system_prompt=system_prompt,
+                    history=raw_convo_history,
+                    current_prompt=request.prompt,
+                )
+                safe_history = governed_ctx["history"]
+
                 # Stream the text response using the singleton LLM client
                 async for chunk in llm_client.stream_text(
-                    system_prompt=system_prompt,
+                    system_prompt=governed_ctx["system_prompt"],
                     prompt=request.prompt,
-                    history=[h.model_dump() for h in (request.history or [])[-5:]],
+                    history=safe_history,
                 ):
                     yield f"data: {json.dumps({'type': 'narrative_chunk', 'content': chunk})}\n\n"
 

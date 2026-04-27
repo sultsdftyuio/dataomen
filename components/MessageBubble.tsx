@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Message } from '@/types/chat';
 import { VegaChart } from './VegaChart';
+import { DashboardCard } from './chat/DashboardCard';
 import { cn } from '@/lib/utils';
 import {
   Terminal,
@@ -326,6 +327,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     </button>
                   )}
                 </div>
+              )}
+
+              {/* Phase 3.2: Spatial Bridge — DashboardCard Handoff */}
+              {message.metadata?.dashboard_workspace_id && (
+                <DashboardCard
+                  workspaceId={String(message.metadata.dashboard_workspace_id)}
+                  summary={message.metadata?.workspace_summary as string | undefined}
+                  vizType={message.chartSpec ? 'chart' : 'table'}
+                  rowCount={message.data?.length}
+                  sqlPreview={message.sql}
+                />
               )}
               </div>
             )}
