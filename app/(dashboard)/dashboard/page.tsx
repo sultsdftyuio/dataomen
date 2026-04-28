@@ -1,275 +1,181 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, LayoutDashboard, Loader2, RefreshCw } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { AlertTriangle, CheckCircle, Link as LinkIcon, Code, Loader2 } from "lucide-react";
 
-import { AnalyticalGrid } from "@/components/dashboard/AnalyticalGrid";
-import { ChartJob, ChartOrchestrator } from "@/lib/intelligence/chart-orchestrator";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+const METRICS = [
+  { id: "revenue", label: "Revenue (Stripe)" },
+  { id: "signups", label: "Signups (Events)" },
+  { id: "logins", label: "Logins (Events)" },
+  { id: "active_users", label: "Active Users (Events)" },
+  { id: "conversion_rate", label: "Conversion Rate (Events)" },
+];
 
-interface WorkspaceWidgetConfig {
-  id: string;
-  query: string;
-  group: string;
-  priority: number;
-  title?: string;
-  description?: string;
-  data?: Array<Record<string, unknown>>;
-  chartSpec?: Record<string, unknown>;
-  vegaLiteSpec?: Record<string, unknown>;
+interface AnomalyResult {
+  isAnomaly: boolean;
+  message: string;
+  cause?: string;
+  recommendation?: string;
 }
 
-interface WorkspaceLayoutResponse {
-  workspaceId: string | null;
-  narrative?: string;
-  widgets?: WorkspaceWidgetConfig[];
-  error?: string;
-}
-
-type GridJobInput = Omit<ChartJob, "status" | "result" | "error" | "retryCount">;
-
-function DashboardOverviewContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const workspaceId = searchParams.get("workspace");
-
-  const [widgets, setWidgets] = useState<WorkspaceWidgetConfig[]>([]);
-  const [narrative, setNarrative] = useState<string>("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [workspaceMissing, setWorkspaceMissing] = useState(false);
+export default function BusinessBreakDetector() {
+  const [activeMetric, setActiveMetric] = useState("revenue");
+  const [activeTab, setActiveTab] = useState<"alerts" | "setup">("alerts");
+  
+  const [status, setStatus] = useState<AnomalyResult | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const orchestrator = useMemo(
-    () =>
-      new ChartOrchestrator(
-        async (_query, params) => {
-          const rows = params?.data;
-          return Array.isArray(rows) ? rows : [];
-        },
-        {
-          maxConcurrency: 4,
-          maxRetries: 0,
-        }
-      ),
-    []
-  );
-
-  const jobs: GridJobInput[] = useMemo(
-    () =>
-      widgets.map((widget, index) => ({
-        id: widget.id || `workspace_job_${index + 1}`,
-        query: widget.query || "SELECT 1 AS value",
-        group: widget.group || "analysis",
-        priority:
-          typeof widget.priority === "number" && Number.isFinite(widget.priority)
-            ? Math.max(1, Math.floor(widget.priority))
-            : Math.max(10, 100 - index * 5),
-        params: {
-          data: Array.isArray(widget.data) ? widget.data : [],
-          chartSpec: widget.chartSpec,
-          vegaLiteSpec: widget.vegaLiteSpec,
-          title: widget.title,
-          description: widget.description,
-        },
-      })),
-    [widgets]
-  );
 
   useEffect(() => {
-    orchestrator.flush();
-  }, [orchestrator, workspaceId, refreshKey]);
+    if (activeTab !== "alerts") return;
 
-  useEffect(() => {
-    return () => {
-      orchestrator.flush();
-    };
-  }, [orchestrator]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    const hydrateWorkspace = async () => {
-      setIsLoading(true);
+    let isMounted = true;
+    const runDetection = async () => {
+      setLoading(true);
       setError(null);
-      setWorkspaceMissing(false);
-
       try {
-        const endpoint = workspaceId
-          ? `/api/chat/orchestrate/workspace/${encodeURIComponent(workspaceId)}`
-          : "/api/chat/orchestrate/workspace/default";
-
-        const response = await fetch(endpoint, {
-          method: "GET",
-          cache: "no-store",
-          headers: {
-            "Content-Type": "application/json",
-          },
+        // Calling the real API (which routes to the Python backend)
+        const res = await fetch("/api/metrics/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenant_id: "acme_tenant", // MVP fixed tenant
+            metric_name: activeMetric
+          }),
         });
 
-        if (response.status === 404) {
-          if (!isCancelled) {
-            setWidgets([]);
-            setNarrative("");
-            setWorkspaceMissing(true);
-          }
-          return;
-        }
-
-        if (!response.ok) {
-          const failureText = await response.text().catch(() => "Unable to load dashboard workspace.");
-          throw new Error(failureText || "Unable to load dashboard workspace.");
-        }
-
-        const payload = (await response.json()) as WorkspaceLayoutResponse;
-
-        if (isCancelled) {
-          return;
-        }
-
-        setWidgets(Array.isArray(payload.widgets) ? payload.widgets : []);
-        setNarrative(typeof payload.narrative === "string" ? payload.narrative : "");
-      } catch (requestError: any) {
-        if (isCancelled) {
-          return;
-        }
-
-        setWidgets([]);
-        setNarrative("");
-        setError(requestError?.message || "Unable to hydrate workspace.");
+        if (!res.ok) throw new Error("Failed to run metric detection");
+        
+        const data = await res.json();
+        if (isMounted) setStatus(data);
+      } catch (err: any) {
+        if (isMounted) setError(err.message || "An error occurred");
       } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
+        if (isMounted) setLoading(false);
       }
     };
 
-    hydrateWorkspace();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [workspaceId, refreshKey]);
+    runDetection();
+    return () => { isMounted = false; };
+  }, [activeMetric, activeTab]);
 
   return (
-    <div className="flex h-full w-full flex-1 flex-col overflow-hidden bg-[radial-gradient(circle_at_10%_0%,rgba(14,116,144,0.08),transparent_40%),radial-gradient(circle_at_95%_10%,rgba(15,23,42,0.08),transparent_38%)] px-4 pb-8 pt-5 sm:px-6">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white/80 px-5 py-4 shadow-sm backdrop-blur">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
-              <LayoutDashboard className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Spatial Grid</p>
-              <h1 className="text-xl font-extrabold tracking-tight text-slate-900">Deterministic Dashboard Mount</h1>
+    <div className="space-y-8">
+      <header>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Arcli</h1>
+        <p className="text-slate-500 mt-2 font-medium">Business Break Detector</p>
+      </header>
+
+      <div className="flex space-x-6 border-b border-slate-200 pb-px">
+        <button
+          onClick={() => setActiveTab("alerts")}
+          className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
+            activeTab === "alerts" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Metric Alerts
+        </button>
+        <button
+          onClick={() => setActiveTab("setup")}
+          className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
+            activeTab === "setup" ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Integration Setup
+        </button>
+      </div>
+
+      {activeTab === "alerts" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex flex-col space-y-2">
+            <label className="text-sm font-bold text-slate-700">Select Metric</label>
+            <select
+              value={activeMetric}
+              onChange={(e) => setActiveMetric(e.target.value)}
+              className="max-w-sm block w-full rounded-lg border-slate-300 shadow-sm focus:border-slate-900 focus:ring-slate-900 sm:text-sm p-2.5 border bg-white"
+            >
+              {METRICS.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {loading ? (
+             <div className="p-6 rounded-xl border border-slate-200 bg-white flex items-center gap-3">
+               <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+               <span className="text-sm font-medium text-slate-600">Analyzing 7-day baseline...</span>
+             </div>
+          ) : error ? (
+             <div className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm font-bold">
+               {error}
+             </div>
+          ) : status ? (
+            <div className={`p-6 rounded-xl border ${
+              status.isAnomaly ? 'bg-red-50/50 border-red-200' : 'bg-emerald-50/50 border-emerald-200'
+            }`}>
+              <div className="flex items-start gap-4">
+                {status.isAnomaly ? (
+                  <AlertTriangle className="w-6 h-6 text-red-600 mt-1 flex-shrink-0" />
+                ) : (
+                  <CheckCircle className="w-6 h-6 text-emerald-600 mt-1 flex-shrink-0" />
+                )}
+                
+                <div className="space-y-4 w-full">
+                  <h3 className={`text-lg font-bold ${status.isAnomaly ? 'text-red-900' : 'text-emerald-900'}`}>
+                    {status.message}
+                  </h3>
+                  
+                  {status.isAnomaly && (
+                    <div className="space-y-2 text-sm text-red-800 bg-red-100/50 p-4 rounded-lg">
+                      {status.cause && <p><span className="font-bold">Main cause:</span> {status.cause}</p>}
+                      <div className="mt-4 pt-4 border-t border-red-200/50">
+                        <p className="font-bold text-red-900 mb-1">Recommended Action:</p>
+                        <p>{status.recommendation}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {activeTab === "setup" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="p-6 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <LinkIcon className="w-5 h-5 text-indigo-500" />
+              <h3 className="text-lg font-bold text-slate-900">Connect Stripe (Revenue)</h3>
+            </div>
+            <p className="text-sm text-slate-600 font-medium">Link your Stripe account to automatically monitor revenue drops and transaction anomalies.</p>
+            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-bold hover:bg-slate-800 transition shadow-sm">
+              Connect Stripe
+            </button>
+          </div>
+          <div className="p-6 rounded-xl border border-slate-200 bg-white shadow-sm space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <Code className="w-5 h-5 text-blue-500" />
+              <h3 className="text-lg font-bold text-slate-900">Event Tracking API</h3>
+            </div>
+            <p className="text-sm text-slate-600 font-medium">Send custom product events (signups, logins, active users) directly to our ingestion API.</p>
+            <div className="bg-slate-900 rounded-lg p-4 overflow-x-auto text-emerald-400 text-sm font-mono shadow-inner">
+              <pre>{`fetch('https://api.arcli.com/track', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    event_name: 'signup',
+    user_id: 'usr_123',
+    timestamp: new Date().toISOString()
+  })
+});`}</pre>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] text-slate-600">
-              {workspaceId ? `workspace=${workspaceId}` : "workspace=default"}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setRefreshKey((value) => value + 1)}
-              className="h-9 w-9 rounded-lg border-slate-300 bg-white"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
-
-        {isLoading && (
-          <Card className="border border-slate-200 bg-white/90 shadow-sm">
-            <CardContent className="flex items-center gap-3 py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
-              <p className="text-sm font-medium text-slate-600">Hydrating analytical workspace...</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {!isLoading && workspaceMissing && (
-          <Card className="border border-amber-200 bg-amber-50/60 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg font-extrabold tracking-tight text-amber-900">Workspace not found</CardTitle>
-              <CardDescription className="text-sm font-medium text-amber-800/80">
-                This workspace id is invalid or expired. Load the default executive layout instead.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={() => {
-                  router.push("/dashboard");
-                }}
-                className="rounded-lg bg-amber-700 text-white hover:bg-amber-800"
-              >
-                Load Default Layout
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {!isLoading && !workspaceMissing && error && (
-          <Card className="border border-rose-200 bg-rose-50/70 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-rose-900">
-                <AlertCircle className="h-4 w-4" />
-                Dashboard hydration failed
-              </CardTitle>
-              <CardDescription className="text-rose-800/90">{error}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button
-                onClick={() => setRefreshKey((value) => value + 1)}
-                className="rounded-lg bg-rose-700 text-white hover:bg-rose-800"
-              >
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {!isLoading && !workspaceMissing && !error && narrative && (
-          <Card className="border border-slate-200/80 bg-white/90 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-sm font-extrabold uppercase tracking-[0.12em] text-slate-700">
-                Workspace Narrative
-              </CardTitle>
-              <CardDescription className="text-sm leading-relaxed text-slate-700">{narrative}</CardDescription>
-            </CardHeader>
-          </Card>
-        )}
-
-        {!isLoading && !workspaceMissing && !error && jobs.length === 0 && (
-          <Card className="border border-slate-200 bg-white/90 shadow-sm">
-            <CardContent className="py-10 text-sm font-medium text-slate-600">
-              No widgets are available for this workspace.
-            </CardContent>
-          </Card>
-        )}
-
-        {!isLoading && !workspaceMissing && !error && jobs.length > 0 && (
-          <div className="min-h-[420px] rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm backdrop-blur">
-            <AnalyticalGrid orchestrator={orchestrator} jobs={jobs} />
-          </div>
-        )}
-      </div>
+      )}
     </div>
-  );
-}
-
-export default function DashboardOverviewPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex h-full w-full flex-1 items-center justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-        </div>
-      }
-    >
-      <DashboardOverviewContent />
-    </Suspense>
   );
 }

@@ -1,34 +1,17 @@
 // app/(dashboard)/layout.tsx
 import React from "react"
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
-import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar"
-import { OmniscientScratchpad } from "@/components/dashboard/OmniscientScratchpad"
 
-export default function DashboardLayout({
+export default function SimpleDashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
   return (
-    <SidebarProvider>
-      {/* The DashboardSidebar mounts exactly ONCE here. 
-        It will not re-render or flash as users navigate between routes.
-      */}
-      <DashboardSidebar />
-      
-      {/* SidebarInset ensures the main content area adjusts perfectly to the sidebar's state */}
-      <SidebarInset className="bg-white flex flex-col min-h-[100dvh]">
-
-        {/* Page Content Injection Area */}
-        <main className="flex-1 flex flex-col relative animate-in fade-in duration-500 overflow-hidden">
-          {children}
-        </main>
-        
-      </SidebarInset>
-
-      {/* Global Cmd+K Canvas mounted strictly ONCE at the top layout level */}
-      <OmniscientScratchpad />
-      
-    </SidebarProvider>
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8">
+      {/* Centered, high-density focus area. No sidebars, no distracting nav. */}
+      <main className="w-full max-w-3xl animate-in fade-in duration-500">
+        {children}
+      </main>
+    </div>
   )
 }
