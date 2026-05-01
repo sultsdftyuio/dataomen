@@ -1,32 +1,130 @@
-# api/routes/metrics.py
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from typing import Optional, Dict, Any
 
-from api.services.anomaly_engine import check_anomaly
+from api.database import get_db
+from api.services.metrics_service import (
+    fetch_current_metric,
+    fetch_metric_history
+)
+from api.services.anomaly_detector import check_anomaly
 from api.services.explanation_engine import generate_explanation
-# from api.services.metrics_service import fetch_metric_data (To be implemented for real DB connection)
+from api.services.alert_engine import handle_anomaly_alert
 
 router = APIRouter()
 
+
+# ---------------------------------------------------------
+# REQUEST SCHEMA
+# ---------------------------------------------------------
+
 class MetricRunRequest(BaseModel):
-    tenant_id: str
-    metric_name: str
+    tenant_id: str = Field(..., min_length=1)
+    metric_name: str = Field(..., min_length=1)
+
+
+# ---------------------------------------------------------
+# RESPONSE SHAPE (CONSISTENT)
+# ---------------------------------------------------------
+
+def _build_response(
+    anomaly: Dict[str, Any],
+    explanation: Dict[str, Any],
+    current_value: float
+) -> Dict[str, Any]:
+    return {
+        "metric": anomaly.get("metric_name"),
+        "is_anomaly": anomaly.get("is_anomaly", False),
+        "severity": anomaly.get("deviation_pct"),
+        "current_value": current_value,
+        "baseline": anomaly.get("baseline"),
+        "direction": anomaly.get("direction"),
+        "explanation": explanation
+    }
+
+
+# ---------------------------------------------------------
+# CORE ROUTE
+# ---------------------------------------------------------
 
 @router.post("/metrics/run")
-def run_metric_detection(payload: MetricRunRequest):
-    # TODO: In the next step, we hook this to `metrics_service.py` to pull real DB arrays.
-    # For now, to keep the pipeline functional end-to-end without mocking the output format,
-    # we simulate the database layer pulling today's value vs the last 7 days.
-    
-    if payload.metric_name == "revenue":
-        current_value = 1400.0
-        history_7_days = [2100.0, 2050.0, 2200.0, 2150.0, 2000.0, 2100.0, 2050.0] # ~2092 avg
-    else:
-        current_value = 100.0
-        history_7_days = [95.0, 105.0, 100.0, 98.0, 102.0, 100.0, 99.0] # stable
-        
-    anomaly_result = check_anomaly(payload.metric_name, current_value, history_7_days)
-    final_response = generate_explanation(anomaly_result)
-    
-    return final_response
+def run_metric_detection(
+    payload: MetricRunRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Runs anomaly detection on a single metric.
+
+    Flow:
+    metric_values → anomaly_engine → explanation_engine → alert_engine
+    """
+
+    try:
+        tenant_id = payload.tenant_id.strip()
+        metric_name = payload.metric_name.strip().lower()
+
+        # ------------------------
+        # FETCH DATA
+        # ------------------------
+        current_value = fetch_current_metric(
+            db,
+            tenant_id,
+            metric_name
+        )
+
+        history = fetch_metric_history(
+            db,
+            tenant_id,
+            metric_name,
+            days=7
+        )
+
+        # ------------------------
+        # NO DATA CASE
+        # ------------------------
+        if current_value == 0 and not history:
+            return {
+                "metric": metric_name,
+                "is_anomaly": False,
+                "message": "No data available for this metric yet."
+            }
+
+        # ------------------------
+        # ANOMALY DETECTION
+        # ------------------------
+        anomaly = check_anomaly(
+            metric_name,
+            current_value,
+            history
+        )
+
+        # ------------------------
+        # EXPLANATION
+        # ------------------------
+        explanation = generate_explanation(anomaly)
+
+        # ------------------------
+        # 🔥 ALERT ENGINE (NEW)
+        # ------------------------
+        if anomaly.get("is_anomaly"):
+            handle_anomaly_alert(db, tenant_id, anomaly)
+
+        # ------------------------
+        # FINAL RESPONSE
+        # ------------------------
+        return _build_response(
+            anomaly,
+            explanation,
+            current_value
+        )
+
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    except Exception as e:
+        # log internally if you have logging
+        raise HTTPException(
+            status_code=500,
+            detail="Metric detection failed"
+        )

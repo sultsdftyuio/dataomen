@@ -9,6 +9,25 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from sqlalchemy import Column, Integer, String, Float, DateTime
+from datetime import datetime
+
+class AnomalyAlert(Base):
+    __tablename__ = "anomaly_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    tenant_id = Column(String, index=True, nullable=False)
+    metric_name = Column(String, index=True, nullable=False)
+
+    date = Column(DateTime, index=True, nullable=False)
+
+    severity = Column(Float, nullable=False)
+    direction = Column(String, nullable=False)
+
+    status = Column(String, default="active")  # active | resolved
+    last_seen = Column(DateTime, default=datetime.utcnow)
+
 # Configure logging for backend observability
 logger = logging.getLogger(__name__)
 
@@ -183,25 +202,15 @@ async def get_async_db():
         await db.close()
 
 def init_db():
-    """
-    Orchestrator method to initialize the database natively.
-    Called during app startup (e.g., in FastAPI lifecycle events).
-    """
-    # Important: Import models here to avoid circular dependencies
-    from models import Base
-    
+    from api.database import Base  # or correct import
+
     try:
         with engine.connect() as conn:
-            # Crucial: Enable the pgvector extension for Postgres natively
-            # This allows cosine similarity math directly in SQL for AI workloads
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
-            logger.info("Successfully ensured pgvector extension is active.")
-        
-        # Safely create all tables that do not exist yet
+
         Base.metadata.create_all(bind=engine)
-        logger.info("Successfully synchronized database schema.")
-        
+
     except Exception as e:
-        logger.critical(f"Failed to initialize database schema: {e}")
+        logger.critical(f"DB init failed: {e}")
         raise
