@@ -11,12 +11,14 @@ const BASE_URL = 'https://arcli.tech';
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 1. Fetch all dynamically generated SEO pages from the registry
   // NOTE: Ensure you run `node scripts/generate-registry.mjs` to pick up new files!
-  const slugs = getAllSlugs();
+  const rawSlugs = await getAllSlugs();
+  const slugs = Array.isArray(rawSlugs) ? rawSlugs : [];
 
-  const dynamicRoutes: MetadataRoute.Sitemap = slugs
-    .filter((slug) => slug) // Guard against empty or undefined keys
-    .map((slug) => {
-      const data = getNormalizedPage(slug);
+  const dynamicRoutes: MetadataRoute.Sitemap = await Promise.all(
+    slugs
+      .filter((slug): slug is string => typeof slug === 'string' && slug.trim().length > 0)
+      .map(async (slug) => {
+        const data = await getNormalizedPage(slug);
       
       // Default values for standard pages (guides, etc.)
       let priority = 0.7;
@@ -43,13 +45,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       // Prevent accidental double slashes in URLs if slugs start with '/'
       const cleanSlug = slug.replace(/^\/+/, '');
 
-      return {
-        url: `${BASE_URL}/${cleanSlug}`,
-        lastModified,
-        changeFrequency,
-        priority,
-      };
-    });
+        return {
+          url: `${BASE_URL}/${cleanSlug}`,
+          lastModified,
+          changeFrequency,
+          priority,
+        };
+      })
+  );
 
   // 2. Define all static application routes found in app/(landing)
   // These are the "Core" pages that don't rely on the SEO registry.
