@@ -2,7 +2,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
-const DEFAULT_REDIRECT_PATH = "/chat";
+const DEFAULT_REDIRECT_PATH = "/dashboard";
 const RECOVERY_REDIRECT_PATH = "/settings?recovery=1";
 
 const isSafeRedirectPath = (value: string | null): value is string => {

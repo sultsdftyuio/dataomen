@@ -23,7 +23,7 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
   const requestedNextPath = formData.get('next')?.toString() || '';
   const nextPath = requestedNextPath.startsWith('/') && !requestedNextPath.startsWith('//')
     ? requestedNextPath
-    : '/chat';
+    : '/dashboard';
 
   if (!email || !password) {
     return { error: 'Email and password are required to access your workspace.' };
