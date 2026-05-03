@@ -122,7 +122,7 @@ export default function RegisterPage() {
         return;
       }
 
-      window.location.assign('/chat');
+      window.location.assign('/dashboard');
     } catch {
       setErrorMessage('Could not complete registration flow. Please try again.');
     } finally {
@@ -225,7 +225,7 @@ export default function RegisterPage() {
           <form onSubmit={handleEmailSubmit} className="space-y-5">
             {isAutoSigningIn && (
               <div className="p-3 text-sm font-medium text-sky-700 bg-sky-50 rounded-lg border border-sky-100">
-                Finalizing your session and redirecting to chat...
+                Finalizing your session and redirecting to dashboard...
               </div>
             )}
 
