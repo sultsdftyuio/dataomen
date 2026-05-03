@@ -2,13 +2,13 @@
  * ARCLI.TECH - Optimized Edge Middleware Orchestrator
  * Deployment Stack: Cloudflare (DNS/Edge) -> Vercel (Next.js) -> Render (FastAPI/Backend)
  * Strategy: Performance-First Auth with System-Route Bypass
- * Objective: Resolve indexing "unreachable" errors, optimize Edge compute, and prioritize the Chat-First landing zone.
+ * Objective: Resolve indexing "unreachable" errors, optimize Edge compute, and prioritize the Dashboard-First landing zone.
  */
 
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export default async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const EDGE_LAYER = 'next-edge-middleware'
 
@@ -30,14 +30,12 @@ export default async function proxy(request: NextRequest) {
   const requestId = request.headers.get('x-vercel-id') || 'local-dev'
 
   // 2. System Route Short-Circuit (Absolute Bypass)
-  // Ensure robots.txt, sitemap.xml, and favicons NEVER hit Supabase logic or risk Edge timeouts
   const isSystemRoute = ['/robots.txt', '/sitemap.xml', '/favicon.ico'].includes(pathname)
   if (isSystemRoute) {
     return NextResponse.next()
   }
 
   // 3. Initialize a Mutable Response Object
-  // This is required by Supabase to securely set/refresh auth cookies at the Edge
   let supabaseResponse = NextResponse.next({
     request: {
       headers: request.headers,
@@ -54,11 +52,9 @@ export default async function proxy(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          // Update request cookies
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           )
-          // Update response cookies
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -69,7 +65,6 @@ export default async function proxy(request: NextRequest) {
   )
 
   // 5. Security by Design: Cryptographic User Verification with Edge Fallback
-  // try-catch block prevents Edge-level 500s if Supabase is momentarily unreachable
   let user = null
   try {
     const { data } = await supabase.auth.getUser()
@@ -79,7 +74,7 @@ export default async function proxy(request: NextRequest) {
   }
 
   // 6. Route Topology & Orchestration Definitions
-  const isAuthRoute = ['/login', '/register', '/forgot-password'].some(route => 
+  const isAuthRoute = ['/login', '/register', '/forgot-password', '/signup', '/sign-up'].some(route => 
     pathname.startsWith(route)
   )
 
@@ -113,7 +108,7 @@ export default async function proxy(request: NextRequest) {
     }
   }
   
-  // Define public APIs that bypass Edge Auth (e.g., Stripe Webhooks, Render Health Checks)
+  // Define public APIs that bypass Edge Auth
   const publicApiRoutes = [
     '/api/webhooks',
     '/api/health',
@@ -155,7 +150,6 @@ export default async function proxy(request: NextRequest) {
     }
 
     // B. Unauthenticated users attempting to hit internal APIs -> Hard block at Edge
-    // This prevents malicious traffic from waking up your Render backend
     if (isApiRoute && !isPublicApiRoute) {
       logRouteTrace('route_trace', { handler: 'proxy-auth-gate', status: 401, trace_id: requestId })
       return NextResponse.json(
@@ -175,12 +169,16 @@ export default async function proxy(request: NextRequest) {
       )
     }
   } else {
-    // C. Authenticated users attempting to view auth pages or landing page -> Fast-forward to Chat
-    // We prioritize the high-quality Chat/AI Analyst as the "first thing" users see.
+    // C. Authenticated users attempting to view auth pages or root landing -> Redirect intelligently
     if (isAuthRoute || pathname === '/') {
-      const url = request.nextUrl.clone()
-      url.pathname = '/chat'
-      return NextResponse.redirect(url)
+      const nextUrl = request.nextUrl.searchParams.get('next')
+      const targetUrl = request.nextUrl.clone()
+      
+      // Respect the 'next' parameter if they were kicked to login, otherwise prioritize the Dashboard
+      targetUrl.pathname = nextUrl || '/dashboard' 
+      targetUrl.searchParams.delete('next')
+      
+      return NextResponse.redirect(targetUrl)
     }
   }
 
@@ -200,7 +198,6 @@ export const config = {
      * 2. /_next/image (image optimization API)
      * 3. /favicon.ico, /robots.txt, /sitemap.xml
      * 4. Static assets (svg, png, jpg, etc.)
-     * Executing middleware on these wastes compute and blocks web crawlers.
      */
     '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
