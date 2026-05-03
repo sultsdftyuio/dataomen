@@ -64,9 +64,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
 
   // 3. Image Optimization: Multi-Region Asset Strategy
   // Enables high-performance formats and normalizes remote asset sources.
