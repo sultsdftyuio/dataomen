@@ -3,7 +3,6 @@
 # Strategy: Maintain Edge isolation by ignoring non-frontend assets.
 
 # Backend Source
-/api/
 /tests/
 /scripts/
 

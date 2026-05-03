@@ -8,7 +8,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+// Correct Next.js 16.1+ export signature for proxy.ts
+export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const EDGE_LAYER = 'next-edge-middleware'
 
