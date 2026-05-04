@@ -1,13 +1,4 @@
-try:
-    from flask import Blueprint, request, jsonify
-except Exception:
-    # Fallbacks for editor/static-analysis environments where Flask
-    # isn't installed. At runtime Flask should be available.
-    from types import SimpleNamespace
-    Blueprint = lambda *a, **k: SimpleNamespace()
-    request = SimpleNamespace(args={}, environ={})
-    def jsonify(obj):
-        return obj
+from flask import Blueprint, request, jsonify
 from functools import wraps
 import logging
 

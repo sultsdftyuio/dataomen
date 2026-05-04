@@ -1,36 +1,72 @@
 import logging
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+
+# Assuming external integrations are available
+# from api.services.integrations.slack import SlackConnector
+# from api.services.integrations.email import EmailConnector
 
 logger = logging.getLogger(__name__)
 
-
 # ---------------------------------------------------------
-# GLOBAL CONFIG (Fallbacks)
+# GLOBAL CONFIG
 # ---------------------------------------------------------
+DEFAULT_ALERT_THRESHOLD = 20.0      # % deviation required to trigger
+DEFAULT_RESOLVE_THRESHOLD = 10.0    # % deviation required to resolve
+DEFAULT_COOLDOWN_MINUTES = 60       # Anti-spam cooldown for ongoing alerts
 
-DEFAULT_ALERT_THRESHOLD = 20.0      # % deviation required
-DEFAULT_RESOLVE_THRESHOLD = 10.0    # recovery threshold
-DEFAULT_COOLDOWN_MINUTES = 60       # anti-spam
-
-
-# ---------------------------------------------------------
-# ALERT ENGINE
-# ---------------------------------------------------------
 
 class AlertEngine:
+    """
+    Intelligent Alert Engine that tracks anomaly lifecycles (Triggered, Ongoing, Resolved).
+    Supports both real-time individual processing and batch digest dispatching.
+    """
+
     def __init__(self, db_client):
+        # Assumes a DB client with a chainable interface (e.g., Supabase / PostgREST)
         self.db = db_client
 
     # ---------------------------------------------------------
-    # MAIN ENTRY
+    # BATCH ENTRY
+    # ---------------------------------------------------------
+    def process_batch_and_dispatch(self, tenant_id: str, anomalies: List[Dict[str, Any]]) -> None:
+        """
+        Processes a batch of anomalies, updates their DB states, and dispatches a 
+        single digest if any anomalies require notification.
+        """
+        if not anomalies:
+            return
+
+        logger.info(f"Evaluating {len(anomalies)} anomalies for dispatch. [Tenant: {tenant_id}]")
+
+        notifiable_events = []
+        for anomaly in anomalies:
+            # Process state without sending immediate individual alerts
+            event = self.process_anomaly(tenant_id, anomaly, send_immediate=False)
+            if event:
+                notifiable_events.append(event)
+
+        if not notifiable_events:
+            logger.info(f"All anomalies normal or on cooldown. No alerts dispatched. [Tenant: {tenant_id}]")
+            return
+
+        # Format and dispatch the batch digest
+        payload = self._format_digest_payload(notifiable_events)
+        self._dispatch_to_tenant_channels(tenant_id, payload)
+
+    # ---------------------------------------------------------
+    # SINGLE ENTRY / STATE MANAGEMENT
     # ---------------------------------------------------------
     def process_anomaly(
         self,
         tenant_id: str,
-        anomaly: Dict[str, Any]
+        anomaly: Dict[str, Any],
+        send_immediate: bool = True
     ) -> Optional[Dict[str, Any]]:
-
+        """
+        Evaluates a single anomaly, tracks state (active/resolved), enforces cooldowns,
+        and returns the event payload. Optionally dispatches immediately.
+        """
         metric = anomaly.get("metric_name")
         is_anomaly = anomaly.get("is_anomaly", False)
         severity = float(anomaly.get("deviation_pct", 0.0))
@@ -42,9 +78,7 @@ class AlertEngine:
         now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
 
-        # ------------------------
-        # FETCH EXISTING ACTIVE ALERT
-        # ------------------------
+        # Fetch existing active alert
         resp = self.db.table("alerts") \
             .select("*") \
             .eq("tenant_id", tenant_id) \
@@ -53,14 +87,15 @@ class AlertEngine:
             .execute()
 
         existing = resp.data[0] if resp.data else None
+        event_type = None
+        alert_id = "unknown"
 
         # =====================================================
-        # CASE 1: NEW ANOMALY (passes severity threshold)
+        # CASE 1: NEW ANOMALY
         # =====================================================
         if is_anomaly and not existing:
-
             if severity < DEFAULT_ALERT_THRESHOLD:
-                return {"status": "filtered_low_severity", "metric": metric}
+                return None  # Filter out low severity
 
             alert = {
                 "tenant_id": tenant_id,
@@ -74,23 +109,16 @@ class AlertEngine:
                 "occurrence_count": 1,
                 "anomaly_details": anomaly
             }
-
             resp = self.db.table("alerts").insert(alert).execute()
             alert_id = resp.data[0]["id"] if resp.data else "unknown"
-
-            self._notify(tenant_id, anomaly, alert_id, "TRIGGERED")
-
-            logger.info("alert_created", extra={"tenant": tenant_id, "metric": metric})
-
-            return {"status": "created", "metric": metric}
+            event_type = "TRIGGERED"
 
         # =====================================================
-        # CASE 2: ONGOING ANOMALY (DEDUP + COOLDOWN)
+        # CASE 2: ONGOING ANOMALY
         # =====================================================
-        if is_anomaly and existing:
-
+        elif is_anomaly and existing:
+            alert_id = existing["id"]
             new_count = existing.get("occurrence_count", 1) + 1
-
             should_notify = self._should_notify(existing, now)
 
             update_payload = {
@@ -102,107 +130,118 @@ class AlertEngine:
 
             if should_notify:
                 update_payload["last_notified"] = now_iso
+                event_type = "ONGOING"
 
-            self.db.table("alerts") \
-                .update(update_payload) \
-                .eq("id", existing["id"]) \
-                .execute()
-
-            if should_notify:
-                self._notify(tenant_id, anomaly, existing["id"], "ONGOING")
-
-            logger.info("alert_updated", extra={
-                "tenant": tenant_id,
-                "metric": metric,
-                "count": new_count,
-                "notified": should_notify
-            })
-
-            return {"status": "updated", "notified": should_notify}
+            self.db.table("alerts").update(update_payload).eq("id", alert_id).execute()
 
         # =====================================================
         # CASE 3: RESOLVED
         # =====================================================
-        if not is_anomaly and existing:
-
-            # Only resolve if truly recovered
+        elif not is_anomaly and existing:
+            alert_id = existing["id"]
+            
+            # Only resolve if it has recovered past the resolve threshold
             if severity >= DEFAULT_RESOLVE_THRESHOLD:
-                return {"status": "still_anomalous", "metric": metric}
+                return None  
 
             self.db.table("alerts").update({
                 "status": "resolved",
                 "last_seen": now_iso
-            }).eq("id", existing["id"]).execute()
-
-            self._notify(tenant_id, anomaly, existing["id"], "RESOLVED")
-
-            logger.info("alert_resolved", extra={
-                "tenant": tenant_id,
-                "metric": metric
-            })
-
-            return {"status": "resolved", "metric": metric}
+            }).eq("id", alert_id).execute()
+            event_type = "RESOLVED"
 
         # =====================================================
-        # CASE 4: NORMAL
+        # DISPATCH & RETURN
         # =====================================================
-        return {"status": "normal", "metric": metric}
+        if event_type:
+            event_data = {
+                "tenant_id": tenant_id,
+                "alert_id": alert_id,
+                "event_type": event_type,
+                "anomaly": anomaly
+            }
+            
+            if send_immediate:
+                payload = self._format_digest_payload([event_data])
+                self._dispatch_to_tenant_channels(tenant_id, payload)
+                
+            return event_data
+
+        return None
 
     # ---------------------------------------------------------
-    # COOLDOWN LOGIC
+    # UTILITIES
     # ---------------------------------------------------------
     def _should_notify(self, existing: Dict, now: datetime) -> bool:
-
+        """Evaluates if an ongoing alert has passed the cooldown period."""
         last_notified = existing.get("last_notified")
         if not last_notified:
             return True
 
         try:
             last_time = datetime.fromisoformat(last_notified)
-        except Exception:
+            # Ensure timezone awareness for accurate comparison
+            if last_time.tzinfo is None:
+                last_time = last_time.replace(tzinfo=timezone.utc)
+        except ValueError:
             return True
 
         return now - last_time > timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
 
-    # ---------------------------------------------------------
-    # NOTIFICATIONS
-    # ---------------------------------------------------------
-    def _notify(
-        self,
-        tenant_id: str,
-        anomaly: Dict,
-        alert_id: str,
-        event_type: str
-    ):
-        try:
-            icon = {
-                "TRIGGERED": "🚨",
-                "ONGOING": "🔁",
-                "RESOLVED": "✅"
-            }.get(event_type, "ℹ️")
+    @staticmethod
+    def _format_digest_payload(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Converts events into a structured digest format.
+        (Can be easily parsed into Slack Blocks, Teams cards, HTML emails, etc.)
+        """
+        icons = {"TRIGGERED": "🚨", "ONGOING": "🔁", "RESOLVED": "✅"}
 
-            message = (
-                f"{icon} [{event_type}] {anomaly.get('metric_name')}\n"
-                f"Tenant: {tenant_id}\n"
-                f"Current: {anomaly.get('current_value')}\n"
-                f"Baseline: {anomaly.get('baseline')}\n"
-                f"Deviation: {anomaly.get('deviation_pct')}%\n"
-                f"Direction: {anomaly.get('direction')}\n"
-                f"Alert ID: {alert_id}"
+        # Sort by severity (descending) so critical issues appear at the top
+        events.sort(key=lambda x: float(x["anomaly"].get("deviation_pct", 0)), reverse=True)
+
+        blocks = []
+        for e in events:
+            anomaly = e["anomaly"]
+            evt_type = e["event_type"]
+            icon = icons.get(evt_type, "ℹ️")
+            explanation = anomaly.get('explanation', 'No context provided.')
+
+            text = (
+                f"{icon} *[{evt_type}] {anomaly.get('metric_name')}*\n"
+                f"> *Deviation:* {anomaly.get('deviation_pct')}% ({anomaly.get('direction', 'N/A')})\n"
+                f"> *Values:* Current: {anomaly.get('current_value')} | Baseline: {anomaly.get('baseline')}\n"
+                f"> *Context:* {explanation}"
             )
 
-            # MVP safe fallback
-            print("\n--- ALERT ---")
-            print(message)
-            print("-------------\n")
-
-            logger.info("notification_sent", extra={
-                "tenant": tenant_id,
-                "type": event_type
+            blocks.append({
+                "type": "section",
+                "text": text
             })
 
-        except Exception as e:
-            logger.error("notification_failed", extra={
-                "tenant": tenant_id,
-                "error": str(e)
-            }, exc_info=True)
+        return {
+            "title": f"Dataomen Insights: {len(events)} Alert Updates",
+            "blocks": blocks,
+            "raw_data": events
+        }
+
+    @staticmethod
+    def _dispatch_to_tenant_channels(tenant_id: str, payload: Dict[str, Any]) -> None:
+        """Looks up tenant integration settings and routes the payload."""
+        
+        # 1. Look up configurations
+        # integrations = get_tenant_integrations(tenant_id)
+        
+        # 2. Route payload
+        # if integrations.get('slack'):
+        #     SlackConnector.send_digest(integrations['slack']['webhook_url'], payload)
+        # if integrations.get('email'):
+        #     EmailConnector.send_digest(integrations['email']['target'], payload)
+
+        logger.info(f"Dispatched alert digest ({len(payload['blocks'])} items). [Tenant: {tenant_id}]")
+
+        # MVP Fallback to Console (for local testing visibility)
+        print(f"\n=== {payload['title'].upper()} ===")
+        for block in payload['blocks']:
+            print(block['text'])
+            print("-" * 40)
+        print("=========================================\n")
