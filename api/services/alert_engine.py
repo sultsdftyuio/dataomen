@@ -1,209 +1,208 @@
-from datetime import datetime, timedelta
-from typing import Optional, Dict
+import logging
+from datetime import datetime, timezone, timedelta
+from typing import Dict, Any, Optional
 
-from sqlalchemy.orm import Session
-
-from api.database import AnomalyAlert
-
-
-# ---------------------------------------------------------
-# CONFIG
-# ---------------------------------------------------------
-
-ALERT_THRESHOLD = 20.0          # Minimum % deviation to alert
-ALERT_COOLDOWN_MINUTES = 60     # Prevent spam (per metric)
-RESOLVE_THRESHOLD = 10.0        # If anomaly drops below this → resolve
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------
-# CORE ALERT HANDLER
+# GLOBAL CONFIG (Fallbacks)
 # ---------------------------------------------------------
 
-def handle_anomaly_alert(
-    db: Session,
-    tenant_id: str,
-    anomaly: Dict
-) -> Optional[Dict]:
-    """
-    Production-ready alert handler:
+DEFAULT_ALERT_THRESHOLD = 20.0      # % deviation required
+DEFAULT_RESOLVE_THRESHOLD = 10.0    # recovery threshold
+DEFAULT_COOLDOWN_MINUTES = 60       # anti-spam
 
-    Responsibilities:
-    - filters weak anomalies
-    - persists anomaly state
-    - handles lifecycle (new / ongoing / resolved)
-    - enforces cooldown (anti-spam)
-    - triggers notifications
-    """
 
-    if not anomaly.get("is_anomaly"):
-        return None
+# ---------------------------------------------------------
+# ALERT ENGINE
+# ---------------------------------------------------------
 
-    severity = float(anomaly.get("deviation_pct", 0.0))
-    metric = anomaly.get("metric_name")
-    direction = anomaly.get("direction")
+class AlertEngine:
+    def __init__(self, db_client):
+        self.db = db_client
 
-    if not metric:
-        return None
+    # ---------------------------------------------------------
+    # MAIN ENTRY
+    # ---------------------------------------------------------
+    def process_anomaly(
+        self,
+        tenant_id: str,
+        anomaly: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
 
-    # ------------------------
-    # FILTER LOW SIGNAL
-    # ------------------------
-    if severity < ALERT_THRESHOLD:
-        return None
+        metric = anomaly.get("metric_name")
+        is_anomaly = anomaly.get("is_anomaly", False)
+        severity = float(anomaly.get("deviation_pct", 0.0))
 
-    now = datetime.utcnow()
-    today = now.date()
+        if not metric:
+            logger.error("missing_metric_name", extra={"tenant": tenant_id})
+            return None
 
-    # ------------------------
-    # FETCH EXISTING ALERT
-    # ------------------------
-    existing: Optional[AnomalyAlert] = db.query(AnomalyAlert).filter(
-        AnomalyAlert.tenant_id == tenant_id,
-        AnomalyAlert.metric_name == metric,
-        AnomalyAlert.date == today
-    ).first()
-
-    # ------------------------
-    # UPDATE EXISTING
-    # ------------------------
-    if existing:
-        existing.severity = severity
-        existing.direction = direction
-        existing.last_seen = now
+        now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
 
         # ------------------------
-        # COOLDOWN CHECK
+        # FETCH EXISTING ACTIVE ALERT
         # ------------------------
-        should_notify = _should_notify(existing, now)
+        resp = self.db.table("alerts") \
+            .select("*") \
+            .eq("tenant_id", tenant_id) \
+            .eq("metric_name", metric) \
+            .eq("status", "active") \
+            .execute()
 
-        db.commit()
+        existing = resp.data[0] if resp.data else None
 
-        if should_notify:
-            _send_alert_notification(tenant_id, anomaly)
+        # =====================================================
+        # CASE 1: NEW ANOMALY (passes severity threshold)
+        # =====================================================
+        if is_anomaly and not existing:
 
-        return {
-            "status": "updated",
-            "metric": metric,
-            "notified": should_notify
-        }
+            if severity < DEFAULT_ALERT_THRESHOLD:
+                return {"status": "filtered_low_severity", "metric": metric}
 
-    # ------------------------
-    # CREATE NEW ALERT
-    # ------------------------
-    new_alert = AnomalyAlert(
-        tenant_id=tenant_id,
-        metric_name=metric,
-        date=today,
-        severity=severity,
-        direction=direction,
-        status="active",
-        last_seen=now
-    )
+            alert = {
+                "tenant_id": tenant_id,
+                "metric_name": metric,
+                "status": "active",
+                "severity": severity,
+                "direction": anomaly.get("direction"),
+                "first_seen": now_iso,
+                "last_seen": now_iso,
+                "last_notified": now_iso,
+                "occurrence_count": 1,
+                "anomaly_details": anomaly
+            }
 
-    db.add(new_alert)
-    db.commit()
+            resp = self.db.table("alerts").insert(alert).execute()
+            alert_id = resp.data[0]["id"] if resp.data else "unknown"
 
-    # Always notify on first detection
-    _send_alert_notification(tenant_id, anomaly)
+            self._notify(tenant_id, anomaly, alert_id, "TRIGGERED")
 
-    return {
-        "status": "created",
-        "metric": metric,
-        "notified": True
-    }
+            logger.info("alert_created", extra={"tenant": tenant_id, "metric": metric})
 
+            return {"status": "created", "metric": metric}
 
-# ---------------------------------------------------------
-# RESOLUTION HANDLER (IMPORTANT)
-# ---------------------------------------------------------
+        # =====================================================
+        # CASE 2: ONGOING ANOMALY (DEDUP + COOLDOWN)
+        # =====================================================
+        if is_anomaly and existing:
 
-def resolve_anomaly_if_recovered(
-    db: Session,
-    tenant_id: str,
-    anomaly: Dict
-) -> Optional[Dict]:
-    """
-    Marks anomaly as resolved if it falls below recovery threshold.
-    """
+            new_count = existing.get("occurrence_count", 1) + 1
 
-    metric = anomaly.get("metric_name")
-    severity = float(anomaly.get("deviation_pct", 0.0))
+            should_notify = self._should_notify(existing, now)
 
-    if not metric:
-        return None
+            update_payload = {
+                "last_seen": now_iso,
+                "occurrence_count": new_count,
+                "severity": severity,
+                "anomaly_details": anomaly
+            }
 
-    # If still strong anomaly → do nothing
-    if severity >= RESOLVE_THRESHOLD:
-        return None
+            if should_notify:
+                update_payload["last_notified"] = now_iso
 
-    today = datetime.utcnow().date()
+            self.db.table("alerts") \
+                .update(update_payload) \
+                .eq("id", existing["id"]) \
+                .execute()
 
-    existing = db.query(AnomalyAlert).filter(
-        AnomalyAlert.tenant_id == tenant_id,
-        AnomalyAlert.metric_name == metric,
-        AnomalyAlert.date == today,
-        AnomalyAlert.status == "active"
-    ).first()
+            if should_notify:
+                self._notify(tenant_id, anomaly, existing["id"], "ONGOING")
 
-    if not existing:
-        return None
+            logger.info("alert_updated", extra={
+                "tenant": tenant_id,
+                "metric": metric,
+                "count": new_count,
+                "notified": should_notify
+            })
 
-    existing.status = "resolved"
-    existing.last_seen = datetime.utcnow()
+            return {"status": "updated", "notified": should_notify}
 
-    db.commit()
+        # =====================================================
+        # CASE 3: RESOLVED
+        # =====================================================
+        if not is_anomaly and existing:
 
-    return {
-        "status": "resolved",
-        "metric": metric
-    }
+            # Only resolve if truly recovered
+            if severity >= DEFAULT_RESOLVE_THRESHOLD:
+                return {"status": "still_anomalous", "metric": metric}
 
+            self.db.table("alerts").update({
+                "status": "resolved",
+                "last_seen": now_iso
+            }).eq("id", existing["id"]).execute()
 
-# ---------------------------------------------------------
-# COOLDOWN LOGIC (ANTI-SPAM)
-# ---------------------------------------------------------
+            self._notify(tenant_id, anomaly, existing["id"], "RESOLVED")
 
-def _should_notify(existing: AnomalyAlert, now: datetime) -> bool:
-    """
-    Prevents repeated alerts within cooldown window.
-    """
+            logger.info("alert_resolved", extra={
+                "tenant": tenant_id,
+                "metric": metric
+            })
 
-    if not existing.last_seen:
-        return True
+            return {"status": "resolved", "metric": metric}
 
-    delta = now - existing.last_seen
-    return delta > timedelta(minutes=ALERT_COOLDOWN_MINUTES)
+        # =====================================================
+        # CASE 4: NORMAL
+        # =====================================================
+        return {"status": "normal", "metric": metric}
 
+    # ---------------------------------------------------------
+    # COOLDOWN LOGIC
+    # ---------------------------------------------------------
+    def _should_notify(self, existing: Dict, now: datetime) -> bool:
 
-# ---------------------------------------------------------
-# NOTIFICATIONS
-# ---------------------------------------------------------
+        last_notified = existing.get("last_notified")
+        if not last_notified:
+            return True
 
-def _send_alert_notification(tenant_id: str, anomaly: Dict):
-    """
-    Dispatch alerts (Slack / Email).
-    Safe: never breaks pipeline.
-    """
+        try:
+            last_time = datetime.fromisoformat(last_notified)
+        except Exception:
+            return True
 
-    try:
-        message = (
-            f"🚨 Anomaly Detected\n"
-            f"Tenant: {tenant_id}\n"
-            f"Metric: {anomaly.get('metric_name')}\n"
-            f"Direction: {anomaly.get('direction')}\n"
-            f"Deviation: {anomaly.get('deviation_pct')}%\n"
-            f"Baseline: {anomaly.get('baseline')}\n"
-            f"Current: {anomaly.get('current_value')}"
-        )
+        return now - last_time > timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
 
-        # MVP fallback (safe)
-        print(message)
+    # ---------------------------------------------------------
+    # NOTIFICATIONS
+    # ---------------------------------------------------------
+    def _notify(
+        self,
+        tenant_id: str,
+        anomaly: Dict,
+        alert_id: str,
+        event_type: str
+    ):
+        try:
+            icon = {
+                "TRIGGERED": "🚨",
+                "ONGOING": "🔁",
+                "RESOLVED": "✅"
+            }.get(event_type, "ℹ️")
 
-        # 👉 Later:
-        # - Slack webhook
-        # - Email (SendGrid)
-        # - Webhooks per tenant
+            message = (
+                f"{icon} [{event_type}] {anomaly.get('metric_name')}\n"
+                f"Tenant: {tenant_id}\n"
+                f"Current: {anomaly.get('current_value')}\n"
+                f"Baseline: {anomaly.get('baseline')}\n"
+                f"Deviation: {anomaly.get('deviation_pct')}%\n"
+                f"Direction: {anomaly.get('direction')}\n"
+                f"Alert ID: {alert_id}"
+            )
 
-    except Exception:
-        # Never break anomaly pipeline because of alerts
-        pass
+            # MVP safe fallback
+            print("\n--- ALERT ---")
+            print(message)
+            print("-------------\n")
+
+            logger.info("notification_sent", extra={
+                "tenant": tenant_id,
+                "type": event_type
+            })
+
+        except Exception as e:
+            logger.error("notification_failed", extra={
+                "tenant": tenant_id,
+                "error": str(e)
+            }, exc_info=True)
