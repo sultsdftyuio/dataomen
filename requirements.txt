@@ -15,7 +15,11 @@ anyio>=4.3.0                  # Explicit requirement for Thread pool offloading
 
 # --- Background Jobs & Task Queues (The Orchestrator) ---
 celery>=5.3.0                 # Distributed task queue for the compute worker
+dramatiq>=1.15.0              # Async task queue for recovery workflows
 redis>=5.0.0                  # Redis client for Celery broker and backend caching
+
+# --- Email Delivery (Recovery Engine) ---
+resend>=0.8.0                 # Resend email SDK for recovery campaigns
 
 # --- Computation & Analytical Engines (Execution Layer) ---
 pandas>=2.1.0
