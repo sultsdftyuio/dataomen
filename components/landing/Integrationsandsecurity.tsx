@@ -122,7 +122,8 @@ export function IntegrationsAndSecurity() {
             <Lock size={16} color={C.navy} style={{ marginBottom: 12 }} />
             <h3 className="pfd" style={{ fontSize: 24, color: C.navy, marginBottom: 14, fontWeight: 600, lineHeight: 1.1 }}>Infrastructure Guardrails</h3>
             <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              [
+              {/* Added curly braces here to evaluate the JavaScript expression */}
+              {[
                 "SOC2 Type II & GDPR Compliant",
                 "Zero PII Ingestion or Retention",
                 "Automated Data Masking & Hashing",
