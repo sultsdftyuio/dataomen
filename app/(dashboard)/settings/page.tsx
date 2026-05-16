@@ -85,7 +85,7 @@ function SettingsPageContent() {
   };
   
   // Developer State
-  const [apiKey] = useState("do_live_7x89f2a4c1b3e6d5p0m9n8q7w6e5r4t3y2u1i0o");
+  const [apiKey] = useState("arcli_live_7x89f2a4c1b3e6d5p0m9n8q7w6e5r4t3y2u1i0o");
 
   useEffect(() => {
     async function loadProfile() {
@@ -234,7 +234,7 @@ function SettingsPageContent() {
   const TABS = [
     { id: "profile", label: "Identity & Profile", icon: User },
     { id: "security", label: "Access & Security", icon: Lock },
-    { id: "notifications", label: "Engine Alerts", icon: Activity },
+    { id: "notifications", label: "Recovery Routing", icon: Activity },
     { id: "developer", label: "API & Webhooks", icon: Terminal },
   ] as const;
 
@@ -308,7 +308,7 @@ function SettingsPageContent() {
             <div className="flex flex-col h-full animate-in fade-in duration-300">
               <div className="px-8 lg:px-12 py-8 border-b border-slate-100 bg-white/80 backdrop-blur-sm">
                 <h2 className="text-xl font-semibold text-[#0A192F]">Identity & Profile</h2>
-                <p className="text-sm text-slate-500 mt-1">Configure your personal identity within the analytical engine.</p>
+                <p className="text-sm text-slate-500 mt-1">Configure your personal identity within the recovery engine.</p>
               </div>
               
               <div className="p-8 lg:px-12 flex-1 overflow-y-auto space-y-10">
@@ -362,7 +362,7 @@ function SettingsPageContent() {
 
               <div className="px-8 lg:px-12 py-5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between mt-auto">
                 <p className="text-xs font-medium text-slate-500">
-                  Changes apply immediately across the DataOmen architecture.
+                  Changes apply immediately across the Arcli architecture.
                 </p>
                 <Button 
                   onClick={handleSaveProfile} 
@@ -465,8 +465,8 @@ function SettingsPageContent() {
           {activeTab === "notifications" && (
             <div className="flex flex-col h-full animate-in fade-in duration-300">
               <div className="px-8 lg:px-12 py-8 border-b border-slate-100 bg-white/80 backdrop-blur-sm">
-                <h2 className="text-xl font-semibold text-[#0A192F]">Engine Alerts</h2>
-                <p className="text-sm text-slate-500 mt-1">Define routing logic for system-generated insights.</p>
+                <h2 className="text-xl font-semibold text-[#0A192F]">Recovery Routing</h2>
+                <p className="text-sm text-slate-500 mt-1">Define routing logic for deterministic churn signals.</p>
               </div>
               
               <div className="p-8 lg:px-12 flex-1 overflow-y-auto space-y-4 max-w-4xl">
@@ -476,10 +476,10 @@ function SettingsPageContent() {
                   <div className="space-y-2 max-w-[80%]">
                     <Label className="text-base font-semibold text-[#0A192F] flex items-center gap-2 cursor-pointer" onClick={() => setNotifyAnomalies(!notifyAnomalies)}>
                       <AlertCircle className={`h-5 w-5 ${notifyAnomalies ? 'text-rose-500' : 'text-slate-400'}`} />
-                      Critical Anomaly Routing
+                      Critical Risk Routing
                     </Label>
                     <p className="text-sm text-slate-500 leading-relaxed">
-                      Dispatch immediate email payloads when the autonomous engine detects high-variance metric shifts (e.g., sudden churn spikes).
+                      Dispatch immediate email payloads when the deterministic engine flags high-MRR accounts for severe churn risk (e.g., immediate cancellation).
                     </p>
                   </div>
                   <Switch checked={notifyAnomalies} onCheckedChange={setNotifyAnomalies} className="data-[state=checked]:bg-rose-500 mt-1" />
@@ -490,10 +490,10 @@ function SettingsPageContent() {
                   <div className="space-y-2 max-w-[80%]">
                     <Label className="text-base font-semibold text-[#0A192F] flex items-center gap-2 cursor-pointer" onClick={() => setNotifyWeekly(!notifyWeekly)}>
                       <Activity className={`h-5 w-5 ${notifyWeekly ? 'text-blue-600' : 'text-slate-400'}`} />
-                      Executive Digest Pipeline
+                      Weekly Recovery Digest
                     </Label>
                     <p className="text-sm text-slate-500 leading-relaxed">
-                      Compile and transmit a summarized narrative report of your entire workspace state every Monday at 08:00 UTC.
+                      Compile and transmit a summarized report of your recovered MRR, active risk queue, and conversion rates every Monday at 08:00 UTC.
                     </p>
                   </div>
                   <Switch checked={notifyWeekly} onCheckedChange={setNotifyWeekly} className="data-[state=checked]:bg-blue-600 mt-1" />
@@ -574,7 +574,7 @@ function SettingsPageContent() {
                   <div>
                     <h4 className="text-base font-semibold text-[#0A192F]">Webhook Architecture</h4>
                     <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                      DataOmen relies on modular webhook pipelines defined at the agent level rather than global settings. To configure an outbound webhook, navigate to the specific Agent's configuration panel in the deployment interface.
+                      Arcli relies on modular webhook pipelines defined at the campaign level rather than global settings. To configure an outbound webhook, navigate to the specific Campaign's configuration panel in the deployment interface.
                     </p>
                   </div>
                 </div>

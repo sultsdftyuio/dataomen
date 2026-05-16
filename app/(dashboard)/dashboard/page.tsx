@@ -1,6 +1,7 @@
+// app/(dashboard)/dashboard/page.tsx
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import BusinessBreakDetector from "./BusinessBreakDetector";
+import RecoveryOverview from "./RecoveryOverview";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -27,11 +28,15 @@ export default async function DashboardPage() {
     return user.id;
   };
 
-  const { data: tenant, error: tenantError } = await supabase
+  // 1. Fetch the data
+  const { data: tenantData, error: tenantError } = await supabase
     .from("tenant_users")
     .select("tenant_id")
     .eq("user_id", user.id)
     .maybeSingle();
+
+  // 2. Safely cast the response to bypass the 'never' type error
+  const tenant = tenantData as { tenant_id: string } | null;
 
   const fallbackTenantId = deriveTenantId();
 
@@ -43,5 +48,6 @@ export default async function DashboardPage() {
 
   const tenantId = tenant?.tenant_id || fallbackTenantId;
 
-  return <BusinessBreakDetector tenantId={tenantId} />;
+  // We are passing the tenantId down to our new deterministic dashboard
+  return <RecoveryOverview tenantId={tenantId} />;
 }

@@ -66,7 +66,6 @@ export default function Page() {
           <Hero />
           <HowItWorks />
           <DeepDiveFeatures />
-          <AIAgents />
           <IntegrationsAndSecurity />
           <FAQ />
           <CTA />
