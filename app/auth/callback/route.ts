@@ -18,10 +18,14 @@ export async function GET(request: Request) {
   const rawType = searchParams.get("type");
   const callbackError = searchParams.get("error");
   const requestedNext = searchParams.get("next");
+  const normalizedNext =
+    isSafeRedirectPath(requestedNext) && !requestedNext.startsWith("/onboarding")
+      ? requestedNext
+      : null;
 
   const isRecoveryFlow = rawType === "recovery";
-  const redirectPath = isSafeRedirectPath(requestedNext)
-    ? requestedNext
+  const redirectPath = normalizedNext
+    ? normalizedNext
     : isRecoveryFlow
       ? RECOVERY_REDIRECT_PATH
       : DEFAULT_REDIRECT_PATH;

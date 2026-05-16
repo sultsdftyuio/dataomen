@@ -44,11 +44,11 @@ export function Hero() {
             }}
           >
             Autonomous<br />
-            <span style={{ color: C.blue }}>Business Intelligence.</span>
+            <span style={{ color: C.blue }}>Customer Retention.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-            Stop querying. Start knowing. Connect your data stack and let AI agents uncover insights, track anomalies, and build reports automatically.
+            Stop reacting to cancellations. Start preventing them. Connect your billing and product data, and let AI agents predict churn, uncover root causes, and trigger retention workflows.
           </p>
 
           {/* CTAs */}

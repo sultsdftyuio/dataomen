@@ -6,15 +6,15 @@ import { C } from "@/lib/tokens";
 const items = [
   {
     q: "What if my database schema is messy or undocumented?",
-    a: "Arcli's AI is built for real-world, messy data. During setup, it automatically maps your schema relationships. You can also add plain-English definitions to tables or columns so the AI instantly learns your unique business logic.",
+    a: "Arcli's AI is built for real-world, messy data. During setup, it automatically maps your schema relationships and learns your definition of an \"Active User\" or \"Churned\". You can also add plain-English definitions to tables or columns so the AI adapts to your lifecycle.",
   },
   {
-    q: "Do you train your AI on my proprietary data?",
-    a: "Never. We use enterprise-grade models with strict zero-data-retention policies. Arcli only looks at your structural metadata (like column names) to write the SQL. Your actual customer and revenue data never leaves your secure infrastructure.",
+    q: "Are you GDPR and CCPA compliant? How do you handle customer PII?",
+    a: "Absolutely. We operate on a strict zero-data-retention architecture for sensitive information. Arcli only processes anonymized IDs, metadata, and aggregate behavioral signals to build its churn predictions. We never store your raw customer records, billing details, or private support conversations.",
   },
   {
     q: "How long does setup really take?",
-    a: "Under 5 minutes. Securely connect your data source (like a read-only Postgres replica or Stripe), and Arcli instantly maps the relationships. You can start asking plain-English questions immediately—no engineering tickets required.",
+    a: "Ask a question like \"Correlate our Stripe cancellations with our Zendesk response times.\" Arcli will join the sources and surface churn drivers in a single, unified result.",
   },
   {
     q: "How does pricing scale? Do I pay per user?",

@@ -124,7 +124,7 @@ async def track_event(
             result = await ingestion_service.process_raw_event(**payload)
 
             return {
-                "status": "processed_sync",
+                "status": result.get("status", "processed_sync"),
                 "idempotency_key": request.idempotency_key,
                 "anomalies": result.get("anomalies", [])
             }
@@ -133,7 +133,7 @@ async def track_event(
         # ASYNC MODE (PRODUCTION PATH)
         # ---------------------------------------------------------
         background_tasks.add_task(
-            ingestion_service.process_raw_event,
+            ingestion_service.process_raw_event_sync,
             **payload
         )
 

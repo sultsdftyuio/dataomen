@@ -1,5 +1,6 @@
 'use server'
 
+import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
@@ -208,7 +209,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
 
     console.log(`[DEBUG-UI][${flowId}] Backend registration SUCCESS. Data:`, backendSuccessData)
     console.log(`[DEBUG-UI][${flowId}] Total flow duration: ${Date.now() - flowStart}ms`)
-    return { success: true }
+    redirect('/dashboard')
 
   } catch (error) {
     console.error(`[DEBUG-UI][${flowId}] UNCAUGHT EXCEPTION in registration flow:`, error)

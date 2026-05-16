@@ -32,11 +32,11 @@ export function IntegrationsAndSecurity() {
         {/* Header Block */}
         <div className={`fu ${vis ? "vis" : ""}`} style={{ textAlign: "center", marginBottom: 60 }}>
           <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 48px)", color: C.navy, marginBottom: 18, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Connect your data. Secure your insights.
+            Connect your customer data. Secure your retention.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 17, maxWidth: 660, margin: "0 auto", lineHeight: 1.62 }}>
             No engineering tickets or ETL pipelines required. Arcli securely authenticates with your tools 
-            and automatically maps your metadata for instant conversational analysis.
+            and maps user behavior for instant churn analysis and retention-ready insights.
           </p>
         </div>
 
@@ -101,8 +101,7 @@ export function IntegrationsAndSecurity() {
             <Shield size={16} color={C.blueLight} style={{ marginBottom: 14 }} />
             <h3 className="pfd" style={{ fontSize: 30, marginBottom: 12, fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.08 }}>Security by Design</h3>
             <p style={{ color: C.faint, fontSize: 15, lineHeight: 1.62, maxWidth: 560, marginBottom: 18 }}>
-              Your raw data never leaves your infrastructure. Arcli connects via 100% read-only credentials, 
-              and our AI agents only process metadata to generate queries—ensuring row-level privacy at every step.
+              Enterprise-grade compliance out of the box. Arcli is built for GDPR and CCPA compliance. We connect via 100% read-only, zero-data-retention pipelines. Your raw PII, billing details, and support transcripts never leave your infrastructure.
             </p>
             <a href="/security" style={{ height: 40, padding: "0 14px", borderRadius: 8, border: darkSurfaceBorder, boxShadow: surfaceShadow, color: "#FFFFFF", fontWeight: 700, fontSize: 14, display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", background: "rgba(255,255,255,0.12)", letterSpacing: "0.02em" }}>
               Explore our Security Architecture <ArrowRight size={14} />
@@ -123,13 +122,13 @@ export function IntegrationsAndSecurity() {
             <Lock size={16} color={C.navy} style={{ marginBottom: 12 }} />
             <h3 className="pfd" style={{ fontSize: 24, color: C.navy, marginBottom: 14, fontWeight: 600, lineHeight: 1.1 }}>Infrastructure Guardrails</h3>
             <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {[
-                "Strict Tenant Isolation",     // Enforced via context wrappers
-                "Hashed Storage Pathing",      // Isolated R2/S3 directory structures
-                "Vectorized PII Masking",      // HMAC-SHA256 anonymization
-                "Secure Credential Vault",     // Fernet encryption for all secrets
-                "Immutable Audit Logging",     // Full prompt and SQL transparency
-                "Automated Schema Jailing"     // Drops unauthorized data on ingestion
+              [
+                "SOC2 Type II & GDPR Compliant",
+                "Zero PII Ingestion or Retention",
+                "Automated Data Masking & Hashing",
+                "Strict Tenant Isolation",
+                "Read-Only API Architecture",
+                "Immutable Audit Logging"
               ].map((item, i) => (
                 <li key={i} style={{ display: "flex", gap: 8, alignItems: "center", color: C.muted, fontSize: 14, fontWeight: 600 }}>
                   <CheckCircle2 size={14} color={C.blue} style={{ flexShrink: 0 }} /> {item}

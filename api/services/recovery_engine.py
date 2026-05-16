@@ -150,7 +150,7 @@ class RecoveryRepository:
         now = datetime.now(timezone.utc)
         cooldown_anchor = now.replace(hour=0, minute=0, second=0, microsecond=0)
         cooldown_until = cooldown_anchor + timedelta(days=COOLDOWN_DAYS)
-        idempotency_key = _build_idempotency_key(
+        message_key = _build_message_key(
             tenant_id,
             candidate.user_id,
             campaign_type,
@@ -163,7 +163,8 @@ class RecoveryRepository:
             "email": candidate.email,
             "campaign_type": campaign_type,
             "status": STATUS_QUEUED,
-            "idempotency_key": idempotency_key,
+            "idempotency_key": message_key,
+            "message_key": message_key,
             "queued_at": now.isoformat(),
             "created_at": now.isoformat(),
             "cooldown_until": cooldown_until.isoformat(),
@@ -273,9 +274,7 @@ class RecoveryAutomationEngine:
         try:
             send_recovery_email.send(
                 tenant_id,
-                candidate.user_id,
-                candidate.email,
-                campaign_type,
+                send_id,
             )
         except Exception:
             logger.exception(
@@ -368,6 +367,20 @@ def _build_idempotency_key(
 ) -> str:
     raw = f"{tenant_id}:{user_id}:{campaign_type}:{window_key}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _build_message_key(
+    tenant_id: str,
+    user_id: str,
+    campaign_type: str,
+    window_key: str
+) -> str:
+    return _build_idempotency_key(
+        tenant_id,
+        user_id,
+        campaign_type,
+        window_key,
+    )
 
 
 def _is_duplicate_error(error: Any) -> bool:

@@ -28,7 +28,7 @@ export function HowItWorks() {
             <Database size={14} /> THE PIPELINE
           </div>
           <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            How DataOmen thinks.
+            How the Retention Engine works.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
             A seamless transition from raw, disjointed data to proactive business intelligence. Built for velocity, engineered for absolute precision.
@@ -45,7 +45,7 @@ export function HowItWorks() {
               Connect & Harmonize
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              Plug in your tools in seconds. DataOmen’s semantic engine automatically maps chaotic, disjointed API fields into a unified, strictly-typed business layer. Zero rigid ETL pipelines required.
+              Unite Stripe billing signals with support and product usage data to create a single Customer Identity. DataOmen maps every event into a retention-ready profile you can act on immediately. We use a Zero-PII sync. The engine maps metadata and aggregated behavioral events without ever ingesting or storing sensitive personal data.
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
               {["1-Click OAuth integrations", "Automatic schema resolution", "Real-time data syncing"].map((item, i) => (
@@ -70,13 +70,13 @@ export function HowItWorks() {
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 8, background: "#635BFF", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>St</div>
                     <div>
-                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>Stripe MRR</div>
+                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>Stripe Subscription Status</div>
                       <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>api.amount</div>
                     </div>
                   </div>
                   <ArrowRight size={16} color={C.faint} />
                   <div style={{ background: "#fff", border: surfaceBorder, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, color: C.navy, boxShadow: surfaceShadow }}>
-                    Global Revenue
+                    Customer Risk Profile
                   </div>
                 </div>
 
@@ -84,13 +84,13 @@ export function HowItWorks() {
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 8, background: "#96BF48", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14 }}>Sh</div>
                     <div>
-                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>Shopify Sales</div>
+                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>Product Activity Score</div>
                       <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>api.total_price</div>
                     </div>
                   </div>
                   <ArrowRight size={16} color={C.faint} />
                   <div style={{ background: "#fff", border: surfaceBorder, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, color: C.navy, boxShadow: surfaceShadow }}>
-                    Global Revenue
+                    Customer Risk Profile
                   </div>
                 </div>
               </div>
@@ -107,10 +107,10 @@ export function HowItWorks() {
               STEP 02
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Bypass the SQL editor.
+              Bypass the churn autopsy.
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              DataOmen's AI understands your unique schema. Simply type your question in plain English, and it instantly translates it into perfectly optimized SQL, generating presentation-ready charts on the fly.
+              DataOmen's AI understands your unique customer lifecycle. Simply ask who is at risk, and it instantly translates behavior into predictive churn models.
             </p>
             <a
               href="/register"
@@ -141,18 +141,17 @@ export function HowItWorks() {
                 <Sparkles size={14} />
               </div>
               <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>
-                "Show me total revenue by month for captured transactions."
+                "Show me Enterprise accounts with a high probability of churning next month."
               </div>
             </div>
 
             {/* SQL Output */}
             <div style={{ background: "#111827", color: "#D1D5DB", padding: "16px 14px", borderRadius: 8, fontSize: 12, position: "relative", zIndex: 2, boxShadow: surfaceShadow, lineHeight: 1.6, border: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ fontSize: 11, color: "#9CA3AF", letterSpacing: "0.08em", marginBottom: 10, textTransform: "uppercase", fontWeight: 600 }}>Generated Query</div>
-              <span style={{ color: "#569CD6" }}>SELECT</span> date_trunc(<span style={{ color: "#CE9178" }}>'month'</span>, created_at),<br />
-              <span style={{ color: "#569CD6" }}>SUM</span>(amount) <span style={{ color: "#569CD6" }}>AS</span> total_revenue<br />
-              <span style={{ color: "#569CD6" }}>FROM</span> core_transactions<br />
-              <span style={{ color: "#569CD6" }}>WHERE</span> status = <span style={{ color: "#CE9178" }}>'captured'</span><br />
-              <span style={{ color: "#569CD6" }}>GROUP BY</span> 1 <span style={{ color: "#569CD6" }}>ORDER BY</span> 1 <span style={{ color: "#569CD6" }}>DESC</span>;
+              <span style={{ color: "#569CD6" }}>SELECT</span> account_name, churn_probability<br />
+              <span style={{ color: "#569CD6" }}>FROM</span> core_users<br />
+              <span style={{ color: "#569CD6" }}>WHERE</span> activity_drop &gt; 40 <span style={{ color: "#569CD6" }}>AND</span> status = <span style={{ color: "#CE9178" }}>'active'</span><br />
+              <span style={{ color: "#569CD6" }}>ORDER BY</span> churn_probability <span style={{ color: "#569CD6" }}>DESC</span>;
             </div>
           </div>
         </div>
@@ -167,7 +166,7 @@ export function HowItWorks() {
               Automate & Guard
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              Don't just stare at dashboards waiting for lines to drop. DataOmen continuously monitors your metrics 24/7. If conversion rates dip or API errors spike, you get an immediate alert with the root cause already diagnosed.
+              DataOmen monitors high-value cohorts for early signs of abandonment. When usage dips or support friction spikes, you get an immediate alert with the likely root cause already diagnosed.
             </p>
             <a
               href="#agents"
@@ -207,9 +206,9 @@ export function HowItWorks() {
                     </div>
                     <span style={{ fontSize: 11, color: C.faint, fontWeight: 600 }}>Just now</span>
                   </div>
-                  <h5 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Checkout Conversion Drop</h5>
+                  <h5 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>High-Value Account Churn Risk</h5>
                   <p style={{ fontSize: 13, color: C.faint, lineHeight: 1.5 }}>
-                    EMEA region conversion fell by 4.2% in the last hour. AI diagnosis correlates this with a spike in Stripe Gateway latency.
+                    Acme Corp's product usage fell by 45% in the last week. AI diagnosis correlates this with 3 unresolved Zendesk tickets.
                   </p>
                 </div>
 

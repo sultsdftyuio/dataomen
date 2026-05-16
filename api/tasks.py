@@ -27,6 +27,7 @@ APP_BASE_URL = os.getenv("APP_BASE_URL", "https://arcli.tech")
 
 RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
 RECOVERY_DLQ_TABLE = os.getenv("RECOVERY_DLQ_TABLE", "recovery_email_dlq")
+RECOVERY_EMAIL_EVENTS_TABLE = os.getenv("RECOVERY_EMAIL_EVENTS_TABLE", "recovery_email_events")
 
 MAX_SEND_ATTEMPTS = int(os.getenv("RECOVERY_MAX_SEND_ATTEMPTS", "5"))
 RETRY_BACKOFF_SECONDS = int(os.getenv("RECOVERY_RETRY_BACKOFF_SECONDS", "300"))
@@ -46,8 +47,12 @@ class RecoverySendRecord(BaseModel):
     user_id: str
     email: str
     campaign_type: str
+    message_key: Optional[str] = None
     status: str = STATUS_QUEUED
     attempt_count: int = 0
+    next_retry_at: Optional[str] = None
+    provider_message_id: Optional[str] = None
+    last_error: Optional[str] = None
     created_at: Optional[str] = None
 
 
@@ -132,6 +137,54 @@ class RecoveryRepository:
     def __init__(self, client: Client):
         self.client = client
 
+    def write_event(self, send_id: str, event_type: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+        if not send_id or not event_type:
+            return
+
+        payload = {
+            "send_id": send_id,
+            "event_type": event_type,
+            "metadata": metadata or {},
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        try:
+            self.client.table(RECOVERY_EMAIL_EVENTS_TABLE).insert(payload).execute()
+        except Exception:
+            logger.exception(
+                "recovery_email_event_write_failed send_id=%s event_type=%s",
+                send_id,
+                event_type,
+            )
+
+    def fetch_send_by_id(
+        self,
+        tenant_id: str,
+        send_id: str,
+    ) -> Optional[RecoverySendRecord]:
+        resp = (
+            self.client
+            .table(RECOVERY_EMAIL_TABLE)
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .eq("id", send_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not resp.data:
+            return None
+
+        try:
+            return RecoverySendRecord.model_validate(resp.data[0])
+        except ValidationError:
+            logger.exception(
+                "recovery_send_record_invalid tenant=%s send_id=%s",
+                tenant_id,
+                send_id,
+            )
+            return None
+
     def fetch_latest_send(
         self,
         tenant_id: str,
@@ -173,6 +226,7 @@ class RecoveryRepository:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "sending", {"attempt_count": attempt_count})
 
     def mark_sent(self, send_id: str, provider_message_id: Optional[str]) -> None:
         payload = {
@@ -182,6 +236,7 @@ class RecoveryRepository:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "sent", {"provider_message_id": provider_message_id})
 
     def mark_failed_transient(self, send_id: str, error: str) -> None:
         payload = {
@@ -193,6 +248,7 @@ class RecoveryRepository:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "failed_transient", {"error": error})
 
     def mark_failed_permanent(self, send_id: str, error: str) -> None:
         payload = {
@@ -201,6 +257,33 @@ class RecoveryRepository:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "failed_permanent", {"error": error})
+
+    def claim_for_sending(
+        self,
+        send_id: str,
+        expected_statuses: Iterable[str],
+        attempt_count: int,
+    ) -> bool:
+        payload = {
+            "status": STATUS_SENDING,
+            "attempt_count": attempt_count,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        resp = (
+            self.client
+            .table(RECOVERY_EMAIL_TABLE)
+            .update(payload)
+            .eq("id", send_id)
+            .in_("status", list(expected_statuses))
+            .execute()
+        )
+        claimed = bool(resp.data)
+        if claimed:
+            self.write_event(send_id, "sending", {"attempt_count": attempt_count})
+
+        return claimed
 
     def write_dlq(self, send_id: str, tenant_id: str, user_id: str, campaign_type: str, error: str) -> None:
         payload: Dict[str, Any] = {
@@ -270,47 +353,47 @@ def _is_retryable_error(exc: Exception) -> bool:
     return status_code >= 500
 
 
-@dramatiq.actor
+@dramatiq.actor(max_retries=MAX_SEND_ATTEMPTS, min_backoff=5_000, max_backoff=120_000)
 def send_recovery_email(
     tenant_id: str,
-    user_id: str,
-    email: str,
-    campaign_type: str
+    send_id: str,
 ) -> None:
-    if not tenant_id or not user_id or not email or not campaign_type:
+    if not tenant_id or not send_id:
         logger.error(
-            "recovery_email_missing_args tenant=%s user_id=%s email=%s campaign=%s",
+            "recovery_email_missing_args tenant=%s send_id=%s",
             tenant_id,
-            user_id,
-            email,
-            campaign_type,
+            send_id,
         )
         return
 
     client = _get_supabase_client()
     if not client:
         logger.error(
-            "recovery_email_no_db_client tenant=%s user_id=%s campaign=%s",
+            "recovery_email_no_db_client tenant=%s send_id=%s",
             tenant_id,
-            user_id,
-            campaign_type,
+            send_id,
         )
         raise RuntimeError("Supabase client unavailable")
 
     repo = RecoveryRepository(client)
-    record = repo.fetch_latest_send(
-        tenant_id,
-        user_id,
-        campaign_type,
-        statuses=(STATUS_QUEUED, STATUS_FAILED_TRANSIENT),
-    )
+    record = repo.fetch_send_by_id(tenant_id, send_id)
 
     if not record:
         logger.warning(
-            "recovery_send_missing_record tenant=%s user_id=%s campaign=%s",
+            "recovery_send_missing_record tenant=%s send_id=%s",
             tenant_id,
-            user_id,
-            campaign_type,
+            send_id,
+        )
+        return
+
+    if record.status in (STATUS_SENT, STATUS_FAILED_PERMANENT):
+        return
+
+    if record.status == STATUS_SENDING:
+        logger.info(
+            "recovery_send_already_claimed tenant=%s send_id=%s",
+            tenant_id,
+            send_id,
         )
         return
 
@@ -318,31 +401,35 @@ def send_recovery_email(
         error_message = "max_attempts_exceeded"
         repo.mark_failed_permanent(record.id, error_message)
         try:
-            repo.write_dlq(record.id, tenant_id, user_id, campaign_type, error_message)
+            repo.write_dlq(record.id, tenant_id, record.user_id, record.campaign_type, error_message)
         except Exception:
             logger.exception(
-                "recovery_send_dlq_failed tenant=%s user_id=%s campaign=%s",
+                "recovery_send_dlq_failed tenant=%s send_id=%s",
                 tenant_id,
-                user_id,
-                campaign_type,
+                send_id,
             )
         return
 
-    repo.mark_sending(record.id, record.attempt_count + 1)
+    claimed = repo.claim_for_sending(
+        record.id,
+        (STATUS_QUEUED, STATUS_FAILED_TRANSIENT),
+        record.attempt_count + 1,
+    )
+    if not claimed:
+        return
 
-    subject, html = TemplateRenderer().render(campaign_type)
+    subject, html = TemplateRenderer().render(record.campaign_type)
     provider = ResendEmailProvider()
-    result = provider.send(email, subject, html)
+    result = provider.send(record.email, subject, html)
 
     if result.status == STATUS_SENT:
         try:
             repo.mark_sent(record.id, result.provider_message_id)
         except Exception:
             logger.exception(
-                "recovery_send_persist_failed tenant=%s user_id=%s campaign=%s",
+                "recovery_send_persist_failed tenant=%s send_id=%s",
                 tenant_id,
-                user_id,
-                campaign_type,
+                send_id,
             )
             persist_recovery_status.send(
                 record.id,
@@ -351,11 +438,9 @@ def send_recovery_email(
                 None,
             )
         logger.info(
-            "recovery_send_sent tenant=%s user_id=%s campaign=%s send_id=%s",
+            "recovery_send_sent tenant=%s send_id=%s",
             tenant_id,
-            user_id,
-            campaign_type,
-            record.id,
+            send_id,
         )
         return
 
@@ -364,23 +449,20 @@ def send_recovery_email(
     if result.retryable:
         repo.mark_failed_transient(record.id, error_message)
         logger.warning(
-            "recovery_send_transient_failure tenant=%s user_id=%s campaign=%s send_id=%s",
+            "recovery_send_transient_failure tenant=%s send_id=%s",
             tenant_id,
-            user_id,
-            campaign_type,
-            record.id,
+            send_id,
         )
         raise RuntimeError(error_message)
 
     repo.mark_failed_permanent(record.id, error_message)
     try:
-        repo.write_dlq(record.id, tenant_id, user_id, campaign_type, error_message)
+        repo.write_dlq(record.id, tenant_id, record.user_id, record.campaign_type, error_message)
     except Exception:
         logger.exception(
-            "recovery_send_dlq_failed tenant=%s user_id=%s campaign=%s",
+            "recovery_send_dlq_failed tenant=%s send_id=%s",
             tenant_id,
-            user_id,
-            campaign_type,
+            send_id,
         )
 
 

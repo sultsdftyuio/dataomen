@@ -1,136 +1,157 @@
-from datetime import datetime
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, validator
-from sqlalchemy.orm import Session
+import asyncio
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
-from api.database import Event, get_db
+from supabase import create_client, Client
 
-# ---------------------------------------------------------
-# Setup & Security
-# ---------------------------------------------------------
+logger = logging.getLogger(__name__)
 
-router = APIRouter()
-security = HTTPBearer()
+EVENTS_TABLE = os.getenv("EVENTS_TABLE", "events")
+
+_supabase_client: Optional[Client] = None
 
 
-def resolve_tenant(
-    credentials: HTTPAuthorizationCredentials = Security(security),
-) -> str:
+def _get_supabase_client() -> Optional[Client]:
+    global _supabase_client
+
+    if _supabase_client is not None:
+        return _supabase_client
+
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+
+    if not supabase_url or not supabase_key:
+        logger.error("supabase_credentials_missing")
+        return None
+
+    _supabase_client = create_client(supabase_url, supabase_key)
+    return _supabase_client
+
+
+def _is_duplicate_error(error: Any) -> bool:
+    if not error:
+        return False
+    text = str(error).lower()
+    return "duplicate" in text or "unique" in text or "23505" in text
+
+
+def _coerce_timestamp(value: Any) -> str:
+    if isinstance(value, datetime):
+        ts = value
+    elif isinstance(value, str):
+        try:
+            ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            ts = datetime.now(timezone.utc)
+    else:
+        ts = datetime.now(timezone.utc)
+
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc).isoformat()
+
+
+class IngestionService:
     """
-    Validates the Bearer token and resolves it to a tenant_id.
+    Idempotent event ingestion using Supabase.
     """
-    token = credentials.credentials
 
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API Key",
+    def __init__(self):
+        self._client: Optional[Client] = None
+
+    def _client_or_raise(self) -> Client:
+        if self._client is None:
+            self._client = _get_supabase_client()
+        if not self._client:
+            raise RuntimeError("Supabase client unavailable")
+        return self._client
+
+    async def process_raw_event(
+        self,
+        tenant_id: str,
+        event_name: str,
+        user_id: Optional[str],
+        idempotency_key: str,
+        timestamp: Any,
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return await asyncio.to_thread(
+            self.process_raw_event_sync,
+            tenant_id,
+            event_name,
+            user_id,
+            idempotency_key,
+            timestamp,
+            properties,
         )
 
-    # MVP: static mapping
-    if token == "arcli_test_key_123":
-        return "acme_tenant"
+    def process_raw_event_sync(
+        self,
+        tenant_id: str,
+        event_name: str,
+        user_id: Optional[str],
+        idempotency_key: str,
+        timestamp: Any,
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if not tenant_id:
+            raise ValueError("tenant_id is required")
+        if not event_name:
+            raise ValueError("event_name is required")
+        if not idempotency_key:
+            raise ValueError("idempotency_key is required")
 
-    # ❌ REMOVE insecure fallback
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid API Key",
-    )
+        client = self._client_or_raise()
+        safe_properties = properties or {}
 
-
-# ---------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------
-
-class TrackEventPayload(BaseModel):
-    """
-    Strict validation schema for incoming product events.
-    """
-    event_name: str = Field(..., min_length=1, max_length=100)
-    user_id: str = Field(..., min_length=1, max_length=100)
-    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
-
-    @validator("event_name")
-    def normalize_event_name(cls, v: str) -> str:
-        return v.lower().strip()
-
-    @validator("user_id")
-    def normalize_user_id(cls, v: str) -> str:
-        return v.strip()
-
-
-# ---------------------------------------------------------
-# Core Service Logic
-# ---------------------------------------------------------
-
-def process_incoming_event(
-    db: Session,
-    tenant_id: str,
-    payload: TrackEventPayload,
-) -> dict:
-    """
-    Inserts a normalized event with strict tenant isolation.
-    """
-    if not tenant_id:
-        raise ValueError("tenant_id is required")
-
-    new_event = Event(
-        tenant_id=tenant_id,
-        event_name=payload.event_name,
-        user_id=payload.user_id,
-        timestamp=payload.timestamp or datetime.utcnow(),
-    )
-
-    db.add(new_event)
-    db.commit()
-    db.refresh(new_event)
-
-    return {
-        "status": "success",
-        "event_id": new_event.id,
-        "tenant_id": tenant_id,
-        "event_name": payload.event_name,
-    }
-
-
-# ---------------------------------------------------------
-# API Route
-# ---------------------------------------------------------
-
-@router.post("/track", status_code=status.HTTP_201_CREATED)
-def track_event(
-    payload: TrackEventPayload,
-    db: Session = Depends(get_db),
-    tenant_id: str = Depends(resolve_tenant),
-):
-    """
-    Ingestion endpoint for product analytics events.
-
-    Example:
-    POST /track
-    Authorization: Bearer <api_key>
-
-    {
-      "event_name": "signup",
-      "user_id": "usr_999"
-    }
-    """
-    try:
-        return process_incoming_event(db, tenant_id, payload)
-
-    except ValueError as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+        existing = (
+            client
+            .table(EVENTS_TABLE)
+            .select("id")
+            .eq("tenant_id", tenant_id)
+            .eq("idempotency_key", idempotency_key)
+            .limit(1)
+            .execute()
         )
 
-    except Exception:
-        db.rollback()
-        # ❌ do NOT leak internal errors
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to ingest event",
+        if existing.data:
+            return {
+                "status": "deduped",
+                "event_id": existing.data[0].get("id"),
+                "anomalies": [],
+            }
+
+        payload = {
+            "tenant_id": tenant_id,
+            "event_name": event_name,
+            "user_id": user_id,
+            "idempotency_key": idempotency_key,
+            "timestamp": _coerce_timestamp(timestamp),
+            "properties": safe_properties,
+        }
+
+        resp = client.table(EVENTS_TABLE).insert(payload).execute()
+
+        if resp.data:
+            return {
+                "status": "inserted",
+                "event_id": resp.data[0].get("id"),
+                "anomalies": [],
+            }
+
+        error = getattr(resp, "error", None)
+        if _is_duplicate_error(error):
+            return {
+                "status": "deduped",
+                "event_id": None,
+                "anomalies": [],
+            }
+
+        logger.warning(
+            "event_insert_failed tenant=%s error=%s",
+            tenant_id,
+            error,
         )
+        raise RuntimeError("event_insert_failed")

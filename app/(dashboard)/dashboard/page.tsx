@@ -14,15 +14,34 @@ export default async function DashboardPage() {
     redirect("/login?next=/dashboard");
   }
 
+  const deriveTenantId = () => {
+    const appTenant = user.app_metadata?.tenant_id;
+    if (typeof appTenant === "string" && appTenant.trim()) return appTenant;
+
+    const userTenant = user.user_metadata?.tenant_id;
+    if (typeof userTenant === "string" && userTenant.trim()) return userTenant;
+
+    const emailDomain = user.email?.split("@")[1];
+    if (emailDomain) return emailDomain;
+
+    return user.id;
+  };
+
   const { data: tenant, error: tenantError } = await supabase
     .from("tenant_users")
     .select("tenant_id")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (tenantError || !tenant?.tenant_id) {
-    redirect("/onboarding");
+  const fallbackTenantId = deriveTenantId();
+
+  if (tenantError && !tenant?.tenant_id) {
+    console.warn("tenant lookup failed, using fallback tenant id", {
+      userId: user.id,
+    });
   }
 
-  return <BusinessBreakDetector tenantId={tenant.tenant_id} />;
+  const tenantId = tenant?.tenant_id || fallbackTenantId;
+
+  return <BusinessBreakDetector tenantId={tenantId} />;
 }

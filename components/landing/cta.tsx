@@ -23,10 +23,10 @@ export function CTA() {
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 54px)", marginBottom: 14, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
-          Stop guessing.<br />Start knowing.
+          Stop reacting to churn.<br />Start preventing it.
         </h2>
         <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-          Connect your first data source and deploy your first autonomous AI agent in under 5 minutes.
+          Connect your billing data and deploy your first AI retention agent in under 5 minutes.
         </p>
 
         {/* CTA buttons */}
@@ -50,7 +50,7 @@ export function CTA() {
               letterSpacing: "0.02em",
             }}
           >
-            Initialize Agent <ArrowRight size={14} />
+            Start Saving Customers <ArrowRight size={14} />
           </a>
           <a
             href="#demo"

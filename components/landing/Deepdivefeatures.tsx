@@ -23,10 +23,10 @@ export function DeepDiveFeatures() {
               <LayoutDashboard size={14} /> THE SMART GRID
             </div>
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Dashboards that actually<br />answer the next question.
+              Dashboards that predict<br />the next cancellation.
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
-              Stop building brittle dashboards that break when you filter them. The Smart Grid dynamically joins data across your platforms (Stripe + Shopify + Zendesk) into fluid, interactive canvases. 
+              Stop building brittle dashboards that break when you filter them. The Smart Grid dynamically joins data across your platforms (Stripe + Zendesk + Mixpanel) into fluid, interactive canvases. 
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
               {[
@@ -63,14 +63,14 @@ export function DeepDiveFeatures() {
               {/* KPI Row */}
               <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
                 <div style={{ flex: 1, border: surfaceBorder, borderRadius: 8, padding: 12, boxShadow: surfaceShadow }}>
-                  <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: "0.05em", marginBottom: 8 }}>REVENUE</div>
+                  <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: "0.05em", marginBottom: 8 }}>AT-RISK MRR</div>
                   <div style={{ fontSize: 18, fontWeight: 700, color: C.navy }}>$124.5k</div>
                   <div style={{ fontSize: 12, color: "#10B981", fontWeight: 600, marginTop: 4 }}>+14.2%</div>
                 </div>
                 <div style={{ flex: 1, border: surfaceBorder, borderRadius: 8, padding: 12, boxShadow: surfaceShadow }}>
-                  <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: "0.05em", marginBottom: 8 }}>AVG ORDER</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: C.navy }}>$84.20</div>
-                  <div style={{ fontSize: 12, color: "#10B981", fontWeight: 600, marginTop: 4 }}>+2.1%</div>
+                  <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, letterSpacing: "0.05em", marginBottom: 8 }}>CHURN RATE</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: C.navy }}>2.4%</div>
+                  <div style={{ fontSize: 12, color: "#10B981", fontWeight: 600, marginTop: 4 }}>+0.2%</div>
                 </div>
               </div>
 
@@ -115,7 +115,7 @@ export function DeepDiveFeatures() {
               <Presentation size={14} /> NARRATIVE SYNTHESIS
             </div>
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Charts are nice.<br />Answers are better.
+              Dashboards are nice.<br />Saved accounts are better.
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Stop pasting screenshots into Slack. With one click, generate a presentation-ready executive summary of your board. We freeze the data state, giving you a "Time-Travel" hash so your team sees exactly what you saw.
@@ -156,7 +156,7 @@ export function DeepDiveFeatures() {
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, color: C.blueLight, letterSpacing: "0.05em" }}>EXECUTIVE BRIEF</span>
                   </div>
-                  <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0, lineHeight: 1.2 }}>Q3 Pipeline Synthesis</h3>
+                  <h3 style={{ fontSize: 18, fontWeight: 600, margin: 0, lineHeight: 1.2 }}>Q3 Churn & Retention Synthesis</h3>
                 </div>
                 <div style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.12)", padding: "6px 10px", borderRadius: 8, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", boxShadow: surfaceShadow }}>
                   <Share2 size={14} color={C.faint} />
@@ -173,7 +173,7 @@ export function DeepDiveFeatures() {
                     <LineChart size={16} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#E2E8F0" }}>Enterprise LTV Growth</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#E2E8F0" }}>Enterprise Churn Reduction</div>
                     <div style={{ fontSize: 13, color: "#34D399", fontWeight: 700 }}>+24% vs Prev Quarter</div>
                   </div>
                 </div>
@@ -181,10 +181,10 @@ export function DeepDiveFeatures() {
                 {/* AI Text Block */}
                 <div style={{ fontSize: 14, color: C.faint, lineHeight: 1.6 }}>
                   <p style={{ marginBottom: 12 }}>
-                    Based on the current Omni-Graph state, Enterprise LTV has driven the majority of Q3 growth, directly correlated with the introduction of the new Zendesk integration.
+                    Based on the current Omni-Graph state, Enterprise churn risk is concentrated in accounts with stagnant usage and delayed support responses.
                   </p>
                   <p>
-                    <span style={{ color: "#E2E8F0", fontWeight: 600 }}>Recommendation:</span> Increase allocation to the Enterprise outbound campaign, as CAC payback period has shortened to 4.2 months.
+                    <span style={{ color: "#E2E8F0", fontWeight: 600 }}>Recommendation:</span> Trigger automated outreach to 42 accounts showing 'stagnant usage' flags before renewal.
                   </p>
                 </div>
               </div>
