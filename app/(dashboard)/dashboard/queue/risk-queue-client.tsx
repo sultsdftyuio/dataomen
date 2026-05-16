@@ -1,6 +1,8 @@
+// app/(dashboard)/dashboard/queue/risk-queue-client.tsx
 "use client";
 
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { 
   ShieldAlert, 
   Search, 
@@ -10,56 +12,111 @@ import {
   Mail, 
   AlertCircle,
   PlayCircle,
-  Ban
+  Ban,
+  RefreshCw,
+  UserCircle
 } from "lucide-react";
 
-const MOCK_QUEUE = [
-  {
-    id: "risk_001",
-    email: "alex.martinez@example.com",
-    mrr: 49,
-    signal: "Failed Stripe Invoice (Attempt 2)",
-    signalType: "billing",
-    status: "Email 1 Sent",
-    cooldown: "48h remaining",
-    severity: "high"
-  },
-  {
-    id: "risk_002",
-    email: "sarah.j@startup.io",
-    mrr: 199,
-    signal: "Zero Logins in 14 Days",
-    signalType: "activity",
-    status: "Pending Routing",
-    cooldown: null,
-    severity: "medium"
-  },
-  {
-    id: "risk_003",
-    email: "m.chen@enterprise.net",
-    mrr: 850,
-    signal: "Subscription Cancelled (End of Term)",
-    signalType: "cancellation",
-    status: "Founder Escalation",
-    cooldown: null,
-    severity: "critical"
-  },
-  {
-    id: "risk_004",
-    email: "david@designco.com",
-    mrr: 29,
-    signal: "Abandoned Onboarding Step 3",
-    signalType: "activity",
-    status: "Email 2 Sent",
-    cooldown: "12h remaining",
-    severity: "low"
-  }
-];
+interface QueueItem {
+  id: string;
+  email: string;
+  mrr: number;
+  signal: string;
+  signalType: "billing" | "cancellation" | "activity";
+  status: string;
+  cooldown: string | null;
+  severity: "high" | "medium" | "critical" | "low";
+}
 
 export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
-  // In a real implementation, you would fetch the queue via SWR/React Query
-  // from an endpoint like `/api/queue/active?tenant_id=${tenantId}`
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   
+  // Feature State: Filter & Action Menus
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [severityFilter, setSeverityFilter] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    let mounted = true;
+
+    const fetchQueue = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/queue/active?tenant_id=${tenantId}`);
+        if (!res.ok) throw new Error("Failed to fetch active queue");
+        
+        const data = await res.json();
+        if (mounted) setQueue(data.items || []);
+      } catch (err) {
+        console.error("Queue fetch error:", err);
+        if (mounted) setQueue([]); // Graceful fallback
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    fetchQueue();
+
+    return () => {
+      mounted = false;
+    };
+  }, [tenantId]);
+
+  // Deterministic Action: Force Execute Workflow Step
+  const handleExecute = async (itemId: string) => {
+    setActionLoading(itemId);
+    try {
+      const res = await fetch("/api/queue/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: tenantId, item_id: itemId })
+      });
+      
+      if (res.ok) {
+        setQueue(prev => prev.map(item => 
+          item.id === itemId ? { ...item, status: "Execution Forced" } : item
+        ));
+      }
+    } catch (err) {
+      console.error("Force execute failed:", err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Deterministic Action: Suppress/Skip User
+  const handleSkip = async (itemId: string) => {
+    setActionLoading(itemId);
+    try {
+      const res = await fetch("/api/queue/skip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: tenantId, item_id: itemId })
+      });
+
+      if (res.ok) {
+        setQueue(prev => prev.filter(item => item.id !== itemId));
+      }
+    } catch (err) {
+      console.error("Skip action failed:", err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Apply Search and Engine Severity Filters
+  const filteredQueue = queue.filter(item => {
+    const matchesSearch = item.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          item.signal.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSeverity = severityFilter ? item.severity === severityFilter : true;
+    return matchesSearch && matchesSeverity;
+  });
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       
@@ -78,18 +135,40 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
             <input 
               type="text" 
               placeholder="Search users..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-full sm:w-64 transition-all"
             />
           </div>
-          <button className="flex items-center gap-2 px-3 py-2 border border-slate-200 bg-white rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-            <Filter className="h-4 w-4" />
-            Filter
-          </button>
+          
+          {/* Functional Filter Dropdown */}
+          <div className="relative">
+            <button 
+              onClick={() => setFilterOpen(!filterOpen)}
+              className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm font-medium transition-colors ${
+                severityFilter ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              <Filter className="h-4 w-4" />
+              {severityFilter ? `Risk: ${severityFilter.charAt(0).toUpperCase() + severityFilter.slice(1)}` : 'Filter'}
+            </button>
+
+            {filterOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
+                <div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Severity Filter</div>
+                <button onClick={() => { setSeverityFilter(null); setFilterOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">All Risks</button>
+                <button onClick={() => { setSeverityFilter("critical"); setFilterOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-rose-700 hover:bg-rose-50 font-medium">Critical</button>
+                <button onClick={() => { setSeverityFilter("high"); setFilterOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-amber-700 hover:bg-amber-50 font-medium">High</button>
+                <button onClick={() => { setSeverityFilter("medium"); setFilterOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-blue-700 hover:bg-blue-50 font-medium">Medium</button>
+                <button onClick={() => { setSeverityFilter("low"); setFilterOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">Low</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ── Data Table ── */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden min-h-[400px]">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -102,7 +181,16 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {MOCK_QUEUE.map((item) => (
+              {loading && (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center">
+                    <RefreshCw className="h-6 w-6 animate-spin text-slate-300 mx-auto" />
+                    <p className="text-sm text-slate-500 mt-2">Loading deterministic queue...</p>
+                  </td>
+                </tr>
+              )}
+
+              {!loading && filteredQueue.map((item) => (
                 <tr key={item.id} className="hover:bg-slate-50/80 transition-colors group">
                   
                   {/* User Column */}
@@ -153,22 +241,45 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
 
                   {/* Actions Column */}
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center justify-end gap-2 relative">
                       <button 
-                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors"
+                        onClick={() => handleExecute(item.id)}
+                        disabled={actionLoading === item.id}
+                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition-colors disabled:opacity-50 opacity-0 group-hover:opacity-100"
                         title="Force Execute Next Step"
                       >
-                        <PlayCircle className="h-4 w-4" />
+                        {actionLoading === item.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
                       </button>
                       <button 
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                        onClick={() => handleSkip(item.id)}
+                        disabled={actionLoading === item.id}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors disabled:opacity-50 opacity-0 group-hover:opacity-100"
                         title="Skip / Suppress User"
                       >
                         <Ban className="h-4 w-4" />
                       </button>
-                      <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
+                      
+                      {/* Functional User Drill-down Menu */}
+                      <div className="relative">
+                        <button 
+                          onClick={() => setOpenMenuId(openMenuId === item.id ? null : item.id)}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+
+                        {openMenuId === item.id && (
+                          <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1 text-left">
+                            <Link 
+                              href={`/dashboard/user/${item.id}`}
+                              className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <UserCircle className="h-4 w-4 text-slate-400" />
+                              View Deep Drill-down
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
 
@@ -178,11 +289,11 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
           </table>
           
           {/* Empty State Fallback */}
-          {MOCK_QUEUE.length === 0 && (
+          {!loading && filteredQueue.length === 0 && (
             <div className="p-12 text-center">
               <ShieldAlert className="h-10 w-10 text-slate-300 mx-auto mb-3" />
               <h3 className="text-sm font-medium text-slate-900">Queue is empty</h3>
-              <p className="text-sm text-slate-500 mt-1">No active churn risks detected.</p>
+              <p className="text-sm text-slate-500 mt-1">No active churn risks match your current filters.</p>
             </div>
           )}
         </div>

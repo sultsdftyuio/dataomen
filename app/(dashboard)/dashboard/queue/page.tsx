@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/queue/page.tsx
 import React from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
@@ -15,17 +16,7 @@ export default async function QueuePage() {
     redirect("/login?next=/dashboard/queue");
   }
 
-  // Tenant Resolution Logic
-  const deriveTenantId = () => {
-    const appTenant = user.app_metadata?.tenant_id;
-    if (typeof appTenant === "string" && appTenant.trim()) return appTenant;
-    const userTenant = user.user_metadata?.tenant_id;
-    if (typeof userTenant === "string" && userTenant.trim()) return userTenant;
-    const emailDomain = user.email?.split("@")[1];
-    if (emailDomain) return emailDomain;
-    return user.id;
-  };
-
+  // 1. Fetch the data explicitly from the database mapping
   const { data: tenantData, error: tenantError } = await supabase
     .from("tenant_users")
     .select("tenant_id")
@@ -33,13 +24,18 @@ export default async function QueuePage() {
     .maybeSingle();
 
   const tenant = tenantData as { tenant_id: string } | null;
-  const fallbackTenantId = deriveTenantId();
+
+  // 2. The Open-Access Fallback (Implicit Isolation)
+  // We explicitly REMOVE the email domain fallback to prevent data mixing.
+  // We default to the user's ID as their isolated workspace.
+  const tenantId = tenant?.tenant_id || user.id;
 
   if (tenantError && !tenant?.tenant_id) {
-    console.warn("tenant lookup failed on queue page", { userId: user.id });
+    console.info("New user sign-up detected. Provisioning implicit workspace for Queue.", {
+      userId: user.id,
+      assignedTenantId: tenantId
+    });
   }
-
-  const tenantId = tenant?.tenant_id || fallbackTenantId;
 
   // Pass the securely fetched tenantId down to the interactive Client Component
   return <RiskQueueClient tenantId={tenantId} />;

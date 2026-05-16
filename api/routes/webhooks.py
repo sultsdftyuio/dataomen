@@ -9,7 +9,7 @@ import hmac
 import hashlib
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Request, Header, HTTPException, BackgroundTasks, status
 from sqlalchemy.orm import Session
@@ -79,7 +79,7 @@ def _load_secret_map(raw_value: str) -> Dict[str, str]:
     return cleaned
 
 
-def _resolve_lemon_squeezy_secret(raw_body: bytes, signature: Optional[str]) -> (Optional[str], Optional[str]):
+def _resolve_lemon_squeezy_secret(raw_body: bytes, signature: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not signature:
         return None, None
 
@@ -176,7 +176,7 @@ def _dedupe_webhook_event(
     return row is None
 
 
-def _resolve_stripe_event(raw_body: bytes, signature: Optional[str]) -> (Dict[str, Any], Optional[str]):
+def _resolve_stripe_event(raw_body: bytes, signature: Optional[str]) -> Tuple[Dict[str, Any], Optional[str]]:
     if not signature:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -195,6 +195,12 @@ def _resolve_stripe_event(raw_body: bytes, signature: Optional[str]) -> (Dict[st
                 return event, tenant_id
             except stripe.error.SignatureVerificationError:
                 continue
+
+        if not STRIPE_WEBHOOK_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Stripe webhook signature",
+            )
 
     if STRIPE_WEBHOOK_SECRET:
         try:
@@ -258,8 +264,8 @@ def _verify_stripe_signature(raw_body: bytes, signature: Optional[str]) -> Dict[
 async def handle_lemonsqueezy_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
-    x_signature: str = Header(None, description="HMAC-SHA256 signature from Lemon Squeezy"),
-    db: Session = Depends(get_db)
+    x_signature: Optional[str] = Header(None, description="HMAC-SHA256 signature from Lemon Squeezy"),
+    db: Session = Depends(get_db),
 ):
     """
     Receives billing lifecycle events directly from Lemon Squeezy (e.g., subscription_created).
@@ -286,6 +292,8 @@ async def handle_lemonsqueezy_webhook(
             raise ValueError("Missing 'event_name' in payload meta.")
 
         tenant_id = _extract_tenant_id(payload)
+        if mapped_tenant and tenant_id == "unknown":
+            tenant_id = mapped_tenant
         if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -341,6 +349,8 @@ async def handle_lemonsqueezy_webhook(
     except ValueError as ve:
         logger.error(f"Payload validation error: {str(ve)}")
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ve))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Critical failure routing billing webhook: {str(e)}")
         # Return 500 so Lemon Squeezy's exponential backoff retry logic kicks in
@@ -365,6 +375,8 @@ async def handle_stripe_webhook(
         )
 
     tenant_id = _extract_stripe_tenant_id(event_payload)
+    if mapped_tenant and tenant_id == "unknown":
+        tenant_id = mapped_tenant
     if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

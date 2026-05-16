@@ -1,22 +1,22 @@
 import logging
-from datetime import datetime
+import json
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from api.database import get_db, get_db_pool
 from api.services.tenant_security_provider import get_current_tenant
 from api.services.metrics_service import fetch_current_metric, fetch_metric_history
 from api.services.anomaly_detector import AnomalyDetector, check_anomaly
-from api.services.explanation_engine import ExplanationEngine
 from api.services.alert_engine import handle_anomaly_alert
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/metrics", tags=["Insights"])
-
 
 # ---------------------------------------------------------
 # RESPONSE SCHEMAS
@@ -50,7 +50,7 @@ class FeedbackResponse(BaseModel):
 
 
 # ---------------------------------------------------------
-# CORE INSIGHTS ENDPOINT (PRIMARY ENTRY)
+# CORE INSIGHTS ENDPOINT (DETERMINISTIC)
 # ---------------------------------------------------------
 
 @router.get("/{metric_name}/insights", response_model=MetricInsightResponse)
@@ -62,12 +62,9 @@ async def get_metric_insights(
     db_pool = Depends(get_db_pool)
 ):
     """
-    Unified Insights Endpoint:
-
-    Flow:
-    metric_values → anomaly → explanation (AI) → alert → segment analysis
+    Unified Insights Endpoint (Deterministic Rules Engine)
+    Flow: metric_values → mathematical anomaly detection → rule-based explanation → alert
     """
-
     metric_name = metric_name.strip().lower()
 
     try:
@@ -90,19 +87,26 @@ async def get_metric_insights(
             )
 
         # -------------------------
-        # DETECTION
+        # STATISTICAL DETECTION
         # -------------------------
         anomaly = check_anomaly(metric_name, current_value, history)
 
         # -------------------------
-        # EXPLANATION ENGINE (AI + RULES)
+        # DETERMINISTIC EXPLANATION
         # -------------------------
-        explanation_engine = ExplanationEngine(db_pool)
-
-        explanation = await explanation_engine.generate(
-            tenant_id=tenant_id,
-            anomaly=anomaly
-        )
+        # ARCLI v2.0 DIRECTIVE: No AI generation. We use strict rule-based formatting.
+        explanation = {"message": "System nominal. No significant deviations detected."}
+        
+        if anomaly.get("is_anomaly"):
+            direction = anomaly.get("direction", "shifted")
+            deviation = anomaly.get("deviation_pct", 0)
+            baseline = anomaly.get("baseline", 0)
+            
+            explanation = {
+                "message": f"Deterministic Alert: {metric_name.capitalize()} has {direction} by {round(deviation, 1)}%. "
+                           f"Current value ({current_value}) exceeds the historical baseline ({baseline}).",
+                "type": "rule_based_threshold"
+            }
 
         segments: List[Dict[str, str]] = []
 
@@ -114,13 +118,13 @@ async def get_metric_insights(
 
             try:
                 detector = AnomalyDetector(db_pool)
-
-                current_time = datetime.now().replace(minute=0, second=0, microsecond=0)
+                # MULTI-TENANT FIX: Enforce UTC timezone to prevent cross-region drift
+                current_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
                 segment_data = await detector.detect_anomalies(
                     tenant_id,
                     metric_name,
-                    current_time
+                    current_time.isoformat()
                 )
 
                 if segment_data:
@@ -152,7 +156,7 @@ async def get_metric_insights(
 
 
 # ---------------------------------------------------------
-# FEEDBACK DRILLDOWN ENDPOINT (POWER FEATURE)
+# FEEDBACK DRILLDOWN ENDPOINT (DETERMINISTIC QUERY)
 # ---------------------------------------------------------
 
 @router.get(
@@ -165,32 +169,56 @@ async def get_anomaly_feedback(
     dimension: Optional[str] = Query(None),
     dimension_value: Optional[str] = Query(None),
     tenant_id: str = Depends(get_current_tenant),
-    db_pool = Depends(get_db_pool)
+    db: Session = Depends(get_db)
 ):
     """
     Drilldown endpoint:
-    Returns "WHY users are reacting" around an anomaly.
+    Returns exact reasons for churn/feedback using deterministic SQL, without AI summarization overhead.
     """
-
     try:
-        engine = ExplanationEngine(db_pool)
-
-        feedback = await engine.fetch_contextual_feedback(
-            tenant_id=tenant_id,
-            anomaly_timestamp=timestamp,
-            dimension=dimension,
-            dimension_value=dimension_value,
-            hours_radius=2,
-            limit=50
-        )
+        # Enforce UTC timezone on incoming timestamp
+        target_ts = timestamp.astimezone(timezone.utc) if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+        start_ts = target_ts - timedelta(hours=2)
+        end_ts = target_ts + timedelta(hours=2)
 
         # -------------------------
-        # SUMMARIZATION (FAST)
+        # DETERMINISTIC DATA FETCH
         # -------------------------
+        # Bypass the "ExplanationEngine" entirely and query the events table directly.
+        sql = text("""
+            SELECT properties
+            FROM events
+            WHERE tenant_id = :tenant_id
+              AND event_name = 'feedback_submitted'
+              AND timestamp >= :start_ts
+              AND timestamp <= :end_ts
+            LIMIT 50
+        """)
+
+        rows = db.execute(sql, {
+            "tenant_id": tenant_id,
+            "start_ts": start_ts.isoformat(),
+            "end_ts": end_ts.isoformat()
+        }).fetchall()
+
+        feedback = []
         reason_counts: Dict[str, int] = {}
 
-        for f in feedback:
-            reason = f.get("reason") or "unspecified"
+        # -------------------------
+        # DETERMINISTIC SUMMARIZATION
+        # -------------------------
+        for row in rows:
+            props = row._mapping.get("properties", {})
+            if isinstance(props, str):
+                try:
+                    props = json.loads(props)
+                except json.JSONDecodeError:
+                    props = {}
+            
+            feedback.append(props)
+            
+            # Extract standard categorical reason safely
+            reason = str(props.get("reason") or "unspecified").strip().lower()
             reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
         top_reasons = sorted(
@@ -202,12 +230,12 @@ async def get_anomaly_feedback(
         return FeedbackResponse(
             anomaly_context={
                 "metric": metric_name,
-                "timestamp": timestamp,
+                "timestamp": target_ts.isoformat(),
                 "segment": f"{dimension}={dimension_value}" if dimension else "global"
             },
             summary=FeedbackSummary(
                 total_feedback_events=len(feedback),
-                top_reasons=top_reasons
+                top_reasons=[list(x) for x in top_reasons]
             ),
             raw_feedback=feedback
         )
@@ -216,5 +244,5 @@ async def get_anomaly_feedback(
         logger.error("feedback_fetch_failed", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="Failed to fetch anomaly feedback"
+            detail="Failed to fetch deterministic anomaly feedback"
         )
