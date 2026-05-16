@@ -11,12 +11,18 @@ import {
   RefreshCw
 } from "lucide-react";
 
+interface MetricsSummary {
+  recoveredMrr: number;
+  atRiskMrr: number;
+  recoveryRate: number;
+  activeRisks: number;
+}
+
 export default function RecoveryOverview({ tenantId }: { tenantId: string }) {
   const [loading, setLoading] = useState(true);
   
-  // In a real implementation, you will fetch this from a deterministic endpoint 
-  // like `/api/metrics/summary?tenant_id=${tenantId}`
-  const [summary, setSummary] = useState({
+  // Deterministic state initialized to baseline zero
+  const [summary, setSummary] = useState<MetricsSummary>({
     recoveredMrr: 0,
     atRiskMrr: 0,
     recoveryRate: 0,
@@ -28,29 +34,40 @@ export default function RecoveryOverview({ tenantId }: { tenantId: string }) {
 
     let mounted = true;
     
-    // Simulating initial data load for the deterministic pipeline
+    // Fetch live data from the deterministic Python API
     const loadDashboardData = async () => {
       setLoading(true);
       try {
-        // Placeholder for your actual API call
-        // const res = await fetch(`/api/dashboard/summary?tenant_id=${tenantId}`);
-        // const data = await res.json();
+        const res = await fetch(`/api/metrics/summary?tenant_id=${tenantId}`);
         
-        // Mocked response representing deterministic SaaS metrics
-        setTimeout(() => {
-          if (mounted) {
-            setSummary({
-              recoveredMrr: 4250,
-              atRiskMrr: 1150,
-              recoveryRate: 68,
-              activeRisks: 12
-            });
-            setLoading(false);
-          }
-        }, 600);
+        if (!res.ok) {
+          throw new Error(`Metrics API returned status: ${res.status}`);
+        }
+
+        const data = await res.json();
+        
+        if (mounted) {
+          setSummary({
+            // Fallback to 0 if backend returns undefined fields
+            recoveredMrr: data.recoveredMrr || 0,
+            atRiskMrr: data.atRiskMrr || 0,
+            recoveryRate: data.recoveryRate || 0,
+            activeRisks: data.activeRisks || 0
+          });
+          setLoading(false);
+        }
       } catch (e) {
-        console.error("Failed to load dashboard metrics", e);
-        if (mounted) setLoading(false);
+        console.error("Failed to load dashboard metrics:", e);
+        if (mounted) {
+          // Fail gracefully to zero-state on error
+          setSummary({
+            recoveredMrr: 0,
+            atRiskMrr: 0,
+            recoveryRate: 0,
+            activeRisks: 0
+          });
+          setLoading(false);
+        }
       }
     };
 

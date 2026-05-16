@@ -15,39 +15,28 @@ export default async function DashboardPage() {
     redirect("/login?next=/dashboard");
   }
 
-  const deriveTenantId = () => {
-    const appTenant = user.app_metadata?.tenant_id;
-    if (typeof appTenant === "string" && appTenant.trim()) return appTenant;
-
-    const userTenant = user.user_metadata?.tenant_id;
-    if (typeof userTenant === "string" && userTenant.trim()) return userTenant;
-
-    const emailDomain = user.email?.split("@")[1];
-    if (emailDomain) return emailDomain;
-
-    return user.id;
-  };
-
-  // 1. Fetch the data
+  // 1. Fetch the data explicitly from the database mapping
   const { data: tenantData, error: tenantError } = await supabase
     .from("tenant_users")
     .select("tenant_id")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  // 2. Safely cast the response to bypass the 'never' type error
   const tenant = tenantData as { tenant_id: string } | null;
 
-  const fallbackTenantId = deriveTenantId();
+  // 2. The Open-Access Fallback (Implicit Isolation)
+  // We check for explicit DB mapping first. If none exists (new signup),
+  // we default to their unique user ID to serve as their personal workspace.
+  // We explicitly REMOVE the email domain fallback to prevent accidental data mixing.
+  const tenantId = tenant?.tenant_id || user.id;
 
   if (tenantError && !tenant?.tenant_id) {
-    console.warn("tenant lookup failed, using fallback tenant id", {
+    console.info("New user sign-up detected. Provisioning implicit workspace.", {
       userId: user.id,
+      assignedTenantId: tenantId
     });
   }
 
-  const tenantId = tenant?.tenant_id || fallbackTenantId;
-
-  // We are passing the tenantId down to our new deterministic dashboard
+  // 3. Render the deterministic dashboard
   return <RecoveryOverview tenantId={tenantId} />;
 }

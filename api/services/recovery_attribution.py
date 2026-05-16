@@ -9,14 +9,17 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
-RECOVERY_ATTRIBUTIONS_TABLE = os.getenv("RECOVERY_ATTRIBUTIONS_TABLE", "recovery_attributions")
+# Enforce deterministic table names (removed env var injection to prevent SQL injection risks)
+RECOVERY_EMAIL_TABLE = "recovery_emails"
+RECOVERY_ATTRIBUTIONS_TABLE = "recovery_attributions"
 DEFAULT_ATTRIBUTION_WINDOW_DAYS = int(os.getenv("RECOVERY_ATTRIBUTION_WINDOW_DAYS", "14"))
 ATTRIBUTION_EVENT_NAMES = os.getenv(
     "RECOVERY_ATTRIBUTION_EVENT_NAMES",
     "subscription_payment_success,invoice_paid,charge_succeeded,order_paid",
 )
 
+# Standard zero-decimal currencies where Stripe/LemonSqueezy do NOT use cents
+ZERO_DECIMAL_CURRENCIES = {"jpy", "vnd", "krw", "clp", "pyg", "bif", "djf", "gnf", "kmf", "mga", "rwf", "ugx", "vuv", "xaf", "xof", "xpf"}
 
 class RecoveryAttributionService:
     def __init__(self, db: Session):
@@ -68,10 +71,11 @@ class RecoveryAttributionService:
 
         if inserted:
             logger.info(
-                "recovery_attributed tenant=%s send_id=%s event=%s",
+                "recovery_attributed tenant=%s send_id=%s event=%s revenue=%s",
                 tenant_id,
                 recovery_row["id"],
                 normalized_event,
+                context.get("revenue")
             )
 
     def _find_recent_recovery(
@@ -86,7 +90,7 @@ class RecoveryAttributionService:
             from {RECOVERY_EMAIL_TABLE}
             where tenant_id = :tenant_id
               and status = 'sent'
-                            and user_id = :user_id
+              and user_id = :user_id
             order by sent_at desc nulls last, created_at desc
             limit 1
             """
@@ -112,9 +116,12 @@ class RecoveryAttributionService:
             window_days = DEFAULT_ATTRIBUTION_WINDOW_DAYS
 
         event_time = event_ts or datetime.now(timezone.utc)
+        
+        # Guard against attributing to emails sent AFTER the payment event
         if event_time < sent_at:
             return None
 
+        # Enforce attribution window mathematically
         if event_time - sent_at > timedelta(days=window_days):
             return None
 
@@ -132,23 +139,16 @@ class RecoveryAttributionService:
     ) -> bool:
         event_at = event_ts or datetime.now(timezone.utc)
 
-        dedupe_sql = text(
-            f"""
-            select id
-            from {RECOVERY_ATTRIBUTIONS_TABLE}
-            where send_id = :send_id
-              and event_name = :event_name
-              and event_at = :event_at
-            limit 1
-            """
-        )
-
+        # ARCLI v2.0 DIRECTIVE: True database-level idempotency via ON CONFLICT
+        # This completely eliminates webhook race-condition duplicate MRR bugs.
         insert_sql = text(
             f"""
             insert into {RECOVERY_ATTRIBUTIONS_TABLE}
                 (send_id, tenant_id, user_id, event_name, event_at, revenue, metadata)
             values
                 (:send_id, :tenant_id, :user_id, :event_name, :event_at, :revenue, :metadata)
+            on conflict (send_id, event_name, event_at) 
+            do nothing
             returning id
             """
         )
@@ -164,19 +164,10 @@ class RecoveryAttributionService:
         }
 
         try:
-            exists = self.db.execute(
-                dedupe_sql,
-                {
-                    "send_id": send_id,
-                    "event_name": event_name,
-                    "event_at": payload["event_at"],
-                },
-            ).fetchone()
-            if exists:
-                return False
-
             row = self.db.execute(insert_sql, payload).fetchone()
             self.db.commit()
+            # If row is None, the ON CONFLICT DO NOTHING triggered (duplicate webhook caught)
+            return row is not None
         except Exception:
             self.db.rollback()
             logger.exception(
@@ -185,8 +176,6 @@ class RecoveryAttributionService:
                 send_id,
             )
             return False
-
-        return row is not None
 
 
 def _normalize_event_names(value: str) -> set:
@@ -249,21 +238,23 @@ def _extract_context_lemonsqueezy(payload: Dict[str, Any], provider: str) -> Dic
         ],
     )
 
-    currency = _find_in_paths(
-        payload,
-        [
-            ["data", "attributes", "currency"],
-            ["data", "attributes", "currency_code"],
-        ],
+    currency = _coerce_string(
+        _find_in_paths(
+            payload,
+            [
+                ["data", "attributes", "currency"],
+                ["data", "attributes", "currency_code"],
+            ],
+        )
     )
 
-    revenue = _coerce_revenue(amount_raw)
+    revenue = _coerce_revenue(amount_raw, currency)
 
     metadata = {
         "provider": provider,
         "event_id": _coerce_string(event_id),
         "invoice_id": _coerce_string(invoice_id),
-        "currency": _coerce_string(currency),
+        "currency": currency,
         "amount_raw": amount_raw,
     }
 
@@ -301,7 +292,7 @@ def _extract_context_stripe(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     currency = _coerce_string(data_object.get("currency"))
-    revenue = _coerce_revenue(amount_raw)
+    revenue = _coerce_revenue(amount_raw, currency)
 
     meta_payload = {
         "provider": "stripe",
@@ -332,24 +323,28 @@ def _find_in_paths(payload: Dict[str, Any], paths: Iterable[Iterable[str]]) -> A
     return None
 
 
-def _coerce_revenue(value: Any) -> Optional[float]:
-    if value is None:
+def _coerce_revenue(amount_raw: Any, currency: Optional[str] = None) -> Optional[float]:
+    """
+    Deterministically convert raw gateway amounts (usually cents) into floating dollar values.
+    Eliminates the dangerous heuristic of guessing based on integer size.
+    """
+    if amount_raw is None:
         return None
 
     try:
-        if isinstance(value, str):
-            value = value.replace(",", "")
-        num = float(value)
+        if isinstance(amount_raw, str):
+            amount_raw = amount_raw.replace(",", "")
+        num = float(amount_raw)
+        
+        # If it's a known zero-decimal currency (e.g., JPY), do not divide by 100
+        if currency and currency.lower() in ZERO_DECIMAL_CURRENCIES:
+            return round(num, 2)
+            
+        # Standard processing: Strip and LemonSqueezy payload amounts are natively in cents.
+        return round(num / 100.0, 2)
+        
     except (TypeError, ValueError):
         return None
-
-    if isinstance(value, int) and value > 1000:
-        return round(num / 100.0, 2)
-
-    if num > 1000 and num.is_integer():
-        return round(num / 100.0, 2)
-
-    return round(num, 2)
 
 
 def _coerce_string(value: Any) -> Optional[str]:

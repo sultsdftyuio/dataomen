@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Generator, List, Dict, Any
 
@@ -21,30 +22,22 @@ USER_PROFILE_CURSOR_FIELD = os.getenv("USER_PROFILE_CURSOR_FIELD", "id")
 # PIPELINE ORCHESTRATOR
 # ---------------------------------------------------------
 
-
 class PipelineOrchestrator:
     """
-    Arcli Daily Churn Recovery Pipeline
+    Arcli Daily Churn Recovery Pipeline (Deterministic Engine)
 
     Responsibilities:
-    - Iterate active tenants
-    - Calculate churn risk
-    - Trigger recovery workflows
-    - Queue recovery emails
-    - Track operational performance
-
-    IMPORTANT:
-    This orchestrator should remain THIN.
-    Business logic belongs inside:
-    - ChurnScoringService
-    - RecoveryAutomationEngine
+    - Iterate active tenants efficiently
+    - Calculate deterministic churn risk
+    - Trigger idempotent recovery workflows
+    - Maintain strict run traceability
     """
 
     def __init__(self, db_client, email_queue=None):
         self.db = db_client
         self.email_queue = email_queue
 
-        # Core MVP Engines
+        # Core Engines
         self.churn_scoring = ChurnScoringService(db_client)
         self.recovery_engine = RecoveryAutomationEngine(
             db_client=db_client,
@@ -58,21 +51,17 @@ class PipelineOrchestrator:
     def run_daily_pipeline(self, target_date_str: str = None):
         """
         Main nightly churn recovery pipeline.
-
-        Flow:
-        1. Fetch active tenants
-        2. Process each tenant independently
-        3. Score churn risk
-        4. Queue recovery campaigns
+        Enforces a strict run_id for full operational traceability.
         """
-
+        run_id = str(uuid.uuid4())
         target_date = (
             target_date_str
             or datetime.now(timezone.utc).strftime("%Y-%m-%d")
         )
 
         logger.info(
-            f"daily_risk_scan_started target_date={target_date}"
+            "daily_risk_scan_started target_date=%s run_id=%s", 
+            target_date, run_id
         )
 
         start_time = time.time()
@@ -81,11 +70,12 @@ class PipelineOrchestrator:
             tenants = self._fetch_active_tenants()
 
             if not tenants:
-                logger.warning("no_active_tenants_found")
+                logger.warning("no_active_tenants_found run_id=%s", run_id)
                 return
 
             logger.info(
-                f"active_tenants_found count={len(tenants)}"
+                "active_tenants_found count=%d run_id=%s", 
+                len(tenants), run_id
             )
 
             processed = 0
@@ -94,7 +84,8 @@ class PipelineOrchestrator:
             for tenant_id in tenants:
                 success = self._process_tenant_safe(
                     tenant_id=tenant_id,
-                    target_date=target_date
+                    target_date=target_date,
+                    run_id=run_id
                 )
 
                 if success:
@@ -105,14 +96,13 @@ class PipelineOrchestrator:
             duration = round(time.time() - start_time, 2)
 
             logger.info(
-                "daily_risk_scan_completed "
-                f"duration={duration}s "
-                f"processed_tenants={processed} "
-                f"failed_tenants={failed}"
+                "daily_risk_scan_completed run_id=%s duration=%ss "
+                "processed_tenants=%d failed_tenants=%d",
+                run_id, duration, processed, failed
             )
 
         except Exception:
-            logger.exception("daily_pipeline_failed")
+            logger.exception("daily_pipeline_failed run_id=%s", run_id)
             raise
 
     # ---------------------------------------------------------
@@ -121,20 +111,13 @@ class PipelineOrchestrator:
 
     def _fetch_active_tenants(self) -> List[str]:
         """
-        MVP Strategy:
-        Fetch unique tenant IDs from user_profiles.
-
-        Future:
-        Move to dedicated tenants table:
-        - id
-        - status
-        - stripe_connected
-        - subscription_status
+        ARCLI v2.0 DIRECTIVE: Relational Efficiency.
+        Never scan the massive user_profiles table for unique tenants.
+        Query the much smaller tenant_users mapping table instead.
         """
-
         resp = (
             self.db
-            .table("user_profiles")
+            .table("tenant_users")
             .select("tenant_id")
             .execute()
         )
@@ -154,27 +137,27 @@ class PipelineOrchestrator:
     def _process_tenant_safe(
         self,
         tenant_id: str,
-        target_date: str
+        target_date: str,
+        run_id: str
     ) -> bool:
         """
-        Isolated tenant processing.
-
-        Prevents one bad tenant from crashing
-        the entire nightly pipeline.
+        Isolated tenant processing. Prevents one bad tenant payload 
+        from crashing the multi-tenant pipeline.
         """
-
         start = time.time()
 
         try:
             self._process_tenant(
                 tenant_id=tenant_id,
-                target_date=target_date
+                target_date=target_date,
+                run_id=run_id
             )
             return True
 
         except Exception:
             logger.exception(
-                f"tenant_processing_failed tenant={tenant_id}"
+                "tenant_processing_failed tenant=%s run_id=%s", 
+                tenant_id, run_id
             )
             return False
 
@@ -183,9 +166,8 @@ class PipelineOrchestrator:
 
             if duration > MAX_TENANT_RUNTIME_SEC:
                 logger.warning(
-                    "slow_tenant_detected "
-                    f"tenant={tenant_id} "
-                    f"duration={duration}s"
+                    "slow_tenant_detected tenant=%s duration=%ss run_id=%s",
+                    tenant_id, duration, run_id
                 )
 
     # ---------------------------------------------------------
@@ -195,20 +177,15 @@ class PipelineOrchestrator:
     def _process_tenant(
         self,
         tenant_id: str,
-        target_date: str
+        target_date: str,
+        run_id: str
     ):
         """
         Core tenant churn recovery workflow.
-
-        Steps:
-        1. Load users in batches
-        2. Calculate churn risk
-        3. Queue recovery campaigns
-        4. Track pipeline metrics
         """
-
         logger.info(
-            f"tenant_scan_started tenant={tenant_id}"
+            "tenant_scan_started tenant=%s run_id=%s", 
+            tenant_id, run_id
         )
 
         tenant_start = time.time()
@@ -221,15 +198,12 @@ class PipelineOrchestrator:
         recovery_duration_total = 0
 
         # ---------------------------------------------------------
-        # PROCESS USERS IN BATCHES
+        # PROCESS USERS IN BATCHES (OOM Prevention)
         # ---------------------------------------------------------
 
-        for users_batch in self._yield_users_in_batches(
-            tenant_id=tenant_id
-        ):
+        for users_batch in self._yield_users_in_batches(tenant_id=tenant_id):
 
             batch_size = len(users_batch)
-
             if batch_size == 0:
                 continue
 
@@ -238,67 +212,48 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------
             # STEP 1 — CHURN SCORING
             # ---------------------------------------------------------
-
             score_start = time.time()
 
-            at_risk_users = (
-                self.churn_scoring.calculate_batch_risk_scores(
-                    tenant_id=tenant_id,
-                    users=users_batch,
-                    target_date=target_date
-                )
+            at_risk_users = self.churn_scoring.calculate_batch_risk_scores(
+                tenant_id=tenant_id,
+                users=users_batch,
+                target_date=target_date
             )
 
-            score_duration_total += (
-                time.time() - score_start
-            )
-
+            score_duration_total += (time.time() - score_start)
             total_at_risk_users += len(at_risk_users)
 
             # ---------------------------------------------------------
-            # STEP 2 — RECOVERY AUTOMATION
+            # STEP 2 — RECOVERY AUTOMATION (Idempotent execution expected)
             # ---------------------------------------------------------
-
             recovery_start = time.time()
 
             for user in at_risk_users:
-
-                result = (
-                    self.recovery_engine
-                    .evaluate_and_queue_campaign(
-                        tenant_id=tenant_id,
-                        user=user
-                    )
+                # Passing run_id down to the engine ensures we can attribute
+                # the exact pipeline execution to the resulting email/revenue
+                result = self.recovery_engine.evaluate_and_queue_campaign(
+                    tenant_id=tenant_id,
+                    user=user,
+                    metadata={"pipeline_run_id": run_id}
                 )
 
-                if (
-                    result
-                    and result.get("status") == "queued"
-                ):
+                if result and result.get("status") == "queued":
                     total_emails_queued += 1
 
-            recovery_duration_total += (
-                time.time() - recovery_start
-            )
+            recovery_duration_total += (time.time() - recovery_start)
 
         # ---------------------------------------------------------
         # FINAL TENANT METRICS
         # ---------------------------------------------------------
-
-        total_duration = round(
-            time.time() - tenant_start,
-            2
-        )
+        total_duration = round(time.time() - tenant_start, 2)
 
         logger.info(
-            "tenant_scan_completed "
-            f"tenant={tenant_id} "
-            f"duration={total_duration}s "
-            f"users_scanned={total_users_scanned} "
-            f"at_risk_users={total_at_risk_users} "
-            f"emails_queued={total_emails_queued} "
-            f"score_duration={round(score_duration_total, 2)}s "
-            f"recovery_duration={round(recovery_duration_total, 2)}s"
+            "tenant_scan_completed tenant=%s run_id=%s duration=%ss "
+            "users_scanned=%d at_risk_users=%d emails_queued=%d "
+            "score_duration=%ss recovery_duration=%ss",
+            tenant_id, run_id, total_duration, total_users_scanned, 
+            total_at_risk_users, total_emails_queued, 
+            round(score_duration_total, 2), round(recovery_duration_total, 2)
         )
 
     # ---------------------------------------------------------
@@ -310,23 +265,11 @@ class PipelineOrchestrator:
         tenant_id: str
     ) -> Generator[List[Dict[str, Any]], None, None]:
         """
-        Streams users in batches.
-
-        Prevents:
-        - giant memory spikes
-        - loading all users into RAM
-        - slow large-tenant processing
-
-        Future Improvements:
-        - cursor pagination
-        - async streaming
-        - incremental syncs
+        Streams users in batches using a deterministic keyset cursor.
         """
-
         cursor_value = None
 
         while True:
-
             query = (
                 self.db
                 .table("user_profiles")
@@ -340,7 +283,6 @@ class PipelineOrchestrator:
                 query = query.gt(USER_PROFILE_CURSOR_FIELD, cursor_value)
 
             resp = query.execute()
-
             users = resp.data or []
 
             if not users:
@@ -352,17 +294,14 @@ class PipelineOrchestrator:
             if not last_value:
                 logger.warning(
                     "user_profile_cursor_missing tenant=%s field=%s",
-                    tenant_id,
-                    USER_PROFILE_CURSOR_FIELD,
+                    tenant_id, USER_PROFILE_CURSOR_FIELD
                 )
                 break
 
             if last_value == cursor_value:
                 logger.warning(
                     "user_profile_cursor_stalled tenant=%s field=%s value=%s",
-                    tenant_id,
-                    USER_PROFILE_CURSOR_FIELD,
-                    cursor_value,
+                    tenant_id, USER_PROFILE_CURSOR_FIELD, cursor_value
                 )
                 break
 

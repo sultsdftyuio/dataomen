@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  Sparkles,
   Database,
   ArrowRight,
   Loader2,
@@ -94,7 +93,7 @@ export default function BusinessBreakDetector({ tenantId }: { tenantId: string }
             marginBottom: 16
           }}>
             <Database size={14} />
-            AI WATCHDOG
+            SYSTEM WATCHDOG
           </div>
 
           <h1 style={{
@@ -234,7 +233,7 @@ export default function BusinessBreakDetector({ tenantId }: { tenantId: string }
                       color: C.navy
                     }}>
                       {status.isAnomaly
-                        ? "AI Diagnosis: Anomaly detected"
+                        ? "Engine Diagnosis: Anomaly detected"
                         : "System nominal"}
                     </div>
 
