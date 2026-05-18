@@ -2,12 +2,13 @@
 import React from "react";
 import Link from "next/link";
 import { 
-  Activity, 
   LayoutDashboard, 
   Settings, 
   ShieldAlert, 
   Send
 } from "lucide-react";
+import Logo from "@/components/ui/logo";
+import LogoutButton from "@/components/dashboard/logout-button";
 
 export default function DashboardLayout({
   children,
@@ -15,57 +16,57 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-900">
       
       {/* ── Top Navigation Bar (SaaS Standard) ── */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="w-full px-6 h-16 flex items-center justify-between">
           
           {/* Brand & Main Nav */}
           <div className="flex items-center gap-10">
-            <Link href="/dashboard" className="flex items-center gap-2 group">
-              <div className="bg-blue-600 p-1.5 rounded-md group-hover:bg-blue-700 transition-colors">
-                <Activity className="h-4 w-4 text-white" />
-              </div>
-              <span className="font-bold text-slate-900 tracking-tight text-lg">Arcli</span>
+            <Link href="/dashboard" className="flex items-center transition-opacity hover:opacity-90">
+              <Logo className="h-8" iconOnly={false} />
             </Link>
 
-            <nav className="hidden md:flex items-center gap-6">
+            <nav className="hidden md:flex items-center gap-1">
               <Link 
                 href="/dashboard" 
-                className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-600 rounded-md hover:text-slate-900 hover:bg-slate-50 transition-all"
               >
-                <LayoutDashboard className="h-4 w-4" />
+                <LayoutDashboard className="h-4 w-4 text-slate-400" />
                 Overview
               </Link>
               <Link 
                 href="/dashboard/queue" 
-                className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-600 rounded-md hover:text-slate-900 hover:bg-slate-50 transition-all"
               >
-                <ShieldAlert className="h-4 w-4 text-amber-500" />
+                <ShieldAlert className="h-4 w-4 text-rose-500" />
                 Risk Queue
               </Link>
               <Link 
                 href="/dashboard/campaigns" 
-                className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-600 rounded-md hover:text-slate-900 hover:bg-slate-50 transition-all"
               >
-                <Send className="h-4 w-4" />
+                <Send className="h-4 w-4 text-blue-500" />
                 Campaigns
               </Link>
             </nav>
           </div>
 
           {/* User & Settings Actions */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Link 
               href="/settings" 
-              className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-md hover:bg-slate-100"
+              className="p-2 text-slate-400 hover:text-slate-700 transition-colors rounded-full hover:bg-slate-100"
+              title="System Preferences"
             >
               <Settings className="h-5 w-5" />
             </Link>
+
+            <LogoutButton />
             
-            {/* Placeholder Profile Avatar */}
-            <div className="h-8 w-8 rounded-full bg-[#0A192F] text-white flex items-center justify-center text-xs font-semibold ring-2 ring-blue-50 shadow-sm cursor-pointer hover:bg-blue-900 transition-colors">
+            {/* User Profile Avatar */}
+            <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-[#0A192F] to-blue-600 text-white flex items-center justify-center text-sm font-semibold shadow-sm cursor-pointer ring-2 ring-transparent hover:ring-blue-100 transition-all">
               U
             </div>
           </div>
@@ -73,7 +74,7 @@ export default function DashboardLayout({
       </header>
 
       {/* ── Expanded Data-Density Focus Area ── */}
-      <main className="flex-1 w-full max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8 animate-in fade-in duration-500">
+      <main className="flex-1 w-full flex flex-col mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
         {children}
       </main>
       
