@@ -1,7 +1,7 @@
 // app/(dashboard)/dashboard/queue/risk-queue-client.tsx
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { 
   ShieldAlert, 
@@ -16,6 +16,7 @@ import {
   RefreshCw,
   UserCircle
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface QueueItem {
   id: string;
@@ -28,7 +29,9 @@ interface QueueItem {
   severity: "high" | "medium" | "critical" | "low";
 }
 
-export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
+// IDOR Fix: We no longer accept tenantId as a prop. 
+export default function RiskQueueClient() {
+  const { toast } = useToast();
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -40,21 +43,27 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!tenantId) return;
-
     let mounted = true;
 
     const fetchQueue = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/queue/active?tenant_id=${tenantId}`);
+        // IDOR Fix: Removed ?tenant_id= parameter
+        const res = await fetch(`/api/queue/active`);
         if (!res.ok) throw new Error("Failed to fetch active queue");
         
         const data = await res.json();
         if (mounted) setQueue(data.items || []);
       } catch (err) {
         console.error("Queue fetch error:", err);
-        if (mounted) setQueue([]); // Graceful fallback
+        if (mounted) {
+          setQueue([]); // Graceful fallback
+          toast({
+            title: "Connection Error",
+            description: "Failed to load the deterministic risk queue.",
+            variant: "destructive",
+          });
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -65,7 +74,7 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
     return () => {
       mounted = false;
     };
-  }, [tenantId]);
+  }, [toast]); // Removed tenantId dependency
 
   // Deterministic Action: Force Execute Workflow Step
   const handleExecute = async (itemId: string) => {
@@ -74,16 +83,28 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
       const res = await fetch("/api/queue/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenant_id: tenantId, item_id: itemId })
+        // IDOR Fix: Removed tenant_id from payload
+        body: JSON.stringify({ item_id: itemId })
       });
       
       if (res.ok) {
         setQueue(prev => prev.map(item => 
           item.id === itemId ? { ...item, status: "Execution Forced" } : item
         ));
+        toast({
+          title: "Workflow Forced",
+          description: "Recovery action added to the execution queue.",
+        });
+      } else {
+        throw new Error("API returned non-OK status");
       }
     } catch (err) {
       console.error("Force execute failed:", err);
+      toast({
+        title: "Execution Failed",
+        description: "Could not force the recovery step. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setActionLoading(null);
     }
@@ -96,14 +117,26 @@ export default function RiskQueueClient({ tenantId }: { tenantId: string }) {
       const res = await fetch("/api/queue/skip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenant_id: tenantId, item_id: itemId })
+        // IDOR Fix: Removed tenant_id from payload
+        body: JSON.stringify({ item_id: itemId })
       });
 
       if (res.ok) {
         setQueue(prev => prev.filter(item => item.id !== itemId));
+        toast({
+          title: "User Suppressed",
+          description: "User skipped and removed from active recovery.",
+        });
+      } else {
+        throw new Error("API returned non-OK status");
       }
     } catch (err) {
       console.error("Skip action failed:", err);
+      toast({
+        title: "Suppression Failed",
+        description: "Failed to skip user. The queue state remains unchanged.",
+        variant: "destructive",
+      });
     } finally {
       setActionLoading(null);
     }

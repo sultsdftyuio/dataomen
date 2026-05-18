@@ -9,12 +9,16 @@ import hmac
 import jwt  # Requires: pip install PyJWT
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from fastapi import APIRouter, Depends, HTTPException, Security, status
+from fastapi import APIRouter, Depends, HTTPException, Security, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel, EmailStr, Field
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from api.database import get_db
 
 # ------------------------------------------------------------------------------
 # 1. Configuration & Security Initialization
@@ -42,7 +46,7 @@ if not INTERNAL_SERVICE_KEY:
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
 # FastAPI security scheme
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 internal_auth_header = APIKeyHeader(name="Authorization", auto_error=True)
 
 # Singleton placeholder for the Supabase client
@@ -91,11 +95,69 @@ def get_supabase_client() -> Client:
         _supabase_client = create_client(url, key)
     return _supabase_client
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+
+def _extract_bearer_token(raw_header: Optional[str]) -> Optional[str]:
+    if not raw_header:
+        return None
+
+    parts = raw_header.strip().split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+
+    return None
+
+
+def _looks_like_jwt(token: Optional[str]) -> bool:
+    return bool(token) and token.count(".") == 2
+
+
+def _extract_access_token_from_cookies(request: Request) -> Optional[str]:
+    if not request.cookies:
+        return None
+
+    for key in ("sb-access-token", "supabase-access-token", "access_token"):
+        token = request.cookies.get(key)
+        if token:
+            return token
+
+    for name, value in request.cookies.items():
+        if not (name.startswith("sb-") and name.endswith("-auth-token")):
+            continue
+        if not value:
+            continue
+
+        try:
+            payload = json.loads(value)
+        except Exception:
+            payload = None
+
+        if isinstance(payload, dict):
+            token = payload.get("access_token") or payload.get("accessToken")
+            if token:
+                return token
+
+        if _looks_like_jwt(value):
+            return value
+
+    return None
+
+def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> Dict[str, Any]:
     """
     SaaS Performance Upgrade: M2M Bypass -> Stateless JWT -> Network Verification
     """
-    token = credentials.credentials
+    token = credentials.credentials if credentials else None
+
+    if not token:
+        token = _extract_bearer_token(request.headers.get("authorization"))
+
+    if not token:
+        token = _extract_access_token_from_cookies(request)
+
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authentication token")
 
     # FAST PATH 0: Machine-to-Machine (M2M) Authentication
     # Permits Cloudflare Workers and Celery Tasks to act as the internal system
@@ -146,7 +208,29 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> TenantContext:
+def _lookup_tenant_id(db: Session, user_id: str) -> Optional[str]:
+    if not user_id:
+        return None
+
+    row = db.execute(
+        text("select tenant_id from tenant_users where user_id = :user_id limit 1"),
+        {"user_id": user_id},
+    ).fetchone()
+
+    if not row:
+        return None
+
+    tenant_id = row[0] if row[0] else None
+    if not tenant_id and hasattr(row, "_mapping"):
+        tenant_id = row._mapping.get("tenant_id")
+
+    return str(tenant_id) if tenant_id else None
+
+
+def verify_tenant(
+    user_payload: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TenantContext:
     """
     Security by Design: Validates and locks the context to a specific tenant.
     Inject this dependency into your routes to enforce strict multi-tenant boundaries.
@@ -154,9 +238,9 @@ def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> T
     user_id = user_payload.get("sub") or user_payload.get("id")
     email = user_payload.get("email", "")
     app_metadata = user_payload.get("app_metadata", {})
-    user_metadata = user_payload.get("user_metadata", {})
-    
-    if not user_id or not email:
+    role = user_payload.get("role") or "authenticated"
+
+    if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Malformed identity profile.")
 
     # 0. M2M System Bypass
@@ -169,30 +253,32 @@ def verify_tenant(user_payload: Dict[str, Any] = Depends(get_current_user)) -> T
             app_metadata=app_metadata
         )
 
-    # 1. Zero-Config Organization Routing (Domain Extraction)
-    tenant_domain = email.split("@")[1].lower() if "@" in email else "unknown"
-    
-    # 2. Global Admin Detection
-    is_admin = tenant_domain == "arcli.tech"
+    try:
+        mapped_tenant_id = _lookup_tenant_id(db, str(user_id))
+    except Exception:
+        logger.exception("tenant_lookup_failed user_id=%s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Tenant resolution failed",
+        )
 
-    # 3. Explicit Override (If a user is manually assigned a tenant_id in Supabase metadata)
-    explicit_tenant = app_metadata.get("tenant_id") or user_metadata.get("tenant_id")
-    
-    # Priority: Explicit Metadata > Extracted Domain > User ID (B2C Solo)
-    final_tenant_id = explicit_tenant or tenant_domain or user_id
+    final_tenant_id = mapped_tenant_id or str(user_id)
     
     return TenantContext(
         user_id=str(user_id),
         tenant_id=str(final_tenant_id),
         email=email,
-        role="admin" if is_admin else "authenticated",
+        role=role,
         app_metadata=app_metadata
     )
 
+def get_current_tenant(tenant_context: TenantContext = Depends(verify_tenant)) -> str:
+    """Convenience dependency: Extract the resolved tenant_id."""
+    return tenant_context.tenant_id
+
+
 def get_current_tenant_id(tenant_context: TenantContext = Depends(verify_tenant)) -> str:
-    """
-    Convenience Dependency: Instantly extracts the tenant_id for rapid API route filtering.
-    """
+    """Backwards-compatible alias for get_current_tenant."""
     return tenant_context.tenant_id
 
 
