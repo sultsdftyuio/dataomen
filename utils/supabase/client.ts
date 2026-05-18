@@ -21,8 +21,8 @@ export const getURL = () => {
 
 /**
  * High-performance Supabase browser client.
- * Uses Supabase native singleton mode to resolve "Multiple GoTrueClient instances" errors.
- * Uses 100% Functional pattern for usage within React hooks.
+ * Removing custom auth options allows @supabase/ssr to natively 
+ * synchronize sessions with Next.js Cookies, fixing the cross-user session leak.
  */
 export function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -32,14 +32,7 @@ export function createClient() {
     // During static prerender on the server, client components can be evaluated.
     // Return a harmless placeholder client so build-time rendering does not crash.
     if (typeof window === "undefined") {
-      return createBrowserClient("https://placeholder.supabase.co", "public-anon-key", {
-        isSingleton: true,
-        auth: {
-          detectSessionInUrl: false,
-          persistSession: true,
-          autoRefreshToken: true,
-        },
-      })
+      return createBrowserClient("https://placeholder.supabase.co", "public-anon-key")
     }
 
     console.error("Supabase Initialization Error: Missing Environment Variables")
@@ -48,17 +41,8 @@ export function createClient() {
     )
   }
 
-  // Use native singleton handling from Supabase to prevent multiple GoTrue instances.
-  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
-    isSingleton: true,
-    auth: {
-      // OAuth/session exchange is handled in app/auth/callback/route.ts.
-      // Disabling browser URL exchange avoids duplicate PKCE exchanges (422) in Chrome.
-      detectSessionInUrl: false,
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  })
+  // Native Next.js SSR setup (Automatically handles cookie syncing safely)
+  return createBrowserClient(supabaseUrl, supabaseAnonKey)
 }
 
 /**

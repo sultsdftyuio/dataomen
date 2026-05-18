@@ -1,3 +1,4 @@
+// components/ui/logo.tsx
 import React from "react";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +58,8 @@ export const Logo = ({ className, iconOnly = false, ...props }: LogoProps) => {
       {/* Wordmark: ARCLI */}
       {!iconOnly && (
         <div className="flex flex-col leading-none justify-center">
-          <span className="text-2xl font-extrabold tracking-[-0.03em] text-slate-900 dark:text-white uppercase">
+          {/* Fixed: Forced strict Dark Navy/Black, removed dark:text-white */}
+          <span className="text-2xl font-extrabold tracking-[-0.03em] text-[#0A192F] uppercase">
             ARCLI<span className="text-blue-500">.</span>
           </span>
         </div>
