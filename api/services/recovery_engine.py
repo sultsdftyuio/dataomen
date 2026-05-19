@@ -154,7 +154,7 @@ class RecoveryRepository:
             tenant_id,
             candidate.user_id,
             campaign_type,
-            cooldown_anchor.date().isoformat(),
+            candidate.email,
         )
 
         payload: Dict[str, Any] = {
@@ -359,28 +359,15 @@ def _coerce_string(value: Any) -> Optional[str]:
     return str(value)
 
 
-def _build_idempotency_key(
-    tenant_id: str,
-    user_id: str,
-    campaign_type: str,
-    window_key: str
-) -> str:
-    raw = f"{tenant_id}:{user_id}:{campaign_type}:{window_key}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
 def _build_message_key(
     tenant_id: str,
     user_id: str,
     campaign_type: str,
-    window_key: str
+    email: str,
 ) -> str:
-    return _build_idempotency_key(
-        tenant_id,
-        user_id,
-        campaign_type,
-        window_key,
-    )
+    normalized_email = str(email).strip().lower()
+    raw = f"{tenant_id}:{user_id}:{campaign_type}:{normalized_email}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _is_duplicate_error(error: Any) -> bool:

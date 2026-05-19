@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { LogOut } from "lucide-react";
 
-import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
+import { logoutAction } from "@/app/logout/actions";
 
 export default function LogoutButton() {
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -14,8 +14,7 @@ export default function LogoutButton() {
     setIsSigningOut(true);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signOut();
+      const { error } = await logoutAction();
       if (error) {
         console.error("Supabase sign out failed", error);
       }
