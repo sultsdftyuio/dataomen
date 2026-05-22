@@ -93,7 +93,7 @@ export default function WorkspaceTab({ initialSettings }: WorkspaceTabProps) {
             onChange={(e) => setCompanyName(e.target.value)}
             className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-11 text-base shadow-sm"
           />
-          <p className="text-xs text-slate-500">Injected dynamically into {{ "{{ company.name }}" }} template variables.</p>
+          <p className="text-xs text-slate-500">Injected dynamically into {'{{ company.name }}'} template variables.</p>
         </div>
 
         <div className="max-w-2xl space-y-4">
