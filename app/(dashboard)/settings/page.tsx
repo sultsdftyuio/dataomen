@@ -18,39 +18,76 @@ export default async function SettingsPage({
     redirect("/login");
   }
 
-  // 2. Fetch Tenant Settings Directly (Bypassing API route overhead)
+  // 2. Resolve Tenant Context
   const tenantResult = await resolveTenantContext();
   
+  // 3. Define the new structured state for the Recovery Engine
   let settings = { 
-    notifyAnomalies: true, 
-    notifyWeekly: true, 
-    apiKey: "No active key", 
-    keyLastUpdated: "Never" 
+    workspace: {
+      companyName: "",
+      replyToEmail: "",
+      timezone: "UTC",
+    },
+    integrations: {
+      stripeConnected: false,
+      emailProviderStatus: false,
+      apiKey: "No active key",
+      keyLastUpdated: "Never"
+    },
+    routing: {
+      notifyAnomalies: true, 
+      notifyWeekly: true, 
+    }
   };
 
   if (!("response" in tenantResult)) {
     const { supabase: tenantSupabase, tenantId } = tenantResult.context;
-    const { data } = await tenantSupabase
+    
+    // Fetch the updated schema fields. 
+    // Note: You will need to add these columns to `tenant_settings` in Supabase.
+    const { data, error } = await tenantSupabase
       .from("tenant_settings")
-      .select("notify_anomalies, notify_weekly, api_key, key_last_updated")
+      .select(`
+        company_name, 
+        reply_to_email, 
+        timezone, 
+        stripe_account_id, 
+        email_provider_status, 
+        notify_anomalies, 
+        notify_weekly, 
+        api_key, 
+        key_last_updated
+      `)
       .eq("tenant_id", tenantId)
       .maybeSingle();
 
-    if (data) {
+    if (data && !error) {
       settings = {
-        notifyAnomalies: data.notify_anomalies ?? true,
-        notifyWeekly: data.notify_weekly ?? true,
-        apiKey: data.api_key || "No active key",
-        keyLastUpdated: data.key_last_updated 
-          ? formatDistanceToNow(new Date(data.key_last_updated), { addSuffix: true }) 
-          : "Never",
+        workspace: {
+          companyName: data.company_name || "",
+          replyToEmail: data.reply_to_email || "",
+          timezone: data.timezone || "UTC",
+        },
+        integrations: {
+          // Abstracting raw IDs into deterministic boolean statuses for the client
+          stripeConnected: !!data.stripe_account_id,
+          emailProviderStatus: !!data.email_provider_status,
+          apiKey: data.api_key || "No active key",
+          keyLastUpdated: data.key_last_updated 
+            ? formatDistanceToNow(new Date(data.key_last_updated), { addSuffix: true }) 
+            : "Never",
+        },
+        routing: {
+          notifyAnomalies: data.notify_anomalies ?? true,
+          notifyWeekly: data.notify_weekly ?? true,
+        }
       };
     }
   }
 
   const isRecoveryMode = searchParams.recovery === "1";
 
-  // 3. Pass clean, deterministic state to the Client
+  // 4. Pass clean, safely abstracted state to the Client
   return (
     <SettingsClient 
       user={user} 
