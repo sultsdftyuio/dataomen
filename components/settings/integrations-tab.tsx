@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { type User } from "@supabase/supabase-js";
 import { Check, Copy, CreditCard, RefreshCw, Send, ShieldAlert } from "lucide-react";
 
 import {
@@ -19,25 +18,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
+import { formatKeyLastUpdated } from "@/lib/settings/format";
+import type { SettingsIntegrations } from "@/lib/settings/types";
 
 interface IntegrationsTabProps {
-  user: User;
-  initialSettings: {
-    integrations: {
-      stripeConnected: boolean;
-      emailProviderStatus: boolean;
-      apiKey: string;
-      keyLastUpdated: string;
-    };
-  };
+  integrations: SettingsIntegrations;
 }
 
-export default function IntegrationsTab({ initialSettings }: IntegrationsTabProps) {
-  const [apiKey, setApiKey] = useState(initialSettings.integrations.apiKey);
-  const [keyLastUpdated, setKeyLastUpdated] = useState<string | null>(initialSettings.integrations.keyLastUpdated);
+const buildMaskedKey = (last4: string | null) => (last4 ? `arcli_live_****${last4}` : "");
+
+const extractKeyLast4 = (apiKey: string) => {
+  const parts = apiKey.split("_");
+  const secret = parts[parts.length - 1] || "";
+  return secret.slice(-4);
+};
+
+export default function IntegrationsTab({ integrations }: IntegrationsTabProps) {
+  const [apiKeyLast4, setApiKeyLast4] = useState(integrations.apiKeyLast4);
+  const [hasApiKey, setHasApiKey] = useState(integrations.hasApiKey);
+  const [keyLastUpdated, setKeyLastUpdated] = useState(integrations.keyLastUpdated);
+  const [fullApiKey, setFullApiKey] = useState<string | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [hasCopiedKey, setHasCopiedKey] = useState(false);
   const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
+  const canReveal = Boolean(fullApiKey);
+  const displayKey = showApiKey && fullApiKey ? fullApiKey : buildMaskedKey(apiKeyLast4);
+  const keyLastUpdatedLabel = formatKeyLastUpdated(keyLastUpdated);
 
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -58,8 +64,10 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
         throw new Error(data.error || "Failed to regenerate key");
       }
       const data = await res.json();
-      setApiKey(data.apiKey);
-      setKeyLastUpdated("Just now");
+      setFullApiKey(data.apiKey);
+      setApiKeyLast4(extractKeyLast4(data.apiKey));
+      setHasApiKey(true);
+      setKeyLastUpdated(new Date().toISOString());
       setShowApiKey(true);
       toast({ title: "Key Regenerated", description: "Your new API token is ready to use." });
     } catch (error: any) {
@@ -69,9 +77,16 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    if (!text || text === "No active key") return;
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = () => {
+    if (!fullApiKey) {
+      toast({
+        title: "Key not available",
+        description: "API keys are only shown once. Regenerate to copy a new key.",
+        variant: "destructive",
+      });
+      return;
+    }
+    navigator.clipboard.writeText(fullApiKey);
     setHasCopiedKey(true);
     toast({ title: "Token Copied", description: "Securely copied to clipboard." });
     if (copyTimeoutRef.current) {
@@ -97,7 +112,7 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
                   <div className="flex items-center gap-3">
                     <div
                       className={`p-2 rounded-lg ${
-                        initialSettings.integrations.stripeConnected ? "bg-[#635BFF]/10 text-[#635BFF]" : "bg-slate-100 text-slate-400"
+                        integrations.stripeConnected ? "bg-[#635BFF]/10 text-[#635BFF]" : "bg-slate-100 text-slate-400"
                       }`}
                     >
                       <CreditCard className="h-5 w-5" />
@@ -106,17 +121,17 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
                   </div>
                   <span
                     className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider border flex items-center gap-1.5 ${
-                      initialSettings.integrations.stripeConnected
+                      integrations.stripeConnected
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                         : "bg-slate-50 text-slate-500 border-slate-200"
                     }`}
                   >
                     <div
                       className={`h-1.5 w-1.5 rounded-full ${
-                        initialSettings.integrations.stripeConnected ? "bg-emerald-500" : "bg-slate-300"
+                        integrations.stripeConnected ? "bg-emerald-500" : "bg-slate-300"
                       }`}
                     />
-                    {initialSettings.integrations.stripeConnected ? "Connected" : "Disconnected"}
+                    {integrations.stripeConnected ? "Connected" : "Disconnected"}
                   </span>
                 </div>
                 <p className="text-sm text-slate-500 mt-3 leading-relaxed">
@@ -125,12 +140,12 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
               </div>
               <div className="mt-6 pt-4 border-t border-slate-100">
                 <Button
-                  variant={initialSettings.integrations.stripeConnected ? "outline" : "default"}
+                  variant={integrations.stripeConnected ? "outline" : "default"}
                   className={`w-full ${
-                    !initialSettings.integrations.stripeConnected && "bg-[#635BFF] hover:bg-[#5249ea] text-white"
+                    !integrations.stripeConnected && "bg-[#635BFF] hover:bg-[#5249ea] text-white"
                   }`}
                 >
-                  {initialSettings.integrations.stripeConnected ? "Manage Connection" : "Connect Stripe"}
+                  {integrations.stripeConnected ? "Manage Connection" : "Connect Stripe"}
                 </Button>
               </div>
             </div>
@@ -141,7 +156,7 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
                   <div className="flex items-center gap-3">
                     <div
                       className={`p-2 rounded-lg ${
-                        initialSettings.integrations.emailProviderStatus ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-400"
+                        integrations.emailProviderStatus ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-400"
                       }`}
                     >
                       <Send className="h-5 w-5" />
@@ -150,17 +165,17 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
                   </div>
                   <span
                     className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider border flex items-center gap-1.5 ${
-                      initialSettings.integrations.emailProviderStatus
+                      integrations.emailProviderStatus
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                         : "bg-slate-50 text-slate-500 border-slate-200"
                     }`}
                   >
                     <div
                       className={`h-1.5 w-1.5 rounded-full ${
-                        initialSettings.integrations.emailProviderStatus ? "bg-emerald-500" : "bg-slate-300"
+                        integrations.emailProviderStatus ? "bg-emerald-500" : "bg-slate-300"
                       }`}
                     />
-                    {initialSettings.integrations.emailProviderStatus ? "Authenticated" : "Required"}
+                    {integrations.emailProviderStatus ? "Authenticated" : "Required"}
                   </span>
                 </div>
                 <p className="text-sm text-slate-500 mt-3 leading-relaxed">
@@ -169,12 +184,12 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
               </div>
               <div className="mt-6 pt-4 border-t border-slate-100">
                 <Button
-                  variant={initialSettings.integrations.emailProviderStatus ? "outline" : "default"}
+                  variant={integrations.emailProviderStatus ? "outline" : "default"}
                   className={`w-full ${
-                    !initialSettings.integrations.emailProviderStatus && "bg-[#0A192F] hover:bg-slate-800 text-white"
+                    !integrations.emailProviderStatus && "bg-[#0A192F] hover:bg-slate-800 text-white"
                   }`}
                 >
-                  {initialSettings.integrations.emailProviderStatus ? "DNS Settings" : "Configure Domain"}
+                  {integrations.emailProviderStatus ? "DNS Settings" : "Configure Domain"}
                 </Button>
               </div>
             </div>
@@ -186,13 +201,13 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
             <Label className="text-xs font-bold tracking-wide text-slate-500 uppercase">Custom Event Ingestion (API)</Label>
             <div
               className={`flex items-center gap-2 px-3 py-1 text-[10px] font-bold tracking-wide uppercase rounded-full border shadow-sm ${
-                apiKey === "No active key"
+                !hasApiKey
                   ? "bg-amber-50 text-amber-700 border-amber-200"
                   : "bg-emerald-50 text-emerald-700 border-emerald-200"
               }`}
             >
-              <div className={`h-1.5 w-1.5 rounded-full ${apiKey === "No active key" ? "bg-amber-500" : "bg-emerald-500"}`} />
-              {apiKey === "No active key" ? "Disabled" : "Active"}
+              <div className={`h-1.5 w-1.5 rounded-full ${!hasApiKey ? "bg-amber-500" : "bg-emerald-500"}`} />
+              {!hasApiKey ? "Disabled" : "Active"}
             </div>
           </div>
 
@@ -204,7 +219,8 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
               <div className="relative flex-1">
                 <Input
                   readOnly
-                  value={apiKey}
+                  value={displayKey}
+                  placeholder="No active key"
                   type={showApiKey ? "text" : "password"}
                   className="font-mono text-sm tracking-widest bg-white border-slate-200 text-[#0A192F] h-12 shadow-sm pr-16 w-full"
                 />
@@ -212,15 +228,16 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
                   type="button"
                   aria-label={showApiKey ? "Hide API key" : "Reveal API key"}
                   onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-600 rounded uppercase tracking-wider transition-colors"
+                  disabled={!canReveal}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-[10px] font-bold text-slate-600 rounded uppercase tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {showApiKey ? "Hide" : "Reveal"}
                 </button>
               </div>
               <Button
                 variant="outline"
-                onClick={() => copyToClipboard(apiKey)}
-                disabled={apiKey === "No active key"}
+                onClick={copyToClipboard}
+                disabled={!fullApiKey}
                 aria-label="Copy API key"
                 className={`h-12 px-5 border-slate-200 shadow-sm transition-all duration-300 ${
                   hasCopiedKey ? "bg-emerald-50 text-emerald-600 border-emerald-200" : "bg-white text-slate-600 hover:text-blue-700 hover:bg-blue-50"
@@ -233,7 +250,10 @@ export default function IntegrationsTab({ initialSettings }: IntegrationsTabProp
 
             <div className="flex items-center justify-between text-xs font-medium border-t border-slate-200 pt-4">
               <span className="text-slate-500 flex items-center gap-2">
-                Last Generated: <span className="text-[#0A192F] font-mono font-semibold bg-slate-100 px-2 py-0.5 rounded">{keyLastUpdated}</span>
+                Last Generated:{" "}
+                <span className="text-[#0A192F] font-mono font-semibold bg-slate-100 px-2 py-0.5 rounded">
+                  {keyLastUpdatedLabel}
+                </span>
               </span>
               <AlertDialog>
                 <AlertDialogTrigger asChild>

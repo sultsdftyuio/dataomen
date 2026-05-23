@@ -1,29 +1,27 @@
-// app/(dashboard)/settings/settings-client.tsx
 "use client";
 
 import React, { useState } from "react";
 import { type User } from "@supabase/supabase-js";
-import { Building2, Plug, BellRing, UserCircle, HelpCircle, Mail } from "lucide-react";
+import { Building2, Plug, BellRing, UserCircle, HelpCircle, Mail, Terminal } from "lucide-react";
 
 import AccountTab from "@/components/settings/account-tab";
 import IntegrationsTab from "@/components/settings/integrations-tab";
 import RoutingTab from "@/components/settings/routing-tab";
 import WorkspaceTab from "@/components/settings/workspace-tab";
+import { DeveloperTab } from "@/components/settings/developer-tab"; // <-- Added import
+import type { SettingsSnapshot } from "@/lib/settings/types";
 
-type SettingsTab = "workspace" | "integrations" | "routing" | "account";
+type SettingsTab = "workspace" | "integrations" | "developer" | "routing" | "account"; // <-- Added 'developer'
 
 interface SettingsClientProps {
   user: User;
-  initialSettings: {
-    workspace: { companyName: string; replyToEmail: string; timezone: string };
-    integrations: { stripeConnected: boolean; emailProviderStatus: boolean; apiKey: string; keyLastUpdated: string };
-    routing: { notifyAnomalies: boolean; notifyWeekly: boolean };
-  };
+  initialSettings: SettingsSnapshot;
   isRecoveryMode: boolean;
 }
 
 export default function SettingsClient({ user, initialSettings, isRecoveryMode }: SettingsClientProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(isRecoveryMode ? "account" : "workspace");
+  
   const accountInitialData = (() => {
     const metadata = user.user_metadata || {};
     const metadataName = metadata.full_name || metadata.name || metadata.preferred_username;
@@ -31,9 +29,11 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
       fullName: typeof metadataName === "string" ? metadataName.trim() : undefined,
     };
   })();
+
   const TABS = [
     { id: "workspace", label: "Workspace Identity", icon: Building2 },
     { id: "integrations", label: "Data & Integrations", icon: Plug },
+    { id: "developer", label: "Developer API", icon: Terminal }, // <-- Added Developer Tab
     { id: "routing", label: "Alerts & Routing", icon: BellRing },
     { id: "account", label: "My Account", icon: UserCircle },
   ] as const;
@@ -78,9 +78,20 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
       {/* Dynamic Content Area */}
       <main className="flex-1 flex flex-col relative bg-gradient-to-br from-white to-slate-50/30 overflow-hidden w-full h-full">
         
-        {activeTab === "workspace" && <WorkspaceTab user={user} initialSettings={initialSettings} />}
-        {activeTab === "integrations" && <IntegrationsTab user={user} initialSettings={initialSettings} />}
-        {activeTab === "routing" && <RoutingTab user={user} initialSettings={initialSettings} />}
+        {activeTab === "workspace" && <WorkspaceTab workspace={initialSettings.workspace} />}
+        {activeTab === "integrations" && <IntegrationsTab integrations={initialSettings.integrations} />}
+        
+        {/* Mount the DeveloperTab and pass the apiKey from initialSettings */}
+        {activeTab === "developer" && (
+          <div className="p-6 overflow-y-auto w-full max-w-4xl">
+            <DeveloperTab
+              initialApiKeyLast4={initialSettings.integrations.apiKeyLast4}
+              hasApiKey={initialSettings.integrations.hasApiKey}
+            />
+          </div>
+        )}
+
+        {activeTab === "routing" && <RoutingTab routing={initialSettings.routing} />}
         {activeTab === "account" && (
           <AccountTab user={user} initialData={accountInitialData} isRecoveryMode={isRecoveryMode} />
         )}

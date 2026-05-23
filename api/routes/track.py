@@ -1,23 +1,119 @@
 import uuid
 import logging
+import os
+import hmac
+import hashlib
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Security, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, validator, constr
 
 from api.services.ingestion_service import IngestionService
+from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/track", tags=["Events"])
 security = HTTPBearer()
 
+API_KEY_PREFIX = os.getenv("API_KEY_PREFIX", "arcli_live_")
+API_KEY_PEPPER = os.getenv("API_KEY_PEPPER")
+_supabase_client: Optional[Client] = None
+
 
 # ---------------------------------------------------------
 # TENANT RESOLUTION
 # ---------------------------------------------------------
+
+def _get_supabase_client() -> Optional[Client]:
+    global _supabase_client
+
+    if _supabase_client is not None:
+        return _supabase_client
+
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+
+    if not supabase_url or not supabase_key:
+        logger.error("supabase_credentials_missing")
+        return None
+
+    _supabase_client = create_client(supabase_url, supabase_key)
+    return _supabase_client
+
+
+def _parse_api_key(raw: str) -> Optional[Tuple[str, str]]:
+    if not raw or not raw.startswith(API_KEY_PREFIX):
+        return None
+
+    trimmed = raw[len(API_KEY_PREFIX):]
+    if "_" not in trimmed:
+        return None
+
+    key_id, secret = trimmed.split("_", 1)
+    if not key_id or not secret:
+        return None
+
+    return key_id, secret
+
+
+def _hash_secret(secret: str) -> Optional[str]:
+    if not API_KEY_PEPPER:
+        logger.error("api_key_pepper_missing")
+        return None
+
+    return hmac.new(
+        API_KEY_PEPPER.encode("utf-8"),
+        secret.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _resolve_tenant_from_key(raw_key: str) -> Optional[str]:
+    parsed = _parse_api_key(raw_key)
+    if not parsed:
+        return None
+
+    key_id, secret = parsed
+    key_hash = _hash_secret(secret)
+    if not key_hash:
+        return None
+
+    client = _get_supabase_client()
+    if not client:
+        return None
+
+    response = (
+        client
+        .table("api_keys")
+        .select("tenant_id, key_hash, revoked_at")
+        .eq("key_id", key_id)
+        .limit(1)
+        .execute()
+    )
+
+    if not response.data:
+        return None
+
+    row = response.data[0]
+    if row.get("revoked_at"):
+        return None
+
+    stored_hash = row.get("key_hash") or ""
+    if not hmac.compare_digest(key_hash, stored_hash):
+        return None
+
+    try:
+        client.table("api_keys").update({
+            "last_used_at": datetime.now(timezone.utc).isoformat()
+        }).eq("key_id", key_id).execute()
+    except Exception:
+        logger.warning("api_key_last_used_update_failed", exc_info=True)
+
+    return row.get("tenant_id")
+
 
 def resolve_tenant(
     credentials: HTTPAuthorizationCredentials = Security(security),
@@ -27,10 +123,11 @@ def resolve_tenant(
     if not token:
         raise HTTPException(status_code=401, detail="Missing API Key")
 
-    if token == "arcli_test_key_123":
-        return "acme_tenant"
+    tenant_id = _resolve_tenant_from_key(token)
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
 
-    raise HTTPException(status_code=401, detail="Invalid API Key")
+    return tenant_id
 
 
 # ---------------------------------------------------------

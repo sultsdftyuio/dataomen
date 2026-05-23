@@ -5,7 +5,12 @@ import React from "react";
 import Link from "next/link";
 import { Key, Send, ShieldAlert, ArrowRight, Activity, CheckCircle2 } from "lucide-react";
 
-export default function QuickStartGuide() {
+export default function QuickStartGuide({ hasApiKey = false }: { hasApiKey?: boolean }) {
+  const keyStatusLabel = hasApiKey ? "Complete" : "Action Required";
+  const keyStatusClass = hasApiKey
+    ? "bg-emerald-100 text-emerald-700"
+    : "bg-blue-100 text-blue-700";
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700 max-w-3xl mx-auto mt-10">
       
@@ -39,8 +44,8 @@ export default function QuickStartGuide() {
               <div className="flex-1 pt-1">
                 <h3 className="text-lg font-semibold text-[#0A192F] flex items-center gap-2">
                   1. Connect your data
-                  <span className="text-[10px] uppercase tracking-wider font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                    Action Required
+                  <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${keyStatusClass}`}>
+                    {keyStatusLabel}
                   </span>
                 </h3>
                 <p className="text-sm text-slate-600 mt-1.5 mb-4 leading-relaxed max-w-xl">

@@ -1,29 +1,27 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { type User } from "@supabase/supabase-js";
 import { Globe, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
+import type { SettingsWorkspace } from "@/lib/settings/types";
+import type { WorkspaceSettingsInput } from "@/lib/settings/schemas";
 
 interface WorkspaceTabProps {
-  user: User;
-  initialSettings: {
-    workspace: { companyName: string; replyToEmail: string; timezone: string };
-  };
+  workspace: SettingsWorkspace;
 }
 
-export default function WorkspaceTab({ initialSettings }: WorkspaceTabProps) {
+export default function WorkspaceTab({ workspace }: WorkspaceTabProps) {
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
 
-  const [companyName, setCompanyName] = useState(initialSettings.workspace.companyName);
-  const [replyToEmail, setReplyToEmail] = useState(initialSettings.workspace.replyToEmail);
-  const [timezone, setTimezone] = useState(initialSettings.workspace.timezone);
+  const [companyName, setCompanyName] = useState(workspace.companyName);
+  const [replyToEmail, setReplyToEmail] = useState(workspace.replyToEmail);
+  const [timezone, setTimezone] = useState(workspace.timezone);
 
-  const [initialWorkspace] = useState(initialSettings.workspace);
+  const [initialWorkspace] = useState(workspace);
   const hasWorkspaceChanges = useMemo(
     () =>
       companyName !== initialWorkspace.companyName ||
@@ -50,10 +48,11 @@ export default function WorkspaceTab({ initialSettings }: WorkspaceTabProps) {
     if (!hasWorkspaceChanges) return;
     setIsSavingWorkspace(true);
     try {
+      const payload: WorkspaceSettingsInput = { companyName, replyToEmail, timezone };
       const res = await fetch("/api/settings/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyName, replyToEmail, timezone }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = await res.json();

@@ -1,27 +1,25 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { type User } from "@supabase/supabase-js";
 import { AlertCircle, BellRing, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
+import type { SettingsRouting } from "@/lib/settings/types";
+import type { NotificationSettingsInput } from "@/lib/settings/schemas";
 
 interface RoutingTabProps {
-  user: User;
-  initialSettings: {
-    routing: { notifyAnomalies: boolean; notifyWeekly: boolean };
-  };
+  routing: SettingsRouting;
 }
 
-export default function RoutingTab({ initialSettings }: RoutingTabProps) {
+export default function RoutingTab({ routing }: RoutingTabProps) {
   const [isSavingRouting, setIsSavingRouting] = useState(false);
-  const [notifyAnomalies, setNotifyAnomalies] = useState(initialSettings.routing.notifyAnomalies);
-  const [notifyWeekly, setNotifyWeekly] = useState(initialSettings.routing.notifyWeekly);
-  const [initialNotifyAnomalies, setInitialNotifyAnomalies] = useState(initialSettings.routing.notifyAnomalies);
-  const [initialNotifyWeekly, setInitialNotifyWeekly] = useState(initialSettings.routing.notifyWeekly);
+  const [notifyAnomalies, setNotifyAnomalies] = useState(routing.notifyAnomalies);
+  const [notifyWeekly, setNotifyWeekly] = useState(routing.notifyWeekly);
+  const [initialNotifyAnomalies, setInitialNotifyAnomalies] = useState(routing.notifyAnomalies);
+  const [initialNotifyWeekly, setInitialNotifyWeekly] = useState(routing.notifyWeekly);
 
   const hasRoutingChanges = useMemo(
     () => notifyAnomalies !== initialNotifyAnomalies || notifyWeekly !== initialNotifyWeekly,
@@ -32,10 +30,11 @@ export default function RoutingTab({ initialSettings }: RoutingTabProps) {
     if (!hasRoutingChanges) return;
     setIsSavingRouting(true);
     try {
+      const payload: NotificationSettingsInput = { notifyAnomalies, notifyWeekly };
       const res = await fetch("/api/settings/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notifyAnomalies, notifyWeekly }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const data = await res.json();

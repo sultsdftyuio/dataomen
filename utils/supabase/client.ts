@@ -1,6 +1,7 @@
 // utils/supabase/client.ts
 
 import { createBrowserClient } from '@supabase/ssr'
+import type { Database } from "@/types/supabase";
 
 /**
  * Utility to resolve the absolute site URL for OAuth redirects.
@@ -32,7 +33,7 @@ export function createClient() {
     // During static prerender on the server, client components can be evaluated.
     // Return a harmless placeholder client so build-time rendering does not crash.
     if (typeof window === "undefined") {
-      return createBrowserClient("https://placeholder.supabase.co", "public-anon-key")
+      return createBrowserClient<Database>("https://placeholder.supabase.co", "public-anon-key")
     }
 
     console.error("Supabase Initialization Error: Missing Environment Variables")
@@ -42,7 +43,7 @@ export function createClient() {
   }
 
   // Native Next.js SSR setup (Automatically handles cookie syncing safely)
-  return createBrowserClient(supabaseUrl, supabaseAnonKey)
+  return createBrowserClient<Database>(supabaseUrl, supabaseAnonKey)
 }
 
 /**

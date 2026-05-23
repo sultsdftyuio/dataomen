@@ -36,13 +36,13 @@ export default async function DashboardPage() {
 
   // 3. Deterministic Setup Verification (Parallelized for Performance)
   // We check BOTH the presence of an API key AND if we've actually received data.
-  const [settingsResponse, eventsResponse] = await Promise.all([
+  const [apiKeyResponse, eventsResponse] = await Promise.all([
     tenantSupabase
-      .from("tenant_settings")
-      .select("api_key")
+      .from("api_keys")
+      .select("id", { count: "exact", head: true })
       .eq("tenant_id", tenantId)
-      .maybeSingle(),
-      
+      .is("revoked_at", null)
+      .limit(1),
     tenantSupabase
       .from("events")
       .select("id", { count: "exact", head: true }) // head:true makes this a blazing fast COUNT() query
@@ -50,7 +50,7 @@ export default async function DashboardPage() {
       .limit(1)
   ]);
 
-  const hasApiKey = !!settingsResponse.data?.api_key;
+  const hasApiKey = (apiKeyResponse.count ?? 0) > 0;
   const hasReceivedData = (eventsResponse.count ?? 0) > 0;
 
   // Setup is only "complete" if data is actively flowing into the system.

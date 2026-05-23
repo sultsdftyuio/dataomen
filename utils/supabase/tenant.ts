@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/supabase";
 import { createClient } from "@/utils/supabase/server";
 
 type TenantContext = {
-  supabase: SupabaseClient;
+  supabase: SupabaseClient<Database>;
   tenantId: string;
   userId: string;
 };

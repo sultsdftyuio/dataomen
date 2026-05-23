@@ -1,28 +1,9 @@
 import { NextResponse } from "next/server";
-import { formatDistanceToNow } from "date-fns";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
+import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
+import { fetchTenantApiKeySummary, fetchTenantSettingsRow } from "@/lib/settings/server";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_SETTINGS = {
-  notifyAnomalies: true,
-  notifyWeekly: true,
-  apiKey: "No active key",
-  keyLastUpdated: "Never",
-};
-
-const formatKeyLastUpdated = (value: string | null | undefined) => {
-  if (!value) {
-    return DEFAULT_SETTINGS.keyLastUpdated;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return DEFAULT_SETTINGS.keyLastUpdated;
-  }
-
-  return formatDistanceToNow(parsed, { addSuffix: true });
-};
 
 export async function GET() {
   const tenantResult = await resolveTenantContext();
@@ -31,41 +12,23 @@ export async function GET() {
   }
 
   const { supabase, tenantId } = tenantResult.context;
+  const [settingsResult, apiKeyResult] = await Promise.all([
+    fetchTenantSettingsRow(supabase, tenantId),
+    fetchTenantApiKeySummary(supabase, tenantId),
+  ]);
 
-  const { data, error } = await supabase
-    .from("tenant_settings")
-    .select("notify_anomalies, notify_weekly, api_key, key_last_updated")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
+  const { data, error } = settingsResult;
+  const { data: apiKeySummary, error: apiKeyError } = apiKeyResult;
 
   if (error) {
-    return NextResponse.json(
-      { error: "Failed to load settings" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to load settings" }, { status: 500 });
   }
 
-  if (!data) {
-    return NextResponse.json(DEFAULT_SETTINGS, {
-      headers: { "Cache-Control": "no-store" },
-    });
+  if (apiKeyError) {
+    console.error("[API_KEY_SUMMARY_ERROR]", apiKeyError);
   }
 
-  return NextResponse.json(
-    {
-      notifyAnomalies:
-        typeof data.notify_anomalies === "boolean"
-          ? data.notify_anomalies
-          : DEFAULT_SETTINGS.notifyAnomalies,
-      notifyWeekly:
-        typeof data.notify_weekly === "boolean"
-          ? data.notify_weekly
-          : DEFAULT_SETTINGS.notifyWeekly,
-      apiKey: data.api_key || DEFAULT_SETTINGS.apiKey,
-      keyLastUpdated: formatKeyLastUpdated(data.key_last_updated),
-    },
-    {
-      headers: { "Cache-Control": "no-store" },
-    }
-  );
+  return NextResponse.json(buildSettingsSnapshot(data, apiKeySummary), {
+    headers: { "Cache-Control": "no-store" },
+  });
 }
