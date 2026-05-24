@@ -2,12 +2,34 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
+import type { Json } from "@/types/supabase";
 
 const dispatchSchema = z.object({
   templateId: z.string().trim().min(1),
   idempotencyKey: z.string().trim().max(128),
-  targets: z.array(z.object({}).passthrough()).min(1).max(500),
+  targets: z
+    .array(
+      z
+        .object({
+          email: z.string().trim().toLowerCase().optional(),
+        })
+        .passthrough()
+    )
+    .min(1)
+    .max(500),
 });
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getRpcStatus = (data: unknown) => {
+  const result = Array.isArray(data) ? data[0] : data;
+
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+
+  return "status" in result ? (result as { status?: string }).status ?? null : null;
+};
 
 export async function POST(req: Request) {
   try {
@@ -35,12 +57,38 @@ export async function POST(req: Request) {
 
     const { templateId, targets, idempotencyKey } = parsed.data;
 
-    const { data, error } = await supabase.rpc("dispatch_campaign_atomic", {
-      tenant_id: tenantId,
-      template_id: templateId,
-      idempotency_key: idempotencyKey,
-      targets,
-    });
+    let data: unknown = null;
+    let error: { message?: string } | null = null;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const rpcResult = await supabase.rpc("dispatch_campaign_atomic", {
+        tenant_id: tenantId,
+        template_id: templateId,
+        idempotency_key: idempotencyKey,
+        targets: targets as Json[],
+      });
+
+      data = rpcResult.data;
+      error = rpcResult.error;
+
+      if (error) {
+        break;
+      }
+
+      if (getRpcStatus(data) === "pending") {
+        if (attempt === 3) {
+          return NextResponse.json(
+            { error: "Campaign dispatch is already pending" },
+            { status: 409 }
+          );
+        }
+
+        await delay(200);
+        continue;
+      }
+
+      break;
+    }
 
     if (error) {
       console.error("[CAMPAIGN_DISPATCH] RPC failed:", error);
@@ -51,10 +99,7 @@ export async function POST(req: Request) {
     }
 
     const result = Array.isArray(data) ? data[0] : data;
-    const status =
-      result && typeof result === "object" && "status" in result
-        ? (result as { status?: string }).status
-        : null;
+    const status = getRpcStatus(data);
     const deduplicated =
       (result &&
         typeof result === "object" &&
@@ -74,7 +119,6 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ status: "success", queued });
-
   } catch (error) {
     console.error("[CAMPAIGN_DISPATCH] Fatal error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

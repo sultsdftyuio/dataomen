@@ -3,7 +3,7 @@ import type { Database } from "@/types/supabase";
 import type { ApiKeySummary, TenantSettingsSnapshotRow } from "@/lib/settings/types";
 
 export const SETTINGS_SELECT =
-  "tenant_id, company_name, reply_to_email, timezone, stripe_account_id, email_provider_status, notify_anomalies, notify_weekly, key_last_updated, updated_at";
+  "tenant_id, company_name, reply_to_email, timezone, stripe_account_id, email_provider_status, key_last_updated, updated_at";
 
 export function fetchTenantSettingsRow(supabase: SupabaseClient<Database>, tenantId: string) {
   return supabase

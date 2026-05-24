@@ -12,7 +12,7 @@ const DispatchSchema = z.object({
   targets: z.array(
     z.object({
       id: z.string().min(1),
-      email: z.string().email(),
+      email: z.string().trim().toLowerCase().email(),
       signal: z.string().optional().default("unknown"),
       riskScore: z.number().min(0).max(100).optional().default(0),
     })
@@ -131,14 +131,48 @@ export async function POST(req: Request) {
     // =========================================================================
     // ATOMIC RPC CALL
     // =========================================================================
-    const { data: rpcResult, error: rpcError } = await supabase.rpc(
-      "dispatch_campaign_atomic",
-      {
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const getRpcStatus = (value: unknown) => {
+      const result = Array.isArray(value) ? value[0] : value;
+
+      if (!result || typeof result !== "object") {
+        return null;
+      }
+
+      return "status" in result ? (result as { status?: string }).status ?? null : null;
+    };
+
+    let rpcResult: unknown = null;
+    let rpcError: { message?: string } | null = null;
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const response = await supabase.rpc("dispatch_campaign_atomic", {
         p_tenant_id: tenantId,
         p_idempotency_key: idempotencyKey,
         p_outbox_payloads: outboxPayloads,
+      });
+
+      rpcResult = response.data;
+      rpcError = response.error;
+
+      if (rpcError) {
+        break;
       }
-    );
+
+      if (getRpcStatus(rpcResult) === "pending") {
+        if (attempt === 3) {
+          return NextResponse.json(
+            { error: "Campaign dispatch is already pending", requestId },
+            { status: 409 }
+          );
+        }
+
+        await delay(200);
+        continue;
+      }
+
+      break;
+    }
 
     if (rpcError) {
       console.error("[RPC_ERROR]", {

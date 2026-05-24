@@ -3,7 +3,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Generator, List, Dict, Any
 
 from api.services.churn_scoring_service import ChurnScoringService
@@ -333,13 +333,19 @@ class OutboxDispatcher:
         """
         logger.info("outbox_dispatcher_started batch_size=%d", batch_size)
         start_time = time.time()
+        lease_cutoff = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        lease_expiration = (
+            datetime.now(timezone.utc) + timedelta(minutes=15)
+        ).isoformat().replace("+00:00", "Z")
 
         try:
             # 1. Fetch unassigned queued jobs
             resp = (
                 self.db.table("recovery_emails")
                 .select("id, tenant_id, user_id, campaign_type, email, message_key")
-                .eq("status", "queued")
+                .or_(
+                    f"status.eq.queued,and(status.eq.processing,lease_expires_at.lt.{lease_cutoff})"
+                )
                 .order("queued_at", desc=False)
                 .limit(batch_size)
                 .execute()
@@ -381,9 +387,17 @@ class OutboxDispatcher:
                 # picked this row a millisecond ago, our update returns 0 rows.
                 claim_resp = (
                     self.db.table("recovery_emails")
-                    .update({"status": "processing", "message_key": message_key})
+                    .update(
+                        {
+                            "status": "processing",
+                            "message_key": message_key,
+                            "lease_expires_at": lease_expiration,
+                        }
+                    )
                     .eq("id", send_id)
-                    .eq("status", "queued")
+                    .or_(
+                        f"status.eq.queued,and(status.eq.processing,lease_expires_at.lt.{lease_cutoff})"
+                    )
                     .execute()
                 )
 

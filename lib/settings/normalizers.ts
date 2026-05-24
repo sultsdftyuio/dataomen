@@ -48,9 +48,6 @@ export function buildSettingsSnapshot(
       hasApiKey,
       keyLastUpdated,
     },
-    routing: {
-      notifyAnomalies: row.notify_anomalies ?? true,
-      notifyWeekly: row.notify_weekly ?? true,
-    },
+    routing: { ...DEFAULT_SETTINGS.routing },
   };
 }

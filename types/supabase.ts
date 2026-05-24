@@ -24,8 +24,6 @@ export type Database = {
           timezone: string | null;
           stripe_account_id: string | null;
           email_provider_status: boolean | null;
-          notify_anomalies: boolean | null;
-          notify_weekly: boolean | null;
           api_key: string | null;
           key_last_updated: string | null;
           updated_at: string | null;
@@ -37,8 +35,6 @@ export type Database = {
           timezone?: string | null;
           stripe_account_id?: string | null;
           email_provider_status?: boolean | null;
-          notify_anomalies?: boolean | null;
-          notify_weekly?: boolean | null;
           api_key?: string | null;
           key_last_updated?: string | null;
           updated_at?: string | null;
@@ -50,8 +46,6 @@ export type Database = {
           timezone?: string | null;
           stripe_account_id?: string | null;
           email_provider_status?: boolean | null;
-          notify_anomalies?: boolean | null;
-          notify_weekly?: boolean | null;
           api_key?: string | null;
           key_last_updated?: string | null;
           updated_at?: string | null;

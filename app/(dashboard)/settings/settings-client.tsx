@@ -2,16 +2,15 @@
 
 import React, { useState } from "react";
 import { type User } from "@supabase/supabase-js";
-import { Building2, Plug, BellRing, UserCircle, HelpCircle, Mail, Terminal } from "lucide-react";
+import { Building2, Plug, UserCircle, HelpCircle, Mail, Terminal } from "lucide-react";
 
 import AccountTab from "@/components/settings/account-tab";
 import IntegrationsTab from "@/components/settings/integrations-tab";
-import RoutingTab from "@/components/settings/routing-tab";
 import WorkspaceTab from "@/components/settings/workspace-tab";
 import { DeveloperTab } from "@/components/settings/developer-tab"; // <-- Added import
 import type { SettingsSnapshot } from "@/lib/settings/types";
 
-type SettingsTab = "workspace" | "integrations" | "developer" | "routing" | "account"; // <-- Added 'developer'
+type SettingsTab = "workspace" | "integrations" | "developer" | "account"; // <-- Added 'developer'
 
 interface SettingsClientProps {
   user: User;
@@ -34,7 +33,6 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
     { id: "workspace", label: "Workspace Identity", icon: Building2 },
     { id: "integrations", label: "Data & Integrations", icon: Plug },
     { id: "developer", label: "Developer API", icon: Terminal }, // <-- Added Developer Tab
-    { id: "routing", label: "Alerts & Routing", icon: BellRing },
     { id: "account", label: "My Account", icon: UserCircle },
   ] as const;
 
@@ -90,8 +88,6 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
             />
           </div>
         )}
-
-        {activeTab === "routing" && <RoutingTab routing={initialSettings.routing} />}
         {activeTab === "account" && (
           <AccountTab user={user} initialData={accountInitialData} isRecoveryMode={isRecoveryMode} />
         )}
