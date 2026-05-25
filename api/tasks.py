@@ -1,7 +1,9 @@
 import logging
 import os
+import time
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, Tuple, Iterable
+from enum import StrEnum
+from typing import Dict, Any, Optional, Tuple
 
 import dramatiq
 from dramatiq.brokers.redis import RedisBroker
@@ -10,6 +12,17 @@ import resend
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
+
+
+class MetricsSink:
+    def increment(self, name: str, value: int = 1, tags: Optional[Dict[str, str]] = None) -> None:
+        logger.info("metric_increment name=%s value=%s tags=%s", name, value, tags)
+
+    def timing(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
+        logger.info("metric_timing name=%s value=%s tags=%s", name, round(value, 6), tags)
+
+
+METRICS = MetricsSink()
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -28,18 +41,37 @@ APP_BASE_URL = os.getenv("APP_BASE_URL", "https://arcli.tech")
 RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
 RECOVERY_DLQ_TABLE = os.getenv("RECOVERY_DLQ_TABLE", "recovery_email_dlq")
 RECOVERY_EMAIL_EVENTS_TABLE = os.getenv("RECOVERY_EMAIL_EVENTS_TABLE", "recovery_email_events")
+RECOVERY_DISPATCH_TOKEN_RPC = os.getenv(
+    "RECOVERY_DISPATCH_TOKEN_RPC",
+    "claim_dispatch_token",
+)
 
 MAX_SEND_ATTEMPTS = int(os.getenv("RECOVERY_MAX_SEND_ATTEMPTS", "5"))
 RETRY_BACKOFF_SECONDS = int(os.getenv("RECOVERY_RETRY_BACKOFF_SECONDS", "300"))
 
-# --- STATUS DEFINITIONS ---
-STATUS_QUEUED = "queued"
-STATUS_PROCESSING = "processing"       # Added: Set by the Outbox Poller
-STATUS_SENDING = "sending"
-STATUS_SENT = "sent"
-STATUS_FAILED_TRANSIENT = "failed_transient"
-STATUS_FAILED_PERMANENT = "failed_permanent"
-STATUS_SKIPPED = "skipped_cooldown"    # Added: For JIT SaaS Safety 
+
+class RecoveryStatus(StrEnum):
+    PENDING_DISPATCH = "pending_dispatch"
+    DISPATCH_CLAIMED = "dispatch_claimed"
+    DISPATCHED_TO_QUEUE = "dispatched_to_queue"
+    PROVIDER_ACCEPTED = "provider_accepted"
+    DELIVERED = "delivered"
+    DISPATCH_FAILED = "dispatch_failed"
+    DEAD_LETTERED = "dead_lettered"
+
+
+class FailureStage(StrEnum):
+    DISPATCH = "dispatch"
+    PROVIDER = "provider"
+    COOLDOWN = "cooldown"
+    VALIDATION = "validation"
+
+
+class ProviderSendStatus(StrEnum):
+    ACCEPTED = "accepted"
+    FAILED_TRANSIENT = "failed_transient"
+    FAILED_PERMANENT = "failed_permanent"
+
 
 _supabase_client: Optional[Client] = None
 
@@ -50,8 +82,9 @@ class RecoverySendRecord(BaseModel):
     user_id: str
     email: str
     campaign_type: str
-    message_key: Optional[str] = None
-    status: str = STATUS_QUEUED
+    status: RecoveryStatus = RecoveryStatus.PENDING_DISPATCH
+    dispatch_token: Optional[str] = None
+    dispatch_attempt: int = 0
     attempt_count: int = 0
     next_retry_at: Optional[str] = None
     provider_message_id: Optional[str] = None
@@ -60,10 +93,15 @@ class RecoverySendRecord(BaseModel):
 
 
 class SendResult(BaseModel):
-    status: str
+    status: ProviderSendStatus
     provider_message_id: Optional[str] = None
     retryable: bool = False
     error: Optional[str] = None
+
+
+class DispatchTokenClaimResponse(BaseModel):
+    claimed: bool
+    state: Optional[str] = None
 
 
 class TemplateRenderer:
@@ -110,11 +148,11 @@ class ResendEmailProvider:
         to_email: str,
         subject: str,
         html: str,
-        message_key: Optional[str] = None,
+        dispatch_token: Optional[str] = None,
     ) -> SendResult:
         if not resend.api_key:
             return SendResult(
-                status=STATUS_FAILED_PERMANENT,
+                status=ProviderSendStatus.FAILED_PERMANENT,
                 retryable=False,
                 error="resend_api_key_missing",
             )
@@ -126,21 +164,21 @@ class ResendEmailProvider:
                 "subject": subject,
                 "html": html,
             }
-            if message_key:
-                payload["headers"] = {"X-Message-Key": message_key}
+            if dispatch_token:
+                payload["headers"] = {"X-Dispatch-Token": dispatch_token}
 
             response = resend.Emails.send(payload)
         except Exception as exc:
             retryable = _is_retryable_error(exc)
             return SendResult(
-                status=STATUS_FAILED_TRANSIENT if retryable else STATUS_FAILED_PERMANENT,
+                status=ProviderSendStatus.FAILED_TRANSIENT if retryable else ProviderSendStatus.FAILED_PERMANENT,
                 retryable=retryable,
                 error=str(exc),
             )
 
         message_id = _extract_message_id(response)
         return SendResult(
-            status=STATUS_SENT,
+            status=ProviderSendStatus.ACCEPTED,
             provider_message_id=message_id,
             retryable=False,
         )
@@ -170,11 +208,7 @@ class RecoveryRepository:
                 event_type,
             )
 
-    def fetch_send_by_id(
-        self,
-        tenant_id: str,
-        send_id: str,
-    ) -> Optional[RecoverySendRecord]:
+    def fetch_send_by_id(self, tenant_id: str, send_id: str) -> Optional[RecoverySendRecord]:
         resp = (
             self.client
             .table(RECOVERY_EMAIL_TABLE)
@@ -198,46 +232,36 @@ class RecoveryRepository:
             )
             return None
 
-    def fetch_latest_send(
-        self,
-        tenant_id: str,
-        user_id: str,
-        campaign_type: str,
-        statuses: Optional[Iterable[str]] = None,
-    ) -> Optional[RecoverySendRecord]:
-        query = (
-            self.client
-            .table(RECOVERY_EMAIL_TABLE)
-            .select("*")
-            .eq("tenant_id", tenant_id)
-            .eq("user_id", user_id)
-            .eq("campaign_type", campaign_type)
-        )
-
-        if statuses:
-            query = query.in_("status", list(statuses))
-
-        resp = query.order("created_at", desc=True).limit(1).execute()
-        if not resp.data:
-            return None
+    def claim_dispatch_token(self, dispatch_token: str, tenant_id: str, send_id: str) -> DispatchTokenClaimResponse:
+        payload = {
+            "p_dispatch_token": dispatch_token,
+            "p_tenant_id": tenant_id,
+            "p_send_id": send_id,
+        }
 
         try:
-            return RecoverySendRecord.model_validate(resp.data[0])
-        except ValidationError:
-            logger.exception(
-                "recovery_send_record_invalid tenant=%s user_id=%s campaign=%s",
-                tenant_id,
-                user_id,
-                campaign_type,
-            )
-            return None
+            resp = self.client.rpc(RECOVERY_DISPATCH_TOKEN_RPC, payload).execute()
+        except Exception:
+            logger.exception("dispatch_token_claim_failed tenant=%s send_id=%s", tenant_id, send_id)
+            return DispatchTokenClaimResponse(claimed=False, state="error")
 
-    # ==========================================
-    # SAAS SAFETY: JUST-IN-TIME (JIT) LIMITS
-    # ==========================================
+        if not resp.data:
+            return DispatchTokenClaimResponse(claimed=False, state="missing")
+
+        payload = resp.data
+        if isinstance(payload, list):
+            payload = payload[0] if payload else None
+
+        if not payload:
+            return DispatchTokenClaimResponse(claimed=False, state="missing")
+
+        try:
+            return DispatchTokenClaimResponse.model_validate(payload)
+        except ValidationError:
+            logger.exception("dispatch_token_claim_invalid tenant=%s send_id=%s", tenant_id, send_id)
+            return DispatchTokenClaimResponse(claimed=False, state="invalid")
 
     def is_user_globally_capped(self, tenant_id: str, user_id: str) -> bool:
-        """Global Cap: Max 1 email per 24 hours per user across all templates."""
         window_start = datetime.now(timezone.utc) - timedelta(hours=24)
         try:
             resp = (
@@ -245,8 +269,8 @@ class RecoveryRepository:
                 .select("id")
                 .eq("tenant_id", tenant_id)
                 .eq("user_id", user_id)
-                .eq("status", STATUS_SENT)
-                .gte("sent_at", window_start.isoformat())
+                .in_("status", [RecoveryStatus.PROVIDER_ACCEPTED.value, RecoveryStatus.DELIVERED.value])
+                .gte("provider_accepted_at", window_start.isoformat())
                 .limit(1)
                 .execute()
             )
@@ -256,7 +280,6 @@ class RecoveryRepository:
             return False
 
     def is_template_on_cooldown(self, tenant_id: str, user_id: str, campaign_type: str) -> bool:
-        """Template Cooldown: Max 1 identical email per 7 days."""
         window_start = datetime.now(timezone.utc) - timedelta(days=7)
         try:
             resp = (
@@ -265,8 +288,8 @@ class RecoveryRepository:
                 .eq("tenant_id", tenant_id)
                 .eq("user_id", user_id)
                 .eq("campaign_type", campaign_type)
-                .eq("status", STATUS_SENT)
-                .gte("sent_at", window_start.isoformat())
+                .in_("status", [RecoveryStatus.PROVIDER_ACCEPTED.value, RecoveryStatus.DELIVERED.value])
+                .gte("provider_accepted_at", window_start.isoformat())
                 .limit(1)
                 .execute()
             )
@@ -275,95 +298,88 @@ class RecoveryRepository:
             logger.exception("is_template_on_cooldown_failed tenant=%s user=%s", tenant_id, user_id)
             return False
 
-    def mark_skipped(self, send_id: str, reason: str) -> None:
-        """Marks an intent as skipped due to spam protection limits."""
-        payload = {
-            "status": STATUS_SKIPPED,
-            "skip_reason": reason,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        try:
-            self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
-            self.write_event(send_id, "skipped", {"reason": reason})
-        except Exception:
-            logger.exception("mark_skipped_failed send_id=%s", send_id)
-
-    # ==========================================
-    # LIFECYCLE MANAGEMENT
-    # ==========================================
-
-    def mark_sending(self, send_id: str, attempt_count: int) -> None:
-        payload = {
-            "status": STATUS_SENDING,
-            "attempt_count": attempt_count,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
-        self.write_event(send_id, "sending", {"attempt_count": attempt_count})
-
-    def mark_sent(self, send_id: str, provider_message_id: Optional[str]) -> None:
-        payload = {
-            "status": STATUS_SENT,
-            "provider_message_id": provider_message_id,
-            "sent_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
-        self.write_event(send_id, "sent", {"provider_message_id": provider_message_id})
-
-    def mark_failed_transient(self, send_id: str, error: str) -> None:
-        payload = {
-            "status": STATUS_FAILED_TRANSIENT,
-            "last_error": error,
-            "next_retry_at": (
-                datetime.now(timezone.utc) + timedelta(seconds=RETRY_BACKOFF_SECONDS)
-            ).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
-        self.write_event(send_id, "failed_transient", {"error": error})
-
-    def mark_failed_permanent(self, send_id: str, error: str) -> None:
-        payload = {
-            "status": STATUS_FAILED_PERMANENT,
-            "last_error": error,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
-        self.write_event(send_id, "failed_permanent", {"error": error})
-
-    def claim_for_sending(
+    def mark_provider_attempt(
         self,
         send_id: str,
-        expected_statuses: Iterable[str],
         attempt_count: int,
-    ) -> bool:
-        payload = {
-            "status": STATUS_SENDING,
+        dispatch_token: str,
+        dispatch_attempt: Optional[int],
+    ) -> None:
+        payload: Dict[str, Any] = {
             "attempt_count": attempt_count,
+            "dispatch_token": dispatch_token,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if dispatch_attempt is not None:
+            payload["dispatch_attempt"] = dispatch_attempt
 
-        resp = (
-            self.client
-            .table(RECOVERY_EMAIL_TABLE)
-            .update(payload)
-            .eq("id", send_id)
-            .in_("status", list(expected_statuses))
-            .execute()
-        )
-        claimed = bool(resp.data)
-        if claimed:
-            self.write_event(send_id, "sending", {"attempt_count": attempt_count})
+        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "provider_attempt", {"attempt_count": attempt_count})
 
-        return claimed
+    def mark_provider_accepted(self, send_id: str, provider_message_id: Optional[str]) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "status": RecoveryStatus.PROVIDER_ACCEPTED.value,
+            "provider_message_id": provider_message_id,
+            "provider_accepted_at": now,
+            "sent_at": now,
+            "updated_at": now,
+        }
+        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "provider_accepted", {"provider_message_id": provider_message_id})
 
-    def write_dlq(self, send_id: str, tenant_id: str, user_id: str, campaign_type: str, error: str) -> None:
+    def mark_delivered(self, send_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {
+            "status": RecoveryStatus.DELIVERED.value,
+            "delivered_at": now,
+            "updated_at": now,
+        }
+        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "delivered", {})
+
+    def mark_dispatch_failed(
+        self,
+        send_id: str,
+        error: str,
+        failure_stage: FailureStage,
+        next_retry_at: Optional[str],
+    ) -> None:
+        payload = {
+            "status": RecoveryStatus.DISPATCH_FAILED.value,
+            "failure_stage": failure_stage.value,
+            "last_error": error[:500],
+            "next_retry_at": next_retry_at,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "dispatch_failed", {"error": error, "stage": failure_stage.value})
+
+    def mark_dead_lettered(self, send_id: str, error: str, failure_stage: FailureStage) -> None:
+        payload = {
+            "status": RecoveryStatus.DEAD_LETTERED.value,
+            "failure_stage": failure_stage.value,
+            "last_error": error[:500],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        self.write_event(send_id, "dead_lettered", {"error": error, "stage": failure_stage.value})
+
+    def write_dlq(
+        self,
+        send_id: str,
+        tenant_id: str,
+        user_id: str,
+        campaign_type: str,
+        error: str,
+        dispatch_token: Optional[str],
+    ) -> None:
         payload: Dict[str, Any] = {
             "send_id": send_id,
             "tenant_id": tenant_id,
             "user_id": user_id,
             "campaign_type": campaign_type,
+            "dispatch_token": dispatch_token,
             "last_error": error,
             "failed_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -431,20 +447,32 @@ def _is_retryable_error(exc: Exception) -> bool:
     return status_code >= 500
 
 
+def _provider_backoff_seconds(attempt: int) -> int:
+    base = RETRY_BACKOFF_SECONDS
+    backoff = base * (2 ** max(0, attempt - 1))
+    return min(backoff, 3600)
+
+
 @dramatiq.actor(max_retries=MAX_SEND_ATTEMPTS, min_backoff=5_000, max_backoff=120_000)
 def send_recovery_email(
     tenant_id: str,
     send_id: str,
+    dispatch_token: str,
+    dispatch_attempt: Optional[int] = None,
 ) -> None:
     """
     Consumes the job from Redis, verifies JIT SaaS safety limits, and fires Resend.
     """
-    if not tenant_id or not send_id:
+    start_time = time.monotonic()
+
+    if not tenant_id or not send_id or not dispatch_token:
         logger.error(
-            "recovery_email_missing_args tenant=%s send_id=%s",
+            "recovery_email_missing_args tenant=%s send_id=%s token_present=%s",
             tenant_id,
             send_id,
+            bool(dispatch_token),
         )
+        METRICS.increment("recovery.send.invalid_args", 1)
         return
 
     client = _get_supabase_client()
@@ -457,88 +485,128 @@ def send_recovery_email(
         raise RuntimeError("Supabase client unavailable")
 
     repo = RecoveryRepository(client)
-    record = repo.fetch_send_by_id(tenant_id, send_id)
+    claim = repo.claim_dispatch_token(dispatch_token, tenant_id, send_id)
+    if not claim.claimed:
+        logger.info(
+            "recovery_dispatch_token_duplicate tenant=%s send_id=%s state=%s",
+            tenant_id,
+            send_id,
+            claim.state,
+        )
+        METRICS.increment("recovery.dispatch.duplicate", 1, {"tenant": tenant_id})
+        return
 
-    # Note the addition of STATUS_SKIPPED to the terminal states
+    record = repo.fetch_send_by_id(tenant_id, send_id)
     if not record:
         logger.warning("recovery_send_missing_record tenant=%s send_id=%s", tenant_id, send_id)
-        return
-    if record.status in (STATUS_SENT, STATUS_FAILED_PERMANENT, STATUS_SKIPPED):
+        METRICS.increment("recovery.send.missing_record", 1, {"tenant": tenant_id})
         return
 
-    if record.status == STATUS_SENDING:
-        logger.info("recovery_send_already_claimed tenant=%s send_id=%s", tenant_id, send_id)
+    if record.dispatch_token and record.dispatch_token != dispatch_token:
+        logger.warning(
+            "recovery_dispatch_token_mismatch tenant=%s send_id=%s",
+            tenant_id,
+            send_id,
+        )
+        METRICS.increment("recovery.dispatch.token_mismatch", 1, {"tenant": tenant_id})
+        return
+
+    if record.status in (
+        RecoveryStatus.PROVIDER_ACCEPTED,
+        RecoveryStatus.DELIVERED,
+        RecoveryStatus.DEAD_LETTERED,
+    ):
+        logger.info("recovery_send_terminal tenant=%s send_id=%s", tenant_id, send_id)
         return
 
     if record.attempt_count >= MAX_SEND_ATTEMPTS:
         error_message = "max_attempts_exceeded"
-        repo.mark_failed_permanent(record.id, error_message)
+        repo.mark_dead_lettered(record.id, error_message, FailureStage.PROVIDER)
         try:
-            repo.write_dlq(record.id, tenant_id, record.user_id, record.campaign_type, error_message)
+            repo.write_dlq(
+                record.id,
+                tenant_id,
+                record.user_id,
+                record.campaign_type,
+                error_message,
+                dispatch_token,
+            )
         except Exception:
             logger.exception("recovery_send_dlq_failed tenant=%s send_id=%s", tenant_id, send_id)
+        METRICS.increment("recovery.send.dead_lettered", 1, {"tenant": tenant_id})
         return
 
     # ==========================================
-    # JIT SAAS SAFETY CHECKS (Execute Right Before Claiming)
+    # JIT SAAS SAFETY CHECKS (Execute Right Before Sending)
     # ==========================================
-    
-    # 1. Global Cap Check (Prevents stacking automation spam)
+
     if repo.is_user_globally_capped(tenant_id, record.user_id):
         logger.info("skipped_global_cap tenant=%s user=%s", tenant_id, record.user_id)
-        repo.mark_skipped(record.id, "global_daily_cap_exceeded")
+        retry_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+        repo.mark_dispatch_failed(record.id, "global_daily_cap_exceeded", FailureStage.COOLDOWN, retry_at)
+        METRICS.increment("recovery.send.cooldown", 1, {"tenant": tenant_id, "type": "global"})
         return
 
-    # 2. Template Cooldown Check (Prevents duplicate template spam)
     if repo.is_template_on_cooldown(tenant_id, record.user_id, record.campaign_type):
-        logger.info("skipped_template_cooldown tenant=%s user=%s campaign=%s", tenant_id, record.user_id, record.campaign_type)
-        repo.mark_skipped(record.id, "template_cooldown_active")
+        logger.info(
+            "skipped_template_cooldown tenant=%s user=%s campaign=%s",
+            tenant_id,
+            record.user_id,
+            record.campaign_type,
+        )
+        retry_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+        repo.mark_dispatch_failed(record.id, "template_cooldown_active", FailureStage.COOLDOWN, retry_at)
+        METRICS.increment("recovery.send.cooldown", 1, {"tenant": tenant_id, "type": "template"})
         return
 
     # ==========================================
-    # EXECUTE CLAIM & SEND
+    # EXECUTE SEND
     # ==========================================
 
-    # Note: We now expect STATUS_PROCESSING (from Outbox Poller) or STATUS_FAILED_TRANSIENT (from Dramatiq Retry)
-    claimed = repo.claim_for_sending(
-        record.id,
-        (STATUS_PROCESSING, STATUS_FAILED_TRANSIENT),
-        record.attempt_count + 1,
-    )
-    
-    if not claimed:
-        return
+    attempt_count = record.attempt_count + 1
+    repo.mark_provider_attempt(record.id, attempt_count, dispatch_token, dispatch_attempt)
 
     subject, html = TemplateRenderer().render(record.campaign_type)
     provider = ResendEmailProvider()
-    result = provider.send(record.email, subject, html, record.message_key)
+    result = provider.send(record.email, subject, html, dispatch_token)
 
-    if result.status == STATUS_SENT:
+    if result.status == ProviderSendStatus.ACCEPTED:
         try:
-            repo.mark_sent(record.id, result.provider_message_id)
+            repo.mark_provider_accepted(record.id, result.provider_message_id)
         except Exception:
             logger.exception("recovery_send_persist_failed tenant=%s send_id=%s", tenant_id, send_id)
             persist_recovery_status.send(
-                record.id,
-                STATUS_SENT,
-                result.provider_message_id,
-                None,
+                send_id=record.id,
+                status=RecoveryStatus.PROVIDER_ACCEPTED.value,
+                provider_message_id=result.provider_message_id,
+                last_error=None,
             )
-        logger.info("recovery_send_sent tenant=%s send_id=%s", tenant_id, send_id)
+        METRICS.increment("recovery.send.accepted", 1, {"tenant": tenant_id})
+        logger.info("recovery_send_accepted tenant=%s send_id=%s", tenant_id, send_id)
+        METRICS.timing("recovery.send.duration", time.monotonic() - start_time, {"tenant": tenant_id})
         return
 
     error_message = result.error or "send_failed"
 
     if result.retryable:
-        repo.mark_failed_transient(record.id, error_message)
-        logger.warning("recovery_send_transient_failure tenant=%s send_id=%s", tenant_id, send_id)
+        retry_at = (datetime.now(timezone.utc) + timedelta(seconds=_provider_backoff_seconds(attempt_count))).isoformat()
+        repo.mark_dispatch_failed(record.id, error_message, FailureStage.PROVIDER, retry_at)
+        METRICS.increment("recovery.send.retryable_failure", 1, {"tenant": tenant_id})
         raise RuntimeError(error_message)
 
-    repo.mark_failed_permanent(record.id, error_message)
+    repo.mark_dead_lettered(record.id, error_message, FailureStage.PROVIDER)
     try:
-        repo.write_dlq(record.id, tenant_id, record.user_id, record.campaign_type, error_message)
+        repo.write_dlq(
+            record.id,
+            tenant_id,
+            record.user_id,
+            record.campaign_type,
+            error_message,
+            dispatch_token,
+        )
     except Exception:
         logger.exception("recovery_send_dlq_failed tenant=%s send_id=%s", tenant_id, send_id)
+    METRICS.increment("recovery.send.dead_lettered", 1, {"tenant": tenant_id})
 
 
 @dramatiq.actor
@@ -564,8 +632,8 @@ def persist_recovery_status(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    if status == STATUS_SENT:
-        payload["sent_at"] = datetime.now(timezone.utc).isoformat()
+    if status == RecoveryStatus.PROVIDER_ACCEPTED.value:
+        payload["provider_accepted_at"] = datetime.now(timezone.utc).isoformat()
 
     try:
         client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()

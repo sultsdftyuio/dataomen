@@ -1,24 +1,70 @@
-import hashlib
 import logging
 import os
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import Generator, List, Dict, Any
+from enum import StrEnum
+from typing import Generator, List, Dict, Any, Optional
+
+from pydantic import BaseModel, Field, ValidationError, TypeAdapter
 
 from api.services.churn_scoring_service import ChurnScoringService
-from api.services.recovery_engine import RecoveryAutomationEngine
-from api.tasks import send_recovery_email  # Added for Outbox Dispatching
+from api.services.recovery_engine import RecoveryAutomationEngine, ClaimOutcome, apply_outbox_backpressure
+from api.tasks import send_recovery_email
 
 logger = logging.getLogger("arcli_worker")
+
+
+class MetricsSink:
+    def increment(self, name: str, value: int = 1, tags: Optional[Dict[str, str]] = None) -> None:
+        logger.info("metric_increment name=%s value=%s tags=%s", name, value, tags)
+
+    def timing(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
+        logger.info("metric_timing name=%s value=%s tags=%s", name, round(value, 6), tags)
+
+
+METRICS = MetricsSink()
 
 # ---------------------------------------------------------
 # PIPELINE CONFIG
 # ---------------------------------------------------------
 
-MAX_TENANT_RUNTIME_SEC = 60
-USER_BATCH_SIZE = 500
-USER_PROFILE_CURSOR_FIELD = os.getenv("USER_PROFILE_CURSOR_FIELD", "id")
+MAX_TENANT_RUNTIME_SEC = int(os.getenv("MAX_TENANT_RUNTIME_SEC", "60"))
+USER_BATCH_SIZE = int(os.getenv("USER_BATCH_SIZE", "500"))
+USER_PROFILE_CURSOR_FIELD = os.getenv("USER_PROFILE_CURSOR_FIELD", "id").strip() or "id"
+ALLOWED_CURSOR_FIELDS = {"id", "created_at", "updated_at"}
+
+PIPELINE_BATCH_TARGET_DURATION_SEC = float(os.getenv("PIPELINE_BATCH_TARGET_DURATION_SEC", "0.35"))
+PIPELINE_BATCH_MIN_SLEEP_SEC = float(os.getenv("PIPELINE_BATCH_MIN_SLEEP_SEC", "0.02"))
+PIPELINE_BATCH_MAX_SLEEP_SEC = float(os.getenv("PIPELINE_BATCH_MAX_SLEEP_SEC", "0.4"))
+
+OUTBOX_BACKPRESSURE_BASE_SEC = float(os.getenv("OUTBOX_BACKPRESSURE_BASE_SEC", "0.05"))
+OUTBOX_BACKPRESSURE_MAX_SEC = float(os.getenv("OUTBOX_BACKPRESSURE_MAX_SEC", "0.3"))
+MAX_DISPATCH_RETRIES = int(os.getenv("RECOVERY_MAX_DISPATCH_RETRIES", "3"))
+
+RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
+OUTBOX_CLAIM_RPC = os.getenv("RECOVERY_OUTBOX_CLAIM_RPC", "claim_outbox_batch")
+
+
+class RecoveryStatus(StrEnum):
+    PENDING_DISPATCH = "pending_dispatch"
+    DISPATCH_CLAIMED = "dispatch_claimed"
+    DISPATCHED_TO_QUEUE = "dispatched_to_queue"
+    PROVIDER_ACCEPTED = "provider_accepted"
+    DELIVERED = "delivered"
+    DISPATCH_FAILED = "dispatch_failed"
+    DEAD_LETTERED = "dead_lettered"
+
+
+class OutboxClaimRow(BaseModel):
+    id: str
+    tenant_id: str
+    dispatch_token: str
+    dispatch_attempt: int = Field(..., ge=1)
+    retry_count: Optional[int] = None
+
+
+_outbox_claim_adapter = TypeAdapter(List[OutboxClaimRow])
 
 # ---------------------------------------------------------
 # PIPELINE ORCHESTRATOR
@@ -35,22 +81,41 @@ class PipelineOrchestrator:
     - Maintain strict run traceability
     """
 
-    def __init__(self, db_client, email_queue=None):
+    def __init__(self, db_client, email_queue: Optional[Any] = None) -> None:
         self.db = db_client
         self.email_queue = email_queue
+        self.user_profile_cursor_field = _normalize_cursor_field(USER_PROFILE_CURSOR_FIELD)
+
+        if not _is_safe_column_name(self.user_profile_cursor_field):
+            logger.warning(
+                "user_profile_cursor_invalid field=%s fallback=id",
+                self.user_profile_cursor_field,
+            )
+            self.user_profile_cursor_field = "id"
+        elif self.user_profile_cursor_field not in ALLOWED_CURSOR_FIELDS:
+            logger.warning(
+                "user_profile_cursor_not_allowed field=%s fallback=id",
+                self.user_profile_cursor_field,
+            )
+            self.user_profile_cursor_field = "id"
+        elif self.user_profile_cursor_field != "id":
+            logger.info(
+                "user_profile_cursor_non_id field=%s",
+                self.user_profile_cursor_field,
+            )
 
         # Core Engines
         self.churn_scoring = ChurnScoringService(db_client)
         self.recovery_engine = RecoveryAutomationEngine(
             db_client=db_client,
-            email_queue=email_queue
+            email_queue=email_queue,
         )
 
     # ---------------------------------------------------------
     # MAIN DAILY PIPELINE
     # ---------------------------------------------------------
 
-    def run_daily_pipeline(self, target_date_str: str = None):
+    def run_daily_pipeline(self, target_date_str: Optional[str] = None) -> None:
         """
         Main nightly churn recovery pipeline.
         Enforces a strict run_id for full operational traceability.
@@ -62,11 +127,12 @@ class PipelineOrchestrator:
         )
 
         logger.info(
-            "daily_risk_scan_started target_date=%s run_id=%s", 
-            target_date, run_id
+            "daily_risk_scan_started target_date=%s run_id=%s",
+            target_date,
+            run_id,
         )
 
-        start_time = time.time()
+        start_time = time.monotonic()
 
         try:
             tenants = self._fetch_active_tenants()
@@ -76,8 +142,9 @@ class PipelineOrchestrator:
                 return
 
             logger.info(
-                "active_tenants_found count=%d run_id=%s", 
-                len(tenants), run_id
+                "active_tenants_found count=%d run_id=%s",
+                len(tenants),
+                run_id,
             )
 
             processed = 0
@@ -87,7 +154,7 @@ class PipelineOrchestrator:
                 success = self._process_tenant_safe(
                     tenant_id=tenant_id,
                     target_date=target_date,
-                    run_id=run_id
+                    run_id=run_id,
                 )
 
                 if success:
@@ -95,12 +162,15 @@ class PipelineOrchestrator:
                 else:
                     failed += 1
 
-            duration = round(time.time() - start_time, 2)
+            duration = round(time.monotonic() - start_time, 2)
 
             logger.info(
                 "daily_risk_scan_completed run_id=%s duration=%ss "
                 "processed_tenants=%d failed_tenants=%d",
-                run_id, duration, processed, failed
+                run_id,
+                duration,
+                processed,
+                failed,
             )
 
         except Exception:
@@ -120,17 +190,18 @@ class PipelineOrchestrator:
         resp = (
             self.db
             .table("tenant_users")
-            .select("tenant_id")
+            .select("distinct(tenant_id)")
             .execute()
         )
 
-        tenant_ids = {
+        tenant_ids = [
             row["tenant_id"]
             for row in (resp.data or [])
             if row.get("tenant_id")
-        }
+        ]
 
-        return list(tenant_ids)
+        tenant_ids.sort()
+        return tenant_ids
 
     # ---------------------------------------------------------
     # SAFE TENANT PROCESSING
@@ -140,36 +211,39 @@ class PipelineOrchestrator:
         self,
         tenant_id: str,
         target_date: str,
-        run_id: str
+        run_id: str,
     ) -> bool:
         """
-        Isolated tenant processing. Prevents one bad tenant payload 
+        Isolated tenant processing. Prevents one bad tenant payload
         from crashing the multi-tenant pipeline.
         """
-        start = time.time()
+        start = time.monotonic()
 
         try:
             self._process_tenant(
                 tenant_id=tenant_id,
                 target_date=target_date,
-                run_id=run_id
+                run_id=run_id,
             )
             return True
 
         except Exception:
             logger.exception(
-                "tenant_processing_failed tenant=%s run_id=%s", 
-                tenant_id, run_id
+                "tenant_processing_failed tenant=%s run_id=%s",
+                tenant_id,
+                run_id,
             )
             return False
 
         finally:
-            duration = round(time.time() - start, 2)
+            duration = round(time.monotonic() - start, 2)
 
             if duration > MAX_TENANT_RUNTIME_SEC:
                 logger.warning(
                     "slow_tenant_detected tenant=%s duration=%ss run_id=%s",
-                    tenant_id, duration, run_id
+                    tenant_id,
+                    duration,
+                    run_id,
                 )
 
     # ---------------------------------------------------------
@@ -180,30 +254,45 @@ class PipelineOrchestrator:
         self,
         tenant_id: str,
         target_date: str,
-        run_id: str
-    ):
+        run_id: str,
+    ) -> None:
         """
         Core tenant churn recovery workflow.
         """
         logger.info(
-            "tenant_scan_started tenant=%s run_id=%s", 
-            tenant_id, run_id
+            "tenant_scan_started tenant=%s run_id=%s",
+            tenant_id,
+            run_id,
         )
 
-        tenant_start = time.time()
+        tenant_start = time.monotonic()
+        tenant_deadline = tenant_start + max(1, MAX_TENANT_RUNTIME_SEC)
+        timed_out = False
 
         total_users_scanned = 0
         total_at_risk_users = 0
         total_emails_queued = 0
 
-        score_duration_total = 0
-        recovery_duration_total = 0
+        score_duration_total = 0.0
+        recovery_duration_total = 0.0
 
         # ---------------------------------------------------------
         # PROCESS USERS IN BATCHES (OOM Prevention)
         # ---------------------------------------------------------
 
         for users_batch in self._yield_users_in_batches(tenant_id=tenant_id):
+
+            if time.monotonic() >= tenant_deadline:
+                timed_out = True
+                logger.warning(
+                    "tenant_runtime_exceeded tenant=%s run_id=%s max_runtime=%ss",
+                    tenant_id,
+                    run_id,
+                    MAX_TENANT_RUNTIME_SEC,
+                )
+                break
+
+            batch_start = time.monotonic()
 
             batch_size = len(users_batch)
             if batch_size == 0:
@@ -214,48 +303,86 @@ class PipelineOrchestrator:
             # ---------------------------------------------------------
             # STEP 1 — CHURN SCORING
             # ---------------------------------------------------------
-            score_start = time.time()
+            score_start = time.monotonic()
 
             at_risk_users = self.churn_scoring.calculate_batch_risk_scores(
                 tenant_id=tenant_id,
                 users=users_batch,
-                target_date=target_date
+                target_date=target_date,
             )
 
-            score_duration_total += (time.time() - score_start)
+            score_duration_total += (time.monotonic() - score_start)
             total_at_risk_users += len(at_risk_users)
 
             # ---------------------------------------------------------
             # STEP 2 — RECOVERY AUTOMATION (Idempotent execution expected)
             # ---------------------------------------------------------
-            recovery_start = time.time()
+            recovery_start = time.monotonic()
 
-            for user in at_risk_users:
-                # Passing run_id down to the engine ensures we can attribute
-                # the exact pipeline execution to the resulting email/revenue
-                result = self.recovery_engine.evaluate_and_queue_campaign(
-                    tenant_id=tenant_id,
-                    user=user,
-                    metadata={"pipeline_run_id": run_id}
-                )
+            recovery_results = self.recovery_engine.evaluate_and_queue_batch(
+                tenant_id=tenant_id,
+                users=at_risk_users,
+                metadata={"pipeline_run_id": run_id},
+            )
 
-                if result and result.get("status") == "queued":
+            for result in recovery_results:
+                if not result:
+                    continue
+
+                status = result.get("status")
+                if status == ClaimOutcome.CLAIMED.value:
                     total_emails_queued += 1
+                    continue
 
-            recovery_duration_total += (time.time() - recovery_start)
+                if status == ClaimOutcome.RATE_LIMITED.value:
+                    METRICS.increment("recovery.rate_limited", 1, {"tenant": tenant_id})
+                elif status == ClaimOutcome.SUPPRESSED.value:
+                    METRICS.increment("recovery.suppressed", 1, {"tenant": tenant_id})
+                elif status == ClaimOutcome.COOLDOWN.value:
+                    METRICS.increment("recovery.cooldown", 1, {"tenant": tenant_id})
+                elif status == ClaimOutcome.DUPLICATE.value:
+                    METRICS.increment("recovery.duplicate", 1, {"tenant": tenant_id})
+                elif status == ClaimOutcome.ERROR.value:
+                    METRICS.increment("recovery.error", 1, {"tenant": tenant_id})
+
+            recovery_duration_total += (time.monotonic() - recovery_start)
+
+            batch_duration = time.monotonic() - batch_start
+            _apply_pipeline_backpressure(
+                batch_duration=batch_duration,
+                batch_size=batch_size,
+                tenant_id=tenant_id,
+                run_id=run_id,
+            )
+
+            if time.monotonic() >= tenant_deadline:
+                timed_out = True
+                logger.warning(
+                    "tenant_runtime_exceeded tenant=%s run_id=%s max_runtime=%ss",
+                    tenant_id,
+                    run_id,
+                    MAX_TENANT_RUNTIME_SEC,
+                )
+                break
 
         # ---------------------------------------------------------
         # FINAL TENANT METRICS
         # ---------------------------------------------------------
-        total_duration = round(time.time() - tenant_start, 2)
+        total_duration = round(time.monotonic() - tenant_start, 2)
 
         logger.info(
             "tenant_scan_completed tenant=%s run_id=%s duration=%ss "
             "users_scanned=%d at_risk_users=%d emails_queued=%d "
-            "score_duration=%ss recovery_duration=%ss",
-            tenant_id, run_id, total_duration, total_users_scanned, 
-            total_at_risk_users, total_emails_queued, 
-            round(score_duration_total, 2), round(recovery_duration_total, 2)
+            "score_duration=%ss recovery_duration=%ss timed_out=%s",
+            tenant_id,
+            run_id,
+            total_duration,
+            total_users_scanned,
+            total_at_risk_users,
+            total_emails_queued,
+            round(score_duration_total, 2),
+            round(recovery_duration_total, 2),
+            timed_out,
         )
 
     # ---------------------------------------------------------
@@ -264,12 +391,22 @@ class PipelineOrchestrator:
 
     def _yield_users_in_batches(
         self,
-        tenant_id: str
+        tenant_id: str,
     ) -> Generator[List[Dict[str, Any]], None, None]:
         """
         Streams users in batches using a deterministic keyset cursor.
+        The cursor field must be immutable and indexed; non-unique cursor fields
+        are stabilized with a secondary `id` ordering to prevent pagination drift.
         """
+        cursor_field = self.user_profile_cursor_field
+        use_tiebreaker = cursor_field != "id"
         cursor_value = None
+        cursor_id = None
+
+        if USER_BATCH_SIZE <= 0:
+            logger.warning("user_batch_size_invalid size=%d fallback=1", USER_BATCH_SIZE)
+
+        batch_limit = USER_BATCH_SIZE if USER_BATCH_SIZE > 0 else 1
 
         while True:
             query = (
@@ -277,12 +414,32 @@ class PipelineOrchestrator:
                 .table("user_profiles")
                 .select("*")
                 .eq("tenant_id", tenant_id)
-                .order(USER_PROFILE_CURSOR_FIELD, desc=False)
-                .limit(USER_BATCH_SIZE)
+                .order(cursor_field, desc=False)
             )
 
+            if use_tiebreaker:
+                query = query.order("id", desc=False)
+
+            query = query.limit(batch_limit)
+
             if cursor_value is not None:
-                query = query.gt(USER_PROFILE_CURSOR_FIELD, cursor_value)
+                if use_tiebreaker:
+                    if cursor_id is None:
+                        logger.warning(
+                            "user_profile_cursor_missing_tiebreaker tenant=%s field=%s",
+                            tenant_id,
+                            cursor_field,
+                        )
+                        break
+
+                    cursor_value_filter = _format_postgrest_value(cursor_value)
+                    cursor_id_filter = _format_postgrest_value(cursor_id)
+                    query = query.or_(
+                        f"{cursor_field}.gt.{cursor_value_filter},"
+                        f"and({cursor_field}.eq.{cursor_value_filter},id.gt.{cursor_id_filter})"
+                    )
+                else:
+                    query = query.gt(cursor_field, cursor_value)
 
             resp = query.execute()
             users = resp.data or []
@@ -292,22 +449,29 @@ class PipelineOrchestrator:
 
             yield users
 
-            last_value = users[-1].get(USER_PROFILE_CURSOR_FIELD)
-            if not last_value:
+            last_value = users[-1].get(cursor_field)
+            last_id = users[-1].get("id")
+
+            if last_value is None or (use_tiebreaker and last_id is None):
                 logger.warning(
                     "user_profile_cursor_missing tenant=%s field=%s",
-                    tenant_id, USER_PROFILE_CURSOR_FIELD
+                    tenant_id,
+                    cursor_field,
                 )
                 break
 
-            if last_value == cursor_value:
+            if cursor_value is not None and last_value == cursor_value and last_id == cursor_id:
                 logger.warning(
-                    "user_profile_cursor_stalled tenant=%s field=%s value=%s",
-                    tenant_id, USER_PROFILE_CURSOR_FIELD, cursor_value
+                    "user_profile_cursor_stalled tenant=%s field=%s value=%s id=%s",
+                    tenant_id,
+                    cursor_field,
+                    cursor_value,
+                    cursor_id,
                 )
                 break
 
             cursor_value = last_value
+            cursor_id = last_id
 
 
 # ============================================================================
@@ -317,115 +481,163 @@ class PipelineOrchestrator:
 class OutboxDispatcher:
     """
     Arcli Outbox Poller (The Bridge)
-    
+
     Responsibilities:
-    - Sweep the `recovery_emails` table for new intents generated by Next.js or the Daily Pipeline.
-    - Optimistically lock the rows to prevent duplicate queueing across multiple workers.
+    - Sweep the `recovery_emails` outbox for new intents generated by Next.js or the Daily Pipeline.
+    - Claim rows via the SQL RPC (SKIP LOCKED + leases) for safe multi-worker concurrency.
     - Push the safely claimed rows into Dramatiq for async delivery.
     """
 
-    def __init__(self, db_client):
+    def __init__(self, db_client) -> None:
         self.db = db_client
 
-    def poll_and_dispatch(self, batch_size: int = 100):
+    def poll_and_dispatch(self, batch_size: int = 100) -> None:
         """
         Polls the outbox. Should be run frequently (e.g., every 10-30 seconds via cron/loop).
         """
         logger.info("outbox_dispatcher_started batch_size=%d", batch_size)
-        start_time = time.time()
-        lease_cutoff = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        lease_expiration = (
-            datetime.now(timezone.utc) + timedelta(minutes=15)
-        ).isoformat().replace("+00:00", "Z")
+        start_time = time.monotonic()
 
-        try:
-            # 1. Fetch unassigned queued jobs
-            resp = (
-                self.db.table("recovery_emails")
-                .select("id, tenant_id, user_id, campaign_type, email, message_key")
-                .or_(
-                    f"status.eq.queued,and(status.eq.processing,lease_expires_at.lt.{lease_cutoff})"
-                )
-                .order("queued_at", desc=False)
-                .limit(batch_size)
-                .execute()
-            )
+        rows = _claim_outbox_batch(self.db, batch_size)
+        if not rows:
+            return
 
-            jobs = resp.data or []
-            if not jobs:
-                return
+        dispatched_count = 0
 
-            dispatched_count = 0
+        for row in rows:
+            send_id = row.id
+            tenant_id = row.tenant_id
+            dispatch_token = row.dispatch_token
+            dispatch_attempt = row.dispatch_attempt
 
-            for job in jobs:
-                send_id = job["id"]
-                tenant_id = job["tenant_id"]
-                user_id = job.get("user_id")
-                campaign_type = job.get("campaign_type")
-                email = job.get("email")
-
-                message_key = job.get("message_key")
-                if not message_key:
-                    message_key = _build_message_key(
-                        tenant_id,
-                        user_id,
-                        campaign_type,
-                        email,
-                    )
-
-                if not message_key:
-                    logger.warning(
-                        "outbox_dispatcher_missing_message_key tenant=%s send_id=%s",
-                        tenant_id,
-                        send_id,
-                    )
-                    continue
-
-                # 2. Atomic Claim (Optimistic Locking)
-                # We transition from 'queued' to 'processing'.
-                # The explicit .eq("status", "queued") ensures that if another worker
-                # picked this row a millisecond ago, our update returns 0 rows.
-                claim_resp = (
-                    self.db.table("recovery_emails")
-                    .update(
-                        {
-                            "status": "processing",
-                            "message_key": message_key,
-                            "lease_expires_at": lease_expiration,
-                        }
-                    )
-                    .eq("id", send_id)
-                    .or_(
-                        f"status.eq.queued,and(status.eq.processing,lease_expires_at.lt.{lease_cutoff})"
-                    )
-                    .execute()
+            try:
+                send_recovery_email.send(
+                    tenant_id=tenant_id,
+                    send_id=send_id,
+                    dispatch_token=dispatch_token,
+                    dispatch_attempt=dispatch_attempt,
                 )
 
-                # 3. Handoff to Queue
-                # Only dispatch if the claim actually modified the row
-                if claim_resp.data:
-                    send_recovery_email.send(tenant_id=tenant_id, send_id=send_id)
-                    dispatched_count += 1
+                self.db.table(RECOVERY_EMAIL_TABLE).update({
+                    "status": RecoveryStatus.DISPATCHED_TO_QUEUE.value,
+                    "dispatched_at": datetime.now(timezone.utc).isoformat(),
+                    "dispatch_token": dispatch_token,
+                    "dispatch_attempt": dispatch_attempt,
+                    "last_error": None,
+                }).eq("id", send_id).execute()
 
-            duration = round(time.time() - start_time, 2)
-            logger.info(
-                "outbox_dispatcher_completed dispatched=%d duration=%ss", 
-                dispatched_count, duration
-            )
+                dispatched_count += 1
 
-        except Exception:
-            logger.exception("outbox_dispatcher_failed")
+            except Exception as exc:
+                logger.error(
+                    "outbox_dispatcher_dispatch_failed tenant=%s send_id=%s attempt=%d",
+                    tenant_id,
+                    send_id,
+                    dispatch_attempt,
+                )
+                _handle_dispatch_failure(self.db, send_id, dispatch_attempt, str(exc))
+
+        duration = round(time.monotonic() - start_time, 2)
+        METRICS.increment("outbox.dispatched", dispatched_count)
+        METRICS.timing("outbox.duration", duration)
+
+        logger.info(
+            "outbox_dispatcher_completed dispatched=%d duration=%ss",
+            dispatched_count,
+            duration,
+        )
+
+        apply_outbox_backpressure(dispatched_count, batch_size)
 
 
-def _build_message_key(
+def _claim_outbox_batch(db_client, limit: int) -> List[OutboxClaimRow]:
+    try:
+        resp = db_client.rpc(OUTBOX_CLAIM_RPC, {"p_limit": limit}).execute()
+    except Exception:
+        logger.exception("outbox_claim_failed")
+        METRICS.increment("outbox.claim_failed", 1)
+        return []
+
+    rows_data = resp.data
+    if isinstance(rows_data, dict):
+        rows_data = rows_data.get("rows", [])
+
+    try:
+        return _outbox_claim_adapter.validate_python(rows_data)
+    except ValidationError:
+        logger.exception("outbox_claim_invalid_response")
+        METRICS.increment("outbox.claim_invalid", 1)
+        return []
+
+
+def _handle_dispatch_failure(db_client, send_id: str, attempt: int, error_msg: str) -> None:
+    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=_dispatch_backoff_seconds(attempt))).isoformat()
+    try:
+        db_client.table(RECOVERY_EMAIL_TABLE).update({
+            "status": RecoveryStatus.DISPATCH_FAILED.value,
+            "failure_stage": "dispatch",
+            "dispatch_attempt": attempt,
+            "next_retry_at": next_retry,
+            "last_error": error_msg[:500],
+        }).eq("id", send_id).execute()
+    except Exception:
+        logger.exception("outbox_dispatcher_dlq_update_failed send_id=%s", send_id)
+
+
+def _dispatch_backoff_seconds(attempt: int) -> int:
+    base = 15
+    backoff = base * (2 ** max(0, attempt - 1))
+    return min(backoff, 900)
+
+
+def _normalize_cursor_field(raw_field: str) -> str:
+    field = (raw_field or "").strip()
+    return field if field else "id"
+
+
+def _is_safe_column_name(name: str) -> bool:
+    if not name:
+        return False
+    return name.replace("_", "").isalnum()
+
+
+def _format_postgrest_value(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    safe = str(value).replace('"', '\\"')
+    return f"\"{safe}\""
+
+
+def _apply_pipeline_backpressure(
+    batch_duration: float,
+    batch_size: int,
     tenant_id: str,
-    user_id: str,
-    campaign_type: str,
-    email: str,
-) -> str:
-    if not tenant_id or not user_id or not campaign_type or not email:
-        return ""
+    run_id: str,
+) -> None:
+    if PIPELINE_BATCH_TARGET_DURATION_SEC <= 0:
+        return
+    if batch_duration >= PIPELINE_BATCH_TARGET_DURATION_SEC:
+        return
 
-    normalized_email = str(email).strip().lower()
-    raw = f"{tenant_id}:{user_id}:{campaign_type}:{normalized_email}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    fullness = min(1.0, batch_size / max(1, USER_BATCH_SIZE))
+    sleep_for = (PIPELINE_BATCH_TARGET_DURATION_SEC - batch_duration) * fullness
+    sleep_for = min(PIPELINE_BATCH_MAX_SLEEP_SEC, max(PIPELINE_BATCH_MIN_SLEEP_SEC, sleep_for))
+
+    if sleep_for <= 0:
+        return
+
+    logger.debug(
+        "pipeline_backpressure_sleep tenant=%s run_id=%s sleep=%ss batch_duration=%ss batch_size=%d",
+        tenant_id,
+        run_id,
+        round(sleep_for, 3),
+        round(batch_duration, 3),
+        batch_size,
+    )
+    time.sleep(sleep_for)
+
+
