@@ -5,18 +5,19 @@ import { ArrowRight, Shield, Lock, CheckCircle2 } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
+// Updated to reflect actual Arcli data sources: Billing, Support, Activity, and Delivery.
 const integrations = [
-  "PostgreSQL",
-  "Snowflake",
   "Stripe",
-  "Shopify",
-  "Salesforce",
-  "Google BigQuery",
-  "MySQL",
-  "AWS Redshift",
-  "S3 Parquet",
-  "DuckDB",
-  "Google Analytics 4"
+  "Paddle",
+  "Lemon Squeezy",
+  "Zendesk",
+  "Intercom",
+  "Mixpanel",
+  "Amplitude",
+  "Segment",
+  "Resend",
+  "Postmark",
+  "Custom Webhooks"
 ];
 
 export function IntegrationsAndSecurity() {
@@ -32,11 +33,10 @@ export function IntegrationsAndSecurity() {
         {/* Header Block */}
         <div className={`fu ${vis ? "vis" : ""}`} style={{ textAlign: "center", marginBottom: 60 }}>
           <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 48px)", color: C.navy, marginBottom: 18, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Connect your customer data. Secure your retention.
+            Connect billing signals. Automate retention.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 17, maxWidth: 660, margin: "0 auto", lineHeight: 1.62 }}>
-            No engineering tickets or ETL pipelines required. Arcli securely authenticates with your tools 
-            and maps user behavior for instant churn analysis and retention-ready insights.
+            No heavy ETL pipelines required. Arcli securely ingests your payment lifecycle events and app activity via simple webhooks to drive deterministic recovery queues.
           </p>
         </div>
 
@@ -80,7 +80,7 @@ export function IntegrationsAndSecurity() {
             </div>
           ))}
           <div style={{ height: 40, padding: "0 14px", border: "1px dashed rgba(0,0,0,0.2)", borderRadius: 8, fontWeight: 600, color: C.faint, fontSize: 14, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-            + Custom Connectors
+            + Custom API Specs
           </div>
         </div>
 
@@ -122,12 +122,11 @@ export function IntegrationsAndSecurity() {
             <Lock size={16} color={C.navy} style={{ marginBottom: 12 }} />
             <h3 className="pfd" style={{ fontSize: 24, color: C.navy, marginBottom: 14, fontWeight: 600, lineHeight: 1.1 }}>Infrastructure Guardrails</h3>
             <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* Added curly braces here to evaluate the JavaScript expression */}
               {[
                 "SOC2 Type II & GDPR Compliant",
-                "Zero PII Ingestion or Retention",
-                "Automated Data Masking & Hashing",
-                "Strict Tenant Isolation",
+                "Strict Multi-Tenant Data Isolation",
+                "Idempotent Campaign Queueing",
+                "Zero PII Deep Storage",
                 "Read-Only API Architecture",
                 "Immutable Audit Logging"
               ].map((item, i) => (
