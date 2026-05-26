@@ -3,14 +3,20 @@ import os
 import time
 import uuid
 from datetime import datetime, timezone, timedelta
-from enum import StrEnum
 from typing import Generator, List, Dict, Any, Optional
 
-from pydantic import BaseModel, Field, ValidationError, TypeAdapter
-
+from api.recovery_common import (
+    ClaimOutcome,
+    FailureStage,
+    OutboxClaimRow,
+    RECOVERY_EMAIL_TABLE,
+    RecoveryStatus,
+    apply_outbox_backpressure,
+    claim_outbox_batch,
+    dispatch_backoff_seconds,
+)
 from api.services.churn_scoring_service import ChurnScoringService
-from api.services.recovery_engine import RecoveryAutomationEngine, ClaimOutcome, apply_outbox_backpressure
-from api.tasks import send_recovery_email
+from api.services.recovery_engine import RecoveryAutomationEngine
 
 logger = logging.getLogger("arcli_worker")
 
@@ -38,33 +44,7 @@ PIPELINE_BATCH_TARGET_DURATION_SEC = float(os.getenv("PIPELINE_BATCH_TARGET_DURA
 PIPELINE_BATCH_MIN_SLEEP_SEC = float(os.getenv("PIPELINE_BATCH_MIN_SLEEP_SEC", "0.02"))
 PIPELINE_BATCH_MAX_SLEEP_SEC = float(os.getenv("PIPELINE_BATCH_MAX_SLEEP_SEC", "0.4"))
 
-OUTBOX_BACKPRESSURE_BASE_SEC = float(os.getenv("OUTBOX_BACKPRESSURE_BASE_SEC", "0.05"))
-OUTBOX_BACKPRESSURE_MAX_SEC = float(os.getenv("OUTBOX_BACKPRESSURE_MAX_SEC", "0.3"))
-MAX_DISPATCH_RETRIES = int(os.getenv("RECOVERY_MAX_DISPATCH_RETRIES", "3"))
 
-RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
-OUTBOX_CLAIM_RPC = os.getenv("RECOVERY_OUTBOX_CLAIM_RPC", "claim_outbox_batch")
-
-
-class RecoveryStatus(StrEnum):
-    PENDING_DISPATCH = "pending_dispatch"
-    DISPATCH_CLAIMED = "dispatch_claimed"
-    DISPATCHED_TO_QUEUE = "dispatched_to_queue"
-    PROVIDER_ACCEPTED = "provider_accepted"
-    DELIVERED = "delivered"
-    DISPATCH_FAILED = "dispatch_failed"
-    DEAD_LETTERED = "dead_lettered"
-
-
-class OutboxClaimRow(BaseModel):
-    id: str
-    tenant_id: str
-    dispatch_token: str
-    dispatch_attempt: int = Field(..., ge=1)
-    retry_count: Optional[int] = None
-
-
-_outbox_claim_adapter = TypeAdapter(List[OutboxClaimRow])
 
 # ---------------------------------------------------------
 # PIPELINE ORCHESTRATOR
@@ -502,6 +482,8 @@ class OutboxDispatcher:
         if not rows:
             return
 
+        from api.tasks import send_recovery_email
+
         dispatched_count = 0
 
         for row in rows:
@@ -538,8 +520,8 @@ class OutboxDispatcher:
                 _handle_dispatch_failure(self.db, send_id, dispatch_attempt, str(exc))
 
         duration = round(time.monotonic() - start_time, 2)
-        METRICS.increment("outbox.dispatched", dispatched_count)
-        METRICS.timing("outbox.duration", duration)
+        METRICS.increment("recovery.outbox.dispatched", dispatched_count)
+        METRICS.timing("recovery.outbox.duration", duration)
 
         logger.info(
             "outbox_dispatcher_completed dispatched=%d duration=%ss",
@@ -551,43 +533,29 @@ class OutboxDispatcher:
 
 
 def _claim_outbox_batch(db_client, limit: int) -> List[OutboxClaimRow]:
-    try:
-        resp = db_client.rpc(OUTBOX_CLAIM_RPC, {"p_limit": limit}).execute()
-    except Exception:
-        logger.exception("outbox_claim_failed")
-        METRICS.increment("outbox.claim_failed", 1)
-        return []
-
-    rows_data = resp.data
-    if isinstance(rows_data, dict):
-        rows_data = rows_data.get("rows", [])
-
-    try:
-        return _outbox_claim_adapter.validate_python(rows_data)
-    except ValidationError:
-        logger.exception("outbox_claim_invalid_response")
-        METRICS.increment("outbox.claim_invalid", 1)
-        return []
+    return claim_outbox_batch(
+        db_client,
+        limit,
+        logger_obj=logger,
+        log_label="outbox_claim_failed",
+        invalid_log_label="outbox_claim_invalid_response",
+        on_error=lambda: METRICS.increment("recovery.outbox.claim_failed", 1),
+        on_invalid=lambda: METRICS.increment("recovery.outbox.claim_invalid", 1),
+    )
 
 
 def _handle_dispatch_failure(db_client, send_id: str, attempt: int, error_msg: str) -> None:
-    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=_dispatch_backoff_seconds(attempt))).isoformat()
+    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=dispatch_backoff_seconds(attempt))).isoformat()
     try:
         db_client.table(RECOVERY_EMAIL_TABLE).update({
             "status": RecoveryStatus.DISPATCH_FAILED.value,
-            "failure_stage": "dispatch",
+            "failure_stage": FailureStage.DISPATCH.value,
             "dispatch_attempt": attempt,
             "next_retry_at": next_retry,
             "last_error": error_msg[:500],
         }).eq("id", send_id).execute()
     except Exception:
         logger.exception("outbox_dispatcher_dlq_update_failed send_id=%s", send_id)
-
-
-def _dispatch_backoff_seconds(attempt: int) -> int:
-    base = 15
-    backoff = base * (2 ** max(0, attempt - 1))
-    return min(backoff, 900)
 
 
 def _normalize_cursor_field(raw_field: str) -> str:

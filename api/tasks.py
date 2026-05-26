@@ -11,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 import resend
 from supabase import create_client, Client
 
+from api.recovery_common import FailureStage, RECOVERY_EMAIL_TABLE, RecoveryStatus
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +40,6 @@ else:
 FROM_EMAIL = os.getenv("RECOVERY_EMAIL_FROM", "Arcli <noreply@arcli.tech>")
 APP_BASE_URL = os.getenv("APP_BASE_URL", "https://arcli.tech")
 
-RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
 RECOVERY_DLQ_TABLE = os.getenv("RECOVERY_DLQ_TABLE", "recovery_email_dlq")
 RECOVERY_EMAIL_EVENTS_TABLE = os.getenv("RECOVERY_EMAIL_EVENTS_TABLE", "recovery_email_events")
 RECOVERY_DISPATCH_TOKEN_RPC = os.getenv(
@@ -48,23 +49,6 @@ RECOVERY_DISPATCH_TOKEN_RPC = os.getenv(
 
 MAX_SEND_ATTEMPTS = int(os.getenv("RECOVERY_MAX_SEND_ATTEMPTS", "5"))
 RETRY_BACKOFF_SECONDS = int(os.getenv("RECOVERY_RETRY_BACKOFF_SECONDS", "300"))
-
-
-class RecoveryStatus(StrEnum):
-    PENDING_DISPATCH = "pending_dispatch"
-    DISPATCH_CLAIMED = "dispatch_claimed"
-    DISPATCHED_TO_QUEUE = "dispatched_to_queue"
-    PROVIDER_ACCEPTED = "provider_accepted"
-    DELIVERED = "delivered"
-    DISPATCH_FAILED = "dispatch_failed"
-    DEAD_LETTERED = "dead_lettered"
-
-
-class FailureStage(StrEnum):
-    DISPATCH = "dispatch"
-    PROVIDER = "provider"
-    COOLDOWN = "cooldown"
-    VALIDATION = "validation"
 
 
 class ProviderSendStatus(StrEnum):

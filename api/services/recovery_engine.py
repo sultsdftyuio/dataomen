@@ -8,7 +8,16 @@ from typing import Dict, Any, Optional, List
 
 from pydantic import BaseModel, EmailStr, Field, ValidationError, TypeAdapter
 
-from api.tasks import send_recovery_email
+from api.recovery_common import (
+    ClaimOutcome,
+    FailureStage,
+    OutboxClaimRow,
+    RECOVERY_EMAIL_TABLE,
+    RecoveryStatus,
+    apply_outbox_backpressure,
+    claim_outbox_batch,
+    dispatch_backoff_seconds,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,39 +39,14 @@ COOLDOWN_DAYS = int(os.getenv("RECOVERY_COOLDOWN_DAYS", "7"))
 MAX_SENDS_PER_TENANT_PER_HOUR = int(os.getenv("RECOVERY_MAX_SENDS_PER_TENANT_PER_HOUR", "0"))
 RECOVERY_QUOTA_WINDOW_SEC = int(os.getenv("RECOVERY_QUOTA_WINDOW_SEC", "3600"))
 
-RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
-OUTBOX_BACKPRESSURE_BASE_SEC = float(os.getenv("OUTBOX_BACKPRESSURE_BASE_SEC", "0.05"))
-OUTBOX_BACKPRESSURE_MAX_SEC = float(os.getenv("OUTBOX_BACKPRESSURE_MAX_SEC", "0.3"))
-
 RECOVERY_BULK_DISPATCH_RPC = os.getenv(
     "RECOVERY_BULK_DISPATCH_RPC",
     "bulk_dispatch_recovery_candidates",
 )
-OUTBOX_CLAIM_RPC = os.getenv("RECOVERY_OUTBOX_CLAIM_RPC", "claim_outbox_batch")
 
 # =============================================================================
 # TYPES & ENUMS
 # =============================================================================
-class RecoveryStatus(StrEnum):
-    PENDING_DISPATCH = "pending_dispatch"
-    DISPATCH_CLAIMED = "dispatch_claimed"
-    DISPATCHED_TO_QUEUE = "dispatched_to_queue"
-    PROVIDER_ACCEPTED = "provider_accepted"
-    DELIVERED = "delivered"
-    DISPATCH_FAILED = "dispatch_failed"
-    DEAD_LETTERED = "dead_lettered"
-
-
-class ClaimOutcome(StrEnum):
-    CLAIMED = "claimed"
-    COOLDOWN = "cooldown"
-    SUPPRESSED = "suppressed"
-    DUPLICATE = "duplicate"
-    INVALID = "invalid"
-    RATE_LIMITED = "rate_limited"
-    ERROR = "error"
-
-
 class RiskSignal(StrEnum):
     INACTIVITY = "inactivity"
     INVOICE_PAYMENT_FAILED = "invoice_payment_failed"
@@ -142,16 +126,7 @@ class BulkDispatchResponse(BaseModel):
     quota: Optional[QuotaCheckResponse] = None
 
 
-class OutboxClaimRow(BaseModel):
-    id: str
-    tenant_id: str
-    dispatch_token: str
-    dispatch_attempt: int = Field(..., ge=1)
-    retry_count: Optional[int] = None
-
-
 _bulk_dispatch_adapter = TypeAdapter(List[BulkDispatchResult])
-_outbox_claim_adapter = TypeAdapter(List[OutboxClaimRow])
 
 
 # =============================================================================
@@ -199,14 +174,13 @@ class RecoveryRepository:
         return _parse_bulk_dispatch_response(resp.data, tenant_id, run_id)
 
     def claim_outbox_batch(self, limit: int) -> List[OutboxClaimRow]:
-        try:
-            resp = self.db.rpc(OUTBOX_CLAIM_RPC, {"p_limit": limit}).execute()
-        except Exception:
-            logger.exception("recovery_outbox_claim_failed")
-            METRICS.increment("recovery.outbox.claim_failed", 1)
-            return []
-
-        return _parse_outbox_claim_response(resp.data)
+        return claim_outbox_batch(
+            self.db,
+            limit,
+            logger_obj=logger,
+            on_error=lambda: METRICS.increment("recovery.outbox.claim_failed", 1),
+            on_invalid=lambda: METRICS.increment("recovery.outbox.claim_invalid", 1),
+        )
 
 
 # =============================================================================
@@ -350,6 +324,8 @@ class OutboxDispatcher:
         if not rows:
             return
 
+        from api.tasks import send_recovery_email
+
         dispatched_count = 0
 
         for row in rows:
@@ -429,21 +405,6 @@ def _parse_bulk_dispatch_response(
             METRICS.increment("recovery.quota.invalid", 1, {"tenant": tenant_id})
 
     return BulkDispatchResponse(results=results, quota=quota)
-
-
-def _parse_outbox_claim_response(data: Any) -> List[OutboxClaimRow]:
-    rows_data = data
-    if isinstance(data, dict):
-        rows_data = data.get("rows", [])
-
-    try:
-        rows = _outbox_claim_adapter.validate_python(rows_data)
-    except ValidationError:
-        logger.exception("recovery_outbox_claim_invalid")
-        METRICS.increment("recovery.outbox.claim_invalid", 1)
-        return []
-
-    return rows
 
 
 def _convert_bulk_results(results: List[BulkDispatchResult]) -> List[RecoveryDecision]:
@@ -534,30 +495,14 @@ def _log_validation_failure(
     )
 
 
-def _dispatch_backoff_seconds(attempt: int) -> int:
-    base = 15
-    backoff = base * (2 ** max(0, attempt - 1))
-    return min(backoff, 900)
-
-
 def _mark_dispatch_failed(db_client, send_id: str, attempt: int, error: str) -> None:
-    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=_dispatch_backoff_seconds(attempt))).isoformat()
+    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=dispatch_backoff_seconds(attempt))).isoformat()
     try:
         db_client.table(RECOVERY_EMAIL_TABLE).update({
             "status": RecoveryStatus.DISPATCH_FAILED.value,
-            "failure_stage": "dispatch",
+            "failure_stage": FailureStage.DISPATCH.value,
             "next_retry_at": next_retry,
             "last_error": error[:500],
         }).eq("id", send_id).execute()
     except Exception:
         logger.exception("recovery_outbox_dispatch_failed_persist send_id=%s", send_id)
-
-
-def apply_outbox_backpressure(dispatched_count: int, limit: int) -> None:
-    if dispatched_count <= 0 or OUTBOX_BACKPRESSURE_BASE_SEC <= 0:
-        return
-    fullness = min(1.0, dispatched_count / max(1, limit))
-    sleep_for = OUTBOX_BACKPRESSURE_BASE_SEC * (1.0 + fullness)
-    sleep_for = min(OUTBOX_BACKPRESSURE_MAX_SEC, sleep_for)
-    if sleep_for > 0:
-        time.sleep(sleep_for)
