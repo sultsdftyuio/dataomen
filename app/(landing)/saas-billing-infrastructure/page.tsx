@@ -3,7 +3,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { Navbar } from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
-import { BrutalistCTA } from "@/components/landing/brutalist-cta";
+import { CTA } from "@/components/landing/cta";
 
 export const metadata: Metadata = {
   title: "Stripe Billing Infrastructure & Idempotent Webhooks | Arcli",
@@ -117,7 +117,7 @@ export default function SaasBillingInfrastructurePage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-slate-200 selection:bg-indigo-500/30 font-sans">
+    <div className="min-h-screen bg-white text-slate-900 selection:bg-blue-200/60 font-sans">
       <Navbar />
       
       {/* JSON-LD Schema Injection */}
@@ -131,26 +131,26 @@ export default function SaasBillingInfrastructurePage() {
       <main className="max-w-5xl mx-auto px-6 pt-32 pb-24 sm:pt-40 sm:pb-32">
         {/* 1. HERO SECTION */}
         <header className="mb-24 text-center sm:text-left">
-          <div className="inline-block px-3 py-1 mb-6 text-xs font-mono font-medium text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-full">
-            Idempotent Webhook Processing
+          <div className="inline-block px-3 py-1 mb-6 text-xs font-mono font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full">
+            Stripe Billing Pipeline
           </div>
-          <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-[1.1]">
-            Reliable Billing Infrastructure <br className="hidden sm:block" />
-            <span className="text-indigo-400">for SaaS Revenue Recovery.</span>
+          <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 mb-6 leading-[1.1]">
+            Idempotent Billing Infrastructure <br className="hidden sm:block" />
+            <span className="text-blue-700">for Stripe Events.</span>
           </h1>
-          <p className="text-lg sm:text-xl text-slate-400 leading-relaxed mb-10 max-w-3xl sm:mx-0 mx-auto">
-            Standard background queues optimize for throughput. Arcli optimizes for transactional correctness. Protect your MRR with infrastructure designed for effectively-once execution under severe webhook retry conditions.
+          <p className="text-lg sm:text-xl text-slate-600 leading-relaxed mb-10 max-w-3xl sm:mx-0 mx-auto">
+            Arcli turns at-least-once Stripe webhooks into effectively-once execution with idempotency keys, distributed locks, and queue isolation. Built for high-volume subscription systems.
           </p>
           <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4">
             <Link
               href="/calculate-mrr"
-              className="px-6 py-3 bg-white text-black font-semibold rounded-md hover:bg-slate-200 transition-colors"
+              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors"
             >
               Calculate Engineering ROI
             </Link>
             <Link
               href="/docs/architecture"
-              className="px-6 py-3 bg-transparent border border-slate-700 text-white font-semibold rounded-md hover:bg-slate-900 transition-colors"
+              className="px-6 py-3 bg-transparent border border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-100 transition-colors"
             >
               Read the Architecture Docs
             </Link>
@@ -159,113 +159,113 @@ export default function SaasBillingInfrastructurePage() {
 
         {/* 2. THE PROBLEM (Calm, Factual Narrative) */}
         <section className="mb-24 grid lg:grid-cols-2 gap-8">
-          <div className="border border-slate-800 bg-slate-900/50 rounded-2xl p-8 sm:p-10">
-            <h2 className="text-2xl font-bold text-white mb-4">
-              The Limits of Standard Queues
+          <div className="border border-slate-200 bg-slate-50 rounded-2xl p-8 sm:p-10">
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+              Where Standard Queues Break
             </h2>
-            <p className="text-slate-400 text-sm leading-relaxed mb-6">
-              Background workers like Sidekiq, Celery, or BullMQ are incredible tools for sending newsletters or processing images. However, Stripe webhooks utilize probabilistic, "at-least-once" delivery. If a standard queue lacks strict, database-level locking tied to billing state, concurrent retries will cause race conditions.
+            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+              Queues like Sidekiq, Celery, or BullMQ are great for best-effort jobs. Stripe webhooks are at-least-once. Without database-level state locks, concurrent retries collide and ordering breaks.
             </p>
-            <div className="text-indigo-400 font-mono text-sm border-l-2 border-indigo-500 pl-4">
+            <div className="text-blue-700 font-mono text-sm border-l-2 border-blue-500 pl-4">
               Arcli converts at-least-once webhooks into effectively-once execution.
             </div>
           </div>
 
-          <div className="border border-slate-800 bg-slate-900/50 rounded-2xl p-8 sm:p-10">
-            <h2 className="text-2xl font-bold text-white mb-4">
-              The Reality of Retry Storms
+          <div className="border border-slate-200 bg-slate-50 rounded-2xl p-8 sm:p-10">
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+              Retry Storms Create Duplicate State
             </h2>
-            <p className="text-slate-400 text-sm leading-relaxed mb-6">
-              When endpoints time out, Stripe automatically re-transmits payloads. If your infrastructure processes an <code>invoice.payment_failed</code> payload multiple times, your customers receive duplicate, overlapping dunning warnings. This breaks user trust and generates unnecessary support tickets.
+            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+              Timeouts trigger automatic retries. If <code>invoice.payment_failed</code> processes twice, customers receive overlapping dunning warnings and support volume spikes.
             </p>
-            <div className="text-indigo-400 font-mono text-sm border-l-2 border-indigo-500 pl-4">
-              Arcli is architected to isolate state, strongly minimizing duplicate processing.
+            <div className="text-blue-700 font-mono text-sm border-l-2 border-blue-500 pl-4">
+              Arcli isolates billing state to suppress duplicate processing.
             </div>
           </div>
         </section>
 
         {/* 3. ARCHITECTURE DEEP DIVE (Spaced out jargon) */}
         <section className="mb-32">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Architected for Effectively-Once Execution
+          <h2 className="text-3xl font-bold text-slate-900 mb-4">
+            Deterministic Execution, By Design
           </h2>
-          <p className="text-lg text-slate-400 mb-12 max-w-3xl">
-            We built Arcli to handle financial events safely, allowing your engineering team to focus on core product features instead of debugging webhook anomalies. Built for high-volume subscription platforms handling thousands of concurrent billing events.
+          <p className="text-lg text-slate-600 mb-12 max-w-3xl">
+            A simple pipeline: ingest fast, lock state, execute safely, and resume on failure. Designed for subscription platforms running thousands of concurrent billing events.
           </p>
 
           <div className="grid sm:grid-cols-3 gap-8">
-            <div className="p-8 bg-[#0d1117] border border-slate-800 rounded-xl">
-              <h3 className="text-xl font-bold text-white mb-3">1. Decoupled Ingestion</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Arcli quickly absorbs Stripe webhook storms, responding immediately to Stripe while asynchronously processing events. The payload is pushed to an isolated holding queue, protecting your primary database from load spikes.
+            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-3">1. Decoupled Ingestion</h3>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                Stripe webhook storms are acknowledged immediately while events move to an isolated queue that shields your primary database from load spikes.
               </p>
             </div>
 
-            <div className="p-8 bg-[#0d1117] border border-slate-800 rounded-xl">
-              <h3 className="text-xl font-bold text-white mb-3">2. Distributed Locking</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                Before evaluating state, Arcli generates an idempotency key from the Stripe event ID and request metadata, then applies a database mutex. This lock strongly mitigates the risk of concurrent worker execution during retry conditions.
+            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-3">2. Distributed Locking</h3>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                We generate idempotency keys from Stripe event metadata and apply a database mutex before any state transition.
               </p>
             </div>
 
-            <div className="p-8 bg-[#0d1117] border border-slate-800 rounded-xl">
-              <h3 className="text-xl font-bold text-white mb-3">3. Graceful Degradation</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">
-                If an email provider API experiences a network partition, Arcli safely routes the workflow to a dead-letter queue (DLQ). Recovery attempts pause securely and resume safely once the network stabilizes.
+            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-3">3. Graceful Degradation</h3>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                External timeouts route the workflow to a dead-letter queue with locks held so retries remain safe.
               </p>
             </div>
           </div>
         </section>
 
         {/* 4. THE COMMERCIAL REALITY (Build vs. Buy) */}
-        <section className="mb-24 bg-gradient-to-br from-slate-900 to-black border border-slate-800 rounded-2xl p-8 sm:p-12">
-          <h2 className="text-3xl font-bold text-white mb-8">The Economics of Billing Infrastructure</h2>
+        <section className="mb-24 bg-slate-50 border border-slate-200 rounded-2xl p-8 sm:p-12">
+          <h2 className="text-3xl font-bold text-slate-900 mb-8">The Economics of Billing Infrastructure</h2>
           <div className="grid sm:grid-cols-2 gap-12">
             <div>
-              <p className="text-slate-400 mb-6 leading-relaxed">
-                CTOs often face the "Build vs. Buy" decision for handling Stripe events. Building a robust, multi-tenant webhook consumer with strict idempotency and DLQs requires significant resource allocation:
+              <p className="text-slate-600 mb-6 leading-relaxed">
+                Building a multi-tenant Stripe consumer with strict idempotency and DLQs requires significant engineering time:
               </p>
-              <p className="text-slate-400 mb-6 leading-relaxed text-sm">
+              <p className="text-slate-600 mb-6 leading-relaxed text-sm">
                 Industry benchmarks estimate that many SaaS products lose roughly <strong>1-3% of MRR</strong> to involuntary churn from failed payments. At <strong>$150k MRR</strong>, that is about <strong>$1,500-$4,500/month</strong>, with a midpoint near <strong>$3,750/month</strong> in recoverable revenue.
               </p>
-              <ul className="space-y-4 text-slate-300 font-mono text-sm">
-                <li className="flex justify-between border-b border-slate-800 pb-2">
-                  <span>Engineering Time:</span> <span className="text-slate-100">~3 to 4 Sprints</span>
+              <ul className="space-y-4 text-slate-700 font-mono text-sm">
+                <li className="flex justify-between border-b border-slate-200 pb-2">
+                  <span>Engineering Time:</span> <span className="text-slate-900">~3 to 4 Sprints</span>
                 </li>
-                <li className="flex justify-between border-b border-slate-800 pb-2">
-                  <span>Resource Cost:</span> <span className="text-red-400">$15,000 - $25,000</span>
+                <li className="flex justify-between border-b border-slate-200 pb-2">
+                  <span>Resource Cost:</span> <span className="text-rose-600">$15,000 - $25,000</span>
                 </li>
-                <li className="flex justify-between border-b border-slate-800 pb-2">
-                  <span>Ongoing Maintenance:</span> <span className="text-slate-100">High</span>
+                <li className="flex justify-between border-b border-slate-200 pb-2">
+                  <span>Ongoing Maintenance:</span> <span className="text-slate-900">High</span>
                 </li>
               </ul>
             </div>
-            <div className="bg-indigo-500/10 border border-indigo-500/30 p-6 rounded-xl flex flex-col justify-center">
-              <h3 className="text-indigo-400 font-bold mb-4 font-mono text-sm">The "Buy" Math</h3>
-              <p className="text-sm text-slate-300 mb-4">While waiting months to build and test this internally, a SaaS generating $150k MRR can lose <strong>$1,500-$4,500 each month</strong> from avoidable failed-payment churn.</p>
-              <div className="text-xl text-white font-medium">
-                Buying dedicated infrastructure pays for itself within the first 30 days of recovered MRR.
+            <div className="bg-blue-50 border border-blue-200 p-6 rounded-xl flex flex-col justify-center">
+              <h3 className="text-blue-700 font-bold mb-4 font-mono text-sm">The Payback Window</h3>
+              <p className="text-sm text-slate-700 mb-4">While waiting months to build and test internally, a SaaS generating $150k MRR can lose <strong>$1,500-$4,500 each month</strong> from avoidable failed-payment churn.</p>
+              <div className="text-xl text-slate-900 font-medium">
+                Dedicated infrastructure pays for itself within the first 30 days of recovered MRR.
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mb-24 bg-slate-100 text-slate-900 rounded-2xl p-8 sm:p-12 border border-slate-300">
+        <section className="mb-24 bg-slate-50 text-slate-900 rounded-2xl p-8 sm:p-12 border border-slate-200">
           <h2 className="text-3xl font-bold mb-8">Operational Snapshot</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
-            <div className="rounded-xl bg-white border border-slate-300 p-4">
+            <div className="rounded-xl bg-white border border-slate-200 p-4">
               <div className="text-2xl font-bold">1-3%</div>
               <p className="text-xs text-slate-600 mt-1">Typical involuntary churn range</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-300 p-4">
+            <div className="rounded-xl bg-white border border-slate-200 p-4">
               <div className="text-2xl font-bold">$1.5k-$4.5k</div>
               <p className="text-xs text-slate-600 mt-1">Monthly leakage at $150k MRR</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-300 p-4">
+            <div className="rounded-xl bg-white border border-slate-200 p-4">
               <div className="text-2xl font-bold">3-4 sprints</div>
               <p className="text-xs text-slate-600 mt-1">Typical in-house build timeline</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-300 p-4">
+            <div className="rounded-xl bg-white border border-slate-200 p-4">
               <div className="text-2xl font-bold">10 min</div>
               <p className="text-xs text-slate-600 mt-1">Fast webhook ingestion setup</p>
             </div>
@@ -273,22 +273,22 @@ export default function SaasBillingInfrastructurePage() {
 
           <h3 className="text-xl font-bold mb-4">How It Works</h3>
           <div className="grid lg:grid-cols-4 gap-3">
-            <div className="bg-white border border-slate-300 rounded-xl p-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
               <p className="text-xs font-mono text-slate-500 mb-1">Step 1</p>
               <p className="font-semibold">Ingest</p>
               <p className="text-sm text-slate-600">Receive Stripe event and verify signature.</p>
             </div>
-            <div className="bg-white border border-slate-300 rounded-xl p-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
               <p className="text-xs font-mono text-slate-500 mb-1">Step 2</p>
               <p className="font-semibold">Lock</p>
               <p className="text-sm text-slate-600">Apply idempotency key and distributed mutex.</p>
             </div>
-            <div className="bg-white border border-slate-300 rounded-xl p-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
               <p className="text-xs font-mono text-slate-500 mb-1">Step 3</p>
               <p className="font-semibold">Process</p>
               <p className="text-sm text-slate-600">Execute deterministic scoring and recovery logic.</p>
             </div>
-            <div className="bg-white border border-slate-300 rounded-xl p-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
               <p className="text-xs font-mono text-slate-500 mb-1">Step 4</p>
               <p className="font-semibold">Recover</p>
               <p className="text-sm text-slate-600">Handle retries safely or route to DLQ if needed.</p>
@@ -298,14 +298,14 @@ export default function SaasBillingInfrastructurePage() {
 
         {/* 5. CODE SNIPPET (Idempotency Proof) */}
         <section className="mb-32">
-          <h2 className="text-3xl font-bold text-white mb-8">
-            How Arcli Handles State Isolation
+          <h2 className="text-3xl font-bold text-slate-900 mb-8">
+            State Isolation Example
           </h2>
-          <div className="p-6 bg-[#0d1117] border border-slate-800 rounded-lg">
-            <div className="text-slate-500 mb-4 border-b border-slate-800 pb-2 font-mono text-sm">
+          <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="text-slate-500 mb-4 border-b border-slate-200 pb-2 font-mono text-sm">
               // Arcli Webhook Ingestion & Lock Strategy
             </div>
-            <pre className="text-slate-300 font-mono text-sm overflow-x-auto">
+            <pre className="text-slate-700 font-mono text-sm overflow-x-auto">
 {`export async function handleStripeEvent(req, res) {
   // 1. Ingest & verify signature instantly
   const event = stripe.webhooks.constructEvent(req.rawBody, signature, secret);
@@ -333,58 +333,58 @@ export default function SaasBillingInfrastructurePage() {
         </section>
 
         {/* 6. BELIEVABLE SOCIAL PROOF */}
-        <section className="mb-32 bg-slate-900 border border-slate-800 rounded-2xl p-8 sm:p-12 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5 text-9xl text-white font-serif">"</div>
-          <blockquote className="relative z-10 text-xl sm:text-2xl font-medium text-slate-300 leading-relaxed mb-8">
+        <section className="mb-32 bg-slate-50 border border-slate-200 rounded-2xl p-8 sm:p-12 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-10 text-9xl text-slate-200 font-serif">"</div>
+          <blockquote className="relative z-10 text-xl sm:text-2xl font-medium text-slate-700 leading-relaxed mb-8">
             "Before Arcli, our custom webhook ingestion script dropped payloads constantly during Stripe API latency spikes. Arcli replaced that fragile script with stable, observable infrastructure. Our engineers no longer have to debug state mismatches."
           </blockquote>
           <div className="relative z-10 flex items-center gap-4">
-            <div className="w-12 h-12 bg-slate-800 rounded-full border border-slate-700 flex items-center justify-center font-bold text-indigo-400">
+            <div className="w-12 h-12 bg-white rounded-full border border-slate-200 flex items-center justify-center font-bold text-blue-700">
               SL
             </div>
             <div>
-              <div className="text-white font-semibold">Staff Engineer</div>
+              <div className="text-slate-900 font-semibold">Staff Engineer</div>
               <div className="text-slate-500 text-sm">Series A SaaS • ~12k Active Subscriptions</div>
             </div>
           </div>
         </section>
 
         <section className="mb-32">
-          <h2 className="text-3xl font-bold text-white mb-6">Capability Comparison</h2>
-          <div className="overflow-x-auto border border-slate-800 rounded-xl">
+          <h2 className="text-3xl font-bold text-slate-900 mb-6">Capability Comparison</h2>
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
             <table className="w-full text-left text-sm">
-              <thead className="bg-slate-900 text-slate-200">
+              <thead className="bg-slate-50 text-slate-700">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Capability</th>
                   <th className="px-4 py-3 font-semibold">Generic Queue</th>
                   <th className="px-4 py-3 font-semibold">Arcli</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-slate-300">
+              <tbody className="divide-y divide-slate-200 text-slate-700">
                 <tr>
                   <td className="px-4 py-3">Stripe idempotency awareness</td>
                   <td className="px-4 py-3">No</td>
-                  <td className="px-4 py-3 text-emerald-400">Yes</td>
+                  <td className="px-4 py-3 text-emerald-600">Yes</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-3">Distributed billing locks</td>
                   <td className="px-4 py-3">Manual</td>
-                  <td className="px-4 py-3 text-emerald-400">Built-in</td>
+                  <td className="px-4 py-3 text-emerald-600">Built-in</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-3">DLQ handling</td>
                   <td className="px-4 py-3">Partial</td>
-                  <td className="px-4 py-3 text-emerald-400">Native</td>
+                  <td className="px-4 py-3 text-emerald-600">Native</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-3">Revenue attribution</td>
                   <td className="px-4 py-3">No</td>
-                  <td className="px-4 py-3 text-emerald-400">Yes</td>
+                  <td className="px-4 py-3 text-emerald-600">Yes</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-3">Multi-tenant isolation</td>
                   <td className="px-4 py-3">Manual</td>
-                  <td className="px-4 py-3 text-emerald-400">Built-in</td>
+                  <td className="px-4 py-3 text-emerald-600">Built-in</td>
                 </tr>
               </tbody>
             </table>
@@ -392,42 +392,42 @@ export default function SaasBillingInfrastructurePage() {
         </section>
 
         {/* 7. SEMANTIC INTERNAL LINKS */}
-        <section className="mb-32 grid sm:grid-cols-2 gap-12 border-t border-slate-800 pt-16">
+        <section className="mb-32 grid sm:grid-cols-2 gap-12 border-t border-slate-200 pt-16">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-4">
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">
               Deterministic Scoring
             </h2>
-            <p className="text-slate-400 leading-relaxed text-sm">
-              Once an event is safely ingested and locked, Arcli routes the payload to the <Link href="/saas-churn-risk-scoring" className="text-indigo-400 hover:underline">deterministic churn scoring engine</Link>. This ensures that recovery workflows are only triggered by explicit, observable facts, not opaque AI probabilities.
+            <p className="text-slate-600 leading-relaxed text-sm">
+              Once an event is safely ingested and locked, Arcli routes the payload to the <Link href="/saas-churn-risk-scoring" className="text-blue-700 hover:underline">deterministic churn scoring engine</Link>. Recovery workflows trigger on explicit, observable facts.
             </p>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white mb-4">
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">
               Dunning Orchestration
             </h2>
-            <p className="text-slate-400 leading-relaxed text-sm">
-              Effectively-once execution ensures that when a payment fails, the system triggers the appropriate <Link href="/saas-dunning-software" className="text-indigo-400 hover:underline">SaaS dunning workflow</Link> with strong safeguards against duplicate recovery messaging, protecting your brand reputation during recovery.
+            <p className="text-slate-600 leading-relaxed text-sm">
+              Effectively-once execution ensures that when a payment fails, the system triggers the appropriate <Link href="/saas-dunning-software" className="text-blue-700 hover:underline">SaaS dunning workflow</Link> with strong safeguards against duplicate recovery messaging.
             </p>
           </div>
         </section>
 
         {/* 8. FAQ SECTION */}
         <section className="mb-24">
-          <h2 className="text-3xl font-bold text-white border-b border-slate-800 pb-4 mb-12">
+          <h2 className="text-3xl font-bold text-slate-900 border-b border-slate-200 pb-4 mb-12">
             Infrastructure FAQ
           </h2>
           <div className="grid sm:grid-cols-2 gap-12">
             
             <div className="space-y-8">
               <div>
-                <h3 className="text-lg font-bold text-white mb-2">How does Arcli handle network partitions?</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">How does Arcli handle network partitions?</h3>
+                <p className="text-slate-600 text-sm leading-relaxed">
                   If an external API experiences a timeout, Arcli gracefully routes the workflow to a dead-letter queue (DLQ) while maintaining the distributed lock. This ensures the revenue recovery attempt is safely retried once the network stabilizes.
                 </p>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white mb-2">What makes this different from Celery or Sidekiq?</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">What makes this different from Celery or Sidekiq?</h3>
+                <p className="text-slate-600 text-sm leading-relaxed">
                   Standard background queues optimize for throughput. Arcli optimizes for state isolation and transactional correctness. We natively handle Stripe payload idempotency, ensuring execution is effectively-once.
                 </p>
               </div>
@@ -435,14 +435,14 @@ export default function SaasBillingInfrastructurePage() {
 
             <div className="space-y-8">
               <div>
-                <h3 className="text-lg font-bold text-white mb-2">How long does it take to implement?</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">How long does it take to implement?</h3>
+                <p className="text-slate-600 text-sm leading-relaxed">
                   You can connect your Stripe webhooks to Arcli's ingestion layer in under 10 minutes. Mapping tenant IDs and activating pre-configured recovery flows typically takes a single afternoon sprint.
                 </p>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white mb-2">Do we need to migrate our database to use Arcli?</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">
+                <h3 className="text-lg font-bold text-slate-900 mb-2">Do we need to migrate our database to use Arcli?</h3>
+                <p className="text-slate-600 text-sm leading-relaxed">
                   No. Arcli acts as an external state machine that sits alongside your existing stack. We do not require you to migrate your primary Postgres, user tables, or auth layers.
                 </p>
               </div>
@@ -453,12 +453,7 @@ export default function SaasBillingInfrastructurePage() {
       </main>
 
       {/* 9. BOTTOM CTA */}
-      <BrutalistCTA 
-        title="Stop building custom webhook handlers."
-        subtitle="Protect your engineering time and your MRR with dedicated billing infrastructure."
-        primaryActionText="Calculate Engineering ROI"
-        primaryActionUrl="/calculate-mrr"
-      />
+      <CTA />
 
       <Footer />
     </div>
