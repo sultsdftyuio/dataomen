@@ -4,6 +4,7 @@ import Script from "next/script";
 import { Navbar } from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
 import { CTA } from "@/components/landing/cta";
+import { C } from "@/lib/tokens";
 
 export const metadata: Metadata = {
   title: "Stripe Billing Infrastructure & Idempotent Webhooks | Arcli",
@@ -116,8 +117,18 @@ export default function SaasBillingInfrastructurePage() {
     ],
   };
 
+  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
+
   return (
-    <div className="min-h-screen bg-white text-slate-900 selection:bg-blue-200/60 font-sans">
+    <div
+      style={{
+        minHeight: "100vh",
+        background: C.white,
+        color: C.text,
+        fontFamily: "var(--font-geist-sans), sans-serif",
+      }}
+    >
       <Navbar />
       
       {/* JSON-LD Schema Injection */}
@@ -128,29 +139,80 @@ export default function SaasBillingInfrastructurePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <main className="max-w-5xl mx-auto px-6 pt-32 pb-24 sm:pt-40 sm:pb-32">
+      <main style={{ maxWidth: 1024, margin: "0 auto", padding: "140px 24px 120px" }}>
         {/* 1. HERO SECTION */}
-        <header className="mb-24 text-center sm:text-left">
-          <div className="inline-block px-3 py-1 mb-6 text-xs font-mono font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full">
+        <header style={{ marginBottom: 96, textAlign: "left" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              color: C.blue,
+              fontWeight: 700,
+              fontSize: 12,
+              marginBottom: 24,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              background: C.bluePale,
+              border: surfaceBorder,
+              padding: "4px 12px",
+              borderRadius: 999,
+              fontFamily: "monospace",
+            }}
+          >
             Stripe Billing Pipeline
           </div>
-          <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-slate-900 mb-6 leading-[1.1]">
-            Idempotent Billing Infrastructure <br className="hidden sm:block" />
-            <span className="text-blue-700">for Stripe Events.</span>
+          <h1
+            className="pfd"
+            style={{
+              fontSize: "clamp(36px, 5vw, 58px)",
+              fontWeight: 600,
+              color: C.navy,
+              marginBottom: 24,
+              lineHeight: 1.08,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Idempotent Billing Infrastructure <br />
+            <span style={{ color: C.blue }}>for Stripe Events.</span>
           </h1>
-          <p className="text-lg sm:text-xl text-slate-600 leading-relaxed mb-10 max-w-3xl sm:mx-0 mx-auto">
+          <p
+            style={{
+              fontSize: 18,
+              color: C.navySoft,
+              lineHeight: 1.7,
+              marginBottom: 40,
+              maxWidth: 760,
+            }}
+          >
             Arcli turns at-least-once Stripe webhooks into effectively-once execution with idempotency keys, distributed locks, and queue isolation. Built for high-volume subscription systems.
           </p>
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4">
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
             <Link
               href="/calculate-mrr"
-              className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors"
+              style={{
+                padding: "12px 20px",
+                background: C.blue,
+                color: C.white,
+                fontWeight: 700,
+                borderRadius: 8,
+                textDecoration: "none",
+                boxShadow: surfaceShadow,
+              }}
             >
               Calculate Engineering ROI
             </Link>
             <Link
               href="/docs/architecture"
-              className="px-6 py-3 bg-transparent border border-slate-300 text-slate-700 font-semibold rounded-md hover:bg-slate-100 transition-colors"
+              style={{
+                padding: "12px 20px",
+                background: "transparent",
+                color: C.navy,
+                fontWeight: 700,
+                borderRadius: 8,
+                border: surfaceBorder,
+                textDecoration: "none",
+              }}
             >
               Read the Architecture Docs
             </Link>
@@ -158,59 +220,82 @@ export default function SaasBillingInfrastructurePage() {
         </header>
 
         {/* 2. THE PROBLEM (Calm, Factual Narrative) */}
-        <section className="mb-24 grid lg:grid-cols-2 gap-8">
-          <div className="border border-slate-200 bg-slate-50 rounded-2xl p-8 sm:p-10">
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+        <section
+          style={{
+            marginBottom: 96,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 24,
+          }}
+        >
+          <div style={{ border: surfaceBorder, background: C.offWhite, borderRadius: 16, padding: "32px" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: C.navy, marginBottom: 16 }}>
               Where Standard Queues Break
             </h2>
-            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+            <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
               Queues like Sidekiq, Celery, or BullMQ are great for best-effort jobs. Stripe webhooks are at-least-once. Without database-level state locks, concurrent retries collide and ordering breaks.
             </p>
-            <div className="text-blue-700 font-mono text-sm border-l-2 border-blue-500 pl-4">
+            <div
+              style={{
+                color: C.blue,
+                fontFamily: "monospace",
+                fontSize: 13,
+                borderLeft: `2px solid ${C.blue}`,
+                paddingLeft: 12,
+              }}
+            >
               Arcli converts at-least-once webhooks into effectively-once execution.
             </div>
           </div>
 
-          <div className="border border-slate-200 bg-slate-50 rounded-2xl p-8 sm:p-10">
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+          <div style={{ border: surfaceBorder, background: C.offWhite, borderRadius: 16, padding: "32px" }}>
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: C.navy, marginBottom: 16 }}>
               Retry Storms Create Duplicate State
             </h2>
-            <p className="text-slate-600 text-sm leading-relaxed mb-6">
+            <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
               Timeouts trigger automatic retries. If <code>invoice.payment_failed</code> processes twice, customers receive overlapping dunning warnings and support volume spikes.
             </p>
-            <div className="text-blue-700 font-mono text-sm border-l-2 border-blue-500 pl-4">
+            <div
+              style={{
+                color: C.blue,
+                fontFamily: "monospace",
+                fontSize: 13,
+                borderLeft: `2px solid ${C.blue}`,
+                paddingLeft: 12,
+              }}
+            >
               Arcli isolates billing state to suppress duplicate processing.
             </div>
           </div>
         </section>
 
         {/* 3. ARCHITECTURE DEEP DIVE (Spaced out jargon) */}
-        <section className="mb-32">
-          <h2 className="text-3xl font-bold text-slate-900 mb-4">
+        <section style={{ marginBottom: 128 }}>
+          <h2 style={{ fontSize: 32, fontWeight: 700, color: C.navy, marginBottom: 16 }}>
             Deterministic Execution, By Design
           </h2>
-          <p className="text-lg text-slate-600 mb-12 max-w-3xl">
+          <p style={{ fontSize: 18, color: C.navySoft, marginBottom: 48, maxWidth: 760, lineHeight: 1.7 }}>
             A simple pipeline: ingest fast, lock state, execute safely, and resume on failure. Designed for subscription platforms running thousands of concurrent billing events.
           </p>
 
-          <div className="grid sm:grid-cols-3 gap-8">
-            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
-              <h3 className="text-xl font-bold text-slate-900 mb-3">1. Decoupled Ingestion</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 24 }}>
+            <div style={{ padding: 24, background: C.white, border: surfaceBorder, borderRadius: 12, boxShadow: surfaceShadow }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: C.navy, marginBottom: 12 }}>1. Decoupled Ingestion</h3>
+              <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.6 }}>
                 Stripe webhook storms are acknowledged immediately while events move to an isolated queue that shields your primary database from load spikes.
               </p>
             </div>
 
-            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
-              <h3 className="text-xl font-bold text-slate-900 mb-3">2. Distributed Locking</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">
+            <div style={{ padding: 24, background: C.white, border: surfaceBorder, borderRadius: 12, boxShadow: surfaceShadow }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: C.navy, marginBottom: 12 }}>2. Distributed Locking</h3>
+              <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.6 }}>
                 We generate idempotency keys from Stripe event metadata and apply a database mutex before any state transition.
               </p>
             </div>
 
-            <div className="p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
-              <h3 className="text-xl font-bold text-slate-900 mb-3">3. Graceful Degradation</h3>
-              <p className="text-slate-600 text-sm leading-relaxed">
+            <div style={{ padding: 24, background: C.white, border: surfaceBorder, borderRadius: 12, boxShadow: surfaceShadow }}>
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: C.navy, marginBottom: 12 }}>3. Graceful Degradation</h3>
+              <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.6 }}>
                 External timeouts route the workflow to a dead-letter queue with locks held so retries remain safe.
               </p>
             </div>
@@ -218,94 +303,106 @@ export default function SaasBillingInfrastructurePage() {
         </section>
 
         {/* 4. THE COMMERCIAL REALITY (Build vs. Buy) */}
-        <section className="mb-24 bg-slate-50 border border-slate-200 rounded-2xl p-8 sm:p-12">
-          <h2 className="text-3xl font-bold text-slate-900 mb-8">The Economics of Billing Infrastructure</h2>
-          <div className="grid sm:grid-cols-2 gap-12">
+        <section style={{ marginBottom: 96, background: C.offWhite, border: surfaceBorder, borderRadius: 16, padding: "32px" }}>
+          <h2 style={{ fontSize: 32, fontWeight: 700, color: C.navy, marginBottom: 32 }}>The Economics of Billing Infrastructure</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 32 }}>
             <div>
-              <p className="text-slate-600 mb-6 leading-relaxed">
+              <p style={{ color: C.navySoft, marginBottom: 24, lineHeight: 1.7 }}>
                 Building a multi-tenant Stripe consumer with strict idempotency and DLQs requires significant engineering time:
               </p>
-              <p className="text-slate-600 mb-6 leading-relaxed text-sm">
+              <p style={{ color: C.navySoft, marginBottom: 24, lineHeight: 1.7, fontSize: 14 }}>
                 Industry benchmarks estimate that many SaaS products lose roughly <strong>1-3% of MRR</strong> to involuntary churn from failed payments. At <strong>$150k MRR</strong>, that is about <strong>$1,500-$4,500/month</strong>, with a midpoint near <strong>$3,750/month</strong> in recoverable revenue.
               </p>
-              <ul className="space-y-4 text-slate-700 font-mono text-sm">
-                <li className="flex justify-between border-b border-slate-200 pb-2">
-                  <span>Engineering Time:</span> <span className="text-slate-900">~3 to 4 Sprints</span>
+              <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, padding: 0, margin: 0 }}>
+                <li style={{ display: "flex", justifyContent: "space-between", borderBottom: surfaceBorder, paddingBottom: 8, fontFamily: "monospace", fontSize: 13, color: C.navySoft }}>
+                  <span>Engineering Time:</span> <span style={{ color: C.navy }}>~3 to 4 Sprints</span>
                 </li>
-                <li className="flex justify-between border-b border-slate-200 pb-2">
-                  <span>Resource Cost:</span> <span className="text-rose-600">$15,000 - $25,000</span>
+                <li style={{ display: "flex", justifyContent: "space-between", borderBottom: surfaceBorder, paddingBottom: 8, fontFamily: "monospace", fontSize: 13, color: C.navySoft }}>
+                  <span>Resource Cost:</span> <span style={{ color: C.red }}>$15,000 - $25,000</span>
                 </li>
-                <li className="flex justify-between border-b border-slate-200 pb-2">
-                  <span>Ongoing Maintenance:</span> <span className="text-slate-900">High</span>
+                <li style={{ display: "flex", justifyContent: "space-between", borderBottom: surfaceBorder, paddingBottom: 8, fontFamily: "monospace", fontSize: 13, color: C.navySoft }}>
+                  <span>Ongoing Maintenance:</span> <span style={{ color: C.navy }}>High</span>
                 </li>
               </ul>
             </div>
-            <div className="bg-blue-50 border border-blue-200 p-6 rounded-xl flex flex-col justify-center">
-              <h3 className="text-blue-700 font-bold mb-4 font-mono text-sm">The Payback Window</h3>
-              <p className="text-sm text-slate-700 mb-4">While waiting months to build and test internally, a SaaS generating $150k MRR can lose <strong>$1,500-$4,500 each month</strong> from avoidable failed-payment churn.</p>
-              <div className="text-xl text-slate-900 font-medium">
+            <div
+              style={{
+                background: C.bluePale,
+                border: "1px solid rgba(27,110,191,0.2)",
+                padding: 24,
+                borderRadius: 12,
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+              }}
+            >
+              <h3 style={{ color: C.blue, fontWeight: 700, marginBottom: 16, fontFamily: "monospace", fontSize: 13 }}>The Payback Window</h3>
+              <p style={{ fontSize: 14, color: C.navy, marginBottom: 16, lineHeight: 1.6 }}>
+                While waiting months to build and test internally, a SaaS generating $150k MRR can lose <strong>$1,500-$4,500 each month</strong> from avoidable failed-payment churn.
+              </p>
+              <div style={{ fontSize: 20, color: C.navy, fontWeight: 600 }}>
                 Dedicated infrastructure pays for itself within the first 30 days of recovered MRR.
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mb-24 bg-slate-50 text-slate-900 rounded-2xl p-8 sm:p-12 border border-slate-200">
-          <h2 className="text-3xl font-bold mb-8">Operational Snapshot</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
-            <div className="rounded-xl bg-white border border-slate-200 p-4">
-              <div className="text-2xl font-bold">1-3%</div>
-              <p className="text-xs text-slate-600 mt-1">Typical involuntary churn range</p>
+        <section style={{ marginBottom: 96, background: C.offWhite, color: C.navy, borderRadius: 16, padding: "32px", border: surfaceBorder }}>
+          <h2 style={{ fontSize: 32, fontWeight: 700, marginBottom: 32 }}>Operational Snapshot</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 40 }}>
+            <div style={{ borderRadius: 12, background: C.white, border: surfaceBorder, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>1-3%</div>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Typical involuntary churn range</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-4">
-              <div className="text-2xl font-bold">$1.5k-$4.5k</div>
-              <p className="text-xs text-slate-600 mt-1">Monthly leakage at $150k MRR</p>
+            <div style={{ borderRadius: 12, background: C.white, border: surfaceBorder, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>$1.5k-$4.5k</div>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Monthly leakage at $150k MRR</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-4">
-              <div className="text-2xl font-bold">3-4 sprints</div>
-              <p className="text-xs text-slate-600 mt-1">Typical in-house build timeline</p>
+            <div style={{ borderRadius: 12, background: C.white, border: surfaceBorder, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>3-4 sprints</div>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Typical in-house build timeline</p>
             </div>
-            <div className="rounded-xl bg-white border border-slate-200 p-4">
-              <div className="text-2xl font-bold">10 min</div>
-              <p className="text-xs text-slate-600 mt-1">Fast webhook ingestion setup</p>
+            <div style={{ borderRadius: 12, background: C.white, border: surfaceBorder, padding: 16 }}>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>10 min</div>
+              <p style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Fast webhook ingestion setup</p>
             </div>
           </div>
 
-          <h3 className="text-xl font-bold mb-4">How It Works</h3>
-          <div className="grid lg:grid-cols-4 gap-3">
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs font-mono text-slate-500 mb-1">Step 1</p>
-              <p className="font-semibold">Ingest</p>
-              <p className="text-sm text-slate-600">Receive Stripe event and verify signature.</p>
+          <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>How It Works</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+            <div style={{ background: C.white, border: surfaceBorder, borderRadius: 12, padding: 16 }}>
+              <p style={{ fontSize: 12, fontFamily: "monospace", color: C.faint, marginBottom: 6 }}>Step 1</p>
+              <p style={{ fontWeight: 600 }}>Ingest</p>
+              <p style={{ fontSize: 14, color: C.muted }}>Receive Stripe event and verify signature.</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs font-mono text-slate-500 mb-1">Step 2</p>
-              <p className="font-semibold">Lock</p>
-              <p className="text-sm text-slate-600">Apply idempotency key and distributed mutex.</p>
+            <div style={{ background: C.white, border: surfaceBorder, borderRadius: 12, padding: 16 }}>
+              <p style={{ fontSize: 12, fontFamily: "monospace", color: C.faint, marginBottom: 6 }}>Step 2</p>
+              <p style={{ fontWeight: 600 }}>Lock</p>
+              <p style={{ fontSize: 14, color: C.muted }}>Apply idempotency key and distributed mutex.</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs font-mono text-slate-500 mb-1">Step 3</p>
-              <p className="font-semibold">Process</p>
-              <p className="text-sm text-slate-600">Execute deterministic scoring and recovery logic.</p>
+            <div style={{ background: C.white, border: surfaceBorder, borderRadius: 12, padding: 16 }}>
+              <p style={{ fontSize: 12, fontFamily: "monospace", color: C.faint, marginBottom: 6 }}>Step 3</p>
+              <p style={{ fontWeight: 600 }}>Process</p>
+              <p style={{ fontSize: 14, color: C.muted }}>Execute deterministic scoring and recovery logic.</p>
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-xs font-mono text-slate-500 mb-1">Step 4</p>
-              <p className="font-semibold">Recover</p>
-              <p className="text-sm text-slate-600">Handle retries safely or route to DLQ if needed.</p>
+            <div style={{ background: C.white, border: surfaceBorder, borderRadius: 12, padding: 16 }}>
+              <p style={{ fontSize: 12, fontFamily: "monospace", color: C.faint, marginBottom: 6 }}>Step 4</p>
+              <p style={{ fontWeight: 600 }}>Recover</p>
+              <p style={{ fontSize: 14, color: C.muted }}>Handle retries safely or route to DLQ if needed.</p>
             </div>
           </div>
         </section>
 
         {/* 5. CODE SNIPPET (Idempotency Proof) */}
-        <section className="mb-32">
-          <h2 className="text-3xl font-bold text-slate-900 mb-8">
+        <section style={{ marginBottom: 128 }}>
+          <h2 style={{ fontSize: 32, fontWeight: 700, color: C.navy, marginBottom: 32 }}>
             State Isolation Example
           </h2>
-          <div className="p-6 bg-slate-50 border border-slate-200 rounded-lg">
-            <div className="text-slate-500 mb-4 border-b border-slate-200 pb-2 font-mono text-sm">
+          <div style={{ padding: 24, background: C.offWhite, border: surfaceBorder, borderRadius: 12 }}>
+            <div style={{ color: C.faint, marginBottom: 16, borderBottom: surfaceBorder, paddingBottom: 8, fontFamily: "monospace", fontSize: 12 }}>
               // Arcli Webhook Ingestion & Lock Strategy
             </div>
-            <pre className="text-slate-700 font-mono text-sm overflow-x-auto">
+            <pre style={{ color: C.navySoft, fontFamily: "monospace", fontSize: 13, overflowX: "auto", margin: 0 }}>
 {`export async function handleStripeEvent(req, res) {
   // 1. Ingest & verify signature instantly
   const event = stripe.webhooks.constructEvent(req.rawBody, signature, secret);
@@ -333,58 +430,60 @@ export default function SaasBillingInfrastructurePage() {
         </section>
 
         {/* 6. BELIEVABLE SOCIAL PROOF */}
-        <section className="mb-32 bg-slate-50 border border-slate-200 rounded-2xl p-8 sm:p-12 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10 text-9xl text-slate-200 font-serif">"</div>
-          <blockquote className="relative z-10 text-xl sm:text-2xl font-medium text-slate-700 leading-relaxed mb-8">
+        <section style={{ marginBottom: 128, background: C.offWhite, border: surfaceBorder, borderRadius: 16, padding: "32px", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, right: 0, padding: 32, opacity: 0.1, fontSize: 96, color: C.ruleDark, fontFamily: "serif" }}>
+            "
+          </div>
+          <blockquote style={{ position: "relative", zIndex: 2, fontSize: "clamp(20px, 2.5vw, 26px)", fontWeight: 500, color: C.navySoft, lineHeight: 1.6, marginBottom: 32 }}>
             "Before Arcli, our custom webhook ingestion script dropped payloads constantly during Stripe API latency spikes. Arcli replaced that fragile script with stable, observable infrastructure. Our engineers no longer have to debug state mismatches."
           </blockquote>
-          <div className="relative z-10 flex items-center gap-4">
-            <div className="w-12 h-12 bg-white rounded-full border border-slate-200 flex items-center justify-center font-bold text-blue-700">
+          <div style={{ position: "relative", zIndex: 2, display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 48, height: 48, background: C.white, borderRadius: "50%", border: surfaceBorder, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: C.blue }}>
               SL
             </div>
             <div>
-              <div className="text-slate-900 font-semibold">Staff Engineer</div>
-              <div className="text-slate-500 text-sm">Series A SaaS • ~12k Active Subscriptions</div>
+              <div style={{ color: C.navy, fontWeight: 600 }}>Staff Engineer</div>
+              <div style={{ color: C.faint, fontSize: 14 }}>Series A SaaS • ~12k Active Subscriptions</div>
             </div>
           </div>
         </section>
 
-        <section className="mb-32">
-          <h2 className="text-3xl font-bold text-slate-900 mb-6">Capability Comparison</h2>
-          <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-700">
+        <section style={{ marginBottom: 128 }}>
+          <h2 style={{ fontSize: 32, fontWeight: 700, color: C.navy, marginBottom: 24 }}>Capability Comparison</h2>
+          <div style={{ overflowX: "auto", border: surfaceBorder, borderRadius: 12 }}>
+            <table style={{ width: "100%", textAlign: "left", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead style={{ background: C.offWhite, color: C.navySoft }}>
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Capability</th>
-                  <th className="px-4 py-3 font-semibold">Generic Queue</th>
-                  <th className="px-4 py-3 font-semibold">Arcli</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600 }}>Capability</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600 }}>Generic Queue</th>
+                  <th style={{ padding: "12px 16px", fontWeight: 600 }}>Arcli</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 text-slate-700">
+              <tbody style={{ color: C.navySoft }}>
                 <tr>
-                  <td className="px-4 py-3">Stripe idempotency awareness</td>
-                  <td className="px-4 py-3">No</td>
-                  <td className="px-4 py-3 text-emerald-600">Yes</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Stripe idempotency awareness</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>No</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder, color: C.green, fontWeight: 600 }}>Yes</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3">Distributed billing locks</td>
-                  <td className="px-4 py-3">Manual</td>
-                  <td className="px-4 py-3 text-emerald-600">Built-in</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Distributed billing locks</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Manual</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder, color: C.green, fontWeight: 600 }}>Built-in</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3">DLQ handling</td>
-                  <td className="px-4 py-3">Partial</td>
-                  <td className="px-4 py-3 text-emerald-600">Native</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>DLQ handling</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Partial</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder, color: C.green, fontWeight: 600 }}>Native</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3">Revenue attribution</td>
-                  <td className="px-4 py-3">No</td>
-                  <td className="px-4 py-3 text-emerald-600">Yes</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Revenue attribution</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>No</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder, color: C.green, fontWeight: 600 }}>Yes</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3">Multi-tenant isolation</td>
-                  <td className="px-4 py-3">Manual</td>
-                  <td className="px-4 py-3 text-emerald-600">Built-in</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Multi-tenant isolation</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder }}>Manual</td>
+                  <td style={{ padding: "12px 16px", borderTop: surfaceBorder, color: C.green, fontWeight: 600 }}>Built-in</td>
                 </tr>
               </tbody>
             </table>
@@ -392,57 +491,66 @@ export default function SaasBillingInfrastructurePage() {
         </section>
 
         {/* 7. SEMANTIC INTERNAL LINKS */}
-        <section className="mb-32 grid sm:grid-cols-2 gap-12 border-t border-slate-200 pt-16">
+        <section
+          style={{
+            marginBottom: 128,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: 48,
+            borderTop: surfaceBorder,
+            paddingTop: 64,
+          }}
+        >
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: C.navy, marginBottom: 16 }}>
               Deterministic Scoring
             </h2>
-            <p className="text-slate-600 leading-relaxed text-sm">
-              Once an event is safely ingested and locked, Arcli routes the payload to the <Link href="/saas-churn-risk-scoring" className="text-blue-700 hover:underline">deterministic churn scoring engine</Link>. Recovery workflows trigger on explicit, observable facts.
+            <p style={{ color: C.muted, lineHeight: 1.7, fontSize: 14 }}>
+              Once an event is safely ingested and locked, Arcli routes the payload to the <Link href="/saas-churn-risk-scoring" style={{ color: C.blue, textDecoration: "underline" }}>deterministic churn scoring engine</Link>. Recovery workflows trigger on explicit, observable facts.
             </p>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">
+            <h2 style={{ fontSize: 24, fontWeight: 700, color: C.navy, marginBottom: 16 }}>
               Dunning Orchestration
             </h2>
-            <p className="text-slate-600 leading-relaxed text-sm">
-              Effectively-once execution ensures that when a payment fails, the system triggers the appropriate <Link href="/saas-dunning-software" className="text-blue-700 hover:underline">SaaS dunning workflow</Link> with strong safeguards against duplicate recovery messaging.
+            <p style={{ color: C.muted, lineHeight: 1.7, fontSize: 14 }}>
+              Effectively-once execution ensures that when a payment fails, the system triggers the appropriate <Link href="/saas-dunning-software" style={{ color: C.blue, textDecoration: "underline" }}>SaaS dunning workflow</Link> with strong safeguards against duplicate recovery messaging.
             </p>
           </div>
         </section>
 
         {/* 8. FAQ SECTION */}
-        <section className="mb-24">
-          <h2 className="text-3xl font-bold text-slate-900 border-b border-slate-200 pb-4 mb-12">
+        <section style={{ marginBottom: 96 }}>
+          <h2 style={{ fontSize: 32, fontWeight: 700, color: C.navy, borderBottom: surfaceBorder, paddingBottom: 16, marginBottom: 48 }}>
             Infrastructure FAQ
           </h2>
-          <div className="grid sm:grid-cols-2 gap-12">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 48 }}>
             
-            <div className="space-y-8">
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
               <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">How does Arcli handle network partitions?</h3>
-                <p className="text-slate-600 text-sm leading-relaxed">
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: C.navy, marginBottom: 8 }}>How does Arcli handle network partitions?</h3>
+                <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>
                   If an external API experiences a timeout, Arcli gracefully routes the workflow to a dead-letter queue (DLQ) while maintaining the distributed lock. This ensures the revenue recovery attempt is safely retried once the network stabilizes.
                 </p>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">What makes this different from Celery or Sidekiq?</h3>
-                <p className="text-slate-600 text-sm leading-relaxed">
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: C.navy, marginBottom: 8 }}>What makes this different from Celery or Sidekiq?</h3>
+                <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>
                   Standard background queues optimize for throughput. Arcli optimizes for state isolation and transactional correctness. We natively handle Stripe payload idempotency, ensuring execution is effectively-once.
                 </p>
               </div>
             </div>
 
-            <div className="space-y-8">
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
               <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">How long does it take to implement?</h3>
-                <p className="text-slate-600 text-sm leading-relaxed">
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: C.navy, marginBottom: 8 }}>How long does it take to implement?</h3>
+                <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>
                   You can connect your Stripe webhooks to Arcli's ingestion layer in under 10 minutes. Mapping tenant IDs and activating pre-configured recovery flows typically takes a single afternoon sprint.
                 </p>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-2">Do we need to migrate our database to use Arcli?</h3>
-                <p className="text-slate-600 text-sm leading-relaxed">
+                <h3 style={{ fontSize: 18, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Do we need to migrate our database to use Arcli?</h3>
+                <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>
                   No. Arcli acts as an external state machine that sits alongside your existing stack. We do not require you to migrate your primary Postgres, user tables, or auth layers.
                 </p>
               </div>
