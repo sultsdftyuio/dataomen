@@ -10,7 +10,7 @@ import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
 import { AIAgents } from "@/components/landing/Aiagents";
 import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
-import { Testimonials } from "@/components/landing/Testimonials";
+import { Testimonials } from "@/components/landing/testimonials";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
 import Footer from "@/components/landing/footer";
