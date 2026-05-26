@@ -1,157 +1,85 @@
 "use client";
 
 import { CheckCircle2, ArrowRight, Play } from "lucide-react";
-import Link from "next/link";
+import { C } from "@/lib/tokens";
 
 export function CTA() {
   return (
     <section
-      className={`
-        relative 
-        overflow-hidden 
-        px-6 
-        py-28 
-        text-center 
-        text-white 
-        bg-gradient-to-br from-[#1B6EBF] to-[#0F4F91] 
-        border-t border-white/10 
-        font-sans
-      `}
+      style={{
+        padding: "120px 24px",
+        background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
+        textAlign: "center",
+        color: "#FFFFFF",
+        position: "relative",
+        overflow: "hidden",
+        borderTop: "1px solid rgba(255,255,255,0.16)",
+        fontFamily: "var(--font-geist-sans), sans-serif"
+      }}
     >
       {/* Subtle atmosphere accents */}
-      <div 
-        className={`
-          absolute 
-          -top-[10%] -left-[8%] 
-          w-[380px] h-[380px] 
-          rounded-full 
-          bg-[#3b9ae8]/30 
-          blur-[90px]
-        `} 
-      />
-      <div 
-        className={`
-          absolute 
-          -bottom-[12%] -right-[8%] 
-          w-[320px] h-[320px] 
-          rounded-full 
-          bg-[#635bff]/20 
-          blur-[80px]
-        `} 
-      />
+      <div style={{ position: "absolute", top: "-10%", left: "-8%", width: 380, height: 380, background: "rgba(59,154,232,0.28)", borderRadius: "50%", opacity: 0.9, filter: "blur(90px)" }} />
+      <div style={{ position: "absolute", bottom: "-12%", right: "-8%", width: 320, height: 320, background: "rgba(99,91,255,0.22)", borderRadius: "50%", opacity: 0.85, filter: "blur(80px)" }} />
 
-      <div 
-        className={`
-          relative 
-          z-10 
-          max-w-2xl 
-          mx-auto
-        `}
-      >
-        <h2 
-          className={`
-            mb-4 
-            text-4xl md:text-5xl 
-            font-semibold 
-            tracking-tight 
-            leading-tight
-          `}
-        >
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto" }}>
+        <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 54px)", marginBottom: 14, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
           Stop reacting to churn.<br />Start preventing it.
         </h2>
-        
-        <p 
-          className={`
-            mb-8 
-            text-lg 
-            text-white/90 
-            leading-relaxed
-          `}
-        >
-          Connect your billing data and launch your first automated recovery campaign in under 5 minutes.
+        <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
+          Connect your billing data and deploy your first automated recovery campaign in under 5 minutes.
         </p>
 
         {/* CTA buttons */}
-        <div 
-          className={`
-            flex 
-            flex-wrap 
-            justify-center 
-            gap-3 
-            mb-6
-          `}
-        >
-          <Link
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 22 }}>
+          <a
             href="/register"
-            className={`
-              inline-flex 
-              items-center 
-              gap-2 
-              px-4 
-              h-10 
-              text-sm 
-              font-semibold 
-              tracking-wide 
-              text-[#1B6EBF] 
-              bg-white 
-              border border-white/20 
-              rounded-lg 
-              shadow-sm 
-              hover:bg-gray-50 
-              transition-colors
-            `}
+            style={{
+              height: 40,
+              padding: "0 16px",
+              borderRadius: 8,
+              fontWeight: 600,
+              textDecoration: "none",
+              fontSize: 14,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "#FFFFFF",
+              color: C.blue,
+              letterSpacing: "0.02em",
+            }}
           >
             Start Saving Customers <ArrowRight size={14} />
-          </Link>
-          
-          <Link
+          </a>
+          <a
             href="#demo"
-            className={`
-              inline-flex 
-              items-center 
-              gap-2 
-              px-4 
-              h-10 
-              text-sm 
-              font-semibold 
-              tracking-wide 
-              text-white 
-              bg-white/10 
-              border border-white/20 
-              rounded-lg 
-              shadow-sm 
-              hover:bg-white/20 
-              transition-colors
-            `}
+            style={{
+              height: 40,
+              padding: "0 16px",
+              borderRadius: 8,
+              fontWeight: 600,
+              textDecoration: "none",
+              fontSize: 14,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+              border: "1px solid rgba(255,255,255,0.22)",
+              background: "rgba(255,255,255,0.12)",
+              color: "#FFFFFF",
+              letterSpacing: "0.02em",
+            }}
           >
             <Play size={14} /> See Live Demo
-          </Link>
+          </a>
         </div>
 
         {/* Trust nudges */}
-        <div 
-          className={`
-            flex 
-            flex-wrap 
-            justify-center 
-            gap-4 
-            text-xs 
-            font-semibold 
-            tracking-wide 
-            uppercase 
-            text-white/80
-          `}
-        >
-          {["3-day free trial", "Cancel anytime", "Setup in 5 minutes"].map((text, i) => (
-            <span 
-              key={i} 
-              className={`
-                flex 
-                items-center 
-                gap-1.5
-              `}
-            >
-              <CheckCircle2 size={14} /> {text}
+        <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: "0.03em", textTransform: "uppercase", flexWrap: "wrap", justifyContent: "center" }}>
+          {["3-day free trial", "Cancel anytime", "Setup in 5 minutes"].map((t, i) => (
+            <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <CheckCircle2 size={14} /> {t}
             </span>
           ))}
         </div>
