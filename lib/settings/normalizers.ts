@@ -4,7 +4,6 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
   workspace: {
     companyName: "",
     replyToEmail: "",
-    timezone: "UTC",
   },
   integrations: {
     stripeConnected: false,
@@ -39,7 +38,6 @@ export function buildSettingsSnapshot(
     workspace: {
       companyName: row.company_name ?? "",
       replyToEmail: row.reply_to_email ?? "",
-      timezone: row.timezone ?? "UTC",
     },
     integrations: {
       stripeConnected: Boolean(row.stripe_account_id),

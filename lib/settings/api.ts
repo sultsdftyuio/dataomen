@@ -59,7 +59,7 @@ export async function handleWorkspaceUpdate(req: Request) {
       return NextResponse.json({ error: "Tenant membership not found." }, { status: 403 });
     }
 
-    const { companyName, replyToEmail, timezone } = parsed.data;
+    const { companyName, replyToEmail } = parsed.data;
 
     const updatePayload: Record<string, string | null> = {
       ...(companyName !== undefined && {
@@ -67,9 +67,6 @@ export async function handleWorkspaceUpdate(req: Request) {
       }),
       ...(replyToEmail !== undefined && {
         reply_to_email: normalizeOptionalString(replyToEmail),
-      }),
-      ...(timezone !== undefined && {
-        timezone,
       }),
     };
 

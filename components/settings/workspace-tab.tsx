@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Globe, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,36 +19,19 @@ export default function WorkspaceTab({ workspace }: WorkspaceTabProps) {
 
   const [companyName, setCompanyName] = useState(workspace.companyName);
   const [replyToEmail, setReplyToEmail] = useState(workspace.replyToEmail);
-  const [timezone, setTimezone] = useState(workspace.timezone);
-
   const [initialWorkspace] = useState(workspace);
   const hasWorkspaceChanges = useMemo(
     () =>
       companyName !== initialWorkspace.companyName ||
-      replyToEmail !== initialWorkspace.replyToEmail ||
-      timezone !== initialWorkspace.timezone,
-    [companyName, replyToEmail, timezone, initialWorkspace]
+      replyToEmail !== initialWorkspace.replyToEmail,
+    [companyName, replyToEmail, initialWorkspace]
   );
-
-  const timezones = useMemo(() => {
-    try {
-      if (typeof Intl === "undefined") return ["UTC"];
-      if (typeof Intl.supportedValuesOf === "function") {
-        const values = Intl.supportedValuesOf("timeZone");
-        return values.length > 0 ? values : ["UTC"];
-      }
-      const fallback = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      return fallback ? [fallback] : ["UTC"];
-    } catch {
-      return ["UTC"];
-    }
-  }, []);
 
   const handleSaveWorkspace = async () => {
     if (!hasWorkspaceChanges) return;
     setIsSavingWorkspace(true);
     try {
-      const payload: WorkspaceSettingsInput = { companyName, replyToEmail, timezone };
+      const payload: WorkspaceSettingsInput = { companyName, replyToEmail };
       const res = await fetch("/api/settings/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -117,26 +100,6 @@ export default function WorkspaceTab({ workspace }: WorkspaceTabProps) {
           <p className="text-xs text-slate-500">When recovered users reply to campaign emails, this is where it routes.</p>
         </div>
 
-        <div className="max-w-2xl space-y-4">
-          <Label htmlFor="timezone" className="text-xs font-bold tracking-wide text-slate-500 uppercase flex items-center gap-2">
-            <Globe className="h-4 w-4" /> Reporting Timezone
-          </Label>
-          <div className="relative">
-            <select
-              id="timezone"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="flex h-11 w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm ring-offset-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-50 appearance-none"
-            >
-              {timezones.map((tz) => (
-                <option key={tz} value={tz}>
-                  {tz}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="text-xs text-slate-500">Dictates alignment for Weekly Digest emails and cohort boundaries.</p>
-        </div>
       </div>
 
       <div className="px-8 lg:px-12 py-5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between mt-auto">

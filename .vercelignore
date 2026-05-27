@@ -5,10 +5,8 @@
 # Backend Source
 /tests/
 /scripts/
+scrpits/
 
-# Explicitly keep Next.js App Router API handlers in deployment artifacts.
-!/app/api/
-!/app/api/**
 
 # Infrastructure & Orchestration
 Dockerfile

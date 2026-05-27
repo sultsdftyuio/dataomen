@@ -9,7 +9,6 @@ export type TenantSettingsSnapshotRow = Omit<TenantSettingsRow, "api_key"> & {
 export type SettingsWorkspace = {
   companyName: string;
   replyToEmail: string;
-  timezone: string;
 };
 
 export type SettingsIntegrations = {

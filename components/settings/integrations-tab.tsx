@@ -41,6 +41,7 @@ export default function IntegrationsTab({ integrations }: IntegrationsTabProps) 
   const [showApiKey, setShowApiKey] = useState(false);
   const [hasCopiedKey, setHasCopiedKey] = useState(false);
   const [isRegeneratingKey, setIsRegeneratingKey] = useState(false);
+  const [isStripeActionPending, setIsStripeActionPending] = useState(false);
   const canReveal = Boolean(fullApiKey);
   const displayKey = showApiKey && fullApiKey ? fullApiKey : buildMaskedKey(apiKeyLast4);
   const keyLastUpdatedLabel = formatKeyLastUpdated(keyLastUpdated);
@@ -95,6 +96,39 @@ export default function IntegrationsTab({ integrations }: IntegrationsTabProps) 
     copyTimeoutRef.current = setTimeout(() => setHasCopiedKey(false), 2000);
   };
 
+  const handleStripeConnection = async () => {
+    if (integrations.stripeConnected) {
+      window.location.href = "/api/integrations/stripe/manage";
+      return;
+    }
+
+    setIsStripeActionPending(true);
+    try {
+      const res = await fetch("/api/integrations/stripe/connect", { method: "POST" });
+      let data: { url?: string; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to initiate Stripe connection");
+      }
+      if (!data.url) {
+        throw new Error("Missing Stripe redirect URL");
+      }
+      window.location.href = data.url;
+    } catch (error: any) {
+      toast({
+        title: "Connection Failed",
+        description: error?.message || "Could not initiate Stripe connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsStripeActionPending(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-300">
       <div className="px-8 lg:px-12 py-8 border-b border-slate-100 bg-white/80 backdrop-blur-sm">
@@ -141,11 +175,20 @@ export default function IntegrationsTab({ integrations }: IntegrationsTabProps) 
               <div className="mt-6 pt-4 border-t border-slate-100">
                 <Button
                   variant={integrations.stripeConnected ? "outline" : "default"}
+                  onClick={handleStripeConnection}
+                  disabled={isStripeActionPending}
                   className={`w-full ${
                     !integrations.stripeConnected && "bg-[#635BFF] hover:bg-[#5249ea] text-white"
                   }`}
                 >
-                  {integrations.stripeConnected ? "Manage Connection" : "Connect Stripe"}
+                  {isStripeActionPending ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      {integrations.stripeConnected ? "Opening Stripe..." : "Connecting..."}
+                    </>
+                  ) : (
+                    <>{integrations.stripeConnected ? "Manage Connection" : "Connect Stripe"}</>
+                  )}
                 </Button>
               </div>
             </div>
