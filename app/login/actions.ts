@@ -8,50 +8,94 @@ export type ActionState = {
   success?: boolean;
 }
 
+// 1. Gate verbose logs behind development environment
+const isDev = process.env.NODE_ENV !== 'production';
+
 /**
- * loginAction: Secure authentication handler for the arcli platform.
+ * loginAction: Secure authentication handler for the Arcli platform.
  * Adheres to "The Modular Strategy" by utilizing the shared server-side client 
  * for centralized session and cookie management.
  */
 export async function loginAction(state: ActionState, formData: FormData): Promise<ActionState> {
-  // 1. Initialize the modular Supabase SSR client
-  const supabase = await createClient();
+  // OBSERVABILITY: Trace ID for tracking failed login attempts through server logs
+  const flowId = `login-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const flowStart = Date.now();
 
-  // 2. Extract and sanitize credentials
-  const email = formData.get('email')?.toString() || '';
-  const password = formData.get('password')?.toString() || '';
-  const requestedNextPath = formData.get('next')?.toString() || '';
-  const nextPath = requestedNextPath.startsWith('/') && !requestedNextPath.startsWith('//')
-    ? requestedNextPath
-    : '/dashboard';
+  if (isDev) console.log(`[DEBUG-UI][${flowId}] === Starting Login Flow ===`);
 
+  // 2. Safe FormData Coercion (Runtime Type Narrowing)
+  const emailField = formData.get('email');
+  const rawEmail = typeof emailField === 'string' ? emailField : '';
+  
+  const passwordField = formData.get('password');
+  const password = typeof passwordField === 'string' ? passwordField : '';
+  
+  const nextField = formData.get('next');
+  const requestedNextPath = typeof nextField === 'string' ? nextField : '';
+
+  // 3. Normalization & Correctness
+  const email = rawEmail.trim().toLowerCase(); 
+  
+  // 4. PII Logging Prevention
+  const maskedEmail = email.length > 5 
+    ? `${email.slice(0, 2)}***${email.slice(email.indexOf('@'))}` 
+    : '[redacted]';
+
+  // 5. Hardened Redirect Validation
+  const nextPath = 
+    requestedNextPath.startsWith('/') && 
+    !requestedNextPath.startsWith('//') &&
+    !requestedNextPath.includes('\\') &&
+    !requestedNextPath.includes('..')
+      ? requestedNextPath 
+      : '/dashboard';
+
+  if (isDev) console.log(`[DEBUG-UI][${flowId}] Parsed credentials. Email: "${maskedEmail}", NextPath: "${nextPath}"`);
+
+  // 6. Pre-flight Validation (Missing fields + Lightweight Regex)
   if (!email || !password) {
+    if (isDev) console.log(`[DEBUG-UI][${flowId}] Failed validation: Missing credentials.`);
     return { error: 'Email and password are required to access your workspace.' };
   }
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    if (isDev) console.log(`[DEBUG-UI][${flowId}] Failed validation: Malformed email.`);
+    return { error: 'Please enter a valid email address.' };
+  }
+
   try {
-    // 3. Authenticate with Supabase
-    // The server client automatically handles setting session cookies in the response headers
-    const { error } = await supabase.auth.signInWithPassword({ 
+    if (isDev) console.log(`[DEBUG-UI][${flowId}] Attempting Supabase authentication...`);
+    
+    // 7. Initialize Client INSIDE Try/Catch
+    // Protects against cookie parsing, header context, and init failures
+    const supabase = await createClient();
+
+    // Authenticate with Supabase
+    const { data, error } = await supabase.auth.signInWithPassword({ 
       email, 
       password 
     });
 
     if (error) {
-      // Return the specific Supabase error message (e.g., "Invalid login credentials")
-      return { error: error.message };
+      // 8. Prevent Provider Leakage & Enumeration
+      // Log the real issue for observability, but return a generic, static message to the client
+      console.warn(`[DEBUG-UI][${flowId}] Auth rejected: ${error.message}`);
+      return { error: 'Invalid email or password.' };
     }
 
+    if (isDev) console.log(`[DEBUG-UI][${flowId}] Auth SUCCESS for user_id=${data?.user?.id} in ${Date.now() - flowStart}ms`);
+
   } catch (err) {
-    // Security by Design: Log internal errors for observability while keeping client feedback generic
-    console.error('Critical Auth Failure:', err);
+    // Security by Design: Catch all critical initialization and connection failures
+    console.error(`[DEBUG-UI][${flowId}] CRITICAL Auth Failure:`, err);
     return { error: 'A secure connection could not be established. Please try again later.' };
   }
 
   /**
-   * 4. Secure Redirect
+   * 9. Secure Redirect
    * Next.js redirect() throws a special error to halt execution and trigger the navigation.
-   * It is placed outside the try/catch block to ensure it is not caught and suppressed.
+   * Kept safely outside the try/catch block to ensure navigation is not suppressed.
    */
   redirect(nextPath);
 }

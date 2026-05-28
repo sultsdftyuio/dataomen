@@ -1,117 +1,161 @@
 /**
- * ARCLI.TECH - Optimized Edge Middleware Orchestrator
- * Deployment Stack: Cloudflare (DNS/Edge) -> Vercel (Next.js) -> Render (FastAPI/Backend)
- * Strategy: Performance-First Auth with System-Route Bypass
- * Objective: Resolve indexing "unreachable" errors, optimize Edge compute, and prioritize the Dashboard-First landing zone.
+ * ARCLI.TECH - Edge Middleware Orchestrator
+ * Deployment Stack: Cloudflare (DNS/CDN/Proxy) -> Vercel (Next.js Edge Runtime) -> Supabase
+ *
+ * Strategy:
+ * - Performance-first auth hydration via Supabase SSR
+ * - Selective route protection with fail-closed authorization
+ * - System-route absolute bypass for crawlers/SEO
+ * - Dashboard-first UX orchestration for authenticated users
+ *
+ * Benefits of current stack (no intermediate backend proxy):
+ * - No cross-origin hops to a separate API server
+ * - No rewrite failure modes or downstream proxy timeouts
+ * - Lower latency: Vercel Edge -> Supabase directly
+ * - Simpler CORS surface: most APIs are same-origin Vercel Route Handlers
+ * - Trust boundaries are cleaner: Edge auth is the single enforcement point
  */
 
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Correct Next.js 16.1+ export signature for proxy.ts
-export default async function proxy(request: NextRequest) {
+export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const EDGE_LAYER = 'next-edge-middleware'
 
+  // ---------------------------------------------------------------------------
+  // Correlation ID: Attach Vercel trace for debugging across Cloudflare + Vercel
+  // ---------------------------------------------------------------------------
+  const requestId = request.headers.get('x-vercel-id') ?? crypto.randomUUID()
+
   const logRouteTrace = (event: string, data: Record<string, unknown> = {}) => {
-    console.info(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        event,
-        layer: EDGE_LAYER,
-        path: pathname,
-        method: request.method,
-        ...data,
-      })
-    )
+    // Reduce noise in production; keep structured for log aggregators (e.g. Axiom, Datadog)
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          event,
+          layer: EDGE_LAYER,
+          path: pathname,
+          method: request.method,
+          request_id: requestId,
+          ...data,
+        })
+      )
+    }
   }
 
-  // 1. Diagnostic Metadata: Capture Vercel Trace ID for Cloudflare/Vercel debugging
-  const requestId = request.headers.get('x-vercel-id') || 'local-dev'
-
-  // 2. System Route Short-Circuit (Absolute Bypass)
+  // ---------------------------------------------------------------------------
+  // 1. System Route Short-Circuit
+  // These are matched by the config.matcher exclusions, but kept as a defense
+  // in case the matcher config is ever loosened.
+  // ---------------------------------------------------------------------------
   const isSystemRoute = ['/robots.txt', '/sitemap.xml', '/favicon.ico'].includes(pathname)
   if (isSystemRoute) {
     return NextResponse.next()
   }
 
-  // 3. Initialize a Mutable Response Object
+  // ---------------------------------------------------------------------------
+  // 2. Initialize a Mutable Response + Supabase SSR Client
+  // IMPORTANT: supabaseResponse must be the object passed to all cookie mutations
+  // so that session tokens are correctly forwarded on redirect/pass-through.
+  // ---------------------------------------------------------------------------
   let supabaseResponse = NextResponse.next({
-    request: {
-      headers: request.headers,
+    request: { headers: request.headers },
+  })
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[Middleware] Missing Supabase env vars — check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    return NextResponse.next()
+  }
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+        supabaseResponse = NextResponse.next({ request })
+        cookiesToSet.forEach(({ name, value, options }) =>
+          supabaseResponse.cookies.set(name, value, options)
+        )
+      },
     },
   })
 
-  // 4. Modular Strategy: Initialize Resilient Supabase Client
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  // 5. Security by Design: Cryptographic User Verification with Edge Fallback
+  // ---------------------------------------------------------------------------
+  // 3. Cryptographic User Verification
+  // getUser() calls the Supabase Auth server to validate the JWT — it is NOT
+  // a local decode. Failures here are non-fatal; the route guard below handles
+  // the unauthenticated case.
+  // ---------------------------------------------------------------------------
   let user = null
   try {
     const { data } = await supabase.auth.getUser()
-    user = data?.user
+    user = data?.user ?? null
   } catch (error) {
-    console.error(`[Middleware Auth Error] Trace ID: ${requestId}`, error)
+    console.error(`[Middleware] Auth verification failed. request_id=${requestId}`, error)
   }
 
-  // 6. Route Topology & Orchestration Definitions
-  const isAuthRoute = ['/login', '/register', '/forgot-password', '/signup', '/sign-up'].some(route => 
-    pathname.startsWith(route)
+  // ---------------------------------------------------------------------------
+  // 4. Route Topology
+  // ---------------------------------------------------------------------------
+  const isAuthRoute = ['/login', '/register', '/forgot-password', '/signup', '/sign-up'].some(
+    route => pathname.startsWith(route)
   )
 
   const protectedViews = [
-    '/dashboard', 
-    '/agents', 
-    '/datasets', 
-    '/investigate', 
-    '/chat', 
-    '/billing', 
-    '/settings'
+    '/dashboard',
+    '/agents',
+    '/datasets',
+    '/investigate',
+    '/chat',
+    '/billing',
+    '/settings',
   ]
   const isProtectedView = protectedViews.some(route => pathname.startsWith(route))
 
-  // API Routing Management (Crucial for Vercel -> Render Next.js Rewrites)
   const isApiRoute = pathname.startsWith('/api')
   const isApiPreflight = isApiRoute && request.method === 'OPTIONS'
-  const authHeader = request.headers.get('authorization') || ''
-  const hasBearerToken = authHeader.toLowerCase().startsWith('bearer ')
 
-  const buildApiCorsHeaders = () => {
-    const origin = request.headers.get('origin') || '*'
-    const requestedHeaders = request.headers.get('access-control-request-headers') || 'Authorization, Content-Type'
+  // ---------------------------------------------------------------------------
+  // 5. CORS Headers
+  // Most APIs in this stack are same-origin Vercel Route Handlers, so CORS is
+  // only required for cross-origin callers: mobile apps, browser extensions,
+  // or explicitly externally-consumed API routes.
+  //
+  // Origin reflection is restricted to the allowlist below rather than echoing
+  // arbitrary origins, which would undermine CORS entirely.
+  // ---------------------------------------------------------------------------
+  const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS ?? '').split(',').filter(Boolean)
+
+  const buildApiCorsHeaders = (): Record<string, string> => {
+    const origin = request.headers.get('origin') ?? ''
+    const isAllowedOrigin = ALLOWED_ORIGINS.includes(origin)
+    const requestedHeaders =
+      request.headers.get('access-control-request-headers') ?? 'Authorization, Content-Type'
 
     return {
-      'Access-Control-Allow-Origin': origin,
+      ...(isAllowedOrigin ? { 'Access-Control-Allow-Origin': origin } : {}),
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Methods': 'GET,HEAD,POST,PUT,DELETE,PATCH,OPTIONS',
       'Access-Control-Allow-Headers': requestedHeaders,
-      'Vary': 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method',
+      'Vary': 'Origin, Access-Control-Request-Headers',
     }
   }
-  
-  // Define public APIs that bypass Edge Auth
+
+  // ---------------------------------------------------------------------------
+  // 6. Public API Routes (no session required)
+  // These are intentionally narrow. Prefer adding routes here over widening
+  // the bearer-token bypass below.
+  // ---------------------------------------------------------------------------
   const publicApiRoutes = [
-    '/api/webhooks',
+    '/api/webhooks',   // e.g. Stripe, GitHub — verified by payload signature, not session
     '/api/health',
     '/api/auth/login',
     '/api/auth/register',
@@ -119,87 +163,121 @@ export default async function proxy(request: NextRequest) {
   ]
   const isPublicApiRoute = publicApiRoutes.some(route => pathname.startsWith(route))
 
-  // Always allow CORS preflight checks to reach route handlers/rewrite targets.
+  // ---------------------------------------------------------------------------
+  // 7. Machine-to-Machine API Routes (Bearer token permitted)
+  // Only routes explicitly listed here can bypass cookie-session auth via a
+  // bearer token. The token MUST still be validated by the Route Handler —
+  // this bypass skips the Edge cookie check, not downstream verification.
+  //
+  // DO NOT widen this list to cover general API routes. Without a separate
+  // API gateway validating tokens, a loose bearer bypass creates a silent
+  // trust boundary gap.
+  // ---------------------------------------------------------------------------
+  const machineApiRoutes = [
+    '/api/internal',   // internal service-to-service calls
+    '/api/webhooks',   // webhook payloads carry their own HMAC signatures
+  ]
+
+  const authHeader = request.headers.get('authorization') ?? ''
+  const hasBearerToken = authHeader.toLowerCase().startsWith('bearer ')
+  const isMachineApiRoute = machineApiRoutes.some(route => pathname.startsWith(route))
+
+  // ---------------------------------------------------------------------------
+  // 8. CORS Preflight — always resolve at Edge so browsers don't fail OPTIONS
+  // ---------------------------------------------------------------------------
   if (isApiPreflight) {
-    logRouteTrace('route_trace', { handler: 'proxy-preflight-terminate', status: 204 })
+    logRouteTrace('route_trace', { handler: 'preflight-terminate', status: 204 })
     return new NextResponse(null, {
       status: 204,
       headers: {
         ...buildApiCorsHeaders(),
-        'X-Route-Layer': EDGE_LAYER,
-        'X-Route-Handler': 'proxy-preflight-terminate',
         'Allow': 'GET,HEAD,POST,PUT,DELETE,PATCH,OPTIONS',
+        'X-Route-Handler': 'preflight-terminate',
       },
     })
   }
 
-  // Permit token-authenticated API requests even when cookie session hydration is flaky.
-  if (isApiRoute && hasBearerToken) {
-    logRouteTrace('route_trace', { handler: 'proxy-bearer-pass', status: 200 })
+  // ---------------------------------------------------------------------------
+  // 9. Bearer-Token Pass-Through (M2M only — explicitly scoped)
+  // ---------------------------------------------------------------------------
+  if (isApiRoute && hasBearerToken && isMachineApiRoute) {
+    logRouteTrace('route_trace', { handler: 'bearer-pass-m2m', status: 200 })
     return NextResponse.next()
   }
 
-  // 7. Access Control Execution
+  // ---------------------------------------------------------------------------
+  // 10. Access Control Execution
+  // ---------------------------------------------------------------------------
   if (!user) {
-    // A. Unauthenticated users attempting to view private UI -> Kick to login
+    // Unauthenticated: protect UI views
     if (isProtectedView) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
-      // Pass the original URL to allow seamless redirect after successful login
-      url.searchParams.set('next', pathname) 
+
+      // Validate `next` to prevent open-redirect attacks: only allow relative paths
+      const rawNext = pathname
+      const safeNext = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard'
+      url.searchParams.set('next', safeNext)
+
       return NextResponse.redirect(url)
     }
 
-    // B. Unauthenticated users attempting to hit internal APIs -> Hard block at Edge
+    // Unauthenticated: hard-block internal API routes at Edge
     if (isApiRoute && !isPublicApiRoute) {
-      logRouteTrace('route_trace', { handler: 'proxy-auth-gate', status: 401, trace_id: requestId })
+      logRouteTrace('route_trace', { handler: 'auth-gate-deny', status: 401 })
       return NextResponse.json(
-        { 
-          error: 'Unauthorized access.', 
-          message: 'Edge Security prevented access to this resource.',
-          trace_id: requestId 
-        }, 
+        {
+          error: 'Unauthorized',
+          message: 'Authentication is required to access this resource.',
+          request_id: requestId,
+        },
         {
           status: 401,
           headers: {
             ...buildApiCorsHeaders(),
-            'X-Route-Layer': EDGE_LAYER,
-            'X-Route-Handler': 'proxy-auth-gate',
+            'X-Route-Handler': 'auth-gate-deny',
           },
         }
       )
     }
   } else {
-    // C. Authenticated users attempting to view auth pages or root landing -> Redirect intelligently
+    // Authenticated: redirect away from auth pages and root
     if (isAuthRoute || pathname === '/') {
-      const nextUrl = request.nextUrl.searchParams.get('next')
+      const rawNext = request.nextUrl.searchParams.get('next') ?? ''
+      // Validate `next` param to prevent open-redirect: must be a relative path on this origin
+      const safeNext =
+        rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.includes(':')
+          ? rawNext
+          : '/dashboard'
+
       const targetUrl = request.nextUrl.clone()
-      
-      // Respect the 'next' parameter if they were kicked to login, otherwise prioritize the Dashboard
-      targetUrl.pathname = nextUrl || '/dashboard' 
+      targetUrl.pathname = safeNext
       targetUrl.searchParams.delete('next')
-      
+
       return NextResponse.redirect(targetUrl)
     }
   }
 
-  // 8. Standardize Security Headers for Cloudflare Compatibility
+  // ---------------------------------------------------------------------------
+  // 11. Security Headers
+  // ---------------------------------------------------------------------------
   supabaseResponse.headers.set('x-middleware-cache', 'no-cache')
-  supabaseResponse.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload')
+  supabaseResponse.headers.set(
+    'Strict-Transport-Security',
+    'max-age=63072000; includeSubDomains; preload'
+  )
+  supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff')
+  supabaseResponse.headers.set('X-Frame-Options', 'DENY')
+  supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
 
   return supabaseResponse
 }
 
-// 9. Refined Matcher Configuration
+// ---------------------------------------------------------------------------
+// Matcher: exclude static assets and Next.js internals from middleware overhead
+// ---------------------------------------------------------------------------
 export const config = {
   matcher: [
-    /*
-     * Match all request paths EXCEPT:
-     * 1. /_next/static (static files, CSS, JS)
-     * 2. /_next/image (image optimization API)
-     * 3. /favicon.ico, /robots.txt, /sitemap.xml
-     * 4. Static assets (svg, png, jpg, etc.)
-     */
     '/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

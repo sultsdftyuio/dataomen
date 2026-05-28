@@ -3,13 +3,41 @@
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 
+// Environment & Configuration
+const isDev = process.env.NODE_ENV !== 'production'
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
 const ROOT_RELATIVE_URL_REGEX = /^\//
-const LOCAL_BACKEND_FALLBACKS = ['http://localhost:8000', 'http://localhost:8080']
+
+// SECURITY: Only expose internal localhost routes in development
+const LOCAL_BACKEND_FALLBACKS = isDev ? ['http://localhost:8000', 'http://localhost:8080'] : []
+
+export type ActionState = {
+  error?: string;
+  success?: boolean;
+}
+
+type BackendValidationError = {
+  loc?: string[];
+  msg?: string;
+}
+
+// --- Utilities ---
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '')
 
+// SECURITY: Prevent PII leakage in server logs
+const maskEmail = (email: string) => {
+  if (!email || !email.includes('@')) return '[redacted]'
+  const [local, domain] = email.split('@')
+  return local.length <= 2 ? `***@${domain}` : `${local.slice(0, 2)}***@${domain}`
+}
+
 const resolveRequestOrigin = async (): Promise<string | null> => {
+  // SECURITY: Prefer a trusted environment variable over headers to prevent spoofing
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return trimTrailingSlash(process.env.NEXT_PUBLIC_APP_URL)
+  }
+
   const headerStore = await headers()
   const host = headerStore.get('x-forwarded-host') || headerStore.get('host')
 
@@ -30,10 +58,7 @@ const resolveRegisterEndpoint = (rawBase: string, requestOrigin: string | null):
 
   let base = trimmedBase
   if (ROOT_RELATIVE_URL_REGEX.test(base)) {
-    if (!requestOrigin) {
-      return null
-    }
-
+    if (!requestOrigin) return null
     base = `${trimTrailingSlash(requestOrigin)}${base}`
   } else if (!ABSOLUTE_HTTP_URL_REGEX.test(base)) {
     return null
@@ -44,15 +69,12 @@ const resolveRegisterEndpoint = (rawBase: string, requestOrigin: string | null):
   if (lowerBase.endsWith('/api/v1/auth/register') || lowerBase.endsWith('/v1/auth/register')) {
     return base
   }
-
   if (lowerBase.endsWith('/api/v1/auth') || lowerBase.endsWith('/v1/auth')) {
     return `${base}/register`
   }
-
   if (lowerBase.endsWith('/api/v1') || lowerBase.endsWith('/v1')) {
     return `${base}/auth/register`
   }
-
   if (lowerBase.endsWith('/api')) {
     return `${base}/v1/auth/register`
   }
@@ -85,134 +107,127 @@ const resolveRegisterEndpointCandidates = async (): Promise<string[]> => {
   return Array.from(endpoints)
 }
 
-export type ActionState = {
-  error?: string;
-  success?: boolean;
-}
+// --- Main Action ---
 
 export async function registerAction(state: ActionState, formData: FormData): Promise<ActionState> {
   const flowId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const flowStart = Date.now()
-
-  console.log(`[DEBUG-UI][${flowId}] === Starting Registration Flow ===`)
+  let shouldRedirect = false
   
-  const rawEmail = formData.get('email')?.toString() || ''
-  const email = rawEmail.trim().toLowerCase()
-  const password = formData.get('password')?.toString() || ''
-
-  console.log(`[DEBUG-UI][${flowId}] Parsed form: Email: "${email}", Password Length: ${password.length}`)
-
-  if (!email || !password) {
-    console.log(`[DEBUG-UI][${flowId}] Failed validation: Missing email or password.`)
-    return { error: 'Email and password are required.' }
-  }
-  
-  const fallbackName = email.split('@')[0] || 'User'
-  const fallbackCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace'
-  const registerPayload = {
-    email,
-    password,
-    full_name: fallbackName,
-    company_name: fallbackCompany,
-  }
-
-  const registerEndpointCandidates = await resolveRegisterEndpointCandidates()
-  console.log(`[DEBUG-UI][${flowId}] Endpoint candidates:`, registerEndpointCandidates)
-  console.log(`[DEBUG-UI][${flowId}] Register payload (password redacted):`, {
-    ...registerPayload,
-    password: '[REDACTED]',
-    password_length: password.length,
-  })
-
   try {
+    // SECURITY: Safe FormData coercion (prevents File object injection)
+    const emailField = formData.get('email')
+    const passwordField = formData.get('password')
+    
+    const email = typeof emailField === 'string' ? emailField.trim().toLowerCase() : ''
+    const password = typeof passwordField === 'string' ? passwordField : ''
+
+    if (!email || !password) {
+      return { error: 'Email and password are required.' }
+    }
+
+    const maskedEmail = maskEmail(email)
+    if (isDev) console.log(`[DEBUG-UI][${flowId}] Starting Registration for: ${maskedEmail}`)
+
+    // DATA INTEGRITY: Stronger company name derivation & sanitization
+    const fallbackName = email.split('@')[0] || 'User'
+    const rawCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace'
+    const fallbackCompany = rawCompany.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace'
+
+    const registerPayload = {
+      email,
+      password,
+      full_name: fallbackName,
+      company_name: fallbackCompany,
+    }
+
+    const registerEndpointCandidates = await resolveRegisterEndpointCandidates()
+
     if (registerEndpointCandidates.length === 0) {
-      console.error(`[DEBUG-UI][${flowId}] CRITICAL: No registration endpoints resolved.`)
-      return { error: 'Registration service is not configured.' }
+      console.error(`[ERROR][${flowId}] CRITICAL: No registration endpoints resolved.`)
+      return { error: 'Registration service is temporarily unavailable.' }
     }
 
     let res: Response | null = null
     let lastNetworkError: unknown = null
-    let successfulEndpoint: string | null = null
 
-    console.log(`[DEBUG-UI][${flowId}] Attempting backend registration...`)
+    // RESILIENCE: Implement an AbortController for fetch timeouts (8 seconds)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
+
     for (const endpoint of registerEndpointCandidates) {
-      console.log(`[DEBUG-UI][${flowId}] Trying endpoint: ${endpoint}`)
+      if (isDev) console.log(`[DEBUG-UI][${flowId}] Trying endpoint: ${endpoint}`)
       try {
-        const attemptStart = Date.now()
         const attempt = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(registerPayload),
           cache: 'no-store',
-        })
-
-        const durationMs = Date.now() - attemptStart
-        console.log(`[DEBUG-UI][${flowId}] Endpoint ${endpoint} responded with status ${attempt.status} in ${durationMs}ms`)
-        console.log(`[DEBUG-UI][${flowId}] Response headers:`, {
-          contentType: attempt.headers.get('content-type'),
-          cacheControl: attempt.headers.get('cache-control'),
+          signal: controller.signal,
         })
 
         res = attempt
-        successfulEndpoint = endpoint
         if (attempt.status !== 404) {
           break
         }
       } catch (error) {
-        console.error(`[DEBUG-UI][${flowId}] Network error hitting ${endpoint}:`, error)
         lastNetworkError = error
+        if (isDev) console.error(`[DEBUG-UI][${flowId}] Network error hitting ${endpoint}:`, error)
       }
     }
 
-    if (!res) {
-      console.error(`[DEBUG-UI][${flowId}] All network requests failed completely.`)
-      throw lastNetworkError || new Error('Registration service request failed.')
-    }
+    clearTimeout(timeoutId)
 
-    console.log(`[DEBUG-UI][${flowId}] Selected response endpoint:`, successfulEndpoint)
+    if (!res) {
+      console.error(`[ERROR][${flowId}] All network requests failed.`, lastNetworkError)
+      return { error: 'Unable to connect to the server. Please check your connection and try again.' }
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      console.error(`[DEBUG-UI][${flowId}] Backend returned HTTP ${res.status}. Raw body:`, text)
+      
+      // DIAGNOSTICS: Keep full errors internal
+      console.error(`[ERROR][${flowId}] Backend returned HTTP ${res.status}. Raw body:`, text)
 
-      let errorMessage = 'Registration failed'
+      // SECURITY/UX: Return normalized, client-safe error messages
+      let clientErrorMessage = 'Registration failed. Please verify your information and try again.'
+      
       try {
         const data = text ? JSON.parse(text) : {}
-        if (Array.isArray(data.detail)) {
-          errorMessage = Array.isArray(data.detail)
-            ? data.detail.map((e: any) => `${e.loc?.join('.') || 'detail'} - ${e.msg || JSON.stringify(e)}`).join(' | ')
-            : String(data.detail)
-        } else if (data.detail) {
-          errorMessage = String(data.detail)
-        } else if (data.message) {
-          errorMessage = String(data.message)
-        } else if (data.error) {
-          errorMessage = String(data.error)
-        } else if (!text) {
-          errorMessage = `Registration failed with HTTP ${res.status}`
+        
+        // Safely extract validation details if they exist, without exposing internal stack traces
+        if (res.status === 400 && data.detail) {
+          if (Array.isArray(data.detail)) {
+            const mappedErrors = data.detail
+              .map((e: BackendValidationError) => e.msg)
+              .filter(Boolean)
+              .join(' | ')
+            if (mappedErrors) clientErrorMessage = mappedErrors
+          } else if (typeof data.detail === 'string') {
+            clientErrorMessage = data.detail
+          }
         }
       } catch {
-        errorMessage = `Backend Gateway Error (${res.status}). Server might be crashing.`
+        // Fallback to the generic error message
       }
-      return { error: errorMessage }
+      
+      return { error: clientErrorMessage }
     }
 
-    const backendSuccessText = await res.text().catch(() => '')
-    let backendSuccessData: unknown = {}
-    if (backendSuccessText) {
-      try {
-        backendSuccessData = JSON.parse(backendSuccessText)
-      } catch {
-        backendSuccessData = { raw: backendSuccessText }
-      }
-    }
-
-    console.log(`[DEBUG-UI][${flowId}] Backend registration SUCCESS. Data:`, backendSuccessData)
-    console.log(`[DEBUG-UI][${flowId}] Total flow duration: ${Date.now() - flowStart}ms`)
-    redirect('/dashboard')
+    if (isDev) console.log(`[DEBUG-UI][${flowId}] Registration SUCCESS for ${maskedEmail}`)
+    
+    // CRITICAL FIX: Do not trigger redirect() inside the try/catch block
+    shouldRedirect = true
 
   } catch (error) {
-    console.error(`[DEBUG-UI][${flowId}] UNCAUGHT EXCEPTION in registration flow:`, error)
-    return { error: 'Could not complete registration flow. Check logs.' }
+    console.error(`[ERROR][${flowId}] UNCAUGHT EXCEPTION in registration flow:`, error)
+    return { error: 'An unexpected error occurred. Please try again later.' }
   }
+
+  // --- External Redirect ---
+  // Next.js redirect throws a specific error that MUST NOT be caught by your standard try/catch
+  if (shouldRedirect) {
+    redirect('/dashboard')
+  }
+
+  return { success: true }
 }

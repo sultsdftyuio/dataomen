@@ -3,11 +3,21 @@ import { cookies } from "next/headers";
 import type { Database } from "@/types/supabase";
 
 export async function createClient() {
+  // 1. Explicit environment variable validation to prevent ambiguous runtime crashes
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "Missing Supabase environment variables. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set."
+    );
+  }
+
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -18,11 +28,23 @@ export async function createClient() {
             cookiesToSet.forEach(({ name, value, options }) => {
               cookieStore.set(name, value, options);
             });
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be safely ignored as long as you have middleware 
-            // set up to refresh user sessions.
+          } catch (error) {
+            // 2. Targeted logging instead of a completely silent catch block
+            // This safely ignores Server Component mutation issues in production, 
+            // but warns you in development in case of real cookie/framework failures.
+            if (process.env.NODE_ENV !== "production") {
+              console.warn(
+                "[SUPABASE-SSR] Cookie persistence skipped. This is expected if called from a Server Component, but ensure middleware is refreshing sessions.",
+                error
+              );
+            }
           }
+        },
+      },
+      // 3. Enterprise Improvement: Added global headers for observability
+      global: {
+        headers: {
+          'x-client-info': 'nextjs-app-router', // Helpful for tracing auth issues in Supabase logs
         },
       },
     }
