@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
+const setTenantStatus = async (supabase: any, tenantId: string, status: string) => {
+  await supabase
+    .from("tenants")
+    .upsert({ tenant_id: tenantId, status })
+    .select("tenant_id");
+};
+
 const STRIPE_DASHBOARD_BASE_URL =
   process.env.STRIPE_DASHBOARD_BASE_URL || "https://dashboard.stripe.com";
 
@@ -34,6 +41,8 @@ export async function GET() {
       { status: 409 }
     );
   }
+
+  await setTenantStatus(supabase, tenantId, "INTEGRATION");
 
   const baseUrl = normalizeBaseUrl(STRIPE_DASHBOARD_BASE_URL);
   const manageUrl = `${baseUrl}/connect/accounts/${data.stripe_account_id}`;

@@ -100,17 +100,46 @@ $$;
 CREATE TABLE IF NOT EXISTS tenants (
     tenant_id    TEXT        PRIMARY KEY,
     display_name TEXT,
+    status       TEXT        NOT NULL DEFAULT 'PROVISIONING',
     -- plan could gate feature flags; left nullable for backward compat
     plan         TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE tenants
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'PROVISIONING';
+
 DO $$ BEGIN PERFORM _attach_updated_at('tenants'); END $$;
 
 COMMENT ON TABLE tenants IS
     'Canonical tenant registry. All tenant_id foreign keys reference this table. '
     'Seeded from tenant_settings on first migration run.';
+
+DO $$ BEGIN
+    ALTER TABLE tenants ADD CONSTRAINT chk_tenants_status
+        CHECK (status IN ('PROVISIONING', 'INTEGRATION', 'BACKFILLING', 'READY', 'FAILED'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+UPDATE tenants t
+SET status = CASE
+    WHEN EXISTS (
+        SELECT 1
+        FROM tenant_settings s
+        WHERE s.tenant_id = t.tenant_id
+          AND s.stripe_account_id IS NOT NULL
+    )
+    THEN CASE
+        WHEN EXISTS (
+            SELECT 1
+            FROM events e
+            WHERE e.tenant_id = t.tenant_id
+        ) THEN 'READY'
+        ELSE 'BACKFILLING'
+    END
+    ELSE 'INTEGRATION'
+END
+WHERE t.status = 'PROVISIONING';
 
 -- Seed from tenant_settings (the most complete source of existing tenants).
 -- ON CONFLICT DO NOTHING makes this replay-safe.
@@ -1439,8 +1468,21 @@ BEGIN
         ) VALUES (
             p_dispatch_token, p_tenant_id, p_send_id, 'processing',
             v_now + INTERVAL '15 minutes', 1, v_now, v_now
-        );
-        RETURN jsonb_build_object('claimed', true, 'state', 'claimed');
+        ) ON CONFLICT (dispatch_token) DO NOTHING;
+
+        IF FOUND THEN
+            RETURN jsonb_build_object('claimed', true, 'state', 'claimed');
+        END IF;
+
+        SELECT state, lease_expires_at
+          INTO v_state, v_lease
+          FROM recovery_dispatch_dedup
+         WHERE dispatch_token = p_dispatch_token
+         FOR UPDATE;
+
+        IF NOT FOUND THEN
+            RETURN jsonb_build_object('claimed', false, 'state', 'missing');
+        END IF;
     END IF;
 
     IF v_state = 'completed' THEN
@@ -1461,6 +1503,35 @@ BEGIN
      WHERE dispatch_token = p_dispatch_token;
 
     RETURN jsonb_build_object('claimed', true, 'state', 'reclaimed');
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION reserve_recovery_attempt(
+    p_send_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_attempt_count INT;
+BEGIN
+    IF p_send_id IS NULL THEN
+        RETURN jsonb_build_object('reserved', false, 'state', 'invalid');
+    END IF;
+
+    UPDATE recovery_emails
+       SET attempt_count = COALESCE(attempt_count, 0) + 1,
+           updated_at = NOW()
+     WHERE id = p_send_id
+     RETURNING attempt_count INTO v_attempt_count;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('reserved', false, 'state', 'missing');
+    END IF;
+
+    RETURN jsonb_build_object('reserved', true, 'attempt_count', v_attempt_count);
 END;
 $$;
 

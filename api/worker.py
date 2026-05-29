@@ -2,8 +2,13 @@ import logging
 import os
 import time
 import uuid
+import threading
 from datetime import datetime, timezone, timedelta
 from typing import Generator, List, Dict, Any, Optional
+
+import dramatiq
+from dramatiq.brokers.redis import RedisBroker
+from supabase import Client, create_client, ClientOptions
 
 from api.recovery_common import (
     ClaimOutcome,
@@ -20,13 +25,169 @@ from api.services.recovery_engine import RecoveryAutomationEngine
 
 logger = logging.getLogger("arcli_worker")
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+dramatiq.set_broker(RedisBroker(url=REDIS_URL))
+
+SUPABASE_TIMEOUT_SEC = float(os.getenv("SUPABASE_TIMEOUT_SEC", "15.0"))
+
+_thread_local = threading.local()
+
+_TENANT_STATUS_RANKS = {
+    "PROVISIONING": 10,
+    "INTEGRATION": 20,
+    "ACTIVE": 30,
+    "FAILED": 40,
+}
+
+
+def _upsert_tenant_status(tenant_id: str, status: str) -> None:
+    try:
+        supabase = _get_supabase_client()
+    except Exception:
+        logger.exception("tenant_status_update_failed tenant_id=%s status=%s", tenant_id, status)
+        return
+
+    try:
+        current_resp = (
+            supabase.table("tenants")
+            .select("status")
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+
+        current_status = None
+        if current_resp.data:
+            current_status = str(current_resp.data[0].get("status") or "").strip() or None
+
+        if _tenant_status_rank(current_status) >= _tenant_status_rank(status):
+            logger.debug(
+                "tenant_status_update_skipped tenant_id=%s current_status=%s requested_status=%s",
+                tenant_id,
+                current_status,
+                status,
+            )
+            return
+
+        supabase.table("tenants").update({"status": status}).eq("tenant_id", tenant_id).execute()
+    except Exception:
+        logger.exception("tenant_status_update_failed tenant_id=%s status=%s", tenant_id, status)
+
+
+def _get_supabase_client() -> Client:
+    if hasattr(_thread_local, "supabase_client"):
+        return _thread_local.supabase_client
+
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+    if not supabase_url or not supabase_key:
+        logger.critical("supabase_credentials_missing_service_role")
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY and URL are required for background workers.")
+
+    options = ClientOptions(postgrest_client_timeout=SUPABASE_TIMEOUT_SEC)
+
+    client = create_client(supabase_url, supabase_key, options=options)
+    _thread_local.supabase_client = client
+    return client
+
+
+def _extract_tenant_id(payload: Any) -> Optional[str]:
+    if payload is None:
+        return None
+
+    if isinstance(payload, str):
+        tenant_id = payload.strip()
+        return tenant_id or None
+
+    if isinstance(payload, dict):
+        tenant_id = payload.get("tenant_id") or payload.get("tenantId") or payload.get("id")
+        if tenant_id:
+            return str(tenant_id)
+        return None
+
+    if isinstance(payload, list):
+        for item in payload:
+            tenant_id = _extract_tenant_id(item)
+            if tenant_id:
+                return tenant_id
+
+    return None
+
+
+def log_critical_error(error: Exception) -> None:
+    logger.exception("signup_provisioning_critical_error error=%s", repr(error))
+
+
+def mark_tenant_failed(user_id: str) -> None:
+    supabase = _get_supabase_client()
+
+    try:
+        mapping_resp = (
+            supabase.table("tenant_users")
+            .select("tenant_id")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        tenant_id = None
+        if mapping_resp.data:
+            tenant_id = str(mapping_resp.data[0].get("tenant_id") or "").strip() or None
+        if tenant_id:
+            _upsert_tenant_status(tenant_id, "FAILED")
+
+        supabase.rpc(
+            "mark_tenant_failed",
+            {
+                "target_user_id": user_id,
+            },
+        ).execute()
+    except Exception:
+        logger.exception("tenant_failure_mark_failed user_id=%s", user_id)
+
+
+@dramatiq.actor(max_retries=4, min_backoff=5_000, max_backoff=120_000)
+def setup_stripe_customer_async(tenant_id: str, user_id: str) -> None:
+    logger.info(
+        "stripe_customer_setup_started tenant=%s user=%s",
+        tenant_id,
+        user_id,
+    )
+    _upsert_tenant_status(tenant_id, "INTEGRATION")
+
+
+def handle_user_signup(user_id: str) -> Optional[str]:
+    try:
+        supabase = _get_supabase_client()
+
+        response = supabase.rpc(
+            "provision_initial_workspace",
+            {
+                "target_user_id": user_id,
+                "default_name": "My Workspace",
+            },
+        ).execute()
+
+        tenant_id = _extract_tenant_id(response.data)
+        if tenant_id is None:
+            raise RuntimeError("Workspace provisioning returned no tenant_id")
+
+        _upsert_tenant_status(tenant_id, "PROVISIONING")
+        setup_stripe_customer_async.delay(tenant_id=tenant_id, user_id=user_id)
+        return tenant_id
+
+    except Exception as error:
+        mark_tenant_failed(user_id)
+        log_critical_error(error)
+        return None
+
 
 class MetricsSink:
     def increment(self, name: str, value: int = 1, tags: Optional[Dict[str, str]] = None) -> None:
-        logger.info("metric_increment name=%s value=%s tags=%s", name, value, tags)
+        logger.debug("metric_increment name=%s value=%s tags=%s", name, value, tags)
 
     def timing(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
-        logger.info("metric_timing name=%s value=%s tags=%s", name, round(value, 6), tags)
+        logger.debug("metric_timing name=%s value=%s tags=%s", name, round(value, 6), tags)
 
 
 METRICS = MetricsSink()
@@ -38,7 +199,9 @@ METRICS = MetricsSink()
 MAX_TENANT_RUNTIME_SEC = int(os.getenv("MAX_TENANT_RUNTIME_SEC", "60"))
 USER_BATCH_SIZE = int(os.getenv("USER_BATCH_SIZE", "500"))
 USER_PROFILE_CURSOR_FIELD = os.getenv("USER_PROFILE_CURSOR_FIELD", "id").strip() or "id"
-ALLOWED_CURSOR_FIELDS = {"id", "created_at", "updated_at"}
+ALLOWED_CURSOR_FIELDS = {"id", "created_at"}
+MAX_USERS_PER_TENANT_RUN = int(os.getenv("MAX_USERS_PER_TENANT_RUN", "10000"))
+MAX_EMAILS_PER_TENANT_RUN = int(os.getenv("MAX_EMAILS_PER_TENANT_RUN", "500"))
 
 PIPELINE_BATCH_TARGET_DURATION_SEC = float(os.getenv("PIPELINE_BATCH_TARGET_DURATION_SEC", "0.35"))
 PIPELINE_BATCH_MIN_SLEEP_SEC = float(os.getenv("PIPELINE_BATCH_MIN_SLEEP_SEC", "0.02"))
@@ -162,15 +325,11 @@ class PipelineOrchestrator:
     # ---------------------------------------------------------
 
     def _fetch_active_tenants(self) -> List[str]:
-        """
-        ARCLI v2.0 DIRECTIVE: Relational Efficiency.
-        Never scan the massive user_profiles table for unique tenants.
-        Query the much smaller tenant_users mapping table instead.
-        """
         resp = (
             self.db
-            .table("tenant_users")
-            .select("distinct(tenant_id)")
+            .table("tenants")
+            .select("tenant_id")
+            .eq("status", "ACTIVE")
             .execute()
         )
 
@@ -309,7 +468,11 @@ class PipelineOrchestrator:
                 if not result:
                     continue
 
-                status = result.get("status")
+                status = getattr(result, "status", None)
+                if status is None and isinstance(result, dict):
+                    status = result.get("status")
+                if hasattr(status, "value"):
+                    status = status.value
                 if status == ClaimOutcome.CLAIMED.value:
                     total_emails_queued += 1
                     continue
@@ -392,7 +555,7 @@ class PipelineOrchestrator:
             query = (
                 self.db
                 .table("user_profiles")
-                .select("*")
+                .select("id, email, last_seen_at, tenant_id")
                 .eq("tenant_id", tenant_id)
                 .order(cursor_field, desc=False)
             )
@@ -552,10 +715,16 @@ def _handle_dispatch_failure(db_client, send_id: str, attempt: int, error_msg: s
             "failure_stage": FailureStage.DISPATCH.value,
             "dispatch_attempt": attempt,
             "next_retry_at": next_retry,
-            "last_error": error_msg[:500],
+            "last_error": str(error_msg)[:500],
         }).eq("id", send_id).execute()
     except Exception:
         logger.exception("outbox_dispatcher_dlq_update_failed send_id=%s", send_id)
+
+
+def _tenant_status_rank(status: Optional[str]) -> int:
+    if not status:
+        return 0
+    return _TENANT_STATUS_RANKS.get(status.strip().upper(), 0)
 
 
 def _normalize_cursor_field(raw_field: str) -> str:

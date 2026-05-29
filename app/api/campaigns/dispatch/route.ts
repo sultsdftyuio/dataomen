@@ -1,7 +1,7 @@
 // app/api/campaigns/dispatch/route.ts
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { resolveTenantContext } from "@/utils/supabase/tenant";
+import { withTenant } from "@/lib/api-security";
 import type { Json } from "@/types/supabase";
 
 const dispatchSchema = z.object({
@@ -31,15 +31,8 @@ const getRpcStatus = (data: unknown) => {
   return "status" in result ? (result as { status?: string }).status ?? null : null;
 };
 
-export async function POST(req: Request) {
+export const POST = withTenant(async (req, { supabase, tenantId }) => {
   try {
-    const tenantResult = await resolveTenantContext();
-    if ("response" in tenantResult) {
-      return tenantResult.response;
-    }
-
-    const { supabase, tenantId } = tenantResult.context;
-
     let body: unknown = null;
     try {
       body = await req.json();
@@ -123,4 +116,4 @@ export async function POST(req: Request) {
     console.error("[CAMPAIGN_DISPATCH] Fatal error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+});

@@ -19,6 +19,7 @@ import stripe
 
 # Core Infrastructure
 from api.database import get_db
+from api.recovery_common import RECOVERY_EMAIL_TABLE, RecoveryStatus
 from api.services.lemon_squeezy_service import LemonSqueezyService
 from api.services.recovery_attribution import RecoveryAttributionService
 from api.services.cache_manager import cache_manager
@@ -31,11 +32,15 @@ LEMON_SQUEEZY_WEBHOOK_SECRET = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "")
 LEMON_SQUEEZY_WEBHOOK_SECRET_MAP = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET_MAP", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_WEBHOOK_SECRET_MAP = os.getenv("STRIPE_WEBHOOK_SECRET_MAP", "")
+RESEND_WEBHOOK_SECRET = os.getenv("RESEND_WEBHOOK_SECRET", "")
 INTERNAL_ROUTING_SECRET = os.getenv("ARCLI_INTERNAL_SECRET", "dev_override_token")
 WEBHOOK_EVENTS_TABLE = os.getenv("WEBHOOK_EVENTS_TABLE", "billing_webhook_events")
 LEMON_SQUEEZY_PROVIDER = "lemonsqueezy"
 STRIPE_PROVIDER = "stripe"
+RESEND_PROVIDER = "resend"
 REQUIRE_WEBHOOK_TENANT_ID = os.getenv("WEBHOOK_REQUIRE_TENANT_ID", "false").lower() == "true"
+WORKSPACE_STATUS_BACKFILLING = "BACKFILLING"
+WORKSPACE_STATUS_READY = "READY"
 
 # ---------------------------------------------------------------------------
 # LEMON SQUEEZY BILLING LIFECYCLE
@@ -133,6 +138,82 @@ def _extract_stripe_tenant_id(event: Dict[str, Any]) -> str:
     return str(tenant_id) if tenant_id else "unknown"
 
 
+def _extract_resend_tenant_id(payload: Dict[str, Any]) -> str:
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    metadata = data.get("metadata") or payload.get("metadata") or {}
+    tenant_id = metadata.get("tenant_id") or metadata.get("tenant")
+
+    if not tenant_id:
+        tenant_id = payload.get("tenant_id") or payload.get("tenant")
+
+    return str(tenant_id) if tenant_id else "unknown"
+
+
+def _extract_resend_message_id(payload: Dict[str, Any]) -> str:
+    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    message_id = (
+        data.get("email_id")
+        or data.get("message_id")
+        or data.get("id")
+        or payload.get("email_id")
+        or payload.get("message_id")
+        or payload.get("id")
+    )
+    return str(message_id) if message_id else "unknown"
+
+
+def _verify_resend_signature(raw_body: bytes, signature: Optional[str]) -> bool:
+    if not RESEND_WEBHOOK_SECRET or not signature:
+        return False
+
+    expected_signature = hmac.new(
+        RESEND_WEBHOOK_SECRET.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected_signature, signature)
+
+
+def _mark_recovery_email_delivered(
+    db: Session,
+    tenant_id: str,
+    provider_message_id: str,
+) -> bool:
+    try:
+        result = db.execute(
+            text(
+                f"""
+                update {RECOVERY_EMAIL_TABLE}
+                   set status = :delivered_status,
+                       delivered_at = now(),
+                       updated_at = now()
+                 where tenant_id = :tenant_id
+                   and provider_message_id = :provider_message_id
+                   and status in (:accepted_status, :queued_status)
+                 returning id
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "provider_message_id": provider_message_id,
+                "delivered_status": RecoveryStatus.DELIVERED.value,
+                "accepted_status": RecoveryStatus.PROVIDER_ACCEPTED.value,
+                "queued_status": RecoveryStatus.DISPATCHED_TO_QUEUE.value,
+            },
+        ).fetchone()
+        db.commit()
+    except Exception:
+        logger.exception(
+            "recovery_delivery_update_failed tenant=%s provider_message_id=%s",
+            tenant_id,
+            provider_message_id,
+        )
+        db.rollback()
+        return False
+
+    return result is not None
+
+
 def _dedupe_webhook_event(
     db: Session,
     tenant_id: str,
@@ -174,6 +255,42 @@ def _dedupe_webhook_event(
         return False
 
     return row is None
+
+
+def _dedupe_recovery_delivery_event(
+    db: Session,
+    tenant_id: str,
+    provider_event_id: str,
+    event_type: Optional[str],
+    payload: Dict[str, Any],
+) -> bool:
+    return _dedupe_webhook_event(
+        db=db,
+        tenant_id=tenant_id,
+        provider=RESEND_PROVIDER,
+        provider_event_id=provider_event_id,
+        event_type=event_type,
+        payload=payload,
+    )
+
+
+def _set_workspace_status(db: Session, tenant_id: str, status: str) -> None:
+    try:
+        db.execute(
+            text(
+                """
+                insert into tenants (tenant_id, status)
+                values (:tenant_id, :status)
+                on conflict (tenant_id) do update
+                set status = excluded.status,
+                    updated_at = now()
+                """
+            ),
+            {"tenant_id": tenant_id, "status": status},
+        )
+        db.commit()
+    except Exception:
+        logger.exception("workspace_status_update_failed tenant=%s status=%s", tenant_id, status)
 
 
 def _resolve_stripe_event(raw_body: bytes, signature: Optional[str]) -> Tuple[Dict[str, Any], Optional[str]]:
@@ -405,6 +522,8 @@ async def handle_stripe_webhook(
         )
         return {"status": "deduped", "message": "Duplicate webhook ignored."}
 
+    _set_workspace_status(db, tenant_id, WORKSPACE_STATUS_BACKFILLING)
+
     try:
         RecoveryAttributionService(db).maybe_attribute_from_webhook(
             tenant_id=tenant_id,
@@ -421,6 +540,97 @@ async def handle_stripe_webhook(
 
     logger.info("stripe_webhook_accepted tenant=%s event=%s", tenant_id, event_name)
     return {"status": "accepted", "message": f"Event {event_name} queued for processing."}
+
+
+@router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
+async def handle_resend_webhook(
+    request: Request,
+    resend_signature: Optional[str] = Header(None, alias="X-Resend-Signature"),
+    db: Session = Depends(get_db),
+):
+    raw_body = await request.body()
+
+    if not _verify_resend_signature(raw_body, resend_signature):
+        logger.warning("invalid_resend_signature")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature.",
+        )
+
+    try:
+        payload: Dict[str, Any] = await request.json()
+        event_name = str(
+            payload.get("type")
+            or payload.get("event")
+            or payload.get("name")
+            or payload.get("data", {}).get("type")
+            or ""
+        ).strip()
+
+        if not event_name:
+            raise ValueError("Missing event type in Resend payload.")
+
+        tenant_id = _extract_resend_tenant_id(payload)
+        if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing tenant_id in webhook payload",
+            )
+
+        provider_event_id = _extract_webhook_event_id(payload, raw_body)
+        deduped = _dedupe_recovery_delivery_event(
+            db=db,
+            tenant_id=tenant_id,
+            provider_event_id=provider_event_id,
+            event_type=event_name,
+            payload=payload,
+        )
+        if deduped:
+            logger.info("resend_webhook_deduped tenant=%s event_id=%s", tenant_id, provider_event_id)
+            return {"status": "deduped", "message": "Duplicate webhook ignored."}
+
+        provider_message_id = _extract_resend_message_id(payload)
+        delivered = False
+        if provider_message_id != "unknown" and event_name.lower() in {
+            "delivered",
+            "delivery.delivered",
+            "email.delivered",
+            "message.delivered",
+        }:
+            delivered = _mark_recovery_email_delivered(db, tenant_id, provider_message_id)
+
+        if delivered:
+            logger.info(
+                "resend_webhook_delivered tenant=%s event_id=%s message_id=%s",
+                tenant_id,
+                provider_event_id,
+                provider_message_id,
+            )
+        else:
+            logger.info(
+                "resend_webhook_accepted tenant=%s event=%s message_id=%s",
+                tenant_id,
+                event_name,
+                provider_message_id,
+            )
+
+        return {
+            "status": "accepted",
+            "message": f"Event {event_name} queued for processing.",
+            "delivered": delivered,
+        }
+
+    except ValueError as ve:
+        logger.error("resend_webhook_validation_error %s", str(ve))
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ve))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("resend_webhook_routing_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal routing failure.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -453,6 +663,10 @@ async def handle_data_sync_webhook(
     if payload.sync_status != "success":
         logger.info(f"[{payload.tenant_id}] Ignored sync webhook for {payload.dataset_id} (Status: {payload.sync_status})")
         return {"status": "ignored", "message": "Cache bust skipped due to unsuccessful sync."}
+
+    dataset_id = payload.dataset_id.lower().strip()
+    if dataset_id.startswith("stripe"):
+        _set_workspace_status(db, payload.tenant_id, WORKSPACE_STATUS_READY)
 
     # 3. Offload Cache Invalidation
     # Fast-return prevents the heavy Sync Engine from hanging while Redis/Vector caches clear

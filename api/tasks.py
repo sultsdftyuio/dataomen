@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import threading
 from datetime import datetime, timezone, timedelta
 from enum import StrEnum
 from typing import Dict, Any, Optional, Tuple
@@ -9,7 +10,7 @@ import dramatiq
 from dramatiq.brokers.redis import RedisBroker
 from pydantic import BaseModel, ValidationError
 import resend
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 
 from api.recovery_common import FailureStage, RECOVERY_EMAIL_TABLE, RecoveryStatus
 
@@ -46,6 +47,10 @@ RECOVERY_DISPATCH_TOKEN_RPC = os.getenv(
     "RECOVERY_DISPATCH_TOKEN_RPC",
     "claim_dispatch_token",
 )
+RECOVERY_ATTEMPT_RESERVATION_RPC = os.getenv(
+    "RECOVERY_ATTEMPT_RESERVATION_RPC",
+    "reserve_recovery_attempt",
+)
 
 MAX_SEND_ATTEMPTS = int(os.getenv("RECOVERY_MAX_SEND_ATTEMPTS", "5"))
 RETRY_BACKOFF_SECONDS = int(os.getenv("RECOVERY_RETRY_BACKOFF_SECONDS", "300"))
@@ -58,6 +63,7 @@ class ProviderSendStatus(StrEnum):
 
 
 _supabase_client: Optional[Client] = None
+_thread_local = threading.local()
 
 
 class RecoverySendRecord(BaseModel):
@@ -147,9 +153,13 @@ class ResendEmailProvider:
                 "to": [to_email],
                 "subject": subject,
                 "html": html,
+                "headers": {
+                    "X-Dispatch-Token": dispatch_token or "",
+                    "X-Idempotency-Key": dispatch_token or "",
+                },
             }
-            if dispatch_token:
-                payload["headers"] = {"X-Dispatch-Token": dispatch_token}
+            if not dispatch_token:
+                payload.pop("headers", None)
 
             response = resend.Emails.send(payload)
         except Exception as exc:
@@ -245,6 +255,35 @@ class RecoveryRepository:
             logger.exception("dispatch_token_claim_invalid tenant=%s send_id=%s", tenant_id, send_id)
             return DispatchTokenClaimResponse(claimed=False, state="invalid")
 
+    def reserve_provider_attempt(self, send_id: str) -> Optional[int]:
+        payload = {"p_send_id": send_id}
+
+        try:
+            resp = self.client.rpc(RECOVERY_ATTEMPT_RESERVATION_RPC, payload).execute()
+        except Exception:
+            logger.exception("attempt_reservation_failed send_id=%s", send_id)
+            raise
+
+        if not resp.data:
+            return None
+
+        data = resp.data
+        if isinstance(data, list):
+            data = data[0] if data else None
+
+        if not data or not isinstance(data, dict):
+            return None
+
+        attempt_value = data.get("attempt_count")
+        if attempt_value is None:
+            return None
+
+        try:
+            return int(attempt_value)
+        except (TypeError, ValueError):
+            logger.exception("attempt_reservation_invalid send_id=%s", send_id)
+            return None
+
     def is_user_globally_capped(self, tenant_id: str, user_id: str) -> bool:
         window_start = datetime.now(timezone.utc) - timedelta(hours=24)
         try:
@@ -261,7 +300,7 @@ class RecoveryRepository:
             return len(resp.data or []) > 0
         except Exception:
             logger.exception("is_user_globally_capped_failed tenant=%s user=%s", tenant_id, user_id)
-            return False
+            return True
 
     def is_template_on_cooldown(self, tenant_id: str, user_id: str, campaign_type: str) -> bool:
         window_start = datetime.now(timezone.utc) - timedelta(days=7)
@@ -281,24 +320,6 @@ class RecoveryRepository:
         except Exception:
             logger.exception("is_template_on_cooldown_failed tenant=%s user=%s", tenant_id, user_id)
             return False
-
-    def mark_provider_attempt(
-        self,
-        send_id: str,
-        attempt_count: int,
-        dispatch_token: str,
-        dispatch_attempt: Optional[int],
-    ) -> None:
-        payload: Dict[str, Any] = {
-            "attempt_count": attempt_count,
-            "dispatch_token": dispatch_token,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        if dispatch_attempt is not None:
-            payload["dispatch_attempt"] = dispatch_attempt
-
-        self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
-        self.write_event(send_id, "provider_attempt", {"attempt_count": attempt_count})
 
     def mark_provider_accepted(self, send_id: str, provider_message_id: Optional[str]) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -371,20 +392,20 @@ class RecoveryRepository:
 
 
 def _get_supabase_client() -> Optional[Client]:
-    global _supabase_client
-
-    if _supabase_client is not None:
-        return _supabase_client
+    if hasattr(_thread_local, "supabase_client"):
+        return _thread_local.supabase_client
 
     supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
     if not supabase_url or not supabase_key:
-        logger.error("supabase_credentials_missing")
-        return None
+        logger.critical("supabase_credentials_missing_service_role")
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY and URL are required for workers.")
 
-    _supabase_client = create_client(supabase_url, supabase_key)
-    return _supabase_client
+    options = ClientOptions(postgrest_client_timeout=float(os.getenv("SUPABASE_TIMEOUT_SEC", "15.0")))
+    client = create_client(supabase_url, supabase_key, options=options)
+    _thread_local.supabase_client = client
+    return client
 
 
 def get_supabase_client() -> Optional[Client]:
@@ -547,8 +568,10 @@ def send_recovery_email(
     # EXECUTE SEND
     # ==========================================
 
-    attempt_count = record.attempt_count + 1
-    repo.mark_provider_attempt(record.id, attempt_count, dispatch_token, dispatch_attempt)
+    attempt_count = repo.reserve_provider_attempt(record.id)
+    if attempt_count is None:
+        logger.error("recovery_attempt_reservation_failed tenant=%s send_id=%s", tenant_id, send_id)
+        raise RuntimeError("Attempt reservation failed")
 
     subject, html = TemplateRenderer().render(record.campaign_type)
     provider = ResendEmailProvider()

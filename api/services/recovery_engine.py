@@ -63,6 +63,7 @@ class RiskSignal(StrEnum):
         try:
             return cls(value)
         except ValueError:
+            logger.warning("recovery_unknown_risk_signal raw=%s", raw_value)
             return None
 
 
@@ -169,7 +170,10 @@ class RecoveryRepository:
         except Exception:
             logger.exception("recovery_bulk_rpc_failed tenant=%s run_id=%s", tenant_id, run_id)
             METRICS.increment("recovery.bulk_rpc.failed", 1, {"tenant": tenant_id})
-            return BulkDispatchResponse(results=[])
+            METRICS.increment("recovery.bulk_rpc.hard_failure", 1, {"tenant": tenant_id})
+            if os.getenv("RECOVERY_RAISE_ON_BULK_RPC_FAILURE", "").strip().lower() in {"1", "true", "yes"}:
+                raise
+            return BulkDispatchResponse(results=[], quota=None)
 
         return _parse_bulk_dispatch_response(resp.data, tenant_id, run_id)
 
@@ -201,7 +205,7 @@ class RecoveryAutomationEngine:
         tenant_id: str,
         users: List[Dict[str, Any]],
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[RecoveryDecision]:
         run_id = _extract_run_id(metadata)
         start_time = time.monotonic()
 
@@ -232,7 +236,7 @@ class RecoveryAutomationEngine:
                 invalid_count += 1
                 continue
 
-            dedup_key = f"{candidate.user_id}:{candidate.campaign_type.value}"
+            dedup_key = f"{tenant_id}:{run_id}:{candidate.user_id}:{candidate.campaign_type.value}"
             if dedup_key in seen_keys:
                 duplicate_count += 1
                 continue
@@ -267,7 +271,7 @@ class RecoveryAutomationEngine:
             elapsed,
         )
 
-        return [decision.model_dump(mode="json", exclude_none=True) for decision in decisions]
+        return decisions
 
     def _build_candidate(
         self,
@@ -454,7 +458,8 @@ def _resolve_email(user: Dict[str, Any]) -> Optional[str]:
 
 
 def _normalize_email(raw_email: str) -> str:
-    return unicodedata.normalize("NFKC", raw_email).strip().lower()
+    compact = str(raw_email).strip().replace(" ", "")
+    return unicodedata.normalize("NFKC", compact).lower()
 
 
 def _log_candidate_rejection(

@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 import { createClient } from "@/utils/supabase/server";
 
-type TenantContext = {
+export type TenantContext = {
   supabase: SupabaseClient<Database>;
   tenantId: string;
   userId: string;
@@ -14,7 +14,7 @@ type TenantUserMapping = {
   user_id: string | null;
 };
 
-type TenantContextResult =
+export type TenantContextResult =
   | { context: TenantContext }
   | { response: NextResponse };
 
@@ -48,8 +48,13 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
   for (let attempt = 0; attempt <= MAX_PROVISIONING_RETRIES; attempt += 1) {
     const { data: mapping, error: mappingError } = await supabase
       .from("tenant_users")
-      .select("tenant_id, user_id")
+      .select(`
+        tenant_id,
+        user_id,
+        tenants!inner(status)
+      `)
       .eq("user_id", userId)
+      .eq("tenants.status", "READY")
       .maybeSingle<TenantUserMapping>();
 
     if (mappingError) {

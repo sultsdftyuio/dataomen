@@ -261,6 +261,40 @@
   100% { transform: translateX(100%); }
 }
 
+@keyframes loading-orb-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(18px, -14px, 0) scale(1.06); }
+}
+
+@keyframes loading-progress-sweep {
+  0% { transform: translateX(-40%); opacity: 0.2; }
+  50% { opacity: 0.7; }
+  100% { transform: translateX(140%); opacity: 0.2; }
+}
+
+.loading-orb {
+  animation: loading-orb-drift 16s ease-in-out infinite;
+}
+
+.loading-orb-2 {
+  animation-delay: -6s;
+  animation-direction: reverse;
+}
+
+.loading-progress-bar {
+  position: relative;
+  background: linear-gradient(90deg, #e2e8f0 0%, #7dd3fc 48%, #0f172a 100%);
+}
+
+.loading-progress-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.65) 50%, transparent 100%);
+  transform: translateX(-40%);
+  animation: loading-progress-sweep 2.8s ease-in-out infinite;
+}
+
 .anim-float-1 { animation: float1 6s ease-in-out infinite; }
 .anim-float-2 { animation: float2 7s ease-in-out infinite reverse; }
 

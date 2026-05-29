@@ -16,6 +16,33 @@ type GenericTable = {
 export type Database = {
   public: {
     Tables: {
+      tenants: {
+        Row: {
+          tenant_id: string;
+          display_name: string | null;
+          status: string;
+          plan: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          tenant_id: string;
+          display_name?: string | null;
+          status?: string;
+          plan?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          tenant_id?: string;
+          display_name?: string | null;
+          status?: string;
+          plan?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
       tenant_settings: {
         Row: {
           tenant_id: string;
