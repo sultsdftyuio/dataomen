@@ -1,0 +1,37 @@
+-- ============================================================================
+-- ARCLI CORE SCHEMA — CONSTRAINT VALIDATION CHECKLIST
+-- ============================================================================
+-- Run after the migration set has landed and historical rows have been cleaned.
+-- These statements are intentionally left commented so they can be copied into
+-- a low-traffic maintenance session or a deployment checklist.
+-- ============================================================================
+
+-- ALTER TABLE tenant_users VALIDATE CONSTRAINT fk_tenant_users_tenant;
+-- ALTER TABLE tenant_users VALIDATE CONSTRAINT fk_tenant_users_user;
+-- ALTER TABLE tenant_billing VALIDATE CONSTRAINT fk_tenant_billing_tenant;
+-- ALTER TABLE tenant_settings VALIDATE CONSTRAINT fk_tenant_settings_tenant;
+-- ALTER TABLE events VALIDATE CONSTRAINT fk_events_tenant;
+-- ALTER TABLE alerts VALIDATE CONSTRAINT fk_alerts_tenant;
+-- ALTER TABLE alert_dispatch_logs VALIDATE CONSTRAINT fk_alert_dispatch_logs_tenant;
+-- ALTER TABLE churn_risk_state VALIDATE CONSTRAINT fk_churn_risk_state_tenant;
+-- ALTER TABLE churn_risk_history VALIDATE CONSTRAINT fk_churn_risk_history_tenant;
+-- ALTER TABLE churn_risk_history VALIDATE CONSTRAINT fk_churn_risk_history_run;
+-- ALTER TABLE churn_scoring_runs VALIDATE CONSTRAINT fk_churn_scoring_runs_tenant;
+-- ALTER TABLE metric_configs VALIDATE CONSTRAINT fk_metric_configs_tenant;
+-- ALTER TABLE metric_values_daily VALIDATE CONSTRAINT fk_metric_values_daily_tenant;
+-- ALTER TABLE metric_values_segmented VALIDATE CONSTRAINT fk_metric_values_segmented_tenant;
+-- ALTER TABLE anomaly_detector_logs VALIDATE CONSTRAINT fk_anomaly_detector_logs_tenant;
+-- ALTER TABLE user_activity_daily VALIDATE CONSTRAINT fk_user_activity_daily_tenant;
+-- ALTER TABLE recovery_emails VALIDATE CONSTRAINT fk_recovery_emails_tenant;
+-- ALTER TABLE recovery_suppressions VALIDATE CONSTRAINT fk_recovery_suppressions_tenant;
+-- ALTER TABLE recovery_quota_usage VALIDATE CONSTRAINT fk_recovery_quota_usage_tenant;
+-- ALTER TABLE recovery_dispatch_dedup VALIDATE CONSTRAINT fk_recovery_dispatch_dedup_tenant;
+-- ALTER TABLE recovery_dispatch_dedup VALIDATE CONSTRAINT fk_recovery_dispatch_dedup_send;
+-- ALTER TABLE recovery_email_dlq VALIDATE CONSTRAINT fk_recovery_email_dlq_tenant;
+-- ALTER TABLE recovery_email_dlq VALIDATE CONSTRAINT fk_recovery_email_dlq_email;
+-- ALTER TABLE recovery_email_events VALIDATE CONSTRAINT fk_recovery_email_events_tenant;
+-- ALTER TABLE recovery_email_events VALIDATE CONSTRAINT fk_recovery_email_events_email;
+-- ALTER TABLE recovery_attributions VALIDATE CONSTRAINT fk_recovery_attributions_tenant;
+-- ALTER TABLE billing_webhook_events VALIDATE CONSTRAINT fk_billing_webhook_events_tenant;
+-- ALTER TABLE api_keys VALIDATE CONSTRAINT fk_api_keys_tenant;
+-- ALTER TABLE api_idempotency_keys VALIDATE CONSTRAINT fk_api_idempotency_keys_tenant;
