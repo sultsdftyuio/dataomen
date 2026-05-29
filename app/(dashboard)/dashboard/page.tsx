@@ -16,8 +16,8 @@ export default async function DashboardPage() {
   if ("response" in tenantResult) {
     if (tenantResult.response.status === 400) {
       // User is authenticated but has no tenant mapping in the DB.
-      // Do NOT show them the QuickStart Guide, route them to create a workspace.
-      redirect("/onboarding/workspace"); 
+      // Do NOT show them the QuickStart Guide, route them to a valid recovery path.
+      redirect("/login?error=workspace_setup_failed");
     }
     // For 401 Unauthorized or 500 errors, force re-authentication.
     redirect("/login?next=/dashboard");
