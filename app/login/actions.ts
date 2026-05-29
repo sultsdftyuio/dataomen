@@ -10,6 +10,16 @@ export type ActionState = {
 
 // 1. Gate verbose logs behind development environment
 const isDev = process.env.NODE_ENV !== 'production';
+const DEAD_ONBOARDING_PATH = '/onboarding/workspace';
+
+const isDeadOnboardingPath = (value: string): boolean => {
+  return (
+    value === DEAD_ONBOARDING_PATH ||
+    value.startsWith(`${DEAD_ONBOARDING_PATH}/`) ||
+    value.startsWith(`${DEAD_ONBOARDING_PATH}?`) ||
+    value.startsWith(`${DEAD_ONBOARDING_PATH}#`)
+  );
+};
 
 /**
  * loginAction: Secure authentication handler for the Arcli platform.
@@ -42,13 +52,17 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
     : '[redacted]';
 
   // 5. Hardened Redirect Validation
-  const nextPath = 
+  const candidateNextPath = 
     requestedNextPath.startsWith('/') && 
     !requestedNextPath.startsWith('//') &&
     !requestedNextPath.includes('\\') &&
     !requestedNextPath.includes('..')
       ? requestedNextPath 
       : '/dashboard';
+
+  const nextPath = isDeadOnboardingPath(candidateNextPath)
+    ? '/dashboard'
+    : candidateNextPath;
 
   if (isDev) console.log(`[DEBUG-UI][${flowId}] Parsed credentials. Email: "${maskedEmail}", NextPath: "${nextPath}"`);
 

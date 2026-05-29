@@ -7,6 +7,7 @@ import { headers } from 'next/headers'
 const isDev = process.env.NODE_ENV !== 'production'
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
 const ROOT_RELATIVE_URL_REGEX = /^\//
+const DEAD_ONBOARDING_PATH = '/onboarding/workspace'
 
 // SECURITY: Only expose internal localhost routes in development
 const LOCAL_BACKEND_FALLBACKS = isDev ? ['http://localhost:8000', 'http://localhost:8080'] : []
@@ -24,6 +25,24 @@ type BackendValidationError = {
 // --- Utilities ---
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, '')
+
+const isSafeRedirectPath = (value: string): boolean => {
+  return (
+    value.startsWith('/') &&
+    !value.startsWith('//') &&
+    !value.includes('\\') &&
+    !value.includes('..')
+  )
+}
+
+const isDeadOnboardingPath = (value: string): boolean => {
+  return (
+    value === DEAD_ONBOARDING_PATH ||
+    value.startsWith(`${DEAD_ONBOARDING_PATH}/`) ||
+    value.startsWith(`${DEAD_ONBOARDING_PATH}?`) ||
+    value.startsWith(`${DEAD_ONBOARDING_PATH}#`)
+  )
+}
 
 // SECURITY: Prevent PII leakage in server logs
 const maskEmail = (email: string) => {
@@ -112,14 +131,25 @@ const resolveRegisterEndpointCandidates = async (): Promise<string[]> => {
 export async function registerAction(state: ActionState, formData: FormData): Promise<ActionState> {
   const flowId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   let shouldRedirect = false
+  let redirectPath = '/dashboard'
   
   try {
     // SECURITY: Safe FormData coercion (prevents File object injection)
     const emailField = formData.get('email')
     const passwordField = formData.get('password')
+    const nextField = formData.get('next')
     
     const email = typeof emailField === 'string' ? emailField.trim().toLowerCase() : ''
     const password = typeof passwordField === 'string' ? passwordField : ''
+    const requestedNext = typeof nextField === 'string' ? nextField : ''
+
+    const candidateNextPath = isSafeRedirectPath(requestedNext)
+      ? requestedNext
+      : '/dashboard'
+
+    redirectPath = isDeadOnboardingPath(candidateNextPath)
+      ? '/dashboard'
+      : candidateNextPath
 
     if (!email || !password) {
       return { error: 'Email and password are required.' }
@@ -226,7 +256,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
   // --- External Redirect ---
   // Next.js redirect throws a specific error that MUST NOT be caught by your standard try/catch
   if (shouldRedirect) {
-    redirect('/dashboard')
+    redirect(redirectPath)
   }
 
   return { success: true }

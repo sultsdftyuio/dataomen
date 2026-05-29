@@ -13,8 +13,7 @@ const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   'email_change',
   'email',
 ]);
-
-const BLOCKED_PREFIXES = ['/onboarding'];
+const DEAD_ONBOARDING_PATH = '/onboarding/workspace';
 
 // ---------------------------------------------------------------------------
 // UTILITIES
@@ -29,12 +28,12 @@ const isSafeRedirectPath = (value: string | null): value is string => {
   );
 };
 
-const isBlockedPath = (requestedNext: string): boolean => {
-  return BLOCKED_PREFIXES.some(
-    (prefix) =>
-      requestedNext === prefix ||
-      requestedNext.startsWith(`${prefix}/`) ||
-      requestedNext.startsWith(`${prefix}?`)
+const isDeadOnboardingPath = (requestedNext: string): boolean => {
+  return (
+    requestedNext === DEAD_ONBOARDING_PATH ||
+    requestedNext.startsWith(`${DEAD_ONBOARDING_PATH}/`) ||
+    requestedNext.startsWith(`${DEAD_ONBOARDING_PATH}?`) ||
+    requestedNext.startsWith(`${DEAD_ONBOARDING_PATH}#`)
   );
 };
 
@@ -93,7 +92,7 @@ export async function GET(request: Request) {
       : '/dashboard';
 
     // 3. Prevent Onboarding Bypass
-    if (isBlockedPath(nextPath)) {
+    if (isDeadOnboardingPath(nextPath)) {
       if (isDev) {
         console.warn(
           `[AUTH_CALLBACK][${flowId}] Blocked unauthorized onboarding redirect attempt`
