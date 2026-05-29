@@ -275,34 +275,17 @@ export function WorkspaceProvisioningPanel() {
                           : "border-slate-200 bg-white"
                     }`}
                   >
-                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
-                  <div>
-                    <h2 className="text-base font-semibold text-rose-950">
-                      We could not confirm the workspace in time.
-                    </h2>
-                    <p className="mt-2 text-sm leading-6 text-rose-700">
-                      Your account is intact. Retry the handoff and the system will re-check the tenant mapping.
-                    </p>
+                    <div className="flex items-start gap-3">
+                      <PhaseIcon className={`mt-0.5 h-5 w-5 shrink-0 ${isComplete ? "text-emerald-500" : isActive ? "text-sky-500" : "text-slate-400"}`} />
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900">{phase.title}</h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{phase.description}</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    onClick={handleRetry}
-                    className="inline-flex items-center justify-center rounded-full bg-slate-950 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800"
-                  >
-                    Retry setup
-                  </button>
-                  <a
-                    href="mailto:support@arcli.com"
-                    className="inline-flex items-center justify-center rounded-full border border-rose-200 bg-white px-5 py-3 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100"
-                  >
-                    Contact support
-                  </a>
-                </div>
-              </div>
-            ) : null}
+                );
+              })}
+            </div>
           </div>
 
           <aside className="relative overflow-hidden rounded-[2rem] border border-slate-900/10 bg-slate-950 p-6 text-white shadow-[0_24px_80px_rgba(15,23,42,0.26)] sm:p-8">
