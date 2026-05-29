@@ -1,70 +1,121 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+
 import { resolveTenantContext } from "@/utils/supabase/tenant";
+
 import RecoveryOverview from "./RecoveryOverview";
 import QuickStartGuide from "./QuickStartGuide";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Dashboard | Arcli",
   description: "Monitor churn risk and recovery performance.",
 };
 
 export default async function DashboardPage() {
-  // 1. Resolve Multi-Tenant Context (Handles Auth Internally)
+  // ============================================================================
+  // 1. Resolve Auth + Tenant Context (Fail Closed)
+  // ============================================================================
+
   const tenantResult = await resolveTenantContext();
 
-  // 2. Handle Broken Tenant States & Auth Failures Deterministically
   if ("response" in tenantResult) {
-    if (tenantResult.response.status === 400) {
-      // User is authenticated but has no tenant mapping in the DB.
-      // Do NOT show them the QuickStart Guide, route them to a valid recovery path.
-      redirect("/login?error=workspace_setup_failed");
+    const status = tenantResult.response.status;
+
+    switch (status) {
+      case 400:
+        // Authenticated user exists but tenant/workspace mapping is broken.
+        redirect("/onboarding/workspace");
+
+      case 401:
+        // Session missing/expired.
+        redirect("/login?next=/dashboard");
+
+      case 403:
+        // User authenticated but forbidden.
+        redirect("/unauthorized");
+
+      default:
+        // Infrastructure or unexpected failure.
+        redirect("/error");
     }
-    // For 401 Unauthorized or 500 errors, force re-authentication.
-    redirect("/login?next=/dashboard");
   }
 
   const { supabase: tenantSupabase, tenantId } = tenantResult.context;
 
-  // 3. Deterministic Setup Verification (Parallelized for Performance)
-  // We check BOTH the presence of an API key AND if we've actually received data.
-  // head: true makes these blazing fast COUNT() queries.
-  const [apiKeyResponse, eventsResponse] = await Promise.all([
+  // ============================================================================
+  // 2. Deterministic Setup Verification
+  // ============================================================================
+  // IMPORTANT:
+  // - We use existence queries instead of COUNT(*)
+  // - COUNT(exact) becomes expensive on large event tables
+  // - limit(1) allows Postgres to stop immediately after first match
+  // ============================================================================
+
+  const [apiKeyResult, eventResult] = await Promise.all([
     tenantSupabase
       .from("api_keys")
-      .select("id", { count: "exact", head: true })
+      .select("id")
       .eq("tenant_id", tenantId)
       .is("revoked_at", null)
-      .limit(1),
+      .limit(1)
+      .maybeSingle(),
+
     tenantSupabase
       .from("events")
-      .select("id", { count: "exact", head: true })
+      .select("id")
       .eq("tenant_id", tenantId)
       .limit(1)
+      .maybeSingle(),
   ]);
 
-  // Observability: Log infrastructure failures so we can debug stuck users
-  if (apiKeyResponse.error || eventsResponse.error) {
-    console.error(`[Dashboard] Setup verification query failed for tenant ${tenantId}`, {
-      apiError: apiKeyResponse.error,
-      eventError: eventsResponse.error
-    });
+  // ============================================================================
+  // 3. Infrastructure Failure Handling
+  // ============================================================================
+  // Never silently downgrade operational failures into onboarding UI.
+  // If the database is failing, surface an actual application error.
+  // ============================================================================
+
+  if (apiKeyResult.error || eventResult.error) {
+    console.error(
+      `[Dashboard] Setup verification failed for tenant ${tenantId}`,
+      {
+        apiKeyError: apiKeyResult.error,
+        eventError: eventResult.error,
+      }
+    );
+
+    throw new Error("Dashboard setup verification failed");
   }
 
-  const hasApiKey = (apiKeyResponse.count ?? 0) > 0;
-  const hasReceivedData = (eventsResponse.count ?? 0) > 0;
+  // ============================================================================
+  // 4. Compute Setup State
+  // ============================================================================
 
-  // Setup is only "complete" if data is actively flowing into the system.
-  const isSetupComplete = hasApiKey && hasReceivedData;
+  const hasApiKey = !!apiKeyResult.data;
+  const hasReceivedData = !!eventResult.data;
 
-  // 4. Render the correct state deterministically
+  // Granular onboarding states improve UX clarity.
+  const setupState =
+    !hasApiKey
+      ? "missing_api_key"
+      : !hasReceivedData
+        ? "awaiting_first_event"
+        : "active";
+
+  // ============================================================================
+  // 5. Render Deterministically
+  // ============================================================================
+
   return (
     <div className="w-full mx-auto h-full flex flex-col animate-in fade-in duration-300">
-      {!isSetupComplete ? (
-        // Passing down the state allows the QuickStartGuide to intelligently 
-        // show "Step 1 complete" vs "Awaiting your first event..."
-        <QuickStartGuide hasApiKey={hasApiKey} /> 
-      ) : (
+      {setupState === "active" ? (
         <RecoveryOverview />
+      ) : (
+        <QuickStartGuide
+          hasApiKey={hasApiKey}
+          hasReceivedData={hasReceivedData}
+          setupState={setupState}
+        />
       )}
     </div>
   );

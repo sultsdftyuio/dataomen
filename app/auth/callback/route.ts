@@ -13,7 +13,6 @@ const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   'email_change',
   'email',
 ]);
-const DEAD_ONBOARDING_PATH = '/onboarding/workspace';
 
 // ---------------------------------------------------------------------------
 // UTILITIES
@@ -25,15 +24,6 @@ const isSafeRedirectPath = (value: string | null): value is string => {
       !value.startsWith('//') &&
       !value.includes('\\') &&
       !value.includes('..')
-  );
-};
-
-const isDeadOnboardingPath = (requestedNext: string): boolean => {
-  return (
-    requestedNext === DEAD_ONBOARDING_PATH ||
-    requestedNext.startsWith(`${DEAD_ONBOARDING_PATH}/`) ||
-    requestedNext.startsWith(`${DEAD_ONBOARDING_PATH}?`) ||
-    requestedNext.startsWith(`${DEAD_ONBOARDING_PATH}#`)
   );
 };
 
@@ -90,16 +80,6 @@ export async function GET(request: Request) {
     let nextPath = isSafeRedirectPath(requestedNext)
       ? requestedNext
       : '/dashboard';
-
-    // 3. Prevent Onboarding Bypass
-    if (isDeadOnboardingPath(nextPath)) {
-      if (isDev) {
-        console.warn(
-          `[AUTH_CALLBACK][${flowId}] Blocked unauthorized onboarding redirect attempt`
-        );
-      }
-      nextPath = '/dashboard';
-    }
 
     // -----------------------------------------------------------------------
     // INVALID FLOW REJECTION

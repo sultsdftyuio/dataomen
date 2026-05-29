@@ -7,7 +7,6 @@ import { headers } from 'next/headers'
 const isDev = process.env.NODE_ENV !== 'production'
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i
 const ROOT_RELATIVE_URL_REGEX = /^\//
-const DEAD_ONBOARDING_PATH = '/onboarding/workspace'
 
 // SECURITY: Only expose internal localhost routes in development
 const LOCAL_BACKEND_FALLBACKS = isDev ? ['http://localhost:8000', 'http://localhost:8080'] : []
@@ -32,15 +31,6 @@ const isSafeRedirectPath = (value: string): boolean => {
     !value.startsWith('//') &&
     !value.includes('\\') &&
     !value.includes('..')
-  )
-}
-
-const isDeadOnboardingPath = (value: string): boolean => {
-  return (
-    value === DEAD_ONBOARDING_PATH ||
-    value.startsWith(`${DEAD_ONBOARDING_PATH}/`) ||
-    value.startsWith(`${DEAD_ONBOARDING_PATH}?`) ||
-    value.startsWith(`${DEAD_ONBOARDING_PATH}#`)
   )
 }
 
@@ -147,9 +137,7 @@ export async function registerAction(state: ActionState, formData: FormData): Pr
       ? requestedNext
       : '/dashboard'
 
-    redirectPath = isDeadOnboardingPath(candidateNextPath)
-      ? '/dashboard'
-      : candidateNextPath
+    redirectPath = candidateNextPath
 
     if (!email || !password) {
       return { error: 'Email and password are required.' }
