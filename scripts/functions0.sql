@@ -1,5 +1,5 @@
 -- ============================================================================
--- ARCLI CORE SCHEMA — PART 0: CANONICAL BASE (v3.1)
+-- ARCLI CORE SCHEMA — PART 0: CANONICAL BASE (v3.1-fixed)
 -- ============================================================================
 -- Creates every table, type, function, and core FK required by the platform.
 -- Run BEFORE Files 1–3. All DDL is idempotent (IF NOT EXISTS / OR REPLACE).
@@ -77,11 +77,6 @@ CREATE TABLE IF NOT EXISTS api_keys (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id    TEXT NOT NULL,
     key_id       TEXT NOT NULL,
-    key_hash     TEXT NOT NULL,
-    key_last4    TEXT NOT NULL,
-    created_by   TEXT,
-    last_used_at TIMESTAMPTZ,
-    label        TEXT,
     revoked_at   TIMESTAMPTZ,
     hash_version TEXT NOT NULL DEFAULT 'sha256',
     scopes       TEXT[] NOT NULL DEFAULT '{}',
@@ -144,7 +139,7 @@ CREATE TABLE IF NOT EXISTS churn_risk_state (
 CREATE TABLE IF NOT EXISTS churn_risk_history (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           TEXT NOT NULL,
-    risk_run_id         UUID,
+    risk_run_id         VARCHAR(255),
     user_id             TEXT NOT NULL,
     churn_risk_score    NUMERIC,
     risk_tier           TEXT,
@@ -156,95 +151,6 @@ COMMENT ON COLUMN churn_risk_history.risk_tier IS
     'Mirrors churn_risk_state.risk_tier for historical trend analysis.';
 COMMENT ON COLUMN churn_risk_history.risk_run_id IS
     'Links back to churn_scoring_runs.id. Used to group history rows per run.';
-
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'api_keys'
-          AND column_name = 'key_hash'
-    ) THEN
-        ALTER TABLE api_keys ADD COLUMN key_hash TEXT;
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'api_keys'
-          AND column_name = 'key_last4'
-    ) THEN
-        ALTER TABLE api_keys ADD COLUMN key_last4 TEXT;
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'api_keys'
-          AND column_name = 'created_by'
-    ) THEN
-        ALTER TABLE api_keys ADD COLUMN created_by TEXT;
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'api_keys'
-          AND column_name = 'last_used_at'
-    ) THEN
-        ALTER TABLE api_keys ADD COLUMN last_used_at TIMESTAMPTZ;
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'api_keys'
-          AND column_name = 'label'
-    ) THEN
-        ALTER TABLE api_keys ADD COLUMN label TEXT;
-    END IF;
-
-    UPDATE api_keys
-       SET key_last4 = RIGHT(key_id, 4)
-     WHERE key_last4 IS NULL
-       AND key_id IS NOT NULL;
-
-    IF EXISTS (
-        SELECT 1
-        FROM api_keys
-        WHERE key_hash IS NULL
-           OR key_last4 IS NULL
-    ) THEN
-        UPDATE api_keys
-           SET revoked_at = COALESCE(revoked_at, NOW())
-         WHERE key_hash IS NULL
-            OR key_last4 IS NULL;
-
-        RAISE NOTICE 'Legacy api_keys rows missing key_hash or key_last4 were revoked; reissue keys for affected tenants.';
-    END IF;
-
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'churn_risk_history'
-          AND column_name = 'risk_run_id'
-          AND udt_name <> 'uuid'
-    ) THEN
-                UPDATE churn_risk_history
-                     SET risk_run_id = NULL
-                 WHERE risk_run_id IS NOT NULL
-                     AND trim(risk_run_id::TEXT) <> ''
-                     AND trim(risk_run_id::TEXT) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
-
-        ALTER TABLE churn_risk_history
-            ALTER COLUMN risk_run_id TYPE UUID USING NULLIF(risk_run_id::TEXT, '')::UUID;
-    END IF;
-END $$;
 
 CREATE TABLE IF NOT EXISTS churn_scoring_runs (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -853,6 +759,45 @@ END;
 $$;
 
 -- ============================================================================
+-- SECTION 14: MIGRATION SAFETY — ENSURE FK COLUMNS EXIST
+-- ============================================================================
+-- If any table was created by an older schema (or a failed partial run) the
+-- column referenced by the FK below may be missing.  ADD COLUMN IF NOT EXISTS
+-- is harmless when the column is already present, and prevents the 42703 error.
+-- ============================================================================
+
+ALTER TABLE IF EXISTS tenant_users         ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS tenant_users         ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE IF EXISTS tenant_billing       ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS tenant_settings      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS events               ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS alerts               ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS alert_dispatch_logs  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS churn_risk_state     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS churn_risk_history   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS churn_scoring_runs   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS metric_configs       ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS metric_values_daily  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS metric_values_segmented ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS anomaly_detector_logs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS user_activity_daily   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_emails       ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_suppressions ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_quota_usage  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_dispatch_dedup ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_email_dlq   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_email_events ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_attributions ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS billing_webhook_events ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS api_keys             ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS api_idempotency_keys ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+
+-- Child FK columns (SET NULL targets) — ensure they exist on pre-existing tables.
+ALTER TABLE IF EXISTS recovery_email_events ADD COLUMN IF NOT EXISTS email_id UUID;
+ALTER TABLE IF EXISTS recovery_email_dlq    ADD COLUMN IF NOT EXISTS email_id UUID;
+ALTER TABLE IF EXISTS recovery_dispatch_dedup ADD COLUMN IF NOT EXISTS send_id UUID;
+
+-- ============================================================================
 -- SECTION 15: CORE FOREIGN KEYS
 -- ============================================================================
 -- All FKs live here so they can be deployed with:
@@ -868,9 +813,12 @@ DO $$ BEGIN ALTER TABLE tenant_users
     ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-DO $$ BEGIN ALTER TABLE tenant_users
-    ADD CONSTRAINT fk_tenant_users_user FOREIGN KEY (user_id) REFERENCES auth.users(id)
-    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') THEN
+        ALTER TABLE tenant_users
+            ADD CONSTRAINT fk_tenant_users_user FOREIGN KEY (user_id) REFERENCES auth.users(id)
+            ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
+    END IF;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN ALTER TABLE tenant_billing
@@ -906,11 +854,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE churn_risk_history
     ADD CONSTRAINT fk_churn_risk_history_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN ALTER TABLE churn_risk_history
-    ADD CONSTRAINT fk_churn_risk_history_run FOREIGN KEY (risk_run_id) REFERENCES churn_scoring_runs(id)
-    ON DELETE SET NULL NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN ALTER TABLE churn_scoring_runs
@@ -1010,7 +953,7 @@ DO $$ BEGIN ALTER TABLE api_idempotency_keys
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
--- END OF PART 0 — CANONICAL BASE v3.1
+-- END OF PART 0 — CANONICAL BASE v3.1-fixed
 -- ============================================================================
 -- Next: run File 1 (triggers, CHECKs, normalization, numeric precision).
 -- ============================================================================

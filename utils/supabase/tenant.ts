@@ -12,6 +12,10 @@ export type TenantContext = {
 type TenantUserMapping = {
   tenant_id: string | null;
   user_id: string | null;
+  // Account for PostgREST inner join return shape
+  tenants?: {
+    status: string;
+  } | null;
 };
 
 export type TenantContextResult =
@@ -21,6 +25,7 @@ export type TenantContextResult =
 const unauthorizedResponse = () =>
   NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+// Strictly for bypassing the Auth -> Public trigger race condition (usually <50ms)
 const PROVISIONING_RETRY_BASE_DELAY_MS = 300;
 const PROVISIONING_RETRY_MULTIPLIER = 1.5;
 const MAX_PROVISIONING_RETRIES = 4;
@@ -42,10 +47,10 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
   }
 
   const userId = data.user.id;
-
-  let pendingProvisioningLogged = false;
+  let pendingAssignmentLogged = false;
 
   for (let attempt = 0; attempt <= MAX_PROVISIONING_RETRIES; attempt += 1) {
+    // We intentionally DO NOT filter by "READY" here. We need to know if the record exists at all.
     const { data: mapping, error: mappingError } = await supabase
       .from("tenant_users")
       .select(`
@@ -54,7 +59,6 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
         tenants!inner(status)
       `)
       .eq("user_id", userId)
-      .eq("tenants.status", "READY")
       .maybeSingle<TenantUserMapping>();
 
     if (mappingError) {
@@ -73,25 +77,45 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
     }
 
     if (mapping?.tenant_id && mapping.user_id === userId) {
-      const tenantId = String(mapping.tenant_id);
+      const tenantStatus = mapping.tenants?.status || "UNKNOWN";
 
+      // 2a. Tenant is fully provisioned and ready
+      if (tenantStatus === "READY") {
+        return {
+          context: {
+            supabase,
+            tenantId: String(mapping.tenant_id),
+            userId: String(mapping.user_id),
+          },
+        };
+      }
+
+      // 2b. Tenant shell exists but is actively building (PROVISIONING, INTEGRATION, BACKFILLING).
+      // DO NOT burn retries. Short-circuit immediately to allow the UI polling to handle it.
+      if (!pendingAssignmentLogged) {
+        console.info(`[TenantContext] Workspace provisioning in progress. Phase: ${tenantStatus}`, { userId });
+      }
+      
       return {
-        context: {
-          supabase,
-          tenantId,
-          userId: String(mapping.user_id),
-        },
+        response: NextResponse.json(
+          {
+            error: "Workspace provisioning in progress.",
+            code: "workspace_setup_pending",
+            phase: tenantStatus // Send exact phase down so UI component can render accurate progress
+          },
+          { status: 400 }
+        ),
       };
     }
 
-    if (!pendingProvisioningLogged) {
-      console.warn(`[TenantContext] Awaiting async provisioning for user ${userId}...`, {
+    // 3. No mapping exists yet. This implies the auth trigger hasn't fired or committed.
+    // This is the ONLY scenario where we use the micro-retry loop.
+    if (!pendingAssignmentLogged) {
+      console.warn(`[TenantContext] Awaiting initial tenant assignment shell for user...`, {
         userId,
-        maxRetries: MAX_PROVISIONING_RETRIES,
-        baseDelayMs: PROVISIONING_RETRY_BASE_DELAY_MS,
-        retryMultiplier: PROVISIONING_RETRY_MULTIPLIER,
+        attempt
       });
-      pendingProvisioningLogged = true;
+      pendingAssignmentLogged = true;
     }
 
     if (attempt < MAX_PROVISIONING_RETRIES) {
@@ -103,7 +127,8 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
     }
   }
 
-  console.error("[TenantContext] Async provisioning exhausted without workspace mapping", {
+  // 4. Exhausted retries without seeing a tenant mapping record.
+  console.error("[TenantContext] Auth sync exhausted. No workspace mapping created.", {
     userId,
     maxRetries: MAX_PROVISIONING_RETRIES,
   });
@@ -112,7 +137,7 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
     response: NextResponse.json(
       {
         error: "No associated workspace found for user.",
-        code: "workspace_setup_pending",
+        code: "tenant_assignment_failed",
       },
       { status: 400 }
     ),
