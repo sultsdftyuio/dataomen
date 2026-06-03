@@ -6,11 +6,14 @@ from threading import Lock
 from typing import Optional
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from datetime import datetime
+
+Base = declarative_base()
 
 class AnomalyAlert(Base):
     __tablename__ = "anomaly_alerts"
