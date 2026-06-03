@@ -1,94 +1,55 @@
 # ==============================================================================
-# ARCLI.TECH - DATAOMEN PRODUCTION DEPENDENCIES (2026 ARCHITECTURE)
+# ARCLI.TECH - CORE PRODUCTION DEPENDENCIES (V3.0 ARCHITECTURE)
 # ==============================================================================
 
-# --- Build Dependencies (FIX for Python 3.12 / Render) ---
-setuptools<70.0.0             # Temporary downgrade to restore pkg_resources
+# --- Build Dependencies ---
+setuptools<70.0.0             
 wheel>=0.43.0
 
 # --- Web Framework & Production Server ---
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
-gunicorn==21.2.0              # Essential for process management on Render
-python-multipart==0.0.9       # Required for file uploads in ingestion_service
-anyio>=4.3.0                  # Explicit requirement for Thread pool offloading
+gunicorn==21.2.0              
+python-multipart==0.0.9       
+anyio>=4.3.0                  
 
 # --- Background Jobs & Task Queues (The Orchestrator) ---
-celery>=5.3.0                 # Distributed task queue for the compute worker
-dramatiq>=1.15.0              # Async task queue for recovery workflows
-redis>=5.0.0                  # Redis client for Celery broker and backend caching
+dramatiq>=1.15.0              # Specified in Constitution Sec. 4
+redis>=5.0.0                  
 
 # --- Email Delivery (Recovery Engine) ---
-resend>=0.8.0                 # Resend email SDK for recovery campaigns
+resend>=0.8.0                 # Core to Recovery Automation
 
-# --- Computation & Analytical Engines (Execution Layer) ---
+# --- Computation (Deterministic Scoring) ---
 pandas>=2.1.0
 numpy>=1.26.0
-polars>=0.20.0                # Vectorized dataframe engine
-scipy>=1.12.0                 # Mathematical precision & anomaly detection
-duckdb>=0.10.0                # In-process analytical engine
-pyarrow>=14.0.0               # Parquet support for DuckDB/Polars
-scikit-learn>=1.4.0           # ML utilities
 
-# --- Intelligence & RAG (Intelligence Layer) ---
-openai>=1.12.0
-langchain>=0.1.0
-langchain-openai>=0.0.5
-sentence-transformers>=2.5.0
-tiktoken>=0.6.0
-chromadb>=0.4.24
-faiss-cpu>=1.8.0              # Fixed for native Python 3.12 support
-qdrant-client>=1.7.0
 # --- Database & Multi-Tenant Infrastructure ---
-supabase>=2.4.0               # Auth and DB management
+supabase>=2.4.0               
 postgrest>=0.10.0
-psycopg2-binary>=2.9.9        # Postgres adapter
-asyncpg>=0.29.0               # Async SQLAlchemy adapter for sync_engine and agent_memory
-sqlalchemy>=2.0.27            # ORM for models.py
-pgvector>=0.2.5               # Required for Vector type in models.py
-pydantic[email]>=2.6.0        # CRITICAL FIX: Added [email] for RegisterRequest validation
+psycopg2-binary>=2.9.9        
+asyncpg>=0.29.0               
+sqlalchemy>=2.0.27            
+pydantic[email]>=2.6.0        
 pydantic-settings>=2.2.0
-
-# --- Storage & Cloud Strategy (Modular Infrastructure) ---
-boto3==1.34.51                # Pinned to mathematically match s3fs 2024.2.0
-s3fs==2024.2.0                
-fsspec==2024.2.0         
 
 # --- Security & Utilities ---
 python-dotenv==1.0.1
-passlib[bcrypt]>=1.7.4        # CRITICAL FIX: Required by FastAPI Auth
+passlib[bcrypt]>=1.7.4        
 bcrypt>=4.1.2
-pyjwt>=2.10.0                 # UPGRADED: To support modern cryptography
-cryptography>=44.0.1          # FIX: Upgraded to satisfy snowflake-connector requirements
-cachetools>=5.3.3             # FIX: Required for LRU Caching in compute_engine.py
+pyjwt>=2.10.0                 
+cryptography>=44.0.1          
+cachetools>=5.3.3             
 python-dateutil==2.8.2
-croniter==2.0.1               # Schedule handling
-openpyxl==3.1.2               # Excel ingestion support
-httpx==0.27.0                 # Async HTTP client for AI streaming/Supabase calls
-tenacity>=8.2.3               # Exponential backoff for SaaS Connectors
+croniter==2.0.1               
+httpx==0.27.0                 
+tenacity>=8.2.3               # Mandatory for retry safety (Sec. 11/14)
 
 # --- Observability & Telemetry ---
 prometheus-client==0.20.0
-structlog==24.1.0
-loguru==0.6.0                 # Advanced logging capabilities
-sentry-sdk==1.28.0            # Error tracking and performance monitoring
-sqlglot>=23.8.0               # SQL parsing and transformation for query optimization
-psutil>=5.9.8                 # CRITICAL FIX: Hardware monitoring for the compute_worker
+structlog==24.1.0             # Pick ONE logging library. Removed loguru.
+sentry-sdk==1.28.0            
+psutil>=5.9.8                 
 
-# --- SaaS & CRM Connectors ---
-stripe>=8.6.0                 # CRITICAL FIX: Missing Stripe SDK
-
-# --- Enterprise Data Warehouses ---
-snowflake-connector-python[pandas]>=3.8.0
-redshift-connector>=2.0.915
-google-cloud-bigquery[pandas,pyarrow]>=3.10.0
-google-auth>=2.49.0
-google-api-core>=2.30.0
-
-# --- Performance Marketing ---
-google-ads>=23.1.0
-grpcio>=1.62.1
-grpcio-status>=1.62.1
-certifi>=2024.2.2
-greenlet>=3.0.3
-instructor>=1.2.0
+# --- Core SaaS Connectors ---
+stripe>=8.6.0                 # Specified in Constitution Sec. 4 & 14
