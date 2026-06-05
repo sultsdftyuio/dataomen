@@ -648,7 +648,8 @@ class DataSyncPayload(BaseModel):
 async def handle_data_sync_webhook(
     payload: DataSyncPayload,
     background_tasks: BackgroundTasks,
-    x_internal_secret: str = Header(..., description="Internal cluster security token")
+    x_internal_secret: str = Header(..., description="Internal cluster security token"),
+    db: Session = Depends(get_db),
 ):
     """
     Receives events when the Data Ingestion Engine finishes pulling from a remote source.

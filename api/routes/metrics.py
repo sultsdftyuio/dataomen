@@ -6,9 +6,10 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from api.database import get_db, get_db_pool
+from api.database import get_db, get_async_db
 from api.auth import get_current_tenant
 from api.services.metrics_service import fetch_current_metric, fetch_metric_history
 from api.services.anomaly_detector import AnomalyDetector, check_anomaly
@@ -59,7 +60,7 @@ async def get_metric_insights(
     force_run: bool = Query(False, description="Force recompute"),
     tenant_id: str = Depends(get_current_tenant),
     db: Session = Depends(get_db),
-    db_pool = Depends(get_db_pool)
+    async_db: AsyncSession = Depends(get_async_db)
 ):
     """
     Unified Insights Endpoint (Deterministic Rules Engine)
@@ -117,7 +118,7 @@ async def get_metric_insights(
             handle_anomaly_alert(db, tenant_id, anomaly)
 
             try:
-                detector = AnomalyDetector(db_pool)
+                detector = AnomalyDetector(async_db)
                 # MULTI-TENANT FIX: Enforce UTC timezone to prevent cross-region drift
                 current_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 

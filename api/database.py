@@ -37,6 +37,7 @@ __all__ = [
     "SessionLocal",
     "get_db",
     "get_async_db",
+    "get_db_pool",
     "init_db",
     "shutdown_database",
     "_normalize_database_url",
@@ -215,6 +216,12 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
         raise
     finally:
         await session.close()
+
+
+async def get_db_pool() -> AsyncGenerator[AsyncEngine, None]:
+    """Yield the raw async engine for operations that bypass the ORM session."""
+    engine = await _get_async_engine()
+    yield engine
 
 
 # ---------------------------------------------------------------------------
