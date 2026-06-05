@@ -74,6 +74,7 @@ DO $$ BEGIN PERFORM _attach_updated_at('api_keys'); END $$;
 DO $$ BEGIN PERFORM _attach_updated_at('metric_configs'); END $$;
 DO $$ BEGIN PERFORM _attach_updated_at('churn_risk_state'); END $$;
 DO $$ BEGIN PERFORM _attach_updated_at('alerts'); END $$;
+DO $$ BEGIN PERFORM _attach_updated_at('anomaly_alerts'); END $$;
 
 
 -- ============================================================================

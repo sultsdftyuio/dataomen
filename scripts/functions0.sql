@@ -1,15 +1,26 @@
 -- ============================================================================
--- ARCLI CORE SCHEMA — PART 0: CANONICAL BASE (v3.1-fixed)
+-- ARCLI CORE SCHEMA — COMBINED CANONICAL BASE (v3.3)
 -- ============================================================================
--- Creates every table, type, function, and core FK required by the platform.
--- Run BEFORE Files 1–3. All DDL is idempotent (IF NOT EXISTS / OR REPLACE).
+-- Merges v3.1 + v3.2.  Run BEFORE Files 1–3.
+-- All DDL is idempotent (IF NOT EXISTS / OR REPLACE / DO-blocks).
 --
--- DESIGN DECISIONS:
---   • NO inline REFERENCES in CREATE TABLE. All FKs live in Section 15 so they
---     can be deployed with NOT VALID + DEFERRABLE INITIALLY DEFERRED.
---   • Child FKs (email_id, send_id) use ON DELETE SET NULL to preserve audit
---     rows and DLQ history if a parent recovery_email is hard-deleted.
---   • tenant_users FKs use ON DELETE CASCADE to match application semantics.
+-- FIXES OVER v3.1+v3.2:
+--   1. ALTER TYPE ... ADD VALUE wrapped in duplicate_object guards
+--      (replaces invalid "IF NOT EXISTS" syntax).
+--   2. Restored anomaly_alerts table (accidentally dropped in v3.2).
+--   3. api_keys gains key_hash so credentials can actually be verified.
+--   4. recovery_attributions gains email_id, user_id, campaign_type,
+--      attributed_at so it can be joined to recovery_emails.
+--   5. FKs added: metric_values_daily/segmented → metric_configs.
+--   6. Performance indexes for outbox claim, dispatch dedup, and
+--      idempotency-key expiry cleanup.
+--   7. Unique indexes to prevent duplicate churn_risk_state and
+--      user_activity_daily rows.
+--
+-- DESIGN DECISIONS (unchanged):
+--   • NO inline REFERENCES in CREATE TABLE. All FKs live in Section 15.
+--   • Child FKs (email_id, send_id) use ON DELETE SET NULL.
+--   • tenant_users FKs use ON DELETE CASCADE.
 -- ============================================================================
 
 -- ============================================================================
@@ -27,24 +38,72 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- Idempotent enum expansion — duplicate_object is the correct exception
+-- for an already-existing label (PostgreSQL does NOT support
+-- "ADD VALUE IF NOT EXISTS" syntax).
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'PENDING';    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'SYNCING';    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'INDEXING';   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'SUSPENDED';  EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'ARCHIVED';     EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'DELETED';    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- ============================================================================
 -- CORE TENANT & USER TABLES
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS tenants (
-    tenant_id    TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    name         TEXT        NOT NULL,
-    display_name TEXT,
-    plan         TEXT,
-    status       provisioning_state DEFAULT 'PROVISIONING',
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    tenant_id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    name                TEXT               NOT NULL,
+    display_name        TEXT,
+    plan                TEXT,
+    provisioning_status provisioning_state DEFAULT 'PROVISIONING',
+    status              TEXT               NOT NULL DEFAULT 'active',
+    created_at          TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ        NOT NULL DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------------------
+-- Migration helpers — idempotent, safe on both fresh and existing databases.
+-- ---------------------------------------------------------------------------
+
+-- On older schemas the provisioning lifecycle column was called 'status'
+-- with type provisioning_state.  Rename it to free the name for the text column.
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'status'
+           AND udt_name     = 'provisioning_state'
+    ) THEN
+        ALTER TABLE public.tenants RENAME COLUMN status TO provisioning_status;
+    END IF;
+END $$;
+
+-- Ensure the account/billing status text column exists (migration + fresh guard).
+ALTER TABLE public.tenants
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+
+-- Ensure provisioning_status column exists (covers schemas where the rename
+-- above did not fire because the column was missing entirely).
+ALTER TABLE public.tenants
+    ADD COLUMN IF NOT EXISTS provisioning_status provisioning_state DEFAULT 'PROVISIONING';
+
+-- Add the status check constraint idempotently.
+DO $$ BEGIN
+    ALTER TABLE public.tenants
+        ADD CONSTRAINT tenants_status_check
+        CHECK (status IN ('active', 'suspended', 'past_due', 'deleted'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS tenant_users (
     tenant_id  TEXT,
     user_id    UUID,
-    role       TEXT DEFAULT 'owner',
+    role       TEXT        DEFAULT 'owner',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (tenant_id, user_id)
@@ -62,11 +121,11 @@ CREATE TABLE IF NOT EXISTS tenant_settings (
 );
 
 CREATE TABLE IF NOT EXISTS tenant_billing (
-    tenant_id            TEXT PRIMARY KEY,
-    stripe_customer_id   TEXT UNIQUE,
-    subscription_status  TEXT DEFAULT 'incomplete',
-    created_at           TIMESTAMPTZ DEFAULT NOW(),
-    updated_at           TIMESTAMPTZ DEFAULT NOW()
+    tenant_id           TEXT PRIMARY KEY,
+    stripe_customer_id  TEXT UNIQUE,
+    subscription_status TEXT        DEFAULT 'incomplete',
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================================
@@ -75,24 +134,25 @@ CREATE TABLE IF NOT EXISTS tenant_billing (
 
 CREATE TABLE IF NOT EXISTS api_keys (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id    TEXT NOT NULL,
-    key_id       TEXT NOT NULL,
+    tenant_id    TEXT        NOT NULL,
+    key_id       TEXT        NOT NULL,
+    key_hash     TEXT        NOT NULL DEFAULT '',
     revoked_at   TIMESTAMPTZ,
-    hash_version TEXT NOT NULL DEFAULT 'sha256',
-    scopes       TEXT[] NOT NULL DEFAULT '{}',
+    hash_version TEXT        NOT NULL DEFAULT 'sha256',
+    scopes       TEXT[]      NOT NULL DEFAULT '{}',
     created_at   TIMESTAMPTZ DEFAULT NOW(),
     updated_at   TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (tenant_id, key_id)
 );
 
 CREATE TABLE IF NOT EXISTS api_idempotency_keys (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL,
-    request_hash    TEXT NOT NULL,
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        TEXT        NOT NULL,
+    idempotency_key  TEXT        NOT NULL,
+    request_hash     TEXT        NOT NULL,
     response_payload JSONB,
-    expires_at      TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    expires_at       TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (tenant_id, idempotency_key)
 );
 
@@ -102,7 +162,7 @@ CREATE TABLE IF NOT EXISTS api_idempotency_keys (
 
 CREATE TABLE IF NOT EXISTS events (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       TEXT NOT NULL,
+    tenant_id       TEXT        NOT NULL,
     idempotency_key TEXT,
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     value           NUMERIC,
@@ -111,11 +171,22 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE TABLE IF NOT EXISTS alerts (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id  TEXT NOT NULL,
-    status     TEXT NOT NULL DEFAULT 'active',
+    tenant_id  TEXT        NOT NULL,
+    status     TEXT        NOT NULL DEFAULT 'active',
     last_seen  TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS anomaly_alerts (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id   TEXT        NOT NULL,
+    metric_name TEXT        NOT NULL,
+    severity    TEXT,
+    message     TEXT,
+    is_resolved BOOLEAN     DEFAULT FALSE,
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS alert_dispatch_logs (
@@ -128,8 +199,8 @@ CREATE TABLE IF NOT EXISTS alert_dispatch_logs (
 
 CREATE TABLE IF NOT EXISTS churn_risk_state (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id  TEXT NOT NULL,
-    user_id    TEXT NOT NULL,
+    tenant_id  TEXT        NOT NULL,
+    user_id    TEXT        NOT NULL,
     risk_tier  TEXT,
     risk_score NUMERIC,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -138,13 +209,13 @@ CREATE TABLE IF NOT EXISTS churn_risk_state (
 
 CREATE TABLE IF NOT EXISTS churn_risk_history (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id           TEXT NOT NULL,
+    tenant_id           TEXT         NOT NULL,
     risk_run_id         VARCHAR(255),
-    user_id             TEXT NOT NULL,
+    user_id             TEXT         NOT NULL,
     churn_risk_score    NUMERIC,
     risk_tier           TEXT,
     primary_risk_signal TEXT,
-    created_at          TIMESTAMPTZ DEFAULT NOW()
+    created_at          TIMESTAMPTZ  DEFAULT NOW()
 );
 
 COMMENT ON COLUMN churn_risk_history.risk_tier IS
@@ -154,8 +225,8 @@ COMMENT ON COLUMN churn_risk_history.risk_run_id IS
 
 CREATE TABLE IF NOT EXISTS churn_scoring_runs (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id    TEXT NOT NULL,
-    status       TEXT DEFAULT 'running',
+    tenant_id    TEXT        NOT NULL,
+    status       TEXT        DEFAULT 'running',
     started_at   TIMESTAMPTZ DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
@@ -163,50 +234,50 @@ CREATE TABLE IF NOT EXISTS churn_scoring_runs (
 
 CREATE TABLE IF NOT EXISTS metric_configs (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   TEXT NOT NULL,
-    metric_name TEXT NOT NULL,
-    config      JSONB DEFAULT '{}',
-    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    tenant_id   TEXT        NOT NULL,
+    metric_name TEXT        NOT NULL,
+    config      JSONB       DEFAULT '{}',
+    is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS metric_values_daily (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id      TEXT NOT NULL,
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        TEXT        NOT NULL,
     metric_config_id UUID,
-    date           DATE NOT NULL,
-    value          NUMERIC,
-    created_at     TIMESTAMPTZ DEFAULT NOW()
+    date             DATE        NOT NULL,
+    value            NUMERIC,
+    created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS metric_values_segmented (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id      TEXT NOT NULL,
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id        TEXT        NOT NULL,
     metric_config_id UUID,
-    segment        TEXT,
-    date           DATE NOT NULL,
-    value          NUMERIC,
-    created_at     TIMESTAMPTZ DEFAULT NOW()
+    segment          TEXT,
+    date             DATE        NOT NULL,
+    value            NUMERIC,
+    created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS anomaly_detector_logs (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id    TEXT NOT NULL,
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     TEXT        NOT NULL,
     detector_type TEXT,
-    severity     TEXT,
-    metric_name  TEXT,
-    date         DATE,
-    log_data     JSONB DEFAULT '{}',
-    created_at   TIMESTAMPTZ DEFAULT NOW()
+    severity      TEXT,
+    metric_name   TEXT,
+    date          DATE,
+    log_data      JSONB       DEFAULT '{}',
+    created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS user_activity_daily (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id      TEXT NOT NULL,
+    tenant_id      TEXT        NOT NULL,
     user_id        TEXT,
-    date           DATE NOT NULL,
-    activity_count INT DEFAULT 0,
+    date           DATE        NOT NULL,
+    activity_count INT         DEFAULT 0,
     created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -215,29 +286,29 @@ CREATE TABLE IF NOT EXISTS user_activity_daily (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS recovery_emails (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id           TEXT NOT NULL,
-    user_id             TEXT NOT NULL,
-    email               TEXT NOT NULL CHECK (email <> ''),
-    campaign_type       TEXT NOT NULL,
-    status              TEXT NOT NULL DEFAULT 'pending_dispatch',
-    idempotency_key     TEXT,
-    primary_risk_signal TEXT,
-    churn_risk_score    INT,
-    dispatch_token      TEXT,
-    dispatch_attempt    INT DEFAULT 0,
-    dispatch_claimed_at TIMESTAMPTZ,
-    dispatched_at       TIMESTAMPTZ,
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id            TEXT        NOT NULL,
+    user_id              TEXT        NOT NULL,
+    email                TEXT        NOT NULL CHECK (email <> ''),
+    campaign_type        TEXT        NOT NULL,
+    status               TEXT        NOT NULL DEFAULT 'pending_dispatch',
+    idempotency_key      TEXT,
+    primary_risk_signal  TEXT,
+    churn_risk_score     INT,
+    dispatch_token       TEXT,
+    dispatch_attempt     INT         DEFAULT 0,
+    dispatch_claimed_at  TIMESTAMPTZ,
+    dispatched_at        TIMESTAMPTZ,
     provider_accepted_at TIMESTAMPTZ,
-    delivered_at        TIMESTAMPTZ,
-    sent_at             TIMESTAMPTZ,
-    lease_expires_at    TIMESTAMPTZ,
-    next_retry_at       TIMESTAMPTZ,
-    failure_stage       TEXT,
-    retry_count         INT DEFAULT 0,
-    queued_at           TIMESTAMPTZ,
-    created_at          TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW()
+    delivered_at         TIMESTAMPTZ,
+    sent_at              TIMESTAMPTZ,
+    lease_expires_at     TIMESTAMPTZ,
+    next_retry_at        TIMESTAMPTZ,
+    failure_stage        TEXT,
+    retry_count          INT         DEFAULT 0,
+    queued_at            TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Partial unique index: only enforces when idempotency_key is supplied.
@@ -247,8 +318,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_emails_batch_user_campaign
 
 CREATE TABLE IF NOT EXISTS recovery_suppressions (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id  TEXT NOT NULL,
-    email      TEXT NOT NULL,
+    tenant_id  TEXT        NOT NULL,
+    email      TEXT        NOT NULL,
     reason     TEXT,
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -256,39 +327,39 @@ CREATE TABLE IF NOT EXISTS recovery_suppressions (
 );
 
 CREATE TABLE IF NOT EXISTS recovery_quota_usage (
-    tenant_id    TEXT NOT NULL,
+    tenant_id    TEXT        NOT NULL,
     window_start TIMESTAMPTZ NOT NULL,
-    used         INT NOT NULL DEFAULT 0,
+    used         INT         NOT NULL DEFAULT 0,
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (tenant_id, window_start)
 );
 
 CREATE TABLE IF NOT EXISTS recovery_dispatch_dedup (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    dispatch_token   TEXT UNIQUE NOT NULL,
-    tenant_id        TEXT NOT NULL,
+    dispatch_token   TEXT        UNIQUE NOT NULL,
+    tenant_id        TEXT        NOT NULL,
     send_id          UUID,
-    state            TEXT NOT NULL DEFAULT 'processing',
+    state            TEXT        NOT NULL DEFAULT 'processing',
     lease_expires_at TIMESTAMPTZ,
-    attempts         INT DEFAULT 0,
+    attempts         INT         DEFAULT 0,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS recovery_email_dlq (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id     TEXT NOT NULL,
+    tenant_id     TEXT        NOT NULL,
     email_id      UUID,
     error_message TEXT,
-    failure_stage TEXT NOT NULL DEFAULT 'unknown',
-    retry_count   INT DEFAULT 0,
+    failure_stage TEXT        NOT NULL DEFAULT 'unknown',
+    retry_count   INT         DEFAULT 0,
     failed_at     TIMESTAMPTZ,
     created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS recovery_email_events (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   TEXT NOT NULL,
+    tenant_id   TEXT        NOT NULL,
     email_id    UUID,
     event_type  TEXT,
     occurred_at TIMESTAMPTZ,
@@ -296,15 +367,19 @@ CREATE TABLE IF NOT EXISTS recovery_email_events (
 );
 
 CREATE TABLE IF NOT EXISTS recovery_attributions (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id  TEXT NOT NULL,
-    revenue    NUMERIC,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     TEXT        NOT NULL,
+    email_id      UUID,
+    user_id       TEXT,
+    campaign_type TEXT,
+    revenue       NUMERIC,
+    attributed_at TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS billing_webhook_events (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id   TEXT NOT NULL,
+    tenant_id   TEXT        NOT NULL,
     provider    TEXT,
     event_type  TEXT,
     received_at TIMESTAMPTZ,
@@ -317,6 +392,7 @@ CREATE TABLE IF NOT EXISTS billing_webhook_events (
 
 -- -------------------------------------------------------------------------
 -- provision_initial_workspace: Race-safe singleton workspace creation
+-- NOTE: writes to provisioning_status (renamed from status in v3.2).
 -- -------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION provision_initial_workspace(target_user_id UUID, default_name TEXT)
 RETURNS TEXT
@@ -330,15 +406,15 @@ DECLARE
 BEGIN
     LOOP
         SELECT tenant_id INTO existing_tenant_id
-        FROM tenant_users
-        WHERE user_id = target_user_id;
+          FROM tenant_users
+         WHERE user_id = target_user_id;
 
         IF existing_tenant_id IS NOT NULL THEN
             RETURN existing_tenant_id;
         END IF;
 
         BEGIN
-            INSERT INTO tenants (name, status)
+            INSERT INTO tenants (name, provisioning_status)
             VALUES (default_name, 'READY')
             RETURNING tenant_id INTO new_tenant_id;
 
@@ -447,7 +523,9 @@ BEGIN
         "riskScore" INT
     )
     WHERE TRIM(COALESCE(t.email, '')) <> ''
-    ON CONFLICT (tenant_id, idempotency_key, user_id, campaign_type) DO NOTHING;
+    ON CONFLICT (tenant_id, idempotency_key, user_id, campaign_type)
+    WHERE idempotency_key IS NOT NULL
+    DO NOTHING;
 
     GET DIAGNOSTICS v_inserted_count = ROW_COUNT;
 
@@ -455,9 +533,9 @@ BEGIN
 
     UPDATE api_idempotency_keys
        SET response_payload = v_result
-     WHERE tenant_id = p_tenant_id
-       AND idempotency_key = p_idempotency_key
-       AND id = v_claimed_id
+     WHERE tenant_id        = p_tenant_id
+       AND idempotency_key  = p_idempotency_key
+       AND id               = v_claimed_id
        AND response_payload IS NULL;
 
     RETURN v_result;
@@ -526,16 +604,16 @@ BEGIN
     FROM jsonb_to_recordset(p_candidates) AS t(
         id TEXT, email TEXT, signal TEXT, campaign_type TEXT, score INT
     )
-    WHERE TRIM(COALESCE(t.id, '')) <> ''
-      AND TRIM(COALESCE(t.email, '')) <> ''
-      AND TRIM(COALESCE(t.campaign_type, '')) <> '';
+    WHERE TRIM(COALESCE(t.id, ''))            <> ''
+      AND TRIM(COALESCE(t.email, ''))          <> ''
+      AND TRIM(COALESCE(t.campaign_type, ''))  <> '';
 
     UPDATE tmp_recovery_candidates c
        SET outcome = 'suppressed', reason = 'suppressed'
      WHERE EXISTS (
         SELECT 1 FROM recovery_suppressions s
          WHERE s.tenant_id = p_tenant_id
-           AND s.email = c.email
+           AND s.email     = c.email
            AND (s.expires_at IS NULL OR s.expires_at > v_now)
      );
 
@@ -544,8 +622,8 @@ BEGIN
      WHERE c.outcome IS NULL
        AND EXISTS (
         SELECT 1 FROM recovery_emails e
-         WHERE e.tenant_id = p_tenant_id
-           AND e.user_id = c.user_id
+         WHERE e.tenant_id     = p_tenant_id
+           AND e.user_id       = c.user_id
            AND e.campaign_type = c.campaign_type
            AND e.status IN ('provider_accepted', 'delivered', 'sent')
            AND COALESCE(e.provider_accepted_at, e.sent_at, e.created_at) >=
@@ -557,8 +635,8 @@ BEGIN
      WHERE c.outcome IS NULL
        AND EXISTS (
         SELECT 1 FROM recovery_emails e
-         WHERE e.tenant_id = p_tenant_id
-           AND e.user_id = c.user_id
+         WHERE e.tenant_id     = p_tenant_id
+           AND e.user_id       = c.user_id
            AND e.campaign_type = c.campaign_type
            AND e.status IN (
                'pending_dispatch', 'dispatch_claimed',
@@ -582,16 +660,19 @@ BEGIN
         VALUES (p_tenant_id, v_window_start, 0, v_now)
         ON CONFLICT (tenant_id, window_start) DO NOTHING;
 
-        SELECT used INTO v_used FROM recovery_quota_usage
-         WHERE tenant_id = p_tenant_id AND window_start = v_window_start
+        SELECT used INTO v_used
+          FROM recovery_quota_usage
+         WHERE tenant_id    = p_tenant_id
+           AND window_start = v_window_start
          FOR UPDATE;
 
-        v_remaining := GREATEST(p_quota_limit - v_used, 0);
+        v_remaining     := GREATEST(p_quota_limit - v_used, 0);
         v_allowed_count := LEAST(v_desired_count, v_remaining);
 
         UPDATE recovery_quota_usage
            SET used = used + v_allowed_count, updated_at = v_now
-         WHERE tenant_id = p_tenant_id AND window_start = v_window_start;
+         WHERE tenant_id    = p_tenant_id
+           AND window_start = v_window_start;
     END IF;
 
     IF v_allowed_count < v_desired_count THEN
@@ -612,28 +693,34 @@ BEGIN
         )
         SELECT p_tenant_id, user_id, email, campaign_type, 'pending_dispatch',
                signal, score, v_now, v_now, v_now
-        FROM tmp_recovery_candidates WHERE outcome = 'pending'
+          FROM tmp_recovery_candidates WHERE outcome = 'pending'
         ON CONFLICT DO NOTHING
         RETURNING id, user_id, campaign_type
     )
     UPDATE tmp_recovery_candidates c
        SET outcome = 'claimed'
-      FROM ins WHERE c.user_id = ins.user_id AND c.campaign_type = ins.campaign_type;
+      FROM ins
+     WHERE c.user_id       = ins.user_id
+       AND c.campaign_type = ins.campaign_type;
 
     UPDATE tmp_recovery_candidates
-       SET outcome = 'duplicate', reason = 'already_queued' WHERE outcome = 'pending';
+       SET outcome = 'duplicate', reason = 'already_queued'
+     WHERE outcome = 'pending';
 
     UPDATE tmp_recovery_candidates c
        SET send_id = e.id
       FROM recovery_emails e
-     WHERE e.tenant_id = p_tenant_id
-       AND e.user_id = c.user_id
+     WHERE e.tenant_id     = p_tenant_id
+       AND e.user_id       = c.user_id
        AND e.campaign_type = c.campaign_type
        AND c.outcome IN ('claimed', 'duplicate');
 
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
-        'outcome', outcome, 'send_id', send_id, 'message', reason,
-        'user_id', user_id, 'campaign_type', campaign_type
+        'outcome',       outcome,
+        'send_id',       send_id,
+        'message',       reason,
+        'user_id',       user_id,
+        'campaign_type', campaign_type
     )), '[]'::jsonb) INTO v_results
     FROM tmp_recovery_candidates;
 
@@ -643,11 +730,11 @@ BEGIN
         CASE
             WHEN p_quota_limit IS NULL OR p_quota_limit <= 0 THEN NULL
             ELSE jsonb_build_object(
-                'allowed', v_allowed_count > 0,
-                'limit', p_quota_limit,
-                'used', v_used + v_allowed_count,
-                'remaining', GREATEST(p_quota_limit - (v_used + v_allowed_count), 0),
-                'applied', v_allowed_count
+                'allowed',    v_allowed_count > 0,
+                'limit',      p_quota_limit,
+                'used',       v_used + v_allowed_count,
+                'remaining',  GREATEST(p_quota_limit - (v_used + v_allowed_count), 0),
+                'applied',    v_allowed_count
             )
         END
     );
@@ -655,15 +742,15 @@ END;
 $$;
 
 -- -------------------------------------------------------------------------
--- claim_outbox_batch: Worker claims batch of emails for dispatch
+-- claim_outbox_batch: Worker claims a batch of emails for dispatch
 -- -------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION claim_outbox_batch(p_limit INT)
 RETURNS TABLE (
-    id             UUID,
-    tenant_id      TEXT,
-    dispatch_token TEXT,
+    id               UUID,
+    tenant_id        TEXT,
+    dispatch_token   TEXT,
     dispatch_attempt INT,
-    retry_count    INT
+    retry_count      INT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -682,12 +769,12 @@ BEGIN
          FOR UPDATE SKIP LOCKED
     ), upd AS (
         UPDATE recovery_emails r
-           SET status = 'dispatch_claimed',
+           SET status           = 'dispatch_claimed',
                dispatch_attempt = COALESCE(dispatch_attempt, 0) + 1,
-               dispatch_token = encode(digest(gen_random_uuid()::TEXT, 'sha256'), 'hex'),
+               dispatch_token   = encode(digest(gen_random_uuid()::TEXT, 'sha256'), 'hex'),
                dispatch_claimed_at = NOW(),
                lease_expires_at = NOW() + INTERVAL '15 minutes',
-               updated_at = NOW()
+               updated_at       = NOW()
           FROM cte WHERE r.id = cte.id
          RETURNING r.id, r.tenant_id, r.dispatch_token, r.dispatch_attempt, r.retry_count
     )
@@ -749,9 +836,12 @@ BEGIN
     END IF;
 
     UPDATE recovery_dispatch_dedup
-       SET tenant_id = p_tenant_id, send_id = p_send_id, state = 'reclaimed',
+       SET tenant_id       = p_tenant_id,
+           send_id         = p_send_id,
+           state           = 'reclaimed',
            lease_expires_at = v_now + INTERVAL '15 minutes',
-           attempts = attempts + 1, updated_at = v_now
+           attempts        = attempts + 1,
+           updated_at      = v_now
      WHERE dispatch_token = p_dispatch_token;
 
     RETURN jsonb_build_object('claimed', true, 'state', 'reclaimed');
@@ -762,40 +852,48 @@ $$;
 -- SECTION 14: MIGRATION SAFETY — ENSURE FK COLUMNS EXIST
 -- ============================================================================
 -- If any table was created by an older schema (or a failed partial run) the
--- column referenced by the FK below may be missing.  ADD COLUMN IF NOT EXISTS
--- is harmless when the column is already present, and prevents the 42703 error.
+-- column referenced by a FK below may be missing.  ADD COLUMN IF NOT EXISTS
+-- is harmless when the column is already present.
 -- ============================================================================
 
-ALTER TABLE IF EXISTS tenant_users         ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS tenant_users         ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE IF EXISTS tenant_billing       ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS tenant_settings      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS events               ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS alerts               ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS alert_dispatch_logs  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS churn_risk_state     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS churn_risk_history   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS churn_scoring_runs   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS metric_configs       ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS metric_values_daily  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS tenant_users            ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS tenant_users            ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE IF EXISTS tenant_billing          ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS tenant_settings         ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS events                  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS alerts                  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS anomaly_alerts          ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS alert_dispatch_logs     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS churn_risk_state        ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS churn_risk_history      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS churn_scoring_runs      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS metric_configs          ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS metric_values_daily     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 ALTER TABLE IF EXISTS metric_values_segmented ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS anomaly_detector_logs ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS user_activity_daily   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_emails       ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_suppressions ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_quota_usage  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS anomaly_detector_logs   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS user_activity_daily     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_emails         ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_suppressions   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_quota_usage    ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 ALTER TABLE IF EXISTS recovery_dispatch_dedup ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_email_dlq   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_email_events ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_attributions ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS billing_webhook_events ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS api_keys             ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS api_idempotency_keys ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_email_dlq      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_email_events   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS billing_webhook_events  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS api_keys                ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE IF EXISTS api_idempotency_keys    ADD COLUMN IF NOT EXISTS tenant_id TEXT;
 
--- Child FK columns (SET NULL targets) — ensure they exist on pre-existing tables.
-ALTER TABLE IF EXISTS recovery_email_events ADD COLUMN IF NOT EXISTS email_id UUID;
-ALTER TABLE IF EXISTS recovery_email_dlq    ADD COLUMN IF NOT EXISTS email_id UUID;
+-- Child FK columns (SET NULL targets)
+ALTER TABLE IF EXISTS recovery_email_events   ADD COLUMN IF NOT EXISTS email_id UUID;
+ALTER TABLE IF EXISTS recovery_email_dlq      ADD COLUMN IF NOT EXISTS email_id UUID;
 ALTER TABLE IF EXISTS recovery_dispatch_dedup ADD COLUMN IF NOT EXISTS send_id UUID;
+
+-- New columns added in v3.3 (safe for existing databases)
+ALTER TABLE IF EXISTS api_keys                ADD COLUMN IF NOT EXISTS key_hash TEXT;
+ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS email_id UUID;
+ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS campaign_type TEXT;
+ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS attributed_at TIMESTAMPTZ;
 
 -- ============================================================================
 -- SECTION 15: CORE FOREIGN KEYS
@@ -839,6 +937,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE alerts
     ADD CONSTRAINT fk_alerts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE anomaly_alerts
+    ADD CONSTRAINT fk_anomaly_alerts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN ALTER TABLE alert_dispatch_logs
@@ -952,8 +1055,48 @@ DO $$ BEGIN ALTER TABLE api_idempotency_keys
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- New FKs in v3.3 (metric_values → metric_configs)
+DO $$ BEGIN ALTER TABLE metric_values_daily
+    ADD CONSTRAINT fk_metric_values_daily_config FOREIGN KEY (metric_config_id) REFERENCES metric_configs(id)
+    ON DELETE SET NULL NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE metric_values_segmented
+    ADD CONSTRAINT fk_metric_values_segmented_config FOREIGN KEY (metric_config_id) REFERENCES metric_configs(id)
+    ON DELETE SET NULL NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- ============================================================================
--- END OF PART 0 — CANONICAL BASE v3.1-fixed
+-- SECTION 16: ADDITIONAL INDEXES & CONSTRAINTS
+-- ============================================================================
+-- Safe, idempotent additions that do NOT modify existing column types or
+-- function signatures, so downstream Files 1–3 continue to work unchanged.
+-- ============================================================================
+
+-- Outbox worker claim query (covers claim_outbox_batch filter + ordering)
+CREATE INDEX IF NOT EXISTS idx_recovery_emails_claim
+    ON recovery_emails(status, next_retry_at, lease_expires_at, created_at)
+    WHERE status IN ('pending_dispatch', 'dispatch_failed');
+
+-- Bulk dispatch duplicate / cooldown checks
+CREATE INDEX IF NOT EXISTS idx_recovery_emails_user_campaign
+    ON recovery_emails(tenant_id, user_id, campaign_type, status, provider_accepted_at, sent_at, created_at);
+
+-- Idempotency key TTL cleanup job
+CREATE INDEX IF NOT EXISTS idx_api_idempotency_keys_expires
+    ON api_idempotency_keys(expires_at)
+    WHERE expires_at IS NOT NULL;
+
+-- Prevent duplicate risk-state rows per tenant/user
+CREATE UNIQUE INDEX IF NOT EXISTS idx_churn_risk_state_tenant_user
+    ON churn_risk_state(tenant_id, user_id);
+
+-- Prevent duplicate daily activity rows
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_activity_daily_tenant_user_date
+    ON user_activity_daily(tenant_id, user_id, date);
+
+-- ============================================================================
+-- END OF COMBINED CANONICAL BASE v3.3
 -- ============================================================================
 -- Next: run File 1 (triggers, CHECKs, normalization, numeric precision).
 -- ============================================================================

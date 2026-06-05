@@ -83,7 +83,27 @@ DO $$ BEGIN
         );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- tenant_settings: read own settings (no write from frontend — use API)
+DO $$ BEGIN
+    CREATE POLICY "tenants_update_own" ON tenants
+        FOR UPDATE USING (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = tenants.tenant_id
+                  AND tu.user_id = auth.uid()
+                  AND tu.role = 'owner'
+            )
+        )
+        WITH CHECK (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = tenants.tenant_id
+                  AND tu.user_id = auth.uid()
+                  AND tu.role = 'owner'
+            )
+        );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- tenant_settings: read own settings (owners may update)
 ALTER TABLE tenant_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_settings FORCE ROW LEVEL SECURITY;
 DO $$ BEGIN
@@ -93,6 +113,26 @@ DO $$ BEGIN
                 SELECT 1 FROM tenant_users tu
                 WHERE tu.tenant_id = tenant_settings.tenant_id
                   AND tu.user_id = auth.uid()
+            )
+        );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "tenant_settings_update_own" ON tenant_settings
+        FOR UPDATE USING (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = tenant_settings.tenant_id
+                  AND tu.user_id = auth.uid()
+                  AND tu.role = 'owner'
+            )
+        )
+        WITH CHECK (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = tenant_settings.tenant_id
+                  AND tu.user_id = auth.uid()
+                  AND tu.role = 'owner'
             )
         );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -224,6 +264,20 @@ DO $$ BEGIN
         );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- anomaly_alerts: read-only for tenant users
+ALTER TABLE anomaly_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE anomaly_alerts FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+    CREATE POLICY "anomaly_alerts_select_tenant" ON anomaly_alerts
+        FOR SELECT USING (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = anomaly_alerts.tenant_id
+                  AND tu.user_id = auth.uid()
+            )
+        );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- churn_scoring_runs: read-only for tenant users
 ALTER TABLE churn_scoring_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE churn_scoring_runs FORCE ROW LEVEL SECURITY;
@@ -238,7 +292,7 @@ DO $$ BEGIN
         );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- metric_configs: read-only for tenant users
+-- metric_configs: read for tenant users, write for owners
 ALTER TABLE metric_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metric_configs FORCE ROW LEVEL SECURITY;
 DO $$ BEGIN
@@ -248,6 +302,26 @@ DO $$ BEGIN
                 SELECT 1 FROM tenant_users tu
                 WHERE tu.tenant_id = metric_configs.tenant_id
                   AND tu.user_id = auth.uid()
+            )
+        );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE POLICY "metric_configs_all_own" ON metric_configs
+        FOR ALL USING (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = metric_configs.tenant_id
+                  AND tu.user_id = auth.uid()
+                  AND tu.role = 'owner'
+            )
+        )
+        WITH CHECK (
+            EXISTS (
+                SELECT 1 FROM tenant_users tu
+                WHERE tu.tenant_id = metric_configs.tenant_id
+                  AND tu.user_id = auth.uid()
+                  AND tu.role = 'owner'
             )
         );
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -358,6 +432,53 @@ ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 COMMENT ON TABLE api_keys IS
     'BACKEND-ONLY API key storage. No frontend access policy intentional. '
     'Managed via service-role RPCs.';
+
+
+-- ============================================================================
+-- SECTION 9B: REALTIME PUBLICATION (OPTIONAL)
+-- ============================================================================
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+    ) THEN
+        CREATE PUBLICATION supabase_realtime
+            WITH (publish = 'insert, update, delete');
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime
+            SET (publish = 'insert, update, delete');
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE anomaly_alerts;
+    END IF;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE churn_risk_state;
+    END IF;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE alerts;
+    END IF;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
 -- ============================================================================

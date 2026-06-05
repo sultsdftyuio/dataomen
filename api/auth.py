@@ -1,212 +1,236 @@
-'use server';
+# api/auth.py
+import os
+import logging
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
 
-import { redirect } from 'next/navigation';
-import { createClient } from '@/utils/supabase/server';
+import jwt
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Security,
+    status,
+)
+from fastapi.security import (
+    HTTPAuthorizationCredentials,
+    HTTPBearer,
+)
 
-export type ActionState = {
-  error?: string;
-  success?: boolean;
-};
+logger = logging.getLogger(__name__)
 
-/**
- * loginAction
- * ---------------------------------------------------------------------------
- * Secure authentication handler for the Arcli platform.
- *
- * Security Properties:
- * - Server-only execution
- * - Input sanitization
- * - Open redirect protection
- * - Safe auth error normalization
- * - PII-safe observability
- * - Redirect-safe architecture
- * - Defensive FormData parsing
- * ---------------------------------------------------------------------------
- */
-export async function loginAction(
-  state: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  // -------------------------------------------------------------------------
-  // OBSERVABILITY
-  // -------------------------------------------------------------------------
-  const flowId = `login-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+router = APIRouter()
 
-  const flowStart = Date.now();
+# ---------------------------------------------------------------------------
+# Security Configuration
+# ---------------------------------------------------------------------------
 
-  const isDev = process.env.NODE_ENV !== 'production';
+security = HTTPBearer(auto_error=True)
 
-  if (isDev) {
-    console.log(`[AUTH][${flowId}] === Starting Login Flow ===`);
-  }
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 
-  // -------------------------------------------------------------------------
-  // SAFE FORM EXTRACTION
-  // -------------------------------------------------------------------------
-  const emailField = formData.get('email');
-  const passwordField = formData.get('password');
-  const nextField = formData.get('next');
+if not SUPABASE_URL:
+    logger.warning(
+        "SUPABASE_URL not configured; issuer validation disabled"
+    )
 
-  const rawEmail =
-    typeof emailField === 'string'
-      ? emailField
-      : '';
+EXPECTED_ISSUER = (
+    f"{SUPABASE_URL.rstrip('/')}/auth/v1"
+    if SUPABASE_URL
+    else None
+)
 
-  const password =
-    typeof passwordField === 'string'
-      ? passwordField
-      : '';
+# ---------------------------------------------------------------------------
+# Auth Context Definition
+# ---------------------------------------------------------------------------
 
-  const requestedNextPath =
-    typeof nextField === 'string'
-      ? nextField
-      : '';
+@dataclass(frozen=True)
+class AuthContext:
+    """
+    Authenticated request context.
 
-  // -------------------------------------------------------------------------
-  // INPUT SANITIZATION
-  // -------------------------------------------------------------------------
-  const email = rawEmail.trim().toLowerCase();
+    user_id:
+        Supabase Auth user UUID (JWT 'sub' claim)
 
-  // -------------------------------------------------------------------------
-  // OPEN REDIRECT PROTECTION
-  // -------------------------------------------------------------------------
-  const isSafeInternalPath =
-    requestedNextPath.startsWith('/') &&
-    !requestedNextPath.startsWith('//') &&
-    !requestedNextPath.includes('\\') &&
-    !requestedNextPath.includes('..');
+    email:
+        User email when present.
 
-  const nextPath = isSafeInternalPath
-    ? requestedNextPath
-    : '/dashboard';
+    role:
+        Supabase role claim (authenticated/service_role/etc.)
+    """
+    user_id: str
+    email: str | None = None
+    role: str | None = None
 
-  // -------------------------------------------------------------------------
-  // VALIDATION
-  // -------------------------------------------------------------------------
-  if (!email || !password) {
-    if (isDev) {
-      console.warn(
-        `[AUTH][${flowId}] Validation failed: Missing credentials`
-      );
-    }
 
+# ---------------------------------------------------------------------------
+# Core JWT Validation
+# ---------------------------------------------------------------------------
+
+def _get_jwt_secret() -> str:
+    secret = os.getenv("SUPABASE_JWT_SECRET")
+
+    if not secret:
+        raise RuntimeError(
+            "SUPABASE_JWT_SECRET environment variable is required"
+        )
+
+    return secret
+
+
+def _decode_jwt(token: str) -> dict[str, Any]:
+    """
+    Validate and decode a Supabase access token.
+
+    Security properties:
+    - Signature verification
+    - Expiration verification
+    - Algorithm allow-list
+    - Optional issuer validation
+    """
+    payload = jwt.decode(
+        token,
+        _get_jwt_secret(),
+        algorithms=["HS256"],
+        options={
+            "verify_signature": True,
+            "verify_exp": True,
+            "verify_aud": False,
+        },
+    )
+
+    if EXPECTED_ISSUER:
+        issuer = payload.get("iss")
+
+        if issuer != EXPECTED_ISSUER:
+            logger.warning(
+                "JWT issuer mismatch: expected=%s actual=%s",
+                EXPECTED_ISSUER,
+                issuer,
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token issuer",
+            )
+
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# FastAPI Dependencies
+# ---------------------------------------------------------------------------
+
+def get_auth_context(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+) -> AuthContext:
+    """
+    FastAPI dependency that validates a Supabase JWT and returns
+    a typed authentication context.
+    """
+    token = credentials.credentials
+
+    try:
+        payload = _decode_jwt(token)
+
+        role = payload.get("role")
+
+        if role == "service_role":
+            logger.warning("Service role token rejected")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Service role tokens not permitted",
+            )
+
+        user_id = payload.get("sub")
+
+        if not user_id:
+            logger.warning("JWT missing required 'sub' claim")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+            )
+
+        try:
+            UUID(user_id)
+        except (TypeError, ValueError):
+            logger.warning("JWT invalid 'sub' claim: %s", user_id)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid subject claim",
+            )
+
+        return AuthContext(
+            user_id=user_id,
+            email=payload.get("email"),
+            role=role,
+        )
+
+    except HTTPException:
+        raise
+
+    except jwt.ExpiredSignatureError:
+        logger.info("Expired JWT presented")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+        )
+
+    except jwt.InvalidTokenError:
+        logger.info("Invalid JWT presented")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+    except Exception:
+        logger.exception("Unexpected authentication failure")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service failure",
+        )
+
+
+def get_current_user_id(
+    auth: AuthContext = Depends(get_auth_context),
+) -> str:
+    """
+    Convenience dependency for routes that only need user_id.
+    """
+    return auth.user_id
+
+
+# ---------------------------------------------------------------------------
+# Backward Compatibility for Existing Routes
+# ---------------------------------------------------------------------------
+
+def get_current_tenant(
+    auth: AuthContext = Depends(get_auth_context),
+) -> str:
+    """
+    Compatibility alias for existing routes.
+
+    Returns authenticated user_id.
+    TODO: Replace with real tenant resolution.
+    """
+    return auth.user_id
+
+
+# ---------------------------------------------------------------------------
+# Health / Verification Route
+# ---------------------------------------------------------------------------
+
+@router.get("/me", tags=["auth"])
+def verify_auth(
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """
+    Test endpoint to verify if the frontend is passing the Bearer token correctly.
+    """
     return {
-      error: 'Email and password are required.',
-    };
-  }
-
-  // -------------------------------------------------------------------------
-  // LIGHT EMAIL VALIDATION
-  // -------------------------------------------------------------------------
-  const emailRegex =
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!emailRegex.test(email)) {
-    if (isDev) {
-      console.warn(
-        `[AUTH][${flowId}] Validation failed: Invalid email format`
-      );
+        "authenticated": True,
+        "user_id": auth.user_id,
+        "email": auth.email,
+        "role": auth.role,
     }
-
-    return {
-      error: 'Please enter a valid email address.',
-    };
-  }
-
-  // -------------------------------------------------------------------------
-  // PII-SAFE OBSERVABILITY
-  // -------------------------------------------------------------------------
-  const maskedEmail =
-    email.length > 5
-      ? `${email.slice(0, 2)}***${email.slice(email.indexOf('@'))}`
-      : '[redacted]';
-
-  if (isDev) {
-    console.log(`[AUTH][${flowId}] Parsed login request`, {
-      email: maskedEmail,
-      nextPath,
-    });
-  }
-
-  try {
-    // -----------------------------------------------------------------------
-    // INITIALIZE SUPABASE SSR CLIENT
-    // -----------------------------------------------------------------------
-    const supabase = await createClient();
-
-    if (isDev) {
-      console.log(
-        `[AUTH][${flowId}] Attempting Supabase authentication`
-      );
-    }
-
-    // -----------------------------------------------------------------------
-    // AUTHENTICATE USER
-    // -----------------------------------------------------------------------
-    const { data, error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-    // -----------------------------------------------------------------------
-    // AUTH FAILURE
-    // -----------------------------------------------------------------------
-    if (error) {
-      console.warn(
-        `[AUTH][${flowId}] Authentication rejected`,
-        {
-          code: error.code,
-          status: error.status,
-        }
-      );
-
-      /**
-       * SECURITY:
-       * Never expose raw provider auth errors to clients.
-       * Prevents auth-state leakage and inconsistent UX.
-       */
-      return {
-        error: 'Invalid email or password.',
-      };
-    }
-
-    // -----------------------------------------------------------------------
-    // AUTH SUCCESS
-    // -----------------------------------------------------------------------
-    if (isDev) {
-      console.log(
-        `[AUTH][${flowId}] Authentication successful`,
-        {
-          userId: data.user.id,
-          durationMs: Date.now() - flowStart,
-        }
-      );
-    }
-  } catch (err) {
-    // -----------------------------------------------------------------------
-    // INTERNAL FAILURE
-    // -----------------------------------------------------------------------
-    console.error(
-      `[AUTH][${flowId}] Critical authentication exception`,
-      err
-    );
-
-    return {
-      error:
-        'A secure connection could not be established. Please try again later.',
-    };
-  }
-
-  // -------------------------------------------------------------------------
-  // SECURE REDIRECT
-  // -------------------------------------------------------------------------
-  /**
-   * IMPORTANT:
-   * redirect() intentionally throws a NEXT_REDIRECT signal.
-   * It MUST remain outside try/catch.
-   */
-  redirect(nextPath);
-}
