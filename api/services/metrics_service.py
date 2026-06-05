@@ -37,7 +37,7 @@ from sqlalchemy import distinct, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from models import Event, MetricValueDaily
+from api.models import Event, MetricValueDaily
 
 logger = logging.getLogger(__name__)
 
