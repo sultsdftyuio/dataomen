@@ -19,6 +19,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 from typing import AsyncGenerator, Generator, Optional
 
 from sqlalchemy import create_engine, text
@@ -29,6 +30,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import Session, sessionmaker
+from supabase import Client, ClientOptions, create_client
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ __all__ = [
     "SessionLocal",
     "get_db",
     "get_async_db",
+    "get_supabase",
     "get_db_pool",
     "init_db",
     "shutdown_database",
@@ -55,6 +58,9 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
 DB_APPLICATION_NAME = os.getenv("DB_APPLICATION_NAME", "arcli_api")
+
+_supabase_client: Optional[Client] = None
+_supabase_thread_local = threading.local()
 
 # ---------------------------------------------------------------------------
 # URL helpers
@@ -203,6 +209,29 @@ def get_db() -> Generator[Session, None, None]:
         raise
     finally:
         db.close()
+
+
+def get_supabase() -> Client:
+    """FastAPI dependency to inject a Supabase service role client."""
+    cached = getattr(_supabase_thread_local, "supabase_client", None)
+    if cached is not None:
+        return cached
+
+    global _supabase_client
+    if _supabase_client is not None:
+        _supabase_thread_local.supabase_client = _supabase_client
+        return _supabase_client
+
+    url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        raise RuntimeError("Supabase credentials are not set.")
+
+    options = ClientOptions(postgrest_client_timeout=float(os.getenv("SUPABASE_TIMEOUT_SEC", "15.0")))
+    client = create_client(url, key, options=options)
+    _supabase_client = client
+    _supabase_thread_local.supabase_client = client
+    return client
 
 
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:

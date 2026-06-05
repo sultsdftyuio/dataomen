@@ -12,7 +12,7 @@ from sqlalchemy import text
 from api.database import get_db, get_async_db
 from api.auth import get_current_tenant
 from api.services.metrics_service import MetricsService
-from api.services.anomaly_detector import AnomalyDetector, check_anomaly
+from api.services.anomaly_detector import AnomalyDetector
 from api.services.alert_engine import handle_anomaly_alert
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,14 @@ async def get_metric_insights(
         # -------------------------
         # STATISTICAL DETECTION
         # -------------------------
-        anomaly = check_anomaly(metric_name, current_value, history)
+        detector = AnomalyDetector(db)
+
+        anomaly = detector._analyze_single_metric(
+            metric_name=metric_name,
+            current_value=current_value,
+            history=history,
+            config={}  # Pass an empty config to use detector defaults
+        )
 
         # -------------------------
         # DETERMINISTIC EXPLANATION
@@ -121,18 +128,15 @@ async def get_metric_insights(
             handle_anomaly_alert(db, tenant_id, anomaly)
 
             try:
-                detector = AnomalyDetector(async_db)
                 # MULTI-TENANT FIX: Enforce UTC timezone to prevent cross-region drift
                 current_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
-                segment_data = await detector.detect_anomalies(
-                    tenant_id,
-                    metric_name,
-                    current_time.isoformat()
+                # Call the new synchronous method
+                segments = detector._analyze_segments(
+                    tenant_id=tenant_id,
+                    metric_name=metric_name,
+                    target_date=current_time.strftime("%Y-%m-%d")
                 )
-
-                if segment_data:
-                    segments = segment_data.get("top_segments", [])
 
             except Exception:
                 logger.warning("segment_analysis_failed", exc_info=True)
