@@ -1,26 +1,24 @@
 -- ============================================================================
--- ARCLI CORE SCHEMA — COMBINED CANONICAL BASE (v3.3)
+-- ARCLI CORE SCHEMA — COMBINED CANONICAL BASE (v3.3-fixed)
 -- ============================================================================
--- Merges v3.1 + v3.2.  Run BEFORE Files 1–3.
+-- Merges v3.1 + v3.2 + v3.3-discrepancy-fixes.  Run BEFORE Files 1-3.
 -- All DDL is idempotent (IF NOT EXISTS / OR REPLACE / DO-blocks).
 --
--- FIXES OVER v3.1+v3.2:
---   1. ALTER TYPE ... ADD VALUE wrapped in duplicate_object guards
---      (replaces invalid "IF NOT EXISTS" syntax).
---   2. Restored anomaly_alerts table (accidentally dropped in v3.2).
---   3. api_keys gains key_hash so credentials can actually be verified.
---   4. recovery_attributions gains email_id, user_id, campaign_type,
---      attributed_at so it can be joined to recovery_emails.
---   5. FKs added: metric_values_daily/segmented → metric_configs.
---   6. Performance indexes for outbox claim, dispatch dedup, and
---      idempotency-key expiry cleanup.
---   7. Unique indexes to prevent duplicate churn_risk_state and
---      user_activity_daily rows.
+-- FIXES OVER v3.3:
+--   1. events table gains user_id and event_name columns (required by
+--      metrics_service.py aggregate_daily_metrics).
+--   2. metric_values_daily and metric_values_segmented gain metric_name
+--      TEXT column so Python MVP code can query by name directly without
+--      joining through metric_configs.
+--   3. Section 14 ALTER TABLE ... ADD COLUMN IF NOT EXISTS wrapped in
+--      safer DO blocks that check information_schema.columns directly.
+--   4. anomaly_alerts definition confirmed as: UUID id, severity TEXT,
+--      message TEXT, is_resolved BOOLEAN — api/database.py must match.
 --
 -- DESIGN DECISIONS (unchanged):
---   • NO inline REFERENCES in CREATE TABLE. All FKs live in Section 15.
---   • Child FKs (email_id, send_id) use ON DELETE SET NULL.
---   • tenant_users FKs use ON DELETE CASCADE.
+--   * NO inline REFERENCES in CREATE TABLE. All FKs live in Section 15.
+--   * Child FKs (email_id, send_id) use ON DELETE SET NULL.
+--   * tenant_users FKs use ON DELETE CASCADE.
 -- ============================================================================
 
 -- ============================================================================
@@ -45,7 +43,7 @@ DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'PENDING';    EXCEPTION WHEN
 DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'SYNCING';    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'INDEXING';   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'SUSPENDED';  EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'ARCHIVED';     EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'ARCHIVED';   EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'DELETED';    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
@@ -160,9 +158,13 @@ CREATE TABLE IF NOT EXISTS api_idempotency_keys (
 -- EVENTS & ANALYTICS TABLES
 -- ============================================================================
 
+-- FIXED v3.3: Added user_id and event_name columns required by
+-- metrics_service.py aggregate_daily_metrics().
 CREATE TABLE IF NOT EXISTS events (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id       TEXT        NOT NULL,
+    user_id         TEXT,                  -- ADDED: distinct user counts
+    event_name      TEXT        NOT NULL,  -- ADDED: group_by aggregations
     idempotency_key TEXT,
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     value           NUMERIC,
@@ -242,19 +244,26 @@ CREATE TABLE IF NOT EXISTS metric_configs (
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- FIXED v3.3: Added metric_name TEXT for direct querying by Python MVP code
+-- without requiring a join through metric_configs.  metric_config_id is
+-- retained for normalized relationships.
 CREATE TABLE IF NOT EXISTS metric_values_daily (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id        TEXT        NOT NULL,
-    metric_config_id UUID,
+    metric_config_id UUID,                      -- normalized FK (optional)
+    metric_name      TEXT,                      -- ADDED: direct name lookup
     date             DATE        NOT NULL,
     value            NUMERIC,
-    created_at       TIMESTAMPTZ DEFAULT NOW()
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- FIXED v3.3: Added metric_name TEXT (same rationale as metric_values_daily)
 CREATE TABLE IF NOT EXISTS metric_values_segmented (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id        TEXT        NOT NULL,
-    metric_config_id UUID,
+    metric_config_id UUID,                      -- normalized FK (optional)
+    metric_name      TEXT,                      -- ADDED: direct name lookup
     segment          TEXT,
     date             DATE        NOT NULL,
     value            NUMERIC,
@@ -852,55 +861,220 @@ $$;
 -- SECTION 14: MIGRATION SAFETY — ENSURE FK COLUMNS EXIST
 -- ============================================================================
 -- If any table was created by an older schema (or a failed partial run) the
--- column referenced by a FK below may be missing.  ADD COLUMN IF NOT EXISTS
--- is harmless when the column is already present.
+-- column referenced by a FK below may be missing.  Column additions are
+-- wrapped in DO blocks that check information_schema.columns directly for
+-- full idempotency on all PostgreSQL versions.
 -- ============================================================================
 
-ALTER TABLE IF EXISTS tenant_users            ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS tenant_users            ADD COLUMN IF NOT EXISTS user_id UUID;
-ALTER TABLE IF EXISTS tenant_billing          ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS tenant_settings         ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS events                  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS alerts                  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS anomaly_alerts          ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS alert_dispatch_logs     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS churn_risk_state        ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS churn_risk_history      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS churn_scoring_runs      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS metric_configs          ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS metric_values_daily     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS metric_values_segmented ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS anomaly_detector_logs   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS user_activity_daily     ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_emails         ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_suppressions   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_quota_usage    ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_dispatch_dedup ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_email_dlq      ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_email_events   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS billing_webhook_events  ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS api_keys                ADD COLUMN IF NOT EXISTS tenant_id TEXT;
-ALTER TABLE IF EXISTS api_idempotency_keys    ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='tenant_users' AND column_name='tenant_id') THEN
+        ALTER TABLE tenant_users ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='tenant_users' AND column_name='user_id') THEN
+        ALTER TABLE tenant_users ADD COLUMN user_id UUID;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='tenant_billing' AND column_name='tenant_id') THEN
+        ALTER TABLE tenant_billing ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='tenant_settings' AND column_name='tenant_id') THEN
+        ALTER TABLE tenant_settings ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='events' AND column_name='tenant_id') THEN
+        ALTER TABLE events ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+-- FIXED v3.3: Also ensure events.user_id and events.event_name exist
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='events' AND column_name='user_id') THEN
+        ALTER TABLE events ADD COLUMN user_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='events' AND column_name='event_name') THEN
+        ALTER TABLE events ADD COLUMN event_name TEXT NOT NULL DEFAULT '';
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='alerts' AND column_name='tenant_id') THEN
+        ALTER TABLE alerts ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='anomaly_alerts' AND column_name='tenant_id') THEN
+        ALTER TABLE anomaly_alerts ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='alert_dispatch_logs' AND column_name='tenant_id') THEN
+        ALTER TABLE alert_dispatch_logs ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='churn_risk_state' AND column_name='tenant_id') THEN
+        ALTER TABLE churn_risk_state ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='churn_risk_history' AND column_name='tenant_id') THEN
+        ALTER TABLE churn_risk_history ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='churn_scoring_runs' AND column_name='tenant_id') THEN
+        ALTER TABLE churn_scoring_runs ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='metric_configs' AND column_name='tenant_id') THEN
+        ALTER TABLE metric_configs ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='metric_values_daily' AND column_name='tenant_id') THEN
+        ALTER TABLE metric_values_daily ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+-- FIXED v3.3: Ensure metric_values_daily.metric_name exists
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='metric_values_daily' AND column_name='metric_name') THEN
+        ALTER TABLE metric_values_daily ADD COLUMN metric_name TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='metric_values_daily' AND column_name='updated_at') THEN
+        ALTER TABLE metric_values_daily ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='metric_values_segmented' AND column_name='tenant_id') THEN
+        ALTER TABLE metric_values_segmented ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+-- FIXED v3.3: Ensure metric_values_segmented.metric_name exists
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='metric_values_segmented' AND column_name='metric_name') THEN
+        ALTER TABLE metric_values_segmented ADD COLUMN metric_name TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='anomaly_detector_logs' AND column_name='tenant_id') THEN
+        ALTER TABLE anomaly_detector_logs ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='user_activity_daily' AND column_name='tenant_id') THEN
+        ALTER TABLE user_activity_daily ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_emails' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_emails ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_suppressions' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_suppressions ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_quota_usage' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_quota_usage ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_dispatch_dedup' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_dispatch_dedup ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_email_dlq' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_email_dlq ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_email_events' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_email_events ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_attributions' AND column_name='tenant_id') THEN
+        ALTER TABLE recovery_attributions ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='billing_webhook_events' AND column_name='tenant_id') THEN
+        ALTER TABLE billing_webhook_events ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='tenant_id') THEN
+        ALTER TABLE api_keys ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_idempotency_keys' AND column_name='tenant_id') THEN
+        ALTER TABLE api_idempotency_keys ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
 
 -- Child FK columns (SET NULL targets)
-ALTER TABLE IF EXISTS recovery_email_events   ADD COLUMN IF NOT EXISTS email_id UUID;
-ALTER TABLE IF EXISTS recovery_email_dlq      ADD COLUMN IF NOT EXISTS email_id UUID;
-ALTER TABLE IF EXISTS recovery_dispatch_dedup ADD COLUMN IF NOT EXISTS send_id UUID;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_email_events' AND column_name='email_id') THEN
+        ALTER TABLE recovery_email_events ADD COLUMN email_id UUID;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_email_dlq' AND column_name='email_id') THEN
+        ALTER TABLE recovery_email_dlq ADD COLUMN email_id UUID;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_dispatch_dedup' AND column_name='send_id') THEN
+        ALTER TABLE recovery_dispatch_dedup ADD COLUMN send_id UUID;
+    END IF;
+END $$;
 
 -- New columns added in v3.3 (safe for existing databases)
-ALTER TABLE IF EXISTS api_keys                ADD COLUMN IF NOT EXISTS key_hash TEXT;
-ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS email_id UUID;
-ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS user_id TEXT;
-ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS campaign_type TEXT;
-ALTER TABLE IF EXISTS recovery_attributions   ADD COLUMN IF NOT EXISTS attributed_at TIMESTAMPTZ;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='key_hash') THEN
+        ALTER TABLE api_keys ADD COLUMN key_hash TEXT NOT NULL DEFAULT '';
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_attributions' AND column_name='email_id') THEN
+        ALTER TABLE recovery_attributions ADD COLUMN email_id UUID;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_attributions' AND column_name='user_id') THEN
+        ALTER TABLE recovery_attributions ADD COLUMN user_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_attributions' AND column_name='campaign_type') THEN
+        ALTER TABLE recovery_attributions ADD COLUMN campaign_type TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_attributions' AND column_name='attributed_at') THEN
+        ALTER TABLE recovery_attributions ADD COLUMN attributed_at TIMESTAMPTZ;
+    END IF;
+END $$;
 
 -- ============================================================================
 -- SECTION 15: CORE FOREIGN KEYS
 -- ============================================================================
 -- All FKs live here so they can be deployed with:
---   NOT VALID            → skips full-table scan during deploy
---   DEFERRABLE INITIALLY DEFERRED → allows complex transactions
+--   NOT VALID            -> skips full-table scan during deploy
+--   DEFERRABLE INITIALLY DEFERRED -> allows complex transactions
 --
 -- Child FKs (email_id, send_id) use ON DELETE SET NULL so audit/DLQ rows
 -- survive parent deletion and can be cleaned by retention jobs independently.
@@ -1055,7 +1229,7 @@ DO $$ BEGIN ALTER TABLE api_idempotency_keys
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- New FKs in v3.3 (metric_values → metric_configs)
+-- New FKs in v3.3 (metric_values -> metric_configs)
 DO $$ BEGIN ALTER TABLE metric_values_daily
     ADD CONSTRAINT fk_metric_values_daily_config FOREIGN KEY (metric_config_id) REFERENCES metric_configs(id)
     ON DELETE SET NULL NOT VALID DEFERRABLE INITIALLY DEFERRED;
@@ -1070,7 +1244,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- SECTION 16: ADDITIONAL INDEXES & CONSTRAINTS
 -- ============================================================================
 -- Safe, idempotent additions that do NOT modify existing column types or
--- function signatures, so downstream Files 1–3 continue to work unchanged.
+-- function signatures, so downstream Files 1-3 continue to work unchanged.
 -- ============================================================================
 
 -- Outbox worker claim query (covers claim_outbox_batch filter + ordering)
@@ -1095,8 +1269,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_churn_risk_state_tenant_user
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_activity_daily_tenant_user_date
     ON user_activity_daily(tenant_id, user_id, date);
 
+-- FIXED v3.3: Index on events.event_name for metrics_service aggregations
+CREATE INDEX IF NOT EXISTS idx_events_tenant_name_ts
+    ON events(tenant_id, event_name, timestamp);
+
+-- FIXED v3.3: Index on metric_values_daily.metric_name for direct lookups
+CREATE INDEX IF NOT EXISTS idx_metric_values_daily_name_date
+    ON metric_values_daily(tenant_id, metric_name, date);
+
+-- Enforce ON CONFLICT target for metric_values_daily upserts
+CREATE UNIQUE INDEX IF NOT EXISTS uq_metric_values_daily_tenant_metric_date
+    ON metric_values_daily(tenant_id, metric_name, date);
+
+-- FIXED v3.3: Index on metric_values_segmented.metric_name for direct lookups
+CREATE INDEX IF NOT EXISTS idx_metric_values_segmented_name_date
+    ON metric_values_segmented(tenant_id, metric_name, date);
+
 -- ============================================================================
--- END OF COMBINED CANONICAL BASE v3.3
+-- END OF COMBINED CANONICAL BASE v3.3-fixed
 -- ============================================================================
 -- Next: run File 1 (triggers, CHECKs, normalization, numeric precision).
 -- ============================================================================

@@ -1,342 +1,259 @@
-# api/database.py
+"""
+ARCLI database layer — connection management, pooling, and lifecycle.
 
+This module keeps all operational concerns separate from the ORM schema
+(models.py).  It provides:
+
+  * Sync and async engine configuration with pooling, pre-ping, and
+    PostgreSQL-specific statement timeouts / application_name.
+  * Lazy async initialization (engine created on first use, not import).
+  * FastAPI dependency injectors: get_db() and get_async_db().
+  * Startup connectivity check: init_db().
+  * Graceful shutdown: shutdown_database().
+  * Credential-safe logging helpers.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import logging
 import os
-from datetime import datetime
-from threading import Lock
-from typing import Optional
+import re
+from typing import AsyncGenerator, Generator, Optional
 
-from sqlalchemy import (
-    Column,
-    DateTime,
-    Float,
-    Integer,
-    String,
-    create_engine,
-)
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker
-
-# ------------------------------------------------------------------------------
-# Logging
-# ------------------------------------------------------------------------------
+from sqlalchemy.orm import Session, sessionmaker
 
 logger = logging.getLogger(__name__)
 
-# ------------------------------------------------------------------------------
-# SQLAlchemy Base
-# ------------------------------------------------------------------------------
+__all__ = [
+    "engine",
+    "SessionLocal",
+    "get_db",
+    "get_async_db",
+    "init_db",
+    "shutdown_database",
+    "_normalize_database_url",
+    "_build_async_database_url",
+    "_mask_database_url",
+]
 
-Base = declarative_base()
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
-# ------------------------------------------------------------------------------
-# Models
-# ------------------------------------------------------------------------------
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/arcli")
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
+DB_APPLICATION_NAME = os.getenv("DB_APPLICATION_NAME", "arcli_api")
 
-
-class AnomalyAlert(Base):
-    __tablename__ = "anomaly_alerts"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-
-    tenant_id = Column(String, index=True, nullable=False)
-    metric_name = Column(String, index=True, nullable=False)
-
-    date = Column(DateTime, index=True, nullable=False)
-
-    severity = Column(Float, nullable=False)
-    direction = Column(String, nullable=False)
-
-    status = Column(String, default="active", nullable=False)
-    last_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-
-# ------------------------------------------------------------------------------
-# Database URL Helpers
-# ------------------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# URL helpers
+# ---------------------------------------------------------------------------
 
 def _normalize_database_url(db_url: str) -> str:
-    """
-    SQLAlchemy requires postgresql:// instead of postgres://
-    """
+    """Convert legacy ``postgres://`` to ``postgresql://`` for SQLAlchemy."""
     if db_url.startswith("postgres://"):
         return db_url.replace("postgres://", "postgresql://", 1)
-
     return db_url
 
 
 def _build_async_database_url(db_url: str) -> str:
-    """
-    Convert sync SQLAlchemy URLs into asyncpg URLs.
-    """
-
+    """Convert a sync PostgreSQL URL into an asyncpg-compatible URL."""
     normalized = _normalize_database_url(db_url)
-
     if normalized.startswith("postgresql+asyncpg://"):
         return normalized
-
-    if normalized.startswith("postgresql+psycopg2://"):
-        return normalized.replace(
-            "postgresql+psycopg2://",
-            "postgresql+asyncpg://",
-            1,
-        )
-
-    if normalized.startswith("postgresql+psycopg://"):
-        return normalized.replace(
-            "postgresql+psycopg://",
-            "postgresql+asyncpg://",
-            1,
-        )
-
     if normalized.startswith("postgresql://"):
-        return normalized.replace(
-            "postgresql://",
-            "postgresql+asyncpg://",
-            1,
-        )
-
+        return normalized.replace("postgresql://", "postgresql+asyncpg://", 1)
     return normalized
 
 
 def _mask_database_url(db_url: str) -> str:
-    """
-    Prevent credentials from leaking into logs.
-    """
-
-    if "@" not in db_url:
-        return db_url
-
-    prefix, suffix = db_url.split("@", 1)
-
-    if "://" in prefix:
-        scheme, _ = prefix.split("://", 1)
-        return f"{scheme}://***@{suffix}"
-
-    return f"***@{suffix}"
+    """Mask password in a database URL so it is safe for logs."""
+    return re.sub(r"://[^:]+:[^@]+@", "://***:***@", db_url)
 
 
-# ------------------------------------------------------------------------------
-# Configuration
-# ------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Sync engine & session factory
+# ---------------------------------------------------------------------------
 
-DATABASE_URL = _normalize_database_url(
-    os.getenv(
-        "DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/dataomen",
-    )
-)
+_normalized_sync_url = _normalize_database_url(DATABASE_URL)
+_masked_sync_url = _mask_database_url(_normalized_sync_url)
 
-ASYNC_DATABASE_URL = _build_async_database_url(DATABASE_URL)
+logger.info("Configuring sync database engine: %s", _masked_sync_url)
 
-_DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
-_DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "5"))
-_DB_POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "30"))
-
-# ------------------------------------------------------------------------------
-# Sync Engine
-# ------------------------------------------------------------------------------
+_sync_connect_args = {
+    "connect_timeout": 10,
+    "options": f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS}",
+    "application_name": DB_APPLICATION_NAME,
+}
 
 engine = create_engine(
-    DATABASE_URL,
+    _normalized_sync_url,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=DB_POOL_TIMEOUT,
     pool_pre_ping=True,
-    pool_size=_DB_POOL_SIZE,
-    max_overflow=_DB_MAX_OVERFLOW,
-    pool_timeout=_DB_POOL_TIMEOUT,
     pool_recycle=3600,
-    connect_args={
-        "options": (
-            "-c statement_timeout=30000 "
-            "-c application_name=arcli_api"
-        )
-    },
+    connect_args=_sync_connect_args,
 )
 
 SessionLocal = sessionmaker(
-    bind=engine,
     autocommit=False,
     autoflush=False,
+    bind=engine,
 )
 
-# ------------------------------------------------------------------------------
-# Async Engine (Lazy Loaded)
-# ------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Async engine & session factory (lazy, thread-safe)
+# ---------------------------------------------------------------------------
 
 _async_engine: Optional[AsyncEngine] = None
-_async_session_factory: Optional[
-    async_sessionmaker[AsyncSession]
-] = None
-
-_async_factory_lock = Lock()
+_async_session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+_async_factory_lock = asyncio.Lock()
 _async_init_error: Optional[Exception] = None
 
 
-def _build_async_connect_args() -> dict:
-    if ASYNC_DATABASE_URL.startswith("postgresql+asyncpg://"):
-        return {
-            "server_settings": {
-                "statement_timeout": "30000",
-                "application_name": "arcli_api",
+async def _get_async_engine() -> AsyncEngine:
+    """Lazy-initialize and return the async engine."""
+    global _async_engine, _async_init_error
+
+    if _async_engine is not None:
+        return _async_engine
+
+    if _async_init_error is not None:
+        raise _async_init_error
+
+    async with _async_factory_lock:
+        # Double-checked locking pattern
+        if _async_engine is not None:
+            return _async_engine
+
+        try:
+            async_url = _build_async_database_url(DATABASE_URL)
+            masked_async = _mask_database_url(async_url)
+            logger.info("Configuring async database engine: %s", masked_async)
+
+            # asyncpg accepts runtime settings via server_settings
+            _async_connect_args = {
+                "server_settings": {
+                    "statement_timeout": str(DB_STATEMENT_TIMEOUT_MS),
+                    "application_name": DB_APPLICATION_NAME,
+                },
+                "timeout": 10,
             }
-        }
 
-    return {}
+            _async_engine = create_async_engine(
+                async_url,
+                pool_size=DB_POOL_SIZE,
+                max_overflow=DB_MAX_OVERFLOW,
+                pool_timeout=DB_POOL_TIMEOUT,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+                connect_args=_async_connect_args,
+            )
+            return _async_engine
+        except Exception as exc:
+            _async_init_error = exc
+            logger.exception("Failed to initialize async database engine")
+            raise
 
 
-def _get_async_session_factory() -> async_sessionmaker[AsyncSession]:
-    global _async_engine
+async def _get_async_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Lazy-initialize and return the async session factory."""
     global _async_session_factory
-    global _async_init_error
 
     if _async_session_factory is not None:
         return _async_session_factory
 
-    if _async_init_error is not None:
-        raise RuntimeError(
-            "Async DB initialization previously failed."
-        ) from _async_init_error
-
-    with _async_factory_lock:
+    async with _async_factory_lock:
         if _async_session_factory is not None:
             return _async_session_factory
 
-        try:
-            _async_engine = create_async_engine(
-                ASYNC_DATABASE_URL,
-                pool_pre_ping=True,
-                pool_size=_DB_POOL_SIZE,
-                max_overflow=_DB_MAX_OVERFLOW,
-                pool_timeout=_DB_POOL_TIMEOUT,
-                pool_recycle=3600,
-                connect_args=_build_async_connect_args(),
-            )
-
-            _async_session_factory = async_sessionmaker(
-                bind=_async_engine,
-                class_=AsyncSession,
-                autocommit=False,
-                autoflush=False,
-                expire_on_commit=False,
-            )
-
-        except Exception as exc:
-            _async_init_error = exc
-
-            logger.exception(
-                "Failed to initialize async database engine for %s",
-                _mask_database_url(ASYNC_DATABASE_URL),
-            )
-
-            raise RuntimeError(
-                "Async database initialization failed. "
-                "Verify DATABASE_URL and asyncpg installation."
-            ) from exc
-
-    return _async_session_factory
+        async_engine = await _get_async_engine()
+        _async_session_factory = async_sessionmaker(
+            async_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+        return _async_session_factory
 
 
-def AsyncSessionLocal() -> AsyncSession:
-    return _get_async_session_factory()()
+# ---------------------------------------------------------------------------
+# FastAPI dependencies
+# ---------------------------------------------------------------------------
 
-
-# ------------------------------------------------------------------------------
-# FastAPI Dependencies
-# ------------------------------------------------------------------------------
-
-
-def get_db():
-    """
-    Sync SQLAlchemy session dependency.
-    """
-
+def get_db() -> Generator[Session, None, None]:
+    """Yield a sync database session for FastAPI dependency injection."""
     db = SessionLocal()
-
     try:
         yield db
-
-    except SQLAlchemyError:
-        logger.exception("Database transaction failed")
+    except Exception:
         db.rollback()
         raise
-
     finally:
         db.close()
 
 
-async def get_async_db():
-    """
-    Async SQLAlchemy session dependency.
-    """
-
-    db = AsyncSessionLocal()
-
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+    """Yield an async database session for FastAPI dependency injection."""
+    factory = await _get_async_session_factory()
+    session = factory()
     try:
-        yield db
-
-    except SQLAlchemyError:
-        logger.exception("Async database transaction failed")
-        await db.rollback()
+        yield session
+    except Exception:
+        await session.rollback()
         raise
-
     finally:
-        await db.close()
+        await session.close()
 
 
-def get_db_pool():
-    """
-    FastAPI dependency.
-
-    Returns the SQLAlchemy Engine that owns
-    the connection pool.
-
-    Used by services requiring direct engine access.
-    """
-
-    return engine
-
-
-# ------------------------------------------------------------------------------
-# Lifecycle Helpers
-# ------------------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# Lifecycle helpers
+# ---------------------------------------------------------------------------
 
 def init_db() -> None:
-    """
-    Database initialization hook.
-
-    Schema creation should be handled via
-    Alembic or Supabase migrations.
-
-    This function intentionally only verifies
-    connectivity.
-    """
-
+    """Verify sync database connectivity at application startup."""
+    logger.info("Verifying database connectivity...")
     try:
-        with engine.connect():
-            logger.info(
-                "Database connectivity verified: %s",
-                _mask_database_url(DATABASE_URL),
-            )
-
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("Database connectivity verified.")
     except Exception:
-        logger.exception("Database initialization failed")
+        logger.exception("Database connectivity check failed")
         raise
 
 
 async def shutdown_database() -> None:
-    """
-    Dispose async SQLAlchemy resources.
-    """
+    """Gracefully dispose of async and sync engines on shutdown."""
+    global _async_engine, _async_session_factory, _async_init_error
 
-    global _async_engine
+    logger.info("Shutting down database engines...")
 
+    # Async engine
     if _async_engine is not None:
-        await _async_engine.dispose()
-        logger.info("Async database engine disposed")
+        try:
+            await _async_engine.dispose()
+            logger.info("Async engine disposed.")
+        except Exception:
+            logger.exception("Error disposing async engine")
+        finally:
+            _async_engine = None
+            _async_session_factory = None
+            _async_init_error = None
+
+    # Sync engine
+    try:
+        engine.dispose()
+        logger.info("Sync engine disposed.")
+    except Exception:
+        logger.exception("Error disposing sync engine")
