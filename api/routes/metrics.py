@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from api.database import get_db, get_async_db
 from api.auth import get_current_tenant
-from api.services.metrics_service import fetch_current_metric, fetch_metric_history
+from api.services.metrics_service import MetricsService
 from api.services.anomaly_detector import AnomalyDetector, check_anomaly
 from api.services.alert_engine import handle_anomaly_alert
 
@@ -72,8 +72,11 @@ async def get_metric_insights(
         # -------------------------
         # FETCH DATA
         # -------------------------
-        current_value = fetch_current_metric(db, tenant_id, metric_name)
-        history = fetch_metric_history(db, tenant_id, metric_name, days=7)
+        metrics_svc = MetricsService(db)
+        
+        # 'get_metric_latest' replaces 'fetch_current_metric'
+        current_value = metrics_svc.get_metric_latest(tenant_id, metric_name)
+        history = metrics_svc.fetch_metric_history(tenant_id, metric_name, days=7)
 
         if current_value == 0 and not history:
             return MetricInsightResponse(
