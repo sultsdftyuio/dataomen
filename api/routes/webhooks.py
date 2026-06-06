@@ -21,7 +21,7 @@ import stripe
 from api.database import get_db
 from api.recovery_common import RECOVERY_EMAIL_TABLE, RecoveryStatus
 from api.services.lemon_squeezy_service import LemonSqueezyService
-from api.services.recovery_attribution import RecoveryAttributionService
+from api.services.recovery_engine import RecoveryAttributionService
 from api.services.cache_manager import cache_manager
 
 logger = logging.getLogger(__name__)
