@@ -1,513 +1,531 @@
+import json
 import logging
 import os
 import time
-import unicodedata
 from datetime import datetime, timezone, timedelta
-from enum import StrEnum
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, Iterable, Optional
 
-from pydantic import BaseModel, EmailStr, Field, ValidationError, TypeAdapter
-
-from api.recovery_common import (
-    ClaimOutcome,
-    FailureStage,
-    OutboxClaimRow,
-    RECOVERY_EMAIL_TABLE,
-    RecoveryStatus,
-    apply_outbox_backpressure,
-    claim_outbox_batch,
-    dispatch_backoff_seconds,
-)
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------
+# DEFENSIVE TABLE NAME LOCKDOWN
+# ---------------------------------------------------------
+RECOVERY_EMAIL_TABLE = "recovery_emails"
+RECOVERY_ATTRIBUTIONS_TABLE = "recovery_attributions"
 
-class MetricsSink:
-    def increment(self, name: str, value: int = 1, tags: Optional[Dict[str, str]] = None) -> None:
-        logger.info("metric_increment name=%s value=%s tags=%s", name, value, tags)
+# Fail fast if constants are ever tampered with at import time
+if RECOVERY_EMAIL_TABLE != "recovery_emails":
+    raise RuntimeError(f"Invalid recovery email table name: {RECOVERY_EMAIL_TABLE}")
+if RECOVERY_ATTRIBUTIONS_TABLE != "recovery_attributions":
+    raise RuntimeError(f"Invalid recovery attributions table name: {RECOVERY_ATTRIBUTIONS_TABLE}")
 
-    def timing(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
-        logger.info("metric_timing name=%s value=%s tags=%s", name, round(value, 6), tags)
-
-
-METRICS = MetricsSink()
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-COOLDOWN_DAYS = int(os.getenv("RECOVERY_COOLDOWN_DAYS", "7"))
-MAX_SENDS_PER_TENANT_PER_HOUR = int(os.getenv("RECOVERY_MAX_SENDS_PER_TENANT_PER_HOUR", "0"))
-RECOVERY_QUOTA_WINDOW_SEC = int(os.getenv("RECOVERY_QUOTA_WINDOW_SEC", "3600"))
-
-RECOVERY_BULK_DISPATCH_RPC = os.getenv(
-    "RECOVERY_BULK_DISPATCH_RPC",
-    "bulk_dispatch_recovery_candidates",
+DEFAULT_ATTRIBUTION_WINDOW_DAYS = int(os.getenv("RECOVERY_ATTRIBUTION_WINDOW_DAYS", "14"))
+ATTRIBUTION_EVENT_NAMES = os.getenv(
+    "RECOVERY_ATTRIBUTION_EVENT_NAMES",
+    "subscription_payment_success,invoice_paid,charge_succeeded,order_paid",
 )
 
-# =============================================================================
-# TYPES & ENUMS
-# =============================================================================
-class RiskSignal(StrEnum):
-    INACTIVITY = "inactivity"
-    INVOICE_PAYMENT_FAILED = "invoice_payment_failed"
-    SUBSCRIPTION_CANCELLED = "subscription_cancelled"
-    NEGATIVE_FEEDBACK = "negative_feedback"
+# Clock skew tolerance: events slightly before sent_at are still valid
+CLOCK_SKEW_TOLERANCE_MINUTES = 5
 
-    @classmethod
-    def from_raw(cls, raw_value: Any) -> Optional["RiskSignal"]:
-        if raw_value is None:
-            return None
-        value = str(raw_value).strip().lower()
-        if not value:
-            return None
-        try:
-            return cls(value)
-        except ValueError:
-            logger.warning("recovery_unknown_risk_signal raw=%s", raw_value)
-            return None
-
-
-class CampaignType(StrEnum):
-    WINBACK_INACTIVE = "winback_inactive"
-    BILLING_FAILED = "billing_failed"
-    CANCELLATION_FOLLOWUP = "cancellation_followup"
-    FEEDBACK_RECOVERY = "feedback_recovery"
-
-
-RISK_TO_CAMPAIGN = {
-    RiskSignal.INACTIVITY: CampaignType.WINBACK_INACTIVE,
-    RiskSignal.INVOICE_PAYMENT_FAILED: CampaignType.BILLING_FAILED,
-    RiskSignal.SUBSCRIPTION_CANCELLED: CampaignType.CANCELLATION_FOLLOWUP,
-    RiskSignal.NEGATIVE_FEEDBACK: CampaignType.FEEDBACK_RECOVERY,
+# Standard zero-decimal currencies (Stripe / LemonSqueezy do NOT use cents)
+ZERO_DECIMAL_CURRENCIES = {
+    "jpy", "vnd", "krw", "clp", "pyg", "bif", "djf", "gnf",
+    "kmf", "mga", "rwf", "ugx", "vuv", "xaf", "xof", "xpf"
 }
 
 
-class RecoveryCandidate(BaseModel):
-    user_id: str = Field(..., min_length=1)
-    email: EmailStr
-    primary_risk_signal: RiskSignal
-    campaign_type: CampaignType
-    churn_risk_score: Optional[int] = None
+class RecoveryAttributionService:
+    def __init__(self, db: Session):
+        self.db = db
+        self._event_names = _normalize_event_names(ATTRIBUTION_EVENT_NAMES)
 
-
-class RecoveryDecision(BaseModel):
-    status: ClaimOutcome
-    campaign_type: Optional[str] = None
-    send_id: Optional[str] = None
-    user_id: Optional[str] = None
-    reason: Optional[str] = None
-
-    @classmethod
-    def safe_create(cls, *, status: Any, **data: Any) -> "RecoveryDecision":
-        if isinstance(status, ClaimOutcome):
-            normalized = status
-        else:
-            normalized = ClaimOutcome(str(status))
-        return cls(status=normalized, **data)
-
-
-class BulkDispatchResult(BaseModel):
-    outcome: ClaimOutcome
-    send_id: Optional[str] = None
-    message: Optional[str] = None
-    user_id: Optional[str] = None
-    campaign_type: Optional[str] = None
-
-
-class QuotaCheckResponse(BaseModel):
-    allowed: bool
-    limit: int
-    used: int
-    remaining: int
-    applied: int
-
-
-class BulkDispatchResponse(BaseModel):
-    results: List[BulkDispatchResult]
-    quota: Optional[QuotaCheckResponse] = None
-
-
-_bulk_dispatch_adapter = TypeAdapter(List[BulkDispatchResult])
-
-
-# =============================================================================
-# REPOSITORY (DATA LAYER)
-# =============================================================================
-class RecoveryRepository:
-    def __init__(self, db_client) -> None:
-        self.db = db_client
-
-    def bulk_dispatch_candidates(
+    def maybe_attribute_from_webhook(
         self,
         tenant_id: str,
-        candidates: List[RecoveryCandidate],
-        run_id: Optional[str],
-    ) -> BulkDispatchResponse:
-        payload = [
-            {
-                "user_id": candidate.user_id,
-                "email": candidate.email,
-                "signal": candidate.primary_risk_signal.value,
-                "campaign_type": candidate.campaign_type.value,
-                "score": candidate.churn_risk_score,
-            }
-            for candidate in candidates
-        ]
+        event_name: str,
+        payload: Dict[str, Any],
+        provider: str,
+    ) -> bool:
+        """
+        Process a webhook payload for recovery attribution.
+        Returns True if a new attribution row was inserted.
+        """
+        if not tenant_id or not event_name:
+            logger.warning(
+                "recovery_attribution_invalid_input",
+                extra={
+                    "tenant_id": tenant_id,
+                    "event_name": event_name,
+                    "reason": "missing_input",
+                }
+            )
+            return False
 
-        rpc_payload: Dict[str, Any] = {
-            "p_tenant_id": tenant_id,
-            "p_candidates": payload,
-            "p_cooldown_days": COOLDOWN_DAYS,
-            "p_quota_window_sec": RECOVERY_QUOTA_WINDOW_SEC,
-            "p_run_id": run_id,
+        normalized_event = event_name.strip().lower()
+        if normalized_event not in self._event_names:
+            logger.info(
+                "recovery_attribution_event_filtered",
+                extra={
+                    "tenant_id": tenant_id,
+                    "event_name": normalized_event,
+                    "reason": "not_in_allowlist",
+                }
+            )
+            return False
+
+        context = _extract_context(payload, provider)
+
+        # Fallback chain: user_id -> email -> customer_id
+        user_id = (
+            context.get("user_id")
+            or context.get("email")
+            or context.get("customer_id")
+        )
+
+        if not user_id:
+            logger.warning(
+                "recovery_attribution_missing_user",
+                extra={
+                    "tenant_id": tenant_id,
+                    "event_name": normalized_event,
+                    "provider": provider,
+                    "reason": "missing_user_id_email_customer_id",
+                }
+            )
+            return False
+
+        recovery_row = self._find_recent_recovery(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            event_ts=context.get("event_ts"),
+        )
+        if not recovery_row:
+            logger.info(
+                "recovery_attribution_no_recovery_found",
+                extra={
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "event_name": normalized_event,
+                    "reason": "no_recent_recovery",
+                }
+            )
+            return False
+
+        inserted = self._insert_attribution(
+            tenant_id=tenant_id,
+            send_id=recovery_row["id"],
+            user_id=user_id,
+            event_name=normalized_event,
+            event_ts=context.get("event_ts"),
+            revenue=context.get("revenue"),
+            metadata=context.get("metadata"),
+            event_id=context.get("metadata", {}).get("event_id"),
+        )
+
+        if inserted:
+            logger.info(
+                "recovery_attributed",
+                extra={
+                    "tenant_id": tenant_id,
+                    "send_id": recovery_row["id"],
+                    "event_name": normalized_event,
+                    "revenue": context.get("revenue"),
+                    "provider": provider,
+                }
+            )
+            return True
+        else:
+            logger.info(
+                "recovery_attribution_duplicate_prevented",
+                extra={
+                    "tenant_id": tenant_id,
+                    "send_id": recovery_row["id"],
+                    "event_name": normalized_event,
+                    "reason": "idempotency_conflict",
+                }
+            )
+            return False
+
+    def _find_recent_recovery(
+        self,
+        tenant_id: str,
+        user_id: Optional[str],
+        event_ts: Optional[datetime],
+    ) -> Optional[Dict[str, Any]]:
+        sql = text(
+            f"""
+            SELECT id, sent_at, created_at, attribution_window_days
+            FROM {RECOVERY_EMAIL_TABLE}
+            WHERE tenant_id = :tenant_id
+              AND status = 'sent'
+              AND user_id = :user_id
+            ORDER BY sent_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+            """
+        )
+
+        params = {
+            "tenant_id": tenant_id,
+            "user_id": user_id or "",
         }
 
-        if MAX_SENDS_PER_TENANT_PER_HOUR > 0:
-            rpc_payload["p_quota_limit"] = MAX_SENDS_PER_TENANT_PER_HOUR
+        row = self.db.execute(sql, params).mappings().first()
+        if not row:
+            return None
 
+        sent_at = _parse_datetime(row.get("sent_at")) or _parse_datetime(row.get("created_at"))
+        if not sent_at:
+            return None
+
+        window_days = row.get("attribution_window_days") or DEFAULT_ATTRIBUTION_WINDOW_DAYS
         try:
-            resp = self.db.rpc(RECOVERY_BULK_DISPATCH_RPC, rpc_payload).execute()
-        except Exception:
-            logger.exception("recovery_bulk_rpc_failed tenant=%s run_id=%s", tenant_id, run_id)
-            METRICS.increment("recovery.bulk_rpc.failed", 1, {"tenant": tenant_id})
-            METRICS.increment("recovery.bulk_rpc.hard_failure", 1, {"tenant": tenant_id})
-            if os.getenv("RECOVERY_RAISE_ON_BULK_RPC_FAILURE", "").strip().lower() in {"1", "true", "yes"}:
-                raise
-            return BulkDispatchResponse(results=[], quota=None)
+            window_days = int(window_days)
+        except (TypeError, ValueError):
+            window_days = DEFAULT_ATTRIBUTION_WINDOW_DAYS
 
-        return _parse_bulk_dispatch_response(resp.data, tenant_id, run_id)
+        event_time = event_ts or datetime.now(timezone.utc)
 
-    def claim_outbox_batch(self, limit: int) -> List[OutboxClaimRow]:
-        return claim_outbox_batch(
-            self.db,
-            limit,
-            logger_obj=logger,
-            on_error=lambda: METRICS.increment("recovery.outbox.claim_failed", 1),
-            on_invalid=lambda: METRICS.increment("recovery.outbox.claim_invalid", 1),
-        )
+        # Clock skew tolerance: allow events slightly before sent_at
+        if event_time < sent_at - timedelta(minutes=CLOCK_SKEW_TOLERANCE_MINUTES):
+            logger.info(
+                "recovery_attribution_future_event",
+                extra={
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "event_time": event_time.isoformat(),
+                    "sent_at": sent_at.isoformat(),
+                    "reason": "event_before_sent_with_tolerance",
+                }
+            )
+            return None
 
+        # Enforce attribution window
+        if event_time - sent_at > timedelta(days=window_days):
+            logger.info(
+                "recovery_attribution_out_of_window",
+                extra={
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "window_days": window_days,
+                    "event_time": event_time.isoformat(),
+                    "sent_at": sent_at.isoformat(),
+                    "reason": "outside_attribution_window",
+                }
+            )
+            return None
 
-# =============================================================================
-# ENGINE LAYER (DECISION & INSERT ONLY)
-# =============================================================================
-class RecoveryAutomationEngine:
-    """
-    Evaluates at-risk users and writes approved campaigns to the Outbox.
-    Does NOT dispatch directly to the queue (crash safe).
-    """
-    def __init__(self, db_client, email_queue: Optional[Any] = None) -> None:
-        self.db = db_client
-        self.email_queue = email_queue
-        self.repo = RecoveryRepository(db_client)
+        return dict(row)
 
-    def evaluate_and_queue_batch(
+    def _insert_attribution(
         self,
         tenant_id: str,
-        users: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> List[RecoveryDecision]:
-        run_id = _extract_run_id(metadata)
-        start_time = time.monotonic()
+        send_id: str,
+        user_id: str,
+        event_name: str,
+        event_ts: Optional[datetime],
+        revenue: Optional[float],
+        metadata: Optional[Dict[str, Any]],
+        event_id: Optional[str] = None,
+    ) -> bool:
+        event_at = event_ts or datetime.now(timezone.utc)
 
-        if not tenant_id or not users:
+        # Stable idempotency key: event_id is the true external identifier.
+        # If missing, fall back to a deterministic composite (last resort).
+        if event_id:
+            idempotency_key = event_id
+        else:
+            idempotency_key = f"{send_id}:{event_name}:{event_at.isoformat()}"
             logger.warning(
-                "recovery_batch_skipped tenant=%s run_id=%s reason=empty_input",
-                tenant_id,
-                run_id,
+                "recovery_attribution_unstable_idempotency_key",
+                extra={
+                    "tenant_id": tenant_id,
+                    "send_id": send_id,
+                    "event_name": event_name,
+                    "reason": "missing_event_id",
+                }
             )
-            METRICS.increment("recovery.batch.skipped", 1, {"tenant": tenant_id})
-            return []
 
-        logger.info(
-            "recovery_batch_started tenant=%s run_id=%s users=%d",
-            tenant_id,
-            run_id,
-            len(users),
+        # True database-level idempotency via ON CONFLICT on stable external key.
+        # Requires DB schema: ALTER TABLE recovery_attributions ADD COLUMN event_id TEXT UNIQUE;
+        insert_sql = text(
+            f"""
+            INSERT INTO {RECOVERY_ATTRIBUTIONS_TABLE}
+                (send_id, tenant_id, user_id, event_name, event_at, revenue, metadata, event_id)
+            VALUES
+                (:send_id, :tenant_id, :user_id, :event_name, :event_at, :revenue, :metadata, :event_id)
+            ON CONFLICT (event_id)
+            DO NOTHING
+            RETURNING id
+            """
         )
 
-        valid_candidates: List[RecoveryCandidate] = []
-        duplicate_count = 0
-        invalid_count = 0
-        seen_keys = set()
+        payload = {
+            "send_id": send_id,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "event_name": event_name,
+            "event_at": event_at,
+            "revenue": revenue,
+            "metadata": metadata or {},  # Pass dict directly for JSONB
+            "event_id": idempotency_key,
+        }
 
-        for user in users:
-            candidate = self._build_candidate(user, tenant_id, run_id)
-            if not candidate:
-                invalid_count += 1
-                continue
-
-            dedup_key = f"{tenant_id}:{run_id}:{candidate.user_id}:{candidate.campaign_type.value}"
-            if dedup_key in seen_keys:
-                duplicate_count += 1
-                continue
-            seen_keys.add(dedup_key)
-
-            valid_candidates.append(candidate)
-
-        METRICS.increment("recovery.candidates.valid", len(valid_candidates), {"tenant": tenant_id})
-        METRICS.increment("recovery.candidates.invalid", invalid_count, {"tenant": tenant_id})
-        METRICS.increment("recovery.candidates.duplicate", duplicate_count, {"tenant": tenant_id})
-
-        if not valid_candidates:
-            logger.info("recovery_batch_no_candidates tenant=%s run_id=%s", tenant_id, run_id)
-            return []
-
-        response = self.repo.bulk_dispatch_candidates(tenant_id, valid_candidates, run_id)
-        decisions = _convert_bulk_results(response.results)
-
-        outcome_counts = _count_outcomes(response.results)
-        for outcome, count in outcome_counts.items():
-            METRICS.increment("recovery.bulk.outcome", count, {"tenant": tenant_id, "outcome": outcome})
-
-        elapsed = round(time.monotonic() - start_time, 3)
-        METRICS.timing("recovery.batch.duration", elapsed, {"tenant": tenant_id})
-
-        logger.info(
-            "recovery_batch_completed tenant=%s run_id=%s candidates=%d outcomes=%s duration=%ss",
-            tenant_id,
-            run_id,
-            len(valid_candidates),
-            outcome_counts,
-            elapsed,
-        )
-
-        return decisions
-
-    def _build_candidate(
-        self,
-        user: Dict[str, Any],
-        tenant_id: str,
-        run_id: Optional[str],
-    ) -> Optional[RecoveryCandidate]:
-        user_id = _resolve_user_id(user)
-        raw_email = _resolve_email(user)
-        risk_signal = RiskSignal.from_raw(user.get("primary_risk_signal"))
-
-        if not user_id or not raw_email or not risk_signal:
-            _log_candidate_rejection(tenant_id, run_id, user_id, raw_email, risk_signal)
-            return None
-
-        campaign_type = RISK_TO_CAMPAIGN.get(risk_signal)
-        if not campaign_type:
-            _log_candidate_rejection(tenant_id, run_id, user_id, raw_email, risk_signal)
-            return None
-
-        safe_email = _normalize_email(raw_email)
-
-        try:
-            return RecoveryCandidate.model_validate({
-                "user_id": user_id,
-                "email": safe_email,
-                "primary_risk_signal": risk_signal,
-                "campaign_type": campaign_type,
-                "churn_risk_score": user.get("churn_risk_score"),
-            })
-        except ValidationError as exc:
-            _log_validation_failure(tenant_id, run_id, user_id, exc)
-            METRICS.increment("recovery.candidates.validation_failed", 1, {"tenant": tenant_id})
-            return None
-
-
-# =============================================================================
-# OUTBOX DISPATCHER (BACKGROUND DAEMON)
-# =============================================================================
-class OutboxDispatcher:
-    """
-    Runs on a cron/loop. Safely claims pending DB rows using SKIP LOCKED,
-    dispatches them to the queue with an idempotency key, and handles DLQs.
-    """
-    def __init__(self, db_client) -> None:
-        self.db = db_client
-        self.repo = RecoveryRepository(db_client)
-
-    def process_pending_outbox(self, limit: int = 100) -> None:
-        logger.info("recovery_outbox_dispatch_started limit=%d", limit)
-        start_time = time.monotonic()
-
-        rows = self.repo.claim_outbox_batch(limit)
-        if not rows:
-            return
-
-        from api.tasks import send_recovery_email
-
-        dispatched_count = 0
-
-        for row in rows:
-            send_id = row.id
-            tenant_id = row.tenant_id
-            dispatch_token = row.dispatch_token
-            dispatch_attempt = row.dispatch_attempt
-
+        # Retry loop for transient DB failures (deadlocks, connection drops)
+        max_retries = 2
+        for attempt in range(max_retries + 1):
             try:
-                send_recovery_email.send(
-                    tenant_id=tenant_id,
-                    send_id=send_id,
-                    dispatch_token=dispatch_token,
-                    dispatch_attempt=dispatch_attempt,
-                )
+                row = self.db.execute(insert_sql, payload).fetchone()
+                self.db.commit()
+                return row is not None
+            except Exception as e:
+                self.db.rollback()
+                if attempt < max_retries:
+                    logger.warning(
+                        "recovery_attribution_insert_retry",
+                        extra={
+                            "tenant_id": tenant_id,
+                            "send_id": send_id,
+                            "attempt": attempt + 1,
+                            "error": str(e),
+                        }
+                    )
+                    time.sleep(0.1 * (attempt + 1))  # Simple backoff
+                else:
+                    logger.exception(
+                        "recovery_attribution_insert_failed",
+                        extra={"tenant_id": tenant_id, "send_id": send_id}
+                    )
+                    return False
 
-                self.db.table(RECOVERY_EMAIL_TABLE).update({
-                    "status": RecoveryStatus.DISPATCHED_TO_QUEUE.value,
-                    "dispatched_at": datetime.now(timezone.utc).isoformat(),
-                    "dispatch_token": dispatch_token,
-                    "dispatch_attempt": dispatch_attempt,
-                    "last_error": None,
-                }).eq("id", send_id).execute()
+        return False
 
-                dispatched_count += 1
 
-            except Exception as exc:
-                logger.error(
-                    "recovery_dispatch_failed tenant=%s send_id=%s attempt=%d",
-                    tenant_id,
-                    send_id,
-                    dispatch_attempt,
-                )
-                _mark_dispatch_failed(self.db, send_id, dispatch_attempt, str(exc))
+def _normalize_event_names(value: str) -> set:
+    if not value:
+        return set()
+    return {part.strip().lower() for part in value.split(",") if part.strip()}
 
-        duration = round(time.monotonic() - start_time, 2)
-        METRICS.increment("recovery.outbox.dispatched", dispatched_count)
-        METRICS.timing("recovery.outbox.duration", duration)
 
-        logger.info(
-            "recovery_outbox_dispatch_completed dispatched=%d duration=%ss",
-            dispatched_count,
-            duration,
+def _extract_context(payload: Dict[str, Any], provider: str) -> Dict[str, Any]:
+    if provider == "stripe":
+        return _extract_context_stripe(payload)
+    return _extract_context_lemonsqueezy(payload, provider)
+
+
+def _extract_context_lemonsqueezy(payload: Dict[str, Any], provider: str) -> Dict[str, Any]:
+    event_ts = _parse_datetime(
+        _find_in_paths(
+            payload,
+            [
+                ["meta", "event_created_at"],
+                ["data", "attributes", "paid_at"],
+                ["data", "attributes", "created_at"],
+                ["data", "attributes", "updated_at"],
+            ],
         )
+    )
 
-        apply_outbox_backpressure(dispatched_count, limit)
+    event_id = _find_in_paths(payload, [["meta", "event_id"], ["data", "id"]])
+    invoice_id = _find_in_paths(
+        payload,
+        [
+            ["meta", "custom_data", "invoice_id"],
+            ["meta", "custom_data", "order_id"],
+            ["meta", "custom_data", "charge_id"],
+            ["data", "attributes", "invoice_id"],
+            ["data", "attributes", "order_id"],
+            ["data", "attributes", "order_number"],
+            ["data", "attributes", "charge_id"],
+            ["data", "id"],
+        ],
+    )
 
+    user_id = _find_in_paths(
+        payload,
+        [
+            ["meta", "custom_data", "user_id"],
+            ["meta", "custom_data", "customer_id"],
+            ["data", "attributes", "user_id"],
+        ],
+    )
 
-# =============================================================================
-# HELPERS
-# =============================================================================
-def _parse_bulk_dispatch_response(
-    data: Any,
-    tenant_id: str,
-    run_id: Optional[str],
-) -> BulkDispatchResponse:
-    results_data = data
-    quota_data = None
+    email = _find_in_paths(
+        payload,
+        [
+            ["data", "attributes", "user_email"],
+            ["data", "attributes", "customer_email"],
+            ["meta", "custom_data", "email"],
+        ],
+    )
 
-    if isinstance(data, dict):
-        results_data = data.get("results", [])
-        quota_data = data.get("quota")
+    amount_raw = _find_in_paths(
+        payload,
+        [
+            ["data", "attributes", "total"],
+            ["data", "attributes", "subtotal"],
+            ["data", "attributes", "amount"],
+            ["data", "attributes", "total_usd"],
+            ["data", "attributes", "total_amount"],
+        ],
+    )
 
-    try:
-        results = _bulk_dispatch_adapter.validate_python(results_data)
-    except ValidationError:
-        logger.exception("recovery_bulk_rpc_invalid tenant=%s run_id=%s", tenant_id, run_id)
-        METRICS.increment("recovery.bulk_rpc.invalid", 1, {"tenant": tenant_id})
-        return BulkDispatchResponse(results=[])
-
-    quota = None
-    if quota_data is not None:
-        try:
-            quota = QuotaCheckResponse.model_validate(quota_data)
-        except ValidationError:
-            logger.exception("recovery_quota_rpc_invalid tenant=%s run_id=%s", tenant_id, run_id)
-            METRICS.increment("recovery.quota.invalid", 1, {"tenant": tenant_id})
-
-    return BulkDispatchResponse(results=results, quota=quota)
-
-
-def _convert_bulk_results(results: List[BulkDispatchResult]) -> List[RecoveryDecision]:
-    decisions: List[RecoveryDecision] = []
-    for result in results:
-        decisions.append(
-            RecoveryDecision.safe_create(
-                status=result.outcome,
-                campaign_type=result.campaign_type,
-                send_id=result.send_id,
-                user_id=result.user_id,
-                reason=result.message,
-            )
+    currency = _coerce_string(
+        _find_in_paths(
+            payload,
+            [
+                ["data", "attributes", "currency"],
+                ["data", "attributes", "currency_code"],
+            ],
         )
-    return decisions
+    )
+
+    revenue = _coerce_revenue(amount_raw, currency, provider)
+
+    metadata = {
+        "provider": provider,
+        "event_id": _coerce_string(event_id),
+        "invoice_id": _coerce_string(invoice_id),
+        "currency": currency,
+        "amount_raw": amount_raw,
+        "email": _coerce_string(email),
+    }
+
+    return {
+        "event_ts": event_ts,
+        "user_id": _coerce_string(user_id),
+        "email": _coerce_string(email),
+        "revenue": revenue,
+        "metadata": metadata,
+    }
 
 
-def _count_outcomes(results: List[BulkDispatchResult]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
-    for result in results:
-        key = result.outcome.value
-        counts[key] = counts.get(key, 0) + 1
-    return counts
+def _extract_context_stripe(payload: Dict[str, Any]) -> Dict[str, Any]:
+    event_id = _coerce_string(payload.get("id"))
+    event_ts = _parse_datetime(payload.get("created"))
+    data_object = (payload.get("data") or {}).get("object") or {}
+    metadata = data_object.get("metadata") or {}
+
+    user_id = _coerce_string(
+        metadata.get("user_id")
+        or metadata.get("tenant_user_id")
+        or metadata.get("app_user_id")
+    )
+
+    email = _coerce_string(
+        metadata.get("email")
+        or data_object.get("customer_email")
+        or data_object.get("receipt_email")
+    )
+
+    invoice_id = _coerce_string(
+        data_object.get("invoice")
+        or data_object.get("id")
+        or data_object.get("charge")
+    )
+
+    amount_raw = (
+        data_object.get("amount_paid")
+        or data_object.get("amount_due")
+        or data_object.get("amount")
+        or data_object.get("amount_received")
+    )
+
+    currency = _coerce_string(data_object.get("currency"))
+    revenue = _coerce_revenue(amount_raw, currency, "stripe")
+
+    meta_payload = {
+        "provider": "stripe",
+        "event_id": event_id,
+        "invoice_id": invoice_id,
+        "currency": currency,
+        "amount_raw": amount_raw,
+        "email": email,
+    }
+
+    return {
+        "event_ts": event_ts,
+        "user_id": user_id,
+        "email": email,
+        "revenue": revenue,
+        "metadata": meta_payload,
+    }
 
 
-def _extract_run_id(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
-    if not metadata:
+def _find_in_paths(payload: Dict[str, Any], paths: Iterable[Iterable[str]]) -> Any:
+    for path in paths:
+        current: Any = payload
+        for key in path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(key)
+        if current is not None and current != "":
+            return current
+    return None
+
+
+def _coerce_revenue(amount_raw: Any, currency: Optional[str], provider: str) -> Optional[float]:
+    """
+    Deterministically convert raw gateway amounts into floating dollar values.
+    Provider-aware to eliminate dangerous universal heuristics.
+    """
+    if amount_raw is None:
         return None
-    run_id = metadata.get("pipeline_run_id") or metadata.get("run_id")
-    return str(run_id) if run_id else None
 
-
-def _resolve_user_id(user: Dict[str, Any]) -> Optional[str]:
-    for key in ("user_id", "id", "uid", "auth_user_id"):
-        val = user.get(key)
-        if val:
-            return str(val).strip()
-    return None
-
-
-def _resolve_email(user: Dict[str, Any]) -> Optional[str]:
-    for key in ("email", "user_email", "primary_email"):
-        val = user.get(key)
-        if val:
-            return str(val)
-    return None
-
-
-def _normalize_email(raw_email: str) -> str:
-    compact = str(raw_email).strip().replace(" ", "")
-    return unicodedata.normalize("NFKC", compact).lower()
-
-
-def _log_candidate_rejection(
-    tenant_id: str,
-    run_id: Optional[str],
-    user_id: Optional[str],
-    raw_email: Optional[str],
-    risk_signal: Optional[RiskSignal],
-) -> None:
-    logger.warning(
-        "recovery_candidate_rejected tenant=%s run_id=%s user_id=%s email_present=%s signal=%s",
-        tenant_id,
-        run_id,
-        user_id,
-        bool(raw_email),
-        risk_signal.value if risk_signal else None,
-    )
-
-
-def _log_validation_failure(
-    tenant_id: str,
-    run_id: Optional[str],
-    user_id: Optional[str],
-    exc: ValidationError,
-) -> None:
-    fields = []
-    for error in exc.errors():
-        loc = error.get("loc")
-        if isinstance(loc, (tuple, list)) and loc:
-            fields.append(str(loc[-1]))
-
-    logger.warning(
-        "recovery_candidate_validation_failed tenant=%s run_id=%s user_id=%s fields=%s",
-        tenant_id,
-        run_id,
-        user_id,
-        fields,
-    )
-
-
-def _mark_dispatch_failed(db_client, send_id: str, attempt: int, error: str) -> None:
-    next_retry = (datetime.now(timezone.utc) + timedelta(seconds=dispatch_backoff_seconds(attempt))).isoformat()
     try:
-        db_client.table(RECOVERY_EMAIL_TABLE).update({
-            "status": RecoveryStatus.DISPATCH_FAILED.value,
-            "failure_stage": FailureStage.DISPATCH.value,
-            "next_retry_at": next_retry,
-            "last_error": error[:500],
-        }).eq("id", send_id).execute()
-    except Exception:
-        logger.exception("recovery_outbox_dispatch_failed_persist send_id=%s", send_id)
+        if isinstance(amount_raw, str):
+            amount_raw = amount_raw.replace(",", "")
+        num = float(amount_raw)
+
+        # Zero-decimal currencies never divide by 100
+        is_zero_decimal = currency and currency.lower() in ZERO_DECIMAL_CURRENCIES
+
+        if provider == "stripe":
+            # Stripe amounts are always in smallest currency unit (cents)
+            return round(num, 2) if is_zero_decimal else round(num / 100.0, 2)
+
+        elif provider in ("lemonsqueezy", "lemon_squeezy"):
+            # LemonSqueezy API v1+ returns amounts in cents (consistent with Stripe).
+            # If your integration uses a legacy decimal format, adjust here.
+            return round(num, 2) if is_zero_decimal else round(num / 100.0, 2)
+
+        else:
+            # Unknown provider: conservative default
+            return round(num, 2) if is_zero_decimal else round(num / 100.0, 2)
+
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_string(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped if stripped else None
+    return str(value)
+
+
+def _parse_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        try:
+            if candidate.endswith("Z"):
+                candidate = candidate[:-1] + "+00:00"
+            parsed = datetime.fromisoformat(candidate)
+            return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
