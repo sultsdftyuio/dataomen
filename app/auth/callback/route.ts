@@ -38,6 +38,7 @@ const isSafeRedirectPath = (value: string | null): value is string => {
  * - Invalid callback rejection
  * - PII-safe structured observability
  * - Global try/catch protection
+ * - SYNCHRONOUS TENANT CREATION (Arcli Architecture Rule 1)
  * ---------------------------------------------------------------------------
  */
 export async function GET(request: Request) {
@@ -100,6 +101,7 @@ export async function GET(request: Request) {
     // INITIALIZE SUPABASE SSR CLIENT
     // -----------------------------------------------------------------------
     const supabase = await createClient();
+    let sessionUser = null; // Track user for synchronous provisioning
 
     // -----------------------------------------------------------------------
     // AUTHENTICATE: OAUTH FLOW
@@ -109,7 +111,7 @@ export async function GET(request: Request) {
         console.log(`[AUTH_CALLBACK][${flowId}] Exchanging OAuth code`);
       }
       
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       
       if (error) {
         console.error(`[AUTH_CALLBACK][${flowId}] Failed OAuth exchange`, {
@@ -121,6 +123,8 @@ export async function GET(request: Request) {
           new URL('/login?error=oauth_failed', origin)
         );
       }
+      
+      sessionUser = data?.user;
     } 
     // -----------------------------------------------------------------------
     // AUTHENTICATE: MAGIC LINK / OTP FLOW
@@ -130,7 +134,7 @@ export async function GET(request: Request) {
         console.log(`[AUTH_CALLBACK][${flowId}] Verifying OTP`, { type: otpType });
       }
 
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         type: otpType,
         token_hash: tokenHash,
       });
@@ -146,15 +150,45 @@ export async function GET(request: Request) {
           new URL('/login?error=otp_failed', origin)
         );
       }
+      
+      sessionUser = data?.user;
+    }
+
+    // -----------------------------------------------------------------------
+    // SYNCHRONOUS CORE IDENTITY (Architecture Rule 1 Enforcement)
+    // -----------------------------------------------------------------------
+    if (sessionUser) {
+      // DATA INTEGRITY: Deterministic company name derivation (matching register flow)
+      const email = sessionUser.email || '';
+      const rawCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace';
+      const fallbackCompany = rawCompany.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace';
+      const workspaceName = `${fallbackCompany.charAt(0).toUpperCase() + fallbackCompany.slice(1)} Workspace`;
+
+      if (isDev) {
+        console.log(`[AUTH_CALLBACK][${flowId}] Provisioning workspace shell for user ${sessionUser.id}...`);
+      }
+
+      // Execute race-safe SQL function. Next.js will NOT proceed until this is done.
+      // This is idempotent: if the user already has a workspace, it safely returns.
+      const { error: rpcError } = await supabase.rpc('provision_initial_workspace', {
+        target_user_id: sessionUser.id,
+        default_name: workspaceName,
+      });
+
+      if (rpcError) {
+        console.error(`[AUTH_CALLBACK][${flowId}] CRITICAL: Workspace provisioning failed:`, rpcError);
+        // We do not intercept the redirect here. The frontend onboarding panel will
+        // catch the missing workspace mapping and fail gracefully with a retry UI.
+      } else {
+        if (isDev) console.log(`[AUTH_CALLBACK][${flowId}] Identity verified and workspace shell secured.`);
+      }
     }
 
     // -----------------------------------------------------------------------
     // SUCCESS & REDIRECT
     // -----------------------------------------------------------------------
     if (isDev) {
-      console.log(`[AUTH_CALLBACK][${flowId}] Authentication successful, redirecting`, {
-        nextPath,
-      });
+      console.log(`[AUTH_CALLBACK][${flowId}] Authentication successful, redirecting to`, nextPath);
     }
 
     return NextResponse.redirect(new URL(nextPath, origin));
