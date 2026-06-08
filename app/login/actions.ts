@@ -88,6 +88,27 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
 
     if (isDev) console.log(`[DEBUG-UI][${flowId}] Auth SUCCESS for user_id=${data?.user?.id} in ${Date.now() - flowStart}ms`);
 
+    // 9. Synchronous Core Identity Enforcement (Rule 1)
+    // Idempotent safeguard: ensures orphaned users/dashboards always get a provisioned workspace
+    if (data?.user) {
+      const rawCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace';
+      const fallbackCompany = rawCompany.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace';
+      const workspaceName = `${fallbackCompany.charAt(0).toUpperCase() + fallbackCompany.slice(1)} Workspace`;
+
+      const { error: rpcError } = await supabase.rpc('provision_initial_workspace', {
+        target_user_id: data.user.id,
+        default_name: workspaceName,
+      });
+
+      if (rpcError) {
+        // We log the error but don't block the login. If it fails, the frontend polling hook
+        // will catch the missing tenant and correctly display the unassigned state or retry.
+        console.error(`[DEBUG-UI][${flowId}] CRITICAL: Workspace provisioning failed:`, rpcError);
+      } else {
+        if (isDev) console.log(`[DEBUG-UI][${flowId}] Idempotent workspace provisioning completed.`);
+      }
+    }
+
   } catch (err) {
     // Security by Design: Catch all critical initialization and connection failures
     console.error(`[DEBUG-UI][${flowId}] CRITICAL Auth Failure:`, err);
@@ -95,7 +116,7 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
   }
 
   /**
-   * 9. Secure Redirect
+   * 10. Secure Redirect
    * Next.js redirect() throws a special error to halt execution and trigger the navigation.
    * Kept safely outside the try/catch block to ensure navigation is not suppressed.
    */

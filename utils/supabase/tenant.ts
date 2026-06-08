@@ -14,7 +14,8 @@ type TenantUserMapping = {
   user_id: string | null;
   // Defensive: PostgREST may return an object or an array for a single FK relation
   // depending on metadata inference. We normalize at runtime.
-  tenants: { status: string } | { status: string }[] | null;
+  // FIX: Updated to target provisioning_status instead of the billing status
+  tenants: { provisioning_status: string } | { provisioning_status: string }[] | null;
 };
 
 export type TenantContextResult =
@@ -83,7 +84,7 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
       .select(`
         tenant_id,
         user_id,
-        tenants (status)
+        tenants (provisioning_status)
       `)
       .eq("user_id", userId)
       .maybeSingle<TenantUserMapping>();
@@ -162,7 +163,8 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
         };
       }
 
-      const tenantStatus = rawTenant.status;
+      // FIX: Extract provisioning_status rather than the billing status
+      const tenantStatus = rawTenant.provisioning_status;
 
       // ----------------------------------------------------------------
       // Explicit, semantic state machine — fail closed for unknown states
