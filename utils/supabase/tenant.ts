@@ -14,8 +14,8 @@ type TenantUserMapping = {
   user_id: string | null;
   // Defensive: PostgREST may return an object or an array for a single FK relation
   // depending on metadata inference. We normalize at runtime.
-  // FIX: Updated to target provisioning_status instead of the billing status
-  tenants: { provisioning_status: string } | { provisioning_status: string }[] | null;
+  // FIX: Updated to target status instead of the billing status
+  tenants: { status: string } | { status: string }[] | null;
 };
 
 export type TenantContextResult =
@@ -57,6 +57,7 @@ const PHASE_MESSAGES: Record<string, string> = {
  * - Async provisioning races (tenant_users row exists before tenants row)
  * - Tenant readiness verification via an explicit, semantic state machine
  * - Invalid / terminal tenant states with precise HTTP semantics
+ * - ACTIVE SELF-HEALING: Synchronously provisions workspaces if missing.
  *
  * Returns 202 Accepted for any provisioning state so the UI can poll.
  * Returns specific 4xx/5xx codes for terminal/error states.
@@ -84,7 +85,7 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
       .select(`
         tenant_id,
         user_id,
-        tenants (provisioning_status)
+        tenants (status)
       `)
       .eq("user_id", userId)
       .maybeSingle<TenantUserMapping>();
@@ -163,8 +164,8 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
         };
       }
 
-      // FIX: Extract provisioning_status rather than the billing status
-      const tenantStatus = rawTenant.provisioning_status;
+      // FIX: Extract status rather than the billing status
+      const tenantStatus = rawTenant.status;
 
       // ----------------------------------------------------------------
       // Explicit, semantic state machine — fail closed for unknown states
@@ -208,9 +209,6 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
         }
 
         // Terminal states — explicit HTTP semantics
-        // NOTE: 423 Locked (ARCHIVED) is precise, but verify your frontend
-        // error handler recognizes it. If your UI only distinguishes
-        // "terminal vs. retryable", you may prefer 403 for all terminals.
         case "SUSPENDED":
           console.warn("[TenantContext] Workspace suspended", {
             userId,
@@ -300,14 +298,34 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
     }
 
     // ------------------------------------------------------------------
-    // No mapping yet — auth user exists but onboarding webhook has not
-    // inserted the tenant_users row.
+    // No mapping yet — Active Self-Healing Protocol (Rule 1 Enforcement)
     // ------------------------------------------------------------------
     if (!loggedMissingMapping) {
-      console.info("[TenantContext] Awaiting tenant assignment", { userId });
+      console.info("[TenantContext] Awaiting tenant assignment. Attempting active self-healing.", { userId });
       loggedMissingMapping = true;
+
+      // Deterministic company name derivation from email matching auth callback
+      const email = data.user.email || '';
+      const rawCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace';
+      const fallbackCompany = rawCompany.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace';
+      const workspaceName = `${fallbackCompany.charAt(0).toUpperCase() + fallbackCompany.slice(1)} Workspace`;
+
+      // Execute race-safe SQL function to enforce synchronous identity.
+      // Idempotent: If another process creates it in parallel, this fails safely or skips.
+      const { error: healError } = await supabase.rpc('provision_initial_workspace', {
+        target_user_id: userId,
+        default_name: workspaceName,
+      });
+
+      if (healError) {
+        console.error("[TenantContext] CRITICAL: Self-healing RPC failed", {
+          userId,
+          error: healError
+        });
+      }
     }
 
+    // Exponential backoff before checking if mapping/healing succeeded
     if (attempt < MAX_PROVISIONING_RETRIES) {
       const delayMs = Math.round(
         PROVISIONING_RETRY_BASE_DELAY_MS *
@@ -318,7 +336,8 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
   }
 
   // Retries exhausted — hand off to the frontend poller.
-  console.info("[TenantContext] Tenant assignment still pending after max retries", {
+  // Because we added self-healing, reaching here means a true backend/DB outage.
+  console.error("[TenantContext] Tenant assignment still pending after max retries and self-healing", {
     userId,
     attempts: MAX_PROVISIONING_RETRIES,
     elapsedMs: Date.now() - startedAt,
@@ -329,7 +348,7 @@ export async function resolveTenantContext(): Promise<TenantContextResult> {
       {
         status: "PROVISIONING",
         phase: "PROVISIONING",
-        message: "Preparing your workspace...",
+        message: "Securing your workspace...",
         code: "workspace_setup_pending",
       },
       { status: 202 }

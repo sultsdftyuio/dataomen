@@ -59,7 +59,7 @@ export async function GET() {
         );
     }
 
-    // 3. FIX: Reverted to 'status' as 'provisioning_status' is not in types/supabase.ts
+    // 3. FIX: Reverted to 'status' as 'status' is not in types/supabase.ts
     const { data: tenantRow, error: tenantError } = await supabase
         .from("tenants")
         .select("status")

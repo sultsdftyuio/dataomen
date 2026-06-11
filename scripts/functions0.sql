@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     name                TEXT               NOT NULL,
     display_name        TEXT,
     plan                TEXT,
-    provisioning_status provisioning_state DEFAULT 'PROVISIONING',
+    status provisioning_state DEFAULT 'PROVISIONING',
     status              TEXT               NOT NULL DEFAULT 'active',
     created_at          TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ        NOT NULL DEFAULT NOW()
@@ -75,7 +75,7 @@ DO $$ BEGIN
            AND column_name  = 'status'
            AND udt_name     = 'provisioning_state'
     ) THEN
-        ALTER TABLE public.tenants RENAME COLUMN status TO provisioning_status;
+        ALTER TABLE public.tenants RENAME COLUMN status TO status;
     END IF;
 END $$;
 
@@ -83,10 +83,10 @@ END $$;
 ALTER TABLE public.tenants
     ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
 
--- Ensure provisioning_status column exists (covers schemas where the rename
+-- Ensure status column exists (covers schemas where the rename
 -- above did not fire because the column was missing entirely).
 ALTER TABLE public.tenants
-    ADD COLUMN IF NOT EXISTS provisioning_status provisioning_state DEFAULT 'PROVISIONING';
+    ADD COLUMN IF NOT EXISTS status provisioning_state DEFAULT 'PROVISIONING';
 
 -- Add the status check constraint idempotently.
 DO $$ BEGIN
@@ -401,7 +401,7 @@ CREATE TABLE IF NOT EXISTS billing_webhook_events (
 
 -- -------------------------------------------------------------------------
 -- provision_initial_workspace: Race-safe singleton workspace creation
--- NOTE: writes to provisioning_status (renamed from status in v3.2).
+-- NOTE: writes to status (renamed from status in v3.2).
 -- -------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION provision_initial_workspace(target_user_id UUID, default_name TEXT)
 RETURNS TEXT
@@ -423,7 +423,7 @@ BEGIN
         END IF;
 
         BEGIN
-            INSERT INTO tenants (name, provisioning_status)
+            INSERT INTO tenants (name, status)
             VALUES (default_name, 'READY')
             RETURNING tenant_id INTO new_tenant_id;
 

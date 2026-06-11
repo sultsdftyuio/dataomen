@@ -67,7 +67,7 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    provisioning_status: Mapped[Optional[str]] = mapped_column(
+    status: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, default="PROVISIONING"
     )
     status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
