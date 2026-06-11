@@ -47,19 +47,45 @@ export async function GET() {
         return jsonResponse({ error: "Failed to resolve workspace mapping." }, { status: 500 });
     }
 
-    // 2. Race Condition Safe: Mapping not committed yet
+    // 2. Race Condition Safe: Active Self-Healing Protocol
+    // If the user is polling but has no mapping, do not passively wait for a timeout.
+    // Enforce Architecture Rule 1 and heal the state synchronously.
     if (!mapping?.tenant_id) {
+        console.info("[Workspace API] Missing mapping detected during poll. Initiating active self-healing.", { userId: user.id });
+
+        // Deterministic company name derivation matching the auth callback logic
+        const email = user.email || '';
+        const rawCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace';
+        const fallbackCompany = rawCompany.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace';
+        const workspaceName = `${fallbackCompany.charAt(0).toUpperCase() + fallbackCompany.slice(1)} Workspace`;
+
+        // Execute idempotent RPC to enforce synchronous identity mapping
+        const { error: healError } = await supabase.rpc('provision_initial_workspace', {
+            target_user_id: user.id,
+            default_name: workspaceName,
+        });
+
+        if (healError) {
+            console.error("[Workspace API] CRITICAL: Self-healing RPC failed", {
+                userId: user.id,
+                error: healError
+            });
+        }
+
+        // Return a 200 so the frontend continues to poll safely. The next cycle will find the created mapping.
         return jsonResponse(
             {
                 status: "PROVISIONING" as WorkspacePhase,
                 phase: "PROVISIONING" as WorkspacePhase,
-                message: "Provisioning your workspace.",
+                message: "Securing your workspace...",
             },
-            { status: 200 }
+            { status: 200 } 
         );
     }
 
-    // 3. FIX: Reverted to 'status' as 'status' is not in types/supabase.ts
+    // 3. Status Query
+    // Note: Kept as 'status' based on types/supabase.ts availability. 
+    // Ensure this perfectly aligns with the actual column name in your production database.
     const { data: tenantRow, error: tenantError } = await supabase
         .from("tenants")
         .select("status")
