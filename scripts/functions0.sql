@@ -1,18 +1,25 @@
 -- ============================================================================
--- ARCLI CORE SCHEMA — COMBINED CANONICAL BASE (v3.3-fixed)
+-- ARCLI CORE SCHEMA — COMBINED CANONICAL BASE (v3.3-fixed-PROPER)
 -- ============================================================================
--- Merges v3.1 + v3.2 + v3.3-discrepancy-fixes.  Run BEFORE Files 1-3.
+-- Merges v3.1 + v3.2 + v3.3-discrepancy-fixes + CRITICAL migration fixes.
+-- Run BEFORE Files 1-3.
 -- All DDL is idempotent (IF NOT EXISTS / OR REPLACE / DO-blocks).
 --
--- FIXES OVER v3.3:
---   1. events table gains user_id and event_name columns (required by
+-- CRITICAL FIXES OVER v3.3:
+--   1. Migration helpers now patch name, display_name, plan columns on legacy
+--      tenants tables (was causing: column "name" does not exist).
+--   2. Fixed broken rename status→status (no-op) to proper status→provisioning_status.
+--   3. Fixed duplicate "status" column definition in CREATE TABLE — now uses
+--      provisioning_status for the enum and status for the text lifecycle column.
+--   4. All NOT NULL column additions use DEFAULT to safely handle existing rows.
+--   5. events table gains user_id and event_name columns (required by
 --      metrics_service.py aggregate_daily_metrics).
---   2. metric_values_daily and metric_values_segmented gain metric_name
+--   6. metric_values_daily and metric_values_segmented gain metric_name
 --      TEXT column so Python MVP code can query by name directly without
 --      joining through metric_configs.
---   3. Section 14 ALTER TABLE ... ADD COLUMN IF NOT EXISTS wrapped in
+--   7. Section 14 ALTER TABLE ... ADD COLUMN IF NOT EXISTS wrapped in
 --      safer DO blocks that check information_schema.columns directly.
---   4. anomaly_alerts definition confirmed as: UUID id, severity TEXT,
+--   8. anomaly_alerts definition confirmed as: UUID id, severity TEXT,
 --      message TEXT, is_resolved BOOLEAN — api/database.py must match.
 --
 -- DESIGN DECISIONS (unchanged):
@@ -50,12 +57,14 @@ DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'DELETED';    EXCEPTION WHEN
 -- CORE TENANT & USER TABLES
 -- ============================================================================
 
+-- FIXED: Removed duplicate "status" column. Now uses provisioning_status for
+-- the provisioning_state enum and status for the text account lifecycle column.
 CREATE TABLE IF NOT EXISTS tenants (
     tenant_id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
-    name                TEXT               NOT NULL,
+    name                TEXT               NOT NULL DEFAULT '',
     display_name        TEXT,
     plan                TEXT,
-    status provisioning_state DEFAULT 'PROVISIONING',
+    provisioning_status provisioning_state DEFAULT 'PROVISIONING',
     status              TEXT               NOT NULL DEFAULT 'active',
     created_at          TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ        NOT NULL DEFAULT NOW()
@@ -65,8 +74,48 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- Migration helpers — idempotent, safe on both fresh and existing databases.
 -- ---------------------------------------------------------------------------
 
--- On older schemas the provisioning lifecycle column was called 'status'
--- with type provisioning_state.  Rename it to free the name for the text column.
+-- CRITICAL FIX v3.3-proper: Patch missing core columns on legacy schemas.
+-- If the table was created by an older schema that lacked these columns,
+-- we must add them with safe defaults so existing rows don't break.
+
+-- name: NOT NULL in the canonical schema, but legacy tables may lack it.
+-- We add it nullable first, backfill, then enforce NOT NULL.
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'name'
+    ) THEN
+        ALTER TABLE public.tenants ADD COLUMN name TEXT NOT NULL DEFAULT '';
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'display_name'
+    ) THEN
+        ALTER TABLE public.tenants ADD COLUMN display_name TEXT;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'plan'
+    ) THEN
+        ALTER TABLE public.tenants ADD COLUMN plan TEXT;
+    END IF;
+END $$;
+
+-- FIXED v3.3-proper: Rename legacy 'status' column (provisioning_state type)
+-- to 'provisioning_status' to free the name for the TEXT account status column.
+-- The old code had: RENAME COLUMN status TO status (a no-op).
 DO $$ BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -74,19 +123,42 @@ DO $$ BEGIN
            AND table_name   = 'tenants'
            AND column_name  = 'status'
            AND udt_name     = 'provisioning_state'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'provisioning_status'
     ) THEN
-        ALTER TABLE public.tenants RENAME COLUMN status TO status;
+        ALTER TABLE public.tenants RENAME COLUMN status TO provisioning_status;
+    END IF;
+END $$;
+
+-- Ensure the provisioning_status column exists (covers schemas where the rename
+-- above did not fire because the column was missing entirely).
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'provisioning_status'
+    ) THEN
+        ALTER TABLE public.tenants
+            ADD COLUMN provisioning_status provisioning_state DEFAULT 'PROVISIONING';
     END IF;
 END $$;
 
 -- Ensure the account/billing status text column exists (migration + fresh guard).
-ALTER TABLE public.tenants
-    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
-
--- Ensure status column exists (covers schemas where the rename
--- above did not fire because the column was missing entirely).
-ALTER TABLE public.tenants
-    ADD COLUMN IF NOT EXISTS status provisioning_state DEFAULT 'PROVISIONING';
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name   = 'tenants'
+           AND column_name  = 'status'
+    ) THEN
+        ALTER TABLE public.tenants
+            ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+    END IF;
+END $$;
 
 -- Add the status check constraint idempotently.
 DO $$ BEGIN
@@ -164,7 +236,7 @@ CREATE TABLE IF NOT EXISTS events (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id       TEXT        NOT NULL,
     user_id         TEXT,                  -- ADDED: distinct user counts
-    event_name      TEXT        NOT NULL,  -- ADDED: group_by aggregations
+    event_name      TEXT        NOT NULL DEFAULT '',  -- ADDED: group_by aggregations
     idempotency_key TEXT,
     timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     value           NUMERIC,
@@ -401,7 +473,7 @@ CREATE TABLE IF NOT EXISTS billing_webhook_events (
 
 -- -------------------------------------------------------------------------
 -- provision_initial_workspace: Race-safe singleton workspace creation
--- NOTE: writes to status (renamed from status in v3.2).
+-- NOTE: writes to provisioning_status (was status in v3.2, renamed).
 -- -------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION provision_initial_workspace(target_user_id UUID, default_name TEXT)
 RETURNS TEXT
@@ -423,7 +495,7 @@ BEGIN
         END IF;
 
         BEGIN
-            INSERT INTO tenants (name, status)
+            INSERT INTO tenants (name, provisioning_status)
             VALUES (default_name, 'READY')
             RETURNING tenant_id INTO new_tenant_id;
 
@@ -1286,7 +1358,7 @@ CREATE INDEX IF NOT EXISTS idx_metric_values_segmented_name_date
     ON metric_values_segmented(tenant_id, metric_name, date);
 
 -- ============================================================================
--- END OF COMBINED CANONICAL BASE v3.3-fixed
+-- END OF COMBINED CANONICAL BASE v3.3-fixed-PROPER
 -- ============================================================================
 -- Next: run File 1 (triggers, CHECKs, normalization, numeric precision).
 -- ============================================================================
