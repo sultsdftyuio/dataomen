@@ -1,298 +1,228 @@
-// app/(dashboard)/dashboard/QuickStartGuide.tsx
-//
-// ⚠️  REQUIRED: The parent route must export:
-//       export const dynamic = "force-dynamic";
+// app/(dashboard)/dashboard/QuickStartHero.tsx
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Activity,
-  ArrowRight,
-  HelpCircle,
+  CheckCircle2,
   Key,
-  Send,
-  ShieldCheck,
+  RefreshCw,
+  Sparkles,
+  Webhook,
 } from "lucide-react";
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
-
-import QuickStartHero from "./QuickStartHero";
-import StepCard from "./StepCard";
+import React from "react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
-export type SetupState =
-  | "missing_api_key"
-  | "awaiting_first_event"
-  | "complete";
-
-export interface QuickStartGuideProps {
+interface QuickStartHeroProps {
+  isComplete: boolean;
+  isAwaitingEvents: boolean;
   hasApiKey: boolean;
   hasReceivedData: boolean;
-  setupState: SetupState;
+  canCheckStatus: boolean;
+  isPending: boolean;
+  showRefreshFlash: boolean;
+  lastCheckedLabel: string | null;
+  progressPercent: number;
+  progressColor: string;
+  refreshDashboard: () => void;
 }
 
-function formatLastChecked(timestamp: Date, now: number): string {
-  const seconds = Math.round((now - timestamp.getTime()) / 1000);
-  if (seconds < 5) return "Checked just now";
-  if (seconds < 60) return `Checked ${seconds}s ago`;
-  return `Checked ${Math.round(seconds / 60)}m ago`;
-}
-
-export default function QuickStartGuide({
+export default function QuickStartHero({
+  isComplete,
+  isAwaitingEvents,
   hasApiKey,
   hasReceivedData,
-  setupState,
-}: QuickStartGuideProps) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
-  // ─── Reactive timestamp ticker ──────────────────────────────────────────
-  const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const ticker = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(ticker);
-  }, []);
-
-  // ─── Detect transition completion ───────────────────────────────────────
-  const [showRefreshFlash, setShowRefreshFlash] = useState(false);
-  const prevIsPendingRef = useRef(false);
-
-  useEffect(() => {
-    const wasRefreshing = prevIsPendingRef.current;
-    prevIsPendingRef.current = isPending;
-
-    if (wasRefreshing && !isPending) {
-      setLastCheckedAt(new Date());
-      setShowRefreshFlash(true);
-      const t = setTimeout(() => setShowRefreshFlash(false), 1800);
-      return () => clearTimeout(t);
-    }
-  }, [isPending]);
-
-  // ─── Stable refresh callback ─────────────────────────────────────────────
-  const isPendingRef = useRef(isPending);
-  useEffect(() => {
-    isPendingRef.current = isPending;
-  }, [isPending]);
-
-  const canCheckStatus = hasApiKey && !hasReceivedData;
-
-  const refreshDashboard = useCallback(() => {
-    if (isPendingRef.current) return;
-    startTransition(() => router.refresh());
-  }, [router, startTransition]);
-
-  // ─── Auto-poll interval ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (!canCheckStatus) return;
-
-    const interval = setInterval(() => {
-      if (document.hidden) return;
-      refreshDashboard();
-    }, 10_000);
-
-    return () => clearInterval(interval);
-  }, [canCheckStatus, refreshDashboard]);
-
-  // ─── Derived display values ───────────────────────────────────────────────
-  const isComplete = setupState === "complete";
-  const isAwaitingEvents = setupState === "awaiting_first_event";
-  const lastCheckedLabel = lastCheckedAt ? formatLastChecked(lastCheckedAt, now) : null;
-
-  const progressPercent = hasReceivedData ? 100 : hasApiKey ? 66 : 33;
-  const progressColor = hasReceivedData ? "#10B981" : C.blue;
-
-  // ─── Aesthetic Config ───────────────────────────────────────────────────
-  const [refSteps, visSteps] = useVisible(0.1);
-  const [refHelp, visHelp] = useVisible(0.1);
+  canCheckStatus,
+  isPending,
+  showRefreshFlash,
+  lastCheckedLabel,
+  progressPercent,
+  refreshDashboard,
+}: QuickStartHeroProps) {
+  // Entrance animations matching the landing page
+  const [refHero, visHero] = useVisible(0.1);
+  const [refProg, visProg] = useVisible(0.1);
 
   const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
-  const sans = "var(--font-geist-sans), sans-serif";
+
+  // Determine colors based on true HEX codes instead of tailwind classes 
+  // for the exact inline-style aesthetic
+  const barColor = hasReceivedData ? "#10B981" : C.blue;
 
   return (
-    <section
-      aria-labelledby="quickstart-heading"
-      style={{ fontFamily: sans, padding: "60px 24px", maxWidth: 1024, margin: "0 auto" }}
-    >
-      <QuickStartHero
-        isComplete={isComplete}
-        isAwaitingEvents={isAwaitingEvents}
-        hasApiKey={hasApiKey}
-        hasReceivedData={hasReceivedData}
-        canCheckStatus={canCheckStatus}
-        isPending={isPending}
-        showRefreshFlash={showRefreshFlash}
-        lastCheckedLabel={lastCheckedLabel}
-        progressPercent={progressPercent}
-        progressColor={progressColor}
-        refreshDashboard={refreshDashboard}
-      />
-
+    <>
       {/* ================================================================
-          STEPS
+          HERO SECTION
       ================================================================ */}
-      <div
-        className={`fu ${visSteps ? "vis" : ""}`}
-        ref={refSteps as React.RefObject<HTMLDivElement>}
-        style={{ marginTop: 80 }}
+      <div 
+        className={`grid lg:grid-cols-2 gap-12 lg:gap-16 items-center mb-16 fu ${visHero ? "vis" : ""}`}
+        ref={refHero as React.RefObject<HTMLDivElement>}
       >
-        <div style={{ marginBottom: 32 }}>
-          <h2 className="pfd" style={{ fontSize: 32, color: C.navy, marginBottom: 12, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Setup Checklist
-          </h2>
-          <p style={{ color: C.navySoft, fontSize: 16, lineHeight: 1.62 }}>
-            Complete the following steps to activate deterministic churn scoring,
-            automated recovery campaigns, and revenue attribution.
+        
+        {/* ── Left: Copy & Messaging ── */}
+        <div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", marginBottom: 16, textTransform: "uppercase" }}>
+            <Sparkles size={14} /> DETERMINISTIC ONBOARDING
+          </div>
+
+          <h1
+            id="quickstart-heading"
+            className="pfd"
+            style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}
+          >
+            {isComplete
+              ? "You're live and monitoring."
+              : isAwaitingEvents
+                ? "Integration detected."
+                : "Welcome to Arcli."}
+          </h1>
+
+          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, maxWidth: 540 }}>
+            {isComplete
+              ? "Churn scoring, automated recovery workflows, and revenue attribution are fully operational. Your pipeline is processing live events."
+              : isAwaitingEvents
+                ? "Your API integration is active. Arcli is now waiting for your first Stripe or product events before enabling automated churn detection and recovery workflows."
+                : "Connect your billing and product events to begin detecting churn risk, recovering revenue, and automating lifecycle intervention flows."}
           </p>
         </div>
 
-        <ol style={{ display: "flex", flexDirection: "column", gap: 24, listStyle: "none", padding: 0, margin: 0 }}>
-          <StepCard
-            step={1}
-            title="Connect your data pipeline"
-            description="Generate a secure API key and begin streaming Stripe webhooks and product events into Arcli."
-            status={hasApiKey ? "complete" : "active"}
-            icon={<Key aria-hidden="true" size={16} />}
-            helperText={
-              hasApiKey
-                ? "Integration credentials generated successfully."
-                : "Usually takes less than 2 minutes to complete."
-            }
-            action={
-              !hasApiKey ? (
-                <Link
-                  href="/settings"
-                  style={{
-                    height: 40, padding: "0 16px", borderRadius: 8,
-                    background: C.navy, color: "#fff", fontSize: 14, fontWeight: 700,
-                    display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none",
-                    boxShadow: surfaceShadow, letterSpacing: "0.02em"
-                  }}
-                >
-                  Generate API Key
-                  <ArrowRight aria-hidden="true" size={14} />
-                </Link>
-              ) : undefined
-            }
-          />
-
-          <StepCard
-            step={2}
-            title="Validate incoming event traffic"
-            description="Arcli will automatically verify webhook ingestion, normalize event payloads, and activate scoring pipelines."
-            status={hasReceivedData ? "complete" : hasApiKey ? "active" : "locked"}
-            icon={<Send aria-hidden="true" size={16} />}
-            helperText={
-              hasApiKey && !hasReceivedData
-                ? "Waiting for your first production or test event."
-                : hasReceivedData
-                  ? "Live events detected successfully."
-                  : "Complete Step 1 before event validation begins."
-            }
-          />
-
-          <StepCard
-            step={3}
-            title="Activate recovery automation"
-            description="Monitor churn-risk accounts, trigger automated recovery sequences, and measure recovered MRR attribution."
-            status={hasReceivedData ? "complete" : "locked"}
-            icon={<ShieldCheck aria-hidden="true" size={16} />}
-            helperText={
-              hasReceivedData
-                ? "Your recovery queue is now operational."
-                : "This unlocks automatically once events begin flowing."
-            }
-          />
-        </ol>
-      </div>
-
-      {/* ================================================================
-          HELP SECTION
-      ================================================================ */}
-      <div
-        className={`fu ${visHelp ? "vis" : ""}`}
-        ref={refHelp as React.RefObject<HTMLDivElement>}
-        style={{
-          marginTop: 80,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: 24
-        }}
-      >
-        <div style={{ background: "#FFFFFF", border: surfaceBorder, borderRadius: 12, padding: 28, boxShadow: surfaceShadow }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(59,130,246,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue }}>
-              <Activity size={18} />
+        {/* ── Right: Live Telemetry Panel ── */}
+        <div style={{ position: "relative" }}>
+          <div style={{ background: "#FFFFFF", padding: 28, borderRadius: 12, border: surfaceBorder, position: "relative", zIndex: 2, boxShadow: surfaceShadow }}>
+            
+            {/* Panel Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22, borderBottom: surfaceBorder, paddingBottom: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.faint, letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
+                SYSTEM STATUS
+              </span>
+              <span style={{ 
+                display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, 
+                color: hasReceivedData ? "#10B981" : C.blue, 
+                background: hasReceivedData ? "rgba(16,185,129,0.08)" : "rgba(59,130,246,0.08)", 
+                padding: "4px 10px", borderRadius: 8, textTransform: "uppercase"
+              }}>
+                <Activity size={14} className={!hasReceivedData ? "animate-pulse" : ""} />
+                {hasReceivedData ? "ONLINE" : "LISTENING"}
+              </span>
             </div>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: C.navy, letterSpacing: "-0.01em" }}>
-              Real-time ingestion monitoring
-            </h3>
-          </div>
-          <p style={{ color: C.navySoft, fontSize: 15, lineHeight: 1.62 }}>
-            Arcli continuously validates incoming events, prevents duplicate
-            processing, and maintains deterministic recovery attribution.
-          </p>
-        </div>
 
-        <div style={{ background: "#FFFFFF", border: surfaceBorder, borderRadius: 12, padding: 28, boxShadow: surfaceShadow }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(16,185,129,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10B981" }}>
-              <ShieldCheck size={18} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              
+              {/* Row 1: API Key */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FAFAFA", padding: "14px 16px", borderRadius: 8, border: surfaceBorder }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: hasApiKey ? "rgba(16,185,129,0.1)" : "rgba(245,158,11,0.1)", color: hasApiKey ? "#10B981" : "#F59E0B", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Key size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>API Authentication</div>
+                    <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>Authorization Header</div>
+                  </div>
+                </div>
+                <div style={{ background: "#fff", border: surfaceBorder, padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, color: hasApiKey ? "#10B981" : "#F59E0B", boxShadow: surfaceShadow }}>
+                  {hasApiKey ? "Connected" : "Pending"}
+                </div>
+              </div>
+
+              {/* Row 2: Event Stream */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#FAFAFA", padding: "14px 16px", borderRadius: 8, border: surfaceBorder }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: hasReceivedData ? "rgba(16,185,129,0.1)" : "rgba(59,130,246,0.1)", color: hasReceivedData ? "#10B981" : C.blue, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Webhook size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>Event Ingestion</div>
+                    <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>Webhook Pipeline</div>
+                  </div>
+                </div>
+                <div style={{ background: "#fff", border: surfaceBorder, padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, color: hasReceivedData ? "#10B981" : C.blue, boxShadow: surfaceShadow }}>
+                  {hasReceivedData ? "Receiving" : "Awaiting"}
+                </div>
+              </div>
+
+              {/* Refresh / Polling Footer */}
+              {canCheckStatus && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, paddingTop: 16, borderTop: "1px dashed rgba(0,0,0,0.06)" }}>
+                  <div style={{ display: "flex", alignItems: "center", minHeight: "1.25rem" }}>
+                    {showRefreshFlash ? (
+                      <span className="animate-in fade-in" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#10B981" }}>
+                        <CheckCircle2 size={14} /> Updated
+                      </span>
+                    ) : lastCheckedLabel ? (
+                      <span style={{ fontSize: 12, color: C.faint, fontWeight: 500 }}>{lastCheckedLabel}</span>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                  
+                  <button
+                    type="button"
+                    onClick={refreshDashboard}
+                    disabled={isPending}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      background: "#FFFFFF", border: surfaceBorder, boxShadow: surfaceShadow,
+                      padding: "8px 12px", borderRadius: 6, fontSize: 12, fontWeight: 600, color: C.navy,
+                      cursor: isPending ? "not-allowed" : "pointer",
+                      opacity: isPending ? 0.6 : 1,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    <RefreshCw size={14} className={isPending ? "animate-spin" : ""} color={C.faint} />
+                    {isPending ? "Polling..." : "Poll Status"}
+                  </button>
+                </div>
+              )}
             </div>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: C.navy, letterSpacing: "-0.01em" }}>
-              Enterprise-grade recovery workflows
-            </h3>
           </div>
-          <p style={{ color: C.navySoft, fontSize: 15, lineHeight: 1.62 }}>
-            Cooldowns, idempotency protection, attribution tracking, and
-            deterministic orchestration are enabled automatically.
-          </p>
+          {/* Offset Background Accent */}
+          <div style={{ position: "absolute", top: 16, left: 16, right: -12, bottom: -12, background: "#F3F4F6", borderRadius: 12, zIndex: 1, opacity: 0.9, border: surfaceBorder }} />
         </div>
       </div>
 
       {/* ================================================================
-          FOOTER
+          PROGRESS BAR
       ================================================================ */}
-      <footer style={{ marginTop: 80, borderTop: surfaceBorder, paddingTop: 40, paddingBottom: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 500, color: C.navySoft }}>
-          <HelpCircle size={16} color={C.faint} />
-          Need help integrating Arcli?
+      <div 
+        className={`fu ${visProg ? "vis" : ""}`} 
+        ref={refProg as React.RefObject<HTMLDivElement>} 
+        style={{ background: "#FFFFFF", borderRadius: 12, border: surfaceBorder, padding: "24px 28px", boxShadow: surfaceShadow, marginBottom: 16 }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
+          <div>
+             <div style={{ color: C.navySoft, fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>
+               ONBOARDING PROGRESS
+             </div>
+             <div style={{ fontSize: 18, fontWeight: 600, color: C.navy }}>
+               {hasReceivedData
+                  ? "Setup complete"
+                  : hasApiKey
+                    ? "Waiting for incoming events"
+                    : "Connect your integration"}
+             </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+             <div className="pfd" style={{ fontSize: 32, fontWeight: 700, color: C.navy, lineHeight: 1, letterSpacing: "-0.02em" }}>
+               {progressPercent}%
+             </div>
+             <div style={{ fontSize: 12, color: C.faint, fontWeight: 500, marginTop: 8 }}>
+               System readiness
+             </div>
+          </div>
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: 12 }}>
-          <Link
-            href="/docs"
-            style={{
-              height: 40, padding: "0 16px", borderRadius: 8,
-              background: "#FFFFFF", border: surfaceBorder, color: C.navy, fontSize: 14, fontWeight: 600,
-              display: "inline-flex", alignItems: "center", textDecoration: "none", boxShadow: surfaceShadow
-            }}
-          >
-            Developer Documentation
-          </Link>
-
-          <Link
-            href="/support"
-            style={{
-              height: 40, padding: "0 16px", borderRadius: 8,
-              background: "#F3F4F6", border: surfaceBorder, color: C.navy, fontSize: 14, fontWeight: 600,
-              display: "inline-flex", alignItems: "center", textDecoration: "none"
-            }}
-          >
-            Contact Support
-          </Link>
+        <div style={{ height: 6, background: "#F3F4F6", borderRadius: 6, overflow: "hidden" }}>
+          <div 
+            style={{ 
+              height: "100%", 
+              width: `${progressPercent}%`, 
+              background: barColor, 
+              transition: "width 0.8s cubic-bezier(0.16, 1, 0.3, 1)" 
+            }} 
+          />
         </div>
-      </footer>
-    </section>
+      </div>
+    </>
   );
 }
