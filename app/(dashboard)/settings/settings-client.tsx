@@ -2,15 +2,15 @@
 
 import React, { useState } from "react";
 import { type User } from "@supabase/supabase-js";
-import { Building2, Plug, UserCircle, HelpCircle, Mail, Terminal } from "lucide-react";
+import { Building2, Database, UserCircle, HelpCircle, Mail } from "lucide-react";
 
 import AccountTab from "@/components/settings/account-tab";
-import IntegrationsTab from "@/components/settings/integrations-tab";
 import WorkspaceTab from "@/components/settings/workspace-tab";
-import { DeveloperTab } from "@/components/settings/developer-tab"; // <-- Added import
+import { DataSourcesTab } from "@/components/settings/data-sources-tab";
 import type { SettingsSnapshot } from "@/lib/settings/types";
 
-type SettingsTab = "workspace" | "integrations" | "developer" | "account"; // <-- Added 'developer'
+// Enforcing the strict 3-pillar architectural boundary
+type SettingsTab = "workspace" | "data-sources" | "account";
 
 interface SettingsClientProps {
   user: User;
@@ -29,11 +29,11 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
     };
   })();
 
+  // Updated nomenclature to match our Constitution
   const TABS = [
-    { id: "workspace", label: "Workspace Identity", icon: Building2 },
-    { id: "integrations", label: "Data & Integrations", icon: Plug },
-    { id: "developer", label: "Developer API", icon: Terminal }, // <-- Added Developer Tab
-    { id: "account", label: "My Account", icon: UserCircle },
+    { id: "workspace", label: "Company Workspace", icon: Building2 },
+    { id: "data-sources", label: "Data Sources & Webhooks", icon: Database },
+    { id: "account", label: "Personal Profile", icon: UserCircle },
   ] as const;
 
   return (
@@ -49,7 +49,7 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveTab(tab.id as SettingsTab)}
                 className={`w-full flex items-center gap-3 px-3 py-3 rounded-md text-sm font-medium transition-all duration-200 ${
                   isActive ? "bg-[#0A192F] text-white font-semibold shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 }`}
@@ -74,20 +74,18 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
       </aside>
 
       {/* Dynamic Content Area */}
-      <main className="flex-1 flex flex-col relative bg-gradient-to-br from-white to-slate-50/30 overflow-hidden w-full h-full">
+      {/* Note: Changed overflow-hidden to overflow-y-auto to support the new unified tab height */}
+      <main className="flex-1 flex flex-col relative bg-gradient-to-br from-white to-slate-50/30 overflow-y-auto w-full h-full">
         
         {activeTab === "workspace" && <WorkspaceTab workspace={initialSettings.workspace} />}
-        {activeTab === "integrations" && <IntegrationsTab integrations={initialSettings.integrations} />}
         
-        {/* Mount the DeveloperTab and pass the apiKey from initialSettings */}
-        {activeTab === "developer" && (
-          <div className="p-6 overflow-y-auto w-full max-w-4xl">
-            <DeveloperTab
-              initialApiKeyLast4={initialSettings.integrations.apiKeyLast4}
-              hasApiKey={initialSettings.integrations.hasApiKey}
-            />
+        {/* The newly merged Unified Data Sources & Webhooks Tab */}
+        {activeTab === "data-sources" && (
+          <div className="w-full">
+            <DataSourcesTab />
           </div>
         )}
+        
         {activeTab === "account" && (
           <AccountTab user={user} initialData={accountInitialData} isRecoveryMode={isRecoveryMode} />
         )}
