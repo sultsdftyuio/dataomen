@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import your route files (add others if needed)
-from api.routes import webhooks, metrics, track, query
+from api.routes import api_keys, webhooks, metrics, track, query
 from api import auth
 
 logging.basicConfig(
@@ -83,7 +83,7 @@ async def health_check():
         "service": "arcli-backend",
         "version": app.version,
     }
-
+app.include_router(api_keys.router)
 
 @app.get("/", include_in_schema=False)
 async def root():
