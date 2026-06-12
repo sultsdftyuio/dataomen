@@ -179,7 +179,7 @@ export default function QuickStartGuide({
                     boxShadow: surfaceShadow, letterSpacing: "0.02em"
                   }}
                 >
-                  Generate API Key
+                  Create API Key
                   <ArrowRight aria-hidden="true" size={14} />
                 </Link>
               ) : undefined

@@ -2,7 +2,14 @@
 
 import React, { useMemo, useState } from "react";
 import { type User } from "@supabase/supabase-js";
-import { Eye, EyeOff, RefreshCw, ShieldCheck } from "lucide-react";
+import { 
+  Eye, 
+  EyeOff, 
+  RefreshCw, 
+  ShieldCheck, 
+  UserCircle2, 
+  Lock 
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,33 +114,44 @@ export default function AccountTab({ user, initialData, isRecoveryMode }: Accoun
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-300">
-      <div className="px-8 lg:px-12 py-8 border-b border-slate-100 bg-white/80 backdrop-blur-sm">
-        <h2 className="text-xl font-semibold text-[#0A192F]">My Account</h2>
+      
+      {/* ── Section Header ── */}
+      <div className="px-8 lg:px-12 py-6 border-b border-slate-100 bg-white/80 backdrop-blur-sm">
+        <div className="flex items-center gap-2 text-blue-600 font-bold text-xs tracking-widest uppercase mb-3">
+          <UserCircle2 className="h-4 w-4" /> Operator Identity
+        </div>
+        <h2 className="text-2xl font-semibold text-[#0A192F] tracking-tight">My Account</h2>
         <p className="text-sm text-slate-500 mt-1">Manage your operator identity and authentication logic.</p>
       </div>
 
-      <div className="p-8 lg:px-12 flex-1 overflow-y-auto space-y-12">
-        <section className="space-y-6">
-          <div className="flex items-center gap-6 p-6 border border-slate-100 rounded-xl bg-white shadow-sm max-w-2xl">
+      <div className="p-6 lg:px-12 flex-1 overflow-y-auto space-y-8">
+        
+        {/* ── Card 1: Profile Details ── */}
+        <section className="p-6 border border-slate-100 rounded-xl bg-white shadow-sm max-w-2xl space-y-8">
+          <h3 className="text-lg font-semibold text-[#0A192F]">
+            Profile Details
+          </h3>
+
+          <div className="flex items-center gap-6 pb-8 border-b border-slate-100">
             <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-[#0A192F] to-blue-600 flex items-center justify-center text-white text-xl font-semibold shadow-md ring-4 ring-slate-50">
               {getInitials(fullName || email)}
             </div>
             <div>
-              <h3 className="text-base font-semibold text-[#0A192F]">{initialFullName || "System Operator"}</h3>
-              <p className="text-xs text-slate-500 font-mono mt-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 inline-block">
+              <h4 className="text-base font-semibold text-[#0A192F]">{initialFullName || "System Operator"}</h4>
+              <p className="text-xs text-slate-500 font-mono mt-1.5 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100 inline-block font-medium">
                 {email}
               </p>
             </div>
           </div>
 
-          <div className="max-w-2xl space-y-4">
+          <div className="space-y-4">
             <div className="flex justify-between items-center">
               <Label htmlFor="fullName" className="text-xs font-bold tracking-wide text-slate-500 uppercase">
                 Operator Name
               </Label>
               {hasAccountChanges && (
-                <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 uppercase tracking-wider">
-                  Unsaved
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200 uppercase tracking-wider">
+                  UNSAVED EDITS
                 </span>
               )}
             </div>
@@ -147,26 +165,27 @@ export default function AccountTab({ user, initialData, isRecoveryMode }: Accoun
               <Button
                 onClick={handleSaveAccount}
                 disabled={isSavingAccount || !hasAccountChanges}
-                className="bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 h-11 px-6 shadow-sm disabled:opacity-50"
+                className="bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 h-11 px-6 shadow-sm disabled:opacity-50 font-medium"
               >
                 {isSavingAccount && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
-                Update Name
+                Save Identity
               </Button>
             </div>
           </div>
         </section>
 
-        <hr className="border-slate-100 max-w-2xl" />
-
-        <section className="space-y-6 max-w-2xl">
-          <h3 className="text-base font-semibold text-[#0A192F]">Authentication Security</h3>
+        {/* ── Card 2: Authentication Security ── */}
+        <section className="p-6 border border-slate-100 rounded-xl bg-white shadow-sm max-w-2xl space-y-6">
+          <h3 className="text-lg font-semibold text-[#0A192F] flex items-center gap-2">
+            <Lock className="h-5 w-5 text-blue-600" /> Authentication Security
+          </h3>
 
           {isRecoveryMode && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-start gap-3">
-              <ShieldCheck className="h-5 w-5 shrink-0 mt-0.5" />
-              <p>
-                Recovery session securely verified via magic link. Please define a new cryptographic password to secure this account
-                going forward.
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 flex items-start gap-3 shadow-sm">
+              <ShieldCheck className="h-5 w-5 shrink-0 mt-0.5 text-emerald-600" />
+              <p className="leading-relaxed">
+                <strong className="block mb-0.5">Recovery Session Verified.</strong>
+                Please define a new cryptographic password to secure this account going forward.
               </p>
             </div>
           )}
@@ -223,13 +242,14 @@ export default function AccountTab({ user, initialData, isRecoveryMode }: Accoun
             <Button
               onClick={handleUpdatePassword}
               disabled={isUpdatingPassword || !isPasswordValid}
-              className="bg-[#0A192F] hover:bg-slate-800 text-white shadow-sm transition-all active:scale-[0.98] h-10 px-6 disabled:opacity-50"
+              className="bg-[#0A192F] hover:bg-slate-800 text-white shadow-sm transition-all active:scale-[0.98] h-11 px-6 disabled:opacity-50 font-medium"
             >
               {isUpdatingPassword && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
               {isUpdatingPassword ? "Encrypting..." : "Update Credentials"}
             </Button>
           </div>
         </section>
+
       </div>
     </div>
   );
