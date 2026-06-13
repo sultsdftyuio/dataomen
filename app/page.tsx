@@ -10,7 +10,6 @@ import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsec
 import { Testimonials } from "@/components/landing/testimonials";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
-import { SeoLinkSilo } from "@/components/landing/seo-link-silo";
 import Footer from "@/components/landing/footer";
 import { createClient } from "@/utils/supabase/server";
 
@@ -46,8 +45,6 @@ export default async function Page() {
           <CTA />
         </div>
       </div>
-      
-      <SeoLinkSilo />
       <Footer />
     </main>
   );
