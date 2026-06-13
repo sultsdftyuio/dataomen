@@ -1,69 +1,42 @@
-"use client";
-
-import React, { useEffect, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import React from "react";
+import { redirect } from "next/navigation";
 import "../styles/globals.css";
 
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import { AIAgents } from "@/components/landing/Aiagents";
 import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
 import { Testimonials } from "@/components/landing/testimonials";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
+import { SeoLinkSilo } from "@/components/landing/seo-link-silo";
 import Footer from "@/components/landing/footer";
-import { createClient } from "@/utils/supabase/client";
+import { createClient } from "@/utils/supabase/server";
 
-/**
- * Arcli Landing Page
- *
- * Component structure (optimized for high-velocity conversion and SEO discovery):
- * Navbar                 <- Multi-tenant isolated navigation
- * Hero                   <- High-impact value proposition + conversion anchor
- * HowItWorks             <- 3-step high-level pipeline flow
- * DeepDiveFeatures       <- Technical architecture deep-dive
- * AIAgents               <- Autonomous "Arc" supervisor pipeline logic
- * IntegrationsAndSecurity<- Enterprise-grade trust & secure hybrid connectivity
- * FAQ                    <- Objection handling + semantic context expansion
- * CTA                    <- High-velocity conversion final push
- * SeoLinkSilo            <- Internal linking strategy (crawler discovery & siloing)
- * Footer                 <- Global directory and legal
- */
-export default function Page() {
-  const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
+export default async function Page() {
+  // Server-side redirect prevents auth flashes on the marketing page.
+  // Using getUser() validates the JWT against Supabase Auth for strict security.
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  useEffect(() => {
-    const redirectAuthenticatedUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.replace("/chat");
-      }
-    };
-
-    void redirectAuthenticatedUser();
-  }, [router, supabase]);
+  if (user) {
+    redirect("/dashboard");
+  }
 
   return (
     <main className="bg-neutral-950 text-slate-50 antialiased selection:bg-blue-500/30">
       <Navbar />
       
-      {/* Compositional Layering: 
-          We utilize a relative container with decorative background gradients 
-          that reinforce the "Arc & Axis" brand concept without impacting 
-          Cumulative Layout Shift (CLS).
-      */}
-      <div className="relative overflow-hidden">
-        {/* Architectural Background Cues */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-30 z-0">
+      <div className="relative isolate overflow-hidden">
+        {/* Decorative background gradients */}
+        <div aria-hidden="true" className="absolute inset-0 pointer-events-none opacity-30 z-0">
           <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-900/10 blur-[120px]" />
           <div className="absolute bottom-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-900/10 blur-[100px]" />
         </div>
 
-        {/* Semantic Content Stack */}
-        <section className="relative z-10">
+        {/* Page Content */}
+        <div className="relative z-10">
           <Hero />
           <HowItWorks />
           <DeepDiveFeatures />
@@ -71,8 +44,10 @@ export default function Page() {
           <Testimonials />
           <FAQ />
           <CTA />
-        </section>
+        </div>
       </div>
+      
+      <SeoLinkSilo />
       <Footer />
     </main>
   );

@@ -1,5 +1,3 @@
-// app/layout.tsx
-
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Playfair_Display } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
@@ -7,6 +5,7 @@ import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
 const SITE_URL = 'https://arcli.tech'
+// The default OG image URL is kept for reference, though Next.js auto-injects from the app directory
 const DEFAULT_OG_IMAGE_URL = `${SITE_URL}/api/og`
 
 const geist = Geist({ 
@@ -26,32 +25,31 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  // Base information
-  title: 'Arcli - Your Autonomous Data Department',
-  description: 'Stop writing SQL and building messy dashboards. Connect your database, ask questions in plain English, and let autonomous AI agents clean, query, and narrate your business insights instantly.',
+  title: 'Arcli | SaaS Churn Recovery Platform',
+  description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
   generator: 'Next.js',
-  metadataBase: new URL('https://arcli.tech'),
+  metadataBase: new URL(SITE_URL),
   alternates: {
-    canonical: 'https://arcli.tech',
+    canonical: SITE_URL,
   },
   
   // Open Graph (Facebook, LinkedIn, Discord, Slack)
   openGraph: {
-    title: 'Arcli | Your AI Data Analyst',
-    description: 'Autonomous agents that watch your data 24/7.',
-    url: 'https://arcli.tech',
+    title: 'Arcli | SaaS Churn Recovery Platform',
+    description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
+    url: SITE_URL,
     siteName: 'Arcli',
     locale: 'en_US',
     type: 'website',
-    // Removed explicit images array. Next.js will auto-inject app/opengraph-image.jpg
+    // Next.js will auto-inject app/opengraph-image.jpg
   },
 
   // Twitter/X Card
   twitter: {
     card: 'summary_large_image', // Triggers the full-width cinematic preview
-    title: 'Arcli | Your AI Data Analyst',
-    description: 'Autonomous agents that watch your data 24/7.',
-    // Removed explicit images array. Next.js will auto-inject app/twitter-image.jpg
+    title: 'Arcli | SaaS Churn Recovery Platform',
+    description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
+    // Next.js will auto-inject app/twitter-image.jpg
   },
 }
 
