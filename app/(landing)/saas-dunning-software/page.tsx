@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   description:
     "Stop losing MRR to involuntary churn. Replace basic Stripe Smart Retries with Arcli's deterministic, retry-safe SaaS dunning and failed payment recovery workflows.",
   alternates: {
-    canonical: "https://arcli.com/saas-dunning-software",
+    canonical: "https://arcli.tech/saas-dunning-software",
   },
   openGraph: {
     title: "Stripe Failed Payment Recovery Software for SaaS | Arcli",
     description: "Stop losing MRR to involuntary churn. Replace basic Stripe Smart Retries with Arcli's deterministic, retry-safe SaaS dunning workflows.",
-    url: "https://arcli.com/saas-dunning-software",
+    url: "https://arcli.tech/saas-dunning-software",
     siteName: "Arcli",
     type: "website",
   },
@@ -49,19 +49,19 @@ export default function SaasDunningSoftwarePage() {
             "@type": "ListItem",
             "position": 1,
             "name": "Home",
-            "item": "https://arcli.com"
+            "item": "https://arcli.tech"
           },
           {
             "@type": "ListItem",
             "position": 2,
             "name": "Solutions",
-            "item": "https://arcli.com/solutions"
+            "item": "https://arcli.tech/solutions"
           },
           {
             "@type": "ListItem",
             "position": 3,
             "name": "SaaS Dunning Software",
-            "item": "https://arcli.com/saas-dunning-software"
+            "item": "https://arcli.tech/saas-dunning-software"
           }
         ]
       },

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description:
     "Recover failed Stripe payments, automate SaaS churn prevention, and measure recovered MRR with deterministic, retry-safe workflows built for subscription SaaS.",
   alternates: {
-    canonical: "https://arcli.com/saas-churn-recovery",
+    canonical: "https://arcli.tech/saas-churn-recovery",
   },
 };
 

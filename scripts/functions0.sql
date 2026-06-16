@@ -1,5 +1,5 @@
 -- ============================================================================
--- ARCLI CORE SCHEMA — COMBINED CANONICAL BASE (v3.3-fixed-PROPER)
+-- ARCLI CORE SCHEMA -- COMBINED CANONICAL BASE (v3.3-fixed-PROPER)
 -- ============================================================================
 -- Merges v3.1 + v3.2 + v3.3-discrepancy-fixes + CRITICAL migration fixes.
 -- Run BEFORE Files 1-3.
@@ -8,8 +8,8 @@
 -- CRITICAL FIXES OVER v3.3:
 --   1. Migration helpers now patch name, display_name, plan columns on legacy
 --      tenants tables (was causing: column "name" does not exist).
---   2. Fixed broken rename status→status (no-op) to proper status→provisioning_status.
---   3. Fixed duplicate "status" column definition in CREATE TABLE — now uses
+--   2. Fixed broken rename status->status (no-op) to proper status->provisioning_status.
+--   3. Fixed duplicate "status" column definition in CREATE TABLE -- now uses
 --      provisioning_status for the enum and status for the text lifecycle column.
 --   4. All NOT NULL column additions use DEFAULT to safely handle existing rows.
 --   5. events table gains user_id and event_name columns (required by
@@ -20,7 +20,12 @@
 --   7. Section 14 ALTER TABLE ... ADD COLUMN IF NOT EXISTS wrapped in
 --      safer DO blocks that check information_schema.columns directly.
 --   8. anomaly_alerts definition confirmed as: UUID id, severity TEXT,
---      message TEXT, is_resolved BOOLEAN — api/database.py must match.
+--      message TEXT, is_resolved BOOLEAN -- api/database.py must match.
+--   9. FIXED queue_items orphan tables: risk_score_explanations, campaign_events,
+--      and manual_interventions now reference recovery_emails(id) instead of
+--      the non-existent queue_items table.
+--  10. Moved premature ALTER TABLE churn_risk_state ADD COLUMN statements
+--      to AFTER the churn_risk_state table is created.
 --
 -- DESIGN DECISIONS (unchanged):
 --   * NO inline REFERENCES in CREATE TABLE. All FKs live in Section 15.
@@ -43,7 +48,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- Idempotent enum expansion — duplicate_object is the correct exception
+-- Idempotent enum expansion -- duplicate_object is the correct exception
 -- for an already-existing label (PostgreSQL does NOT support
 -- "ADD VALUE IF NOT EXISTS" syntax).
 DO $$ BEGIN ALTER TYPE provisioning_state ADD VALUE 'PENDING';    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -71,7 +76,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 );
 
 -- ---------------------------------------------------------------------------
--- Migration helpers — idempotent, safe on both fresh and existing databases.
+-- Migration helpers -- idempotent, safe on both fresh and existing databases.
 -- ---------------------------------------------------------------------------
 
 -- CRITICAL FIX v3.3-proper: Patch missing core columns on legacy schemas.
@@ -79,7 +84,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 -- we must add them with safe defaults so existing rows don't break.
 
 -- name: NOT NULL in the canonical schema, but legacy tables may lack it.
--- We add it nullable first, backfill, then enforce NOT NULL.
+-- We add it with safe defaults for existing rows.
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -281,6 +286,57 @@ CREATE TABLE IF NOT EXISTS churn_risk_state (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ============================================================================
+-- 1. ADD MISSING "AIR TRAFFIC CONTROL" COLUMNS (moved AFTER churn_risk_state creation)
+-- ============================================================================
+
+-- Add MRR and Name to the risk state (the easiest place to cache customer identity)
+ALTER TABLE churn_risk_state ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE churn_risk_state ADD COLUMN IF NOT EXISTS mrr_at_risk NUMERIC(18,2) DEFAULT 0;
+
+-- ============================================================================
+-- 2. CREATE THE UNIFIED RADAR VIEW (recovery_emails must exist first, so moved)
+--    NOTE: View is created in Section 4 after recovery_emails is defined.
+-- ============================================================================
+
+-- ============================================================================
+-- 3. RISK & CAMPAIGN TABLES (FIXED: queue_items -> recovery_emails)
+-- ============================================================================
+
+-- Risk factor explanations (written by the scoring engine)
+CREATE TABLE IF NOT EXISTS risk_score_explanations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  queue_item_id uuid,  -- references recovery_emails.id (FK added in Section 15)
+  factor text NOT NULL,
+  weight integer NOT NULL,
+  order_index integer NOT NULL DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Campaign events (written by the automation pipeline)
+CREATE TABLE IF NOT EXISTS campaign_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  queue_item_id uuid,  -- references recovery_emails.id (FK added in Section 15)
+  name text NOT NULL,
+  date timestamptz NOT NULL,
+  status text NOT NULL CHECK (status IN ('delivered','opened','clicked','replied','bounced','suppressed','dead_lettered')),
+  created_at timestamptz DEFAULT now()
+);
+
+-- Operator actions (written by the queue client)
+CREATE TABLE IF NOT EXISTS manual_interventions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  queue_item_id uuid,  -- references recovery_emails.id (FK added in Section 15)
+  action text NOT NULL,
+  operator_name text NOT NULL,
+  date timestamptz NOT NULL DEFAULT now(),
+  notes text
+);
+
+-- ============================================================================
+-- MORE EVENTS & ANALYTICS TABLES
+-- ============================================================================
+
 CREATE TABLE IF NOT EXISTS churn_risk_history (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           TEXT         NOT NULL,
@@ -466,6 +522,57 @@ CREATE TABLE IF NOT EXISTS billing_webhook_events (
     received_at TIMESTAMPTZ,
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================================================
+-- 4. CREATE THE UNIFIED RADAR VIEW (after recovery_emails exists)
+-- ============================================================================
+-- This view acts as the single source of truth for the Next.js Frontend.
+-- It maps backend worker statuses directly to our UI state badges.
+
+CREATE OR REPLACE VIEW vw_risk_queue_radar AS
+SELECT
+    re.id,
+    re.tenant_id,
+    re.user_id AS customer_id,
+
+    -- Fallback to email prefix if customer_name isn't populated yet
+    COALESCE(crs.customer_name, SPLIT_PART(re.email, '@', 1)) AS customer_name,
+    re.email AS customer_email,
+
+    -- Score and MRR from Risk State
+    COALESCE(re.churn_risk_score, crs.risk_score, 0) AS risk_score,
+    COALESCE(crs.mrr_at_risk, 0) AS mrr_at_risk,
+
+    -- Strict mapping of backend enum to frontend UI states
+    CASE
+        WHEN re.status = 'dead_lettered' THEN 'dead_lettered'
+        WHEN re.status IN ('dispatch_failed', 'failed') THEN 'failed'
+        WHEN re.status IN ('pending_dispatch', 'queued') THEN 'pending'
+        WHEN re.status IN ('dispatch_claimed', 'processing', 'dispatched_to_queue') THEN 'processing'
+        WHEN re.status IN ('provider_accepted', 'delivered', 'sent') THEN 'cooldown'
+        WHEN re.status = 'suppressed' THEN 'suppressed'
+        ELSE 'pending'
+    END AS state,
+
+    -- Next automated action time
+    COALESCE(re.next_retry_at, re.lease_expires_at) AS next_action_time,
+
+    -- Future-proofing Phase 4: Assignment (Returns UUID for now)
+    re.claimed_by_operator AS assigned_operator_id
+
+FROM recovery_emails re
+LEFT JOIN churn_risk_state crs
+    ON re.tenant_id = crs.tenant_id AND re.user_id = crs.user_id
+-- We filter out ancient 'completed' campaigns so the radar doesn't get cluttered.
+-- Only show recent cooldowns (e.g., last 30 days) and active/failed queue items.
+WHERE re.status NOT IN ('provider_accepted', 'delivered', 'sent')
+   OR (re.created_at > NOW() - INTERVAL '30 days');
+
+-- ============================================================================
+-- Add Incident Assignment tracking to the outbox (AFTER recovery_emails exists)
+-- ============================================================================
+ALTER TABLE recovery_emails ADD COLUMN IF NOT EXISTS claimed_by_operator UUID;
+ALTER TABLE recovery_emails ADD COLUMN IF NOT EXISTS operator_claimed_at TIMESTAMPTZ;
 
 -- ============================================================================
 -- RPC FUNCTIONS
@@ -930,7 +1037,7 @@ END;
 $$;
 
 -- ============================================================================
--- SECTION 14: MIGRATION SAFETY — ENSURE FK COLUMNS EXIST
+-- SECTION 14: MIGRATION SAFETY -- ENSURE FK COLUMNS EXIST
 -- ============================================================================
 -- If any table was created by an older schema (or a failed partial run) the
 -- column referenced by a FK below may be missing.  Column additions are
@@ -1096,6 +1203,21 @@ DO $$ BEGIN
         ALTER TABLE api_idempotency_keys ADD COLUMN tenant_id TEXT;
     END IF;
 END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='risk_score_explanations' AND column_name='queue_item_id') THEN
+        ALTER TABLE risk_score_explanations ADD COLUMN queue_item_id UUID;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='campaign_events' AND column_name='queue_item_id') THEN
+        ALTER TABLE campaign_events ADD COLUMN queue_item_id UUID;
+    END IF;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='manual_interventions' AND column_name='queue_item_id') THEN
+        ALTER TABLE manual_interventions ADD COLUMN queue_item_id UUID;
+    END IF;
+END $$;
 
 -- Child FK columns (SET NULL targets)
 DO $$ BEGIN
@@ -1157,7 +1279,8 @@ DO $$ BEGIN ALTER TABLE tenant_users
     ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-DO $$ BEGIN
+DO $$
+BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') THEN
         ALTER TABLE tenant_users
             ADD CONSTRAINT fk_tenant_users_user FOREIGN KEY (user_id) REFERENCES auth.users(id)
@@ -1310,6 +1433,22 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE metric_values_segmented
     ADD CONSTRAINT fk_metric_values_segmented_config FOREIGN KEY (metric_config_id) REFERENCES metric_configs(id)
     ON DELETE SET NULL NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- FIXED v3.3: FKs for the three queue_item_id tables (now referencing recovery_emails.id)
+DO $$ BEGIN ALTER TABLE risk_score_explanations
+    ADD CONSTRAINT fk_risk_score_explanations_email FOREIGN KEY (queue_item_id) REFERENCES recovery_emails(id)
+    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE campaign_events
+    ADD CONSTRAINT fk_campaign_events_email FOREIGN KEY (queue_item_id) REFERENCES recovery_emails(id)
+    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE manual_interventions
+    ADD CONSTRAINT fk_manual_interventions_email FOREIGN KEY (queue_item_id) REFERENCES recovery_emails(id)
+    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================

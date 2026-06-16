@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description:
     "Calculate SaaS churn risk deterministically. Stop relying on black-box AI. Use explicit Stripe billing events and product analytics to trigger safe recovery workflows.",
   alternates: {
-    canonical: "https://arcli.com/saas-churn-risk-scoring",
+    canonical: "https://arcli.tech/saas-churn-risk-scoring",
   },
 };
 

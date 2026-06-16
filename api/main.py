@@ -83,7 +83,7 @@ async def health_check():
         "service": "arcli-backend",
         "version": app.version,
     }
-app.include_router(api_keys.router)
+app.include_router(api_keys.router, prefix="/api")
 
 @app.get("/", include_in_schema=False)
 async def root():

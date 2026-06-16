@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   description:
     "Stop guessing your recovery ROI. Arcli provides deterministic SaaS revenue attribution, tracing recovered MRR directly from transactional workflows to paid Stripe invoices.",
   alternates: {
-    canonical: "https://arcli.com/saas-revenue-attribution",
+    canonical: "https://arcli.tech/saas-revenue-attribution",
   },
   openGraph: {
     title: "SaaS Revenue Attribution & Churn Recovery Metrics | Arcli",
     description: "Arcli provides deterministic SaaS revenue attribution, tracing recovered MRR directly from transactional workflows to paid Stripe invoices.",
-    url: "https://arcli.com/saas-revenue-attribution",
+    url: "https://arcli.tech/saas-revenue-attribution",
     siteName: "Arcli",
     type: "website",
   },
@@ -49,19 +49,19 @@ export default function SaasRevenueAttributionPage() {
             "@type": "ListItem",
             "position": 1,
             "name": "Home",
-            "item": "https://arcli.com"
+            "item": "https://arcli.tech"
           },
           {
             "@type": "ListItem",
             "position": 2,
             "name": "Solutions",
-            "item": "https://arcli.com/solutions"
+            "item": "https://arcli.tech/solutions"
           },
           {
             "@type": "ListItem",
             "position": 3,
             "name": "SaaS Revenue Attribution",
-            "item": "https://arcli.com/saas-revenue-attribution"
+            "item": "https://arcli.tech/saas-revenue-attribution"
           }
         ]
       },

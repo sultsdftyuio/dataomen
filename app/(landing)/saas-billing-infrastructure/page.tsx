@@ -22,12 +22,12 @@ export const metadata: Metadata = {
     "billing state machine",
   ],
   alternates: {
-    canonical: "https://arcli.com/saas-billing-infrastructure",
+    canonical: "https://arcli.tech/saas-billing-infrastructure",
   },
   openGraph: {
     title: "Stripe Billing Infrastructure & Idempotent Webhooks | Arcli",
     description: "Protect your SaaS revenue with reliable billing infrastructure. Arcli provides effectively-once webhook processing, distributed locks, and idempotent queues for Stripe.",
-    url: "https://arcli.com/saas-billing-infrastructure",
+    url: "https://arcli.tech/saas-billing-infrastructure",
     siteName: "Arcli",
     type: "website",
   },
@@ -61,19 +61,19 @@ export default function SaasBillingInfrastructurePage() {
             "@type": "ListItem",
             "position": 1,
             "name": "Home",
-            "item": "https://arcli.com"
+            "item": "https://arcli.tech"
           },
           {
             "@type": "ListItem",
             "position": 2,
             "name": "Solutions",
-            "item": "https://arcli.com/solutions"
+            "item": "https://arcli.tech/solutions"
           },
           {
             "@type": "ListItem",
             "position": 3,
             "name": "SaaS Billing Infrastructure",
-            "item": "https://arcli.com/saas-billing-infrastructure"
+            "item": "https://arcli.tech/saas-billing-infrastructure"
           }
         ]
       },
