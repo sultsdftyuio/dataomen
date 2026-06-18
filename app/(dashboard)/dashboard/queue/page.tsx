@@ -10,7 +10,7 @@ export const metadata = {
 };
 
 // ─── Types ─────────────────────────────────────────────────────────
-type QueueItem = {
+export type QueueItem = {
   id: string;
   customer_id: string;
   customer_name: string;
@@ -42,13 +42,12 @@ export default async function RiskQueuePage() {
     redirect("/login");
   }
 
-  // ── Layer 2: Tenant Resolution (Immutable Membership Table) ───
-  // SECURITY: Using tenant_users instead of users.tenant_id
-  // FIX 2 & 3: Corrected table name to tenant_users and removed extra ')'
+  // ── Layer 2: Tenant Resolution ───
   const { data: membership, error: membershipError } = await supabase
     .from("tenant_users") 
     .select("tenant_id, role")
     .eq("user_id", user.id)
+    .returns<{ tenant_id: string; role: string }[]>() // <-- Added [] here
     .single();
 
   if (membershipError || !membership) {
@@ -58,9 +57,8 @@ export default async function RiskQueuePage() {
   const { tenant_id: tenantId, role } = membership;
 
   // ── Layer 3: Role-Based Authorization ───────────────────────────
-  const allowedRoles: MembershipRole[] = ['owner', 'admin', 'operator'];
-  // Typecasting membership.role just in case it pulls string from DB types
-  if (!allowedRoles.includes(role as MembershipRole)) {
+  const allowedRoles: string[] = ['owner', 'admin', 'operator'];
+  if (!allowedRoles.includes(role)) {
     redirect("/unauthorized");
   }
 
@@ -98,14 +96,6 @@ export default async function RiskQueuePage() {
   const pendingDispatches = items.filter(item => item.state === 'pending').length;
   const deadLetters = items.filter(item => item.state === 'dead_lettered').length;
   const activeLocks = items.filter(item => item.state === 'cooldown').length;
-
-  const hudMetrics = {
-    totalMrrAtRisk,
-    criticalAccounts,
-    pendingDispatches,
-    deadLetters,
-    activeLocks,
-  };
 
   return (
     <div className="flex-1 space-y-6 p-8 pt-6">
