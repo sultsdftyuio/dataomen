@@ -1,3 +1,5 @@
+// app/(dashboard)/dashboard/queue/page.tsx
+
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import RiskQueueClient from "./risk-queue-client";
@@ -8,7 +10,6 @@ export const metadata = {
 };
 
 // ─── Types ─────────────────────────────────────────────────────────
-// Must stay synchronized with RiskQueueClientProps["initialData"][number]
 type QueueItem = {
   id: string;
   customer_id: string;
@@ -32,7 +33,8 @@ interface Membership {
 
 // ─── Page Component ──────────────────────────────────────────────────
 export default async function RiskQueuePage() {
-  const supabase = createClient();
+  // FIX 1: Await the creation of the Supabase client
+  const supabase = await createClient();
 
   // ── Layer 1: Authentication ─────────────────────────────────────
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -41,35 +43,30 @@ export default async function RiskQueuePage() {
   }
 
   // ── Layer 2: Tenant Resolution (Immutable Membership Table) ───
-  // SECURITY: Using tenant_memberships instead of users.tenant_id
-  // prevents accidental tenant boundary drift if the users table is modified.
+  // SECURITY: Using tenant_users instead of users.tenant_id
+  // FIX 2 & 3: Corrected table name to tenant_users and removed extra ')'
   const { data: membership, error: membershipError } = await supabase
-    .from("tenant_users"))
+    .from("tenant_users") 
     .select("tenant_id, role")
     .eq("user_id", user.id)
     .single();
 
   if (membershipError || !membership) {
-    // Authorization problem, not an application crash
     redirect("/unauthorized");
   }
 
   const { tenant_id: tenantId, role } = membership;
 
   // ── Layer 3: Role-Based Authorization ───────────────────────────
-  // Only owners, admins, and operators can view and intervene on the queue.
-  // Viewers and billing-only users are redirected.
   const allowedRoles: MembershipRole[] = ['owner', 'admin', 'operator'];
-  if (!allowedRoles.includes(role)) {
+  // Typecasting membership.role just in case it pulls string from DB types
+  if (!allowedRoles.includes(role as MembershipRole)) {
     redirect("/unauthorized");
   }
 
   // ── Layer 4: Data Fetching (Explicitly Typed) ─────────────────
-  // RECOMMENDATION: Replace "queue_items" with a read model like
-  // "risk_queue_projection" containing all denormalized fields.
-  // This prevents N+1 queries as the system grows.
   const { data: queueData, error: queueError } = await supabase
-    .from("vw_risk_queue_radar") // TODO: Migrate to risk_queue_projection view
+    .from("vw_risk_queue_radar") 
     .select(`
       id,
       customer_id,
@@ -90,8 +87,6 @@ export default async function RiskQueuePage() {
   // ── Layer 5: Error Handling (Do Not Swallow) ──────────────────
   if (queueError) {
     console.error("Failed to fetch queue data:", queueError);
-    // Return an error state so operators know the system failed,
-    // rather than showing an empty queue.
     return <QueueErrorState />;
   }
 

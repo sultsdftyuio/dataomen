@@ -39,7 +39,7 @@ export async function applyInterventionAction(formData: FormData): Promise<Inter
 
   // 3. Resolve tenant and handle lookup errors explicitly
   const { data: membership, error: membershipError } = await supabase
-    .from("tenant_memberships") // Standardized table name
+    .from("tenant_users") // Standardized table name
     .select("tenant_id, role")
     .eq("user_id", user.id)
     .single();

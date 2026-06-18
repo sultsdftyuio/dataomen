@@ -1,63 +1,148 @@
 -- ============================================================================
--- ARCLI SCHEMA PATCH: ACTIVE SELF-HEALING & PRIMARY KEY DRIFT FIX
+-- 1. PATCH THE EXISTING manual_interventions TABLE
 -- ============================================================================
+ALTER TABLE manual_interventions ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE manual_interventions ADD COLUMN IF NOT EXISTS customer_id TEXT;
+ALTER TABLE manual_interventions ADD COLUMN IF NOT EXISTS operator_id UUID;
+ALTER TABLE manual_interventions ADD COLUMN IF NOT EXISTS duration_days INT;
+ALTER TABLE manual_interventions ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
 
--- 1. Heal the Schema Drift: Ensure the primary key has its default generator attached
-ALTER TABLE public.tenants 
-    ALTER COLUMN tenant_id SET DEFAULT gen_random_uuid()::TEXT;
+-- Safely enforce Idempotency
+DO $$ BEGIN
+    ALTER TABLE manual_interventions ADD CONSTRAINT unique_idempotency_per_tenant UNIQUE(tenant_id, idempotency_key);
+EXCEPTION WHEN duplicate_table THEN NULL; WHEN duplicate_object THEN NULL; END $$;
+
+-- Enforce Multi-Tenant Isolation (Layer 3 Security)
+ALTER TABLE manual_interventions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tenant isolation for manual interventions" ON manual_interventions;
+CREATE POLICY "Tenant isolation for manual interventions"
+ON manual_interventions
+FOR ALL
+USING (tenant_id = (SELECT tenant_id FROM tenant_users WHERE user_id = auth.uid()));
 
 
--- 2. Make the RPC Foolproof: Explicitly generate the ID to bypass any future schema inconsistencies
-CREATE OR REPLACE FUNCTION provision_initial_workspace(target_user_id UUID, default_name TEXT)
-RETURNS TEXT
+-- ============================================================================
+-- 2. REWRITE PHASE 3 RPC (Using TEXT for tenant/customer IDs)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION apply_manual_intervention(
+    p_tenant_id TEXT,
+    p_customer_id TEXT,
+    p_action TEXT,
+    p_duration_days INT,
+    p_reason TEXT,
+    p_idempotency_key TEXT
+) 
+RETURNS VOID 
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
 AS $$
 DECLARE
-    existing_tenant_id TEXT;
-    new_tenant_id      TEXT;
+    v_operator_id UUID;
 BEGIN
-    LOOP
-        SELECT tenant_id INTO existing_tenant_id
-          FROM tenant_users
-         WHERE user_id = target_user_id;
+    v_operator_id := auth.uid();
+    IF v_operator_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
 
-        IF existing_tenant_id IS NOT NULL THEN
-            RETURN existing_tenant_id;
-        END IF;
+    -- Verify tenant membership
+    IF NOT EXISTS (SELECT 1 FROM tenant_users WHERE user_id = v_operator_id AND tenant_id = p_tenant_id) THEN
+        RAISE EXCEPTION 'Unauthorized tenant access';
+    END IF;
 
-        BEGIN
-            -- FIX: Explicitly generate and pass the UUID to bypass missing DEFAULT constraints
-            INSERT INTO tenants (tenant_id, name, provisioning_status)
-            VALUES (gen_random_uuid()::TEXT, default_name, 'READY')
-            RETURNING tenant_id INTO new_tenant_id;
+    -- Insert the Audit Record (Maps to your existing 'notes' and 'operator_name' columns)
+    INSERT INTO manual_interventions (
+        tenant_id, customer_id, operator_id, operator_name, action, duration_days, notes, idempotency_key
+    ) VALUES (
+        p_tenant_id, p_customer_id, v_operator_id, 'Dashboard Operator', p_action, p_duration_days, p_reason, p_idempotency_key
+    );
 
-            INSERT INTO tenant_users (tenant_id, user_id, role)
-            VALUES (new_tenant_id, target_user_id, 'owner');
-
-            RETURN new_tenant_id;
-        EXCEPTION WHEN unique_violation THEN
-            -- Race condition caught: another concurrent call created the user mapping
-            CONTINUE;
-        END;
-    END LOOP;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE EXCEPTION 'Failed to provision workspace for user %: %', target_user_id, SQLERRM;
+    -- Update the Queue / Outbox State
+    IF p_action = 'suppress' THEN
+        UPDATE recovery_emails 
+        SET status = 'suppressed', updated_at = NOW()
+        WHERE tenant_id = p_tenant_id AND user_id = p_customer_id;
+        
+    ELSIF p_action = 'cooldown' THEN
+        UPDATE recovery_emails
+        SET status = 'cooldown', 
+            next_retry_at = NOW() + (p_duration_days || ' days')::INTERVAL,
+            updated_at = NOW()
+        WHERE tenant_id = p_tenant_id AND user_id = p_customer_id;
+    END IF;
 END;
 $$;
-CREATE TABLE IF NOT EXISTS public.api_keys (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    tenant_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    key_hash TEXT NOT NULL UNIQUE,
-    masked_key TEXT NOT NULL,
-    is_revoked BOOLEAN DEFAULT FALSE NOT NULL,
-    last_used_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
-);
 
--- Crucial index: We will look up incoming webhooks by this hash rapidly
-CREATE INDEX idx_api_keys_hash ON public.api_keys(key_hash) WHERE is_revoked = FALSE;
+
+-- ============================================================================
+-- 3. REWRITE PHASE 4 RPCs (Using TEXT for tenant/customer IDs)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION claim_queue_account(
+    p_tenant_id TEXT,
+    p_customer_id TEXT
+) 
+RETURNS JSONB 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_operator_id UUID;
+    v_existing_claim UUID;
+BEGIN
+    v_operator_id := auth.uid();
+    IF v_operator_id IS NULL THEN 
+        RETURN jsonb_build_object('success', false, 'error', 'Not authenticated'); 
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM tenant_users WHERE user_id = v_operator_id AND tenant_id = p_tenant_id) THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Unauthorized');
+    END IF;
+
+    -- Row lock to prevent race conditions
+    SELECT claimed_by_operator INTO v_existing_claim
+    FROM recovery_emails
+    WHERE tenant_id = p_tenant_id AND user_id = p_customer_id
+    FOR UPDATE;
+
+    IF v_existing_claim IS NOT NULL THEN
+        IF v_existing_claim = v_operator_id THEN
+            RETURN jsonb_build_object('success', true, 'message', 'You already claimed this account.');
+        ELSE
+            RETURN jsonb_build_object('success', false, 'error', 'Account was just claimed by another operator.');
+        END IF;
+    END IF;
+
+    UPDATE recovery_emails
+    SET claimed_by_operator = v_operator_id,
+        operator_claimed_at = NOW(),
+        updated_at = NOW()
+    WHERE tenant_id = p_tenant_id AND user_id = p_customer_id;
+
+    RETURN jsonb_build_object('success', true, 'message', 'Account claimed successfully.');
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION requeue_dead_letter(
+    p_tenant_id TEXT,
+    p_customer_id TEXT
+) 
+RETURNS VOID 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_operator_id UUID := auth.uid();
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM tenant_users WHERE user_id = v_operator_id AND tenant_id = p_tenant_id) THEN
+        RAISE EXCEPTION 'Unauthorized';
+    END IF;
+
+    UPDATE recovery_emails
+    SET status = 'pending_dispatch',
+        failure_stage = NULL,
+        next_retry_at = NOW(),
+        updated_at = NOW()
+    WHERE tenant_id = p_tenant_id 
+      AND user_id = p_customer_id 
+      AND status = 'dead_lettered';
+END;
+$$;

@@ -94,6 +94,29 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Explicitly defining tenant_users to enforce strong typing 
+      // and prevent GenericTable JSON fallbacks.
+      tenant_users: {
+        Row: {
+          tenant_id: string;
+          user_id: string;
+          role: string;
+          created_at: string | null;
+        };
+        Insert: {
+          tenant_id: string;
+          user_id: string;
+          role?: string;
+          created_at?: string | null;
+        };
+        Update: {
+          tenant_id?: string;
+          user_id?: string;
+          role?: string;
+          created_at?: string | null;
+        };
+        Relationships: [];
+      };
       api_keys: {
         Row: {
           id: string;
