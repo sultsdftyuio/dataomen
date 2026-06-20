@@ -41,7 +41,7 @@ from pydantic import ValidationError
 # ---------------------------------------------------------------------------
 # Re-exports from churn_config for full backward compatibility
 # ---------------------------------------------------------------------------
-from churn_config import (  # noqa: F401
+from api.services.churn_config import  # noqa: F401
     ACTIVITY_ROLLUP_TABLE,
     CHURN_USE_ACTIVITY_ROLLUP,
     DEFAULT_EVENT_BATCH_SIZE,

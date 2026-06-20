@@ -69,7 +69,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-from churn_config import (
+from api.services.churn_config import
     ACTIVITY_ROLLUP_TABLE,
     CHURN_USE_ACTIVITY_ROLLUP,
     DEFAULT_EVENT_BATCH_SIZE,

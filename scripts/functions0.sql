@@ -26,6 +26,8 @@
 --      the non-existent queue_items table.
 --  10. Moved premature ALTER TABLE churn_risk_state ADD COLUMN statements
 --      to AFTER the churn_risk_state table is created.
+--  11. Added email_templates table and safely appended CampaignsClient 
+--      columns to vw_risk_queue_radar.
 --
 -- DESIGN DECISIONS (unchanged):
 --   * NO inline REFERENCES in CREATE TABLE. All FKs live in Section 15.
@@ -329,7 +331,6 @@ CREATE TABLE IF NOT EXISTS campaign_events (
 );
 
 -- Operator actions (written by the queue client)
--- Operator actions (written by the queue client)
 CREATE TABLE IF NOT EXISTS manual_interventions (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id       TEXT NOT NULL,
@@ -459,6 +460,17 @@ CREATE TABLE IF NOT EXISTS recovery_emails (
     updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS email_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'recovery',
+    body_html TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Partial unique index: only enforces when idempotency_key is supplied.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_emails_batch_user_campaign
     ON recovery_emails(tenant_id, idempotency_key, user_id, campaign_type)
@@ -569,7 +581,11 @@ SELECT
     COALESCE(re.next_retry_at, re.lease_expires_at) AS next_action_time,
 
     -- Future-proofing Phase 4: Assignment (Returns UUID for now)
-    re.claimed_by_operator AS assigned_operator_id
+    re.claimed_by_operator AS assigned_operator_id,
+
+    -- ADDED: Safely appended to end so CREATE OR REPLACE works without dropping
+    COALESCE(re.primary_risk_signal, crs.risk_tier, 'High Risk Detected') AS signal,
+    re.updated_at AS last_active
 
 FROM recovery_emails re
 LEFT JOIN churn_risk_state crs
@@ -1268,6 +1284,11 @@ DO $$ BEGIN
     END IF;
 END $$;
 DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='email_templates' AND column_name='tenant_id') THEN
+        ALTER TABLE email_templates ADD COLUMN tenant_id TEXT;
+    END IF;
+END $$;
+DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='recovery_suppressions' AND column_name='tenant_id') THEN
         ALTER TABLE recovery_suppressions ADD COLUMN tenant_id TEXT;
     END IF;
@@ -1470,6 +1491,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE recovery_emails
     ADD CONSTRAINT fk_recovery_emails_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE email_templates
+    ADD CONSTRAINT fk_email_templates_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN ALTER TABLE recovery_suppressions
