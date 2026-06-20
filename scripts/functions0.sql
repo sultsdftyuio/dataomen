@@ -189,10 +189,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_users_user_id
     ON tenant_users(user_id);
 
 CREATE TABLE IF NOT EXISTS tenant_settings (
-    tenant_id      TEXT PRIMARY KEY,
-    reply_to_email TEXT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    tenant_id             TEXT PRIMARY KEY,
+    company_name          TEXT,
+    reply_to_email        TEXT,
+    stripe_account_id     TEXT,
+    email_provider_status BOOLEAN,
+    api_key               TEXT,
+    key_last_updated      TIMESTAMPTZ,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS tenant_billing (
@@ -324,13 +329,19 @@ CREATE TABLE IF NOT EXISTS campaign_events (
 );
 
 -- Operator actions (written by the queue client)
+-- Operator actions (written by the queue client)
 CREATE TABLE IF NOT EXISTS manual_interventions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  queue_item_id uuid,  -- references recovery_emails.id (FK added in Section 15)
-  action text NOT NULL,
-  operator_name text NOT NULL,
-  date timestamptz NOT NULL DEFAULT now(),
-  notes text
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       TEXT NOT NULL,
+    customer_id     TEXT NOT NULL,
+    operator_id     UUID NOT NULL,
+    operator_name   TEXT NOT NULL,
+    action          TEXT NOT NULL CHECK (action IN ('suppress', 'cooldown')),
+    duration_days   INT,
+    notes           TEXT,
+    idempotency_key TEXT,
+    date            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(tenant_id, idempotency_key)
 );
 
 -- ============================================================================
@@ -577,7 +588,96 @@ ALTER TABLE recovery_emails ADD COLUMN IF NOT EXISTS operator_claimed_at TIMESTA
 -- ============================================================================
 -- RPC FUNCTIONS
 -- ============================================================================
+-- -------------------------------------------------------------------------
+-- apply_manual_intervention: Atomic Audit + Queue State Update
+-- -------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION apply_manual_intervention(
+    p_tenant_id TEXT,
+    p_customer_id TEXT,
+    p_action TEXT,
+    p_duration_days INT,
+    p_reason TEXT,
+    p_idempotency_key TEXT
+) 
+RETURNS VOID 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_operator_id UUID;
+BEGIN
+    v_operator_id := auth.uid();
+    IF v_operator_id IS NULL THEN RAISE EXCEPTION 'Not authenticated'; END IF;
 
+    IF NOT EXISTS (SELECT 1 FROM tenant_users WHERE user_id = v_operator_id AND tenant_id = p_tenant_id) THEN
+        RAISE EXCEPTION 'Unauthorized tenant access';
+    END IF;
+
+    -- 1. Audit Log (Throws constraint violation if idempotency_key exists)
+    INSERT INTO manual_interventions (
+        tenant_id, customer_id, operator_id, operator_name, action, duration_days, notes, idempotency_key
+    ) VALUES (
+        p_tenant_id, p_customer_id, v_operator_id, 'Dashboard Operator', p_action, p_duration_days, p_reason, p_idempotency_key
+    );
+
+    -- 2. Update the True Outbox State
+    IF p_action = 'suppress' THEN
+        UPDATE recovery_emails 
+        SET status = 'suppressed', updated_at = NOW()
+        WHERE tenant_id = p_tenant_id AND user_id = p_customer_id;
+        
+    ELSIF p_action = 'cooldown' THEN
+        UPDATE recovery_emails
+        SET status = 'cooldown', 
+            next_retry_at = NOW() + (p_duration_days || ' days')::INTERVAL,
+            updated_at = NOW()
+        WHERE tenant_id = p_tenant_id AND user_id = p_customer_id;
+    END IF;
+END;
+$$;
+
+-- -------------------------------------------------------------------------
+-- claim_queue_account: Race-Safe Row Claiming
+-- -------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION claim_queue_account(p_tenant_id TEXT, p_customer_id TEXT) 
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_operator_id UUID := auth.uid();
+    v_existing_claim UUID;
+BEGIN
+    IF v_operator_id IS NULL THEN RETURN jsonb_build_object('success', false, 'error', 'Not authenticated'); END IF;
+    IF NOT EXISTS (SELECT 1 FROM tenant_users WHERE user_id = v_operator_id AND tenant_id = p_tenant_id) THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Unauthorized');
+    END IF;
+
+    SELECT claimed_by_operator INTO v_existing_claim FROM recovery_emails
+    WHERE tenant_id = p_tenant_id AND user_id = p_customer_id FOR UPDATE;
+
+    IF v_existing_claim IS NOT NULL THEN
+        IF v_existing_claim = v_operator_id THEN RETURN jsonb_build_object('success', true, 'message', 'Already claimed.');
+        ELSE RETURN jsonb_build_object('success', false, 'error', 'Account claimed by another operator.'); END IF;
+    END IF;
+
+    UPDATE recovery_emails SET claimed_by_operator = v_operator_id, operator_claimed_at = NOW(), updated_at = NOW()
+    WHERE tenant_id = p_tenant_id AND user_id = p_customer_id;
+    RETURN jsonb_build_object('success', true, 'message', 'Account claimed successfully.');
+END;
+$$;
+
+-- -------------------------------------------------------------------------
+-- requeue_dead_letter: Resets queue status
+-- -------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION requeue_dead_letter(p_tenant_id TEXT, p_customer_id TEXT) 
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_operator_id UUID := auth.uid();
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM tenant_users WHERE user_id = v_operator_id AND tenant_id = p_tenant_id) THEN
+        RAISE EXCEPTION 'Unauthorized';
+    END IF;
+    UPDATE recovery_emails SET status = 'pending_dispatch', failure_stage = NULL, next_retry_at = NOW(), updated_at = NOW()
+    WHERE tenant_id = p_tenant_id AND user_id = p_customer_id AND status = 'dead_lettered';
+END;
+$$;
 -- -------------------------------------------------------------------------
 -- provision_initial_workspace: Race-safe singleton workspace creation
 -- NOTE: writes to provisioning_status (was status in v3.2, renamed).
@@ -1045,6 +1145,15 @@ $$;
 -- full idempotency on all PostgreSQL versions.
 -- ============================================================================
 
+-- Safe migration for tenant_settings
+DO $$ BEGIN
+    ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS company_name TEXT;
+    ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS stripe_account_id TEXT;
+    ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS email_provider_status BOOLEAN;
+    ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS api_key TEXT;
+    ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS key_last_updated TIMESTAMPTZ;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='tenant_users' AND column_name='tenant_id') THEN
         ALTER TABLE tenant_users ADD COLUMN tenant_id TEXT;
@@ -1446,10 +1555,6 @@ DO $$ BEGIN ALTER TABLE campaign_events
     ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-DO $$ BEGIN ALTER TABLE manual_interventions
-    ADD CONSTRAINT fk_manual_interventions_email FOREIGN KEY (queue_item_id) REFERENCES recovery_emails(id)
-    ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================================
 -- SECTION 16: ADDITIONAL INDEXES & CONSTRAINTS

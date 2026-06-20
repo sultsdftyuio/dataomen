@@ -6,7 +6,7 @@ from pydantic import BaseModel, StringConstraints
 from typing_extensions import Annotated
 
 # Adjust these imports to match your project's internal structure
-from api.database import get_supabase_admin_client  # Renamed for clarity on service-role usage
+from api.database import get_supabase
 from api.auth import verify_tenant_access
 from api.services.security.api_keys import ApiKeyVault
 
@@ -72,7 +72,7 @@ class PaginatedApiKeyResponse(BaseModel):
 async def generate_api_key(
     payload: GenerateKeyRequest,
     tenant_id: str = Depends(verify_tenant_access),
-    supabase = Depends(get_supabase_admin_client)
+supabase = Depends(get_supabase)
 ):
     """
     Generates a new production API key.
@@ -162,7 +162,7 @@ async def generate_api_key(
 async def revoke_api_key(
     payload: RevokeKeyRequest,
     tenant_id: str = Depends(verify_tenant_access),
-    supabase = Depends(get_supabase_admin_client)
+    supabase = Depends(get_supabase)
 ):
     """
     Idempotently invalidates an API key.
@@ -233,7 +233,7 @@ async def revoke_api_key(
 @router.get("/", response_model=PaginatedApiKeyResponse, status_code=status.HTTP_200_OK)
 async def list_api_keys(
     tenant_id: str = Depends(verify_tenant_access),
-    supabase = Depends(get_supabase_admin_client),
+    supabase = Depends(get_supabase),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):

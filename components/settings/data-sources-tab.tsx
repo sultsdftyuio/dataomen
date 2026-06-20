@@ -1,154 +1,147 @@
 "use client";
 
-import React from "react";
-import { 
-  CheckCircle2, 
-  Database, 
-  Webhook, 
-  CreditCard, 
-  Mail, 
-  Activity, 
-  AlertCircle
-} from "lucide-react";
-import { useVisible } from "@/hooks/useVisible";
+import { useTransition, useState } from "react";
+import { toast } from "sonner"; // Assuming sonner for shadcn/ui toasts
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 
-// Import centralized design tokens
-import { C } from "@/lib/tokens";
+// In a real implementation, this is imported from your server actions file
+// e.g., import { updateWebhookEndpoint } from "@/app/actions/webhooks";
 
-// Import the newly built Command Center for API Keys
-import { ApiKeysManager } from "./api-keys-manager";
+export function DataSourcesTab({ 
+  initialWebhookUrl = "", 
+  webhookSecret = "whsec_..." 
+}: { 
+  initialWebhookUrl?: string;
+  webhookSecret?: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [webhookUrl, setWebhookUrl] = useState(initialWebhookUrl);
+  const [showSecret, setShowSecret] = useState(false);
 
-export function DataSourcesTab() {
-  const [ref0, vis0] = useVisible(0.1);
+  // Rule 18: Prefer Server Actions
+  const handleSaveEndpoint = () => {
+    if (!webhookUrl.startsWith("https://")) {
+      toast.error("Invalid URL: Webhook endpoints must use HTTPS.");
+      return;
+    }
 
-  const sans = "var(--font-geist-sans), sans-serif";
-  const surfaceBorder = `1px solid ${C.rule}`;
-  const surfaceShadow = "0 2px 8px rgba(10, 22, 40, 0.04)";
+    startTransition(async () => {
+      try {
+        // ACTION: updateWebhookEndpoint(webhookUrl)
+        // Rule 6: The server action MUST securely derive tenant_id from the 
+        // Supabase session, never trusting a client-provided ID.
+        
+        // Simulating network request
+        await new Promise((resolve) => setTimeout(resolve, 1000)); 
+        toast.success("Webhook endpoint updated successfully.");
+      } catch (error) {
+        // Rule 17: Log for operators, clear messages for users
+        toast.error("Failed to update webhook. Please try again.");
+      }
+    });
+  };
 
   return (
-    <section style={{ padding: "60px 24px", background: C.white, fontFamily: sans }}>
-      <div style={{ maxWidth: 960, margin: "0 auto" }} ref={ref0 as React.RefObject<HTMLDivElement>}>
-        
-        {/* ── Section Header ── */}
-        <div className={`fu ${vis0 ? "vis" : ""}`} style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 64px" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", marginBottom: 14, textTransform: "uppercase" }}>
-            <Database size={14} /> Pipeline Inputs
+    <div className="space-y-6">
+      {/* Billing Data Source (Stripe) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Billing Data Source</CardTitle>
+          <CardDescription>
+            Connect your Stripe account to automatically ingest billing events, subscription changes, and churn signals.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-medium leading-none">Stripe Connection</p>
+              <p className="text-sm text-muted-foreground">
+                Currently connected to <span className="font-semibold text-foreground">acme_inc_stripe</span>
+              </p>
+            </div>
+            <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+              Connected
+            </Badge>
           </div>
-          <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 16, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Data Sources & Webhooks
-          </h2>
-          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
-            Manage the input layer of your recovery engine. Arcli requires a healthy billing connection and an active delivery provider to orchestrate recovery.
-          </p>
-        </div>
+        </CardContent>
+        <CardFooter className="border-t px-6 py-4">
+          <Button variant="outline">Manage Connection</Button>
+        </CardFooter>
+      </Card>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 56 }}>
+      {/* Webhooks Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Webhook Endpoints</CardTitle>
+          <CardDescription>
+            Configure webhook endpoints to receive real-time alerts for recovered subscriptions and at-risk users.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="webhook-url">Endpoint URL</Label>
+            <Input
+              id="webhook-url"
+              type="url"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              placeholder="https://api.yourdomain.com/webhooks/arcli"
+              disabled={isPending}
+            />
+            <p className="text-[0.8rem] text-muted-foreground">
+              Endpoint must return a 2xx status code within 3 seconds.
+            </p>
+          </div>
           
-          {/* ── Stripe Integration ── */}
-          <div style={{ position: "relative" }}>
-            <div style={{ background: C.white, padding: 28, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 2 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 8, background: C.offWhite, border: surfaceBorder, color: "#6366F1", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: surfaceShadow }}>
-                  <CreditCard size={24} />
-                </div>
-                <div>
-                  <h3 className="pfd" style={{ fontSize: 18, fontWeight: 600, color: C.navy, marginBottom: 4 }}>Stripe Billing</h3>
-                  <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.5 }}>
-                    Listens for <code style={{background: C.offWhite, border: surfaceBorder, padding: "2px 6px", borderRadius: 4}}>invoice.payment_failed</code> to detect churn risk.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: C.green, background: C.greenPale, padding: "6px 12px", borderRadius: 6, border: `1px solid rgba(16, 185, 129, 0.2)` }}>
-                  <CheckCircle2 size={15} /> HEALTHY
-                </span>
-                <button style={{ height: 38, padding: "0 18px", borderRadius: 8, border: surfaceBorder, background: C.white, color: C.navy, fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: surfaceShadow, letterSpacing: "0.02em" }}>
-                  Manage
-                </button>
-              </div>
+          <Separator />
+          
+          <div className="space-y-2">
+            <Label htmlFor="webhook-secret">Signing Secret</Label>
+            <div className="flex space-x-2">
+              <Input
+                id="webhook-secret"
+                type={showSecret ? "text" : "password"}
+                value={webhookSecret}
+                readOnly
+                className="font-mono text-sm"
+              />
+              <Button 
+                variant="secondary" 
+                size="icon"
+                onClick={() => setShowSecret(!showSecret)}
+                aria-label={showSecret ? "Hide secret" : "Show secret"}
+              >
+                {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
             </div>
-            {/* Offset Background Accent */}
-            <div style={{ position: "absolute", top: 10, left: 10, right: -10, bottom: -10, background: C.offWhite, borderRadius: 8, zIndex: 1, border: surfaceBorder }} />
+            <p className="text-[0.8rem] text-muted-foreground">
+              Use this secret to verify the webhook payload signature. Protect it like a password.
+            </p>
           </div>
-
-          {/* ── Email Delivery Integration ── */}
-          <div style={{ position: "relative" }}>
-            <div style={{ background: C.white, padding: 28, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 2 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 8, background: C.offWhite, border: surfaceBorder, color: C.amber, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: surfaceShadow }}>
-                  <Mail size={24} />
-                </div>
-                <div>
-                  <h3 className="pfd" style={{ fontSize: 18, fontWeight: 600, color: C.navy, marginBottom: 4 }}>Email Delivery (Resend)</h3>
-                  <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.5 }}>
-                    Dispatches recovery sequences securely to at-risk subscribers.
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: C.green, background: C.greenPale, padding: "6px 12px", borderRadius: 6, border: `1px solid rgba(16, 185, 129, 0.2)` }}>
-                  <CheckCircle2 size={15} /> CONNECTED
-                </span>
-                <button style={{ height: 38, padding: "0 18px", borderRadius: 8, border: surfaceBorder, background: C.white, color: C.navy, fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: surfaceShadow, letterSpacing: "0.02em" }}>
-                  Manage
-                </button>
-              </div>
-            </div>
-            {/* Offset Background Accent */}
-            <div style={{ position: "absolute", top: 10, left: 10, right: -10, bottom: -10, background: C.offWhite, borderRadius: 8, zIndex: 1, border: surfaceBorder }} />
-          </div>
-
-          {/* ── Ingest API Reference ── */}
-          <div style={{ position: "relative" }}>
-            <div style={{ background: C.white, padding: 28, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative", zIndex: 2 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                <div style={{ width: 48, height: 48, borderRadius: 8, background: C.bluePale, border: `1px solid ${C.rule}`, color: C.blue, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: surfaceShadow }}>
-                  <Webhook size={24} />
-                </div>
-                <div>
-                  <h3 className="pfd" style={{ fontSize: 18, fontWeight: 600, color: C.navy, marginBottom: 4 }}>Custom Event Ingestion</h3>
-                  <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.5 }}>
-                    Push raw activity events (e.g., <code style={{background: C.offWhite, border: surfaceBorder, padding: "2px 6px", borderRadius: 4}}>app.session_started</code>) to: <br/>
-                    <code style={{background: C.offWhite, border: surfaceBorder, padding: "4px 8px", borderRadius: 6, color: C.navy, marginTop: 8, display: "inline-block", fontWeight: 600, fontSize: 13}}>POST https://ingest.arcli.io/v1/events</code>
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: C.navySoft, background: C.offWhite, padding: "6px 12px", borderRadius: 6, border: surfaceBorder }}>
-                  <Activity size={15} /> LISTENING
-                </span>
-              </div>
-            </div>
-            {/* Offset Background Accent */}
-            <div style={{ position: "absolute", top: 10, left: 10, right: -10, bottom: -10, background: C.bluePale, borderRadius: 8, zIndex: 1, border: surfaceBorder }} />
-          </div>
-
-          {/* ── The Real Production API Keys Manager ── */}
-          <ApiKeysManager />
-
-          {/* ── System Audit Log (Deterministic Observability) ── */}
-          <div style={{ position: "relative", marginTop: 16 }}>
-            <div style={{ background: C.navy, color: C.rule, padding: "24px 28px", borderRadius: 8, fontSize: 13, position: "relative", zIndex: 2, boxShadow: surfaceShadow, lineHeight: 1.6, border: `1px solid ${C.navyMid}`, fontFamily: "monospace" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, borderBottom: `1px solid ${C.navySoft}`, paddingBottom: 12 }}>
-                <span style={{ fontSize: 11, color: C.faint, letterSpacing: "0.08em", fontFamily: sans, textTransform: "uppercase", fontWeight: 700 }}>
-                  CONNECTION AUDIT LOG
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.faint, fontFamily: sans, fontWeight: 500 }}>
-                  <AlertCircle size={13} /> Read-only system events
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div><span style={{ color: C.green, fontWeight: 600 }}>[OK]</span> 14:32:01 UTC - Stripe webhook signature verified.</div>
-                <div><span style={{ color: C.green, fontWeight: 600 }}>[OK]</span> 14:30:45 UTC - Custom event <span style={{ color: C.white, fontWeight: 500 }}>app.session_started</span> processed (200 OK).</div>
-                <div><span style={{ color: C.blueLight, fontWeight: 600 }}>[INFO]</span> 13:15:00 UTC - Resend delivery token refreshed successfully.</div>
-              </div>
-            </div>
-            {/* Offset Background Accent */}
-            <div style={{ position: "absolute", top: -8, left: 8, right: -8, bottom: 8, background: C.navySoft, borderRadius: 8, zIndex: 1, opacity: 0.4, border: `1px solid ${C.navyMid}` }} />
-          </div>
-
-        </div>
-      </div>
-    </section>
+        </CardContent>
+        <CardFooter className="border-t px-6 py-4 justify-between">
+          <Button variant="ghost" disabled={!webhookUrl || isPending}>
+            Test Endpoint
+          </Button>
+          <Button onClick={handleSaveEndpoint} disabled={isPending}>
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Endpoint
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
   );
 }
