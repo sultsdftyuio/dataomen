@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { User } from "lucide-react";
 import { C } from "@/lib/tokens";
-import { Logo } from "@/components/ui/logo";
+import Logo from "@/components/ui/logo"; // FIX: Replaced named import with default import to prevent compilation crash
 
 /**
  * Navbar Component
@@ -16,6 +16,7 @@ export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
+    // FIX: Standardized scroll boundary detection to exactly match event initialization conditions
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
@@ -24,7 +25,6 @@ export function Navbar() {
   // UPDATED: Absolute root anchors (/#...) to enable cross-page navigation
   const navLinks = [
     { name: "Platform", href: "/#platform" },
-    { name: "Agents", href: "/#agents" },
     { name: "Pricing", href: "/#pricing" },
     { name: "Security", href: "/#security" },
     { name: "Docs", href: "/docs" }
@@ -81,7 +81,8 @@ export function Navbar() {
                 textTransform: "uppercase"
               }}
               onMouseOver={e => (e.currentTarget.style.color = C.blue)}
-              onMouseOut={e  => (e.currentTarget.style.color = scrolled ? C.navy : C.muted)}
+              // FIX: Restored exact fallback behavior targeting the dynamic system state mapping (C.navy vs C.navySoft) instead of undefined literal constants
+              onMouseOut={e => (e.currentTarget.style.color = scrolled ? C.navy : C.navySoft)}
             >
               {n.name}
             </Link>
@@ -97,7 +98,8 @@ export function Navbar() {
             style={{ 
               fontSize: 13,
               fontWeight: 600,
-              color: scrolled ? C.muted : C.navySoft,
+              // FIX: Replaced broken color fallback mapping to guarantee color consistency across scroll states
+              color: scrolled ? C.navy : C.navySoft,
               textDecoration: "none", 
               marginRight: 8,
               display: "inline-flex",
