@@ -1,8 +1,8 @@
 // app/(dashboard)/dashboard/StepCard.tsx
 "use client";
 
-import { CheckCircle2, Clock3, Lock } from "lucide-react";
-import React from "react";
+import React, { ReactNode } from "react";
+import { CheckCircle2, Circle, Lock } from "lucide-react";
 import { C } from "@/lib/tokens";
 
 export interface StepProps {
@@ -10,9 +10,11 @@ export interface StepProps {
   title: string;
   description: string;
   status: "complete" | "active" | "locked";
-  icon: React.ReactNode;
-  action?: React.ReactNode;
+  icon: ReactNode;
   helperText?: string;
+  action?: ReactNode;
+  // Added the missing prop to the interface definition
+  isHighlighted?: boolean; 
 }
 
 export default function StepCard({
@@ -21,132 +23,119 @@ export default function StepCard({
   description,
   status,
   icon,
-  action,
   helperText,
+  action,
+  isHighlighted = false, // Default to false if not provided
 }: StepProps) {
-  const isComplete = status === "complete";
-  const isActive   = status === "active";
-
-  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
-  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
-
-  const HelperIcon = isComplete ? CheckCircle2 : isActive ? Clock3 : Lock;
   
-  const helperIconColor = isComplete
-    ? "#10B981" 
-    : isActive
-      ? C.blue
-      : C.faint;
+  // Define visual states based on the step's status
+  const isActive = status === "active";
+  const isComplete = status === "complete";
+  const isLocked = status === "locked";
 
-  // Aesthetic mapping based on step status
-  const cardStyle: React.CSSProperties = isActive 
-    ? { background: "#FFFFFF", border: surfaceBorder, boxShadow: surfaceShadow, borderRadius: 12, padding: 24 }
-    : isComplete
-      ? { background: "#FAFAFA", border: surfaceBorder, borderRadius: 12, padding: 24 }
-      : { background: "transparent", border: "1px solid transparent", borderRadius: 12, padding: 24, opacity: 0.5 };
+  // Determine border color based on status and the new highlighted prop
+  let borderColor = "rgba(0,0,0,0.08)";
+  if (isHighlighted) {
+    borderColor = "rgba(59,130,246,0.5)"; // Blue highlight ring
+  } else if (isActive) {
+    borderColor = "rgba(0,0,0,0.12)";
+  }
 
-  const iconBoxStyle: React.CSSProperties = isComplete
-    ? { background: "rgba(16,185,129,0.1)", color: "#10B981" }
-    : isActive
-      ? { background: "rgba(59,130,246,0.1)", color: C.blue }
-      : { background: "rgba(0,0,0,0.05)", color: C.faint };
+  // Determine icon and colors based on state
+  const IconComponent = isComplete ? CheckCircle2 : isLocked ? Lock : Circle;
+  const iconColor = isComplete ? "#10B981" : isActive ? C.blue : "#9CA3AF";
+  
+  // Adjust opacity for locked state to indicate it's not ready
+  const opacity = isLocked ? 0.6 : 1;
 
   return (
     <li
-      aria-current={isActive ? "step" : undefined}
-      className="group relative flex gap-4 transition-all duration-300"
-      style={cardStyle}
+      style={{
+        display: "flex",
+        gap: 20,
+        padding: 28,
+        background: "#FFFFFF",
+        borderRadius: 12,
+        border: `1px solid ${borderColor}`,
+        boxShadow: isHighlighted 
+          ? "0 0 0 4px rgba(59,130,246,0.1)" // Outer glow when highlighted
+          : "0 1px 3px rgba(0,0,0,0.08)",
+        opacity,
+        transition: "all 0.3s ease",
+        position: "relative",
+        overflow: "hidden"
+      }}
     >
-      {/* Subtle Dashed Connector */}
-      <div
-        aria-hidden="true"
-        className="absolute group-last:hidden"
-        style={{
-          left: 40, // 24px padding + 16px (half of 32px icon box)
-          top: 64,  // Drops below the icon
-          bottom: -16, // Extends into the gap between items
-          borderLeft: "1px dashed rgba(0,0,0,0.08)",
-          zIndex: 0
-        }}
-      />
+      {/* Optional: Add a subtle highlight background flash */}
+      {isHighlighted && (
+        <div style={{
+          position: "absolute",
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: "linear-gradient(90deg, rgba(59,130,246,0.05) 0%, transparent 100%)",
+          pointerEvents: "none"
+        }} />
+      )}
 
-      {/* Compact Tinted Icon Box */}
-      <div
-        className="relative z-10 flex shrink-0 items-center justify-center rounded-lg"
-        style={{
-          width: 32,
-          height: 32,
-          ...iconBoxStyle
-        }}
-      >
-        {/* Force Lucide icons to size 16/18 dynamically without altering parent definition */}
-        {icon}
+      {/* Step Number / Status Icon Indicator */}
+      <div style={{ flexShrink: 0, marginTop: 2 }}>
+        <IconComponent size={24} color={iconColor} />
       </div>
 
-      {/* Content Block */}
-      <div className="flex-1 min-w-0" style={{ paddingTop: 3 }}>
-        
-        {/* Step Label & Status Badge */}
-        <div className="flex flex-wrap items-center gap-3 mb-3">
-          <span style={{ color: isActive ? C.blue : C.navySoft, fontWeight: 700, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            STEP 0{step}
+      <div style={{ display: "flex", flexDirection: "column", flexGrow: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ 
+            fontSize: 12, 
+            fontWeight: 700, 
+            color: C.navySoft, 
+            textTransform: "uppercase", 
+            letterSpacing: "0.06em" 
+          }}>
+            Step {step}
           </span>
-
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              padding: "3px 8px",
-              borderRadius: 6,
-              background: isComplete ? "rgba(16,185,129,0.08)" : isActive ? "rgba(59,130,246,0.08)" : "rgba(0,0,0,0.04)",
-              color: isComplete ? "#10B981" : isActive ? C.blue : C.faint,
-              border: isComplete ? "1px solid rgba(16,185,129,0.12)" : isActive ? "1px solid rgba(59,130,246,0.12)" : surfaceBorder
-            }}
-          >
-            {isComplete ? "Complete" : isActive ? "In Progress" : "Locked"}
-          </span>
+          {/* Main feature Icon */}
+          <div style={{ color: C.faint }}>
+            {icon}
+          </div>
         </div>
 
-        {/* Premium Display Title */}
-        <h3 className="pfd" style={{ fontSize: 20, color: C.navy, marginBottom: 8, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
+        <h3 style={{ 
+          fontSize: 18, 
+          fontWeight: 600, 
+          color: C.navy, 
+          marginBottom: 8, 
+          letterSpacing: "-0.01em" 
+        }}>
           {title}
         </h3>
 
-        <p style={{ color: C.navySoft, fontSize: 14, lineHeight: 1.62, marginBottom: (helperText || action) ? 18 : 0, maxWidth: "600px" }}>
+        <p style={{ 
+          fontSize: 15, 
+          color: C.navySoft, 
+          lineHeight: 1.6, 
+          marginBottom: action || helperText ? 20 : 0 
+        }}>
           {description}
         </p>
 
-        {/* Data-Style Helper Readout */}
-        {helperText && (
-          <div 
-            style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: 8, 
-              background: "#FAFAFA", 
-              padding: "10px 14px", 
-              borderRadius: 8, 
-              border: surfaceBorder,
-              marginBottom: action ? 20 : 0,
-              width: "fit-content"
-            }}
-          >
-            <HelperIcon
-              aria-hidden="true"
-              size={14}
-              color={helperIconColor}
-              style={{ flexShrink: 0 }}
-            />
-            <span style={{ fontSize: 13, fontWeight: 500, color: C.navySoft }}>
-              {helperText}
-            </span>
+        {/* Render interactive action block if provided */}
+        {action && (
+          <div style={{ marginBottom: helperText ? 16 : 0 }}>
+            {action}
           </div>
         )}
 
-        {/* Action Button Area */}
-        {action && <div>{action}</div>}
+        {/* Render helper/status text if provided */}
+        {helperText && (
+          <div style={{ 
+            fontSize: 13, 
+            fontWeight: 500, 
+            color: isComplete ? "#059669" : C.faint, 
+            display: "flex", 
+            alignItems: "center" 
+          }}>
+            {helperText}
+          </div>
+        )}
       </div>
     </li>
   );

@@ -4,30 +4,64 @@ import crypto from "crypto";
 import { z } from "zod";
 
 // ============================================================================
+// RUNTIME — explicit Node.js to avoid Edge incompatibilities with `crypto`
+// ============================================================================
+export const runtime = "nodejs";
+
+// ============================================================================
 // VALIDATION LAYER
 // ============================================================================
 const DispatchSchema = z.object({
   templateId: z.string().min(1),
   idempotencyKey: z.string().max(128),
-  targets: z.array(
-    z.object({
-      id: z.string().min(1),
-      email: z.string().trim().toLowerCase().email(),
-      signal: z.string().optional().default("unknown"),
-      riskScore: z.number().min(0).max(100).optional().default(0),
-    })
-  )
-  .min(1)
-  .max(500),
+  targets: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        email: z.string().trim().toLowerCase().email(),
+        signal: z.string().optional().default("unknown"),
+        riskScore: z.number().min(0).max(100).optional().default(0),
+      })
+    )
+    .min(1)
+    .max(500),
 });
 
 // ============================================================================
-// RPC RESPONSE VALIDATION
+// RPC RESPONSE TYPE + VALIDATION
+// Discriminated union prevents impossible states (e.g. status:"success" with
+// no queued count, or a queued count on a deduplicated response).
+// "pending" is intentionally excluded — it is handled by the retry loop before
+// we ever reach schema validation.
 // ============================================================================
-const RpcResponseSchema = z.object({
-  status: z.enum(["success", "deduplicated"]),
-  queued: z.number().optional(),
-});
+type RpcResponse =
+  | { status: "success"; queued: number }
+  | { status: "deduplicated" }
+  | { status: "pending" };
+
+const RpcResponseSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("success"),
+    queued: z.number().int().nonnegative(),
+  }),
+  z.object({
+    status: z.literal("deduplicated"),
+  }),
+]);
+
+// ============================================================================
+// HELPERS — defined outside POST to avoid per-request allocations
+// ============================================================================
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function getRpcStatus(value: unknown): string | null {
+  const result = Array.isArray(value) ? value[0] : value;
+  if (!result || typeof result !== "object") return null;
+  return "status" in result
+    ? (result as { status?: string }).status ?? null
+    : null;
+}
 
 // ============================================================================
 // OPTIONAL: RATE LIMIT HOOK (plug Redis or Upstash here)
@@ -37,6 +71,9 @@ async function checkRateLimit(_tenantId: string): Promise<boolean> {
   return true;
 }
 
+// ============================================================================
+// HANDLER
+// ============================================================================
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
 
@@ -108,6 +145,8 @@ export async function POST(req: Request) {
 
     // =========================================================================
     // TRANSFORM PAYLOAD (WORKER-READY OUTBOX ROWS)
+    // Message key is intentionally generated here — keeps hashing logic in the
+    // application layer and the database focused on persistence.
     // =========================================================================
     const outboxPayloads = targets.map((t) => {
       const messageKey = crypto
@@ -130,19 +169,12 @@ export async function POST(req: Request) {
 
     // =========================================================================
     // ATOMIC RPC CALL
+    // The retry loop exists only to handle a "pending" status that your RPC can
+    // legitimately return while a concurrent dispatch is in flight.
+    // If dispatch_campaign_atomic can never return "pending", collapse this to a
+    // single await supabase.rpc(...) call and remove getRpcStatus/delay.
     // =========================================================================
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    const getRpcStatus = (value: unknown) => {
-      const result = Array.isArray(value) ? value[0] : value;
-
-      if (!result || typeof result !== "object") {
-        return null;
-      }
-
-      return "status" in result ? (result as { status?: string }).status ?? null : null;
-    };
-
-    let rpcResult: unknown = null;
+    let rpcResult: RpcResponse | null = null;
     let rpcError: { message?: string } | null = null;
 
     for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -152,12 +184,10 @@ export async function POST(req: Request) {
         p_outbox_payloads: outboxPayloads,
       });
 
-      rpcResult = response.data;
+      rpcResult = response.data as RpcResponse | null;
       rpcError = response.error;
 
-      if (rpcError) {
-        break;
-      }
+      if (rpcError) break;
 
       if (getRpcStatus(rpcResult) === "pending") {
         if (attempt === 3) {
@@ -166,7 +196,6 @@ export async function POST(req: Request) {
             { status: 409 }
           );
         }
-
         await delay(200);
         continue;
       }
@@ -178,6 +207,10 @@ export async function POST(req: Request) {
       console.error("[RPC_ERROR]", {
         requestId,
         tenantId,
+        userId: user.id,
+        templateId,
+        targetCount: targets.length,
+        idempotencyKey,
         error: rpcError,
       });
 
@@ -195,6 +228,9 @@ export async function POST(req: Request) {
     if (!validated.success) {
       console.error("[RPC_INVALID_RESPONSE]", {
         requestId,
+        tenantId,
+        userId: user.id,
+        templateId,
         rpcResult,
       });
 
@@ -216,21 +252,27 @@ export async function POST(req: Request) {
     }
 
     // =========================================================================
-    // SUCCESS RESPONSE
+    // SUCCESS
+    // TypeScript narrows validated.data to the "success" branch here, so
+    // .queued is guaranteed to be a non-negative integer by the schema.
     // =========================================================================
-    return NextResponse.json({
-      status: "success",
-      queued: validated.data.queued ?? targets.length,
+    const { queued } = validated.data;
+
+    console.info("[DISPATCH_SUCCESS]", {
       requestId,
+      tenantId,
+      userId: user.id,
+      templateId,
+      queued,
+      targetCount: targets.length,
     });
+
+    return NextResponse.json({ status: "success", queued, requestId });
   } catch (error) {
-    console.error("[FATAL_ERROR]", error);
+    console.error("[FATAL_ERROR]", { requestId, error });
 
     return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        requestId,
-      },
+      { error: "Internal Server Error", requestId },
       { status: 500 }
     );
   }
