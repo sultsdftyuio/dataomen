@@ -1,7 +1,3 @@
-// app/(dashboard)/dashboard/QuickStartGuide.tsx
-//
-// ⚠️  REQUIRED: The parent route must export:
-//        export const dynamic = "force-dynamic";
 "use client";
 
 import Link from "next/link";
@@ -11,11 +7,11 @@ import {
   CheckCircle2,
   ChevronRight,
   ExternalLink,
-  Key,
   Send,
   ShieldAlert,
-  Sparkles,
   Lock,
+  Sparkles,
+  KeyRound,
 } from "lucide-react";
 import React, {
   useCallback,
@@ -23,6 +19,7 @@ import React, {
   useRef,
   useState,
   useTransition,
+  useMemo,
 } from "react";
 
 import { C } from "@/lib/tokens";
@@ -91,7 +88,7 @@ export default function QuickStartGuide({
     }
   }, [isPending]);
 
-  // ─── Stable refresh callback ─────────────────────────────────────────────
+  // ─── Stable refresh callback ────────────────────────────────────────────
   const isPendingRef = useRef(isPending);
   useEffect(() => {
     isPendingRef.current = isPending;
@@ -104,27 +101,48 @@ export default function QuickStartGuide({
     startTransition(() => router.refresh());
   }, [router, startTransition]);
 
-  // ─── Auto-poll interval ──────────────────────────────────────────────────
+  // ─── Auto-poll interval (pauses when hidden) ──────────────────────────
   useEffect(() => {
     if (!canCheckStatus) return;
 
-    const interval = setInterval(() => {
-      if (document.hidden) return;
-      refreshDashboard();
-    }, 10_000);
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-    return () => clearInterval(interval);
+    const startPolling = () => {
+      interval = setInterval(() => {
+        refreshDashboard();
+      }, 10_000);
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+        interval = null;
+      } else if (!interval) {
+        startPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [canCheckStatus, refreshDashboard]);
 
   // ─── Derived display values ─────────────────────────────────────────────
   const isComplete = setupState === "complete";
-  const lastCheckedLabel = lastCheckedAt
-    ? formatLastChecked(lastCheckedAt, now)
-    : null;
+  const progressPercent = useMemo(
+    () => (hasReceivedData ? 100 : hasApiKey ? 66 : 33),
+    [hasApiKey, hasReceivedData]
+  );
+  const lastCheckedLabel = useMemo(
+    () => (lastCheckedAt ? formatLastChecked(lastCheckedAt, now) : null),
+    [lastCheckedAt, now]
+  );
 
-  const progressPercent = hasReceivedData ? 100 : hasApiKey ? 66 : 33;
-
-  // ─── Aesthetic Config ───────────────────────────────────────────────────
+  // ─── Aesthetic Config (matches DeepDiveFeatures) ────────────────────────
   const [refSteps, visSteps] = useVisible(0.1);
 
   const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
@@ -222,16 +240,18 @@ export default function QuickStartGuide({
       );
     }
 
-    // ACTIVE: Full but tight card (only one should ever be active)
+    // ACTIVE: Full card with offset accent (matches DeepDiveFeatures style)
     return (
       <li
         key={stepNum}
         style={{
-          padding: "20px",
-          borderRadius: 12,
+          position: "relative",
+          padding: 24,
+          borderRadius: 8,
           background: "#fff",
           border: surfaceBorder,
           boxShadow: surfaceShadow,
+          zIndex: 2,
         }}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -278,6 +298,25 @@ export default function QuickStartGuide({
             {action}
           </div>
         </div>
+
+        {/* Offset Background Accent — matches DeepDiveFeatures */}
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 10,
+            right: -10,
+            bottom: -10,
+            background: stepNum === 1
+              ? "rgba(59,154,232,0.12)"
+              : stepNum === 2
+              ? "rgba(245,158,11,0.12)"
+              : "rgba(16,185,129,0.12)",
+            borderRadius: 8,
+            zIndex: -1,
+            border: surfaceBorder,
+          }}
+        />
       </li>
     );
   };
@@ -287,397 +326,390 @@ export default function QuickStartGuide({
       aria-labelledby="quickstart-heading"
       style={{
         fontFamily: sans,
-        padding: "40px 24px",
-        maxWidth: 640,
-        margin: "0 auto",
+        padding: "140px 24px",
+        background: "#FAFAFA",
+        borderTop: surfaceBorder,
       }}
     >
-      {/* ─── Compact Hero (~140px) ──────────────────────────────────────── */}
-      <div style={{ marginBottom: 32 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 10,
-          }}
-        >
-          {isComplete ? (
-            <CheckCircle2 size={18} color="#10B981" />
-          ) : (
-            <div
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                border: `2px solid ${C.navy}`,
-                borderTopColor: "transparent",
-                animation: "spin 1s linear infinite",
-              }}
-            />
-          )}
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-              color: isComplete ? "#059669" : C.navySoft,
-            }}
-          >
-            {isComplete ? "Setup Complete" : "Setup in Progress"}
-          </span>
-        </div>
-
-        <h1
-          id="quickstart-heading"
-          style={{
-            fontSize: 26,
-            color: C.navy,
-            fontWeight: 700,
-            lineHeight: 1.15,
-            letterSpacing: "-0.01em",
-            marginBottom: 10,
-          }}
-        >
-          {isComplete ? "You're all set" : "Get Arcli running in 2 minutes"}
-        </h1>
-
-        {!isComplete && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div
-              style={{
-                flex: 1,
-                height: 4,
-                borderRadius: 2,
-                background: "#E5E7EB",
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  width: `${progressPercent}%`,
-                  height: "100%",
-                  background: hasReceivedData ? "#10B981" : C.blue,
-                  borderRadius: 2,
-                  transition: "width 0.5s ease",
-                }}
-              />
-            </div>
-            <span
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: C.navySoft,
-                minWidth: 32,
-                textAlign: "right",
-              }}
-            >
-              {progressPercent}%
-            </span>
-          </div>
-        )}
-
-        {canCheckStatus && (
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
+        {/* ─── Compact Hero ─────────────────────────────────────────────── */}
+        <div style={{ marginBottom: 32 }}>
           <div
             style={{
-              marginTop: 10,
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
               gap: 8,
+              color: isComplete ? "#059669" : C.blue,
+              fontWeight: 700,
               fontSize: 12,
-              color: "#6B7280",
+              marginBottom: 14,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
             }}
           >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: "#10B981",
-                display: "inline-block",
-                animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-              }}
-            />
-            Listening for events
-            {lastCheckedLabel && (
-              <span style={{ marginLeft: "auto" }}>
-                Checked {lastCheckedLabel}
-              </span>
+            {isComplete ? (
+              <CheckCircle2 size={14} />
+            ) : (
+              <Sparkles size={14} />
             )}
-            <button
-              onClick={refreshDashboard}
-              disabled={isPending}
+            {isComplete ? "Setup Complete" : "Setup in Progress"}
+          </div>
+
+          <h1
+            id="quickstart-heading"
+            className="pfd"
+            style={{
+              fontSize: 42,
+              color: C.navy,
+              fontWeight: 600,
+              lineHeight: 1.06,
+              letterSpacing: "-0.015em",
+              marginBottom: 20,
+            }}
+          >
+            {isComplete ? "You\'re all set" : "Get Arcli running in 2 minutes"}
+          </h1>
+
+          {!isComplete && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div
+                style={{
+                  flex: 1,
+                  height: 4,
+                  borderRadius: 2,
+                  background: "#E5E7EB",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: "100%",
+                    background: hasReceivedData ? "#10B981" : C.blue,
+                    borderRadius: 2,
+                    transition: "width 0.5s ease",
+                  }}
+                />
+              </div>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: C.navySoft,
+                  minWidth: 32,
+                  textAlign: "right",
+                }}
+              >
+                {progressPercent}%
+              </span>
+            </div>
+          )}
+
+          {canCheckStatus && (
+            <div
+              aria-live="polite"
+              aria-atomic="true"
               style={{
-                background: "none",
-                border: "none",
-                color: C.blue,
+                marginTop: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
                 fontSize: 12,
-                fontWeight: 600,
-                cursor: isPending ? "wait" : "pointer",
-                padding: 0,
-                textDecoration: "underline",
-                textUnderlineOffset: 2,
+                color: "#6B7280",
               }}
             >
-              {isPending ? "Refreshing..." : "Refresh"}
-            </button>
-            {showRefreshFlash && (
-              <span style={{ color: "#10B981", fontWeight: 600, fontSize: 12 }}>
-                Updated
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ─── Steps (alternating density) ────────────────────────────────── */}
-      <div
-        className={`fu ${visSteps ? "vis" : ""}`}
-        ref={refSteps as React.RefObject<HTMLDivElement>}
-      >
-        <ol
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            listStyle: "none",
-            padding: 0,
-            margin: 0,
-          }}
-        >
-          {/* ─── STEP 1 ─────────────────────────────────────────────────── */}
-          {renderStep(
-            1,
-            "Create your API key",
-            "Generate credentials for your integration.",
-            hasApiKey ? "complete" : "active",
-            !hasApiKey ? (
-              <Dialog
-                open={isApiModalOpen}
-                onOpenChange={setIsApiModalOpen}
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "#10B981",
+                  display: "inline-block",
+                  animation: "qsg-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+                }}
+              />
+              Listening for events
+              {lastCheckedLabel && (
+                <span style={{ marginLeft: "auto" }}>
+                  Checked {lastCheckedLabel}
+                </span>
+              )}
+              <button
+                onClick={refreshDashboard}
+                disabled={isPending}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: C.blue,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: isPending ? "wait" : "pointer",
+                  padding: 0,
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                }}
               >
-                <DialogTrigger asChild>
-                  <button
-                    style={{
-                      height: 36,
-                      padding: "0 14px",
-                      borderRadius: 8,
-                      background: C.navy,
-                      color: "#fff",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      border: "none",
-                      cursor: "pointer",
-                      boxShadow: surfaceShadow,
-                    }}
-                  >
-                    Create API Key
-                    <ArrowRight size={13} />
-                  </button>
-                </DialogTrigger>
+                {isPending ? "Refreshing..." : "Refresh"}
+              </button>
+              {showRefreshFlash && (
+                <span style={{ color: "#10B981", fontWeight: 600, fontSize: 12 }}>
+                  Updated
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
-                <DialogContent
-                  className="sm:max-w-3xl p-0 border-slate-200 shadow-xl overflow-hidden rounded-xl"
-                  style={{ fontFamily: sans }}
+        {/* ─── Steps ────────────────────────────────────────────────────── */}
+        <div
+          className={`fu ${visSteps ? "vis" : ""}`}
+          ref={refSteps}
+        >
+          <ol
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 24,
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+            }}
+          >
+            {/* ─── STEP 1 ─────────────────────────────────────────────── */}
+            {renderStep(
+              1,
+              "Create your API key",
+              "Generate credentials for your integration.",
+              hasApiKey ? "complete" : "active",
+              !hasApiKey ? (
+                <Dialog
+                  open={isApiModalOpen}
+                  onOpenChange={setIsApiModalOpen}
                 >
-                  <DialogHeader className="px-6 py-5 border-b border-slate-100 bg-white">
-                    <DialogTitle className="flex items-center gap-2.5 text-lg text-slate-900 tracking-tight">
-                      <ShieldAlert className="h-5 w-5 text-blue-600" />
-                      API Credentials
-                    </DialogTitle>
-                    <DialogDescription className="text-sm text-slate-500 mt-1.5">
-                      Generate and store your API keys securely. Raw keys are
-                      only displayed once.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="p-6 bg-slate-50/50 max-h-[60vh] overflow-y-auto">
-                    <div className="bg-white border border-slate-200 rounded-xl p-2 shadow-sm">
-                      <ApiKeysManager />
-                    </div>
-                  </div>
-
-                  <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end">
+                  <DialogTrigger asChild>
                     <button
-                      onClick={() => {
-                        setIsApiModalOpen(false);
-                        refreshDashboard();
-                      }}
                       style={{
-                        height: 36,
+                        height: 40,
                         padding: "0 16px",
-                        borderRadius: 6,
+                        borderRadius: 8,
+                        border: surfaceBorder,
+                        boxShadow: surfaceShadow,
                         background: C.navy,
                         color: "#fff",
                         fontSize: 14,
-                        fontWeight: 600,
+                        fontWeight: 700,
                         display: "inline-flex",
                         alignItems: "center",
-                        border: "none",
+                        gap: 6,
                         cursor: "pointer",
+                        letterSpacing: "0.02em",
                       }}
                     >
-                      Done
+                      <KeyRound size={14} />
+                      Create API Key
+                      <ArrowRight size={14} />
                     </button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            ) : undefined
-          )}
+                  </DialogTrigger>
 
-          {/* ─── STEP 2 ─────────────────────────────────────────────────── */}
-          {renderStep(
-            2,
-            "Validate incoming events",
-            hasApiKey
-              ? hasReceivedData
-                ? "Integration verified."
-                : "Send your first event to verify the integration."
-              : "Complete Step 1 first.",
-            hasReceivedData ? "complete" : hasApiKey ? "active" : "locked",
-            hasApiKey && !hasReceivedData ? (
-              <Link
-                href="/docs/test-events"
-                style={{
-                  height: 36,
-                  padding: "0 14px",
-                  borderRadius: 8,
-                  background: "#F3F4F6",
-                  border: surfaceBorder,
-                  color: C.navy,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  textDecoration: "none",
-                }}
-              >
-                <Send size={13} />
-                Send test event
-              </Link>
-            ) : hasReceivedData ? (
-              <div
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 13,
-                  color: "#059669",
-                  fontWeight: 600,
-                }}
-              >
-                <CheckCircle2 size={14} />
-                Event received
-              </div>
-            ) : undefined
-          )}
+                  <DialogContent
+                    className="sm:max-w-3xl p-0 border-slate-200 shadow-xl overflow-hidden rounded-xl"
+                    style={{ fontFamily: sans }}
+                  >
+                    <DialogHeader className="px-6 py-5 border-b border-slate-100 bg-white">
+                      <DialogTitle className="flex items-center gap-2.5 text-lg text-slate-900 tracking-tight">
+                        <ShieldAlert className="h-5 w-5 text-blue-600" />
+                        API Credentials
+                      </DialogTitle>
+                      <DialogDescription className="text-sm text-slate-500 mt-1.5">
+                        Generate and store your API keys securely. Raw keys are
+                        only displayed once.
+                      </DialogDescription>
+                    </DialogHeader>
 
-          {/* ─── STEP 3 ─────────────────────────────────────────────────── */}
-          {renderStep(
-            3,
-            "Your dashboard is live",
-            "Monitor churn-risk accounts and trigger recovery.",
-            hasReceivedData ? "complete" : "locked",
-            hasReceivedData ? (
-              <Link
-                href="/dashboard"
-                style={{
-                  height: 36,
-                  padding: "0 16px",
-                  borderRadius: 8,
-                  background: "#10B981",
-                  color: "#fff",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  textDecoration: "none",
-                  boxShadow: "0 1px 3px rgba(16,185,129,0.25)",
-                }}
-              >
-                Go to Dashboard
-                <ChevronRight size={13} />
-              </Link>
-            ) : undefined
-          )}
-        </ol>
+                    <div className="p-6 bg-slate-50/50 max-h-[60vh] overflow-y-auto">
+                      <div className="bg-white border border-slate-200 rounded-xl p-2 shadow-sm">
+                        <ApiKeysManager />
+                      </div>
+                    </div>
+
+                    <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end">
+                      <button
+                        onClick={() => {
+                          setIsApiModalOpen(false);
+                          refreshDashboard();
+                        }}
+                        style={{
+                          height: 36,
+                          padding: "0 16px",
+                          borderRadius: 6,
+                          background: C.navy,
+                          color: "#fff",
+                          fontSize: 14,
+                          fontWeight: 600,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          border: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              ) : undefined
+            )}
+
+            {/* ─── STEP 2 ─────────────────────────────────────────────── */}
+            {renderStep(
+              2,
+              "Validate incoming events",
+              hasApiKey
+                ? hasReceivedData
+                  ? "Integration verified."
+                  : "Send your first event to verify the integration."
+                : "Complete Step 1 first.",
+              hasReceivedData ? "complete" : hasApiKey ? "active" : "locked",
+              hasApiKey && !hasReceivedData ? (
+                <Link
+                  href="/docs/test-events"
+                  style={{
+                    height: 40,
+                    padding: "0 16px",
+                    borderRadius: 8,
+                    border: surfaceBorder,
+                    boxShadow: surfaceShadow,
+                    background: "#F3F4F6",
+                    color: C.navy,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    textDecoration: "none",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  <Send size={14} />
+                  Send test event
+                </Link>
+              ) : hasReceivedData ? (
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 14,
+                    color: "#059669",
+                    fontWeight: 700,
+                  }}
+                >
+                  <CheckCircle2 size={14} />
+                  Event received
+                </div>
+              ) : undefined
+            )}
+
+            {/* ─── STEP 3 ─────────────────────────────────────────────── */}
+            {renderStep(
+              3,
+              "Your dashboard is live",
+              "Monitor churn-risk accounts and trigger recovery.",
+              hasReceivedData ? "complete" : "locked",
+              hasReceivedData ? (
+                <Link
+                  href="/dashboard"
+                  style={{
+                    height: 40,
+                    padding: "0 16px",
+                    borderRadius: 8,
+                    border: surfaceBorder,
+                    boxShadow: surfaceShadow,
+                    background: "#10B981",
+                    color: "#fff",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    textDecoration: "none",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  Go to Dashboard
+                  <ChevronRight size={14} />
+                </Link>
+              ) : undefined
+            )}
+          </ol>
+        </div>
+
+        {/* ─── Compact Footer ─────────────────────────────────────────── */}
+        <footer
+          style={{
+            marginTop: 48,
+            paddingTop: 16,
+            borderTop: surfaceBorder,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 13, color: C.navySoft, fontWeight: 500 }}>
+            Need help?
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link
+              href="/docs"
+              style={{
+                height: 32,
+                padding: "0 12px",
+                borderRadius: 6,
+                background: C.navy,
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                textDecoration: "none",
+              }}
+            >
+              Docs
+              <ExternalLink size={11} />
+            </Link>
+            <Link
+              href="/support"
+              style={{
+                height: 32,
+                padding: "0 12px",
+                borderRadius: 6,
+                background: "#F3F4F6",
+                border: surfaceBorder,
+                color: C.navy,
+                fontSize: 12,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                textDecoration: "none",
+              }}
+            >
+              Support
+            </Link>
+          </div>
+        </footer>
       </div>
 
-      {/* ─── Compact Footer (~60px) ─────────────────────────────────────── */}
-      <footer
-        style={{
-          marginTop: 32,
-          paddingTop: 16,
-          borderTop: surfaceBorder,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 10,
-        }}
-      >
-        <span style={{ fontSize: 13, color: C.navySoft, fontWeight: 500 }}>
-          Need help?
-        </span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Link
-            href="/docs"
-            style={{
-              height: 32,
-              padding: "0 12px",
-              borderRadius: 6,
-              background: C.navy,
-              color: "#fff",
-              fontSize: 12,
-              fontWeight: 700,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 5,
-              textDecoration: "none",
-            }}
-          >
-            Docs
-            <ExternalLink size={11} />
-          </Link>
-          <Link
-            href="/support"
-            style={{
-              height: 32,
-              padding: "0 12px",
-              borderRadius: 6,
-              background: "#F3F4F6",
-              border: surfaceBorder,
-              color: C.navy,
-              fontSize: 12,
-              fontWeight: 600,
-              display: "inline-flex",
-              alignItems: "center",
-              textDecoration: "none",
-            }}
-          >
-            Support
-          </Link>
-        </div>
-      </footer>
-
-      <style jsx global>{`
-        @keyframes pulse {
+      {/* ─── Scoped keyframes (no global collision) ───────────────────── */}
+      <style jsx>{`
+        @keyframes qsg-pulse {
           0%, 100% {
             opacity: 1;
           }
           50% {
             opacity: 0.5;
-          }
-        }
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
           }
         }
       `}</style>

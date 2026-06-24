@@ -8,7 +8,6 @@ import {
   Send
 } from "lucide-react";
 import Logo from "@/components/ui/logo";
-import LogoutButton from "@/components/dashboard/logout-button";
 
 export default function DashboardLayout({
   children,
@@ -62,13 +61,6 @@ export default function DashboardLayout({
             >
               <Settings className="h-5 w-5" />
             </Link>
-
-            <LogoutButton />
-            
-            {/* User Profile Avatar */}
-            <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-[#0A192F] to-blue-600 text-white flex items-center justify-center text-sm font-semibold shadow-sm cursor-pointer ring-2 ring-transparent hover:ring-blue-100 transition-all">
-              U
-            </div>
           </div>
         </div>
       </header>

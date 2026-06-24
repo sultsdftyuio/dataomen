@@ -7,11 +7,8 @@ from typing_extensions import Annotated
 
 # Adjust these imports to match your project's internal structure
 from api.database import get_supabase
-from api.auth import get_current_tenant
+from api.auth import get_auth_context, AuthContext
 from api.services.security.api_keys import ApiKeyVault
-
-# Optional: Import Supabase-specific exception for better observability
-# from postgrest.exceptions import APIError
 
 router = APIRouter(prefix="/v1/api-keys", tags=["Developer Vault"])
 logger = logging.getLogger(__name__)
@@ -66,13 +63,34 @@ class PaginatedApiKeyResponse(BaseModel):
     limit: int
     offset: int
 
+
+# --- Dependencies ---
+
+async def get_real_tenant_id(
+    auth: AuthContext = Depends(get_auth_context), 
+    supabase = Depends(get_supabase)
+) -> str:
+    """
+    Resolve the real tenant_id for the user.
+    auth.user_id is the user's UUID, not the tenant_id. We must look it up.
+    """
+    response = supabase.table("tenant_users").select("tenant_id").eq("user_id", auth.user_id).execute()
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not associated with any tenant."
+        )
+    return response.data[0]["tenant_id"]
+
+
 # --- Endpoints ---
 
 @router.post("/generate", response_model=KeyGenerationResponse, status_code=status.HTTP_201_CREATED)
 async def generate_api_key(
     payload: GenerateKeyRequest,
-    tenant_id: str = Depends(get_current_tenant),
-supabase = Depends(get_supabase)
+    auth: AuthContext = Depends(get_auth_context),
+    tenant_id: str = Depends(get_real_tenant_id),
+    supabase = Depends(get_supabase)
 ):
     """
     Generates a new production API key.
@@ -93,14 +111,16 @@ supabase = Depends(get_supabase)
             )
 
     # 2. Soft limit: prevent abuse by capping active keys per tenant
+    # Uses .is_("revoked_at", "null") instead of the missing .eq("is_revoked", False)
     existing = (
         supabase.table("api_keys")
         .select("id", count="exact")
         .eq("tenant_id", tenant_id)
-        .eq("is_revoked", False)
+        .is_("revoked_at", "null")
         .execute()
     )
-    if existing.count >= 100:
+    
+    if existing.count is not None and existing.count >= 100:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Maximum number of active API keys reached."
@@ -115,6 +135,9 @@ supabase = Depends(get_supabase)
         )
 
         db_record = key_data["db_record"]
+        
+        # Add creator metadata
+        db_record["created_by"] = auth.user_id
 
         # 4. Persist the hash and metadata to the Vault (Supabase)
         response = supabase.table("api_keys").insert(db_record).execute()
@@ -126,26 +149,26 @@ supabase = Depends(get_supabase)
                 detail="Failed to persist API key to the vault."
             )
 
-        # 5. Return the payload. The plaintext_key leaves the server here and is never seen again.
+        # 5. Sync active key prefix with tenant_settings (matches Next.js behavior)
+        supabase.table("tenant_settings").upsert(
+            {
+                "tenant_id": tenant_id, 
+                "api_key": db_record["key_id"], 
+                "key_last_updated": db_record["created_at"]
+            }
+        ).execute()
+
+        # 6. Return the payload. The plaintext_key leaves the server here and is never seen again.
         return KeyGenerationResponse(
             plaintext_key=key_data["plaintext_key"],
-            masked_key=db_record["masked_key"],
+            masked_key=key_data["masked_key"],
             key_id=db_record["key_id"],
-            name=db_record["name"]
+            name=key_data["name"]
         )
 
     except HTTPException:
         # Prevent catching our own HTTPExceptions
         raise
-    # except APIError:
-    #     logger.exception(
-    #         "API key generation failed — Supabase persistence error",
-    #         extra={"tenant_id": tenant_id},
-    #     )
-    #     raise HTTPException(
-    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #         detail="An internal persistence error occurred."
-    #     )
     except Exception:
         # Use logger.exception to capture the full traceback
         logger.exception(
@@ -161,32 +184,31 @@ supabase = Depends(get_supabase)
 @router.post("/revoke", response_model=RevokeResponse, status_code=status.HTTP_200_OK)
 async def revoke_api_key(
     payload: RevokeKeyRequest,
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_real_tenant_id),
     supabase = Depends(get_supabase)
 ):
     """
     Idempotently invalidates an API key.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).isoformat()
 
     try:
         # SECURITY: Explicitly chain `.eq("tenant_id", tenant_id)` to prevent IDOR.
-        # Add `.eq("is_revoked", False)` to prevent race conditions and allow idempotency checks.
+        # Add `.is_("revoked_at", "null")` to prevent race conditions and allow idempotency checks.
         response = supabase.table("api_keys").update({
-            "is_revoked": True,
             "revoked_at": now
-        }).eq("key_id", payload.key_id).eq("tenant_id", tenant_id).eq("is_revoked", False).execute()
+        }).eq("key_id", payload.key_id).eq("tenant_id", tenant_id).is_("revoked_at", "null").execute()
 
         # If rows were updated, revocation was successful
         if response.data:
             return RevokeResponse(
                 status="revoked",
                 key_id=payload.key_id,
-                revoked_at=now
+                revoked_at=datetime.fromisoformat(now)
             )
 
         # If no rows were updated, check if the key exists at all for this tenant
-        check = supabase.table("api_keys").select("is_revoked").eq("key_id", payload.key_id).eq("tenant_id", tenant_id).execute()
+        check = supabase.table("api_keys").select("revoked_at").eq("key_id", payload.key_id).eq("tenant_id", tenant_id).execute()
 
         if not check.data:
             # Ambiguous 404 prevents enumeration attacks (keeps bad actors guessing if key or tenant is wrong)
@@ -199,23 +221,11 @@ async def revoke_api_key(
         return RevokeResponse(
             status="already_revoked",
             key_id=payload.key_id,
-            revoked_at=None
+            revoked_at=datetime.fromisoformat(check.data[0]["revoked_at"]) if check.data[0].get("revoked_at") else None
         )
 
     except HTTPException:
         raise
-    # except APIError:
-    #     logger.exception(
-    #         "API key revocation failed — Supabase persistence error",
-    #         extra={
-    #             "tenant_id": tenant_id,
-    #             "key_id": payload.key_id,
-    #         },
-    #     )
-    #     raise HTTPException(
-    #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #         detail="Failed to revoke API key."
-    #     )
     except Exception:
         logger.exception(
             "API key revocation failed",
@@ -232,7 +242,7 @@ async def revoke_api_key(
 
 @router.get("/", response_model=PaginatedApiKeyResponse, status_code=status.HTTP_200_OK)
 async def list_api_keys(
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_real_tenant_id),
     supabase = Depends(get_supabase),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -245,7 +255,7 @@ async def list_api_keys(
         response = (
             supabase.table("api_keys")
             .select(
-                "key_id, name, masked_key, created_at, expires_at, last_used_at, is_revoked",
+                "key_id, label, key_last4, created_at, revoked_at, last_used_at",
                 count="exact",
             )
             .eq("tenant_id", tenant_id)
@@ -254,8 +264,23 @@ async def list_api_keys(
             .execute()
         )
 
+        items = []
+        for row in response.data or []:
+            # Reconstruct masked key to match frontend expectation
+            masked_key = f"{ApiKeyVault.PREFIX}_{row['key_id']}_...{row['key_last4']}"
+            
+            items.append(ApiKeyMetadata(
+                key_id=row["key_id"],
+                name=row.get("label") or "",
+                masked_key=masked_key,
+                created_at=datetime.fromisoformat(row["created_at"]),
+                expires_at=None,
+                last_used_at=datetime.fromisoformat(row["last_used_at"]) if row.get("last_used_at") else None,
+                is_revoked=row.get("revoked_at") is not None
+            ))
+
         return PaginatedApiKeyResponse(
-            items=response.data or [],
+            items=items,
             total=response.count or 0,
             limit=limit,
             offset=offset,
