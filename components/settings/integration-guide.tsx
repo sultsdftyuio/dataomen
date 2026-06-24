@@ -12,8 +12,7 @@ import {
   RefreshCw,
   Send,
   Check,
-  Activity,
-  AlertTriangle
+  Activity
 } from "lucide-react";
 
 type LangTab = "curl" | "node" | "python";
@@ -40,43 +39,53 @@ export function IntegrationGuide() {
   };
 
   const snippets = {
-    curl: `curl -X POST https://api.arcli.tech/v1/events \\
-  -H "Authorization: Bearer sk_live_your_api_key_here" \\
+    curl: `curl -X POST https://api.arcli.tech/api/v1/track \\
+  -H "Authorization: Bearer arcli_live_your_api_key_here" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "event_type": "payment_failed",
+    "event_name": "payment_failed",
     "user_id": "usr_98765",
-    "metadata": { 
-      "plan": "pro_monthly",
-      "amount": 4900 
+    "idempotency_key": "evt_550e8400-e29b-41d4-a716-446655440000",
+    "properties": { 
+      "plan_tier": "pro_monthly",
+      "metadata": { "amount": 4900 }
     }
   }'`,
     node: `// Native fetch (Node.js 18+)
-const response = await fetch('https://api.arcli.tech/v1/events', {
+const response = await fetch('https://api.arcli.tech/api/v1/track', {
   method: 'POST',
   headers: {
-    'Authorization': 'Bearer sk_live_your_api_key_here',
+    'Authorization': 'Bearer arcli_live_your_api_key_here',
     'Content-Type': 'application/json'
   },
   body: JSON.stringify({
-    event_type: 'payment_failed',
+    event_name: 'payment_failed',
     user_id: 'usr_98765',
-    metadata: { plan: 'pro_monthly', amount: 4900 }
+    idempotency_key: crypto.randomUUID(),
+    properties: { 
+      plan_tier: 'pro_monthly', 
+      metadata: { amount: 4900 } 
+    }
   })
 });
 
 const data = await response.json();`,
     python: `import requests
+import uuid
 
-url = "https://api.arcli.tech/v1/events"
+url = "https://api.arcli.tech/api/v1/track"
 headers = {
-    "Authorization": "Bearer sk_live_your_api_key_here",
+    "Authorization": "Bearer arcli_live_your_api_key_here",
     "Content-Type": "application/json"
 }
 payload = {
-    "event_type": "payment_failed",
+    "event_name": "payment_failed",
     "user_id": "usr_98765",
-    "metadata": { "plan": "pro_monthly", "amount": 4900 }
+    "idempotency_key": str(uuid.uuid4()),
+    "properties": { 
+        "plan_tier": "pro_monthly", 
+        "metadata": { "amount": 4900 } 
+    }
 }
 
 response = requests.post(url, json=payload, headers=headers)
@@ -123,7 +132,7 @@ data = response.json()`
               <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Endpoint</span>
               <div className="flex items-center gap-2">
                 <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">POST</span>
-                <code className="text-sm font-mono text-[#0A192F] font-semibold">/v1/events</code>
+                <code className="text-sm font-mono text-[#0A192F] font-semibold">/api/v1/track</code>
               </div>
             </div>
             <div className="space-y-1.5">
@@ -196,14 +205,14 @@ data = response.json()`
           <div className="bg-slate-900 border-t border-slate-800 p-4 px-6 flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
             <div className="shrink-0 pt-1">
               <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
-                200 OK Response
+                202 Accepted
               </span>
             </div>
             <pre className="font-mono text-[12px] leading-relaxed text-slate-400 overflow-x-auto">
               <code>{`{
-  "success": true,
-  "event_id": "evt_01H8X...",
-  "received_at": "${new Date().toISOString()}"
+  "status": "accepted",
+  "idempotency_key": "evt_550e8400-e29b-41d4-a716-446655440000",
+  "anomalies": null
 }`}</code>
             </pre>
           </div>
@@ -222,22 +231,27 @@ data = response.json()`
             <table className="w-full text-left border-collapse text-sm">
               <tbody>
                 <tr className="border-b border-slate-100">
-                  <td className="p-4 font-mono text-blue-600 font-medium">event_type</td>
+                  <td className="p-4 font-mono text-blue-600 font-medium">event_name</td>
                   <td className="p-4"><span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">REQUIRED</span></td>
                   <td className="p-4 text-slate-500 text-xs">String identifier of the action.</td>
                 </tr>
                 <tr className="border-b border-slate-100">
-                  <td className="p-4 font-mono text-blue-600 font-medium">user_id</td>
-                  <td className="p-4"><span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">REQUIRED</span></td>
-                  <td className="p-4 text-slate-500 text-xs">Your system's unique user identifier.</td>
+                  <td className="p-4 font-mono text-slate-600">user_id</td>
+                  <td className="p-4"><span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">RECOMMENDED</span></td>
+                  <td className="p-4 text-slate-500 text-xs">Your system's unique user identifier. Crucial for active user distinct counts.</td>
                 </tr>
                 <tr className="border-b border-slate-100">
-                  <td className="p-4 font-mono text-slate-600">metadata</td>
+                  <td className="p-4 font-mono text-slate-600">idempotency_key</td>
                   <td className="p-4"><span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">OPTIONAL</span></td>
-                  <td className="p-4 text-slate-500 text-xs">JSON object containing context (amount, plan).</td>
+                  <td className="p-4 text-slate-500 text-xs">UUID for retry-safety. Auto-generated if omitted.</td>
+                </tr>
+                <tr className="border-b border-slate-100">
+                  <td className="p-4 font-mono text-slate-600">properties</td>
+                  <td className="p-4"><span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">OPTIONAL</span></td>
+                  <td className="p-4 text-slate-500 text-xs">Event properties (e.g., plan_tier, reason, rating) and nested metadata object.</td>
                 </tr>
                 <tr>
-                  <td className="p-4 font-mono text-slate-600">occurred_at</td>
+                  <td className="p-4 font-mono text-slate-600">timestamp</td>
                   <td className="p-4"><span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">OPTIONAL</span></td>
                   <td className="p-4 text-slate-500 text-xs">ISO-8601 timestamp (defaults to now).</td>
                 </tr>
@@ -261,6 +275,7 @@ data = response.json()`
                 { name: "subscription_cancelled", desc: "User explicitly requested cancellation." },
                 { name: "trial_expired", desc: "User failed to convert at trial end." },
                 { name: "downgrade_requested", desc: "User moved to a lower-tier plan." },
+                { name: "feedback_submitted", desc: "Requires 'reason', 'feedback_text', or 'rating' inside properties." },
               ].map((ev) => (
                 <div key={ev.name} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
                   <code className="text-xs font-mono font-semibold text-[#0A192F]">{ev.name}</code>
@@ -282,7 +297,7 @@ data = response.json()`
           <div>
             <h4 className="text-sm font-semibold text-[#0A192F] mb-1">Idempotency & Retries</h4>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Events are deduplicated automatically. If you encounter a <strong className="font-mono bg-slate-100 px-1 rounded text-slate-700">500</strong> or <strong className="font-mono bg-slate-100 px-1 rounded text-slate-700">503</strong> response, or a network timeout, it is perfectly safe to retry the request using exponential backoff.
+              Events are deduplicated automatically via the <code>idempotency_key</code>. If you encounter a <strong className="font-mono bg-slate-100 px-1 rounded text-slate-700">500</strong> or <strong className="font-mono bg-slate-100 px-1 rounded text-slate-700">503</strong> response, or a network timeout, it is perfectly safe to retry the request using exponential backoff.
             </p>
           </div>
         </div>
@@ -294,7 +309,7 @@ data = response.json()`
           <div>
             <h4 className="text-sm font-semibold text-[#0A192F] mb-1">Security Bearer Scheme</h4>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Ensure your integration explicitly sets the header as <code>Authorization: Bearer sk_live_***</code>. Requests missing the <code>Bearer</code> prefix will be rejected with a 401 Unauthorized status.
+              Ensure your integration explicitly sets the header as <code>Authorization: Bearer arcli_live_***</code>. Requests missing the <code>Bearer</code> prefix or proper token signature will be rejected with a 401 Unauthorized status.
             </p>
           </div>
         </div>
@@ -323,7 +338,7 @@ data = response.json()`
             </div>
             
             <div className="w-full md:w-1/3 space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Event Type</label>
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Event Name</label>
               <select 
                 value={testEvent}
                 onChange={(e) => setTestEvent(e.target.value)}
@@ -332,6 +347,7 @@ data = response.json()`
                 <option value="payment_failed">payment_failed</option>
                 <option value="subscription_cancelled">subscription_cancelled</option>
                 <option value="trial_expired">trial_expired</option>
+                <option value="feedback_submitted">feedback_submitted</option>
                 <option value="custom_event">custom_event</option>
               </select>
             </div>
