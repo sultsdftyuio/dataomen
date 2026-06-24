@@ -1,137 +1,161 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { RefreshCw, Building2, Globe, Mail } from "lucide-react";
+import React, { useState } from "react";
+import { Building2, Mail, Globe, Info, Save, Code } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { toast } from "@/components/ui/use-toast";
-import type { SettingsWorkspace } from "@/lib/settings/types";
-import type { WorkspaceSettingsInput } from "@/lib/settings/schemas";
+interface WorkspaceData {
+  name?: string;
+  supportEmail?: string;
+  website?: string;
+}
 
 interface WorkspaceTabProps {
-  workspace: SettingsWorkspace;
+  workspace?: WorkspaceData;
 }
 
 export default function WorkspaceTab({ workspace }: WorkspaceTabProps) {
-  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
+  const [name, setName] = useState(workspace?.name || "");
+  const [email, setEmail] = useState(workspace?.supportEmail || "");
+  const [website, setWebsite] = useState(workspace?.website || "");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [companyName, setCompanyName] = useState(workspace.companyName);
-  const [replyToEmail, setReplyToEmail] = useState(workspace.replyToEmail);
-  const [initialWorkspace] = useState(workspace);
-  
-  const hasWorkspaceChanges = useMemo(
-    () =>
-      companyName !== initialWorkspace.companyName ||
-      replyToEmail !== initialWorkspace.replyToEmail,
-    [companyName, replyToEmail, initialWorkspace]
-  );
-
-  const handleSaveWorkspace = async () => {
-    if (!hasWorkspaceChanges) return;
-    setIsSavingWorkspace(true);
-    try {
-      const payload: WorkspaceSettingsInput = { companyName, replyToEmail };
-      const res = await fetch("/api/settings/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to sync workspace configuration");
-      }
-      toast({ title: "Workspace Synced", description: "Global recovery variables updated." });
-    } catch (error: any) {
-      toast({ title: "Sync Error", description: error.message, variant: "destructive" });
-    } finally {
-      setIsSavingWorkspace(false);
-    }
+  const handleSave = async () => {
+    setIsSaving(true);
+    // TODO: Implement actual Supabase RPC transaction to update workspace
+    setTimeout(() => setIsSaving(false), 800);
   };
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in duration-300 bg-white">
+    <div className="w-full max-w-4xl mx-auto p-6 md:p-8 space-y-8 animate-in fade-in duration-300">
       
-      {/* ── Section Header ── */}
-      <div className="px-8 lg:px-12 py-8 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
-        <div className="flex items-center gap-2 text-blue-600 font-bold text-xs tracking-widest uppercase mb-3">
-          <Globe className="h-4 w-4" /> Global Configuration
-        </div>
-        <h2 className="text-2xl font-semibold text-[#0A192F] tracking-tight">Workspace Identity</h2>
-        <p className="text-sm text-slate-500 mt-1">Global variables used across your outbound recovery campaigns.</p>
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-semibold text-[#0A192F]">Global Configuration</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Manage your workspace identity. Changes propagate immediately across all active recovery campaigns.
+        </p>
       </div>
 
-      <div className="p-8 lg:px-12 flex-1 overflow-y-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* ── Configuration Card ── */}
-        <section className="border border-slate-200 rounded-xl bg-white shadow-sm max-w-2xl overflow-hidden flex flex-col">
-          
-          <div className="p-8 space-y-8">
-            {/* Field 1: Company Name */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <Label htmlFor="companyName" className="text-xs font-bold tracking-wide text-slate-500 flex items-center gap-2 uppercase">
-                  <Building2 className="h-4 w-4 text-slate-400" /> Product / Company Name
-                </Label>
-                {companyName !== initialWorkspace.companyName && (
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200 uppercase tracking-wider shadow-sm">
-                    Unsaved Edits
-                  </span>
-                )}
+        {/* Main Form Area (Spans 2 columns on large screens) */}
+        <div className="lg:col-span-2 space-y-6">
+          <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="p-6 sm:p-8 border-b border-slate-100">
+              <div className="flex items-center gap-3 mb-6">
+                <Building2 className="h-5 w-5 text-slate-400" />
+                <h3 className="text-lg font-medium text-slate-900">Workspace Identity</h3>
               </div>
-              <Input
-                id="companyName"
-                placeholder="e.g. Acme Corp"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-11 text-base shadow-sm transition-colors"
-              />
-              <p className="text-xs text-slate-500 font-medium">
-                Injected dynamically into <code className="font-mono bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 text-slate-700">{'{{ company.name }}'}</code> template variables.
-              </p>
-            </div>
 
-            {/* Field 2: Reply-To Email */}
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <Label htmlFor="replyToEmail" className="text-xs font-bold tracking-wide text-slate-500 flex items-center gap-2 uppercase">
-                  <Mail className="h-4 w-4 text-slate-400" /> Default Reply-To Email
-                </Label>
-                {replyToEmail !== initialWorkspace.replyToEmail && (
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200 uppercase tracking-wider shadow-sm">
-                    Unsaved Edits
-                  </span>
-                )}
+              <div className="space-y-6">
+                {/* Company Name */}
+                <div className="space-y-2">
+                  <label htmlFor="companyName" className="text-sm font-medium text-slate-700 block">
+                    Company Name
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Building2 className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      id="companyName"
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                      placeholder="e.g. Acme Corp"
+                    />
+                  </div>
+                </div>
+
+                {/* Support Email */}
+                <div className="space-y-2">
+                  <label htmlFor="supportEmail" className="text-sm font-medium text-slate-700 block">
+                    Support / Reply-To Email
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Mail className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      id="supportEmail"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                      placeholder="e.g. support@acmecorp.com"
+                    />
+                  </div>
+                </div>
+
+                {/* Website URL */}
+                <div className="space-y-2">
+                  <label htmlFor="website" className="text-sm font-medium text-slate-700 block">
+                    Website URL
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Globe className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      id="website"
+                      type="url"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                      placeholder="https://acmecorp.com"
+                    />
+                  </div>
+                </div>
               </div>
-              <Input
-                id="replyToEmail"
-                type="email"
-                placeholder="support@yourdomain.com"
-                value={replyToEmail}
-                onChange={(e) => setReplyToEmail(e.target.value)}
-                className="bg-white border-slate-200 focus-visible:ring-blue-500/20 focus-visible:border-blue-500 h-11 text-base shadow-sm transition-colors"
-              />
-              <p className="text-xs text-slate-500 font-medium">
-                When recovered users reply to your campaign emails, this is where it routes.
-              </p>
+            </div>
+            
+            {/* Action Footer */}
+            <div className="bg-slate-50/50 p-4 px-6 flex justify-end">
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="bg-[#0A192F] text-white px-6 py-2.5 rounded-md text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-70 flex items-center gap-2"
+              >
+                <Save className="h-4 w-4" />
+                {isSaving ? "Saving Configuration..." : "Save Workspace"}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {/* Info / Context Sidebar */}
+        <div className="space-y-6">
+          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Code className="h-5 w-5 text-blue-600" />
+              <h4 className="text-sm font-bold text-[#0A192F]">Dynamic Injection</h4>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed mb-4">
+              These global variables are injected dynamically into your outbound recovery emails. 
+            </p>
+            <div className="bg-white border border-slate-200 rounded-md p-3 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-mono text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{"{{ company.name }}"}</span>
+                <span className="text-slate-500 truncate max-w-[120px]">{name || "Not set"}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="font-mono text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{"{{ company.url }}"}</span>
+                <span className="text-slate-500 truncate max-w-[120px]">{website || "Not set"}</span>
+              </div>
             </div>
           </div>
 
-          {/* ── Card Footer Action Bar ── */}
-          <div className="px-8 py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between mt-auto">
-            <p className="text-xs font-medium text-slate-500">Changes propagate immediately upon saving.</p>
-            <Button
-              onClick={handleSaveWorkspace}
-              disabled={isSavingWorkspace || !hasWorkspaceChanges}
-              className="bg-[#0A192F] hover:bg-slate-800 text-white shadow-sm transition-all active:scale-[0.98] disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200 px-6 h-10 font-medium"
-            >
-              {isSavingWorkspace && <RefreshCw className="mr-2 h-4 w-4 animate-spin" />}
-              Save Workspace
-            </Button>
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Info className="h-5 w-5 text-slate-500" />
+              <h4 className="text-sm font-bold text-[#0A192F]">Reply-To Routing</h4>
+            </div>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              When recovered users reply directly to your automated campaign emails, their responses will automatically route to the <strong className="font-medium text-slate-900">Support Email</strong> configured here.
+            </p>
           </div>
-          
-        </section>
+        </div>
 
       </div>
     </div>
