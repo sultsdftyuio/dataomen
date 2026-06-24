@@ -9,6 +9,8 @@ from typing import Generator, List, Dict, Any, Optional
 import dramatiq
 from dramatiq.brokers.redis import RedisBroker
 from supabase import Client, create_client, ClientOptions
+from sqlalchemy import text
+from api.database import SessionLocal
 
 from api.recovery_common import (
     ClaimOutcome,
@@ -209,67 +211,76 @@ PIPELINE_BATCH_MAX_SLEEP_SEC = float(os.getenv("PIPELINE_BATCH_MAX_SLEEP_SEC", "
 
 # api/worker.py
 @dramatiq.actor(max_retries=3, time_limit=30000)
+@dramatiq.actor(max_retries=3, time_limit=30000)
 def process_dodo_webhook(webhook_id: str):
-    db = get_db_sync()
-    
-    event = db.fetchone("""
-        SELECT payload, tenant_id FROM dodo_webhook_events 
-        WHERE webhook_id = %s AND status = 'pending'
-        FOR UPDATE SKIP LOCKED;
-    """, (webhook_id,))
-    
-    if not event:
-        return
+    # Use the SessionLocal context manager to ensure safe connection pooling
+    with SessionLocal() as db:
+        try:
+            # 1. Use text() and named parameters (:webhook_id)
+            # 2. Use .mappings().fetchone() to allow dict-like access
+            event = db.execute(text("""
+                SELECT payload, tenant_id FROM dodo_webhook_events 
+                WHERE webhook_id = :webhook_id AND status = 'pending'
+                FOR UPDATE SKIP LOCKED;
+            """), {"webhook_id": webhook_id}).mappings().fetchone()
+            
+            if not event:
+                return
 
-    tenant_id = event["tenant_id"]
-    payload = event["payload"]
-    event_type = payload.get("type")
-    data = payload.get("data", {})
+            tenant_id = event["tenant_id"]
+            payload = event["payload"]
+            event_type = payload.get("type")
+            data = payload.get("data", {})
 
-    try:
-        # 1. New Subscription or Successful Renewal
-        if event_type in ["subscription.active", "subscription.renewed"]:
-            db.execute("""
-                UPDATE tenants 
-                SET billing_status = 'active', 
-                    dodo_customer_id = %s,
-                    dodo_subscription_id = %s,
-                    current_period_end = %s
-                WHERE id = %s
-            """, (
-                data["customer_id"], 
-                data["subscription_id"],
-                data["current_period_end"], # Map to Dodo's date field
-                tenant_id
-            ))
+            # 1. New Subscription or Successful Renewal
+            if event_type in ["subscription.active", "subscription.renewed"]:
+                db.execute(text("""
+                    UPDATE tenants 
+                    SET billing_status = 'active', 
+                        dodo_customer_id = :customer_id,
+                        dodo_subscription_id = :subscription_id,
+                        current_period_end = :current_period_end
+                    WHERE id = :tenant_id
+                """), {
+                    "customer_id": data.get("customer_id"), 
+                    "subscription_id": data.get("subscription_id"),
+                    "current_period_end": data.get("current_period_end"), 
+                    "tenant_id": tenant_id
+                })
 
-        # 2. Payment Failure (Grace Period Logic)
-        elif event_type == "subscription.payment_failed":
-            db.execute("""
-                UPDATE tenants 
-                SET billing_status = 'past_due'
-                WHERE id = %s
-            """, (tenant_id,))
+            # 2. Payment Failure (Grace Period Logic)
+            elif event_type == "subscription.payment_failed":
+                db.execute(text("""
+                    UPDATE tenants 
+                    SET billing_status = 'past_due'
+                    WHERE id = :tenant_id
+                """), {"tenant_id": tenant_id})
 
-        # 3. Cancellation (Downgrade to Free/Locked)
-        elif event_type == "subscription.canceled":
-            db.execute("""
-                UPDATE tenants 
-                SET billing_status = 'canceled',
-                    dodo_subscription_id = NULL
-                WHERE id = %s
-            """, (tenant_id,))
+            # 3. Cancellation (Downgrade to Free/Locked)
+            elif event_type == "subscription.canceled":
+                db.execute(text("""
+                    UPDATE tenants 
+                    SET billing_status = 'canceled',
+                        dodo_subscription_id = NULL
+                    WHERE id = :tenant_id
+                """), {"tenant_id": tenant_id})
 
-        # Mark as completed
-        db.execute("UPDATE dodo_webhook_events SET status = 'completed' WHERE webhook_id = %s", (webhook_id,))
-        db.commit()
+            # Mark as completed
+            db.execute(
+                text("UPDATE dodo_webhook_events SET status = 'completed' WHERE webhook_id = :webhook_id"), 
+                {"webhook_id": webhook_id}
+            )
+            db.commit()
 
-    except Exception as e:
-        db.rollback()
-        db.execute("UPDATE dodo_webhook_events SET status = 'failed' WHERE webhook_id = %s", (webhook_id,))
-        db.commit()
-        raise e
-
+        except Exception as e:
+            db.rollback()
+            # Safety catch: record the failure in the DB
+            db.execute(
+                text("UPDATE dodo_webhook_events SET status = 'failed' WHERE webhook_id = :webhook_id"), 
+                {"webhook_id": webhook_id}
+            )
+            db.commit()
+            raise e
 # ---------------------------------------------------------
 # PIPELINE ORCHESTRATOR
 # ---------------------------------------------------------
