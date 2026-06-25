@@ -240,7 +240,7 @@ async def revoke_api_key(
         )
 
 
-@router.get("/", response_model=PaginatedApiKeyResponse, status_code=status.HTTP_200_OK)
+@router.get("", response_model=PaginatedApiKeyResponse, status_code=status.HTTP_200_OK)
 async def list_api_keys(
     tenant_id: str = Depends(get_real_tenant_id),
     supabase = Depends(get_supabase),

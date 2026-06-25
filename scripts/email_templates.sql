@@ -1,3 +1,106 @@
+CREATE OR REPLACE FUNCTION reserve_email_dispatch(
+    p_dispatch_token TEXT,
+    p_tenant_id TEXT,
+    p_send_id TEXT,
+    p_max_attempts INT
+)
+RETURNS TABLE (
+    record JSONB,
+    claim_status TEXT,
+    cooldown_status TEXT,
+    attempt_count INT,
+    error TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_record JSONB;
+    v_claimed BOOLEAN := FALSE;
+    v_claim_status TEXT := 'missing';
+    v_cooldown_status TEXT := 'ok';
+    v_attempt_count INT;
+    v_now TIMESTAMPTZ := NOW();
+BEGIN
+    -- 1. Claim dispatch token (idempotent; assumes your existing claim logic)
+    -- Replace with your actual token claim logic or call your existing RPC
+    SELECT TRUE INTO v_claimed
+    FROM recovery_email_dispatch_tokens
+    WHERE token = p_dispatch_token
+      AND tenant_id = p_tenant_id
+      AND send_id = p_send_id
+      AND claimed_at IS NULL
+    FOR UPDATE SKIP LOCKED;
+    
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT NULL::JSONB, 'duplicate'::TEXT, NULL::TEXT, NULL::INT, NULL::TEXT;
+        RETURN;
+    END IF;
+    
+    UPDATE recovery_email_dispatch_tokens
+    SET claimed_at = v_now
+    WHERE token = p_dispatch_token;
+    
+    v_claim_status := 'claimed';
+
+    -- 2. Fetch record
+    SELECT TO_JSONB(r.*) INTO v_record
+    FROM recovery_email_table r
+    WHERE r.tenant_id = p_tenant_id AND r.id = p_send_id;
+    
+    IF v_record IS NULL THEN
+        RETURN QUERY SELECT v_record, v_claim_status, 'missing_record'::TEXT, NULL::INT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    -- 3. Terminal status check
+    IF (v_record->>'status')::TEXT IN ('provider_accepted', 'delivered', 'dead_lettered') THEN
+        RETURN QUERY SELECT v_record, v_claim_status, 'terminal'::TEXT, NULL::INT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    -- 4. Max attempts
+    IF (v_record->>'attempt_count')::INT >= p_max_attempts THEN
+        RETURN QUERY SELECT v_record, v_claim_status, 'max_attempts'::TEXT, NULL::INT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    -- 5. Global cap (24h)
+    PERFORM 1 FROM recovery_email_table
+    WHERE tenant_id = p_tenant_id
+      AND user_id = (v_record->>'user_id')::TEXT
+      AND status IN ('provider_accepted', 'delivered')
+      AND provider_accepted_at >= v_now - INTERVAL '24 hours'
+    LIMIT 1;
+    
+    IF FOUND THEN
+        RETURN QUERY SELECT v_record, v_claim_status, 'global_cap'::TEXT, NULL::INT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    -- 6. Template cooldown (7d)
+    PERFORM 1 FROM recovery_email_table
+    WHERE tenant_id = p_tenant_id
+      AND user_id = (v_record->>'user_id')::TEXT
+      AND campaign_type = (v_record->>'campaign_type')::TEXT
+      AND status IN ('provider_accepted', 'delivered')
+      AND provider_accepted_at >= v_now - INTERVAL '7 days'
+    LIMIT 1;
+    
+    IF FOUND THEN
+        RETURN QUERY SELECT v_record, v_claim_status, 'template_cooldown'::TEXT, NULL::INT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    -- 7. Reserve attempt
+    UPDATE recovery_email_table
+    SET attempt_count = attempt_count + 1,
+        updated_at = v_now
+    WHERE id = p_send_id
+    RETURNING attempt_count INTO v_attempt_count;
+
+    RETURN QUERY SELECT v_record, v_claim_status, 'ok'::TEXT, v_attempt_count, NULL::TEXT;
+END;
+$$;
 -- ============================================================================
 -- 1. EMAIL TEMPLATES TABLE (Perfect as-is)
 -- ============================================================================

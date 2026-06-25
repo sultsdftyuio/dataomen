@@ -3,7 +3,7 @@ import os
 import time
 
 from api.tasks import get_supabase_client
-from api.worker import OutboxDispatcher
+from api.worker_main import OutboxDispatcher
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 POLL_INTERVAL_SEC = int(os.getenv("OUTBOX_POLL_INTERVAL_SEC", "10"))

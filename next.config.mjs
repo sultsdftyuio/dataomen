@@ -44,8 +44,14 @@ const resolveBackendRewriteBase = () => {
     'https://data-omen-api-tnps9.ondigitalocean.app',
   ].filter(Boolean);
 
-  const preferred = candidates.find((urlValue) => !isLegacyBackend(urlValue));
-  return preferred || candidates[0];
+  // Prevent Next.js from proxying to itself by filtering out frontend domains
+  const preferred = candidates.find((urlValue) => 
+    !isLegacyBackend(urlValue) && 
+    !urlValue.includes('arcli.tech')
+  );
+  
+  // Fallback safely to the DigitalOcean cluster
+  return preferred || 'https://data-omen-api-tnps9.ondigitalocean.app'; 
 };
 
 /** @type {import('next').NextConfig} */
@@ -101,8 +107,6 @@ const nextConfig = {
     ]
   },
 
-  // 5. Hybrid Performance Paradigm: Deterministic API Routing
-  // Maps Vercel Edge requests to DigitalOcean App Platform clusters.
   // 5. Hybrid Performance Paradigm: Deterministic API Routing
   // Maps Vercel Edge requests to DigitalOcean App Platform clusters.
   async rewrites() {

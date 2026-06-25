@@ -12,10 +12,10 @@ importable with the exact same names and signatures::
 
 The implementation has been refactored into three focused modules:
 
-* ``churn_config``   – constants, env config, Pydantic models
-* ``churn_queries``  – database query layer (aggregation, DISTINCT, memory
+* ``churn_config``    constants, env config, Pydantic models
+* ``churn_queries``   database query layer (aggregation, DISTINCT, memory
   protection fixes applied)
-* ``churn_scoring``  – this file; business logic and re-exports
+* ``churn_scoring``   this file; business logic and re-exports
 
 Production fixes applied (see churn_queries.py for query-level details):
 
@@ -41,7 +41,7 @@ from pydantic import ValidationError
 # ---------------------------------------------------------------------------
 # Re-exports from churn_config for full backward compatibility
 # ---------------------------------------------------------------------------
-from api.services.churn_config import  # noqa: F401
+from api.services.churn_config import (
     ACTIVITY_ROLLUP_TABLE,
     CHURN_USE_ACTIVITY_ROLLUP,
     DEFAULT_EVENT_BATCH_SIZE,
