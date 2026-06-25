@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import { type User } from "@supabase/supabase-js";
 import { Building2, Database, UserCircle, HelpCircle, Mail } from "lucide-react";
 
-import AccountTab from "@/components/settings/account-tab";
+// FIX 1: Import AccountPlanTab as a named export
+import { AccountPlanTab } from "@/components/settings/account-tab";
 import WorkspaceTab from "@/components/settings/workspace-tab";
 import { DataSourcesTab } from "@/components/settings/data-sources-tab";
 import type { SettingsSnapshot } from "@/lib/settings/types";
@@ -89,20 +90,22 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
       <main className="flex-1 flex flex-col relative bg-slate-50/30 overflow-y-auto w-full h-full p-6 md:p-8 lg:p-10">
         <div className="w-full max-w-5xl mx-auto">
           
+          {/* FIX 2: Pass flattened props matching WorkspaceSettingsProps interface */}
           {activeTab === "workspace" && (
-            <WorkspaceTab workspace={workspaceData} />
+            <WorkspaceTab 
+              initialCompanyName={workspaceData.name}
+              initialSupportEmail={workspaceData.supportEmail}
+              initialWebsite={workspaceData.website}
+            />
           )}
           
           {activeTab === "data-sources" && (
             <DataSourcesTab />
           )}
           
+          {/* FIX 3: Use the correctly named component without unsupported children */}
           {activeTab === "account" && (
-            <AccountTab>
-               <div className="text-sm text-slate-500 py-8 text-center bg-white border border-slate-200 rounded-xl shadow-sm">
-                 Personal Profile Configuration
-               </div>
-            </AccountTab>
+            <AccountPlanTab />
           )}
 
         </div>
