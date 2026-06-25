@@ -17,6 +17,7 @@ const normalizeBackendBase = (rawValue) => {
     const parsed = new URL(candidate);
     const normalizedPath = parsed.pathname.replace(/\/+$/, '');
 
+    // Strip common API prefixes from the base URL so the rewrite rules can manage them deterministically
     if (!normalizedPath || normalizedPath === '/' || normalizedPath === '/api' || normalizedPath === '/api/v1' || normalizedPath === '/v1') {
       return parsed.origin;
     }
@@ -51,7 +52,6 @@ const resolveBackendRewriteBase = () => {
 const nextConfig = {
   // 1. Analytical Efficiency: In-Process Engine Preparation
   // Optimized for high-concurrency WASM and binary compute packages.
-  // Moved from experimental to top-level for Next.js 15+ stability.
   serverExternalPackages: [
     'duckdb', 
     'polars', 
@@ -106,21 +106,19 @@ const nextConfig = {
   async rewrites() {
     const backendUrl = resolveBackendRewriteBase();
 
-    return {
-      // Fallback rewrites run only when no local route handler/page matches.
-      // This guarantees local App Router endpoints like /api/chat/* and
-      // /api/insights remain first-class and never get shadowed.
-      fallback: [
-        {
-          source: '/api/v1/:path*',
-          destination: `${backendUrl}/api/v1/:path*`,
-        },
-        {
-          source: '/api/:path*',
-          destination: `${backendUrl}/api/:path*`,
-        },
-      ],
-    }
+    return [
+      // Translates /api/v1/api-keys -> https://data-omen-api.../v1/api-keys
+      // Crucial Fix: Drops the internal "/api" prefix so it matches FastAPI's APIRouter setup
+      {
+        source: '/api/v1/:path*',
+        destination: `${backendUrl}/v1/:path*`, 
+      },
+      // Generic fallback for any other FastAPI endpoints (e.g. /api/webhooks)
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/:path*`, 
+      },
+    ];
   },
 
   // 6. Runtime Optimizations
