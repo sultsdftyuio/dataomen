@@ -103,22 +103,29 @@ const nextConfig = {
 
   // 5. Hybrid Performance Paradigm: Deterministic API Routing
   // Maps Vercel Edge requests to DigitalOcean App Platform clusters.
+  // 5. Hybrid Performance Paradigm: Deterministic API Routing
+  // Maps Vercel Edge requests to DigitalOcean App Platform clusters.
   async rewrites() {
     const backendUrl = resolveBackendRewriteBase();
 
-    return [
-      // Translates /api/v1/api-keys -> https://data-omen-api.../v1/api-keys
-      // Crucial Fix: Drops the internal "/api" prefix so it matches FastAPI's APIRouter setup
-      {
-        source: '/api/v1/:path*',
-        destination: `${backendUrl}/v1/:path*`, 
-      },
-      // Generic fallback for any other FastAPI endpoints (e.g. /api/webhooks)
-      {
-        source: '/api/:path*',
-        destination: `${backendUrl}/:path*`, 
-      },
-    ];
+    return {
+      // 🚨 CRITICAL FIX: 'beforeFiles' forces Next.js to proxy these routes 
+      // BEFORE it looks inside your local app/api/ folder.
+      beforeFiles: [
+        {
+          source: '/api/v1/:path*',
+          destination: `${backendUrl}/v1/:path*`, 
+        }
+      ],
+      afterFiles: [],
+      fallback: [
+        // Generic fallback for any other endpoints
+        {
+          source: '/api/:path*',
+          destination: `${backendUrl}/:path*`, 
+        }
+      ]
+    };
   },
 
   // 6. Runtime Optimizations
