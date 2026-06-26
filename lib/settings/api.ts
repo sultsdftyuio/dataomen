@@ -61,14 +61,20 @@ export async function handleWorkspaceUpdate(req: Request) {
 
     const { companyName, replyToEmail } = parsed.data;
 
-    const updatePayload: Record<string, string | null> = {
-      ...(companyName !== undefined && {
-        company_name: normalizeOptionalString(companyName),
-      }),
-      ...(replyToEmail !== undefined && {
-        reply_to_email: normalizeOptionalString(replyToEmail),
-      }),
-    };
+    // 🚨 CRITICAL FIX: Replaced wide Record<string, string | null> with strict explicit types 
+    // to satisfy Supabase v2 RejectExcessProperties strict typing requirements.
+    const updatePayload: { 
+      company_name?: string | null; 
+      reply_to_email?: string | null; 
+    } = {};
+
+    if (companyName !== undefined) {
+      updatePayload.company_name = normalizeOptionalString(companyName);
+    }
+    
+    if (replyToEmail !== undefined) {
+      updatePayload.reply_to_email = normalizeOptionalString(replyToEmail);
+    }
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: "No valid fields provided for update." }, { status: 400 });
