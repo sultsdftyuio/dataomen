@@ -5,7 +5,10 @@
  */
 
 const ABSOLUTE_HTTP_URL_REGEX = /^https?:\/\//i;
-const LEGACY_BACKEND_HOSTS = new Set(['api.arcli.tech']);
+
+// Only block Next.js from routing to its own UI domains.
+// This allows 'api.arcli.tech' and 'localhost' to pass through normally.
+const FRONTEND_HOSTS = new Set(['arcli.tech', 'www.arcli.tech']);
 
 const trimTrailingSlash = (value) => value.replace(/\/+$/, '');
 
@@ -28,10 +31,10 @@ const normalizeBackendBase = (rawValue) => {
   }
 };
 
-const isLegacyBackend = (urlValue) => {
+const isFrontendDomain = (urlValue) => {
   try {
     const hostname = new URL(urlValue).hostname.toLowerCase();
-    return LEGACY_BACKEND_HOSTS.has(hostname);
+    return FRONTEND_HOSTS.has(hostname);
   } catch {
     return false;
   }
@@ -41,17 +44,14 @@ const resolveBackendRewriteBase = () => {
   const candidates = [
     normalizeBackendBase(process.env.BACKEND_API_URL),
     normalizeBackendBase(process.env.NEXT_PUBLIC_API_URL),
-    'https://data-omen-api-tnps9.ondigitalocean.app',
+    'https://arcli-s2mti.ondigitalocean.app', // Updated to the active DigitalOcean cluster
   ].filter(Boolean);
 
-  // Prevent Next.js from proxying to itself by filtering out frontend domains
-  const preferred = candidates.find((urlValue) => 
-    !isLegacyBackend(urlValue) && 
-    !urlValue.includes('arcli.tech')
-  );
+  // Prevent Next.js from proxying to itself by filtering out ONLY UI frontend domains
+  const preferred = candidates.find((urlValue) => !isFrontendDomain(urlValue));
   
-  // Fallback safely to the DigitalOcean cluster
-  return preferred || 'https://data-omen-api-tnps9.ondigitalocean.app'; 
+  // Fallback safely to the active DigitalOcean cluster
+  return preferred || 'https://arcli-s2mti.ondigitalocean.app'; 
 };
 
 /** @type {import('next').NextConfig} */
@@ -68,7 +68,7 @@ const nextConfig = {
   // 2. Engineering Excellence: Managed Build Pipeline
   // Build-time checks are handled via dedicated CI/CD workflows (GitHub Actions).
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false
   },
 
   // 3. Image Optimization: Multi-Region Asset Strategy
