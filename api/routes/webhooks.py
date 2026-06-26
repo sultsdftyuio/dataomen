@@ -24,6 +24,8 @@ from enum import StrEnum
 from typing import Dict, Any, Optional, Tuple, Final
 
 from fastapi import APIRouter, Request, Header, HTTPException, BackgroundTasks, status
+from polars import datetime
+from pytz import timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, Field
@@ -34,8 +36,7 @@ from api.database import SessionLocal
 from api.recovery_common import RECOVERY_EMAIL_TABLE, RecoveryStatus
 from api.services.recovery_engine import RecoveryAttributionService
 from api.services.cache_manager import cache_manager
-from api.services.integrations.stripe_sync import StripeSyncService
-
+from api.services.ingestion_service import IngestionService
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
 
@@ -437,20 +438,6 @@ def _handle_resend_failure(db: Session, tenant_id: str, payload: Dict[str, Any],
 # BACKGROUND TASK HANDLERS (isolated DB sessions — never touch request-scoped sessions)
 # ---------------------------------------------------------------------------
 
-def _process_stripe_webhook_background(tenant_id: str, event_name: str, event_payload: Dict[str, Any]) -> None:
-    """
-    Process Stripe webhook asynchronously with a dedicated DB session.
-    Isolates long-running billing logic from the HTTP request lifecycle.
-    """
-    db = SessionLocal()
-    try:
-        stripe_service = StripeSyncService(db)
-        stripe_service.process_webhook_event(tenant_id, event_name, event_payload)
-        logger.info("stripe_webhook_processed tenant_id=%s event=%s", tenant_id, event_name)
-    except Exception:
-        logger.exception("stripe_background_task_failed tenant_id=%s event=%s", tenant_id, event_name)
-    finally:
-        db.close()
 
 
 def _sync_stripe_handoff(tenant_id: str, event_name: str, event_payload: Dict[str, Any], provider_event_id: str) -> Dict[str, str]:
@@ -579,15 +566,41 @@ async def handle_stripe_webhook(
     # Run synchronous DB operations in thread pool with a locally-created session
     result = await asyncio.to_thread(_sync_stripe_handoff, tenant_id, event_name, event_payload, provider_event_id)
 
+    # ... inside your handle_stripe_webhook function ...
+
     if result["status"] == "deduped":
         logger.info("stripe_webhook_deduped tenant_id=%s event_id=%s", tenant_id, provider_event_id)
         return {"status": "deduped", "message": "Duplicate webhook ignored."}
 
-    # Hand off to isolated background task (do NOT pass request-scoped DB session)
-    background_tasks.add_task(_process_stripe_webhook_background, tenant_id, event_name, event_payload)
+    # FIX: Explicitly convert Stripe's Unix timestamp to an ISO string
+    # Prevents _coerce_timestamp from defaulting to datetime.now()
+    created_ts = event_payload.get("created")
+    if isinstance(created_ts, int):
+        event_timestamp = datetime.fromtimestamp(created_ts, tz=timezone.utc).isoformat()
+    else:
+        event_timestamp = created_ts
 
+    # --- NEW ARCHITECTURE: ROUTE TO IMMUTABLE EVENT LOG ---
+    try:
+        ingestion = IngestionService()
+        await ingestion.process_raw_event(
+            tenant_id=tenant_id,
+            event_name=f"stripe.{event_name}",
+            user_id=None,  # Resolve this later asynchronously
+            idempotency_key=provider_event_id,
+            timestamp=event_timestamp,
+            properties=event_payload
+        )
+    except Exception as e:
+        logger.exception("stripe_webhook_ingestion_failed tenant_id=%s event=%s", tenant_id, event_name)
+        # FIX: Do NOT return 200 OK. Force a 500 so Stripe utilizes its built-in retry mechanics.
+        # This guarantees we never permanently lose attribution data.
+        raise HTTPException(status_code=500, detail="Failed to durably persist event")
+        
     logger.info("stripe_webhook_accepted tenant_id=%s event=%s", tenant_id, event_name)
-    return {"status": "accepted", "message": f"Event {event_name} queued for processing."}
+    return {"status": "accepted", "message": f"Event {event_name} durably logged."}
+
+
 
 
 @router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
