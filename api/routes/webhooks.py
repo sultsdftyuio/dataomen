@@ -24,7 +24,7 @@ from enum import StrEnum
 from typing import Dict, Any, Optional, Tuple, Final
 
 from fastapi import APIRouter, Request, Header, HTTPException, BackgroundTasks, status
-from polars import datetime
+from datetime import datetime, timezone
 from pytz import timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
