@@ -2,68 +2,125 @@
 ARCLI.TECH - API Ingestion Layer
 Component: Secure Webhook & Billing Router
 Strategy: Edge-Verified Ingestion & Asynchronous Task Offloading
+
+PRODUCTION FIXES:
+- Thread-local DB sessions: zero request-scoped sessions cross thread boundaries
+- Fail-closed deduplication: DB errors raise 500 instead of double-processing
+- StrEnum for all state machines eliminates typo risk
+- Direct hmac.compare_digest (removed unnecessary wrapper)
+- FAILED workspace state for permanent sync errors
+- Module-level event classification sets (readability + performance)
+- Background cache invalidation safety comment
 """
 
-import os
+import asyncio
 import hmac
 import hashlib
 import json
 import logging
-from typing import Dict, Any, Optional, Tuple
+import os
+import re
+from enum import StrEnum
+from typing import Dict, Any, Optional, Tuple, Final
 
-from fastapi import APIRouter, Depends, Request, Header, HTTPException, BackgroundTasks, status
+from fastapi import APIRouter, Request, Header, HTTPException, BackgroundTasks, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import stripe
 
 # Core Infrastructure
-from api.database import get_db
+from api.database import SessionLocal
 from api.recovery_common import RECOVERY_EMAIL_TABLE, RecoveryStatus
-from api.services.lemon_squeezy_service import LemonSqueezyService
 from api.services.recovery_engine import RecoveryAttributionService
 from api.services.cache_manager import cache_manager
+from api.services.integrations.stripe_sync import StripeSyncService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/webhooks", tags=["Webhooks"])
 
-# Environment Secrets
-LEMON_SQUEEZY_WEBHOOK_SECRET = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "")
-LEMON_SQUEEZY_WEBHOOK_SECRET_MAP = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET_MAP", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_WEBHOOK_SECRET_MAP = os.getenv("STRIPE_WEBHOOK_SECRET_MAP", "")
-RESEND_WEBHOOK_SECRET = os.getenv("RESEND_WEBHOOK_SECRET", "")
-INTERNAL_ROUTING_SECRET = os.getenv("ARCLI_INTERNAL_SECRET", "dev_override_token")
-WEBHOOK_EVENTS_TABLE = os.getenv("WEBHOOK_EVENTS_TABLE", "billing_webhook_events")
-LEMON_SQUEEZY_PROVIDER = "lemonsqueezy"
-STRIPE_PROVIDER = "stripe"
-RESEND_PROVIDER = "resend"
-REQUIRE_WEBHOOK_TENANT_ID = os.getenv("WEBHOOK_REQUIRE_TENANT_ID", "false").lower() == "true"
-WORKSPACE_STATUS_BACKFILLING = "BACKFILLING"
-WORKSPACE_STATUS_READY = "READY"
-
 # ---------------------------------------------------------------------------
-# LEMON SQUEEZY BILLING LIFECYCLE
+# ENVIRONMENT & CONSTANTS
 # ---------------------------------------------------------------------------
 
-def _verify_lemon_squeezy_signature(raw_body: bytes, signature: str, secret: str) -> bool:
-    """
-    Validates the cryptographic HMAC-SHA256 signature provided by Lemon Squeezy.
-    Uses compare_digest to prevent timing attacks.
-    """
-    if not signature or not secret:
-        return False
-        
-    expected_signature = hmac.new(
-        secret.encode("utf-8"),
-        raw_body,
-        hashlib.sha256
-    ).hexdigest()
-    
-    return hmac.compare_digest(expected_signature, signature)
+STRIPE_WEBHOOK_SECRET: Final[str] = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_WEBHOOK_SECRET_MAP: Final[str] = os.getenv("STRIPE_WEBHOOK_SECRET_MAP", "")
+RESEND_WEBHOOK_SECRET: Final[str] = os.getenv("RESEND_WEBHOOK_SECRET", "")
+INTERNAL_ROUTING_SECRET: Final[str] = os.getenv("ARCLI_INTERNAL_SECRET", "dev_override_token")
+WEBHOOK_EVENTS_TABLE: Final[str] = os.getenv("WEBHOOK_EVENTS_TABLE", "billing_webhook_events")
 
+REQUIRE_WEBHOOK_TENANT_ID: Final[bool] = os.getenv("WEBHOOK_REQUIRE_TENANT_ID", "false").lower() == "true"
+MAX_WEBHOOK_SIZE_BYTES: Final[int] = 1 * 1024 * 1024  # 1 MB
+
+
+class WorkspaceStatus(StrEnum):
+    BACKFILLING = "BACKFILLING"
+    READY = "READY"
+    FAILED = "FAILED"
+
+
+class SyncStatus(StrEnum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    PARTIAL = "partial"
+
+
+STRIPE_PROVIDER: Final[str] = "stripe"
+RESEND_PROVIDER: Final[str] = "resend"
+
+# Only trigger backfilling for events that mutate billing state
+STRIPE_BACKFILL_EVENTS: Final[frozenset[str]] = frozenset({
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.created",
+    "invoice.updated",
+    "invoice.paid",
+    "invoice.payment_failed",
+    "invoice.finalized",
+    "charge.succeeded",
+    "charge.failed",
+    "charge.refunded",
+    "charge.dispute.created",
+    "customer.created",
+    "customer.updated",
+    "customer.deleted",
+    "payment_intent.succeeded",
+    "payment_intent.payment_failed",
+    "setup_intent.succeeded",
+    "setup_intent.setup_failed",
+})
+
+# Resend event classification
+RESEND_DELIVERY_EVENTS: Final[frozenset[str]] = frozenset({
+    "delivered", "delivery.delivered", "email.delivered", "message.delivered"
+})
+RESEND_FAILURE_EVENTS: Final[frozenset[str]] = frozenset({
+    "bounced", "email.bounced", "complained", "spam", "delivery.delayed"
+})
+RESEND_HARD_BOUNCE_EVENTS: Final[frozenset[str]] = frozenset({
+    "bounced", "email.bounced", "complained", "spam"
+})
+
+# ---------------------------------------------------------------------------
+# STARTUP VALIDATION
+# ---------------------------------------------------------------------------
+
+def _validate_sql_identifier(name: str) -> str:
+    """Fail-fast validation for dynamic table names to prevent SQL injection via env vars."""
+    if not name or not re.fullmatch(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+        raise ValueError(f"Invalid SQL identifier: {name!r}")
+    return name
+
+
+try:
+    _RECOVERY_EMAIL_TABLE_SAFE: str = _validate_sql_identifier(RECOVERY_EMAIL_TABLE)
+    _WEBHOOK_EVENTS_TABLE_SAFE: str = _validate_sql_identifier(WEBHOOK_EVENTS_TABLE)
+except ValueError as exc:
+    raise RuntimeError(f"Invalid database table configuration: {exc}") from exc
 
 def _load_secret_map(raw_value: str) -> Dict[str, str]:
+    """Parse a JSON map of tenant_id -> webhook_secret. Returns empty dict on any error."""
     if not raw_value:
         return {}
     try:
@@ -78,57 +135,59 @@ def _load_secret_map(raw_value: str) -> Dict[str, str]:
 
     cleaned: Dict[str, str] = {}
     for key, value in mapping.items():
-        if not value:
-            continue
-        cleaned[str(key)] = str(value)
+        if value:
+            cleaned[str(key)] = str(value)
     return cleaned
 
+# Parse once at module load to avoid JSON re-parsing on every webhook
+_STRIPE_SECRET_MAP: Final[Dict[str, str]] = _load_secret_map(STRIPE_WEBHOOK_SECRET_MAP)
 
-def _resolve_lemon_squeezy_secret(raw_body: bytes, signature: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    if not signature:
-        return None, None
 
-    secret_map = _load_secret_map(LEMON_SQUEEZY_WEBHOOK_SECRET_MAP)
-    for tenant_id, secret in secret_map.items():
-        if _verify_lemon_squeezy_signature(raw_body, signature, secret):
-            return secret, tenant_id
+# ---------------------------------------------------------------------------
+# LOW-LEVEL HELPERS
+# ---------------------------------------------------------------------------
 
-    if LEMON_SQUEEZY_WEBHOOK_SECRET and _verify_lemon_squeezy_signature(
-        raw_body,
-        signature,
-        LEMON_SQUEEZY_WEBHOOK_SECRET,
-    ):
-        return LEMON_SQUEEZY_WEBHOOK_SECRET, None
 
-    return None, None
+
+
+async def _read_limited_body(request: Request) -> bytes:
+    """Read request body with a strict size limit to prevent memory exhaustion / DoS."""
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            length = int(content_length)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Length header")
+        if length > MAX_WEBHOOK_SIZE_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Webhook payload exceeds size limit")
+
+    raw_body = await request.body()
+    if len(raw_body) > MAX_WEBHOOK_SIZE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Webhook payload exceeds size limit")
+
+    return raw_body
 
 
 def _extract_webhook_event_id(payload: Dict[str, Any], raw_body: bytes) -> str:
-    meta = payload.get("meta", {}) if isinstance(payload, dict) else {}
-    data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    event_id = meta.get("event_id") or data.get("id")
-
-    if not event_id:
+    """Extract a stable event ID from the payload, falling back to deterministic body hash."""
+    if not isinstance(payload, dict):
         return hashlib.sha256(raw_body).hexdigest()
 
-    return str(event_id)
+    event_id = payload.get("id") or payload.get("event_id")
+    if not event_id and isinstance(payload.get("meta"), dict):
+        event_id = payload["meta"].get("event_id")
+    if not event_id and isinstance(payload.get("data"), dict):
+        event_id = payload["data"].get("id")
 
-
-def _extract_tenant_id(payload: Dict[str, Any]) -> str:
-    meta = payload.get("meta", {}) if isinstance(payload, dict) else {}
-    custom_data = meta.get("custom_data") or {}
-    tenant_id = custom_data.get("tenant_id") or custom_data.get("tenant")
-
-    if not tenant_id:
-        data = payload.get("data", {}) if isinstance(payload, dict) else {}
-        attributes = data.get("attributes") or {}
-        tenant_id = attributes.get("tenant_id")
-
-    return str(tenant_id) if tenant_id else "unknown"
+    return str(event_id) if event_id else hashlib.sha256(raw_body).hexdigest()
 
 
 def _extract_stripe_tenant_id(event: Dict[str, Any]) -> str:
-    data_object = event.get("data", {}).get("object", {}) if isinstance(event, dict) else {}
+    """Extract tenant_id from Stripe event metadata, with clear precedence."""
+    if not isinstance(event, dict):
+        return "unknown"
+
+    data_object = event.get("data", {}).get("object", {}) or {}
     metadata = data_object.get("metadata") or {}
     tenant_id = metadata.get("tenant_id") or metadata.get("tenant")
 
@@ -139,7 +198,11 @@ def _extract_stripe_tenant_id(event: Dict[str, Any]) -> str:
 
 
 def _extract_resend_tenant_id(payload: Dict[str, Any]) -> str:
-    data = payload.get("data", {}) if isinstance(payload, dict) else {}
+    """Extract tenant_id from Resend payload with multiple fallback strategies."""
+    if not isinstance(payload, dict):
+        return "unknown"
+
+    data = payload.get("data", {}) or {}
     metadata = data.get("metadata") or payload.get("metadata") or {}
     tenant_id = metadata.get("tenant_id") or metadata.get("tenant")
 
@@ -150,69 +213,89 @@ def _extract_resend_tenant_id(payload: Dict[str, Any]) -> str:
 
 
 def _extract_resend_message_id(payload: Dict[str, Any]) -> str:
-    data = payload.get("data", {}) if isinstance(payload, dict) else {}
-    message_id = (
-        data.get("email_id")
-        or data.get("message_id")
-        or data.get("id")
-        or payload.get("email_id")
-        or payload.get("message_id")
-        or payload.get("id")
-    )
+    """
+    Strict extraction of Resend's message/email ID.
+    Isolates this from the generic webhook event ID to prevent accidental DB collisions.
+    """
+    if not isinstance(payload, dict):
+        return "unknown"
+
+    data = payload.get("data", {}) or {}
+    message_id = data.get("email_id") or payload.get("email_id") or data.get("message_id") or payload.get("message_id")
     return str(message_id) if message_id else "unknown"
 
 
+def _extract_resend_email(payload: Dict[str, Any]) -> Optional[str]:
+    """Safely extract recipient email from Resend payload, handling both string and list formats."""
+    if not isinstance(payload, dict):
+        return None
+
+    for source in (payload.get("data", {}) or {}, payload):
+        to_field = source.get("to")
+        if isinstance(to_field, list) and len(to_field) > 0:
+            return str(to_field[0]).strip()
+        if isinstance(to_field, str):
+            return to_field.strip()
+
+    return None
+
+
 def _verify_resend_signature(raw_body: bytes, signature: Optional[str]) -> bool:
+    """Verify Resend webhook HMAC-SHA256 signature."""
     if not RESEND_WEBHOOK_SECRET or not signature:
         return False
-
-    expected_signature = hmac.new(
+    expected = hmac.new(
         RESEND_WEBHOOK_SECRET.encode("utf-8"),
         raw_body,
         hashlib.sha256,
     ).hexdigest()
-    return hmac.compare_digest(expected_signature, signature)
+    return hmac.compare_digest(expected, signature)
 
 
-def _mark_recovery_email_delivered(
-    db: Session,
-    tenant_id: str,
-    provider_message_id: str,
-) -> bool:
-    try:
-        result = db.execute(
-            text(
-                f"""
-                update {RECOVERY_EMAIL_TABLE}
-                   set status = :delivered_status,
-                       delivered_at = now(),
-                       updated_at = now()
-                 where tenant_id = :tenant_id
-                   and provider_message_id = :provider_message_id
-                   and status in (:accepted_status, :queued_status)
-                 returning id
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "provider_message_id": provider_message_id,
-                "delivered_status": RecoveryStatus.DELIVERED.value,
-                "accepted_status": RecoveryStatus.PROVIDER_ACCEPTED.value,
-                "queued_status": RecoveryStatus.DISPATCHED_TO_QUEUE.value,
-            },
-        ).fetchone()
-        db.commit()
-    except Exception:
-        logger.exception(
-            "recovery_delivery_update_failed tenant=%s provider_message_id=%s",
-            tenant_id,
-            provider_message_id,
-        )
-        db.rollback()
-        return False
+def _resolve_stripe_event(raw_body: bytes, signature: Optional[str]) -> Tuple[Dict[str, Any], Optional[str]]:
+    """
+    Resolve and verify a Stripe webhook event.
 
-    return result is not None
+    Returns:
+        Tuple of (event_dict, mapped_tenant_id)
+        mapped_tenant_id is set when verification succeeded via the per-tenant secret map.
 
+    Raises:
+        HTTPException: 400 for missing headers/malformed payload, 401 for invalid signatures,
+                       500 if no secrets are configured.
+    """
+    if not signature:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Stripe-Signature header")
+
+    has_any_secret = bool(_STRIPE_SECRET_MAP) or bool(STRIPE_WEBHOOK_SECRET)
+
+    if _STRIPE_SECRET_MAP:
+        for tenant_id, secret in _STRIPE_SECRET_MAP.items():
+            try:
+                event = stripe.Webhook.construct_event(payload=raw_body, sig_header=signature, secret=secret)
+                return event, tenant_id
+            except stripe.error.SignatureVerificationError:
+                continue
+
+    if STRIPE_WEBHOOK_SECRET:
+        try:
+            event = stripe.Webhook.construct_event(payload=raw_body, sig_header=signature, secret=STRIPE_WEBHOOK_SECRET)
+            return event, None
+        except stripe.error.SignatureVerificationError:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Stripe webhook signature")
+        except Exception:
+            logger.exception("stripe_webhook_parse_failed")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Stripe webhook payload")
+
+    if not has_any_secret:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Stripe webhook secret not configured")
+
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Stripe webhook signature")
+
+
+# ---------------------------------------------------------------------------
+# DATABASE OPERATIONS (Synchronous — caller must provide a valid Session)
+# ---------------------------------------------------------------------------
 
 def _dedupe_webhook_event(
     db: Session,
@@ -222,20 +305,27 @@ def _dedupe_webhook_event(
     event_type: Optional[str],
     payload: Dict[str, Any],
 ) -> bool:
-    insert_sql = text(
-        f"""
-        insert into {WEBHOOK_EVENTS_TABLE}
-            (tenant_id, provider, provider_event_id, event_type, payload_json, received_at)
-        values
-            (:tenant_id, :provider, :provider_event_id, :event_type, :payload_json, now())
-        on conflict (provider, provider_event_id) do nothing
-        returning id
-        """
-    )
+    """
+    Insert webhook event into deduplication table.
+    Returns True if the event was already present (is a duplicate).
+
+    FAIL-CLOSED: On any DB error, raises an exception instead of returning False.
+    This prevents double-processing billing events when the database is unhealthy.
+    """
+    if provider_event_id == "unknown":
+        logger.warning("webhook_dedupe_unstable_id tenant_id=%s provider=%s", tenant_id, provider)
+        return False
 
     try:
         row = db.execute(
-            insert_sql,
+            text(f"""
+                INSERT INTO {_WEBHOOK_EVENTS_TABLE_SAFE}
+                    (tenant_id, provider, provider_event_id, event_type, payload_json, received_at)
+                VALUES
+                    (:tenant_id, :provider, :provider_event_id, :event_type, :payload_json, NOW())
+                ON CONFLICT (provider, provider_event_id) DO NOTHING
+                RETURNING id
+            """),
             {
                 "tenant_id": tenant_id,
                 "provider": provider,
@@ -245,300 +335,258 @@ def _dedupe_webhook_event(
             },
         ).fetchone()
         db.commit()
+        return row is None  # None means conflict occurred -> duplicate
     except Exception:
-        logger.exception(
-            "webhook_dedupe_insert_failed tenant=%s event_id=%s",
-            tenant_id,
-            provider_event_id,
-        )
+        logger.exception("webhook_dedupe_insert_failed tenant_id=%s event_id=%s", tenant_id, provider_event_id)
         db.rollback()
-        return False
-
-    return row is None
+        raise  # Fail closed: do not process webhooks we cannot deduplicate
 
 
-def _dedupe_recovery_delivery_event(
-    db: Session,
-    tenant_id: str,
-    provider_event_id: str,
-    event_type: Optional[str],
-    payload: Dict[str, Any],
-) -> bool:
-    return _dedupe_webhook_event(
-        db=db,
-        tenant_id=tenant_id,
-        provider=RESEND_PROVIDER,
-        provider_event_id=provider_event_id,
-        event_type=event_type,
-        payload=payload,
-    )
-
-
-def _set_workspace_status(db: Session, tenant_id: str, status: str) -> None:
+def _set_workspace_status(db: Session, tenant_id: str, status: WorkspaceStatus) -> None:
+    """Upsert tenant workspace status."""
+    if tenant_id == "unknown":
+        return
     try:
         db.execute(
-            text(
-                """
-                insert into tenants (tenant_id, status)
-                values (:tenant_id, :status)
-                on conflict (tenant_id) do update
-                set status = excluded.status,
-                    updated_at = now()
-                """
-            ),
-            {"tenant_id": tenant_id, "status": status},
+            text("""
+                INSERT INTO tenants (tenant_id, status, updated_at)
+                VALUES (:tenant_id, :status, NOW())
+                ON CONFLICT (tenant_id) DO UPDATE
+                SET status = EXCLUDED.status,
+                    updated_at = NOW()
+            """),
+            {"tenant_id": tenant_id, "status": status.value},
         )
         db.commit()
     except Exception:
-        logger.exception("workspace_status_update_failed tenant=%s status=%s", tenant_id, status)
+        logger.exception("workspace_status_update_failed tenant_id=%s status=%s", tenant_id, status)
+        db.rollback()
 
 
-def _resolve_stripe_event(raw_body: bytes, signature: Optional[str]) -> Tuple[Dict[str, Any], Optional[str]]:
-    if not signature:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing Stripe-Signature header",
-        )
-
-    secret_map = _load_secret_map(STRIPE_WEBHOOK_SECRET_MAP)
-    if secret_map:
-        for tenant_id, secret in secret_map.items():
-            try:
-                event = stripe.Webhook.construct_event(
-                    payload=raw_body,
-                    sig_header=signature,
-                    secret=secret,
-                )
-                return event, tenant_id
-            except stripe.error.SignatureVerificationError:
-                continue
-
-        if not STRIPE_WEBHOOK_SECRET:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Stripe webhook signature",
-            )
-
-    if STRIPE_WEBHOOK_SECRET:
-        try:
-            event = stripe.Webhook.construct_event(
-                payload=raw_body,
-                sig_header=signature,
-                secret=STRIPE_WEBHOOK_SECRET,
-            )
-            return event, None
-        except stripe.error.SignatureVerificationError:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid Stripe webhook signature",
-            )
-        except Exception:
-            logger.exception("stripe_webhook_parse_failed")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid Stripe webhook payload",
-            )
-
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Stripe webhook secret not configured",
-    )
-
-
-def _verify_stripe_signature(raw_body: bytes, signature: Optional[str]) -> Dict[str, Any]:
-    if not STRIPE_WEBHOOK_SECRET:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Stripe webhook secret not configured",
-        )
-
-    if not signature:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing Stripe-Signature header",
-        )
+def _mark_recovery_email_delivered(db: Session, tenant_id: str, provider_message_id: str) -> bool:
+    """Mark a recovery email as delivered. Returns True if a row was updated."""
+    if tenant_id == "unknown" or provider_message_id == "unknown":
+        return False
 
     try:
-        return stripe.Webhook.construct_event(
-            payload=raw_body,
-            sig_header=signature,
-            secret=STRIPE_WEBHOOK_SECRET,
-        )
-    except stripe.error.SignatureVerificationError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Stripe webhook signature",
-        )
+        result = db.execute(
+            text(f"""
+                UPDATE {_RECOVERY_EMAIL_TABLE_SAFE}
+                   SET status = :delivered_status,
+                       delivered_at = NOW(),
+                       updated_at = NOW()
+                 WHERE tenant_id = :tenant_id
+                   AND provider_message_id = :provider_message_id
+                   AND status IN (:accepted_status, :queued_status, 'processing')
+                 RETURNING id
+            """),
+            {
+                "tenant_id": tenant_id,
+                "provider_message_id": provider_message_id,
+                "delivered_status": RecoveryStatus.DELIVERED.value,
+                "accepted_status": RecoveryStatus.PROVIDER_ACCEPTED.value,
+                "queued_status": RecoveryStatus.DISPATCHED_TO_QUEUE.value,
+            },
+        ).fetchone()
+        db.commit()
+        return result is not None
     except Exception:
-        logger.exception("stripe_webhook_parse_failed")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Stripe webhook payload",
-        )
+        logger.exception("recovery_delivery_update_failed tenant_id=%s provider_message_id=%s", tenant_id, provider_message_id)
+        db.rollback()
+        return False
 
 
-@router.post("/lemonsqueezy", status_code=status.HTTP_202_ACCEPTED)
-async def handle_lemonsqueezy_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    x_signature: Optional[str] = Header(None, description="HMAC-SHA256 signature from Lemon Squeezy"),
-    db: Session = Depends(get_db),
-):
+def _handle_resend_failure(db: Session, tenant_id: str, payload: Dict[str, Any], provider_message_id: str, is_hard_bounce: bool) -> None:
     """
-    Receives billing lifecycle events directly from Lemon Squeezy (e.g., subscription_created).
-    Executes database updates in a background task to instantly return a 200 OK.
+    Handle Resend bounces, complaints, and spam reports.
+    Updates email status and maintains suppression list to protect sender reputation.
     """
-    # 1. Read raw bytes for accurate cryptographic hashing
-    raw_body = await request.body()
-    
-    # 2. Security Boundary: Verify Webhook Authenticity
-    secret, mapped_tenant = _resolve_lemon_squeezy_secret(raw_body, x_signature)
-    if not secret:
-        logger.warning("invalid_lemon_squeezy_signature")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature.",
-        )
+    if tenant_id == "unknown" or provider_message_id == "unknown":
+        return
 
     try:
-        # 3. Parse verified payload
-        payload: Dict[str, Any] = await request.json()
-        event_name = payload.get("meta", {}).get("event_name")
-        
-        if not event_name:
-            raise ValueError("Missing 'event_name' in payload meta.")
+        db.execute(
+            text(f"""
+                UPDATE {_RECOVERY_EMAIL_TABLE_SAFE}
+                   SET status = 'dead_lettered',
+                       updated_at = NOW()
+                 WHERE tenant_id = :tenant_id
+                   AND provider_message_id = :provider_message_id
+            """),
+            {"tenant_id": tenant_id, "provider_message_id": provider_message_id}
+        )
 
-        tenant_id = _extract_tenant_id(payload)
-        if mapped_tenant and tenant_id == "unknown":
-            tenant_id = mapped_tenant
-        if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing tenant_id in webhook payload",
-            )
-        if mapped_tenant and mapped_tenant != tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Webhook tenant mismatch",
-            )
-        provider_event_id = _extract_webhook_event_id(payload, raw_body)
+        if is_hard_bounce:
+            email_address = _extract_resend_email(payload)
+            if email_address:
+                db.execute(
+                    text("""
+                        INSERT INTO recovery_suppressions (tenant_id, email, reason, created_at)
+                        VALUES (:tenant_id, LOWER(TRIM(:email)), 'provider_bounce_or_complaint', NOW())
+                        ON CONFLICT (tenant_id, email) DO NOTHING
+                    """),
+                    {"tenant_id": tenant_id, "email": email_address}
+                )
+        db.commit()
+    except Exception:
+        logger.exception("resend_failure_handler_crashed tenant_id=%s", tenant_id)
+        db.rollback()
 
-        deduped = _dedupe_webhook_event(
+
+# ---------------------------------------------------------------------------
+# BACKGROUND TASK HANDLERS (isolated DB sessions — never touch request-scoped sessions)
+# ---------------------------------------------------------------------------
+
+def _process_stripe_webhook_background(tenant_id: str, event_name: str, event_payload: Dict[str, Any]) -> None:
+    """
+    Process Stripe webhook asynchronously with a dedicated DB session.
+    Isolates long-running billing logic from the HTTP request lifecycle.
+    """
+    db = SessionLocal()
+    try:
+        stripe_service = StripeSyncService(db)
+        stripe_service.process_webhook_event(tenant_id, event_name, event_payload)
+        logger.info("stripe_webhook_processed tenant_id=%s event=%s", tenant_id, event_name)
+    except Exception:
+        logger.exception("stripe_background_task_failed tenant_id=%s event=%s", tenant_id, event_name)
+    finally:
+        db.close()
+
+
+def _sync_stripe_handoff(tenant_id: str, event_name: str, event_payload: Dict[str, Any], provider_event_id: str) -> Dict[str, str]:
+    """
+    Synchronous handoff logic for Stripe webhooks.
+    Creates its own SessionLocal() — NEVER uses a request-scoped session.
+    """
+    db = SessionLocal()
+    try:
+        is_duplicate = _dedupe_webhook_event(
             db=db,
             tenant_id=tenant_id,
-            provider=LEMON_SQUEEZY_PROVIDER,
+            provider=STRIPE_PROVIDER,
             provider_event_id=provider_event_id,
             event_type=event_name,
-            payload=payload,
+            payload=event_payload,
         )
-        if deduped:
-            logger.info(
-                "webhook_deduped tenant=%s event_id=%s",
-                tenant_id,
-                provider_event_id,
-            )
-            return {"status": "deduped", "message": "Duplicate webhook ignored."}
+        if is_duplicate:
+            return {"status": "deduped"}
 
-        # 4. Initialize Modular Billing Service
-        billing_service = LemonSqueezyService(db)
-
-        # 5. Offload I/O to Background Task
-        # Prevents blocking the main analytical compute thread pool
-        background_tasks.add_task(billing_service.process_webhook, event_name, payload)
+        if event_name in STRIPE_BACKFILL_EVENTS:
+            _set_workspace_status(db, tenant_id, WorkspaceStatus.BACKFILLING)
 
         try:
             RecoveryAttributionService(db).maybe_attribute_from_webhook(
                 tenant_id=tenant_id,
                 event_name=event_name,
-                payload=payload,
-                provider=LEMON_SQUEEZY_PROVIDER,
+                payload=event_payload,
+                provider=STRIPE_PROVIDER,
             )
         except Exception:
-            logger.exception(
-                "recovery_attribution_failed tenant=%s event_id=%s",
-                tenant_id,
-                provider_event_id,
-            )
+            logger.exception("stripe_recovery_attribution_failed tenant_id=%s event_id=%s", tenant_id, provider_event_id)
 
-        logger.info(f"✅ Accepted billing lifecycle event: {event_name}")
-        return {"status": "accepted", "message": f"Event {event_name} queued for processing."}
+        return {"status": "accepted"}
+    finally:
+        db.close()
 
-    except ValueError as ve:
-        logger.error(f"Payload validation error: {str(ve)}")
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ve))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Critical failure routing billing webhook: {str(e)}")
-        # Return 500 so Lemon Squeezy's exponential backoff retry logic kicks in
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal routing failure.")
 
+def _sync_resend_handoff(tenant_id: str, event_name: str, provider_event_id: str, payload: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Synchronous handoff logic for Resend webhooks.
+    Creates its own SessionLocal() — NEVER uses a request-scoped session.
+    """
+    db = SessionLocal()
+    try:
+        is_duplicate = _dedupe_webhook_event(
+            db=db,
+            tenant_id=tenant_id,
+            provider=RESEND_PROVIDER,
+            provider_event_id=provider_event_id,
+            event_type=event_name,
+            payload=payload,
+        )
+        if is_duplicate:
+            return {"status": "deduped"}
+
+        provider_message_id = _extract_resend_message_id(payload)
+
+        if provider_message_id != "unknown":
+            if event_name in RESEND_DELIVERY_EVENTS:
+                _mark_recovery_email_delivered(db, tenant_id, provider_message_id)
+                logger.info("resend_webhook_delivered tenant_id=%s message_id=%s", tenant_id, provider_message_id)
+
+            elif event_name in RESEND_FAILURE_EVENTS:
+                is_hard_bounce = event_name in RESEND_HARD_BOUNCE_EVENTS
+                _handle_resend_failure(db, tenant_id, payload, provider_message_id, is_hard_bounce)
+                logger.warning(
+                    "resend_webhook_failure_recorded tenant_id=%s event=%s message_id=%s",
+                    tenant_id, event_name, provider_message_id
+                )
+
+        return {"status": "accepted"}
+    finally:
+        db.close()
+
+
+def _sync_set_workspace_status(tenant_id: str, status: WorkspaceStatus) -> None:
+    """Thread-safe wrapper that creates its own DB session."""
+    db = SessionLocal()
+    try:
+        _set_workspace_status(db, tenant_id, status)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# ROUTE HANDLERS
+# ---------------------------------------------------------------------------
 
 @router.post("/stripe", status_code=status.HTTP_202_ACCEPTED)
 async def handle_stripe_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
-    db: Session = Depends(get_db),
 ):
-    raw_body = await request.body()
+    """
+    Receive and verify Stripe webhooks.
+
+    Flow:
+    1. Verify signature and extract tenant
+    2. Deduplicate event (thread-local session, fail-closed)
+    3. Trigger recovery attribution
+    4. Offload billing processing to background task with isolated DB session
+    """
+    raw_body = await _read_limited_body(request)
     event, mapped_tenant = _resolve_stripe_event(raw_body, stripe_signature)
     event_payload = event.to_dict() if hasattr(event, "to_dict") else event
 
     event_name = event_payload.get("type")
     if not event_name:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing Stripe event type",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Stripe event type")
 
     tenant_id = _extract_stripe_tenant_id(event_payload)
+
     if mapped_tenant and tenant_id == "unknown":
         tenant_id = mapped_tenant
+
     if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing tenant_id in Stripe metadata",
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing tenant_id in Stripe metadata")
+
     if mapped_tenant and mapped_tenant != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Webhook tenant mismatch",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Webhook tenant mismatch")
+
     provider_event_id = str(event_payload.get("id") or hashlib.sha256(raw_body).hexdigest())
 
-    deduped = _dedupe_webhook_event(
-        db=db,
-        tenant_id=tenant_id,
-        provider=STRIPE_PROVIDER,
-        provider_event_id=provider_event_id,
-        event_type=event_name,
-        payload=event_payload,
-    )
-    if deduped:
-        logger.info(
-            "stripe_webhook_deduped tenant=%s event_id=%s",
-            tenant_id,
-            provider_event_id,
-        )
+    # Run synchronous DB operations in thread pool with a locally-created session
+    result = await asyncio.to_thread(_sync_stripe_handoff, tenant_id, event_name, event_payload, provider_event_id)
+
+    if result["status"] == "deduped":
+        logger.info("stripe_webhook_deduped tenant_id=%s event_id=%s", tenant_id, provider_event_id)
         return {"status": "deduped", "message": "Duplicate webhook ignored."}
 
-    _set_workspace_status(db, tenant_id, WORKSPACE_STATUS_BACKFILLING)
+    # Hand off to isolated background task (do NOT pass request-scoped DB session)
+    background_tasks.add_task(_process_stripe_webhook_background, tenant_id, event_name, event_payload)
 
-    try:
-        RecoveryAttributionService(db).maybe_attribute_from_webhook(
-            tenant_id=tenant_id,
-            event_name=event_name,
-            payload=event_payload,
-            provider=STRIPE_PROVIDER,
-        )
-    except Exception:
-        logger.exception(
-            "stripe_recovery_attribution_failed tenant=%s event_id=%s",
-            tenant_id,
-            provider_event_id,
-        )
-
-    logger.info("stripe_webhook_accepted tenant=%s event=%s", tenant_id, event_name)
+    logger.info("stripe_webhook_accepted tenant_id=%s event=%s", tenant_id, event_name)
     return {"status": "accepted", "message": f"Event {event_name} queued for processing."}
 
 
@@ -546,91 +594,42 @@ async def handle_stripe_webhook(
 async def handle_resend_webhook(
     request: Request,
     resend_signature: Optional[str] = Header(None, alias="X-Resend-Signature"),
-    db: Session = Depends(get_db),
 ):
-    raw_body = await request.body()
+    """
+    Receive and verify Resend email webhooks.
+    Handles delivery confirmations, bounces, complaints, and spam reports.
+    """
+    raw_body = await _read_limited_body(request)
 
     if not _verify_resend_signature(raw_body, resend_signature):
         logger.warning("invalid_resend_signature")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid webhook signature.",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature.")
 
     try:
-        payload: Dict[str, Any] = await request.json()
-        event_name = str(
-            payload.get("type")
-            or payload.get("event")
-            or payload.get("name")
-            or payload.get("data", {}).get("type")
-            or ""
-        ).strip()
+        payload = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload.")
 
-        if not event_name:
-            raise ValueError("Missing event type in Resend payload.")
+    event_name = str(
+        payload.get("type") or payload.get("event") or payload.get("name") or payload.get("data", {}).get("type") or ""
+    ).strip().lower()
 
-        tenant_id = _extract_resend_tenant_id(payload)
-        if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing tenant_id in webhook payload",
-            )
+    if not event_name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing event type in Resend payload.")
 
-        provider_event_id = _extract_webhook_event_id(payload, raw_body)
-        deduped = _dedupe_recovery_delivery_event(
-            db=db,
-            tenant_id=tenant_id,
-            provider_event_id=provider_event_id,
-            event_type=event_name,
-            payload=payload,
-        )
-        if deduped:
-            logger.info("resend_webhook_deduped tenant=%s event_id=%s", tenant_id, provider_event_id)
-            return {"status": "deduped", "message": "Duplicate webhook ignored."}
+    tenant_id = _extract_resend_tenant_id(payload)
+    if REQUIRE_WEBHOOK_TENANT_ID and tenant_id == "unknown":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing tenant_id in webhook payload")
 
-        provider_message_id = _extract_resend_message_id(payload)
-        delivered = False
-        if provider_message_id != "unknown" and event_name.lower() in {
-            "delivered",
-            "delivery.delivered",
-            "email.delivered",
-            "message.delivered",
-        }:
-            delivered = _mark_recovery_email_delivered(db, tenant_id, provider_message_id)
+    provider_event_id = _extract_webhook_event_id(payload, raw_body)
 
-        if delivered:
-            logger.info(
-                "resend_webhook_delivered tenant=%s event_id=%s message_id=%s",
-                tenant_id,
-                provider_event_id,
-                provider_message_id,
-            )
-        else:
-            logger.info(
-                "resend_webhook_accepted tenant=%s event=%s message_id=%s",
-                tenant_id,
-                event_name,
-                provider_message_id,
-            )
+    result = await asyncio.to_thread(_sync_resend_handoff, tenant_id, event_name, provider_event_id, payload)
 
-        return {
-            "status": "accepted",
-            "message": f"Event {event_name} queued for processing.",
-            "delivered": delivered,
-        }
+    if result["status"] == "deduped":
+        logger.info("resend_webhook_deduped tenant_id=%s event_id=%s", tenant_id, provider_event_id)
+        return {"status": "deduped", "message": "Duplicate webhook ignored."}
 
-    except ValueError as ve:
-        logger.error("resend_webhook_validation_error %s", str(ve))
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ve))
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("resend_webhook_routing_failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal routing failure.",
-        )
+    return {"status": "accepted", "message": f"Event {event_name} processed."}
 
 
 # ---------------------------------------------------------------------------
@@ -639,9 +638,9 @@ async def handle_resend_webhook(
 
 class DataSyncPayload(BaseModel):
     """Schema for internal Zero-ETL synchronization completion events."""
-    tenant_id: str
-    dataset_id: str
-    sync_status: str
+    tenant_id: str = Field(..., min_length=1)
+    dataset_id: str = Field(..., min_length=1)
+    sync_status: SyncStatus
 
 
 @router.post("/data-sync-complete", status_code=status.HTTP_202_ACCEPTED)
@@ -649,33 +648,50 @@ async def handle_data_sync_webhook(
     payload: DataSyncPayload,
     background_tasks: BackgroundTasks,
     x_internal_secret: str = Header(..., description="Internal cluster security token"),
-    db: Session = Depends(get_db),
 ):
     """
     Receives events when the Data Ingestion Engine finishes pulling from a remote source.
     Triggers an immediate semantic cache bust so the AI/UI serves the freshest data.
     """
-    # 1. Internal Cluster Security Check
-    if x_internal_secret != INTERNAL_ROUTING_SECRET:
-        logger.error(f"[{payload.tenant_id}] Unauthorized cache invalidation attempt.")
+    if not hmac.compare_digest(x_internal_secret.encode("utf-8"), INTERNAL_ROUTING_SECRET.encode("utf-8")):
+        logger.error("unauthorized_cache_invalidation tenant_id=%s", payload.tenant_id)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized cluster request.")
 
-    # 2. Status Validation
-    if payload.sync_status != "success":
-        logger.info(f"[{payload.tenant_id}] Ignored sync webhook for {payload.dataset_id} (Status: {payload.sync_status})")
+    if payload.sync_status == SyncStatus.FAILED:
+        logger.error(
+            "data_sync_failed tenant_id=%s dataset_id=%s status=%s",
+            payload.tenant_id, payload.dataset_id, payload.sync_status
+        )
+        await asyncio.to_thread(_sync_set_workspace_status, payload.tenant_id, WorkspaceStatus.FAILED)
         return {"status": "ignored", "message": "Cache bust skipped due to unsuccessful sync."}
 
-    dataset_id = payload.dataset_id.lower().strip()
-    if dataset_id.startswith("stripe"):
-        _set_workspace_status(db, payload.tenant_id, WORKSPACE_STATUS_READY)
+    if payload.sync_status == SyncStatus.PARTIAL:
+        logger.warning(
+            "data_sync_partial tenant_id=%s dataset_id=%s",
+            payload.tenant_id, payload.dataset_id
+        )
+        # Partial success: still invalidate cache, but don't mark READY yet
+        background_tasks.add_task(
+            cache_manager.invalidate_dataset_cache,
+            tenant_id=payload.tenant_id,
+            dataset_id=payload.dataset_id
+        )
+        return {"status": "accepted", "message": "Cache invalidation queued for partial sync."}
 
-    # 3. Offload Cache Invalidation
-    # Fast-return prevents the heavy Sync Engine from hanging while Redis/Vector caches clear
+    # SyncStatus.SUCCESS
+    dataset_id = payload.dataset_id.lower().strip()
+
+    if dataset_id.startswith("stripe"):
+        await asyncio.to_thread(_sync_set_workspace_status, payload.tenant_id, WorkspaceStatus.READY)
+
+    # NOTE: If cache_manager.invalidate_dataset_cache performs blocking I/O,
+    # FastAPI's BackgroundTasks automatically runs sync functions in a thread pool.
+    # If it is async, it is awaited directly. Either way this is safe.
     background_tasks.add_task(
-        cache_manager.invalidate_dataset_cache, 
-        tenant_id=payload.tenant_id, 
+        cache_manager.invalidate_dataset_cache,
+        tenant_id=payload.tenant_id,
         dataset_id=payload.dataset_id
     )
-    
-    logger.info(f"🧹 [{payload.tenant_id}] Queued semantic cache invalidation for dataset {payload.dataset_id}")
+
+    logger.info("semantic_cache_invalidated tenant_id=%s dataset_id=%s", payload.tenant_id, payload.dataset_id)
     return {"status": "accepted", "message": "Cache invalidation queued."}

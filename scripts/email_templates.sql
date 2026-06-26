@@ -1,7 +1,12 @@
+-- ============================================================================
+-- ARCLI CORE SCHEMA — EMAIL TEMPLATES & QUEUE VIEWS
+-- SAFE TO RUN MULTIPLE TIMES: uses IF NOT EXISTS / OR REPLACE / DROP VIEW
+-- ============================================================================
+
 CREATE OR REPLACE FUNCTION reserve_email_dispatch(
     p_dispatch_token TEXT,
     p_tenant_id TEXT,
-    p_send_id TEXT,
+    p_send_id UUID,
     p_max_attempts INT
 )
 RETURNS TABLE (
@@ -21,10 +26,10 @@ DECLARE
     v_attempt_count INT;
     v_now TIMESTAMPTZ := NOW();
 BEGIN
-    -- 1. Claim dispatch token (idempotent; assumes your existing claim logic)
-    -- Replace with your actual token claim logic or call your existing RPC
+    -- 1. Claim dispatch token (idempotent deduplication)
+    -- Matches table defined in foundations1.sql
     SELECT TRUE INTO v_claimed
-    FROM recovery_email_dispatch_tokens
+    FROM recovery_dispatch_dedup
     WHERE token = p_dispatch_token
       AND tenant_id = p_tenant_id
       AND send_id = p_send_id
@@ -36,15 +41,16 @@ BEGIN
         RETURN;
     END IF;
     
-    UPDATE recovery_email_dispatch_tokens
+    UPDATE recovery_dispatch_dedup
     SET claimed_at = v_now
     WHERE token = p_dispatch_token;
     
     v_claim_status := 'claimed';
 
     -- 2. Fetch record
+    -- Matches table defined in foundations1.sql
     SELECT TO_JSONB(r.*) INTO v_record
-    FROM recovery_email_table r
+    FROM recovery_emails r
     WHERE r.tenant_id = p_tenant_id AND r.id = p_send_id;
     
     IF v_record IS NULL THEN
@@ -65,7 +71,7 @@ BEGIN
     END IF;
 
     -- 5. Global cap (24h)
-    PERFORM 1 FROM recovery_email_table
+    PERFORM 1 FROM recovery_emails
     WHERE tenant_id = p_tenant_id
       AND user_id = (v_record->>'user_id')::TEXT
       AND status IN ('provider_accepted', 'delivered')
@@ -78,7 +84,7 @@ BEGIN
     END IF;
 
     -- 6. Template cooldown (7d)
-    PERFORM 1 FROM recovery_email_table
+    PERFORM 1 FROM recovery_emails
     WHERE tenant_id = p_tenant_id
       AND user_id = (v_record->>'user_id')::TEXT
       AND campaign_type = (v_record->>'campaign_type')::TEXT
@@ -92,8 +98,8 @@ BEGIN
     END IF;
 
     -- 7. Reserve attempt
-    UPDATE recovery_email_table
-    SET attempt_count = attempt_count + 1,
+    UPDATE recovery_emails
+    SET attempt_count = COALESCE(attempt_count, 0) + 1,
         updated_at = v_now
     WHERE id = p_send_id
     RETURNING attempt_count INTO v_attempt_count;
@@ -101,8 +107,9 @@ BEGIN
     RETURN QUERY SELECT v_record, v_claim_status, 'ok'::TEXT, v_attempt_count, NULL::TEXT;
 END;
 $$;
+
 -- ============================================================================
--- 1. EMAIL TEMPLATES TABLE (Perfect as-is)
+-- 2. EMAIL TEMPLATES TABLE
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS public.email_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -115,7 +122,6 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Tenant FK (DEFERRABLE per Arcli standards)
 DO $$ BEGIN 
     ALTER TABLE public.email_templates
     ADD CONSTRAINT fk_email_templates_tenant 
@@ -124,11 +130,9 @@ DO $$ BEGIN
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
--- Fast lookup for the frontend
 CREATE INDEX IF NOT EXISTS idx_email_templates_tenant 
     ON public.email_templates(tenant_id, created_at DESC);
 
--- Strict RLS Policies
 ALTER TABLE public.email_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_templates FORCE ROW LEVEL SECURITY;
 
@@ -142,15 +146,13 @@ CREATE POLICY "email_templates_select_tenant" ON public.email_templates
         )
     );
 
--- Optional: Insert a dummy template so your UI isn't empty
--- INSERT INTO public.email_templates (tenant_id, name, subject, type) 
--- VALUES ('YOUR_TENANT_ID', 'Payment Failed - Gentle Reminder', 'Action Required: Payment failed', 'billing');
-
-
 -- ============================================================================
--- 2. AT-RISK USERS (RADAR VIEW - FIXED TO PREVENT 42P16 ERROR)
+-- 3. AT-RISK USERS (RADAR VIEW)
 -- ============================================================================
-CREATE OR REPLACE VIEW public.vw_risk_queue_radar AS
+-- Must DROP CASCADE first to strictly prevent 42P16 error on iterative deploys
+DROP VIEW IF EXISTS public.vw_risk_queue_radar CASCADE;
+
+CREATE VIEW public.vw_risk_queue_radar AS
 SELECT
     re.id,
     re.tenant_id,
@@ -158,10 +160,7 @@ SELECT
     COALESCE(crs.customer_name, SPLIT_PART(re.email, '@', 1)) AS customer_name,
     re.email AS customer_email,
     COALESCE(re.churn_risk_score, crs.risk_score, 0) AS risk_score,
-    
-    -- MUST stay here (Column 7) to avoid the 42P16 rename error
     COALESCE(crs.mrr_at_risk, 0) AS mrr_at_risk,
-    
     CASE
         WHEN re.status = 'dead_lettered' THEN 'dead_lettered'
         WHEN re.status IN ('dispatch_failed', 'failed') THEN 'failed'
@@ -173,11 +172,8 @@ SELECT
     END AS state,
     COALESCE(re.next_retry_at, re.lease_expires_at) AS next_action_time,
     re.claimed_by_operator AS assigned_operator_id,
-
-    -- ADDED AT THE END: Exposed for CampaignsClient without breaking existing columns
     COALESCE(re.primary_risk_signal, crs.risk_tier, 'High Risk Detected') AS signal,
     re.updated_at AS last_active
-    
 FROM public.recovery_emails re
 LEFT JOIN public.churn_risk_state crs
     ON re.tenant_id = crs.tenant_id AND re.user_id = crs.user_id
