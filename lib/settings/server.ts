@@ -5,12 +5,20 @@ import type { ApiKeySummary, TenantSettingsSnapshotRow } from "@/lib/settings/ty
 export const SETTINGS_SELECT =
   "tenant_id, company_name, reply_to_email, stripe_account_id, email_provider_status, key_last_updated, updated_at";
 
-export function fetchTenantSettingsRow(supabase: SupabaseClient<Database>, tenantId: string) {
-  return supabase
+export async function fetchTenantSettingsRow(
+  supabase: SupabaseClient<Database>,
+  tenantId: string
+): Promise<{ data: TenantSettingsSnapshotRow | null; error: any }> {
+  const { data, error } = await supabase
     .from("tenant_settings")
-    .select<TenantSettingsSnapshotRow>(SETTINGS_SELECT)
+    .select(SETTINGS_SELECT) // 🚨 FIX: Removed the invalid generic from here
     .eq("tenant_id", tenantId)
     .maybeSingle();
+
+  return {
+    data: data as TenantSettingsSnapshotRow | null, // Cast the resolved data payload instead
+    error,
+  };
 }
 
 export async function fetchTenantApiKeySummary(
