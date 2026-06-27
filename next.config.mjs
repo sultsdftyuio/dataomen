@@ -118,7 +118,7 @@ const nextConfig = {
       beforeFiles: [
         {
           source: '/api/v1/:path*',
-          destination: `${backendUrl}/v1/:path*`, 
+           destination: `${backendUrl}/api/v1/:path*`,
         }
       ],
       afterFiles: [],
@@ -126,7 +126,7 @@ const nextConfig = {
         // Generic fallback for any other endpoints
         {
           source: '/api/:path*',
-          destination: `${backendUrl}/:path*`, 
+          destination: `${backendUrl}/api/:path*`,
         }
       ]
     };
