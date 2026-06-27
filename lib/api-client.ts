@@ -1,40 +1,27 @@
 /**
  * ARCLI.TECH - Universal API Client
- * Strategy: Hybrid Performance & Multi-Tenant Security
- * Description: Wrapper around native fetch that automatically injects 
- * Supabase Authorization headers and handles Vercel-to-DigitalOcean routing securely.
+ * Strategy: Single Entry Point (Browser -> Vercel -> DigitalOcean)
+ * Description: Wrapper around native fetch that strictly uses relative routes 
+ * to leverage next.config.mjs rewrites, avoiding CORS entirely.
  */
 
 import { createClient } from '@/utils/supabase/client'
 
-// --- Temporary Debug Logs ---
-console.log("NEXT_PUBLIC_API_URL =", process.env.NEXT_PUBLIC_API_URL);
-
-// 1. Resolve base URL safely (Vercel as Single Entry Point)
-const resolveApiUrl = () => {
-  const url = process.env.NEXT_PUBLIC_API_URL?.trim();
-
-  // Production should always go through Vercel rewrites by default.
-  if (!url) {
-    return "/api/v1";
+// --- Custom Error Class ---
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public data?: any
+  ) {
+    super(message);
+    this.name = 'ApiError';
   }
-
-  return url.replace(/\/+$/, "");
-};
-
-const API_BASE_URL = resolveApiUrl();
-console.log("API_BASE_URL =", API_BASE_URL); // Temporary debug log
-
-// 8. Detect accidental HTTP in production immediately at startup
-if (
-  process.env.NODE_ENV === "production" &&
-  API_BASE_URL.startsWith("http://") &&
-  !API_BASE_URL.includes("localhost")
-) {
-  throw new Error(`NEXT_PUBLIC_API_URL must use HTTPS: ${API_BASE_URL}`);
 }
 
-const ABSOLUTE_URL_REGEX = /^https?:\/\//i;
+// 1. Hardcoded Base URL (Security win: backend origin is never exposed to the browser)
+const API_BASE_URL = "/api/v1";
+
 const INTERNAL_NEXT_API_PREFIXES = [
   '/api/chat',
   '/api/insights',
@@ -48,23 +35,10 @@ const isInternalNextApiRoute = (path: string) => {
   );
 };
 
-// 2. Fail loud on insecure external URLs instead of silently masking them
-const validateExternalUrl = (url: string) => {
-  if (
-    process.env.NODE_ENV === "production" &&
-    url.startsWith("http://") &&
-    !url.includes("localhost")
-  ) {
-    throw new Error(`Insecure API URL detected: ${url}. Use HTTPS or /api/v1.`);
-  }
-
-  return url;
-};
-
-// 3. Simplified URL Builder without double-prefixing
+// 2. Simplified URL Builder
 const buildRequestUrl = (endpoint: string) => {
-  if (ABSOLUTE_URL_REGEX.test(endpoint)) {
-    return validateExternalUrl(endpoint);
+  if (/^https?:\/\//i.test(endpoint)) {
+    throw new Error("Absolute API URLs are forbidden. Use relative endpoints.");
   }
 
   const clean = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
@@ -73,12 +47,11 @@ const buildRequestUrl = (endpoint: string) => {
     return clean;
   }
 
-  // Strip prefix if the endpoint passed already includes it, to prevent /api/v1/api/v1/...
-  const normalizedEndpoint = clean.startsWith("/api")
-    ? clean.replace(/^\/api\/v1/, "")
-    : clean;
+  if (clean.startsWith("/api/v1")) {
+    return clean;
+  }
 
-  return validateExternalUrl(`${API_BASE_URL}${normalizedEndpoint}`);
+  return `${API_BASE_URL}${clean}`;
 };
 
 interface FetchOptions extends RequestInit {
@@ -103,25 +76,32 @@ export class ApiClient {
       headers.set('Content-Type', 'application/json');
     }
 
-    // 2. Inject Supabase Session Token if Auth is required
+    // 9. Add Request ID for end-to-end tracing
+    if (!headers.has('X-Request-ID')) {
+      headers.set('X-Request-ID', crypto.randomUUID());
+    }
+
+    // 2. Inject Supabase Session Token & Handle Automatic Refreshes
     if (requireAuth) {
-      const { data: { session }, error } = await this.supabase.auth.getSession();
+      const { data: { session } } = await this.supabase.auth.getSession();
       
-      if (error || !session) {
-        console.warn('API Client: Missing session for authenticated route.');
-        // 5. Better authentication diagnostics
-        throw new Error(error?.message ?? "Unauthorized: No active session.");
+      if (!session) {
+        // Attempt to refresh an expired session before failing
+        await this.supabase.auth.refreshSession();
+        const refreshed = await this.supabase.auth.getSession();
+
+        if (!refreshed.data.session) {
+          throw new ApiError(401, "Authentication required. No active session.");
+        }
+        
+        headers.set('Authorization', `Bearer ${refreshed.data.session.access_token}`);
+      } else {
+        headers.set('Authorization', `Bearer ${session.access_token}`);
       }
-      
-      headers.set('Authorization', `Bearer ${session.access_token}`);
     }
 
     // 3. Construct URL
     const url = buildRequestUrl(endpoint);
-
-    // --- Temporary Diagnostics ---
-    console.log("Endpoint:", endpoint);
-    console.log("Final URL:", url);
 
     // 4. Request Debugging (Development only)
     if (process.env.NODE_ENV !== "production") {
@@ -130,43 +110,58 @@ export class ApiClient {
         url,
         method: fetchOptions.method ?? "GET",
         auth: headers.has("Authorization"),
+        requestId: headers.get("X-Request-ID")
       });
     }
 
-    // 7. Abort long requests to prevent hanging UI
+    // 5. Abort long requests to prevent hanging UI
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+    let response: Response;
+
     try {
-      // 4. Execute Network Call
-      const response = await fetch(url, {
+      // 6. Execute Network Call with resilience checks
+      response = await fetch(url, {
         ...fetchOptions,
         headers,
+        credentials: "same-origin",
+        cache: "no-store", // Prevent browser caching of authenticated requests
         signal: controller.signal,
       });
-
-      // 6. Handle standard HTTP Errors organically with preserved status
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          [
-            `HTTP ${response.status}`,
-            errorData.detail,
-            errorData.error,
-            errorData.message,
-          ]
-            .filter(Boolean)
-            .join(" | ")
-        );
+    } catch (err) {
+      // Explicitly handle timeouts vs total network failures
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new ApiError(408, "Request timed out.");
       }
-
-      // Return parsed JSON automatically
-      return (await response.json()) as T;
-
+      throw new ApiError(0, "Unable to reach the server.");
     } finally {
       // Clean up the timer to prevent memory leaks
       clearTimeout(timeoutId);
     }
+
+    // 7. Handle standard HTTP Errors organically with preserved status
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      
+      throw new ApiError(
+        response.status,
+        errorData.detail ?? errorData.message ?? errorData.error ?? "Unknown API error",
+        errorData
+      );
+    }
+
+    // 8. Smart Response Parsing
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (contentType?.includes("application/json")) {
+      return (await response.json()) as T;
+    }
+
+    return (await response.text()) as unknown as T;
   }
 
   // --- Convenience Methods ---

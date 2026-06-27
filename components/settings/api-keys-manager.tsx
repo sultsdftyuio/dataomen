@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   Key, 
   Plus, 
@@ -18,13 +18,27 @@ import {
 import { C } from "@/lib/tokens";
 import { ApiClient } from "@/lib/api-client";
 
+// 11. Stronger typing using readonly properties
 interface ApiKeyMetadata {
-  key_id: string;
-  name: string;
-  masked_key: string;
-  created_at: string;
-  is_revoked: boolean;
+  readonly key_id: string;
+  readonly name: string;
+  readonly masked_key: string;
+  readonly created_at: string;
+  readonly is_revoked: boolean;
 }
+
+// 1. Remove `any` by explicitly typing the API response
+interface ApiKeysResponse {
+  items: ApiKeyMetadata[];
+  total?: number;
+}
+
+// 10. Better date formatting outside the component to avoid re-instantiation
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 export function ApiKeysManager() {
   const [keys, setKeys] = useState<ApiKeyMetadata[]>([]);
@@ -46,28 +60,49 @@ export function ApiKeysManager() {
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
 
-  // --- Data Fetching ---
-  useEffect(() => {
-    fetchKeys();
+  // 8. useCallback for background fetches
+  const fetchKeys = useCallback(async () => {
+    try {
+      const data = await ApiClient.get<ApiKeysResponse | ApiKeyMetadata[]>("/api/v1/api-keys");
+      setKeys(Array.isArray(data) ? data : data.items); 
+    } catch (err) {
+      console.error("Background fetch failed", err);
+    }
   }, []);
 
-  const fetchKeys = async () => {
-    setIsLoading(true);
-    try {
-      // Note: If your Python backend returns a PaginatedApiKeyResponse, 
-      // you may need to adjust this to setKeys(data.items || data) 
-      const data = await ApiClient.get<any>("/api/v1/api-keys");
-      setKeys(data.items || data); 
-    } catch (err) {
-      console.error("Failed to fetch keys", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // 9. Handle component unmount gracefully for initial load
+  useEffect(() => {
+    let mounted = true;
+
+    const load = async () => {
+      setIsLoading(true);
+      try {
+        const data = await ApiClient.get<ApiKeysResponse | ApiKeyMetadata[]>("/api/v1/api-keys");
+        if (mounted) {
+          setKeys(Array.isArray(data) ? data : data.items);
+        }
+      } catch (err) {
+        console.error("Failed to fetch keys", err);
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // --- Actions ---
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 3. Prevent duplicate requests
+    if (isGenerating) return;
     if (!newKeyName.trim()) return;
     
     setIsGenerating(true);
@@ -81,6 +116,7 @@ export function ApiKeysManager() {
         name: newKeyName 
       });
       
+      // 12. Optimistic update
       setKeys(prev => [{
         key_id: data.key_id,
         name: data.name,
@@ -90,15 +126,23 @@ export function ApiKeysManager() {
       }, ...prev]);
 
       setNewlyGeneratedKey(data.plaintext_key);
+
+      // 4. Background refresh to get exact server state
+      await fetchKeys();
     } catch (err) {
       console.error(err);
-      alert("Failed to generate API Key.");
+      
+      // 2. Better error handling
+      const message = err instanceof Error ? err.message : "Unexpected error while generating key.";
+      alert(message);
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleRevoke = async (keyId: string) => {
+    // 3. Prevent duplicate requests
+    if (revokingId) return;
     if (!confirm("Are you sure? This will instantly break any integrations using this key.")) return;
     
     setRevokingId(keyId);
@@ -107,20 +151,32 @@ export function ApiKeysManager() {
         key_id: keyId 
       });
       
+      // 12. Optimistic update
       setKeys(prev => prev.map(k => k.key_id === keyId ? { ...k, is_revoked: true } : k));
+
+      // 6. Background refresh to sync exact state
+      await fetchKeys();
     } catch (err) {
       console.error(err);
-      alert("Failed to revoke API Key.");
+      
+      // 2. Better error handling
+      const message = err instanceof Error ? err.message : "Unexpected error while revoking key.";
+      alert(message);
     } finally {
       setRevokingId(null);
     }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (newlyGeneratedKey) {
-      navigator.clipboard.writeText(newlyGeneratedKey);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // 5. Better Clipboard API handling
+      try {
+        await navigator.clipboard.writeText(newlyGeneratedKey);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        alert("Unable to copy to clipboard.");
+      }
     }
   };
 
@@ -148,7 +204,14 @@ export function ApiKeysManager() {
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
-            style={{ height: 40, padding: "0 18px", borderRadius: 8, background: C.navy, color: C.white, fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+            disabled={isLoading} // 7. Add loading state to Create button
+            style={{ 
+              height: 40, padding: "0 18px", borderRadius: 8, background: C.navy, 
+              color: C.white, fontSize: 13, fontWeight: 600, border: "none", 
+              cursor: isLoading ? "not-allowed" : "pointer", display: "flex", 
+              alignItems: "center", gap: 8, opacity: isLoading ? 0.7 : 1 
+            }}
+          >
             <Plus size={16} /> Create new API Key
           </button>
         </div>
@@ -196,7 +259,8 @@ export function ApiKeysManager() {
                       <code style={{ background: C.offWhite, border: surfaceBorder, padding: "4px 8px", borderRadius: 6 }}>{k.masked_key}</code>
                     </td>
                     <td style={{ padding: "16px 20px", fontSize: 13, color: C.muted }}>
-                      {new Date(k.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      {/* 10. Memoized date formatter instead of instantiating new local strings per row */}
+                      {dateFormatter.format(new Date(k.created_at))}
                     </td>
                     <td style={{ padding: "16px 20px", textAlign: "right" }}>
                       {!k.is_revoked ? (
