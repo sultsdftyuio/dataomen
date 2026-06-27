@@ -16,6 +16,7 @@ import {
 
 // Import your centralized design tokens
 import { C } from "@/lib/tokens";
+import { ApiClient } from "@/lib/api-client";
 
 interface ApiKeyMetadata {
   key_id: string;
@@ -53,11 +54,10 @@ export function ApiKeysManager() {
   const fetchKeys = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/v1/api-keys");
-      if (res.ok) {
-        const data = await res.json();
-        setKeys(data);
-      }
+      // Note: If your Python backend returns a PaginatedApiKeyResponse, 
+      // you may need to adjust this to setKeys(data.items || data) 
+      const data = await ApiClient.get<any>("/api/v1/api-keys");
+      setKeys(data.items || data); 
     } catch (err) {
       console.error("Failed to fetch keys", err);
     } finally {
@@ -72,15 +72,14 @@ export function ApiKeysManager() {
     
     setIsGenerating(true);
     try {
-      const res = await fetch("/api/v1/api-keys/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName })
+      const data = await ApiClient.post<{
+        key_id: string;
+        name: string;
+        masked_key: string;
+        plaintext_key: string;
+      }>("/api/v1/api-keys/generate", { 
+        name: newKeyName 
       });
-
-      if (!res.ok) throw new Error("Generation failed");
-      
-      const data = await res.json();
       
       setKeys(prev => [{
         key_id: data.key_id,
@@ -104,13 +103,9 @@ export function ApiKeysManager() {
     
     setRevokingId(keyId);
     try {
-      const res = await fetch("/api/v1/api-keys/revoke", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key_id: keyId })
+      await ApiClient.post("/api/v1/api-keys/revoke", { 
+        key_id: keyId 
       });
-
-      if (!res.ok) throw new Error("Revocation failed");
       
       setKeys(prev => prev.map(k => k.key_id === keyId ? { ...k, is_revoked: true } : k));
     } catch (err) {
