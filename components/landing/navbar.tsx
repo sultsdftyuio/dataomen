@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { User } from "lucide-react";
 import { C } from "@/lib/tokens";
-import Logo from "@/components/ui/logo"; // FIX: Replaced named import with default import to prevent compilation crash
+import Logo from "@/components/ui/logo"; 
 
 /**
  * Navbar Component
@@ -25,9 +25,9 @@ export function Navbar() {
   // UPDATED: Absolute root anchors (/#...) to enable cross-page navigation
   const navLinks = [
     { name: "Platform", href: "/#platform" },
-    { name: "Pricing", href: "/#pricing" },
-    { name: "Security", href: "/#security" },
-    { name: "Docs", href: "/docs" }
+    { name: "Features", href: "/#features" },
+    { name: "Campaigns", href: "/#campaigns" },
+    { name: "Pricing", href: "/#pricing" }
   ];
 
   return (

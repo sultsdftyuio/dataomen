@@ -6,7 +6,9 @@ import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
+import Campaigns from "@/components/landing/Campaigns"; // Integrating the new Campaigns component
 import { Testimonials } from "@/components/landing/testimonials";
+import Pricing from "@/components/landing/Pricing"; // Integrating the new Pricing component
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
 import Footer from "@/components/landing/footer";
@@ -23,26 +25,30 @@ export default async function Page() {
   }
 
   return (
-    <main className="bg-neutral-950 text-slate-50 antialiased selection:bg-blue-500/30">
+    // FIX: Switched to a light theme to match the Arcli branding and component designs
+    <main className="bg-[#FAFCFF] text-slate-900 antialiased selection:bg-blue-100 selection:text-[#1B6EBF]">
       <Navbar />
       
       <div className="relative isolate overflow-hidden">
-        {/* Decorative background gradients */}
-        <div aria-hidden="true" className="absolute inset-0 pointer-events-none opacity-30 z-0">
-          <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-900/10 blur-[120px]" />
-          <div className="absolute bottom-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-900/10 blur-[100px]" />
+        {/* Decorative background gradients optimized for light mode */}
+        <div aria-hidden="true" className="absolute inset-0 pointer-events-none opacity-60 z-0">
+          <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-100/50 blur-[120px]" />
+          <div className="absolute bottom-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-sky-100/50 blur-[100px]" />
         </div>
 
-        {/* Page Content */}
-        <div className="relative z-10">
+        {/* Page Content Flow */}
+        <div className="relative z-10 flex flex-col">
           <Hero />
           <HowItWorks />
           <DeepDiveFeatures />
+          <Campaigns />
           <Testimonials />
+          <Pricing />
           <FAQ />
           <CTA />
         </div>
       </div>
+      
       <Footer />
     </main>
   );

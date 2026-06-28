@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { Mail, ShieldCheck } from 'lucide-react';
+import { Mail } from 'lucide-react';
 import Logo from '@/components/ui/logo';
 
 const SUPPORT_EMAIL = 'support@arcli.tech';
@@ -30,10 +30,6 @@ export default function Footer() {
             <p className="text-slate-600 mb-6 max-w-md text-[14px] leading-relaxed">
               The intelligence layer for subscription SaaS revenue recovery. Built to detect churn signals, automate personalized campaigns, and attribute recovered revenue with deterministic precision.
             </p>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              Fully Transaction-Safe Multi-Tenant Isolation
-            </div>
           </div>
 
           {/* Nav Links Grid */}
@@ -134,10 +130,6 @@ export default function Footer() {
             &copy; {currentYear} Arcli. All rights reserved. Deterministic Churn Mitigation Engine.
           </p>
           <div className="flex items-center gap-6 text-sm text-slate-500">
-            <span className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              PostgreSQL RLS Active
-            </span>
             <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-[#1B6EBF] transition-colors flex items-center gap-2 font-medium text-slate-600">
               <Mail className="w-4 h-4" />
               {SUPPORT_EMAIL}
