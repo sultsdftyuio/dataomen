@@ -81,7 +81,7 @@ export function Hero() {
 
           {/* Social nudge */}
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", marginTop: 0, fontSize: 12, color: C.faint, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            14-day free trial · No credit card · Setup in 5 minutes
+            3-day free trial · No credit card · Easy setup
           </p>
         </div>
 

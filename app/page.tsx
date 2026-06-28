@@ -6,7 +6,6 @@ import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import { IntegrationsAndSecurity } from "@/components/landing/Integrationsandsecurity";
 import { Testimonials } from "@/components/landing/testimonials";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
@@ -39,7 +38,6 @@ export default async function Page() {
           <Hero />
           <HowItWorks />
           <DeepDiveFeatures />
-          <IntegrationsAndSecurity />
           <Testimonials />
           <FAQ />
           <CTA />
