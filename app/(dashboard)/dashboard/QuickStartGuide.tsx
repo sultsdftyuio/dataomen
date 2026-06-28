@@ -1,3 +1,4 @@
+// app/(dashboard)/dashboard/QuickStartGuide.tsx
 "use client";
 
 import Link from "next/link";
@@ -32,7 +33,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { ApiKeysManager } from "@/components/settings/api-keys-manager";
 
@@ -62,6 +62,14 @@ export default function QuickStartGuide({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+
+  // ─── Optimistic Local State ──────────────────────────────────────────────
+  // Triggers instantly when the user creates a key in the modal
+  const [localKeyGenerated, setLocalKeyGenerated] = useState(false);
+
+  // Derive the active states optimistically
+  const isStep2Active = hasApiKey || localKeyGenerated;
+  const isComplete = setupState === "complete";
 
   // ─── Reactive timestamp ticker ──────────────────────────────────────────
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
@@ -94,7 +102,8 @@ export default function QuickStartGuide({
     isPendingRef.current = isPending;
   }, [isPending]);
 
-  const canCheckStatus = hasApiKey && !hasReceivedData;
+  // We can poll if Step 2 is active (they have a key) but no data yet
+  const canCheckStatus = isStep2Active && !hasReceivedData;
 
   const refreshDashboard = useCallback(() => {
     if (isPendingRef.current) return;
@@ -132,10 +141,9 @@ export default function QuickStartGuide({
   }, [canCheckStatus, refreshDashboard]);
 
   // ─── Derived display values ─────────────────────────────────────────────
-  const isComplete = setupState === "complete";
   const progressPercent = useMemo(
-    () => (hasReceivedData ? 100 : hasApiKey ? 66 : 33),
-    [hasApiKey, hasReceivedData]
+    () => (hasReceivedData ? 100 : isStep2Active ? 66 : 33),
+    [isStep2Active, hasReceivedData]
   );
   const lastCheckedLabel = useMemo(
     () => (lastCheckedAt ? formatLastChecked(lastCheckedAt, now) : null),
@@ -480,83 +488,31 @@ export default function QuickStartGuide({
               1,
               "Create your API key",
               "Generate credentials for your integration.",
-              hasApiKey ? "complete" : "active",
-              !hasApiKey ? (
-                <Dialog
-                  open={isApiModalOpen}
-                  onOpenChange={setIsApiModalOpen}
+              isStep2Active ? "complete" : "active",
+              !isStep2Active ? (
+                <button
+                  onClick={() => setIsApiModalOpen(true)}
+                  style={{
+                    height: 40,
+                    padding: "0 16px",
+                    borderRadius: 8,
+                    border: surfaceBorder,
+                    boxShadow: surfaceShadow,
+                    background: C.navy,
+                    color: "#fff",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    cursor: "pointer",
+                    letterSpacing: "0.02em",
+                  }}
                 >
-                  <DialogTrigger asChild>
-                    <button
-                      style={{
-                        height: 40,
-                        padding: "0 16px",
-                        borderRadius: 8,
-                        border: surfaceBorder,
-                        boxShadow: surfaceShadow,
-                        background: C.navy,
-                        color: "#fff",
-                        fontSize: 14,
-                        fontWeight: 700,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        cursor: "pointer",
-                        letterSpacing: "0.02em",
-                      }}
-                    >
-                      <KeyRound size={14} />
-                      Create API Key
-                      <ArrowRight size={14} />
-                    </button>
-                  </DialogTrigger>
-
-                  <DialogContent
-                    className="sm:max-w-3xl p-0 border-slate-200 shadow-xl overflow-hidden rounded-xl"
-                    style={{ fontFamily: sans }}
-                  >
-                    <DialogHeader className="px-6 py-5 border-b border-slate-100 bg-white">
-                      <DialogTitle className="flex items-center gap-2.5 text-lg text-slate-900 tracking-tight">
-                        <ShieldAlert className="h-5 w-5 text-blue-600" />
-                        API Credentials
-                      </DialogTitle>
-                      <DialogDescription className="text-sm text-slate-500 mt-1.5">
-                        Generate and store your API keys securely. Raw keys are
-                        only displayed once.
-                      </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="p-6 bg-slate-50/50 max-h-[60vh] overflow-y-auto">
-                      <div className="bg-white border border-slate-200 rounded-xl p-2 shadow-sm">
-                        <ApiKeysManager />
-                      </div>
-                    </div>
-
-                    <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end">
-                      <button
-                        onClick={() => {
-                          setIsApiModalOpen(false);
-                          refreshDashboard();
-                        }}
-                        style={{
-                          height: 36,
-                          padding: "0 16px",
-                          borderRadius: 6,
-                          background: C.navy,
-                          color: "#fff",
-                          fontSize: 14,
-                          fontWeight: 600,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          border: "none",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Done
-                      </button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+                  <KeyRound size={14} />
+                  Create API Key
+                  <ArrowRight size={14} />
+                </button>
               ) : undefined
             )}
 
@@ -564,13 +520,13 @@ export default function QuickStartGuide({
             {renderStep(
               2,
               "Validate incoming events",
-              hasApiKey
+              isStep2Active
                 ? hasReceivedData
                   ? "Integration verified."
                   : "Send your first event to verify the integration."
                 : "Complete Step 1 first.",
-              hasReceivedData ? "complete" : hasApiKey ? "active" : "locked",
-              hasApiKey && !hasReceivedData ? (
+              hasReceivedData ? "complete" : isStep2Active ? "active" : "locked",
+              isStep2Active && !hasReceivedData ? (
                 <Link
                   href="/docs/test-events"
                   style={{
@@ -701,6 +657,62 @@ export default function QuickStartGuide({
           </div>
         </footer>
       </div>
+
+      {/* ─── Hoisted Modal (prevents unmount when step completes) ─── */}
+      <Dialog
+        open={isApiModalOpen}
+        onOpenChange={(open) => {
+          setIsApiModalOpen(open);
+          // Refresh the dashboard data server-side when the modal is closed
+          if (!open) refreshDashboard();
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-3xl p-0 border-slate-200 shadow-xl overflow-hidden rounded-xl"
+          style={{ fontFamily: sans }}
+        >
+          <DialogHeader className="px-6 py-5 border-b border-slate-100 bg-white">
+            <DialogTitle className="flex items-center gap-2.5 text-lg text-slate-900 tracking-tight">
+              <ShieldAlert className="h-5 w-5 text-blue-600" />
+              API Credentials
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500 mt-1.5">
+              Generate and store your API keys securely. Raw keys are
+              only displayed once.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-6 bg-slate-50/50 max-h-[60vh] overflow-y-auto">
+            <div className="bg-white border border-slate-200 rounded-xl p-2 shadow-sm">
+              <ApiKeysManager onKeyGenerated={() => setLocalKeyGenerated(true)} />
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end">
+            <button
+              onClick={() => {
+                setIsApiModalOpen(false);
+                refreshDashboard();
+              }}
+              style={{
+                height: 36,
+                padding: "0 16px",
+                borderRadius: 6,
+                background: C.navy,
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Scoped keyframes (no global collision) ───────────────────── */}
       <style jsx>{`

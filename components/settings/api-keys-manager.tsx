@@ -1,3 +1,4 @@
+// components/settings/api-keys-manager.tsx
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -40,7 +41,11 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-export function ApiKeysManager() {
+export interface ApiKeysManagerProps {
+  onKeyGenerated?: () => void;
+}
+
+export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
   const [keys, setKeys] = useState<ApiKeyMetadata[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -126,6 +131,11 @@ export function ApiKeysManager() {
       }, ...prev]);
 
       setNewlyGeneratedKey(data.plaintext_key);
+
+      // Trigger the callback to unlock UI in parent elements instantly
+      if (onKeyGenerated) {
+        onKeyGenerated();
+      }
 
       // 4. Background refresh to get exact server state
       await fetchKeys();

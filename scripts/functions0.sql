@@ -1392,7 +1392,58 @@ DO $$ BEGIN
         ALTER TABLE recovery_attributions ADD COLUMN attributed_at TIMESTAMPTZ;
     END IF;
 END $$;
+-- Safely add missing columns to the api_keys table
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='label') THEN
+        ALTER TABLE api_keys ADD COLUMN label TEXT;
+    END IF;
+END $$;
 
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='key_last4') THEN
+        ALTER TABLE api_keys ADD COLUMN key_last4 TEXT;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='created_by') THEN
+        ALTER TABLE api_keys ADD COLUMN created_by UUID;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='api_keys' AND column_name='last_used_at') THEN
+        ALTER TABLE api_keys ADD COLUMN last_used_at TIMESTAMPTZ;
+    END IF;
+END $$;
+
+-- Optional: If you want to strictly tie created_by to the auth.users table (per Section 15 rules)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth') THEN
+        ALTER TABLE api_keys
+            ADD CONSTRAINT fk_api_keys_created_by FOREIGN KEY (created_by) REFERENCES auth.users(id)
+            ON DELETE SET NULL NOT VALID DEFERRABLE INITIALLY DEFERRED;
+    END IF;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ 
+BEGIN
+    -- Check if the legacy 'name' column exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'api_keys' 
+          AND column_name = 'name'
+    ) THEN
+        -- 1. Migrate legacy data to the new 'label' column
+        UPDATE public.api_keys 
+        SET label = name 
+        WHERE label IS NULL AND name IS NOT NULL;
+
+        -- 2. Remove the NOT NULL constraint so the Python code can insert successfully
+        EXECUTE 'ALTER TABLE public.api_keys ALTER COLUMN name DROP NOT NULL;';
+    END IF;
+END $$;
 -- ============================================================================
 -- SECTION 15: CORE FOREIGN KEYS
 -- ============================================================================
