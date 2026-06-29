@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Mail, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { CreateTemplateModal } from "./create-template-modal"; // Wired up here
+import { CreateTemplateModal } from "./create-template-modal";
 
-// Data shapes exported so the Modal can share the types
 export interface RiskUser {
   id: string;
   email: string;
@@ -42,33 +41,59 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [isSending, setIsSending] = useState(false);
 
-  // 1. Optimistic Insertion Logic (Called by the child modal)
-  const onNewTemplateCreated = (newTemplate: EmailTemplate) => {
+  // Abort controller for pending requests on unmount/re-triggers
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup: abort any pending fetches if the user navigates away
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Memoized derived states
+  const sortedAtRiskUsers = useMemo(() => {
+    return [...atRiskUsers].sort((a, b) => b.riskScore - a.riskScore);
+  }, [atRiskUsers]);
+
+  const allSelected = useMemo(() => {
+    return sortedAtRiskUsers.length > 0 && sortedAtRiskUsers.every((u) => selectedUsers.has(u.id));
+  }, [sortedAtRiskUsers, selectedUsers]);
+
+  const activeTemplate = useMemo(() => {
+    return templates.find(t => t.id === selectedTemplate);
+  }, [templates, selectedTemplate]);
+
+  // Optimistic Insertion Logic
+  const onNewTemplateCreated = useCallback((newTemplate: EmailTemplate) => {
     setTemplates((prev) => [newTemplate, ...prev]);
     setSelectedTemplate(newTemplate.id);
-    // Optionally trigger a silent background refresh to sync Next.js Server state
     router.refresh();
-  };
+  }, [router]);
 
-  const toggleUser = (userId: string) => {
-    const newSet = new Set(selectedUsers);
-    if (newSet.has(userId)) newSet.delete(userId);
-    else newSet.add(userId);
-    setSelectedUsers(newSet);
-  };
+  // Functional state updates to prevent stale closures
+  const toggleUser = useCallback((userId: string) => {
+    setSelectedUsers((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }, []);
 
-  const toggleAll = () => {
-    if (selectedUsers.size === atRiskUsers.length) {
-      setSelectedUsers(new Set());
-    } else {
-      setSelectedUsers(new Set(atRiskUsers.map((u) => u.id)));
-    }
-  };
+  const toggleAll = useCallback(() => {
+    setSelectedUsers((prev) => {
+      if (allSelected) return new Set();
+      return new Set(sortedAtRiskUsers.map((u) => u.id));
+    });
+  }, [allSelected, sortedAtRiskUsers]);
 
   const handleSendCampaign = async () => {
     if (!selectedTemplate || selectedUsers.size === 0) return;
 
-    const targets = atRiskUsers
+    const targets = sortedAtRiskUsers
       .filter((user) => selectedUsers.has(user.id))
       .map((user) => ({
         id: user.id,
@@ -77,23 +102,38 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
         riskScore: user.riskScore,
       }));
 
+    // Prevent accidental huge requests
     if (targets.length > 500) {
       toast({ title: "Selection Limit Exceeded", description: "Select up to 500 users.", variant: "destructive" });
       return;
     }
 
+    // Common SaaS confirmation for mass dispatch
+    if (targets.length >= 50) {
+      const confirmed = window.confirm(`Are you sure you want to dispatch this campaign to ${targets.length} users?`);
+      if (!confirmed) return;
+    }
+
     setIsSending(true);
     const idempotencyKey = `req_dispatch_${crypto.randomUUID()}`;
+
+    // Refresh abort controller
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch("/api/campaigns/dispatch", {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey // Added header for robust backend idempotency
+        },
         body: JSON.stringify({
           templateId: selectedTemplate,
           targets: targets,
           idempotencyKey: idempotencyKey
         }),
+        signal: abortControllerRef.current.signal,
       });
 
       const payload = await response.json().catch(() => null);
@@ -105,15 +145,20 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
       
       toast({
         title: "Campaign Dispatched 🚀",
-        description: payload.note === "deduplicated" 
+        description: payload?.note === "deduplicated" 
           ? "Request already processed safely." 
-          : `Successfully queued ${typeof payload.queued === "number" ? payload.queued : targets.length} recovery emails.`,
+          : `Successfully queued ${typeof payload?.queued === "number" ? payload.queued : targets.length} recovery emails.`,
       });
 
-    } catch (error) {
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return; // Component unmounted or request aborted, fail silently
+      }
+      
+      // Surfacing actual backend error messages for better debugging
       toast({
         title: "Dispatch Failed",
-        description: "An error occurred while queuing your campaign.",
+        description: err instanceof Error ? err.message : "An unexpected error occurred while queuing your campaign.",
         variant: "destructive",
       });
     } finally {
@@ -121,8 +166,16 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
     }
   };
 
+  // UX Polish: Risk color mapping
+  const getRiskBadgeProps = (score: number) => {
+    if (score >= 95) return { variant: "destructive" as const, className: "bg-red-500 hover:bg-red-600 shadow-sm" };
+    if (score >= 80) return { variant: "secondary" as const, className: "bg-orange-100 text-orange-800 hover:bg-orange-200 border-orange-200 shadow-sm" };
+    if (score >= 60) return { variant: "secondary" as const, className: "bg-yellow-100 text-yellow-800 hover:bg-yellow-200 border-yellow-200 shadow-sm" };
+    return { variant: "secondary" as const, className: "shadow-sm" };
+  };
+
   return (
-    <div className="flex flex-col h-full space-y-6 pb-12 animate-in fade-in duration-300">
+    <div className="flex flex-col h-full space-y-6 pb-12 animate-in fade-in duration-300 relative">
       
       {/* Header Container */}
       <div className="flex items-center justify-between">
@@ -131,7 +184,7 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
           <p className="text-sm text-slate-500 mt-1">Select an email template and dispatch it to at-risk users.</p>
         </div>
         
-        {/* 2. Modal Injection */}
+        {/* Modal Injection */}
         <CreateTemplateModal onTemplateCreated={onNewTemplateCreated} />
       </div>
 
@@ -150,7 +203,15 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
               {templates.map((tpl) => (
                 <Card 
                   key={tpl.id} 
-                  className={`cursor-pointer transition-all border ${selectedTemplate === tpl.id ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50/50' : 'border-slate-200 hover:border-blue-300 bg-white shadow-sm'}`}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedTemplate(tpl.id);
+                    }
+                  }}
+                  className={`cursor-pointer transition-all border outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 ${selectedTemplate === tpl.id ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50/50' : 'border-slate-200 hover:border-blue-300 bg-white shadow-sm'}`}
                   onClick={() => setSelectedTemplate(tpl.id)}
                 >
                   <CardHeader className="p-4">
@@ -178,7 +239,7 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">2. Select Target Users</h2>
             <Badge variant="secondary" className="bg-orange-100 text-orange-800 border border-orange-200/50 shadow-sm font-semibold">
-              {atRiskUsers.length} High Risk Detected
+              {sortedAtRiskUsers.length} High Risk Detected
             </Badge>
           </div>
           
@@ -187,7 +248,7 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
               <TableHeader className="bg-slate-50 border-b border-slate-100">
                 <TableRow>
                   <TableHead className="w-[50px] text-center">
-                    <Checkbox checked={selectedUsers.size === atRiskUsers.length && atRiskUsers.length > 0} onCheckedChange={toggleAll} disabled={atRiskUsers.length === 0} />
+                    <Checkbox checked={allSelected} onCheckedChange={toggleAll} disabled={sortedAtRiskUsers.length === 0} />
                   </TableHead>
                   <TableHead className="font-semibold text-slate-700">User Context</TableHead>
                   <TableHead className="font-semibold text-slate-700">Risk Signal</TableHead>
@@ -196,14 +257,14 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {atRiskUsers.length === 0 ? (
+                {sortedAtRiskUsers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center h-32 text-slate-500 bg-white">
                       No high-risk users currently detected.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  atRiskUsers.map((user) => (
+                  sortedAtRiskUsers.map((user) => (
                     <TableRow key={user.id} className={`transition-colors ${selectedUsers.has(user.id) ? "bg-blue-50/40" : "bg-white"}`}>
                       <TableCell className="text-center">
                         <Checkbox checked={selectedUsers.has(user.id)} onCheckedChange={() => toggleUser(user.id)} />
@@ -216,7 +277,7 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={user.riskScore > 90 ? "destructive" : "secondary"} className="shadow-sm">
+                        <Badge {...getRiskBadgeProps(user.riskScore)}>
                           {user.riskScore}/100
                         </Badge>
                       </TableCell>
@@ -230,13 +291,13 @@ export default function CampaignsClient({ atRiskUsers, emailTemplates }: Campaig
         </div>
       </div>
 
-      {/* Action Footer */}
-      <div className="mt-8 flex justify-between items-center p-5 border border-slate-200 bg-white rounded-xl shadow-sm">
+      {/* Action Footer - Now sticky for better long-table UX */}
+      <div className="mt-8 sticky bottom-0 z-10 flex justify-between items-center p-5 border border-slate-200 bg-white/95 backdrop-blur-sm rounded-xl shadow-md">
         <div className="text-sm text-slate-600 flex items-center gap-2">
-          {selectedTemplate ? (
+          {activeTemplate ? (
             <>
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              <span>Ready to dispatch <strong>1</strong> template to <strong>{selectedUsers.size}</strong> queued operators.</span>
+              <span>Template: <strong>{activeTemplate.name}</strong> queued for <strong>{selectedUsers.size}</strong> operators.</span>
             </>
           ) : (
             <>

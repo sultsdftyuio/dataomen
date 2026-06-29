@@ -1,159 +1,194 @@
-import React from 'react';
+"use client";
+
+import React from "react";
 import { 
   Megaphone, 
   ShieldCheck, 
   Mail, 
   Clock, 
-  CheckCircle2, 
   AlertCircle,
   Lock,
-  LineChart
-} from 'lucide-react';
+  LineChart,
+  Workflow,
+  Activity
+} from "lucide-react";
+import { C } from "@/lib/tokens";
+import { useVisible } from "@/hooks/useVisible";
 
-export default function Campaigns() {
+export function Campaigns() {
+  const [ref1, vis1] = useVisible(0.1);
+  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
+
   return (
     <section 
       id="campaigns" 
-      className="py-24 relative overflow-hidden"
       style={{ 
+        padding: "140px 24px", 
+        background: "#FFFFFF", // Alternates cleanly with the #FAFAFA of Dashboards
+        borderTop: surfaceBorder, 
         fontFamily: "var(--font-geist-sans), sans-serif",
-        background: "linear-gradient(180deg, #FAFCFF 0%, #FFFFFF 100%)"
+        position: "relative",
+        overflow: "hidden"
       }}
     >
-      {/* Background Decorative Grid */}
+      {/* Subtle Grid Background */}
       <div 
-        className="absolute inset-0 pointer-events-none opacity-[0.03]" 
-        style={{ backgroundImage: 'linear-gradient(#1B6EBF 1px, transparent 1px), linear-gradient(90deg, #1B6EBF 1px, transparent 1px)', backgroundSize: '32px 32px' }}
+        style={{ 
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          opacity: 0.03,
+          backgroundImage: 'linear-gradient(#1B6EBF 1px, transparent 1px), linear-gradient(90deg, #1B6EBF 1px, transparent 1px)', 
+          backgroundSize: '32px 32px' 
+        }}
       />
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl relative z-10">
-        
-        {/* Section Header */}
-        <div className="max-w-2xl mb-16">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-100 text-[#1B6EBF] text-xs font-bold tracking-[0.08em] uppercase mb-6">
-            <Megaphone className="w-3.5 h-3.5" />
-            Smart Recovery Campaigns
-          </div>
-          <h2 className="text-3xl md:text-4xl font-semibold text-gray-900 mb-4 tracking-tight">
-            Rescue Customers. Protect Your Brand.
-          </h2>
-          <p className="text-slate-600 text-lg leading-relaxed">
-            Arcli isn't a generic email blast tool. It’s a precise, automated safety net that recovers lost revenue while strictly protecting your customers from spam.
-          </p>
-        </div>
+      <div style={{ maxWidth: 1240, margin: "0 auto", position: "relative", zIndex: 10 }}>
 
-        {/* Main Split Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          
-          {/* Left: Non-Technical Feature Explanations */}
-          <div className="space-y-10">
+        {/* ── Campaigns Layout Split ── */}
+        <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 80, alignItems: "center" }} ref={ref1 as React.RefObject<HTMLDivElement>}>
+
+          {/* Left Side: Product Copy */}
+          <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              <Megaphone size={14} /> SMART RECOVERY CAMPAIGNS
+            </div>
             
-            {/* Feature 1 */}
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 mt-1">
-                <div className="w-12 h-12 rounded-xl bg-white border flex items-center justify-center shadow-sm" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
-                  <Clock className="w-6 h-6 text-[#1B6EBF]" />
+            <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
+              Rescue customers without<br />ruining your reputation.
+            </h2>
+            
+            <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 40 }}>
+              Arcli isn't a generic email blast tool. It’s a precise, automated safety net that recovers lost revenue while strictly protecting your customers from spam.
+            </p>
+
+            {/* Premium Feature Stack */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+              
+              {/* Feature 1 */}
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(59,154,232,0.1)", border: "1px solid rgba(59,154,232,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, flexShrink: 0, boxShadow: surfaceShadow }}>
+                  <Clock size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Smart Contact Limits</h3>
+                  <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
+                    Automatically pause outreach to avoid annoying your users. Arcli strictly follows 7, 14, or 30-day contact rules and instantly respects global unsubscribes.
+                  </p>
                 </div>
               </div>
-              <div>
-                <h3 className="text-lg text-gray-900 font-semibold mb-2">Smart Contact Limits</h3>
-                <p className="text-base text-slate-600 leading-relaxed">
-                  Automatically pause outreach to avoid annoying your users. Arcli strictly follows 7, 14, or 30-day contact rules and instantly respects global unsubscribes before sending anything.
-                </p>
-              </div>
-            </div>
 
-            {/* Feature 2 */}
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 mt-1">
-                <div className="w-12 h-12 rounded-xl bg-white border flex items-center justify-center shadow-sm" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
-                  <Lock className="w-6 h-6 text-[#1B6EBF]" />
+              {/* Feature 2 */}
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(59,154,232,0.1)", border: "1px solid rgba(59,154,232,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, flexShrink: 0, boxShadow: surfaceShadow }}>
+                  <Lock size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Failsafe Idempotency</h3>
+                  <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
+                    Even if webhooks misfire or systems crash, your brand is safe. Built-in distributed locks guarantee a customer never receives the same recovery email twice.
+                  </p>
                 </div>
               </div>
-              <div>
-                <h3 className="text-lg text-gray-900 font-semibold mb-2">Failsafe Email Protection</h3>
-                <p className="text-base text-slate-600 leading-relaxed">
-                  Even if the internet glitches or systems crash, your reputation is safe. Built-in safeguards guarantee that a customer will never accidentally receive the same recovery email twice.
-                </p>
-              </div>
-            </div>
 
-            {/* Feature 3 */}
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 mt-1">
-                <div className="w-12 h-12 rounded-xl bg-white border flex items-center justify-center shadow-sm" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
-                  <LineChart className="w-6 h-6 text-emerald-600" />
+              {/* Feature 3 */}
+              <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10B981", flexShrink: 0, boxShadow: surfaceShadow }}>
+                  <LineChart size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Crystal-Clear ROI Proof</h3>
+                  <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
+                    No guessing games. Arcli draws a direct, unbroken line between the exact recovery email sent and the specific dollar amount restored to your bottom line.
+                  </p>
                 </div>
               </div>
-              <div>
-                <h3 className="text-lg text-gray-900 font-semibold mb-2">Crystal-Clear ROI Proof</h3>
-                <p className="text-base text-slate-600 leading-relaxed">
-                  No guessing games. Arcli draws a direct, unbroken line between the exact email we sent and the specific dollar amount recovered to your bottom line.
-                </p>
-              </div>
-            </div>
 
+            </div>
           </div>
 
-          {/* Right: The "Detect -> Recover -> Measure" Pipeline UI */}
-          <div className="relative pl-4">
-            {/* Visual connecting line */}
-            <div className="absolute left-[43px] top-8 bottom-8 w-0.5 bg-slate-200 z-0" />
+          {/* Right Side: Visual Workflow Canvas Mockup */}
+          <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 2, position: "relative" }}>
+            
+            {/* Offset Background Accent */}
+            <div style={{ position: "absolute", top: 12, left: 12, right: -12, bottom: -12, background: "rgba(59,154,232,0.12)", borderRadius: 8, zIndex: 1, border: surfaceBorder }} />
 
-            <div className="space-y-6 relative z-10">
+            {/* Main Mockup Container */}
+            <div style={{ background: "#FFFFFF", borderRadius: 8, padding: 32, position: "relative", zIndex: 2, boxShadow: "0 10px 30px rgba(0,0,0,0.08)", border: surfaceBorder }}>
               
-              {/* Step 1: Detect */}
-              <div className="flex items-center gap-5 bg-white p-5 rounded-2xl border shadow-sm transition-all hover:shadow-md" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
-                <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center border border-rose-100 flex-shrink-0 z-10">
-                  <AlertCircle className="w-5 h-5 text-rose-600" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Step 1: Detect</div>
-                  <div className="text-base font-semibold text-gray-900">Payment Failed</div>
-                  <div className="text-sm text-slate-500 mt-0.5">Customer's card was declined.</div>
-                </div>
-              </div>
-
-              {/* Step 2: Safety Check */}
-              <div className="flex items-center gap-5 bg-white p-5 rounded-2xl border shadow-sm transition-all hover:shadow-md" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
-                <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center border border-slate-200 flex-shrink-0 z-10">
-                  <ShieldCheck className="w-5 h-5 text-slate-600" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Step 2: Verify</div>
-                  <div className="text-base font-semibold text-gray-900">Safety Check Passed</div>
-                  <div className="text-sm text-slate-500 mt-0.5">Customer hasn't been emailed in 14 days.</div>
-                </div>
-              </div>
-
-              {/* Step 3: Recover */}
-              <div className="flex items-center gap-5 bg-white p-5 rounded-2xl border shadow-sm transition-all hover:shadow-md" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
-                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center border border-blue-100 flex-shrink-0 z-10">
-                  <Mail className="w-5 h-5 text-[#1B6EBF]" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Step 3: Recover</div>
-                  <div className="text-base font-semibold text-gray-900">Rescue Email Sent</div>
-                  <div className="text-sm text-slate-500 mt-0.5">Friendly reminder securely delivered.</div>
-                </div>
-              </div>
-
-              {/* Step 4: Measure */}
-              <div className="flex items-center gap-5 bg-emerald-50/50 p-5 rounded-2xl border border-emerald-200 shadow-sm transition-all hover:shadow-md relative overflow-hidden">
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500" />
-                <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center border border-emerald-300 flex-shrink-0 z-10">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-700" />
-                </div>
-                <div className="flex-1">
-                  <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-1">Step 4: Measure</div>
-                  <div className="text-base font-semibold text-emerald-950">Revenue Recovered</div>
-                  <div className="text-sm font-medium text-emerald-700 mt-0.5">
-                    Customer updated card. <span className="font-bold">+$49/mo saved.</span>
+              {/* Top Canvas Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(0,0,0,0.06)", paddingBottom: 16, marginBottom: 28 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ background: "rgba(59,154,232,0.1)", padding: 8, borderRadius: 8, color: C.blue, border: "1px solid rgba(59,154,232,0.2)" }}>
+                    <Workflow size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 2 }}>CANVAS BUILDER</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Standard Dunning Pipeline</div>
                   </div>
                 </div>
+                <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", color: "#10B981", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 12, letterSpacing: "0.05em" }}>
+                  ACTIVE
+                </div>
               </div>
 
+              {/* Vertical Pipeline Interface */}
+              <div style={{ position: "relative", paddingLeft: 16 }}>
+                {/* Visual connecting line */}
+                <div style={{ position: "absolute", left: 33, top: 20, bottom: 20, width: 2, background: "rgba(0,0,0,0.06)", zIndex: 0 }} />
+
+                {/* Node 1: Detect */}
+                <div style={{ display: "flex", gap: 20, marginBottom: 28, position: "relative", zIndex: 1 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#FEF2F2", border: "1px solid #FECACA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: surfaceShadow }}>
+                    <AlertCircle size={16} color="#EF4444" />
+                  </div>
+                  <div style={{ paddingTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 1: DETECT</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>stripe.invoice_payment_failed</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Triggered via real-time webhooks.</div>
+                  </div>
+                </div>
+
+                {/* Node 2: Verify */}
+                <div style={{ display: "flex", gap: 20, marginBottom: 28, position: "relative", zIndex: 1 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#F8FAFC", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: surfaceShadow }}>
+                    <ShieldCheck size={16} color="#64748B" />
+                  </div>
+                  <div style={{ paddingTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 2: VERIFY</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Safety & Idempotency Check</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Validates user is outside 14-day contact limit.</div>
+                  </div>
+                </div>
+
+                {/* Node 3: Recover */}
+                <div style={{ display: "flex", gap: 20, marginBottom: 28, position: "relative", zIndex: 1 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#EFF6FF", border: "1px solid #BFDBFE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: surfaceShadow }}>
+                    <Mail size={16} color={C.blue} />
+                  </div>
+                  <div style={{ paddingTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 3: RECOVER</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Dispatch Rescue Campaign</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Sends template with secure 1-click update link.</div>
+                  </div>
+                </div>
+
+                {/* Node 4: Measure */}
+                <div style={{ display: "flex", gap: 20, position: "relative", zIndex: 1 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#ECFDF5", border: "1px solid #A7F3D0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: surfaceShadow }}>
+                    <Activity size={16} color="#10B981" />
+                  </div>
+                  <div style={{ paddingTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", letterSpacing: "0.06em", marginBottom: 4 }}>STEP 4: MEASURE</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Attribution Registered</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Customer restored account. <span style={{ fontWeight: 600, color: "#10B981" }}>+$49 MRR attributed.</span></div>
+                  </div>
+                </div>
+
+              </div>
             </div>
+
           </div>
         </div>
       </div>
