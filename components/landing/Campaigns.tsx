@@ -25,7 +25,7 @@ export function Campaigns() {
       id="campaigns" 
       style={{ 
         padding: "140px 24px", 
-        background: "#FFFFFF", // Alternates cleanly with the #FAFAFA of Dashboards
+        background: "#FFFFFF", 
         borderTop: surfaceBorder, 
         fontFamily: "var(--font-geist-sans), sans-serif",
         position: "relative",
@@ -60,7 +60,7 @@ export function Campaigns() {
             </h2>
             
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 40 }}>
-              Arcli isn't a generic email blast tool. It’s a precise, automated safety net that recovers lost revenue while strictly protecting your customers from spam.
+              Arcli isn't a generic email blast tool. It’s a precise, automated safety net that re-engages slipping users while strictly protecting your customers from spam.
             </p>
 
             {/* Premium Feature Stack */}
@@ -87,7 +87,7 @@ export function Campaigns() {
                 <div>
                   <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Failsafe Idempotency</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    Even if webhooks misfire or systems crash, your brand is safe. Built-in distributed locks guarantee a customer never receives the same recovery email twice.
+                    Even if API events misfire or systems crash, your brand is safe. Built-in distributed locks guarantee a customer never receives the same recovery email twice.
                   </p>
                 </div>
               </div>
@@ -98,9 +98,9 @@ export function Campaigns() {
                   <LineChart size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Crystal-Clear ROI Proof</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Crystal-Clear Attribution</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    No guessing games. Arcli draws a direct, unbroken line between the exact recovery email sent and the specific dollar amount restored to your bottom line.
+                    No guessing games. Arcli draws a direct, unbroken line between the exact recovery campaign sent and the specific user returning to your platform.
                   </p>
                 </div>
               </div>
@@ -125,7 +125,7 @@ export function Campaigns() {
                   </div>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 2 }}>CANVAS BUILDER</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Standard Dunning Pipeline</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Engagement Recovery Pipeline</div>
                   </div>
                 </div>
                 <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", color: "#10B981", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 12, letterSpacing: "0.05em" }}>
@@ -145,8 +145,8 @@ export function Campaigns() {
                   </div>
                   <div style={{ paddingTop: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 1: DETECT</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>stripe.invoice_payment_failed</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Triggered via real-time webhooks.</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>api.inactivity_threshold_met</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Triggered via real-time API events.</div>
                   </div>
                 </div>
 
@@ -170,7 +170,7 @@ export function Campaigns() {
                   <div style={{ paddingTop: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 3: RECOVER</div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Dispatch Rescue Campaign</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Sends template with secure 1-click update link.</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Sends template with secure re-engagement link.</div>
                   </div>
                 </div>
 
@@ -182,7 +182,7 @@ export function Campaigns() {
                   <div style={{ paddingTop: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", letterSpacing: "0.06em", marginBottom: 4 }}>STEP 4: MEASURE</div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Attribution Registered</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Customer restored account. <span style={{ fontWeight: 600, color: "#10B981" }}>+$49 MRR attributed.</span></div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>User resumed activity. <span style={{ fontWeight: 600, color: "#10B981" }}>Churn prevented.</span></div>
                   </div>
                 </div>
 
