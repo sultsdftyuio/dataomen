@@ -45,22 +45,24 @@ export default async function DashboardPage() {
   // ============================================================================
   // 2. Deterministic Setup Verification
   // ============================================================================
+  // NOTE:
+  // - Stripe integration tracking resides inside 'tenant_settings.stripe_account_id'
+  // - api_keys and events utilize explicit UUID existence checks via select("id")
+  // ============================================================================
   
-  let stripeResult, apiKeyResult, eventResult;
+  let settingsResult, apiKeyResult, eventResult;
 
   try {
-    [stripeResult, apiKeyResult, eventResult] = await Promise.all([
+    [settingsResult, apiKeyResult, eventResult] = await Promise.all([
       tenantSupabase
-        .from("tenant_integrations")
-        .select("provider") // FIX: Select 'provider' instead of 'id' to prevent the 42703 column error
+        .from("tenant_settings")
+        .select("stripe_account_id")
         .eq("tenant_id", tenantId)
-        .eq("provider", "stripe")
-        .limit(1)
         .maybeSingle(),
 
       tenantSupabase
         .from("api_keys")
-        .select("id") // Keep 'id' here, api_keys has an id
+        .select("id")
         .eq("tenant_id", tenantId)
         .is("revoked_at", null)
         .limit(1)
@@ -68,7 +70,7 @@ export default async function DashboardPage() {
 
       tenantSupabase
         .from("events")
-        .select("id") // Keep 'id' here, events has an id
+        .select("id")
         .eq("tenant_id", tenantId)
         .limit(1)
         .maybeSingle(),
@@ -83,17 +85,17 @@ export default async function DashboardPage() {
   // ============================================================================
 
   if (
-    !stripeResult ||
+    !settingsResult ||
     !apiKeyResult ||
     !eventResult ||
-    stripeResult.error || 
+    settingsResult.error || 
     apiKeyResult.error || 
     eventResult.error
   ) {
     console.error(
       `[Dashboard] Setup verification failed for tenant ${tenantId}`,
       {
-        stripeError: stripeResult?.error,
+        settingsError: settingsResult?.error,
         apiKeyError: apiKeyResult?.error,
         eventError: eventResult?.error,
       }
@@ -108,7 +110,7 @@ export default async function DashboardPage() {
   // 4. Compute Setup State
   // ============================================================================
 
-  const hasStripe = !!stripeResult.data;
+  const hasStripe = !!settingsResult.data?.stripe_account_id;
   const hasApiKey = !!apiKeyResult.data;
   const hasReceivedData = !!eventResult.data;
 
