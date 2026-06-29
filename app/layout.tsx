@@ -1,11 +1,10 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Playfair_Display } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
 const SITE_URL = 'https://arcli.tech'
-// The default OG image URL is kept for reference, though Next.js auto-injects from the app directory
 const DEFAULT_OG_IMAGE_URL = `${SITE_URL}/api/og`
 
 const geist = Geist({ 
@@ -24,6 +23,13 @@ const playfair = Playfair_Display({
   weight: ["600", "700"],
 });
 
+// Explicitly export Viewport to resolve the Lighthouse tag warning in Next.js 14+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+}
+
 export const metadata: Metadata = {
   title: 'Arcli | SaaS Churn Recovery Platform',
   description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
@@ -33,7 +39,6 @@ export const metadata: Metadata = {
     canonical: SITE_URL,
   },
   
-  // Open Graph (Facebook, LinkedIn, Discord, Slack)
   openGraph: {
     title: 'Arcli | SaaS Churn Recovery Platform',
     description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
@@ -41,15 +46,12 @@ export const metadata: Metadata = {
     siteName: 'Arcli',
     locale: 'en_US',
     type: 'website',
-    // Next.js will auto-inject app/opengraph-image.jpg
   },
 
-  // Twitter/X Card
   twitter: {
-    card: 'summary_large_image', // Triggers the full-width cinematic preview
+    card: 'summary_large_image', 
     title: 'Arcli | SaaS Churn Recovery Platform',
     description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
-    // Next.js will auto-inject app/twitter-image.jpg
   },
 }
 

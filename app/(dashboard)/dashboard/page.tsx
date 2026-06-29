@@ -45,55 +45,63 @@ export default async function DashboardPage() {
   // ============================================================================
   // 2. Deterministic Setup Verification
   // ============================================================================
-  // IMPORTANT:
-  // - We use existence queries instead of COUNT(*)
-  // - COUNT(exact) becomes expensive on large event tables
-  // - limit(1) allows Postgres to stop immediately after first match
-  // ============================================================================
+  
+  let stripeResult, apiKeyResult, eventResult;
 
-  const [stripeResult, apiKeyResult, eventResult] = await Promise.all([
-    tenantSupabase
-      .from("integrations")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("provider", "stripe")
-      .limit(1)
-      .maybeSingle(),
+  try {
+    [stripeResult, apiKeyResult, eventResult] = await Promise.all([
+      tenantSupabase
+        .from("integrations")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("provider", "stripe")
+        .limit(1)
+        .maybeSingle(),
 
-    tenantSupabase
-      .from("api_keys")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .is("revoked_at", null)
-      .limit(1)
-      .maybeSingle(),
+      tenantSupabase
+        .from("api_keys")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .is("revoked_at", null)
+        .limit(1)
+        .maybeSingle(),
 
-    tenantSupabase
-      .from("events")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .limit(1)
-      .maybeSingle(),
-  ]);
+      tenantSupabase
+        .from("events")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .limit(1)
+        .maybeSingle(),
+    ]);
+  } catch (error) {
+    // Catch unhandled promise rejections (e.g. network failure to Supabase)
+    console.error("[Dashboard] Fatal error executing setup queries", error);
+  }
 
   // ============================================================================
   // 3. Infrastructure Failure Handling
   // ============================================================================
-  // Never silently downgrade operational failures into onboarding UI.
-  // If the database is failing, surface an actual application error.
-  // ============================================================================
 
-  if (stripeResult.error || apiKeyResult.error || eventResult.error) {
+  if (
+    !stripeResult ||
+    !apiKeyResult ||
+    !eventResult ||
+    stripeResult.error || 
+    apiKeyResult.error || 
+    eventResult.error
+  ) {
     console.error(
       `[Dashboard] Setup verification failed for tenant ${tenantId}`,
       {
-        stripeError: stripeResult.error,
-        apiKeyError: apiKeyResult.error,
-        eventError: eventResult.error,
+        stripeError: stripeResult?.error,
+        apiKeyError: apiKeyResult?.error,
+        eventError: eventResult?.error,
       }
     );
 
-    throw new Error("Dashboard setup verification failed");
+    // Gracefully redirect to the error page instead of throwing an unhandled Error
+    // This stops the generic 'Digest' 500 server-side exception from breaking the app.
+    redirect("/error");
   }
 
   // ============================================================================
