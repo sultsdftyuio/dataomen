@@ -4,20 +4,17 @@ import Link from "next/link";
 import {
   ArrowRight,
   CheckCircle2,
-  ChevronRight,
   Lock,
   Send,
   KeyRound,
-  Plug,
 } from "lucide-react";
-import React, { useState } from "react";
+import React from "react";
 
 import { C } from "@/lib/tokens";
 
 import type { SetupState } from "@/app/(dashboard)/dashboard/QuickStartGuide";
 
 interface QuickStartGuideStepsProps {
-  hasStripe: boolean;
   hasApiKey: boolean;
   hasReceivedData: boolean;
   setupState: SetupState;
@@ -189,10 +186,8 @@ function StepCard({
           bottom: -10,
           background:
             stepNum === 1
-              ? "rgba(99,102,241,0.12)" // Indigo for Stripe (Step 1)
-              : stepNum === 2
-                ? "rgba(59,154,232,0.12)" // Blue for API Key (Step 2)
-                : "rgba(16,185,129,0.12)", // Green for Event Validation (Step 3)
+              ? "rgba(59,154,232,0.12)" // Blue for API Key (Now Step 1)
+              : "rgba(16,185,129,0.12)", // Green for Event Validation (Now Step 2)
           borderRadius: 8,
           zIndex: -1,
           border: surfaceBorder,
@@ -203,33 +198,11 @@ function StepCard({
 }
 
 export function QuickStartGuideSteps({
-  hasStripe,
   hasApiKey,
   hasReceivedData,
   setupState,
   onOpenApiModal,
 }: QuickStartGuideStepsProps) {
-  const [isConnecting, setIsConnecting] = useState(false);
-
-  // Calls the existing Stripe OAuth connect route you already have built
-  const handleConnectStripe = async () => {
-    setIsConnecting(true);
-    try {
-      const res = await fetch("/api/integrations/stripe/connect", {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error("No URL returned from Stripe integration.");
-      }
-    } catch (err) {
-      console.error("[Stripe Connect Error]", err);
-      setIsConnecting(false); 
-    }
-  };
-
   return (
     <ol
       style={{
@@ -241,52 +214,14 @@ export function QuickStartGuideSteps({
         margin: 0,
       }}
     >
-      {/* ─── STEP 1: STRIPE ───────────────────────────────────────────── */}
+      {/* ─── STEP 1: API KEY ──────────────────────────────────────────── */}
       <StepCard
         stepNum={1}
-        title="Connect your Billing Engine"
-        description="Link Stripe to automatically detect payment failures, MRR, and cancellation intent."
-        status={hasStripe ? "complete" : "active"}
-        action={
-          !hasStripe ? (
-            <button
-              onClick={handleConnectStripe}
-              disabled={isConnecting}
-              style={{
-                height: 40,
-                padding: "0 16px",
-                borderRadius: 8,
-                border: surfaceBorder,
-                boxShadow: surfaceShadow,
-                background: "#6366f1", // Stripe Indigo brand color match
-                color: "#fff",
-                fontSize: 14,
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                cursor: isConnecting ? "wait" : "pointer",
-                letterSpacing: "0.02em",
-                opacity: isConnecting ? 0.8 : 1,
-                transition: "opacity 0.2s",
-              }}
-            >
-              <Plug size={14} />
-              {isConnecting ? "Redirecting to Stripe..." : "Connect Stripe"}
-              {!isConnecting && <ArrowRight size={14} />}
-            </button>
-          ) : undefined
-        }
-      />
-
-      {/* ─── STEP 2: API KEY ──────────────────────────────────────────── */}
-      <StepCard
-        stepNum={2}
         title="Track Product Usage"
         description="Generate an API key to track user inactivity and engagement signals."
-        status={hasApiKey ? "complete" : hasStripe ? "active" : "locked"}
+        status={hasApiKey ? "complete" : "active"}
         action={
-          hasStripe && !hasApiKey ? (
+          !hasApiKey ? (
             <button
               onClick={onOpenApiModal}
               style={{
@@ -314,16 +249,16 @@ export function QuickStartGuideSteps({
         }
       />
 
-      {/* ─── STEP 3: EVENT VALIDATION ─────────────────────────────────── */}
+      {/* ─── STEP 2: EVENT VALIDATION ─────────────────────────────────── */}
       <StepCard
-        stepNum={3}
+        stepNum={2}
         title="Validate incoming events"
         description={
           hasReceivedData
             ? "Integration verified. Arcli is listening."
             : hasApiKey
               ? "Send your first product event to verify the integration."
-              : "Complete the previous steps to unlock your dashboard."
+              : "Complete the previous step to unlock your dashboard."
         }
         status={
           hasReceivedData ? "complete" : hasApiKey ? "active" : "locked"

@@ -16,14 +16,14 @@ import { useVisible } from "@/hooks/useVisible";
 import { QuickStartGuideSteps } from "@/app/(dashboard)/dashboard/tutorial/QuickStartGuideSteps";
 import { QuickStartGuideModal } from "@/app/(dashboard)/dashboard/tutorial/QuickStartGuideModal";
 
+// Removed "missing_stripe" from the possible states
 export type SetupState =
-  | "missing_stripe"
   | "missing_api_key"
   | "awaiting_first_event"
   | "active";
 
+// Removed hasStripe prop
 export interface QuickStartGuideProps {
-  hasStripe: boolean;
   hasApiKey: boolean;
   hasReceivedData: boolean;
   setupState: SetupState;
@@ -37,7 +37,6 @@ function formatLastChecked(timestamp: Date, now: number): string {
 }
 
 export default function QuickStartGuide({
-  hasStripe,
   hasApiKey,
   hasReceivedData,
   setupState,
@@ -49,9 +48,8 @@ export default function QuickStartGuide({
   // ─── Optimistic Local State ──────────────────────────────────────────────
   const [localKeyGenerated, setLocalKeyGenerated] = useState(false);
 
-  // Progressive Unlocking Logic
-  const isStep2Active = hasStripe; 
-  const isStep3Active = hasApiKey || localKeyGenerated;
+  // Progressive Unlocking Logic (Stripe removed)
+  const isApiKeyActive = hasApiKey || localKeyGenerated;
   const isComplete = setupState === "active";
 
   // ─── Reactive timestamp ticker ──────────────────────────────────────────
@@ -85,8 +83,8 @@ export default function QuickStartGuide({
     isPendingRef.current = isPending;
   }, [isPending]);
 
-  // Only poll if they have completed Step 1 & 2 but we haven't received events yet
-  const canCheckStatus = isStep3Active && !hasReceivedData;
+  // Only poll if they have generated an API key but we haven't received events yet
+  const canCheckStatus = isApiKeyActive && !hasReceivedData;
 
   const refreshDashboard = React.useCallback(() => {
     if (isPendingRef.current) return;
@@ -126,10 +124,9 @@ export default function QuickStartGuide({
   // ─── Derived display values ─────────────────────────────────────────────
   const progressPercent = useMemo(() => {
     if (hasReceivedData) return 100;
-    if (isStep3Active) return 66;
-    if (hasStripe) return 33;
+    if (isApiKeyActive) return 50; // API Key done, waiting for data
     return 5; // Minimal progress just for starting
-  }, [hasStripe, isStep3Active, hasReceivedData]);
+  }, [isApiKeyActive, hasReceivedData]);
 
   const lastCheckedLabel = useMemo(
     () => (lastCheckedAt ? formatLastChecked(lastCheckedAt, now) : null),
@@ -290,8 +287,7 @@ export default function QuickStartGuide({
           ref={refSteps}
         >
           <QuickStartGuideSteps
-            hasStripe={hasStripe}
-            hasApiKey={isStep3Active}
+            hasApiKey={isApiKeyActive}
             hasReceivedData={hasReceivedData}
             setupState={setupState}
             onOpenApiModal={() => setIsApiModalOpen(true)}
