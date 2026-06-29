@@ -52,7 +52,7 @@ export default async function DashboardPage() {
     [stripeResult, apiKeyResult, eventResult] = await Promise.all([
       tenantSupabase
         .from("tenant_integrations")
-        .select("id")
+        .select("provider") // FIX: Select 'provider' instead of 'id' to prevent the 42703 column error
         .eq("tenant_id", tenantId)
         .eq("provider", "stripe")
         .limit(1)
@@ -60,7 +60,7 @@ export default async function DashboardPage() {
 
       tenantSupabase
         .from("api_keys")
-        .select("id")
+        .select("id") // Keep 'id' here, api_keys has an id
         .eq("tenant_id", tenantId)
         .is("revoked_at", null)
         .limit(1)
@@ -68,7 +68,7 @@ export default async function DashboardPage() {
 
       tenantSupabase
         .from("events")
-        .select("id")
+        .select("id") // Keep 'id' here, events has an id
         .eq("tenant_id", tenantId)
         .limit(1)
         .maybeSingle(),
