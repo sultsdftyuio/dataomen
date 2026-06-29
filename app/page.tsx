@@ -6,7 +6,7 @@ import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import Campaigns from "@/components/landing/Campaigns"; // Integrating the new Campaigns component
+import { Campaigns } from "@/components/landing/Campaigns"; // Integrating the new Campaigns component 
 import { Testimonials } from "@/components/landing/testimonials";
 import Pricing from "@/components/landing/Pricing"; // Integrating the new Pricing component
 import { FAQ } from "@/components/landing/faq";
