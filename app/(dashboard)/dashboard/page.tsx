@@ -51,7 +51,7 @@ export default async function DashboardPage() {
   try {
     [stripeResult, apiKeyResult, eventResult] = await Promise.all([
       tenantSupabase
-        .from("integrations")
+        .from("tenant_integrations")
         .select("id")
         .eq("tenant_id", tenantId)
         .eq("provider", "stripe")
