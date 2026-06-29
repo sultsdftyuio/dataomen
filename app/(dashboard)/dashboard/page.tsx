@@ -51,7 +51,15 @@ export default async function DashboardPage() {
   // - limit(1) allows Postgres to stop immediately after first match
   // ============================================================================
 
-  const [apiKeyResult, eventResult] = await Promise.all([
+  const [stripeResult, apiKeyResult, eventResult] = await Promise.all([
+    tenantSupabase
+      .from("integrations")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("provider", "stripe")
+      .limit(1)
+      .maybeSingle(),
+
     tenantSupabase
       .from("api_keys")
       .select("id")
@@ -75,10 +83,11 @@ export default async function DashboardPage() {
   // If the database is failing, surface an actual application error.
   // ============================================================================
 
-  if (apiKeyResult.error || eventResult.error) {
+  if (stripeResult.error || apiKeyResult.error || eventResult.error) {
     console.error(
       `[Dashboard] Setup verification failed for tenant ${tenantId}`,
       {
+        stripeError: stripeResult.error,
         apiKeyError: apiKeyResult.error,
         eventError: eventResult.error,
       }
@@ -91,16 +100,18 @@ export default async function DashboardPage() {
   // 4. Compute Setup State
   // ============================================================================
 
+  const hasStripe = !!stripeResult.data;
   const hasApiKey = !!apiKeyResult.data;
   const hasReceivedData = !!eventResult.data;
 
   // Granular onboarding states improve UX clarity.
-  const setupState =
-    !hasApiKey
-      ? "missing_api_key"
-      : !hasReceivedData
-        ? "awaiting_first_event"
-        : "active";
+  const setupState = !hasStripe
+    ? "missing_stripe"
+    : !hasApiKey
+    ? "missing_api_key"
+    : !hasReceivedData
+    ? "awaiting_first_event"
+    : "active";
 
   // ============================================================================
   // 5. Render Deterministically
@@ -112,6 +123,7 @@ export default async function DashboardPage() {
         <RecoveryOverview />
       ) : (
         <QuickStartGuide
+          hasStripe={hasStripe}
           hasApiKey={hasApiKey}
           hasReceivedData={hasReceivedData}
           setupState={setupState}
