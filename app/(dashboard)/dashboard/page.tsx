@@ -46,20 +46,13 @@ export default async function DashboardPage() {
   // 2. Deterministic Setup Verification
   // ============================================================================
   // NOTE:
-  // - Stripe integration tracking resides inside 'tenant_settings.stripe_account_id'
   // - api_keys and events utilize explicit UUID existence checks via select("id")
   // ============================================================================
   
-  let settingsResult, apiKeyResult, eventResult;
+  let apiKeyResult, eventResult;
 
   try {
-    [settingsResult, apiKeyResult, eventResult] = await Promise.all([
-      tenantSupabase
-        .from("tenant_settings")
-        .select("stripe_account_id")
-        .eq("tenant_id", tenantId)
-        .maybeSingle(),
-
+    [apiKeyResult, eventResult] = await Promise.all([
       tenantSupabase
         .from("api_keys")
         .select("id")
@@ -85,17 +78,14 @@ export default async function DashboardPage() {
   // ============================================================================
 
   if (
-    !settingsResult ||
     !apiKeyResult ||
     !eventResult ||
-    settingsResult.error || 
     apiKeyResult.error || 
     eventResult.error
   ) {
     console.error(
       `[Dashboard] Setup verification failed for tenant ${tenantId}`,
       {
-        settingsError: settingsResult?.error,
         apiKeyError: apiKeyResult?.error,
         eventError: eventResult?.error,
       }
@@ -110,14 +100,11 @@ export default async function DashboardPage() {
   // 4. Compute Setup State
   // ============================================================================
 
-  const hasStripe = !!settingsResult.data?.stripe_account_id;
   const hasApiKey = !!apiKeyResult.data;
   const hasReceivedData = !!eventResult.data;
 
   // Granular onboarding states improve UX clarity.
-  const setupState = !hasStripe
-    ? "missing_stripe"
-    : !hasApiKey
+  const setupState = !hasApiKey
     ? "missing_api_key"
     : !hasReceivedData
     ? "awaiting_first_event"
@@ -133,7 +120,6 @@ export default async function DashboardPage() {
         <RecoveryOverview />
       ) : (
         <QuickStartGuide
-          hasStripe={hasStripe}
           hasApiKey={hasApiKey}
           hasReceivedData={hasReceivedData}
           setupState={setupState}
