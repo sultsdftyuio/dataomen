@@ -97,7 +97,9 @@ export default async function CampaignsPage() {
   const initialSenderEmail = workspaceData?.sender_email ?? null;
 
   return (
-    <div className="flex flex-col h-full w-full animate-in fade-in duration-300">
+    // AESTHETIC UPGRADE: Added the exact canvas background (#FAFAFA) and tight 
+    // structural padding (p-6 lg:p-8) to frame the client component perfectly.
+    <div className="flex flex-col min-h-screen w-full bg-[#FAFAFA] p-6 lg:p-8 animate-in fade-in duration-300 font-sans">
       <CampaignsClient 
         atRiskUsers={atRiskUsers} 
         emailTemplates={emailTemplates}

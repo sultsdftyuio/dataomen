@@ -60,12 +60,13 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
   };
 
   return (
-    <form onSubmit={handleCreateTemplate}>
-      <div className="px-6 py-6 space-y-5 bg-white">
-        <div className="space-y-2.5">
+    <form onSubmit={handleCreateTemplate} className="font-sans">
+      <div className="px-5 py-5 space-y-4 bg-white">
+        
+        <div className="space-y-1.5">
           <Label
             htmlFor="tpl-name"
-            className="text-xs font-bold uppercase tracking-wide text-slate-600"
+            className="text-[11px] font-bold uppercase tracking-[0.05em] text-slate-500"
           >
             Template Name
           </Label>
@@ -75,15 +76,16 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
             onChange={(e) => setNewTemplateName(e.target.value)}
             placeholder="e.g. High Risk Dunning - Day 3"
             disabled={isCreating}
-            className="border-slate-200 shadow-sm focus-visible:ring-blue-500/20 text-sm"
+            className="h-9 text-[13px] bg-[#FAFAFA] border-black/[0.08] shadow-none focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 transition-colors"
             autoFocus
             required
           />
         </div>
-        <div className="space-y-2.5">
+
+        <div className="space-y-1.5">
           <Label
             htmlFor="tpl-subj"
-            className="text-xs font-bold uppercase tracking-wide text-slate-600"
+            className="text-[11px] font-bold uppercase tracking-[0.05em] text-slate-500"
           >
             Email Subject Line
           </Label>
@@ -93,29 +95,30 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
             onChange={(e) => setNewTemplateSubject(e.target.value)}
             placeholder="e.g. Action Required: Subscription Paused"
             disabled={isCreating}
-            className="border-slate-200 shadow-sm focus-visible:ring-blue-500/20 text-sm"
+            className="h-9 text-[13px] bg-[#FAFAFA] border-black/[0.08] shadow-none focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 transition-colors"
             required
           />
         </div>
+
       </div>
 
-      <DialogFooter className="px-6 py-4 border-t border-slate-100 bg-slate-50">
+      <DialogFooter className="px-5 py-3.5 border-t border-black/[0.08] bg-[#FAFAFA]">
         <Button
           type="button"
           variant="outline"
           onClick={onCancel}
           disabled={isCreating}
-          className="bg-white"
+          className="h-8 px-4 text-[13px] font-semibold bg-white border border-black/[0.08] text-slate-600 hover:bg-slate-50 shadow-none"
         >
           Cancel
         </Button>
         <Button
           type="submit"
           disabled={isCreating || !newTemplateName.trim() || !newTemplateSubject.trim()}
-          className="bg-blue-600 hover:bg-blue-700 text-white min-w-[120px] transition-all"
+          className="h-8 px-4 min-w-[120px] text-[13px] font-bold bg-[#0B1120] hover:bg-slate-800 text-white shadow-[0_2px_4px_rgba(0,0,0,0.12)] transition-all"
         >
           {isCreating ? (
-            <RefreshCw className="h-4 w-4 animate-spin" />
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
           ) : (
             "Save Template"
           )}

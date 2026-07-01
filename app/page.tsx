@@ -6,9 +6,9 @@ import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import { Campaigns } from "@/components/landing/Campaigns"; // Integrating the new Campaigns component 
+import { Campaigns } from "@/components/landing/Campaigns"; 
 import { Testimonials } from "@/components/landing/testimonials";
-import Pricing from "@/components/landing/Pricing"; // Integrating the new Pricing component
+import Pricing from "@/components/landing/Pricing"; 
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
 import Footer from "@/components/landing/footer";
@@ -25,16 +25,26 @@ export default async function Page() {
   }
 
   return (
-    // FIX: Switched to a light theme to match the Arcli branding and component designs
-    <main className="bg-[#FAFCFF] text-slate-900 antialiased selection:bg-blue-100 selection:text-[#1B6EBF]">
+    // ALIGNED: Switched base to match exact custom text color (#0B1120) and a sharper selection highlight
+    <main className="bg-[#FAFAFA] text-[#0B1120] font-sans antialiased selection:bg-blue-500/20 selection:text-blue-900">
       <Navbar />
       
       <div className="relative isolate overflow-hidden">
-        {/* Decorative background gradients optimized for light mode */}
-        <div aria-hidden="true" className="absolute inset-0 pointer-events-none opacity-60 z-0">
-          <div className="absolute top-[-10%] left-[-20%] w-[60%] h-[60%] rounded-full bg-blue-100/50 blur-[120px]" />
-          <div className="absolute bottom-[20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-sky-100/50 blur-[100px]" />
-        </div>
+        
+        {/* AESTHETIC UPGRADE:
+          Replaced the "floaty" blurred background blobs with a highly precise, 
+          structural dot-grid to match the "deterministic engineering" brand promise.
+        */}
+        <div 
+          aria-hidden="true" 
+          className="absolute inset-0 pointer-events-none z-0"
+          style={{
+            backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(0,0,0,0.06) 1px, transparent 0)',
+            backgroundSize: '32px 32px',
+            maskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 10%, transparent 90%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,1) 10%, transparent 90%)'
+          }}
+        />
 
         {/* Page Content Flow */}
         <div className="relative z-10 flex flex-col">
