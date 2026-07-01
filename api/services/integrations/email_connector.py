@@ -35,20 +35,27 @@ class EmailConfig(BaseModel):
     # Explicit toggle for mock/dry-run mode so production behavior is never hidden accidentally
     mock: bool = False
 
+    # In api/services/integrations/email_connector.py
+
     @field_validator("sender")
     @classmethod
     def _sender_must_contain_email(cls, v: str) -> str:
         """
         Validates that the sender string contains a valid email-like address.
         Accepts both 'email@example.com' and 'Name <email@example.com>' formats.
+        Synchronized with Frontend Zod Schema (SENDER_EMAIL_REGEX).
         """
         if not v or not v.strip():
             raise ValueError("sender cannot be empty")
-        # Look for <email> or bare email
-        if re.search(r"[^<<>\s]+@[^<<>\s]+\.[^<<>\s]+", v):
+            
+        # Strict anchored regex to prevent trailing/leading garbage
+        pattern = r"^(?:[^<>]+<[^<>\s]+@[^<>\s]+\.[^<>\s]+>|[^<>\s]+@[^<>\s]+\.[^<>\s]+)$"
+        
+        if re.match(pattern, v):
             return v
+            
         raise ValueError(
-            "sender must contain a valid email address (e.g. 'Name <user@example.com>')"
+            "sender must be a valid email address or 'Name <email@example.com>'"
         )
 
 

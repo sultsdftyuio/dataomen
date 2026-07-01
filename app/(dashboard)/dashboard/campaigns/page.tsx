@@ -1,7 +1,8 @@
 // app/(dashboard)/dashboard/campaigns/page.tsx
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import CampaignsClient, { RiskUser, EmailTemplate } from "./campaigns-client";
+import { RiskUser, EmailTemplate } from "@/lib/types";
+import CampaignsClient from "@/app/(dashboard)/dashboard/campaigns/campaigns-client";
 
 export const metadata = {
   title: "Campaigns | Arcli",
@@ -33,7 +34,6 @@ export default async function CampaignsPage() {
   const tenantId = membership.tenant_id;
 
   // 3. Fetch At-Risk Users (Scoped to Tenant)
-  // Re-using the same materialized view, heavily typed to satisfy TypeScript
   const { data: riskData, error: riskError } = await supabase
     .from("vw_risk_queue_radar")
     .select(`
@@ -59,7 +59,6 @@ export default async function CampaignsPage() {
     console.error("Failed to fetch risk users for campaigns:", riskError);
   }
 
-  // Map database view payload to the RiskUser interface
   const atRiskUsers: RiskUser[] = (riskData || []).map((row) => ({
     id: row.customer_id || "", 
     email: row.customer_email || "Unknown Email",
@@ -68,7 +67,7 @@ export default async function CampaignsPage() {
     lastActive: row.last_active ? new Date(row.last_active).toLocaleDateString() : "Recently",
   }));
 
-  // 4. Fetch Email Templates from Database (Scoped to Tenant)
+  // 4. Fetch Email Templates (Scoped to Tenant)
   const { data: templatesData, error: templatesError } = await supabase
     .from("email_templates")
     .select("id, name, subject, type")
@@ -87,11 +86,22 @@ export default async function CampaignsPage() {
     type: row.type || "recovery",
   }));
 
+  // 5. Fetch Sender Email (Scoped to Tenant)
+  const { data: workspaceData } = await supabase
+    .from("workspace_settings")
+    .select("sender_email")
+    .eq("tenant_id", tenantId)
+    .returns<{ sender_email: string | null }[]>()
+    .single();
+
+  const initialSenderEmail = workspaceData?.sender_email ?? null;
+
   return (
     <div className="flex flex-col h-full w-full animate-in fade-in duration-300">
       <CampaignsClient 
         atRiskUsers={atRiskUsers} 
-        emailTemplates={emailTemplates} 
+        emailTemplates={emailTemplates}
+        initialSenderEmail={initialSenderEmail}
       />
     </div>
   );
