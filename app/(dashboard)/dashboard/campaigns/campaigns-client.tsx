@@ -9,7 +9,6 @@ import {
   RefreshCw,
   AlertCircle,
   Save,
-  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,7 @@ import { TargetUsersTable } from "./target-users-table";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { type CampaignsClientProps } from "@/lib/types";
 
-// Design tokens mapped from the DeepDiveFeatures snippet
+// Design tokens
 const surfaceBorder = "border border-black/[0.08]";
 const surfaceShadow = "shadow-[0_1px_3px_rgba(0,0,0,0.08)]";
 
@@ -57,10 +56,7 @@ export default function CampaignsClient({
       {/* Header Container */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 text-blue-600 font-bold text-[12px] mb-2 tracking-[0.08em] uppercase">
-            <AlertTriangle size={14} /> Immediate Recovery
-          </div>
-          <h1 className="text-[28px] font-semibold tracking-[-0.015em] text-[#0B1120] leading-tight">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
             Campaign Dispatch
           </h1>
         </div>
@@ -82,22 +78,22 @@ export default function CampaignsClient({
 
       {/* --- Campaign Blocker Alert --- */}
       {!senderEmail && (
-        <div className={`flex flex-col gap-3 p-4 bg-red-50/50 border border-red-200/60 rounded-lg ${surfaceShadow}`}>
-          <div className="flex items-center gap-2 text-[14px] font-semibold text-red-800">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            Sender Configuration Required
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-amber-50 border border-amber-200/80 rounded-lg shadow-sm">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-[14px] font-semibold text-amber-900">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              Sender Configuration Required
+            </div>
+            <p className="text-[13px] text-amber-800">
+              Configure a verified sender email address to unlock campaign creation and dispatch.
+            </p>
           </div>
-          <p className="text-[13px] text-red-700 leading-relaxed max-w-3xl">
-            You cannot create or execute recovery campaigns until you configure
-            a verified sender email address. This protects your domain
-            reputation and prevents spam failures.
-          </p>
-          <div className="mt-1 flex items-center gap-3 max-w-md">
+          <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
             <Input
-              placeholder="e.g., Arcli Recovery <recovery@yourdomain.com>"
+              placeholder="e.g., recovery@yourdomain.com"
               value={senderInput}
               onChange={(e) => setSenderInput(e.target.value)}
-              className="bg-white border-red-200 h-9 text-[13px] focus-visible:ring-red-500/20"
+              className="bg-white border-amber-200 h-9 text-[13px] md:min-w-[260px] focus-visible:ring-amber-500/20"
             />
             <Button
               onClick={handleSaveSenderEmail}
@@ -106,7 +102,7 @@ export default function CampaignsClient({
                 !senderInput.trim() ||
                 senderInput.trim() === senderEmail
               }
-              className={`h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold text-[13px] rounded-lg ${surfaceShadow}`}
+              className="h-9 px-4 bg-amber-600 hover:bg-amber-700 text-white font-medium text-[13px] rounded-lg shadow-sm transition-colors"
             >
               {isSavingSender ? (
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -208,8 +204,8 @@ export default function CampaignsClient({
         <div className="text-[12px] font-semibold text-slate-600 flex items-center gap-2.5">
           {!senderEmail ? (
             <>
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-red-700">Action Required: Set up sender email to unlock dispatch.</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              <span className="text-amber-700">Action Required: Set up sender email to unlock dispatch.</span>
             </>
           ) : activeTemplate ? (
             <>
