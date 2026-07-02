@@ -1,5 +1,7 @@
 import logging
 import json
+from sqlalchemy import func, case
+from api.models import ChurnRiskState, RecoveryAttribution, RecoveryEmail
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -22,6 +24,92 @@ router = APIRouter(prefix="/v1/metrics", tags=["Insights"])
 # ---------------------------------------------------------
 # RESPONSE SCHEMAS
 # ---------------------------------------------------------
+# ---------------------------------------------------------
+# SUMMARY RESPONSE SCHEMAS
+# ---------------------------------------------------------
+class RecentRisk(BaseModel):
+    id: str
+    email: str
+    signal: str
+    mrr: float
+    status: str
+    cooldown: Optional[str] = None
+
+class MetricsSummaryResponse(BaseModel):
+    recoveredMrr: float
+    atRiskMrr: float
+    recoveryRate: float
+    activeRisks: int
+    recentRisks: List[RecentRisk]
+
+# ---------------------------------------------------------
+# DASHBOARD SUMMARY ENDPOINT
+# ---------------------------------------------------------
+@router.get("/summary", response_model=MetricsSummaryResponse)
+async def get_metrics_summary(
+    tenant_id: str = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the high-level ROI and Risk Queue overview for the dashboard.
+    Strictly tenant-isolated.
+    """
+    # 1. Recovered MRR: Sum of revenue from successful attributions in the last 30 days
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    recovered_mrr = db.query(func.coalesce(func.sum(RecoveryAttribution.revenue), 0.0)) \
+        .filter(RecoveryAttribution.tenant_id == tenant_id) \
+        .filter(RecoveryAttribution.attributed_at >= thirty_days_ago) \
+        .scalar()
+
+    # 2. At-Risk MRR & Active Risks: From current unrecovered ChurnRiskState
+    risk_stats = db.query(
+        func.count(ChurnRiskState.id).label("active_risks"),
+        func.coalesce(func.sum(ChurnRiskState.risk_score), 0.0).label("at_risk_mrr") # Assuming risk_score correlates to MRR for MVP, or join with users table if MRR is stored elsewhere
+    ) \
+    .filter(ChurnRiskState.tenant_id == tenant_id) \
+    .filter(ChurnRiskState.risk_tier.in_(["high", "critical"])) \
+    .first()
+
+    active_risks = risk_stats.active_risks or 0
+    at_risk_mrr = float(risk_stats.at_risk_mrr)
+
+    # 3. Recovery Rate (Deterministic Logic)
+    # Total distinct users intervened vs total users attributed to revenue
+    total_interventions = db.query(func.count(func.distinct(RecoveryEmail.user_id))) \
+        .filter(RecoveryEmail.tenant_id == tenant_id).scalar() or 0
+    
+    recovered_users = db.query(func.count(func.distinct(RecoveryAttribution.user_id))) \
+        .filter(RecoveryAttribution.tenant_id == tenant_id).scalar() or 0
+
+    recovery_rate = round((recovered_users / total_interventions * 100), 1) if total_interventions > 0 else 0.0
+
+    # 4. Recent Live Risk Queue Preview (Top 5)
+    # Joining ChurnRiskState with RecoveryEmail (to get current status/cooldowns)
+    recent_risks_query = db.query(ChurnRiskState).filter(
+        ChurnRiskState.tenant_id == tenant_id,
+        ChurnRiskState.risk_tier.in_(["high", "critical"])
+    ).order_by(ChurnRiskState.updated_at.desc()).limit(5).all()
+
+    recent_risks = []
+    for risk in recent_risks_query:
+        recent_risks.append(
+            RecentRisk(
+                id=str(risk.id),
+                email=f"{risk.user_id}@placeholder.com", # Replace with actual join to tenant_users if email is stored
+                signal="inactivity" if not risk.risk_tier else risk.risk_tier,
+                mrr=float(risk.risk_score or 0.0), # Swap with actual MRR field
+                status="Pending Review",
+                cooldown=None
+            )
+        )
+
+    return MetricsSummaryResponse(
+        recoveredMrr=float(recovered_mrr),
+        atRiskMrr=at_risk_mrr,
+        recoveryRate=recovery_rate,
+        activeRisks=active_risks,
+        recentRisks=recent_risks
+    )
 
 class SegmentImpact(BaseModel):
     segment: str

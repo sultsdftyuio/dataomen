@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { ApiClient } from "@/lib/api-client";
 import Link from "next/link";
 import { 
   Activity, 
@@ -47,30 +48,23 @@ export default function RecoveryOverview() {
     
     // Fetch live data from the deterministic Python API
     const loadDashboardData = async () => {
-      setLoading(true);
-      try {
-        // Phase 1: Removed ?tenant_id= query param
-        const res = await fetch(`/api/metrics/summary`);
-        
-        if (!res.ok) {
-          throw new Error(`Metrics API returned status: ${res.status}`);
-        }
-
-        const data = await res.json();
-        
-        if (mounted) {
-          setSummary({
-            // Fallback to 0 / empty if backend returns undefined fields
-            recoveredMrr: data.recoveredMrr || 0,
-            atRiskMrr: data.atRiskMrr || 0,
-            recoveryRate: data.recoveryRate || 0,
-            activeRisks: data.activeRisks || 0,
-            recentRisks: data.recentRisks || []
-          });
-          setLoading(false);
-        }
-      } catch (e) {
-        console.error("Failed to load dashboard metrics:", e);
+  setLoading(true);
+  try {
+    // Automatically injects auth JWT and routes to /api/v1/metrics/summary
+    const data = await ApiClient.get<MetricsSummary>('/metrics/summary');
+    
+    if (mounted) {
+      setSummary({
+        recoveredMrr: data.recoveredMrr || 0,
+        atRiskMrr: data.atRiskMrr || 0,
+        recoveryRate: data.recoveryRate || 0,
+        activeRisks: data.activeRisks || 0,
+        recentRisks: data.recentRisks || []
+      });
+      setLoading(false);
+    }
+  } catch (e) {
+    console.error("Failed to load dashboard metrics:", e);
         if (mounted) {
           // Fail gracefully to zero-state on error
           setSummary({
