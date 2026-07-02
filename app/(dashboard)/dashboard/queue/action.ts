@@ -3,6 +3,8 @@
 import { createClient } from "@/utils/supabase/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
+import type { Database } from "@/types/supabase";
 
 export type InterventionResult =
   | { success: true; message: string }
@@ -15,6 +17,17 @@ const ALLOWED_ROLES = [
 ] as const;
 
 type AllowedRole = (typeof ALLOWED_ROLES)[number];
+
+// ─── Explicit Discriminated Union for Context ───────────────────────────────
+type OperatorContext =
+  | { authorized: false; error: string }
+  | {
+      authorized: true;
+      supabase: SupabaseClient<Database>;
+      user: User;
+      membership: { tenant_id: string; role: AllowedRole };
+      profile: { full_name: string | null } | null;
+    };
 
 // ─── Zod Validation Schemas ─────────────────────────────────────────────────
 const uuidSchema = z.string().uuid("Invalid ID format.");
@@ -55,21 +68,25 @@ function getErrorMessage(error: unknown): string {
 }
 
 // ─── Shared Authorization Helper (Rule 6: Strict Tenant Isolation) ──────────
-async function getOperatorContext(expectedTenantId: string) {
-  const supabase = await createClient();
+async function getOperatorContext(expectedTenantId: string): Promise<OperatorContext> {
+  // 1. Create an untyped client locally. This completely stops TypeScript from 
+  // assigning 'never' if a table is currently missing from your global Database types.
+  const supabaseUntyped = (await createClient()) as SupabaseClient<any, any, any>;
 
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  const { data: { user }, error: userError } = await supabaseUntyped.auth.getUser();
   if (userError || !user) {
-    return { authorized: false as const, error: "Unauthorized" };
+    return { authorized: false, error: "Unauthorized" };
   }
 
-  // CRITICAL: We explicitly verify the user belongs to the tenantId passed in the payload
-  const { data: membership, error: membershipError } = await supabase
+  // 2. Fetch and manually cast membership (bypasses all type interference)
+  const { data: rawMembership, error: membershipError } = await supabaseUntyped
     .from("tenant_users")
     .select("tenant_id, role")
     .eq("user_id", user.id)
-    .eq("tenant_id", expectedTenantId) // Strict validation against incoming payload
+    .eq("tenant_id", expectedTenantId)
     .single();
+
+  const membership = rawMembership as { tenant_id: string; role: string } | null;
 
   if (membershipError || !membership) {
     console.error("security_violation", { 
@@ -77,32 +94,41 @@ async function getOperatorContext(expectedTenantId: string) {
       expectedTenantId, 
       error: membershipError 
     });
-    return { authorized: false as const, error: "Authorization lookup failed or invalid tenant." };
+    return { authorized: false, error: "Authorization lookup failed or invalid tenant." };
   }
 
-  if (!ALLOWED_ROLES.includes(membership.role as AllowedRole)) {
+  if (!(ALLOWED_ROLES as readonly string[]).includes(membership.role)) {
     console.warn("auth_warning", { userId: user.id, role: membership.role });
-    return { authorized: false as const, error: "Insufficient permissions." };
+    return { authorized: false, error: "Insufficient permissions." };
   }
 
-  // Fetch operator profile for explainability audit logs
-  const { data: profile, error: profileError } = await supabase
+  // 3. Fetch and manually cast profile
+  const { data: rawProfile, error: profileError } = await supabaseUntyped
     .from("users")
     .select("full_name")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
+
+  const profile = rawProfile as { full_name: string | null } | null;
 
   if (profileError) {
     console.error("profile_lookup_failed", { userId: user.id, error: profileError });
   }
 
-  return { authorized: true as const, supabase, user, membership, profile };
+  return { 
+    authorized: true, 
+    // Return the strictly typed client for your safe RPC transactions downstream
+    supabase: supabaseUntyped as SupabaseClient<Database>, 
+    user, 
+    membership: { tenant_id: membership.tenant_id, role: membership.role as AllowedRole }, 
+    profile 
+  };
 }
 
 // ─── 1. Apply Intervention ──────────────────────────────────────────────────
 export async function applyInterventionAction(formData: FormData): Promise<InterventionResult> {
   const rawDuration = formData.get("durationDays");
-  const durationDays = (!rawDuration || rawDuration === "null") ? null : rawDuration;
+  const durationDays = rawDuration === "null" ? null : rawDuration;
 
   const parseResult = interventionSchema.safeParse({
     itemId: formData.get("itemId"),
@@ -121,93 +147,29 @@ export async function applyInterventionAction(formData: FormData): Promise<Inter
   const { customerId, action, reason, idempotencyKey } = parseResult.data;
   
   const ctx = await getOperatorContext(parseResult.data.tenantId);
-  if (!ctx.authorized) return { success: false, error: ctx.error };
+  if (!ctx.authorized) return { success: false, error: ctx.error }; 
   const { supabase, user, membership, profile } = ctx;
 
   try {
-    // Fast-path idempotency check (not sufficient under concurrency; unique constraint is the real guard)
-    const { data: existing, error: idempotencyCheckError } = await supabase
-      .from("manual_interventions")
-      .select("id")
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-
-    if (idempotencyCheckError) {
-      console.error("idempotency_check_failed", { tenantId: membership.tenant_id, error: idempotencyCheckError });
-      return { success: false, error: "Failed to verify idempotency." };
-    }
-
-    if (existing) {
-      return { success: true, message: "Action was already processed." };
-    }
-
-    // TODO: Move multi-step writes into a single database transaction (RPC/stored procedure)
-    // to guarantee atomicity and eliminate idempotency races.
-    if (action === "suppress") {
-      // 1. Mark state as suppressed
-      const { error: suppressError } = await supabase
-        .from("churn_risk_state")
-        .update({ is_suppressed: true })
-        .eq("tenant_id", membership.tenant_id)
-        .eq("user_id", customerId);
-
-      if (suppressError) {
-        console.error("suppress_state_failed", { tenantId: membership.tenant_id, customerId, error: suppressError });
-        return { success: false, error: "Failed to suppress churn risk state." };
-      }
-
-      // 2. Kill pending emails in queue
-      const { error: cancelError } = await supabase
-        .from("recovery_emails")
-        .update({ status: "suppressed" })
-        .eq("tenant_id", membership.tenant_id)
-        .eq("user_id", customerId)
-        .in("status", ["pending_dispatch", "queued"]);
-
-      if (cancelError) {
-        console.error("suppress_emails_failed", { tenantId: membership.tenant_id, customerId, error: cancelError });
-        return { success: false, error: "Failed to cancel pending emails." };
-      }
-
-    } else if (action === "cooldown") {
-      // Push the lease expiration out by X days
-      const days = parseResult.data.durationDays;
-      const cooldownDate = new Date();
-      cooldownDate.setDate(cooldownDate.getDate() + days);
-
-      const { error: cooldownError } = await supabase
-        .from("recovery_emails")
-        .update({ 
-          status: "cooldown",
-          lease_expires_at: cooldownDate.toISOString() 
-        })
-        .eq("tenant_id", membership.tenant_id)
-        .eq("user_id", customerId)
-        .in("status", ["pending_dispatch", "queued", "failed"]);
-
-      if (cooldownError) {
-        console.error("cooldown_apply_failed", { tenantId: membership.tenant_id, customerId, error: cooldownError });
-        return { success: false, error: "Failed to apply cooldown." };
-      }
-    }
-
-    // Rule 17: Write to Explainability Audit Trail
-    const { error: auditError } = await supabase.from("manual_interventions").insert({
-      tenant_id: membership.tenant_id,
-      user_id: customerId,
-      action: action === "suppress" ? "Suppressed" : `Cooldown Applied (${parseResult.data.durationDays} days)`,
-      operator_name: profile?.full_name || user.email,
-      notes: reason,
-      idempotency_key: idempotencyKey
+    // Rule 11 & Rule 13: Execute multi-table updates securely inside an atomic PostgreSQL RPC.
+    const { error: rpcError } = await supabase.rpc("apply_queue_intervention", {
+      p_tenant_id: membership.tenant_id,
+      p_user_id: customerId,
+      p_action: action,
+      p_duration_days: parseResult.data.action === "cooldown" ? parseResult.data.durationDays : null,
+      p_operator_name: profile?.full_name ?? user.email ?? "Unknown Operator",
+      p_reason: reason,
+      p_idempotency_key: idempotencyKey,
     });
 
-    if (auditError) {
-      // Gracefully handle idempotency race via unique constraint on idempotency_key
-      if (auditError.code === "23505") {
-        return { success: true, message: "Action was already processed." };
-      }
-      console.error("audit_insert_failed", { tenantId: membership.tenant_id, customerId, action, error: auditError });
-      return { success: false, error: "Failed to write audit log." };
+    if (rpcError) {
+      console.error("intervention_rpc_failed", { 
+        tenantId: membership.tenant_id, 
+        customerId, 
+        action, 
+        error: rpcError 
+      });
+      return { success: false, error: rpcError.message || "Failed to apply intervention atomically." };
     }
 
     console.info("intervention_applied", {
@@ -216,13 +178,18 @@ export async function applyInterventionAction(formData: FormData): Promise<Inter
       action,
       operatorId: user.id,
     });
-    revalidatePath("/dashboard/queue");
     
+    revalidatePath("/dashboard/queue");
     return { success: true, message: `Successfully applied ${action}.` };
 
   } catch (error) {
-    console.error("intervention_failed", { tenantId: membership.tenant_id, customerId, operatorId: user.id, error: getErrorMessage(error) });
-    return { success: false, error: "Failed to apply intervention." };
+    console.error("intervention_failed", { 
+      tenantId: membership.tenant_id, 
+      customerId, 
+      operatorId: user.id, 
+      error: getErrorMessage(error) 
+    });
+    return { success: false, error: "Failed to apply intervention due to server error." };
   }
 }
 
@@ -237,52 +204,28 @@ export async function claimAccountAction(payload: { itemId: string; tenantId: st
   if (!ctx.authorized) return { success: false, error: ctx.error };
   const { supabase, user, membership, profile } = ctx;
 
-  // Phase 1 Schema Alignment: Update recovery_emails
-  const { data, error } = await supabase
-    .from("recovery_emails") 
-    .update({ claimed_by_operator: user.id })
-    .eq("tenant_id", membership.tenant_id)
-    .eq("id", itemId)
-    .is("claimed_by_operator", null) // Prevents last-writer-wins race conditions
-    .select("user_id");
-
-  if (error) {
-    console.error("claim_db_error", { tenantId: membership.tenant_id, itemId, operatorId: user.id, error });
-    return { success: false, error: "Database error. Could not claim account." };
-  }
-
-  if (!data || data.length === 0) {
-    return { success: false, error: "Account could not be claimed. It may not exist or is already assigned." };
-  }
-
-  // Rule 17: Write to Explainability Audit Trail
-  // Without transactions, audit is treated as best-effort: the primary operation already succeeded,
-  // so we log audit failures critically but still return success to the caller.
-  const { error: auditError } = await supabase.from("manual_interventions").insert({
-    tenant_id: membership.tenant_id,
-    user_id: data[0].user_id,
-    action: "Account Claimed",
-    operator_name: profile?.full_name || user.email,
-  });
-
-  if (auditError) {
-    console.error("claim_audit_failed", { 
-      tenantId: membership.tenant_id, 
-      itemId, 
-      operatorId: user.id, 
-      userId: data[0].user_id,
-      error: auditError 
+  try {
+    // Rule 11 & Rule 13: Atomic transaction via RPC guarantees account is claimed AND audit log is written.
+    const { error: rpcError } = await supabase.rpc("claim_account_intervention", {
+      p_tenant_id: membership.tenant_id,
+      p_item_id: itemId,
+      p_operator_id: user.id,
+      p_operator_name: profile?.full_name ?? user.email ?? "Unknown Operator"
     });
-    // Intentionally not returning failure — the claim succeeded; audit is best-effort without transactions.
-  }
 
-  console.info("account_claimed", {
-    tenantId: membership.tenant_id,
-    itemId,
-    operatorId: user.id,
-  });
-  revalidatePath("/dashboard/queue");
-  return { success: true, message: "Account successfully claimed." };
+    if (rpcError) {
+      console.error("claim_rpc_failed", { tenantId: membership.tenant_id, itemId, operatorId: user.id, error: rpcError });
+      return { success: false, error: rpcError.message || "Failed to claim account atomically." };
+    }
+
+    console.info("account_claimed", { tenantId: membership.tenant_id, itemId, operatorId: user.id });
+    revalidatePath("/dashboard/queue");
+    return { success: true, message: "Account successfully claimed." };
+
+  } catch (error) {
+    console.error("claim_failed", { tenantId: membership.tenant_id, itemId, error: getErrorMessage(error) });
+    return { success: false, error: "Server error while claiming account." };
+  }
 }
 
 // ─── 3. Requeue Dead Letter ─────────────────────────────────────────────────
@@ -296,54 +239,25 @@ export async function requeueDeadLetterAction(payload: { itemId: string; tenantI
   if (!ctx.authorized) return { success: false, error: ctx.error };
   const { supabase, user, membership, profile } = ctx;
 
-  // Phase 1 Schema Alignment: Update recovery_emails
-  const { data, error } = await supabase
-    .from("recovery_emails")
-    .update({ 
-      status: "pending_dispatch",
-      error_logs: null, 
-      next_retry_at: new Date().toISOString()
-    })
-    .eq("tenant_id", membership.tenant_id)
-    .eq("id", itemId)
-    .eq("status", "dead_lettered") // Safety check
-    .select("user_id");
-
-  if (error) {
-    console.error("requeue_db_error", { tenantId: membership.tenant_id, itemId, operatorId: user.id, error });
-    return { success: false, error: "Database error. Could not requeue." };
-  }
-
-  if (!data || data.length === 0) {
-    return { success: false, error: "Could not requeue. Account may not exist or is not in a dead-letter state." };
-  }
-
-  // Rule 17: Write to Explainability Audit Trail
-  // Without transactions, audit is treated as best-effort: the primary operation already succeeded,
-  // so we log audit failures critically but still return success to the caller.
-  const { error: auditError } = await supabase.from("manual_interventions").insert({
-    tenant_id: membership.tenant_id,
-    user_id: data[0].user_id,
-    action: "Dead Letter Requeued",
-    operator_name: profile?.full_name || user.email,
-  });
-
-  if (auditError) {
-    console.error("requeue_audit_failed", { 
-      tenantId: membership.tenant_id, 
-      itemId, 
-      operatorId: user.id, 
-      userId: data[0].user_id,
-      error: auditError 
+  try {
+    // Rule 11 & Rule 13: Atomic transaction via RPC guarantees dead letter state resets AND audit log is written.
+    const { error: rpcError } = await supabase.rpc("requeue_dead_letter_intervention", {
+      p_tenant_id: membership.tenant_id,
+      p_item_id: itemId,
+      p_operator_name: profile?.full_name ?? user.email ?? "Unknown Operator"
     });
-    // Intentionally not returning failure — the requeue succeeded; audit is best-effort without transactions.
-  }
 
-  console.info("dead_letter_requeued", {
-    tenantId: membership.tenant_id,
-    itemId,
-    operatorId: user.id,
-  });
-  revalidatePath("/dashboard/queue");
-  return { success: true, message: "Account requeued for dispatch." };
+    if (rpcError) {
+      console.error("requeue_rpc_failed", { tenantId: membership.tenant_id, itemId, operatorId: user.id, error: rpcError });
+      return { success: false, error: rpcError.message || "Failed to requeue account atomically." };
+    }
+
+    console.info("dead_letter_requeued", { tenantId: membership.tenant_id, itemId, operatorId: user.id });
+    revalidatePath("/dashboard/queue");
+    return { success: true, message: "Account requeued for dispatch." };
+
+  } catch (error) {
+    console.error("requeue_failed", { tenantId: membership.tenant_id, itemId, error: getErrorMessage(error) });
+    return { success: false, error: "Server error while requeuing account." };
+  }
 }

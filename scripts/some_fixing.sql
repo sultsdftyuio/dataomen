@@ -179,3 +179,125 @@ SELECT
     SUM(mrr_at_risk) FILTER (WHERE risk_score >= 50) AS total_mrr_at_risk
 FROM vw_customer_operations
 GROUP BY tenant_id;
+CREATE OR REPLACE FUNCTION apply_queue_intervention(
+  p_tenant_id UUID,
+  p_user_id TEXT,
+  p_action TEXT, -- 'suppress' or 'cooldown'
+  p_duration_days INT,
+  p_operator_name TEXT,
+  p_reason TEXT,
+  p_idempotency_key UUID
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_cooldown_date TIMESTAMPTZ;
+BEGIN
+  -- 1. Strict Idempotency Guard
+  IF EXISTS (SELECT 1 FROM manual_interventions WHERE idempotency_key = p_idempotency_key) THEN
+    RETURN; -- Silently exit, it was already processed
+  END IF;
+
+  -- 2. Handle 'suppress'
+  IF p_action = 'suppress' THEN
+    UPDATE churn_risk_state
+    SET is_suppressed = true
+    WHERE tenant_id = p_tenant_id AND user_id = p_user_id;
+
+    UPDATE recovery_emails
+    SET status = 'suppressed'
+    WHERE tenant_id = p_tenant_id 
+      AND user_id = p_user_id 
+      AND status IN ('pending_dispatch', 'queued');
+      
+  -- 3. Handle 'cooldown'
+  ELSIF p_action = 'cooldown' THEN
+    v_cooldown_date := NOW() + (p_duration_days || ' days')::interval;
+    
+    UPDATE recovery_emails
+    SET status = 'cooldown',
+        lease_expires_at = v_cooldown_date
+    WHERE tenant_id = p_tenant_id 
+      AND user_id = p_user_id 
+      AND status IN ('pending_dispatch', 'queued', 'failed');
+  END IF;
+
+  -- 4. Write Explainability Audit Trail
+  INSERT INTO manual_interventions (
+    tenant_id, user_id, action, operator_name, notes, idempotency_key
+  ) VALUES (
+    p_tenant_id, 
+    p_user_id, 
+    CASE WHEN p_action = 'suppress' THEN 'Suppressed' ELSE 'Cooldown Applied (' || p_duration_days || ' days)' END, 
+    p_operator_name, 
+    p_reason, 
+    p_idempotency_key
+  );
+  
+  -- If any step above fails, Postgres rolls back the entire transaction automatically.
+END;
+$$;
+-- 1. RPC for Claiming Accounts Transactionally
+CREATE OR REPLACE FUNCTION claim_account_intervention(
+  p_tenant_id UUID,
+  p_item_id UUID,
+  p_operator_id UUID,
+  p_operator_name TEXT
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id TEXT;
+BEGIN
+  -- 1. Attempt to claim and return the associated user_id
+  UPDATE recovery_emails
+  SET claimed_by_operator = p_operator_id
+  WHERE tenant_id = p_tenant_id AND id = p_item_id AND claimed_by_operator IS NULL
+  RETURNING user_id INTO v_user_id;
+
+  -- 2. Concurrency check (if another operator claimed it first, v_user_id is null)
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Account could not be claimed. It may not exist or is already assigned.';
+  END IF;
+
+  -- 3. Audit Log
+  INSERT INTO manual_interventions (tenant_id, user_id, action, operator_name)
+  VALUES (p_tenant_id, v_user_id, 'Account Claimed', p_operator_name);
+END;
+$$;
+
+-- 2. RPC for Requeuing Dead Letters Transactionally
+CREATE OR REPLACE FUNCTION requeue_dead_letter_intervention(
+  p_tenant_id UUID,
+  p_item_id UUID,
+  p_operator_name TEXT
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id TEXT;
+BEGIN
+  -- 1. Attempt to reset state
+  UPDATE recovery_emails
+  SET status = 'pending_dispatch',
+      error_logs = NULL,
+      next_retry_at = NOW()
+  WHERE tenant_id = p_tenant_id AND id = p_item_id AND status = 'dead_lettered'
+  RETURNING user_id INTO v_user_id;
+
+  -- 2. State mismatch check
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Could not requeue. Account may not exist or is not in a dead-letter state.';
+  END IF;
+
+  -- 3. Audit Log
+  INSERT INTO manual_interventions (tenant_id, user_id, action, operator_name)
+  VALUES (p_tenant_id, v_user_id, 'Dead Letter Requeued', p_operator_name);
+END;
+$$;

@@ -80,16 +80,19 @@ export type Database = {
         Row: {
           tenant_id: string;
           user_id: string;
+          role: string;
           created_at: string | null;
         };
         Insert: {
           tenant_id: string;
           user_id: string;
+          role?: string;
           created_at?: string | null;
         };
         Update: {
           tenant_id?: string;
           user_id?: string;
+          role?: string;
           created_at?: string | null;
         };
         Relationships: [];
@@ -185,6 +188,24 @@ export type Database = {
           status?: string | null;
           created_at?: string | null;
         };
+        Relationships: [];
+      };
+      manual_interventions: {
+        Row: Record<string, any>;
+        Insert: Record<string, any>;
+        Update: Record<string, any>;
+        Relationships: [];
+      };
+      churn_risk_state: {
+        Row: Record<string, any>;
+        Insert: Record<string, any>;
+        Update: Record<string, any>;
+        Relationships: [];
+      };
+      recovery_emails: {
+        Row: Record<string, any>;
+        Insert: Record<string, any>;
+        Update: Record<string, any>;
         Relationships: [];
       };
     } & Record<string, GenericTable>;
