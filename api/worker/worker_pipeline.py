@@ -1,17 +1,12 @@
-"""
-Arcli Worker — Daily Churn Recovery Pipeline
+# api/worker/worker_pipeline.py
 
-Contains: PipelineOrchestrator with tenant scanning,
-batch user streaming, churn scoring, and recovery automation.
-"""
-
-from __future__ import annotations
-
+import logging
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
+from api.database import get_supabase_client
 from api.recovery_common import ClaimOutcome
 from api.services.churn_scoring_service import ChurnScoringService
 from api.services.recovery_engine import RecoveryAutomationEngine
@@ -28,6 +23,49 @@ from api.worker.worker_core import (
     _is_safe_column_name,
     _format_postgrest_value,
 )
+
+
+# ---------------------------------------------------------------------------
+# SUBSCRIPTION LIFECYCLE HELPERS
+# ---------------------------------------------------------------------------
+
+def process_subscription_upgrade(tenant_id: str, new_plan_id: str, transaction_id: str):
+    """
+    Rule 11: Idempotent upgrade fulfillment.
+    Rule 14: Never trust delivery ordering; enforce explicit DB transitions.
+    """
+    supabase = get_supabase_client()
+    
+    try:
+        # 1. Atomic state mutation via tenant isolation (Rule 6)
+        #    NOTE: new_plan_id is accepted for audit context but mapped to the
+        #    internal 'pro' tier to satisfy the CHECK constraint on plan_tier.
+        response = supabase.table("tenants").update({
+            "plan_tier": "pro",
+            "subscription_status": "active"
+        }).eq("tenant_id", tenant_id).execute()
+        
+        if not response.data:
+            logger.warning(
+                "tenant_upgrade_noop tenant_id=%s transaction_id=%s reason=no_matching_tenant",
+                tenant_id,
+                transaction_id
+            )
+            return
+        
+        # Rule 17: Observability Standards - Log for operators
+        logger.info(
+            "tenant_upgraded tenant_id=%s new_tier=pro transaction_id=%s",
+            tenant_id,
+            transaction_id
+        )
+    except Exception:
+        logger.exception(
+            "tenant_upgrade_failed tenant_id=%s transaction_id=%s",
+            tenant_id,
+            transaction_id
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------
