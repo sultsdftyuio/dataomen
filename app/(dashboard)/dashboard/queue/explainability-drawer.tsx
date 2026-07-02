@@ -90,29 +90,39 @@ export function ExplainabilityDrawer({
     ? data.factors.reduce((sum, f) => sum + f.weight, 0) + data.baseline_score
     : item.risk_score;
 
-  const handleClaim = () => {
-    startTransition(async () => {
-      const result = await claimAccountAction({ itemId: item.id, tenantId: item.tenant_id });
-      if (result.success) {
-        toast({ title: "Account Claimed", description: result.message });
-        onClose();
-      } else {
-        toast({ title: "Claim Failed", description: result.error, variant: "destructive" });
-      }
+  // 1. Update handleClaim
+const handleClaim = () => {
+  startTransition(async () => {
+    // Pass the payload object with tenantId
+    const result = await claimAccountAction({ 
+      itemId: item.id, 
+      tenantId: item.tenant_id 
     });
-  };
+    if (result.success) {
+      toast({ title: "Account Claimed", description: result.message });
+      onClose();
+    } else {
+      toast({ title: "Claim Failed", description: result.error, variant: "destructive" });
+    }
+  });
+};
 
-  const handleRequeue = () => {
-    startTransition(async () => {
-      const result = await requeueDeadLetterAction({ itemId: item.id, tenantId: item.tenant_id });
-      if (result.success) {
-        toast({ title: "Requeued Successfully", description: result.message });
-        onClose();
-      } else {
-        toast({ title: "Requeue Failed", description: result.error, variant: "destructive" });
-      }
+// 2. Update handleRequeue
+const handleRequeue = () => {
+  startTransition(async () => {
+    // Pass the payload object with tenantId
+    const result = await requeueDeadLetterAction({ 
+      itemId: item.id, 
+      tenantId: item.tenant_id 
     });
-  };
+    if (result.success) {
+      toast({ title: "Requeued Successfully", description: result.message });
+      onClose();
+    } else {
+      toast({ title: "Requeue Failed", description: result.error, variant: "destructive" });
+    }
+  });
+};
 
   const isHealthy = item.state === "healthy";
   const isDeadLettered = item.state === "dead_lettered";
