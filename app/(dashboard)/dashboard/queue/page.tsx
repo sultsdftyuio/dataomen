@@ -1,11 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import CustomerOperationsClient from "./risk-queue-client";
-import type { CustomerOperation, OperationsMetrics } from "./risk-queue-client";
+import CustomerOperationsClient, { 
+  type CustomerOperationsPage, 
+  type CustomerOperation, 
+  type OperationsMetrics 
+} from "./risk-queue-client";
 
 export const metadata = {
-  title: "Customer Operations | Arcli",
-  description: "Air traffic control for customer retention and churn recovery.",
+ title: "Customer Operations | Arcli",
+description: "Air traffic control for customer retention and churn recovery.",
 };
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -164,14 +167,14 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     });
   }
 
-  const metrics: OperationsMetrics = metricsData || {
-    total_customers: 0,
-    at_risk_count: 0,
-    critical_count: 0,
-    pending_count: 0,
-    dead_letter_count: 0,
-    total_mrr_at_risk: 0,
-  };
+  const defaultMetrics: OperationsMetrics = {
+  total_customers: 0,
+  at_risk_count: 0,
+  critical_count: 0,
+  pending_count: 0,
+  dead_letter_count: 0,
+  total_mrr_at_risk: 0,
+};
 
   // ── Layer 7: Pagination Bounds & Clamping ───────────────────────
   // NOTE: For tables with hundreds of thousands+ of rows, consider
@@ -228,9 +231,19 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     });
     return <QueueErrorState />;
   }
-
+  
+  const metrics: OperationsMetrics = metricsData ? (metricsData as OperationsMetrics) : defaultMetrics;
   const customerOperations: CustomerOperation[] = items || [];
-
+const pageData: CustomerOperationsPage = {
+  customers: customerOperations,
+  metrics: metrics,
+  pagination: {
+    currentPage: page,
+    totalPages: totalPages,
+    totalItems: totalItems,
+    pageSize: PAGE_SIZE, // Ensure PAGE_SIZE is available in this scope
+    },
+};
   return (
     <div className="flex-1 space-y-6 p-8 pt-6 max-w-screen-2xl mx-auto">
       <div className="flex items-center justify-between space-y-2">
@@ -263,14 +276,7 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
       </div>
 
       {/* ── The Radar Screen (Client Component) ────────────────── */}
-      <CustomerOperationsClient
-        data={customerOperations}
-        metrics={metrics}
-        tenantId={tenantId}
-        currentPage={page}
-        totalPages={totalPages}
-        totalItems={totalItems}
-      />
+      <CustomerOperationsClient page={pageData} />
     </div>
   );
 }
@@ -343,4 +349,4 @@ function QueueErrorState() {
       </div>
     </div>
   );
-}
+} 
