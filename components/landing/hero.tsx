@@ -48,8 +48,7 @@ export function Hero() {
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-            Stop reacting to cancellations. Start preventing them. Connect your billing and product data, and let AI agents predict churn, uncover root causes, and trigger retention workflows.
-          </p>
+              Stop reacting to cancellations. Start preventing them. Track your product data to automatically detect explicit churn signals, score user inactivity, and trigger explainable retention workflows.          </p>
 
           {/* CTAs */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
