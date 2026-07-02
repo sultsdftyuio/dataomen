@@ -1,17 +1,24 @@
 import { redirect } from "next/navigation";
+
 import { createClient } from "@/utils/supabase/server";
+
 import CustomerOperationsClient, { 
   type CustomerOperationsPage, 
   type CustomerOperation, 
   type OperationsMetrics 
 } from "./risk-queue-client";
 
+
+
 export const metadata = {
  title: "Customer Operations | Arcli",
 description: "Air traffic control for customer retention and churn recovery.",
 };
 
+
+
 // ─── Constants ───────────────────────────────────────────────────
+
 const ALLOWED_ROLES = new Set(["owner", "admin", "operator"] as const);
 type AllowedRole = "owner" | "admin" | "operator";
 
@@ -27,11 +34,11 @@ type ValidTab = "critical" | "pending" | "cooldown" | "dead_lettered" | "healthy
 
 const PAGE_SIZE = 50;
 
+
+
 // ─── Input Sanitization & Validation ───────────────────────────────
+
 function sanitizeSearchQuery(raw: string): string {
-  // Whitelist approach: only allow word characters, whitespace, @, ., and -.
-  // This prevents malformed PostgREST filter strings while preserving
-  // useful search characters for names, emails, and customer IDs.
   return raw.trim().replace(/[^\w\s@.-]/g, "");
 }
 
@@ -53,15 +60,18 @@ function parseQueryParam(raw: string | string[] | undefined): string {
   return sanitizeSearchQuery(raw);
 }
 
+
+
 // ─── Types ─────────────────────────────────────────────────────────
+
 interface PageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
 
+
+
 // ─── Internal Filter Applicator ────────────────────────────────────
-// Applies tab and search filters to any PostgREST query builder instance.
-// Typed as `any` internally because this is a pure, private helper with
-// guaranteed inputs — the public API is fully typed above.
+
 function applyOperationFilters(
   query: any,
   tab: ValidTab,
@@ -99,20 +109,20 @@ function applyOperationFilters(
   return q;
 }
 
+
+
 // ─── Page Component ──────────────────────────────────────────────
+
 export default async function CustomerOperationsPage({ searchParams }: PageProps) {
   const supabase = await createClient();
 
-  // ── Layer 1: Authentication (Rule 1) ────────────────────────────
+  // ── Layer 1: Authentication ────────────────────────────
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     redirect("/login");
   }
 
   // ── Layer 2: Tenant Resolution & Security ───────────────────────
-  // NOTE: .single() assumes a user belongs to exactly one tenant.
-  // If multi-tenant membership is planned, replace with .maybeSingle()
-  // and implement a tenant selection / active-tenant strategy.
   const { data: membership, error: membershipError } = await supabase
     .from("tenant_users")
     .select("tenant_id, role")
@@ -136,10 +146,6 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
   const rawPage = parsePageParam(searchParams.page);
 
   // ── Layer 5: Parallel Execution — Metrics + Lightweight Count ───
-  // Rule 13: Never load datasets into memory to calculate metrics.
-  // We run a head-only count first to determine valid pagination bounds
-  // BEFORE executing the actual data query. This prevents wasteful
-  // high-offset queries when users request out-of-range pages.
   const [metricsResult, countResult] = await Promise.all([
     supabase
       .from("vw_customer_operations_metrics")
@@ -168,25 +174,20 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
   }
 
   const defaultMetrics: OperationsMetrics = {
-  total_customers: 0,
-  at_risk_count: 0,
-  critical_count: 0,
-  pending_count: 0,
-  dead_letter_count: 0,
-  total_mrr_at_risk: 0,
-};
+    total_customers: 0,
+    at_risk_count: 0,
+    critical_count: 0,
+    pending_count: 0,
+    dead_letter_count: 0,
+    total_mrr_at_risk: 0,
+  };
 
   // ── Layer 7: Pagination Bounds & Clamping ───────────────────────
-  // NOTE: For tables with hundreds of thousands+ of rows, consider
-  // switching count: "exact" to "planned" or "estimated" to avoid
-  // the performance cost of an exact count.
   const { count } = countResult;
   const totalItems = count ?? 0;
   const totalPages = Math.ceil(totalItems / PAGE_SIZE);
   const page = totalPages > 0 ? Math.min(rawPage, totalPages) : 1;
 
-  // Redirect to the last valid page if the requested page was out of range.
-  // This happens BEFORE the data query, preventing huge wasteful offsets.
   if (page !== rawPage) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(searchParams)) {
@@ -234,29 +235,32 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
   
   const metrics: OperationsMetrics = metricsData ? (metricsData as OperationsMetrics) : defaultMetrics;
   const customerOperations: CustomerOperation[] = items || [];
-const pageData: CustomerOperationsPage = {
-  customers: customerOperations,
-  metrics: metrics,
-  pagination: {
-    currentPage: page,
-    totalPages: totalPages,
-    totalItems: totalItems,
-    pageSize: PAGE_SIZE, // Ensure PAGE_SIZE is available in this scope
+  const pageData: CustomerOperationsPage = {
+    customers: customerOperations,
+    metrics: metrics,
+    pagination: {
+      currentPage: page,
+      totalPages: totalPages,
+      totalItems: totalItems,
+      pageSize: PAGE_SIZE,
     },
-};
+  };
+
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 max-w-screen-2xl mx-auto">
-      <div className="flex items-center justify-between space-y-2">
+<div className="flex-1 space-y-6 p-8 pt-6 max-w-full mx-auto">
+        <div className="flex items-center justify-between space-y-2">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Risk Queues</h2>
-          <p className="text-muted-foreground">
+          <h2 style={{ fontSize: 42, color: "#0F172A", marginBottom: 8, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            Risk Queues
+          </h2>
+          <p style={{ color: "#475569", fontSize: 17, lineHeight: 1.62 }}>
             Air traffic control for at-risk accounts. Triage, intervene, and monitor recovery pipelines.
           </p>
         </div>
       </div>
 
       {/* ── The Heads-Up Display (HUD) ─────────────────────────── */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Critical Accounts"
           value={metrics.critical_count}
@@ -269,10 +273,6 @@ const pageData: CustomerOperationsPage = {
         />
         <MetricCard title="Pending Dispatches" value={metrics.pending_count} />
         <MetricCard title="At Risk Accounts" value={metrics.at_risk_count} />
-        <MetricCard
-          title="Total MRR at Risk"
-          value={`$${metrics.total_mrr_at_risk.toLocaleString()}`}
-        />
       </div>
 
       {/* ── The Radar Screen (Client Component) ────────────────── */}
@@ -281,7 +281,10 @@ const pageData: CustomerOperationsPage = {
   );
 }
 
+
+
 // ─── Internal HUD Component ────────────────────────────────────────
+
 type MetricVariant = "default" | "alert";
 
 function MetricCard({
@@ -294,38 +297,90 @@ function MetricCard({
   variant?: MetricVariant;
 }) {
   const isAlert = variant === "alert";
+  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <div className="rounded-xl border bg-card text-card-foreground shadow-sm">
-      <div className="p-6 flex flex-row items-center justify-between space-y-0 pb-2">
-        <h3 className="tracking-tight text-sm font-medium text-slate-500">{title}</h3>
-      </div>
-      <div className="p-6 pt-0">
-        <div className={`text-3xl font-bold ${isAlert ? "text-red-500" : "text-slate-900"}`}>
+    <div style={{ 
+      borderRadius: 8, 
+      border: surfaceBorder, 
+      background: "#fff", 
+      boxShadow: surfaceShadow,
+      position: "relative",
+      overflow: "hidden"
+    }}>
+      <div style={{ padding: "20px 20px 12px" }}>
+        <h3 style={{ 
+          fontSize: 11, 
+          fontWeight: 600, 
+          color: "#94A3B8", 
+          letterSpacing: "0.05em", 
+          textTransform: "uppercase",
+          marginBottom: 8
+        }}>
+          {title}
+        </h3>
+        <div style={{ 
+          fontSize: 28, 
+          fontWeight: 700, 
+          color: isAlert ? "#EF4444" : "#0F172A",
+          letterSpacing: "-0.02em",
+          lineHeight: 1.2
+        }}>
           {value}
         </div>
       </div>
+      {isAlert && (
+        <div style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          background: "#EF4444"
+        }} />
+      )}
     </div>
   );
 }
 
+
+
 // ─── Error State (When Queue Fetch Fails) ──────────────────────────
+
 function QueueErrorState() {
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 max-w-screen-2xl mx-auto">
+    <div className="flex-1 space-y-6 p-8 pt-6 max-w-full mx-auto">
       <div className="flex items-center justify-between space-y-2">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Risk Queues</h2>
-          <p className="text-muted-foreground">
+          <h2 style={{ fontSize: 42, color: "#0F172A", marginBottom: 8, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
+            Risk Queues
+          </h2>
+          <p style={{ color: "#475569", fontSize: 17, lineHeight: 1.62 }}>
             Air traffic control for at-risk accounts.
           </p>
         </div>
       </div>
 
-      <div className="rounded-xl border border-red-200 bg-red-50 p-12 text-center">
-        <div className="mx-auto h-16 w-16 rounded-full bg-red-100 flex items-center justify-center mb-4">
+      <div style={{ 
+        borderRadius: 8, 
+        border: "1px solid rgba(239,68,68,0.2)", 
+        background: "rgba(239,68,68,0.04)", 
+        padding: "48px 24px", 
+        textAlign: "center" 
+      }}>
+        <div style={{ 
+          margin: "0 auto 16px", 
+          width: 48, 
+          height: 48, 
+          borderRadius: "50%", 
+          background: "rgba(239,68,68,0.1)", 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "center" 
+        }}>
           <svg
-            className="h-8 w-8 text-red-600"
+            style={{ width: 24, height: 24, color: "#EF4444" }}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -338,15 +393,25 @@ function QueueErrorState() {
             />
           </svg>
         </div>
-        <h3 className="text-xl font-semibold text-red-900 mb-2">System Error</h3>
-        <p className="text-red-700 max-w-md mx-auto">
+        <h3 style={{ fontSize: 18, fontWeight: 600, color: "#0F172A", marginBottom: 8 }}>System Error</h3>
+        <p style={{ color: "#475569", fontSize: 15, lineHeight: 1.62, maxWidth: 480, margin: "0 auto" }}>
           Failed to load the risk queue. The database may be unavailable or experiencing high
           latency. Please refresh the page or contact engineering if this persists.
         </p>
-        <p className="text-sm font-medium text-red-600 mt-6 bg-white/50 inline-block px-4 py-2 rounded-md">
+        <p style={{ 
+          fontSize: 12, 
+          fontWeight: 600, 
+          color: "#EF4444", 
+          marginTop: 20, 
+          display: "inline-block", 
+          padding: "6px 14px", 
+          borderRadius: 6, 
+          background: "rgba(255,255,255,0.6)",
+          border: "1px solid rgba(239,68,68,0.15)"
+        }}>
           Do not assume the queue is empty. This is a failure state, not a clear state.
         </p>
       </div>
     </div>
   );
-} 
+}

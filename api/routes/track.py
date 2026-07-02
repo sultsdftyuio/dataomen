@@ -1,54 +1,70 @@
 import uuid
 import logging
+import time
+import redis.asyncio as redis
 import os
 import hmac
 import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, List, Tuple
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Security, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Security, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, validator, constr
+from pydantic import BaseModel, Field, field_validator
+from supabase import create_client, Client
 
 from api.services.ingestion_service import IngestionService
-from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/track", tags=["Events"])
 security = HTTPBearer()
 
-API_KEY_PREFIX = os.getenv("API_KEY_PREFIX", "arcli_live_")
 API_KEY_PEPPER = os.getenv("API_KEY_PEPPER")
+
+# 2. Dynamic, environment-driven prefixes
+LIVE_PREFIX = os.getenv("API_KEY_LIVE_PREFIX", "arcli_live_")
+TEST_PREFIX = os.getenv("API_KEY_TEST_PREFIX", "arcli_test_")
+
 _supabase_client: Optional[Client] = None
+
+# ---------------------------------------------------------
+# RATE LIMITING (PLACEHOLDER)
+# ---------------------------------------------------------
 
 
 # ---------------------------------------------------------
 # TENANT RESOLUTION
 # ---------------------------------------------------------
 
-def _get_supabase_client() -> Optional[Client]:
+def _get_supabase_client() -> Client:
     global _supabase_client
 
     if _supabase_client is not None:
         return _supabase_client
 
     supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
     if not supabase_url or not supabase_key:
-        logger.error("supabase_credentials_missing")
-        return None
+        raise RuntimeError("CRITICAL: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be configured.")
 
     _supabase_client = create_client(supabase_url, supabase_key)
     return _supabase_client
 
 
 def _parse_api_key(raw: str) -> Optional[Tuple[str, str]]:
-    if not raw or not raw.startswith(API_KEY_PREFIX):
+    if not raw:
         return None
 
-    trimmed = raw[len(API_KEY_PREFIX):]
+    if raw.startswith(LIVE_PREFIX):
+        prefix_len = len(LIVE_PREFIX)
+    elif raw.startswith(TEST_PREFIX):
+        prefix_len = len(TEST_PREFIX)
+    else:
+        return None
+
+    trimmed = raw[prefix_len:]
     if "_" not in trimmed:
         return None
 
@@ -58,11 +74,87 @@ def _parse_api_key(raw: str) -> Optional[Tuple[str, str]]:
 
     return key_id, secret
 
+# ---------------------------------------------------------
+# RATE LIMITING (SLIDING WINDOW)
+# ---------------------------------------------------------
 
-def _hash_secret(secret: str) -> Optional[str]:
+_redis_client: Optional[redis.Redis] = None
+
+def get_redis_client() -> redis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+    return _redis_client
+
+
+async def rate_limit_check(request: Request):
+    """
+    Redis-based Sliding Window Rate Limiter.
+    Provides precise burst protection per IP and per API Key.
+    """
+    redis_client = get_redis_client()
+    current_time = time.time()
+    req_id = str(uuid.uuid4())
+
+    # 1. Extract Identifiers
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    
+    # Safely extract key_id using existing parse logic without hashing the secret
+    key_id = "unknown"
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        parsed = _parse_api_key(token)
+        if parsed:
+            key_id = parsed[0]  # parsed is (key_id, secret)
+
+    # 2. Burst Configurations (Adjust based on your infrastructure sizing)
+    WINDOW_SECONDS = 10 
+    IP_LIMIT = 50       # Max requests per IP per 10 seconds
+    KEY_LIMIT = 200     # Max requests per API Key per 10 seconds
+
+    ip_key = f"ratelimit:ip:{client_ip}"
+    api_limit_key = f"ratelimit:key:{key_id}"
+
+    # 3. Atomic Redis Pipeline (Sliding Window Log Algorithm)
+    async with redis_client.pipeline(transaction=True) as pipe:
+        # Evaluate IP Window
+        pipe.zremrangebyscore(ip_key, 0, current_time - WINDOW_SECONDS)
+        pipe.zadd(ip_key, {f"{current_time}-{req_id}": current_time})
+        pipe.zcard(ip_key)
+        pipe.expire(ip_key, WINDOW_SECONDS)
+
+        # Evaluate API Key Window (if valid)
+        if key_id != "unknown":
+            pipe.zremrangebyscore(api_limit_key, 0, current_time - WINDOW_SECONDS)
+            pipe.zadd(api_limit_key, {f"{current_time}-{req_id}": current_time})
+            pipe.zcard(api_limit_key)
+            pipe.expire(api_limit_key, WINDOW_SECONDS)
+
+        results = await pipe.execute()
+
+    # 4. Enforce Limits
+    ip_count = results[2]
+    if ip_count > IP_LIMIT:
+        logger.warning("rate_limit_exceeded_ip", extra={"ip": client_ip, "count": ip_count})
+        raise HTTPException(status_code=429, detail="Too Many Requests (IP Limit Exceeded)")
+
+    if key_id != "unknown":
+        key_count = results[6]
+        if key_count > KEY_LIMIT:
+            logger.warning("rate_limit_exceeded_key", extra={"key_id": key_id, "count": key_count})
+            raise HTTPException(status_code=429, detail="Too Many Requests (API Key Limit Exceeded)")
+        
+def _hash_secret(secret: str) -> str:
     if not API_KEY_PEPPER:
-        logger.error("api_key_pepper_missing")
-        return None
+        raise RuntimeError("API_KEY_PEPPER is not configured")
+
+    return hmac.new(
+        API_KEY_PEPPER.encode("utf-8"),
+        secret.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
     return hmac.new(
         API_KEY_PEPPER.encode("utf-8"),
@@ -71,67 +163,108 @@ def _hash_secret(secret: str) -> Optional[str]:
     ).hexdigest()
 
 
-def _resolve_tenant_from_key(raw_key: str) -> Optional[str]:
-    parsed = _parse_api_key(raw_key)
-    if not parsed:
-        return None
-
-    key_id, secret = parsed
-    key_hash = _hash_secret(secret)
-    if not key_hash:
-        return None
-
-    client = _get_supabase_client()
-    if not client:
-        return None
-
-    response = (
-        client
-        .table("api_keys")
-        .select("tenant_id, key_hash, revoked_at")
-        .eq("key_id", key_id)
-        .limit(1)
-        .execute()
-    )
-
-    if not response.data:
-        return None
-
-    row = response.data[0]
-    if row.get("revoked_at"):
-        return None
-
-    stored_hash = row.get("key_hash") or ""
-    if not hmac.compare_digest(key_hash, stored_hash):
-        return None
-
+def update_last_used_at(key_id: str):
+    """Async task to update the last_used_at timestamp without blocking the HTTP request."""
     try:
+        client = _get_supabase_client()
         client.table("api_keys").update({
             "last_used_at": datetime.now(timezone.utc).isoformat()
         }).eq("key_id", key_id).execute()
     except Exception:
         logger.warning("api_key_last_used_update_failed", exc_info=True)
 
-    return row.get("tenant_id")
 
-
-def resolve_tenant(
+# 1. Dependency upgraded to `async`
+async def resolve_tenant(
+    request: Request, 
     credentials: HTTPAuthorizationCredentials = Security(security),
-) -> str:
+    _rate_limit: None = Depends(rate_limit_check)
+) -> Tuple[str, str]:
+    """
+    Validates API key and resolves the tenant.
+    5. Returns (tenant_id, key_id) so the route handles background tasks natively.
+    """
     token = credentials.credentials
 
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing API Key")
-
-    tenant_id = _resolve_tenant_from_key(token)
-    if not tenant_id:
+    parsed = _parse_api_key(token)
+    if not parsed:
+        logger.warning("invalid_api_key_format")
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-    return tenant_id
+    key_id, secret = parsed
+    key_hash = _hash_secret(secret)
+    
+    if not key_hash:
+        raise HTTPException(status_code=500, detail="Server configuration error")
+
+    client = _get_supabase_client()
+
+    try:
+        # 4. Use `.maybe_single()` to strictly return 0 or 1 dict, avoiding 
+        # the PostgrestAPIError thrown by `.single()` when a row isn't found.
+        response = (
+            client
+            .table("api_keys")
+            .select("tenant_id, key_hash, revoked_at, expires_at")
+            .eq("key_id", key_id)
+            .maybe_single()
+            .execute()
+        )
+    except Exception:
+        logger.exception("api_key_db_lookup_failed")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+    row = response.data
+    
+    if not row:
+        logger.warning("invalid_api_key", extra={"key_id": key_id})
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    if row.get("revoked_at"):
+        logger.warning("revoked_api_key_attempt", extra={"key_id": key_id})
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    if row.get("expires_at"):
+        expires_at_str = row["expires_at"].replace("Z", "+00:00")
+        expires_at = datetime.fromisoformat(expires_at_str)
+        if datetime.now(timezone.utc) > expires_at:
+            logger.warning("expired_api_key_attempt", extra={"key_id": key_id})
+            raise HTTPException(status_code=401, detail="API Key expired")
+
+    stored_hash = row.get("key_hash") or ""
+    if not hmac.compare_digest(key_hash, stored_hash):
+        logger.warning("invalid_api_key_secret", extra={"key_id": key_id})
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    # 3. Explicitly verify the tenant exists to catch DB corruption
+    tenant_id = row.get("tenant_id")
+    if not tenant_id:
+        logger.error("api_key_missing_tenant", extra={"key_id": key_id})
+        raise HTTPException(status_code=500, detail="Invalid API key configuration")
+
+    return tenant_id, key_id
+
+
+def safe_process_raw_event_sync(ingestion_service: IngestionService, **payload):
+    """
+    7. Wrapped background executor: prevents hidden pipeline exceptions 
+    from silently failing and dropping payloads out of memory.
+    """
+    try:
+        ingestion_service.process_raw_event_sync(**payload)
+    except Exception:
+        logger.exception(
+            "background_ingestion_failed", 
+            extra={
+                "tenant_id": payload.get("tenant_id"),
+                "event_name": payload.get("event_name"),
+                "idempotency_key": payload.get("idempotency_key")
+            }
+        )
 
 
 # ---------------------------------------------------------
-# SCHEMAS
+# SCHEMAS 
 # ---------------------------------------------------------
 
 class EventProperties(BaseModel):
@@ -148,7 +281,7 @@ class EventProperties(BaseModel):
 
 
 class TrackEventRequest(BaseModel):
-    event_name: constr(min_length=1, max_length=100)
+    event_name: str = Field(..., min_length=1, max_length=100)
     user_id: Optional[str] = None
 
     idempotency_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -156,19 +289,25 @@ class TrackEventRequest(BaseModel):
 
     properties: EventProperties = Field(default_factory=EventProperties)
 
-    @validator("event_name")
-    def normalize_event_name(cls, v: str):
-        return v.lower().strip()
+    @field_validator("event_name", mode="before")
+    @classmethod
+    def normalize_event_name(cls, v: Any):
+        if isinstance(v, str):
+            return v.lower().strip()
+        return v
 
-    @validator("user_id")
-    def normalize_user_id(cls, v: Optional[str]):
-        return v.strip() if v else v
+    @field_validator("user_id", mode="before")
+    @classmethod
+    def normalize_user_id(cls, v: Any):
+        if isinstance(v, str):
+            return v.strip() if v.strip() else None
+        return v
 
 
 class TrackEventResponse(BaseModel):
     status: str
     idempotency_key: str
-    anomalies: Optional[List[Dict]] = None
+    anomalies: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------
@@ -180,7 +319,7 @@ async def track_event(
     request: TrackEventRequest,
     background_tasks: BackgroundTasks,
     sync: bool = Query(False, description="Run ingestion + pipeline synchronously (debug only)"),
-    tenant_id: str = Depends(resolve_tenant),
+    auth_data: Tuple[str, str] = Depends(resolve_tenant),
     ingestion_service: IngestionService = Depends()
 ):
     """
@@ -189,6 +328,11 @@ async def track_event(
     - Async by default
     - Optional sync mode for debugging
     """
+    
+    tenant_id, key_id = auth_data
+
+    # 5. Background task assignment pulled out of the auth dependency
+    background_tasks.add_task(update_last_used_at, key_id)
 
     # ------------------------
     # VALIDATION (HIGH SIGNAL)
@@ -211,7 +355,7 @@ async def track_event(
             "user_id": request.user_id,
             "idempotency_key": request.idempotency_key,
             "timestamp": request.timestamp,
-            "properties": request.properties.dict(exclude_none=True)
+            "properties": request.properties.model_dump(exclude_none=True)
         }
 
         # ---------------------------------------------------------
@@ -229,8 +373,11 @@ async def track_event(
         # ---------------------------------------------------------
         # ASYNC MODE (PRODUCTION PATH)
         # ---------------------------------------------------------
+        
+        # 7. Dispatched using the safe wrapper
         background_tasks.add_task(
-            ingestion_service.process_raw_event_sync,
+            safe_process_raw_event_sync,
+            ingestion_service,
             **payload
         )
 

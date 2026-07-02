@@ -301,3 +301,8 @@ BEGIN
   VALUES (p_tenant_id, v_user_id, 'Dead Letter Requeued', p_operator_name);
 END;
 $$;
+ALTER TABLE public.tenant_settings 
+ADD CONSTRAINT tenant_settings_tenant_id_fkey 
+FOREIGN KEY (tenant_id) REFERENCES public.tenants(tenant_id) ON DELETE CASCADE;
+CREATE INDEX idx_recovery_emails_latest 
+ON recovery_emails (tenant_id, user_id, created_at DESC);
