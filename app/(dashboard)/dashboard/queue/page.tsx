@@ -1,21 +1,15 @@
 import { redirect } from "next/navigation";
-
 import { createClient } from "@/utils/supabase/server";
-
-import CustomerOperationsClient, { 
-  type CustomerOperationsPage, 
-  type CustomerOperation, 
-  type OperationsMetrics 
+import CustomerOperationsClient, {
+  type CustomerOperationsPage,
+  type CustomerOperation,
+  type OperationsMetrics,
 } from "./risk-queue-client";
 
-
-
 export const metadata = {
- title: "Customer Operations | Arcli",
-description: "Air traffic control for customer retention and churn recovery.",
+  title: "Customer Health | Arcli",
+  description: "Spot struggling accounts early, take action, and track your wins.",
 };
-
-
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -34,7 +28,26 @@ type ValidTab = "critical" | "pending" | "cooldown" | "dead_lettered" | "healthy
 
 const PAGE_SIZE = 50;
 
+// ─── Design Tokens (matching your DeepDiveFeatures style) ────────
 
+const C = {
+  navy: "#0F172A",
+  navySoft: "#475569",
+  blue: "#3B9AE8",
+  blueLight: "#60A5FA",
+  muted: "#64748B",
+  faint: "#94A3B8",
+  red: "#EF4444",
+  redLight: "#FCA5A5",
+  amber: "#F59E0B",
+  amberLight: "#FCD34D",
+  green: "#10B981",
+  greenLight: "#34D399",
+  surface: "#FFFFFF",
+  bg: "#FAFAFA",
+  border: "1px solid rgba(0,0,0,0.08)",
+  shadow: "0 1px 3px rgba(0,0,0,0.08)",
+};
 
 // ─── Input Sanitization & Validation ───────────────────────────────
 
@@ -60,15 +73,11 @@ function parseQueryParam(raw: string | string[] | undefined): string {
   return sanitizeSearchQuery(raw);
 }
 
-
-
 // ─── Types ─────────────────────────────────────────────────────────
 
 interface PageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
-
-
 
 // ─── Internal Filter Applicator ────────────────────────────────────
 
@@ -108,8 +117,6 @@ function applyOperationFilters(
 
   return q;
 }
-
-
 
 // ─── Page Component ──────────────────────────────────────────────
 
@@ -232,8 +239,10 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     });
     return <QueueErrorState />;
   }
-  
-  const metrics: OperationsMetrics = metricsData ? (metricsData as OperationsMetrics) : defaultMetrics;
+
+  const metrics: OperationsMetrics = metricsData
+    ? (metricsData as OperationsMetrics)
+    : defaultMetrics;
   const customerOperations: CustomerOperation[] = items || [];
   const pageData: CustomerOperationsPage = {
     customers: customerOperations,
@@ -247,140 +256,280 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
   };
 
   return (
-<div className="flex-1 space-y-6 p-8 pt-6 w-full">
-          <div className="flex items-center justify-between space-y-2">
+    <div className="flex-1 space-y-6 p-8 pt-6 w-full">
+      {/* ── Page Header ────────────────────────────────────────── */}
+      <div className="flex items-center justify-between space-y-2">
         <div>
-          <h2 style={{ fontSize: 42, color: "#0F172A", marginBottom: 8, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Risk Queues
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              color: C.blue,
+              fontWeight: 700,
+              fontSize: 12,
+              marginBottom: 10,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+            CUSTOMER HEALTH
+          </div>
+          <h2
+            style={{
+              fontSize: 32,
+              color: C.navy,
+              marginBottom: 8,
+              lineHeight: 1.1,
+              letterSpacing: "-0.015em",
+              fontWeight: 600,
+            }}
+          >
+            Accounts needing attention
           </h2>
-          <p style={{ color: "#475569", fontSize: 17, lineHeight: 1.62 }}>
-            Air traffic control for at-risk accounts. Triage, intervene, and monitor recovery pipelines.
+          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, maxWidth: 560 }}>
+            See which customers need a hand, reach out at the right time, and watch them get back on track.
           </p>
         </div>
       </div>
 
-      {/* ── The Heads-Up Display (HUD) ─────────────────────────── */}
+      {/* ── Metric Cards ───────────────────────────────────────── */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Critical Accounts"
           value={metrics.critical_count}
-          variant={metrics.critical_count > 0 ? "alert" : "default"}
+          subtitle="Need immediate outreach"
+          color={C.red}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          }
         />
         <MetricCard
           title="Dead Letters"
           value={metrics.dead_letter_count}
-          variant={metrics.dead_letter_count > 0 ? "alert" : "default"}
+          subtitle="Failed recovery attempts"
+          color={C.amber}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+              <line x1="4" y1="22" x2="4" y2="15" />
+            </svg>
+          }
         />
-        <MetricCard title="Pending Dispatches" value={metrics.pending_count} />
-        <MetricCard title="At Risk Accounts" value={metrics.at_risk_count} />
+        <MetricCard
+          title="Pending Dispatches"
+          value={metrics.pending_count}
+          subtitle="Queued for outreach"
+          color={C.blue}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          }
+        />
+        <MetricCard
+          title="At Risk Accounts"
+          value={metrics.at_risk_count}
+          subtitle="Showing warning signals"
+          color={C.navySoft}
+          icon={
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 00-3-3.87" />
+              <path d="M16 3.13a4 4 0 010 7.75" />
+            </svg>
+          }
+        />
       </div>
 
-      {/* ── The Radar Screen (Client Component) ────────────────── */}
+      {/* ── Client Radar Screen ────────────────────────────────── */}
       <CustomerOperationsClient page={pageData} />
     </div>
   );
 }
 
-
-
-// ─── Internal HUD Component ────────────────────────────────────────
-
-type MetricVariant = "default" | "alert";
+// ─── Metric Card ─────────────────────────────────────────────────
 
 function MetricCard({
   title,
   value,
-  variant = "default",
+  subtitle,
+  color,
+  icon,
 }: {
   title: string;
   value: string | number;
-  variant?: MetricVariant;
+  subtitle?: string;
+  color: string;
+  icon: React.ReactNode;
 }) {
-  const isAlert = variant === "alert";
-  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
-  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
+  const isAlert = color === C.red;
 
   return (
-    <div style={{ 
-      borderRadius: 8, 
-      border: surfaceBorder, 
-      background: "#fff", 
-      boxShadow: surfaceShadow,
-      position: "relative",
-      overflow: "hidden"
-    }}>
-      <div style={{ padding: "20px 20px 12px" }}>
-        <h3 style={{ 
-          fontSize: 11, 
-          fontWeight: 600, 
-          color: "#94A3B8", 
-          letterSpacing: "0.05em", 
-          textTransform: "uppercase",
-          marginBottom: 8
-        }}>
-          {title}
-        </h3>
-        <div style={{ 
-          fontSize: 28, 
-          fontWeight: 700, 
-          color: isAlert ? "#EF4444" : "#0F172A",
-          letterSpacing: "-0.02em",
-          lineHeight: 1.2
-        }}>
-          {value}
-        </div>
-      </div>
-      {isAlert && (
-        <div style={{
+    <div
+      style={{
+        borderRadius: 8,
+        border: C.border,
+        background: C.surface,
+        boxShadow: C.shadow,
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Colored top accent bar */}
+      <div
+        style={{
           position: "absolute",
           top: 0,
           left: 0,
           right: 0,
           height: 3,
-          background: "#EF4444"
-        }} />
-      )}
+          background: color,
+        }}
+      />
+
+      <div style={{ padding: "20px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
+          <h3
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: C.faint,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            {title}
+          </h3>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              background: `${color}12`,
+              border: `1px solid ${color}28`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: color,
+            }}
+          >
+            {icon}
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            color: isAlert ? C.red : C.navy,
+            letterSpacing: "-0.02em",
+            lineHeight: 1.2,
+            marginBottom: 4,
+          }}
+        >
+          {value}
+        </div>
+
+        {subtitle && (
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: C.muted,
+            }}
+          >
+            {subtitle}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-
-
-// ─── Error State (When Queue Fetch Fails) ──────────────────────────
+// ─── Error State ─────────────────────────────────────────────────
 
 function QueueErrorState() {
   return (
     <div className="flex-1 space-y-6 p-8 pt-6 w-full">
       <div className="flex items-center justify-between space-y-2">
         <div>
-          <h2 style={{ fontSize: 42, color: "#0F172A", marginBottom: 8, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Risk Queues
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              color: C.blue,
+              fontWeight: 700,
+              fontSize: 12,
+              marginBottom: 10,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+            CUSTOMER HEALTH
+          </div>
+          <h2
+            style={{
+              fontSize: 32,
+              color: C.navy,
+              marginBottom: 8,
+              lineHeight: 1.1,
+              letterSpacing: "-0.015em",
+              fontWeight: 600,
+            }}
+          >
+            Accounts needing attention
           </h2>
-          <p style={{ color: "#475569", fontSize: 17, lineHeight: 1.62 }}>
-            Air traffic control for at-risk accounts.
-          </p>
         </div>
       </div>
 
-      <div style={{ 
-        borderRadius: 8, 
-        border: "1px solid rgba(239,68,68,0.2)", 
-        background: "rgba(239,68,68,0.04)", 
-        padding: "48px 24px", 
-        textAlign: "center" 
-      }}>
-        <div style={{ 
-          margin: "0 auto 16px", 
-          width: 48, 
-          height: 48, 
-          borderRadius: "50%", 
-          background: "rgba(239,68,68,0.1)", 
-          display: "flex", 
-          alignItems: "center", 
-          justifyContent: "center" 
-        }}>
+      <div
+        style={{
+          borderRadius: 8,
+          border: "1px solid rgba(239,68,68,0.2)",
+          background: "rgba(239,68,68,0.04)",
+          padding: "48px 24px",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            margin: "0 auto 16px",
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            background: "rgba(239,68,68,0.1)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           <svg
-            style={{ width: 24, height: 24, color: "#EF4444" }}
+            style={{ width: 24, height: 24, color: C.red }}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -393,22 +542,34 @@ function QueueErrorState() {
             />
           </svg>
         </div>
-        <h3 style={{ fontSize: 18, fontWeight: 600, color: "#0F172A", marginBottom: 8 }}>System Error</h3>
-        <p style={{ color: "#475569", fontSize: 15, lineHeight: 1.62, maxWidth: 480, margin: "0 auto" }}>
-          Failed to load the risk queue. The database may be unavailable or experiencing high
+        <h3 style={{ fontSize: 18, fontWeight: 600, color: C.navy, marginBottom: 8 }}>
+          System Error
+        </h3>
+        <p
+          style={{
+            color: C.navySoft,
+            fontSize: 15,
+            lineHeight: 1.62,
+            maxWidth: 480,
+            margin: "0 auto",
+          }}
+        >
+          Failed to load the customer list. The database may be unavailable or experiencing high
           latency. Please refresh the page or contact engineering if this persists.
         </p>
-        <p style={{ 
-          fontSize: 12, 
-          fontWeight: 600, 
-          color: "#EF4444", 
-          marginTop: 20, 
-          display: "inline-block", 
-          padding: "6px 14px", 
-          borderRadius: 6, 
-          background: "rgba(255,255,255,0.6)",
-          border: "1px solid rgba(239,68,68,0.15)"
-        }}>
+        <p
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: C.red,
+            marginTop: 20,
+            display: "inline-block",
+            padding: "6px 14px",
+            borderRadius: 6,
+            background: "rgba(255,255,255,0.6)",
+            border: "1px solid rgba(239,68,68,0.15)",
+          }}
+        >
           Do not assume the queue is empty. This is a failure state, not a clear state.
         </p>
       </div>
