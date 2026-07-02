@@ -28,23 +28,19 @@ type ValidTab = "critical" | "pending" | "cooldown" | "dead_lettered" | "healthy
 
 const PAGE_SIZE = 50;
 
-// ─── Design Tokens (matching your DeepDiveFeatures style) ────────
+// ─── Design Tokens ───────────────────────────────────────────────
 
 const C = {
   navy: "#0F172A",
   navySoft: "#475569",
   blue: "#3B9AE8",
-  blueLight: "#60A5FA",
+  blueDeep: "#2563EB",
   muted: "#64748B",
   faint: "#94A3B8",
   red: "#EF4444",
-  redLight: "#FCA5A5",
   amber: "#F59E0B",
-  amberLight: "#FCD34D",
   green: "#10B981",
-  greenLight: "#34D399",
   surface: "#FFFFFF",
-  bg: "#FAFAFA",
   border: "1px solid rgba(0,0,0,0.08)",
   shadow: "0 1px 3px rgba(0,0,0,0.08)",
 };
@@ -256,54 +252,124 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
   };
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 w-full">
+    <div className="flex-1 space-y-6 p-8 pt-6 w-full" style={{ position: "relative", overflow: "hidden" }}>
+      
+      {/* ═══ Giant Watermark (Editorial Background) ═══ */}
+      <div
+        style={{
+          position: "absolute",
+          right: -20,
+          top: -10,
+          fontSize: 180,
+          fontWeight: 800,
+          color: "transparent",
+          WebkitTextStroke: "1px rgba(15,23,42,0.035)",
+          letterSpacing: "-0.04em",
+          lineHeight: 1,
+          userSelect: "none",
+          pointerEvents: "none",
+          zIndex: 0,
+          fontFamily: "var(--font-geist-sans), sans-serif",
+        }}
+      >
+        HEALTH
+      </div>
+
       {/* ── Page Header ────────────────────────────────────────── */}
-      <div className="flex items-center justify-between space-y-2">
+      <div className="flex items-center justify-between space-y-2" style={{ position: "relative", zIndex: 1 }}>
         <div>
+          {/* Eyebrow with live dot */}
           <div
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              color: C.blue,
-              fontWeight: 700,
-              fontSize: 12,
-              marginBottom: 10,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
+              marginBottom: 14,
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-            CUSTOMER HEALTH
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: C.green,
+                boxShadow: `0 0 0 4px rgba(16,185,129,0.25)`,
+                display: "inline-block",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.faint,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Live Dashboard
+            </span>
           </div>
+
+          {/* Main Title — gradient keyword + highlight marker */}
           <h2
             style={{
-              fontSize: 32,
+              fontSize: 36,
+              fontWeight: 700,
               color: C.navy,
-              marginBottom: 8,
-              lineHeight: 1.1,
-              letterSpacing: "-0.015em",
-              fontWeight: 600,
+              lineHeight: 1.12,
+              letterSpacing: "-0.025em",
+              marginBottom: 12,
             }}
           >
-            Accounts needing attention
+            See who{" "}
+            <span style={{ position: "relative", display: "inline-block" }}>
+              <span
+                style={{
+                  background: `linear-gradient(135deg, ${C.blue} 0%, ${C.blueDeep} 100%)`,
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                needs you
+              </span>
+              {/* Highlighter marker behind the word */}
+              <span
+                style={{
+                  position: "absolute",
+                  bottom: 2,
+                  left: -4,
+                  right: -4,
+                  height: 10,
+                  background: `linear-gradient(135deg, rgba(59,154,232,0.18) 0%, rgba(37,99,235,0.18) 100%)`,
+                  borderRadius: 4,
+                  zIndex: -1,
+                }}
+              />
+            </span>
+            {" "}most
           </h2>
-          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, maxWidth: 560 }}>
-            See which customers need a hand, reach out at the right time, and watch them get back on track.
+
+          {/* Subtitle — shorter, warmer */}
+          <p
+            style={{
+              color: C.navySoft,
+              fontSize: 16,
+              lineHeight: 1.65,
+              maxWidth: 500,
+              fontWeight: 400,
+            }}
+          >
+            Catch warning signs early, reach out with context, and bring customers back from the edge.
           </p>
         </div>
       </div>
 
       {/* ── Metric Cards ───────────────────────────────────────── */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4" style={{ position: "relative", zIndex: 1 }}>
         <MetricCard
-          title="Critical Accounts"
+          title="Critical"
           value={metrics.critical_count}
-          subtitle="Need immediate outreach"
+          subtitle="Immediate outreach"
           color={C.red}
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -316,7 +382,7 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
         <MetricCard
           title="Dead Letters"
           value={metrics.dead_letter_count}
-          subtitle="Failed recovery attempts"
+          subtitle="Failed recoveries"
           color={C.amber}
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -326,9 +392,9 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
           }
         />
         <MetricCard
-          title="Pending Dispatches"
+          title="Pending"
           value={metrics.pending_count}
-          subtitle="Queued for outreach"
+          subtitle="Queued to reach out"
           color={C.blue}
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -338,9 +404,9 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
           }
         />
         <MetricCard
-          title="At Risk Accounts"
+          title="At Risk"
           value={metrics.at_risk_count}
-          subtitle="Showing warning signals"
+          subtitle="Showing signals"
           color={C.navySoft}
           icon={
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -387,7 +453,7 @@ function MetricCard({
         overflow: "hidden",
       }}
     >
-      {/* Colored top accent bar */}
+      {/* Colored top accent */}
       <div
         style={{
           position: "absolute",
@@ -438,12 +504,13 @@ function MetricCard({
 
         <div
           style={{
-            fontSize: 28,
+            fontSize: 30,
             fontWeight: 700,
             color: isAlert ? C.red : C.navy,
-            letterSpacing: "-0.02em",
-            lineHeight: 1.2,
-            marginBottom: 4,
+            letterSpacing: "-0.03em",
+            lineHeight: 1.1,
+            marginBottom: 6,
+            fontVariantNumeric: "tabular-nums",
           }}
         >
           {value}
@@ -469,40 +536,68 @@ function MetricCard({
 
 function QueueErrorState() {
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 w-full">
-      <div className="flex items-center justify-between space-y-2">
+    <div className="flex-1 space-y-6 p-8 pt-6 w-full" style={{ position: "relative" }}>
+      <div
+        style={{
+          position: "absolute",
+          right: -20,
+          top: -10,
+          fontSize: 180,
+          fontWeight: 800,
+          color: "transparent",
+          WebkitTextStroke: "1px rgba(15,23,42,0.035)",
+          letterSpacing: "-0.04em",
+          lineHeight: 1,
+          userSelect: "none",
+          pointerEvents: "none",
+          zIndex: 0,
+        }}
+      >
+        HEALTH
+      </div>
+
+      <div className="flex items-center justify-between space-y-2" style={{ position: "relative", zIndex: 1 }}>
         <div>
           <div
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 8,
-              color: C.blue,
-              fontWeight: 700,
-              fontSize: 12,
-              marginBottom: 10,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
+              marginBottom: 14,
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-            CUSTOMER HEALTH
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: C.green,
+                boxShadow: `0 0 0 4px rgba(16,185,129,0.25)`,
+              }}
+            />
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: C.faint,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+              }}
+            >
+              Live Dashboard
+            </span>
           </div>
           <h2
             style={{
-              fontSize: 32,
+              fontSize: 36,
+              fontWeight: 700,
               color: C.navy,
-              marginBottom: 8,
-              lineHeight: 1.1,
-              letterSpacing: "-0.015em",
-              fontWeight: 600,
+              lineHeight: 1.12,
+              letterSpacing: "-0.025em",
+              marginBottom: 12,
             }}
           >
-            Accounts needing attention
+            See who needs you most
           </h2>
         </div>
       </div>
@@ -514,6 +609,8 @@ function QueueErrorState() {
           background: "rgba(239,68,68,0.04)",
           padding: "48px 24px",
           textAlign: "center",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <div
