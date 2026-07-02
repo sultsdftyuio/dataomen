@@ -1,51 +1,111 @@
-// app/components/UpgradeButton.tsx
 "use client";
 
 import { useState } from "react";
-import { upgradeToProPlan } from "@/app/actions/billing"; // Adjust path if needed
+import { Loader2, Sparkles } from "lucide-react";
 
-export default function UpgradeButton() {
+import { upgradeToProPlan } from "@/app/actions/billing";
+
+interface UpgradeButtonProps {
+  /**
+   * Optional product ID.
+   * Kept for compatibility with WorkspaceHeader and future
+   * multi-plan checkout flows.
+   */
+  productId?: string;
+
+  /**
+   * Optional className override.
+   */
+  className?: string;
+}
+
+export default function UpgradeButton({
+  productId, // Reserved for future checkout variants
+  className = "",
+}: UpgradeButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleUpgrade = async () => {
+    // Prevent accidental double-clicks or duplicate requests.
+    if (isLoading) return;
+
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Execute the Next.js Server Action
+
+      // Reserved for future use when the server action accepts a product ID.
+      void productId;
+
       const { url } = await upgradeToProPlan();
-      
-      // Redirect the user to Dodo's hosted checkout page
-      if (url) {
-        window.location.href = url;
-      } else {
+
+      if (!url) {
         throw new Error("Failed to generate checkout link.");
       }
-    } catch (err: any) {
-      console.error("Checkout error:", err);
-      setError(err.message || "Something went wrong. Please try again.");
+
+      // Redirect to the hosted Dodo checkout.
+      window.location.assign(url);
+    } catch (err: unknown) {
+      console.error("[Checkout UI Error]", err);
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to start checkout session. Please try again.";
+
+      setError(message);
     } finally {
+      // If navigation succeeds, the page unloads before this matters.
+      // If it fails, this re-enables the button for retry.
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-start gap-2">
+    <div className="flex flex-col items-start gap-1.5">
       <button
+        type="button"
         onClick={handleUpgrade}
         disabled={isLoading}
-        className={`px-6 py-3 font-semibold text-white rounded-lg transition-all ${
-          isLoading 
-            ? "bg-indigo-400 cursor-not-allowed" 
-            : "bg-indigo-600 hover:bg-indigo-700 active:scale-95"
-        }`}
+        aria-busy={isLoading}
+        aria-disabled={isLoading}
+        className={[
+          "inline-flex items-center justify-center gap-2",
+          "rounded-lg px-4 py-2",
+          "text-sm font-semibold text-white",
+          "shadow-sm transition-all",
+          "focus-visible:outline focus-visible:outline-2",
+          "focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
+          isLoading
+            ? "cursor-not-allowed bg-indigo-400 opacity-80 dark:bg-indigo-500/50"
+            : "cursor-pointer bg-indigo-600 shadow-indigo-500/10 hover:bg-indigo-700 active:scale-[0.98]",
+          className,
+        ].join(" ")}
       >
-        {isLoading ? "Preparing Checkout..." : "Upgrade to Pro"}
+        {isLoading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            <span>Preparing Checkout...</span>
+          </>
+        ) : (
+          <>
+            <Sparkles
+              className="h-4 w-4 text-amber-300"
+              aria-hidden="true"
+            />
+            <span>Upgrade to Pro</span>
+          </>
+        )}
       </button>
-      
-      {/* Surface errors to the user if the server action fails */}
-      {error && <p className="text-sm text-red-500">{error}</p>}
+
+      {error && (
+        <p
+          role="alert"
+          className="animate-in slide-in-from-top-1 fade-in text-xs font-medium text-destructive duration-200 dark:text-red-400"
+        >
+          {error}
+        </p>
+      )}
     </div>
   );
 }

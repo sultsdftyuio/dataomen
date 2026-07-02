@@ -1,6 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { Badge } from "@/components/ui/badge";
-import  UpgradeButton  from "@/components/ui/UpgradeButton"; // Fixed: Using named import
+import UpgradeButton from "@/components/ui/UpgradeButton";
 
 export async function WorkspaceHeader() {
   const supabase = await createClient();
@@ -17,30 +17,30 @@ export async function WorkspaceHeader() {
 
   if (mapError || !tenantMapping?.tenant_id) return null;
 
-  // Step 2: Fetch the exact workspace billing state. 
-  // Separating this from the join bypasses the TypeScript relation inference error.
+  // Step 2: Fetch the exact workspace state using strictly typed schema columns
   const { data: workspace, error: workspaceError } = await supabase
     .from("tenants")
-    .select("name, plan_tier, subscription_status, trial_ends_at")
-    .eq("id", tenantMapping.tenant_id)
+    .select("display_name, plan, status, created_at")
+    .eq("tenant_id", tenantMapping.tenant_id)
     .single();
 
   if (workspaceError || !workspace) return null;
 
-  const isTrial = workspace.plan_tier === "free_trial";
+  const isTrial = workspace.plan === "free_trial" || workspace.plan === "trial";
   
-  // Calculate remaining trial days safely
-  const daysRemaining = workspace.trial_ends_at 
-    ? Math.max(0, Math.ceil((new Date(workspace.trial_ends_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 0;
+  // Calculate remaining trial days safely (assuming standard 14-day trial window from created_at)
+  const trialDurationDays = 14;
+  const createdAtTime = workspace.created_at ? new Date(workspace.created_at).getTime() : Date.now();
+  const trialEndsAt = createdAtTime + trialDurationDays * 24 * 60 * 60 * 1000;
+  const daysRemaining = Math.max(0, Math.ceil((trialEndsAt - Date.now()) / (1000 * 60 * 60 * 24)));
 
   return (
     <header className="flex items-center justify-between border-b px-6 py-4 bg-background">
       <div className="flex items-center space-x-3">
-        <h1 className="text-lg font-semibold">{workspace.name}</h1>
+        <h1 className="text-lg font-semibold">{workspace.display_name || "Workspace"}</h1>
         
-        {/* Render Pro Badge if upgraded */}
-        {!isTrial && workspace.subscription_status === "active" && (
+        {/* Render Pro Badge if active subscription */}
+        {!isTrial && workspace.status === "active" && (
           <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white font-medium px-2.5 py-0.5">
             Pro Tier ✨
           </Badge>
@@ -56,7 +56,7 @@ export async function WorkspaceHeader() {
               — {daysRemaining} {daysRemaining === 1 ? "day" : "days"} left
             </span>
           </div>
-          <UpgradeButton productId={process.env.NEXT_PUBLIC_PRO_PLAN_ID!} />
+          <UpgradeButton productId={process.env.NEXT_PUBLIC_PRO_PLAN_ID} />
         </div>
       )}
     </header>
