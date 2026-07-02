@@ -61,14 +61,14 @@ export function DataSourcesTab({
           <Database size={20} color={C.blue} /> System Integrations & API
         </h2>
         <p style={{ fontSize: 14, color: C.navySoft, margin: 0, lineHeight: 1.5 }}>
-          Manage upstream billing connections, configure webhook endpoints, and provision API keys.
+          Provision API keys and review integration documentation for custom data ingestion.
         </p>
       </div>
 
       <div style={{ maxWidth: 896, paddingBottom: 96, display: "flex", flexDirection: "column", gap: 32 }}>
         
-        {/* 1. Stripe Connection Container */}
-        <div style={{ background: C.white, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, overflow: "hidden" }}>
+        {/* HIDDEN: 1. Stripe Connection Container */}
+        {/* <div style={{ background: C.white, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, overflow: "hidden" }}>
           <div style={{ padding: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
               <div style={{ padding: 10, background: C.offWhite, borderRadius: 8, border: surfaceBorder, display: "flex" }}>
@@ -96,9 +96,10 @@ export function DataSourcesTab({
             </button>
           </div>
         </div>
+        */}
 
-        {/* 2. Webhooks Configuration Container */}
-        <div style={{ background: C.white, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, overflow: "hidden" }}>
+        {/* HIDDEN: 2. Webhooks Configuration Container */}
+        {/* <div style={{ background: C.white, borderRadius: 8, border: surfaceBorder, boxShadow: surfaceShadow, overflow: "hidden" }}>
           <div style={{ padding: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 32 }}>
               <div style={{ padding: 10, background: C.offWhite, borderRadius: 8, border: surfaceBorder, display: "flex" }}>
@@ -166,6 +167,7 @@ export function DataSourcesTab({
             </button>
           </div>
         </div>
+        */}
 
         {/* 3. API Keys Native Embed */}
         <ApiKeysManager />
