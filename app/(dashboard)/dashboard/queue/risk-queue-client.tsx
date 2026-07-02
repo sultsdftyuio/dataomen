@@ -56,6 +56,7 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 
 // ─── Types ─────────────────────────────────────────────────────
 export type CustomerOperation = {
+  tenant_id: string;
   id: string;
   customer_id: string;
   name: string;           
