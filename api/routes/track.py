@@ -75,77 +75,215 @@ def _parse_api_key(raw: str) -> Optional[Tuple[str, str]]:
     return key_id, secret
 
 # ---------------------------------------------------------
-# RATE LIMITING (SLIDING WINDOW)
+# RATE LIMITING (REDIS SLIDING WINDOW)
 # ---------------------------------------------------------
 
-_redis_client: Optional[redis.Redis] = None
+import os
+import time
+import uuid
+import logging
+
+import redis.asyncio as redis
+
+from fastapi import HTTPException, Request
+
+logger = logging.getLogger(__name__)
+
+_redis_client: redis.Redis | None = None
+
 
 def get_redis_client() -> redis.Redis:
+    """
+    Lazily creates a shared async Redis client.
+    """
+
     global _redis_client
+
     if _redis_client is None:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        _redis_client = redis.from_url(redis_url, decode_responses=True)
+
+        _redis_client = redis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_timeout=2,
+            socket_connect_timeout=2,
+            health_check_interval=30,
+        )
+
     return _redis_client
 
 
-async def rate_limit_check(request: Request):
+WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "10"))
+IP_LIMIT = int(os.getenv("RATE_LIMIT_IP_LIMIT", "50"))
+API_KEY_LIMIT = int(os.getenv("RATE_LIMIT_API_KEY_LIMIT", "200"))
+
+
+async def rate_limit_check(request: Request) -> None:
     """
-    Redis-based Sliding Window Rate Limiter.
-    Provides precise burst protection per IP and per API Key.
+    Sliding-window Redis rate limiter.
+
+    Limits:
+        • Per IP
+        • Per API Key
+
+    Uses Redis sorted sets (ZSET).
+
+    Redis failures DO NOT block ingestion.
     """
+
     redis_client = get_redis_client()
-    current_time = time.time()
-    req_id = str(uuid.uuid4())
 
-    # 1. Extract Identifiers
-    client_ip = request.client.host if request.client else "127.0.0.1"
-    
-    # Safely extract key_id using existing parse logic without hashing the secret
-    key_id = "unknown"
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        parsed = _parse_api_key(token)
+    now = time.time()
+    request_id = str(uuid.uuid4())
+
+    client_ip = (
+        request.client.host
+        if request.client
+        else "unknown"
+    )
+
+    key_id: str | None = None
+
+    auth_header = request.headers.get("Authorization")
+
+    if auth_header and auth_header.startswith("Bearer "):
+        parsed = _parse_api_key(auth_header[7:])
         if parsed:
-            key_id = parsed[0]  # parsed is (key_id, secret)
-
-    # 2. Burst Configurations (Adjust based on your infrastructure sizing)
-    WINDOW_SECONDS = 10 
-    IP_LIMIT = 50       # Max requests per IP per 10 seconds
-    KEY_LIMIT = 200     # Max requests per API Key per 10 seconds
+            key_id = parsed[0]
 
     ip_key = f"ratelimit:ip:{client_ip}"
-    api_limit_key = f"ratelimit:key:{key_id}"
 
-    # 3. Atomic Redis Pipeline (Sliding Window Log Algorithm)
-    async with redis_client.pipeline(transaction=True) as pipe:
-        # Evaluate IP Window
-        pipe.zremrangebyscore(ip_key, 0, current_time - WINDOW_SECONDS)
-        pipe.zadd(ip_key, {f"{current_time}-{req_id}": current_time})
-        pipe.zcard(ip_key)
-        pipe.expire(ip_key, WINDOW_SECONDS)
+    try:
 
-        # Evaluate API Key Window (if valid)
-        if key_id != "unknown":
-            pipe.zremrangebyscore(api_limit_key, 0, current_time - WINDOW_SECONDS)
-            pipe.zadd(api_limit_key, {f"{current_time}-{req_id}": current_time})
-            pipe.zcard(api_limit_key)
-            pipe.expire(api_limit_key, WINDOW_SECONDS)
+        async with redis_client.pipeline(transaction=True) as pipe:
 
-        results = await pipe.execute()
+            #
+            # ------------------------
+            # IP LIMIT
+            # ------------------------
+            #
 
-    # 4. Enforce Limits
+            pipe.zremrangebyscore(
+                ip_key,
+                0,
+                now - WINDOW_SECONDS,
+            )
+
+            pipe.zadd(
+                ip_key,
+                {f"{now}:{request_id}": now},
+            )
+
+            pipe.zcard(ip_key)
+
+            pipe.expire(
+                ip_key,
+                WINDOW_SECONDS,
+            )
+
+            #
+            # ------------------------
+            # API KEY LIMIT
+            # ------------------------
+            #
+
+            if key_id:
+
+                api_key = f"ratelimit:key:{key_id}"
+
+                pipe.zremrangebyscore(
+                    api_key,
+                    0,
+                    now - WINDOW_SECONDS,
+                )
+
+                pipe.zadd(
+                    api_key,
+                    {f"{now}:{request_id}": now},
+                )
+
+                pipe.zcard(api_key)
+
+                pipe.expire(
+                    api_key,
+                    WINDOW_SECONDS,
+                )
+
+            results = await pipe.execute()
+
+    except redis.RedisError:
+        logger.exception("redis_rate_limit_failed")
+
+        #
+        # Fail OPEN.
+        #
+        # Don't take down your tracking API because Redis
+        # had a temporary outage.
+        #
+        return
+
+    #
+    # ------------------------
+    # Parse Results
+    # ------------------------
+    #
+
     ip_count = results[2]
-    if ip_count > IP_LIMIT:
-        logger.warning("rate_limit_exceeded_ip", extra={"ip": client_ip, "count": ip_count})
-        raise HTTPException(status_code=429, detail="Too Many Requests (IP Limit Exceeded)")
 
-    if key_id != "unknown":
+    key_count = None
+
+    if key_id:
         key_count = results[6]
-        if key_count > KEY_LIMIT:
-            logger.warning("rate_limit_exceeded_key", extra={"key_id": key_id, "count": key_count})
-            raise HTTPException(status_code=429, detail="Too Many Requests (API Key Limit Exceeded)")
-        
+
+    #
+    # ------------------------
+    # Enforce IP Limit
+    # ------------------------
+    #
+
+    if ip_count > IP_LIMIT:
+
+        logger.warning(
+            "ip_rate_limit_exceeded",
+            extra={
+                "ip": client_ip,
+                "count": ip_count,
+            },
+        )
+
+        raise HTTPException(
+            status_code=429,
+            detail="Too Many Requests",
+            headers={
+                "Retry-After": str(WINDOW_SECONDS),
+            },
+        )
+
+    #
+    # ------------------------
+    # Enforce API Key Limit
+    # ------------------------
+    #
+
+    if key_count is not None and key_count > API_KEY_LIMIT:
+
+        logger.warning(
+            "api_key_rate_limit_exceeded",
+            extra={
+                "key_id": key_id,
+                "count": key_count,
+            },
+        )
+
+        raise HTTPException(
+            status_code=429,
+            detail="API Key Rate Limit Exceeded",
+            headers={
+                "Retry-After": str(WINDOW_SECONDS),
+            },
+        )
+    
 def _hash_secret(secret: str) -> str:
     if not API_KEY_PEPPER:
         raise RuntimeError("API_KEY_PEPPER is not configured")
