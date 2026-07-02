@@ -247,8 +247,8 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
   };
 
   return (
-<div className="flex-1 space-y-6 p-8 pt-6 max-w-full mx-auto">
-        <div className="flex items-center justify-between space-y-2">
+<div className="flex-1 space-y-6 p-8 pt-6 w-full">
+          <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 style={{ fontSize: 42, color: "#0F172A", marginBottom: 8, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
             Risk Queues
@@ -350,7 +350,7 @@ function MetricCard({
 
 function QueueErrorState() {
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 max-w-full mx-auto">
+    <div className="flex-1 space-y-6 p-8 pt-6 w-full">
       <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 style={{ fontSize: 42, color: "#0F172A", marginBottom: 8, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
