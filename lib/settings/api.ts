@@ -1,3 +1,4 @@
+// lib/settings/api.ts
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/utils/supabase/server";
@@ -29,8 +30,14 @@ export async function handleWorkspaceUpdate(req: Request) {
     const parsed = WorkspaceSettingsSchema.safeParse(body);
 
     if (!parsed.success) {
+      // Structured observability for validation failures (Rule 17)
+      console.warn("[WORKSPACE_UPDATE_VALIDATION_FAILED]", {
+        errors: parsed.error.flatten(),
+        receivedPayload: body,
+      });
+
       return NextResponse.json(
-        { error: "Invalid payload.", details: parsed.error.flatten() },
+        { error: "Invalid configuration payload.", details: parsed.error.flatten() },
         { status: 400 }
       );
     }
@@ -48,16 +55,12 @@ export async function handleWorkspaceUpdate(req: Request) {
 
     // 4. Rule 6: Tenant Isolation & Invariant Verification
     // Using .single() instead of .maybeSingle() to strictly enforce the membership invariant
-    // 4. Rule 6: Tenant Isolation & Invariant Verification
-    // 4. Rule 6: Tenant Isolation & Invariant Verification
     const { data: tenantUser, error: tenantError } = await supabase
       .from("tenant_users")
       .select("tenant_id")
       .eq("user_id", user.id)
       .single();
 
-    // PGRST116 indicates 0 rows matched .single() (i.e., membership missing)
-    // Checking tenantError first prevents TypeScript discriminated union narrowing errors
     const isMissingMembership =
       Boolean(tenantError && tenantError.code === "PGRST116") || !tenantUser?.tenant_id;
 
@@ -78,7 +81,8 @@ export async function handleWorkspaceUpdate(req: Request) {
         { status: 403 }
       );
     }
-    // 5. Destructure validated inputs (including senderEmail)
+
+    // 5. Destructure validated inputs
     const { companyName, replyToEmail, senderEmail } = parsed.data;
 
     // 6. Fully typed Supabase schema payload with explicit updated_at
@@ -99,9 +103,16 @@ export async function handleWorkspaceUpdate(req: Request) {
       updatePayload.sender_email = normalizeOptionalString(senderEmail);
     }
 
-    // Ensure we are actually mutating at least one user-provided configuration field
+    // IMPROVED: Handle no-op updates gracefully with a 200 response instead of throwing a 400 error
     if (Object.keys(updatePayload).length <= 1) {
-      return NextResponse.json({ error: "No valid fields provided for update." }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: true,
+          message: "No modifications required.",
+          metadata: { tenantId: tenantUser.tenant_id },
+        },
+        { status: 200 }
+      );
     }
 
     // 7. Rule 13 & Rule 6: Strictly scoped atomic update by tenant_id
