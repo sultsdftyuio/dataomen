@@ -8,6 +8,7 @@ export type TenantSettingsSnapshotRow = Omit<TenantSettingsRow, "api_key"> & {
 
 export type SettingsWorkspace = {
   companyName: string;
+  senderEmail?: string;
   replyToEmail: string;
 };
 

@@ -71,7 +71,7 @@ export default async function CampaignsPage() {
 
     // 5. Fetch Sender Email (Scoped to Tenant)
     supabase
-      .from("workspace_settings")
+      .from("tenant_settings")
       .select("sender_email")
       .eq("tenant_id", tenantId)
       .returns<{ sender_email: string | null }[]>()

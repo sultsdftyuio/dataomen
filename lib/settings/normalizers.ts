@@ -3,6 +3,7 @@ import type { ApiKeySummary, SettingsSnapshot, TenantSettingsSnapshotRow } from 
 export const DEFAULT_SETTINGS: SettingsSnapshot = {
   workspace: {
     companyName: "",
+    senderEmail: "", // Added senderEmail to default snapshot
     replyToEmail: "",
   },
   integrations: {
@@ -37,6 +38,8 @@ export function buildSettingsSnapshot(
   return {
     workspace: {
       companyName: row.company_name ?? "",
+      // Map sender_email directly from the Supabase row payload
+      senderEmail: (row as any).sender_email ?? "",
       replyToEmail: row.reply_to_email ?? "",
     },
     integrations: {
