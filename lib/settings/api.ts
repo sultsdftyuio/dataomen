@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { WorkspaceSettingsSchema } from "@/lib/settings/schemas";
 
-const normalizeOptionalString = (value: string | undefined) => {
+const normalizeOptionalString = (value: string | undefined): string | null | undefined => {
   if (value === undefined) {
     return undefined;
   }
@@ -30,6 +30,7 @@ export async function handleWorkspaceUpdate(req: Request) {
       );
     }
 
+    // Rule 18: Use SSR-safe Supabase server client
     const supabase = await createClient();
     const {
       data: { user },
@@ -40,6 +41,7 @@ export async function handleWorkspaceUpdate(req: Request) {
       return NextResponse.json({ error: "Unauthorized session." }, { status: 401 });
     }
 
+    // Rule 6: Tenant Isolation & Verification
     const { data: tenantUser, error: tenantError } = await supabase
       .from("tenant_users")
       .select("tenant_id")
@@ -59,27 +61,34 @@ export async function handleWorkspaceUpdate(req: Request) {
       return NextResponse.json({ error: "Tenant membership not found." }, { status: 403 });
     }
 
-    const { companyName, replyToEmail } = parsed.data;
+    // 🚨 CRITICAL FIX: Destructure senderEmail alongside companyName and replyToEmail
+    const { companyName, replyToEmail, senderEmail } = parsed.data;
 
-    // 🚨 CRITICAL FIX: Replaced wide Record<string, string | null> with strict explicit types 
-    // to satisfy Supabase v2 RejectExcessProperties strict typing requirements.
-    const updatePayload: { 
-      company_name?: string | null; 
-      reply_to_email?: string | null; 
+    // Explicit typing to satisfy Supabase v2 strict property definitions
+    const updatePayload: {
+      company_name?: string | null;
+      reply_to_email?: string | null;
+      sender_email?: string | null;
     } = {};
 
     if (companyName !== undefined) {
       updatePayload.company_name = normalizeOptionalString(companyName);
     }
-    
+
     if (replyToEmail !== undefined) {
       updatePayload.reply_to_email = normalizeOptionalString(replyToEmail);
+    }
+
+    // Map senderEmail to sender_email database column for Campaign Delivery (Rule 15)
+    if (senderEmail !== undefined) {
+      updatePayload.sender_email = normalizeOptionalString(senderEmail);
     }
 
     if (Object.keys(updatePayload).length === 0) {
       return NextResponse.json({ error: "No valid fields provided for update." }, { status: 400 });
     }
 
+    // Rule 6: Strictly scope update by tenant_id
     const { data: updatedSettings, error: updateError } = await supabase
       .from("tenant_settings")
       .update(updatePayload)

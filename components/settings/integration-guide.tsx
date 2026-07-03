@@ -30,15 +30,15 @@ export function IntegrationGuide() {
   const handleTestEvent = () => {
     setIsTesting(true);
     setTestSuccess(false);
-    // Mock network request
+    // Mock network request verification
     setTimeout(() => {
       setIsTesting(false);
       setTestSuccess(true);
-      setTimeout(() => setTestSuccess(false), 3000);
+      setTimeout(() => setTestSuccess(false), 4000);
     }, 800);
   };
 
-  const snippets = {
+  const snippets: Record<LangTab, string> = {
     curl: `curl -X POST https://api.arcli.tech/api/v1/track \\
   -H "Authorization: Bearer arcli_live_your_api_key_here" \\
   -H "Content-Type: application/json" \\
@@ -102,7 +102,7 @@ data = response.json()`
     <div className="w-full space-y-8 animate-in fade-in duration-300 pb-12">
       
       {/* ── 1. Header & Security Callout ── */}
-      <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <section className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
         <div className="p-6 sm:p-8 border-b border-slate-100">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-lg">
@@ -127,7 +127,7 @@ data = response.json()`
 
         {/* ── 2. Endpoint Summary & Auth ── */}
         <div className="p-6 sm:p-8 bg-slate-50/50 border-b border-slate-100">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="space-y-1.5">
               <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Endpoint</span>
               <div className="flex items-center gap-2">
@@ -165,9 +165,9 @@ data = response.json()`
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as LangTab)}
-                  className={`relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 ease-in-out border-t-2 border-x border-x-transparent -mb-px ${
+                  className={`relative flex items-center gap-2 px-5 py-3 text-sm font-medium transition-all duration-200 ease-in-out border-t-2 border-x border-x-transparent -mb-px cursor-pointer ${
                     isActive 
-                      ? "bg-white text-[#0A192F] border-t-blue-500 border-x-slate-200 border-b-white rounded-t-lg z-10" 
+                      ? "bg-[#0A192F] text-white border-t-blue-500 border-x-slate-700 rounded-t-lg z-10" 
                       : "text-slate-500 hover:text-slate-700 border-t-transparent hover:bg-slate-100/50 rounded-t-lg"
                   }`}
                 >
@@ -178,27 +178,17 @@ data = response.json()`
           </div>
 
           {/* Request Block */}
-          <div className="relative bg-[#0A192F] p-6 overflow-hidden">
+          <div className="relative bg-[#0A192F] p-6 min-h-[220px]">
             <button 
               onClick={handleCopy}
-              className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-md text-white text-xs font-medium transition-colors"
+              className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/10 rounded-md text-white text-xs font-medium transition-colors cursor-pointer"
             >
               {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />} 
               {copied ? "Copied" : "Copy"}
             </button>
-            {/* Animated Tab Content */}
-            <div className="relative">
-              {Object.entries(snippets).map(([key, code]) => (
-                <pre 
-                  key={key} 
-                  className={`font-mono text-[13px] leading-relaxed text-slate-300 overflow-x-auto transition-all duration-300 absolute inset-0 ${
-                    activeTab === key ? "opacity-100 translate-y-0 relative" : "opacity-0 translate-y-2 pointer-events-none"
-                  }`}
-                >
-                  <code>{code}</code>
-                </pre>
-              ))}
-            </div>
+            <pre className="font-mono text-[13px] leading-relaxed text-slate-300 overflow-x-auto pr-24">
+              <code>{snippets[activeTab]}</code>
+            </pre>
           </div>
 
           {/* Response Block */}
@@ -223,7 +213,7 @@ data = response.json()`
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Schema Table */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50">
             <h4 className="text-sm font-bold text-[#0A192F]">Request Schema</h4>
           </div>
@@ -238,7 +228,7 @@ data = response.json()`
                 <tr className="border-b border-slate-100">
                   <td className="p-4 font-mono text-slate-600">user_id</td>
                   <td className="p-4"><span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">RECOMMENDED</span></td>
-                  <td className="p-4 text-slate-500 text-xs">Your system's unique user identifier. Crucial for active user distinct counts.</td>
+                  <td className="p-4 text-slate-500 text-xs">Your system&apos;s unique user identifier. Crucial for active user distinct counts.</td>
                 </tr>
                 <tr className="border-b border-slate-100">
                   <td className="p-4 font-mono text-slate-600">idempotency_key</td>
@@ -261,13 +251,13 @@ data = response.json()`
         </div>
 
         {/* Event Catalog */}
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden flex flex-col">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50">
             <h4 className="text-sm font-bold text-[#0A192F]">Standard Event Catalog</h4>
           </div>
-          <div className="p-6 space-y-4 flex-1 overflow-y-auto">
+          <div className="p-6 space-y-4 flex-1">
             <p className="text-xs text-slate-500 leading-relaxed mb-2">
-              To leverage Arcli's deterministic churn scoring, map your events to these standard identifiers:
+              To leverage Arcli&apos;s deterministic churn scoring, map your events to these standard identifiers:
             </p>
             <div className="space-y-3">
               {[
@@ -290,7 +280,7 @@ data = response.json()`
 
       {/* ── 5. Operational Guidelines ── */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="p-6 bg-white border border-slate-200 rounded-xl shadow-sm flex items-start gap-4">
+        <div className="p-6 bg-white border border-slate-200 rounded-xl shadow-xs flex items-start gap-4">
           <div className="p-2 bg-blue-50 text-blue-600 rounded-lg shrink-0">
             <Activity className="h-5 w-5" />
           </div>
@@ -302,7 +292,7 @@ data = response.json()`
           </div>
         </div>
         
-        <div className="p-6 bg-white border border-slate-200 rounded-xl shadow-sm flex items-start gap-4">
+        <div className="p-6 bg-white border border-slate-200 rounded-xl shadow-xs flex items-start gap-4">
           <div className="p-2 bg-slate-100 text-slate-600 rounded-lg shrink-0">
             <Lock className="h-5 w-5" />
           </div>
@@ -316,7 +306,7 @@ data = response.json()`
       </section>
 
       {/* ── 6. Test Integration Playground ── */}
-      <section className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <section className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
           <Activity className="h-4 w-4 text-[#0A192F]" />
           <h4 className="text-sm font-bold text-[#0A192F]">Test Integration</h4>
@@ -333,7 +323,7 @@ data = response.json()`
                 type="text" 
                 value={testUserId}
                 onChange={(e) => setTestUserId(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono"
               />
             </div>
             
@@ -342,7 +332,7 @@ data = response.json()`
               <select 
                 value={testEvent}
                 onChange={(e) => setTestEvent(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-xs focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono"
               >
                 <option value="payment_failed">payment_failed</option>
                 <option value="subscription_cancelled">subscription_cancelled</option>
@@ -356,21 +346,23 @@ data = response.json()`
               <button 
                 onClick={handleTestEvent}
                 disabled={isTesting}
-                className="flex-1 bg-[#0A192F] hover:bg-slate-800 text-white shadow-sm h-[38px] rounded-md px-5 text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-80"
+                className="flex-1 bg-[#0A192F] hover:bg-slate-800 text-white shadow-xs h-[38px] rounded-md px-5 text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-80 cursor-pointer"
               >
                 {isTesting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {isTesting ? "Sending..." : "Send Test Event"}
               </button>
 
               {/* Success Feedback Indicator */}
-              <div className={`flex items-center gap-2 transition-all duration-300 ${testSuccess ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-2 pointer-events-none"}`}>
-                <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
-                  <Check className="h-4 w-4 text-emerald-600" />
+              {testSuccess && (
+                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  </div>
+                  <span className="text-xs font-medium text-emerald-600 hidden xl:block whitespace-nowrap">
+                    Delivered
+                  </span>
                 </div>
-                <span className="text-xs font-medium text-emerald-600 hidden lg:block whitespace-nowrap">
-                  Delivered
-                </span>
-              </div>
+              )}
             </div>
           </div>
         </div>

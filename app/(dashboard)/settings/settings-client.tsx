@@ -1,17 +1,42 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { type User } from "@supabase/supabase-js";
-import { Building2, Database, UserCircle, HelpCircle, Mail, ChevronRight } from "lucide-react";
+import { 
+  Building2, 
+  Database, 
+  UserCircle, 
+  HelpCircle, 
+  Mail, 
+  ChevronRight,
+  type LucideIcon
+} from "lucide-react";
 
-// FIX 1: Import AccountPlanTab as a named export
 import { AccountPlanTab } from "@/components/settings/account-tab";
 import WorkspaceTab from "@/components/settings/workspace-tab";
 import { DataSourcesTab } from "@/components/settings/data-sources-tab";
 import type { SettingsSnapshot } from "@/lib/settings/types";
 
-// Enforcing the strict 3-pillar architectural boundary
+// ── Strict Architectural Boundaries & Constants ──
 type SettingsTab = "workspace" | "data-sources" | "account";
+
+const SUPPORT_EMAIL = "support@arcli.tech";
+
+const TABS: ReadonlyArray<{
+  id: SettingsTab;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "workspace", label: "Company Workspace", icon: Building2 },
+  { id: "data-sources", label: "Data Sources & API", icon: Database },
+  { id: "account", label: "Personal Profile", icon: UserCircle },
+];
+
+export interface WorkspaceData {
+  name: string;
+  supportEmail: string;
+  website: string;
+}
 
 interface SettingsClientProps {
   user: User;
@@ -19,34 +44,35 @@ interface SettingsClientProps {
   isRecoveryMode: boolean;
 }
 
-export default function SettingsClient({ user, initialSettings, isRecoveryMode }: SettingsClientProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>(isRecoveryMode ? "account" : "workspace");
+export default function SettingsClient({ 
+  user, 
+  initialSettings, 
+  isRecoveryMode 
+}: SettingsClientProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    isRecoveryMode ? "account" : "workspace"
+  );
 
-  // Updated nomenclature to match our architectural standard
-  const TABS = [
-    { id: "workspace", label: "Company Workspace", icon: Building2 },
-    { id: "data-sources", label: "Data Sources & API", icon: Database },
-    { id: "account", label: "Personal Profile", icon: UserCircle },
-  ] as const;
+  // Sync active tab safely if recovery mode changes dynamically
+  useEffect(() => {
+    if (isRecoveryMode) {
+      setActiveTab("account");
+    }
+  }, [isRecoveryMode]);
 
-  // Safely map initialSettings to avoid the SettingsWorkspace vs WorkspaceData TS Error
-  // We typecast as any locally to handle variations in the DB schema vs frontend types
-  const workspaceData = {
-    name: (initialSettings.workspace as any)?.name || (initialSettings.workspace as any)?.company_name || "",
-    supportEmail: (initialSettings.workspace as any)?.supportEmail || (initialSettings.workspace as any)?.support_email || "",
-    website: (initialSettings.workspace as any)?.website || (initialSettings.workspace as any)?.website_url || "",
+  // Server guarantees a normalized shape. Client just renders.
+  const workspaceData: WorkspaceData = {
+    name: initialSettings.workspace?.name ?? "",
+    supportEmail: initialSettings.workspace?.supportEmail ?? "",
+    website: initialSettings.workspace?.website ?? "",
   };
 
   return (
-    <div className="flex flex-col md:flex-row flex-1 w-full h-full bg-slate-50/50 overflow-hidden animate-in fade-in duration-300">
+    <div className="flex flex-col md:flex-row min-h-screen w-full bg-slate-50/50 animate-in fade-in duration-300">
       
-      {/* Sleek, Compact Sidebar Navigation */}
-      <aside className="w-full md:w-60 shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between z-10 overflow-y-auto select-none">
-        <div className="p-3 space-y-0.5">
-          <div className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase mb-1.5 px-2 mt-1">
-            Architecture Map
-          </div>
-          
+      {/* ── Sleek, Pinned Sidebar Navigation ── */}
+      <aside className="w-full md:w-60 shrink-0 bg-white border-r border-slate-200/80 flex flex-col justify-between md:sticky md:top-0 md:h-screen overflow-y-auto z-10 select-none">
+        <div className="p-3 pt-4 space-y-1">
           <div className="flex flex-col gap-0.5">
             {TABS.map((tab) => {
               const Icon = tab.icon;
@@ -54,8 +80,10 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as SettingsTab)}
-                  className={`group w-full flex items-center justify-between px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-current={isActive ? "page" : undefined}
+                  aria-pressed={isActive}
+                  className={`group w-full flex items-center justify-between px-2.5 py-2 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer ${
                     isActive 
                       ? "bg-blue-50/80 text-blue-700 font-semibold shadow-2xs border border-blue-100/60" 
                       : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent"
@@ -85,20 +113,19 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
               Engineering support for architectural & custom integrations.
             </p>
             <a 
-              href="mailto:support@arcli.tech" 
+              href={`mailto:${SUPPORT_EMAIL}`}
               className="flex items-center justify-center gap-1.5 w-full py-1.5 px-2 bg-white border border-slate-200/80 rounded text-[11px] font-medium text-slate-700 hover:text-blue-700 hover:border-blue-200 hover:bg-blue-50/50 transition-all shadow-2xs"
             >
-              <Mail className="h-3 w-3" /> support@arcli.tech
+              <Mail className="h-3 w-3" /> {SUPPORT_EMAIL}
             </a>
           </div>
         </div>
       </aside>
 
-      {/* Dynamic Content Area */}
-      <main className="flex-1 flex flex-col relative bg-slate-50/30 overflow-y-auto w-full h-full p-6 md:p-8 lg:p-10">
-        <div className="w-full max-w-5xl mx-auto">
+      {/* ── Dynamic Content Area ── */}
+      <main className="flex-1 flex flex-col min-h-screen bg-slate-50/30 overflow-y-auto w-full p-6 md:p-8 lg:p-10">
+        <div className="w-full max-w-5xl mx-auto h-full flex flex-col">
           
-          {/* FIX 2: Pass flattened props matching WorkspaceSettingsProps interface */}
           {activeTab === "workspace" && (
             <WorkspaceTab 
               initialCompanyName={workspaceData.name}
@@ -111,7 +138,6 @@ export default function SettingsClient({ user, initialSettings, isRecoveryMode }
             <DataSourcesTab />
           )}
           
-          {/* FIX 3: Use the correctly named component without unsupported children */}
           {activeTab === "account" && (
             <AccountPlanTab />
           )}

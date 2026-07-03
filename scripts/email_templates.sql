@@ -2,6 +2,23 @@
 -- ARCLI CORE SCHEMA — EMAIL TEMPLATES & QUEUE VIEWS
 -- SAFE TO RUN MULTIPLE TIMES: uses IF NOT EXISTS / OR REPLACE / DROP VIEW
 -- ============================================================================
+-- Add sender_email column to tenant_settings if it doesn't already exist
+ALTER TABLE public.tenant_settings 
+ADD COLUMN IF NOT EXISTS sender_email text;
+
+-- Normalize existing emails just in case
+UPDATE public.tenant_settings
+SET sender_email = LOWER(TRIM(sender_email))
+WHERE sender_email IS NOT NULL
+  AND sender_email <> LOWER(TRIM(sender_email));
+
+-- Enforce email formatting & normalization at the database level
+DO $$ BEGIN
+    ALTER TABLE public.tenant_settings
+        ADD CONSTRAINT chk_tenant_sender_email_normalized
+        CHECK (sender_email IS NULL OR sender_email = LOWER(TRIM(sender_email)))
+        NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE OR REPLACE FUNCTION reserve_email_dispatch(
     p_dispatch_token TEXT,
