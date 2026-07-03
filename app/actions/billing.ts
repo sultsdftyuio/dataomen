@@ -59,7 +59,7 @@ export async function upgradeToProPlan() {
   const tenantId = tenantMembership.tenant_id;
 
   // 5. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
-  // FIXED: Strictly query canonical columns ('status', 'plan') present in types/supabase.ts
+  // Strictly query canonical columns ('status', 'plan') present in types/supabase.ts
   const { data: currentTenant, error: tenantLookupError } = await supabase
     .from("tenants")
     .select("tenant_id, status, plan")
@@ -125,5 +125,98 @@ export async function upgradeToProPlan() {
     });
     
     throw new Error("Unable to create checkout session. Please try again later.");
+  }
+}
+
+/**
+ * Generates a Dodo Payments Customer Portal session for active subscribers
+ * to manage payment methods, download invoices, or modify plans.
+ */
+export async function manageBillingPortal() {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl) {
+    console.error("[Billing] Missing NEXT_PUBLIC_SITE_URL environment variable.");
+    throw new Error("Billing service is currently unavailable.");
+  }
+
+  const dodo = getDodoClient();
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !user || !user.email) {
+    throw new Error("Authentication required.");
+  }
+
+  // 1. Resolve Tenant Context (Rule 6: Scope by Tenant)
+  const { data: membership, error: membershipError } = await supabase
+    .from("tenant_users")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (membershipError || !membership) {
+    console.error("[Billing] Workspace membership lookup failed during portal creation", {
+      event: "tenant_membership_lookup_failed",
+      user_id: user.id,
+      error: membershipError,
+    });
+    throw new Error("No valid workspace found for user.");
+  }
+
+  // 2. Verify active subscription state
+  const { data: tenant, error: tenantError } = await supabase
+    .from("tenants")
+    .select("tenant_id, status, plan")
+    .eq("tenant_id", membership.tenant_id)
+    .single();
+
+  if (tenantError || !tenant) {
+    console.error("[Billing] Tenant lookup failed during portal creation", {
+      event: "tenant_lookup_failed",
+      tenant_id: membership.tenant_id,
+      error: tenantError,
+    });
+    throw new Error("Unable to resolve workspace billing status.");
+  }
+
+  if (tenant.status !== "active" && tenant.plan !== "pro") {
+    throw new Error("No active subscription found to manage.");
+  }
+
+  try {
+    // 3. Resolve the customer ID in Dodo Payments using their authenticated email
+    let customerId: string | undefined;
+    for await (const customer of dodo.customers.list({ email: user.email })) {
+      if (customer.customer_id) {
+        customerId = customer.customer_id;
+        break;
+      }
+    }
+
+    if (!customerId) {
+      console.error("[Billing] Dodo Payments customer profile lookup failed", {
+        event: "portal_customer_not_found",
+        tenant_id: membership.tenant_id,
+        user_email: user.email,
+      });
+      throw new Error("No active customer billing profile found.");
+    }
+
+    // 4. Create Customer Portal session using the correct SDK namespace (dodo.customers.customerPortal)
+    const portalSession = await dodo.customers.customerPortal.create(customerId);
+
+    if (!portalSession || !portalSession.link) {
+      throw new Error("Portal session returned without a valid link.");
+    }
+
+    return { url: portalSession.link };
+  } catch (error) {
+    console.error("[Billing] Customer portal creation failed", {
+      event: "portal_creation_failed",
+      tenant_id: membership.tenant_id,
+      user_id: user.id,
+      error,
+    });
+    throw new Error("Unable to open billing portal. Please try again later.");
   }
 }

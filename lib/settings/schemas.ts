@@ -1,3 +1,4 @@
+// lib/settings/schemas.ts
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -18,10 +19,10 @@ const trimString = (value: unknown) =>
 
 /**
  * Accepts either:
- *   recovery@example.com
+ * recovery@example.com
  *
  * or:
- *   Arcli Recovery <recovery@example.com>
+ * Arcli Recovery <recovery@example.com>
  *
  * This validates the entire input rather than matching an email
  * embedded somewhere inside an arbitrary string.
@@ -87,8 +88,31 @@ export const WorkspaceSettingsSchema = z
      * Reply-To header for recovery emails.
      */
     replyToEmail: ReplyToEmailSchema.optional(),
+
+    /**
+     * Full Name associated with the user profile updating the workspace.
+     */
+    fullName: z
+      .preprocess(
+        trimString,
+        z.string().max(100, "Full name must be 100 characters or less")
+      )
+      .optional(),
+
+    /**
+     * Optional company website URL.
+     */
+    websiteUrl: z
+      .preprocess(
+        trimString,
+        z.union([
+          z.string().url("Must be a valid URL format"),
+          z.literal(""),
+        ])
+      )
+      .optional(),
   })
-  .strict(); // Reject unknown properties.
+  .strip(); // Safely remove unmapped frontend properties instead of throwing a 400 Bad Request
 
 export type WorkspaceSettingsInput = z.infer<
   typeof WorkspaceSettingsSchema
@@ -108,7 +132,7 @@ export const NotificationSettingsSchema = z
       required_error: "notifyWeekly flag is required.",
     }),
   })
-  .strict();
+  .strip();
 
 export type NotificationSettingsInput = z.infer<
   typeof NotificationSettingsSchema

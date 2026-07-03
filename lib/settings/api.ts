@@ -30,10 +30,15 @@ export async function handleWorkspaceUpdate(req: Request) {
     const parsed = WorkspaceSettingsSchema.safeParse(body);
 
     if (!parsed.success) {
-      // Structured observability for validation failures (Rule 17)
+      // Rule 17: Structured observability with sanitized payload inspection (prevents PII leakage)
+      const receivedKeys =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? Object.keys(body as Record<string, unknown>)
+          : typeof body;
+
       console.warn("[WORKSPACE_UPDATE_VALIDATION_FAILED]", {
         errors: parsed.error.flatten(),
-        receivedPayload: body,
+        receivedKeys,
       });
 
       return NextResponse.json(
@@ -83,12 +88,43 @@ export async function handleWorkspaceUpdate(req: Request) {
     }
 
     // 5. Destructure validated inputs
-    const { companyName, replyToEmail, senderEmail } = parsed.data;
+    const { companyName, replyToEmail, senderEmail, fullName } = parsed.data;
 
-    // 6. Fully typed Supabase schema payload with explicit updated_at
-    const updatePayload: TenantSettingsUpdate = {
-      updated_at: new Date().toISOString(),
-    };
+    let profileUpdated = false;
+
+    // Synchronize user profile full name in Supabase Auth Metadata if provided
+    if (fullName !== undefined) {
+      const normalizedIncomingName = normalizeOptionalString(fullName) ?? "";
+      
+      // REFINED: Normalize stored full name to prevent redundant updates on trailing spaces
+      const currentStoredName =
+        normalizeOptionalString(user.user_metadata?.full_name ?? user.user_metadata?.name) ?? "";
+
+      if (normalizedIncomingName !== currentStoredName) {
+        const { error: authUpdateError } = await supabase.auth.updateUser({
+          data: {
+            full_name: normalizedIncomingName,
+            name: normalizedIncomingName,
+          },
+        });
+
+        if (authUpdateError) {
+          console.error("[USER_PROFILE_UPDATE_ERROR]", {
+            userId: user.id,
+            error: authUpdateError,
+          });
+          return NextResponse.json(
+            { error: "Failed to update personal profile information." },
+            { status: 500 }
+          );
+        }
+
+        profileUpdated = true;
+      }
+    }
+
+    // 6. Fully typed Supabase schema payload for workspace settings
+    const updatePayload: TenantSettingsUpdate = {};
 
     if (companyName !== undefined) {
       updatePayload.company_name = normalizeOptionalString(companyName);
@@ -103,8 +139,12 @@ export async function handleWorkspaceUpdate(req: Request) {
       updatePayload.sender_email = normalizeOptionalString(senderEmail);
     }
 
-    // IMPROVED: Handle no-op updates gracefully with a 200 response instead of throwing a 400 error
-    if (Object.keys(updatePayload).length <= 1) {
+    // REFINED: Compute mutated field names cleanly before attaching updated_at
+    const mutatedFields = Object.keys(updatePayload);
+    const hasTenantMutations = mutatedFields.length > 0;
+
+    // Handle no-op updates gracefully with a 200 response instead of throwing a 400 error
+    if (!hasTenantMutations && !profileUpdated) {
       return NextResponse.json(
         {
           success: true,
@@ -115,47 +155,68 @@ export async function handleWorkspaceUpdate(req: Request) {
       );
     }
 
-    // 7. Rule 13 & Rule 6: Strictly scoped atomic update by tenant_id
-    const { data: updatedSettings, error: updateError } = await supabase
-      .from("tenant_settings")
-      .update(updatePayload)
-      .eq("tenant_id", tenantUser.tenant_id)
-      .select("tenant_id, updated_at")
-      .single();
+    let updatedTimestamp = new Date().toISOString();
 
-    if (updateError) {
-      console.error("[WORKSPACE_UPDATE_ERROR]", {
-        tenantId: tenantUser.tenant_id,
-        userId: user.id,
-        error: updateError,
-      });
+    // 7. Rule 13 & Rule 6: Strictly scoped atomic update by tenant_id (only if tenant settings changed)
+    if (hasTenantMutations) {
+      updatePayload.updated_at = updatedTimestamp;
 
-      return NextResponse.json(
-        { error: "Database failed to persist workspace configuration." },
-        { status: 500 }
-      );
+      const { data: updatedSettings, error: updateError } = await supabase
+        .from("tenant_settings")
+        .update(updatePayload)
+        .eq("tenant_id", tenantUser.tenant_id)
+        .select("tenant_id, updated_at")
+        .single();
+
+      if (updateError) {
+        // REFINED: Explicitly distinguish between missing database row (404) vs internal error (500)
+        if (updateError.code === "PGRST116") {
+          console.error("[WORKSPACE_UPDATE_NOT_FOUND]", {
+            tenantId: tenantUser.tenant_id,
+            userId: user.id,
+          });
+          return NextResponse.json(
+            { error: "Workspace settings record not found." },
+            { status: 404 }
+          );
+        }
+
+        console.error("[WORKSPACE_UPDATE_ERROR]", {
+          tenantId: tenantUser.tenant_id,
+          userId: user.id,
+          error: updateError,
+        });
+
+        return NextResponse.json(
+          { error: "Database failed to persist workspace configuration." },
+          { status: 500 }
+        );
+      }
+
+      updatedTimestamp = updatedSettings.updated_at ?? updatedTimestamp;
     }
 
     // 8. Rule 17: Structured Observability & Audit Logging
     console.info("[WORKSPACE_UPDATED]", {
       tenantId: tenantUser.tenant_id,
       userId: user.id,
-      fieldsMutated: Object.keys(updatePayload).filter((k) => k !== "updated_at"),
-      timestamp: updatedSettings.updated_at,
+      profileUpdated,
+      fieldsMutated: mutatedFields,
+      timestamp: updatedTimestamp,
     });
 
     // 9. Instant Cache Invalidation across Next.js App Router
-    // Guarantees page refreshes instantly pull the new database state
+    // Guarantees page refreshes instantly pull the new database and auth state
     revalidatePath("/settings");
     revalidatePath("/dashboard/settings");
     revalidatePath("/dashboard/campaigns");
 
     return NextResponse.json({
       success: true,
-      message: "Workspace configuration updated successfully.",
+      message: "Configuration updated successfully.",
       metadata: {
-        tenantId: updatedSettings.tenant_id,
-        updatedAt: updatedSettings.updated_at,
+        tenantId: tenantUser.tenant_id,
+        updatedAt: updatedTimestamp,
       },
     });
   } catch (error: unknown) {

@@ -1,17 +1,16 @@
+// components/settings/workspace_page/workspace-billing-card.tsx
 "use client";
 
 import React, { useTransition } from "react";
-import { CreditCard, CheckCircle2, RefreshCw, TrendingUp } from "lucide-react";
+import { CreditCard, CheckCircle2, RefreshCw } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { upgradeToProPlan } from "@/app/actions/billing";
+import { upgradeToProPlan, manageBillingPortal } from "@/app/actions/billing";
 import { C } from "@/lib/tokens";
 
 export interface WorkspaceBillingCardProps {
   planData?: {
     planName?: string;
     planStatus?: "active" | "past_due" | "canceled" | "trialing";
-    monitoredMrr?: number;
-    mrrLimit?: number;
   };
 }
 
@@ -19,41 +18,42 @@ export default function WorkspaceBillingCard({
   planData = {
     planName: "Growth Tier",
     planStatus: "active",
-    monitoredMrr: 42500,
-    mrrLimit: 100000,
   },
 }: WorkspaceBillingCardProps) {
   const [isBillingPending, startBillingTransition] = useTransition();
-
-  // Derived Billing & Capacity Metrics
-  const monitoredMrr = planData.monitoredMrr || 0;
-  const mrrLimit = planData.mrrLimit || 100000;
-  const mrrPercentage = Math.min((monitoredMrr / mrrLimit) * 100, 100);
-
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      maximumFractionDigits: 0,
-    }).format(val);
+  const isActiveSubscriber = planData.planStatus === "active";
 
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow =
     "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
 
-  // Enforces Rule 2 (Async Enrichment Boundary) & Section 14 (Stripe Processing)
+  // Enforces Rule 2 (Async Enrichment Boundary)
   const handleManageBilling = () => {
     startBillingTransition(async () => {
       try {
-        const { url } = await upgradeToProPlan();
+        // FORK: Route active paying workspaces to the portal, others to upgrade checkout
+        const { url } = isActiveSubscriber
+          ? await manageBillingPortal()
+          : await upgradeToProPlan();
+
         if (url) {
-          window.location.href = url;
+          window.location.assign(url);
         }
       } catch (error: any) {
+        const message = error?.message || "Could not initiate billing session.";
+
+        // Graceful handling if the backend catches a duplicate checkout attempt
+        if (message.includes("already has an active subscription")) {
+          toast({
+            title: "Subscription Active",
+            description: "Your workspace is already upgraded to Pro.",
+          });
+          return;
+        }
+
         toast({
           title: "Billing Error",
-          description:
-            error.message || "Could not initiate secure checkout session.",
+          description: message,
           variant: "destructive",
         });
       }
@@ -94,16 +94,15 @@ export default function WorkspaceBillingCard({
               margin: 0,
             }}
           >
-            Plan & Recovery Capacity
+            Plan & Billing
           </h2>
         </div>
         <span
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: planData.planStatus === "active" ? C.green : C.amber,
-            background:
-              planData.planStatus === "active" ? C.greenPale : C.amberPale,
+            color: isActiveSubscriber ? C.green : C.amber,
+            background: isActiveSubscriber ? C.greenPale : C.amberPale,
             padding: "2px 8px",
             borderRadius: 12,
             textTransform: "capitalize",
@@ -112,117 +111,56 @@ export default function WorkspaceBillingCard({
             gap: 4,
           }}
         >
-          {planData.planStatus === "active" && <CheckCircle2 size={12} />}
+          {isActiveSubscriber && <CheckCircle2 size={12} />}
           {planData.planStatus || "Active"}
         </span>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: C.navy,
-              }}
-            >
-              {planData.planName}
-            </div>
-            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-              Automated churn risk scoring & retention workflows.
-            </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.navy }}>
+            {planData.planName}
           </div>
-          <button
-            type="button"
-            onClick={handleManageBilling}
-            disabled={isBillingPending}
-            style={{
-              height: 28,
-              padding: "0 12px",
-              background: C.offWhite,
-              color: C.navy,
-              border: surfaceBorder,
-              borderRadius: 6,
-              fontSize: 11,
-              fontWeight: 600,
-              cursor: isBillingPending ? "not-allowed" : "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            {isBillingPending ? (
-              <>
-                <RefreshCw size={12} className="animate-spin" /> Redirecting...
-              </>
-            ) : (
-              "Manage Billing"
-            )}
-          </button>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+            Automated churn risk scoring & retention workflows.
+          </div>
         </div>
-
-        {/* Monitored MRR Capacity Meter */}
-        <div
+        <button
+          type="button"
+          onClick={handleManageBilling}
+          disabled={isBillingPending}
           style={{
+            height: 28,
+            padding: "0 12px",
             background: C.offWhite,
-            padding: 12,
-            borderRadius: 6,
+            color: C.navy,
             border: surfaceBorder,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: isBillingPending ? "not-allowed" : "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            whiteSpace: "nowrap",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 11,
-              fontWeight: 600,
-            }}
-          >
-            <span
-              style={{
-                color: C.navySoft,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <TrendingUp size={13} color={C.blue} /> Monitored Revenue Capacity
-            </span>
-            <span style={{ color: C.navy }}>
-              {formatCurrency(monitoredMrr)} / {formatCurrency(mrrLimit)}
-            </span>
-          </div>
-
-          <div
-            style={{
-              width: "100%",
-              height: 6,
-              background: C.rule,
-              borderRadius: 3,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: `${mrrPercentage}%`,
-                height: "100%",
-                background: mrrPercentage > 90 ? C.amber : C.blue,
-                borderRadius: 3,
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-        </div>
+          {isBillingPending ? (
+            <>
+              <RefreshCw size={12} className="animate-spin" /> Redirecting...
+            </>
+          ) : isActiveSubscriber ? (
+            "Manage Billing"
+          ) : (
+            "Upgrade Plan"
+          )}
+        </button>
       </div>
     </section>
   );
