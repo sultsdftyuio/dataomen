@@ -12,8 +12,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 
-import { AccountPlanTab } from "@/components/settings/account-tab";
-import WorkspaceTab from "@/components/settings/workspace-tab";
+import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
 import { DataSourcesTab } from "@/components/settings/data-sources-tab";
 import type { SettingsSnapshot } from "@/lib/settings/types";
 
@@ -136,10 +135,6 @@ export default function SettingsClient({
           
           {activeTab === "data-sources" && (
             <DataSourcesTab />
-          )}
-          
-          {activeTab === "account" && (
-            <AccountPlanTab />
           )}
 
         </div>
