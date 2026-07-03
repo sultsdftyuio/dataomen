@@ -15,6 +15,9 @@ import {
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 
+// Centralized design tokens
+import { C } from "@/lib/tokens";
+
 interface WorkspaceSettingsProps {
   initialData?: {
     fullName: string;
@@ -43,6 +46,11 @@ export default function CompactWorkspaceSettings({
   const [websiteUrl, setWebsiteUrl] = useState(initialData.websiteUrl);
   const [isDirty, setIsDirty] = useState(false);
 
+  // Unified styling constants matching the Arcli design system
+  const sans = "var(--font-geist-sans), sans-serif";
+  const surfaceBorder = `1px solid ${C.rule}`;
+  const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+
   const handleInputChange = (setter: React.Dispatch<React.SetStateAction<string>>, value: string) => {
     setter(value);
     setIsDirty(true);
@@ -70,41 +78,95 @@ export default function CompactWorkspaceSettings({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 sm:px-6 space-y-5 animate-in fade-in duration-200">
-      
+    <div
+      style={{
+        fontFamily: sans,
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+        maxWidth: 896,
+        margin: "0 auto",
+        padding: "24px 16px",
+        gap: 20,
+        animation: "fadeIn 0.2s ease-in",
+      }}
+    >
       {/* ── Page Header (Dense & Clean) ── */}
-      <div className="border-b border-border pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg sm:text-xl font-semibold text-foreground tracking-tight">
-            Workspace Settings
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Manage your user profile and global workspace identity for outbound recovery campaigns.
-          </p>
-        </div>
+      <div style={{ borderBottom: surfaceBorder, paddingBottom: 12 }}>
+        <h1
+          className="pfd"
+          style={{
+            fontSize: 20,
+            fontWeight: 600,
+            color: C.navy,
+            margin: "0 0 4px 0",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          Workspace Settings
+        </h1>
+        <p style={{ fontSize: 13, color: C.navySoft, margin: 0, lineHeight: 1.5 }}>
+          Manage your user profile and global workspace identity for outbound recovery campaigns.
+        </p>
       </div>
 
-      <form onSubmit={handleSave} className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        
+      <form
+        onSubmit={handleSave}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 7fr) minmax(0, 5fr)",
+          gap: 20,
+          alignItems: "start",
+        }}
+      >
         {/* ── Left Column (7 Cols): Dense Form Elements ── */}
-        <div className="lg:col-span-7 space-y-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           
           {/* Section 1: Workspace Identity */}
-          <section className="rounded-lg border border-border bg-card p-4 shadow-2xs space-y-3.5">
-            <div className="flex items-center gap-2 border-b border-border/60 pb-2.5">
-              <Building2 className="w-4 h-4 text-primary shrink-0" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+          <section
+            style={{
+              background: C.white,
+              borderRadius: 8,
+              border: surfaceBorder,
+              boxShadow: surfaceShadow,
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                borderBottom: `1px solid ${C.rule}`,
+                paddingBottom: 10,
+              }}
+            >
+              <Building2 size={16} color={C.blue} />
+              <h2
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: C.navySoft,
+                  margin: 0,
+                }}
+              >
                 Workspace Identity
               </h2>
             </div>
 
-            <div className="space-y-3">
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
-                <label className="block text-xs font-medium text-foreground mb-1">
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
                   Company Name
                 </label>
-                <div className="relative">
-                  <Building2 className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <div style={{ position: "relative" }}>
+                  <Building2 size={14} color={C.muted} style={{ position: "absolute", left: 10, top: 9 }} />
                   <input
                     type="text"
                     required
@@ -112,18 +174,30 @@ export default function CompactWorkspaceSettings({
                     value={companyName}
                     disabled={isPending}
                     onChange={(e) => handleInputChange(setCompanyName, e.target.value)}
-                    className="w-full h-8 pl-8 pr-3 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50"
+                    style={{
+                      width: "100%",
+                      height: 32,
+                      padding: "0 12px 0 32px",
+                      borderRadius: 6,
+                      border: surfaceBorder,
+                      background: C.white,
+                      fontSize: 13,
+                      color: C.navy,
+                      outline: "none",
+                      boxShadow: surfaceShadow,
+                      opacity: isPending ? 0.6 : 1,
+                    }}
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
                     Support / Reply-To Email
                   </label>
-                  <div className="relative">
-                    <Mail className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
+                  <div style={{ position: "relative" }}>
+                    <Mail size={14} color={C.muted} style={{ position: "absolute", left: 10, top: 9 }} />
                     <input
                       type="email"
                       required
@@ -131,17 +205,29 @@ export default function CompactWorkspaceSettings({
                       value={supportEmail}
                       disabled={isPending}
                       onChange={(e) => handleInputChange(setSupportEmail, e.target.value)}
-                      className="w-full h-8 pl-8 pr-3 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50"
+                      style={{
+                        width: "100%",
+                        height: 32,
+                        padding: "0 12px 0 32px",
+                        borderRadius: 6,
+                        border: surfaceBorder,
+                        background: C.white,
+                        fontSize: 13,
+                        color: C.navy,
+                        outline: "none",
+                        boxShadow: surfaceShadow,
+                        opacity: isPending ? 0.6 : 1,
+                      }}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1">
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
                     Website URL
                   </label>
-                  <div className="relative">
-                    <Globe className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
+                  <div style={{ position: "relative" }}>
+                    <Globe size={14} color={C.muted} style={{ position: "absolute", left: 10, top: 9 }} />
                     <input
                       type="url"
                       required
@@ -149,7 +235,19 @@ export default function CompactWorkspaceSettings({
                       value={websiteUrl}
                       disabled={isPending}
                       onChange={(e) => handleInputChange(setWebsiteUrl, e.target.value)}
-                      className="w-full h-8 pl-8 pr-3 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50"
+                      style={{
+                        width: "100%",
+                        height: 32,
+                        padding: "0 12px 0 32px",
+                        borderRadius: 6,
+                        border: surfaceBorder,
+                        background: C.white,
+                        fontSize: 13,
+                        color: C.navy,
+                        outline: "none",
+                        boxShadow: surfaceShadow,
+                        opacity: isPending ? 0.6 : 1,
+                      }}
                     />
                   </div>
                 </div>
@@ -157,18 +255,46 @@ export default function CompactWorkspaceSettings({
             </div>
           </section>
 
-          {/* Section 2: User Profile (Scrapped separate page, merged here) */}
-          <section className="rounded-lg border border-border bg-card p-4 shadow-2xs space-y-3.5">
-            <div className="flex items-center gap-2 border-b border-border/60 pb-2.5">
-              <User className="w-4 h-4 text-primary shrink-0" />
-              <h2 className="text-xs font-semibold uppercase tracking-wider text-foreground">
+          {/* Section 2: User Profile */}
+          <section
+            style={{
+              background: C.white,
+              borderRadius: 8,
+              border: surfaceBorder,
+              boxShadow: surfaceShadow,
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                borderBottom: `1px solid ${C.rule}`,
+                paddingBottom: 10,
+              }}
+            >
+              <User size={16} color={C.blue} />
+              <h2
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: C.navySoft,
+                  margin: 0,
+                }}
+              >
                 User Profile
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <div>
-                <label className="block text-xs font-medium text-foreground mb-1">
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
                   Full Name
                 </label>
                 <input
@@ -178,46 +304,83 @@ export default function CompactWorkspaceSettings({
                   value={fullName}
                   disabled={isPending}
                   onChange={(e) => handleInputChange(setFullName, e.target.value)}
-                  className="w-full h-8 px-3 text-xs rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-colors disabled:opacity-50"
+                  style={{
+                    width: "100%",
+                    height: 32,
+                    padding: "0 12px",
+                    borderRadius: 6,
+                    border: surfaceBorder,
+                    background: C.white,
+                    fontSize: 13,
+                    color: C.navy,
+                    outline: "none",
+                    boxShadow: surfaceShadow,
+                    opacity: isPending ? 0.6 : 1,
+                  }}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-foreground mb-1">
+                <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
                   Authentication Email
                 </label>
-                <div className="relative">
+                <div style={{ position: "relative" }}>
                   <input
                     type="email"
                     disabled
                     value={initialData.authEmail}
-                    className="w-full h-8 pl-3 pr-8 text-xs font-mono rounded-md border border-input bg-muted/60 text-muted-foreground select-none cursor-not-allowed"
+                    style={{
+                      width: "100%",
+                      height: 32,
+                      padding: "0 32px 0 12px",
+                      borderRadius: 6,
+                      border: surfaceBorder,
+                      background: C.offWhite,
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      color: C.muted,
+                      cursor: "not-allowed",
+                      userSelect: "none",
+                    }}
                   />
-                  <Lock className="w-3.5 h-3.5 absolute right-2.5 top-2.5 text-muted-foreground" />
+                  <Lock size={14} color={C.muted} style={{ position: "absolute", right: 10, top: 9 }} />
                 </div>
               </div>
             </div>
           </section>
 
           {/* Submit Action Bar */}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-muted-foreground">
-              {isDirty ? "Unsaved changes" : "All changes saved"}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
+            <span style={{ fontSize: 11, color: isDirty ? C.amber : C.muted, fontWeight: isDirty ? 600 : 400 }}>
+              {isDirty ? "● Unsaved changes" : "All changes saved"}
             </span>
             <button
               type="submit"
               disabled={isPending || !isDirty}
-              className="inline-flex items-center justify-center gap-1.5 h-8 px-4 rounded-md bg-primary text-primary-foreground text-xs font-medium shadow-2xs hover:bg-primary/90 disabled:opacity-50 transition-all cursor-pointer"
+              style={{
+                height: 32,
+                padding: "0 16px",
+                background: isPending || !isDirty ? C.offWhite : C.navy,
+                color: isPending || !isDirty ? C.faint : C.white,
+                border: isPending || !isDirty ? surfaceBorder : "none",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: isPending || !isDirty ? "not-allowed" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                boxShadow: isPending || !isDirty ? "none" : surfaceShadow,
+                transition: "all 0.15s ease",
+              }}
             >
               {isPending ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  Saving...
+                  <RefreshCw size={13} className="animate-spin" /> Saving...
                 </>
               ) : (
                 <>
-                  <Save className="w-3.5 h-3.5" />
-                  Save Changes
+                  <Save size={13} /> Save Changes
                 </>
               )}
             </button>
@@ -226,51 +389,109 @@ export default function CompactWorkspaceSettings({
         </div>
 
         {/* ── Right Column (5 Cols): Dynamic Context & Previews ── */}
-        <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-6">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 24 }}>
           
           {/* Box 1: Dynamic Injection Panel */}
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
-            <div className="flex items-center gap-1.5 text-primary font-semibold text-xs">
-              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+          <div
+            style={{
+              background: C.bluePale,
+              borderRadius: 8,
+              border: `1px solid rgba(27, 110, 191, 0.25)`,
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.blue }}>
+              <Sparkles size={14} />
               <span>Dynamic Injection Preview</span>
             </div>
             
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <p style={{ fontSize: 11, color: C.navySoft, margin: 0, lineHeight: 1.5 }}>
               These global variables are injected dynamically into your outbound recovery emails.
             </p>
 
-            <div className="space-y-1.5 pt-0.5 font-mono text-[11px]">
-              <div className="p-2 rounded-md bg-background border border-border flex justify-between items-center overflow-hidden">
-                <span className="text-primary/80 font-medium select-none">{ "{{ company.name }}" }</span>
-                <span className="font-semibold text-foreground truncate max-w-[140px]">
-                  {companyName || <span className="text-muted-foreground italic">Not set</span>}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 2 }}>
+              <div
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  background: C.white,
+                  border: surfaceBorder,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  overflow: "hidden",
+                }}
+              >
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: C.blue, fontWeight: 600, userSelect: "none" }}>
+                  { "{{ company.name }}" }
+                </span>
+                <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 600, color: C.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
+                  {companyName || <span style={{ color: C.muted, fontStyle: "italic", fontFamily: sans }}>Not set</span>}
                 </span>
               </div>
 
-              <div className="p-2 rounded-md bg-background border border-border flex justify-between items-center overflow-hidden">
-                <span className="text-primary/80 font-medium select-none">{ "{{ company.url }}" }</span>
-                <span className="font-semibold text-foreground truncate max-w-[140px]">
-                  {websiteUrl || <span className="text-muted-foreground italic">Not set</span>}
+              <div
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  background: C.white,
+                  border: surfaceBorder,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  overflow: "hidden",
+                }}
+              >
+                <span style={{ fontSize: 11, fontFamily: "monospace", color: C.blue, fontWeight: 600, userSelect: "none" }}>
+                  { "{{ company.url }}" }
+                </span>
+                <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 600, color: C.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
+                  {websiteUrl || <span style={{ color: C.muted, fontStyle: "italic", fontFamily: sans }}>Not set</span>}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Box 2: Reply-To Routing Panel */}
-          <div className="rounded-lg border border-border bg-card p-4 space-y-2.5 shadow-2xs">
-            <div className="flex items-center gap-1.5 text-foreground font-semibold text-xs">
-              <CornerDownLeft className="w-3.5 h-3.5 text-primary shrink-0" />
+          <div
+            style={{
+              background: C.white,
+              borderRadius: 8,
+              border: surfaceBorder,
+              boxShadow: surfaceShadow,
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.navy }}>
+              <CornerDownLeft size={14} color={C.blue} />
               <span>Reply-To Routing</span>
             </div>
 
-            <p className="text-[11px] text-muted-foreground leading-relaxed">
-              When recovered users reply directly to your automated campaign emails, their responses will automatically route to the Support Email configured in your Workspace Identity.
+            <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.5 }}>
+              When recovered users reply directly to your automated campaign emails, responses route to the Support Email configured above.
             </p>
 
-            <div className="mt-2 p-2 rounded-md bg-muted/50 border border-border/80 flex items-center gap-2">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="text-[11px] font-mono text-foreground font-medium truncate">
-                {supportEmail || <span className="text-muted-foreground italic font-sans">No support email set</span>}
+            <div
+              style={{
+                marginTop: 4,
+                padding: "8px 10px",
+                borderRadius: 6,
+                background: C.offWhite,
+                border: surfaceBorder,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <ShieldCheck size={14} color={C.green} />
+              <span style={{ fontSize: 11, fontFamily: "monospace", color: C.navy, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {supportEmail || <span style={{ color: C.muted, fontStyle: "italic", fontFamily: sans, fontWeight: 400 }}>No support email set</span>}
               </span>
             </div>
           </div>

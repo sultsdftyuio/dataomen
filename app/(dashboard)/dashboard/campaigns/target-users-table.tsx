@@ -2,19 +2,16 @@
 
 import React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { C } from "@/lib/tokens";
 
 interface TargetUsersTableProps {
-  sortedAtRiskUsers: any[]; // Replace 'any' with your actual User type if exported from types
+  sortedAtRiskUsers: any[];
   selectedUsers: Set<string>;
   allSelected: boolean;
   senderEmail: string | null;
   toggleUser: (id: string) => void;
   toggleAll: (checked: boolean) => void;
 }
-
-// Design tokens mapped from the DeepDiveFeatures snippet
-const surfaceBorder = "border border-black/[0.08]";
-const surfaceShadow = "shadow-[0_1px_3px_rgba(0,0,0,0.08)]";
 
 export function TargetUsersTable({
   sortedAtRiskUsers,
@@ -24,94 +21,151 @@ export function TargetUsersTable({
   toggleUser,
   toggleAll,
 }: TargetUsersTableProps) {
+  const sans = "var(--font-geist-sans), sans-serif";
+  const surfaceBorder = `1px solid ${C.rule}`;
+  const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+
   return (
-    <div className="lg:col-span-2 space-y-3 font-sans">
+    <div style={{ fontFamily: sans, display: "flex", flexDirection: "column", gap: 12 }}>
       
-      {/* Header Container */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.05em]">
+      {/* ── Section Header ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            color: C.navySoft,
+            margin: 0,
+          }}
+        >
           2. Target Roster
         </h2>
-        <div className="text-[11px] font-bold text-orange-600 bg-orange-50 border border-orange-200/50 px-2 py-0.5 rounded-md">
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: C.amber,
+            background: C.amberPale,
+            border: `1px solid rgba(245, 158, 11, 0.3)`,
+            padding: "2px 8px",
+            borderRadius: 6,
+          }}
+        >
           {sortedAtRiskUsers.length} High Risk
         </div>
       </div>
 
-      {/* Tightly Packed Data Table */}
-      <div 
-        className={`bg-white rounded-lg overflow-hidden ${surfaceBorder} ${surfaceShadow} ${
-          !senderEmail ? "opacity-60 pointer-events-none" : ""
-        }`}
+      {/* ── Table Container ── */}
+      <div
+        style={{
+          background: C.white,
+          borderRadius: 8,
+          border: surfaceBorder,
+          boxShadow: surfaceShadow,
+          overflow: "hidden",
+          opacity: !senderEmail ? 0.6 : 1,
+          pointerEvents: !senderEmail ? "none" : "auto",
+        }}
       >
-        <table className="w-full text-left text-[13px] border-collapse">
-          <thead className="bg-[#FAFAFA] border-b border-black/[0.04]">
+        <table style={{ width: "100%", textAlign: "left", fontSize: 13, borderCollapse: "collapse" }}>
+          <thead style={{ background: C.offWhite, borderBottom: surfaceBorder }}>
             <tr>
-              <th className="w-[40px] p-2.5 text-center font-medium">
+              <th style={{ width: 40, padding: 10, textAlign: "center" }}>
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={toggleAll}
                   disabled={sortedAtRiskUsers.length === 0 || !senderEmail}
-                  className="w-3.5 h-3.5 rounded-[3px] data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                  className="w-3.5 h-3.5 rounded-[3px]"
                 />
               </th>
-              <th className="p-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-[0.05em]">
+              <th style={{ padding: 10, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.navySoft }}>
                 User Entity
               </th>
-              <th className="p-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-[0.05em]">
+              <th style={{ padding: 10, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.navySoft }}>
                 Primary Signal
               </th>
-              <th className="p-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-[0.05em]">
+              <th style={{ padding: 10, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.navySoft }}>
                 Score
               </th>
-              <th className="p-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-[0.05em] text-right">
+              <th style={{ padding: 10, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.navySoft, textAlign: "right" }}>
                 Active
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-black/[0.04]">
+          <tbody>
             {sortedAtRiskUsers.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-12 text-[13px] text-slate-500">
+                <td colSpan={5} style={{ textAlign: "center", padding: 48, fontSize: 13, color: C.muted }}>
                   No high-risk users currently detected.
                 </td>
               </tr>
             ) : (
-              sortedAtRiskUsers.map((user) => (
-                <tr
-                  key={user.id}
-                  className={`transition-colors ${
-                    selectedUsers.has(user.id) ? "bg-blue-50/30" : "hover:bg-[#FAFAFA]"
-                  }`}
-                >
-                  <td className="p-2.5 text-center">
-                    <Checkbox
-                      checked={selectedUsers.has(user.id)}
-                      onCheckedChange={() => toggleUser(user.id)}
-                      disabled={!senderEmail}
-                      className="w-3.5 h-3.5 rounded-[3px] data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                    />
-                  </td>
-                  <td className="p-2.5 font-semibold text-[#0B1120]">
-                    {user.email}
-                  </td>
-                  <td className="p-2.5">
-                    {/* Deterministic Signal Pill */}
-                    <div className="inline-flex items-center gap-1.5 px-2 py-1 bg-orange-50/50 border border-orange-100 rounded text-[11px] font-mono text-orange-800">
-                      <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                      {user.signal}
-                    </div>
-                  </td>
-                  <td className="p-2.5">
-                    {/* Compact Score Indicator */}
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200/60">
-                      {user.riskScore}
-                    </span>
-                  </td>
-                  <td className="p-2.5 text-right text-slate-500 text-[12px] font-medium">
-                    {user.lastActive}
-                  </td>
-                </tr>
-              ))
+              sortedAtRiskUsers.map((user) => {
+                const isChecked = selectedUsers.has(user.id);
+                return (
+                  <tr
+                    key={user.id}
+                    style={{
+                      background: isChecked ? C.bluePale : C.white,
+                      borderBottom: `1px solid rgba(221, 232, 242, 0.5)`,
+                      transition: "background 0.15s ease",
+                    }}
+                  >
+                    <td style={{ padding: 10, textAlign: "center" }}>
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={() => toggleUser(user.id)}
+                        disabled={!senderEmail}
+                        className="w-3.5 h-3.5 rounded-[3px]"
+                      />
+                    </td>
+                    <td style={{ padding: 10, fontWeight: 600, color: C.navy }}>
+                      {user.email}
+                    </td>
+                    <td style={{ padding: 10 }}>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "4px 8px",
+                          background: C.amberPale,
+                          border: `1px solid rgba(245, 158, 11, 0.3)`,
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontFamily: "monospace",
+                          color: "#92400E",
+                        }}
+                      >
+                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.amber }} />
+                        {user.signal}
+                      </div>
+                    </td>
+                    <td style={{ padding: 10 }}>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: C.offWhite,
+                          color: C.navySoft,
+                          border: surfaceBorder,
+                        }}
+                      >
+                        {user.riskScore}
+                      </span>
+                    </td>
+                    <td style={{ padding: 10, textAlign: "right", color: C.muted, fontSize: 12, fontWeight: 500 }}>
+                      {user.lastActive}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

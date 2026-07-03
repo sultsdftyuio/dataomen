@@ -10,16 +10,13 @@ import {
   AlertCircle,
   Save,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { CreateTemplateModal } from "./create-template-modal";
 import { TargetUsersTable } from "./target-users-table";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { type CampaignsClientProps } from "@/lib/types";
 
-// Design tokens
-const surfaceBorder = "border border-black/[0.08]";
-const surfaceShadow = "shadow-[0_1px_3px_rgba(0,0,0,0.08)]";
+// Centralized design tokens
+import { C } from "@/lib/tokens";
 
 export default function CampaignsClient({
   atRiskUsers,
@@ -50,13 +47,39 @@ export default function CampaignsClient({
     initialSenderEmail,
   });
 
+  // Unified styling constants matching the Arcli design system
+  const sans = "var(--font-geist-sans), sans-serif";
+  const surfaceBorder = `1px solid ${C.rule}`;
+  const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+
   return (
-    <div className="flex flex-col h-full w-full max-w-[1240px] mx-auto space-y-6 pb-12 animate-in fade-in duration-300 relative font-sans text-[13px]">
-      
-      {/* Header Container */}
-      <div className="flex items-center justify-between">
+    <div
+      style={{
+        fontFamily: sans,
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+        maxWidth: 1240,
+        margin: "0 auto",
+        gap: 24,
+        paddingBottom: 48,
+        animation: "fadeIn 0.3s ease-in",
+      }}
+    >
+      {/* ── Page Header ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          <h1
+            className="pfd"
+            style={{
+              fontSize: 24,
+              fontWeight: 700,
+              color: C.navy,
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}
+          >
             Campaign Dispatch
           </h1>
         </div>
@@ -65,78 +88,154 @@ export default function CampaignsClient({
         {senderEmail ? (
           <CreateTemplateModal onTemplateCreated={onNewTemplateCreated} />
         ) : (
-          <Button 
-            disabled 
-            variant="outline" 
-            className={`opacity-50 cursor-not-allowed h-9 px-4 text-[13px] bg-[#FAFAFA] text-slate-500 font-semibold rounded-lg ${surfaceBorder} shadow-none`}
+          <button
+            disabled
+            style={{
+              height: 36,
+              padding: "0 16px",
+              background: C.offWhite,
+              color: C.muted,
+              border: surfaceBorder,
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "not-allowed",
+              opacity: 0.6,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
           >
-            <Mail className="h-3.5 w-3.5 mr-2" />
+            <Mail size={14} />
             Create Template
-          </Button>
+          </button>
         )}
       </div>
 
-      {/* --- Campaign Blocker Alert --- */}
+      {/* ── Campaign Blocker Alert ── */}
       {!senderEmail && (
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-amber-50 border border-amber-200/80 rounded-lg shadow-sm">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-[14px] font-semibold text-amber-900">
-              <AlertCircle className="h-4 w-4 text-amber-600" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 16,
+            padding: "16px 20px",
+            background: C.amberPale,
+            border: `1px solid rgba(245, 158, 11, 0.3)`,
+            borderRadius: 8,
+            boxShadow: surfaceShadow,
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: "#92400E" }}>
+              <AlertCircle size={16} color={C.amber} />
               Sender Configuration Required
             </div>
-            <p className="text-[13px] text-amber-800">
+            <p style={{ fontSize: 13, color: "#92400E", margin: 0 }}>
               Configure a verified sender email address to unlock campaign creation and dispatch.
             </p>
           </div>
-          <div className="flex items-center gap-3 w-full md:w-auto shrink-0">
-            <Input
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <input
+              type="email"
               placeholder="e.g., recovery@yourdomain.com"
               value={senderInput}
               onChange={(e) => setSenderInput(e.target.value)}
-              className="bg-white border-amber-200 h-9 text-[13px] md:min-w-[260px] focus-visible:ring-amber-500/20"
+              style={{
+                height: 36,
+                padding: "0 14px",
+                borderRadius: 6,
+                border: `1px solid rgba(245, 158, 11, 0.4)`,
+                background: C.white,
+                fontSize: 13,
+                color: C.navy,
+                outline: "none",
+                minWidth: 260,
+                boxShadow: surfaceShadow,
+              }}
             />
-            <Button
+            <button
               onClick={handleSaveSenderEmail}
               disabled={
                 isSavingSender ||
                 !senderInput.trim() ||
                 senderInput.trim() === senderEmail
               }
-              className="h-9 px-4 bg-amber-600 hover:bg-amber-700 text-white font-medium text-[13px] rounded-lg shadow-sm transition-colors"
+              style={{
+                height: 36,
+                padding: "0 16px",
+                background: C.amber,
+                color: C.white,
+                border: "none",
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: isSavingSender ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                opacity: !senderInput.trim() || senderInput.trim() === senderEmail ? 0.6 : 1,
+              }}
             >
               {isSavingSender ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <RefreshCw size={14} className="animate-spin" />
               ) : (
-                <Save className="h-3.5 w-3.5 mr-2" />
+                <Save size={14} />
               )}
               {isSavingSender ? "Saving..." : "Save"}
-            </Button>
+            </button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* ── Main Workspace Grid ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 20 }}>
+        
         {/* Left Column: Email Templates */}
-        <div className="lg:col-span-1 space-y-3">
-          <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.05em] flex items-center justify-between">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              color: C.navySoft,
+              margin: 0,
+            }}
+          >
             1. Select Template
           </h2>
 
           {emailTemplates.length === 0 ? (
-            <div className={`text-[13px] text-slate-500 border border-dashed rounded-lg p-6 text-center bg-[#FAFAFA] border-black/[0.08]`}>
-              No templates found. <br />
+            <div
+              style={{
+                padding: 24,
+                textAlign: "center",
+                background: C.offWhite,
+                border: `1px dashed ${C.ruleDark}`,
+                borderRadius: 8,
+                fontSize: 13,
+                color: C.muted,
+              }}
+            >
+              No templates found.
+              <br />
               {senderEmail ? (
-                <span className="text-blue-600 font-semibold cursor-pointer mt-1 block hover:underline">
+                <span
+                  style={{ color: C.blue, fontWeight: 600, cursor: "pointer", display: "block", marginTop: 4 }}
+                >
                   Create one now
                 </span>
               ) : (
-                <span className="text-slate-400 mt-1 block">
+                <span style={{ color: C.faint, display: "block", marginTop: 4 }}>
                   Configure sender to unlock.
                 </span>
               )}
             </div>
           ) : (
-            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 500, overflowY: "auto" }}>
               {emailTemplates.map((tpl) => {
                 const isSelected = selectedTemplate === tpl.id;
                 const isDisabled = !senderEmail;
@@ -153,32 +252,61 @@ export default function CampaignsClient({
                         setSelectedTemplate(tpl.id);
                       }
                     }}
-                    className={`transition-all rounded-lg p-3 outline-none
-                      ${isDisabled ? `opacity-50 cursor-not-allowed bg-[#FAFAFA] ${surfaceBorder}` : "cursor-pointer"}
-                      ${
-                        isSelected && !isDisabled
-                          ? "bg-blue-50/40 border border-blue-500 ring-1 ring-blue-500"
-                          : `bg-white hover:border-blue-300 ${surfaceBorder} ${surfaceShadow}`
-                      }
-                    `}
                     onClick={() => {
                       if (!isDisabled) setSelectedTemplate(tpl.id);
                     }}
+                    style={{
+                      padding: 12,
+                      borderRadius: 8,
+                      border: isSelected && !isDisabled ? `1px solid ${C.blue}` : surfaceBorder,
+                      background: isSelected && !isDisabled ? C.bluePale : C.white,
+                      boxShadow: surfaceShadow,
+                      cursor: isDisabled ? "not-allowed" : "pointer",
+                      opacity: isDisabled ? 0.5 : 1,
+                      transition: "all 0.15s ease",
+                    }}
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center space-x-2.5">
-                        <div className={`p-1.5 rounded-md ${isSelected ? "bg-blue-100/50" : "bg-[#FAFAFA] border border-black/[0.04]"}`}>
-                          <Mail className={`h-3.5 w-3.5 ${isSelected ? "text-blue-600" : "text-slate-500"}`} />
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div
+                          style={{
+                            padding: 6,
+                            borderRadius: 6,
+                            background: isSelected ? "rgba(27, 110, 191, 0.12)" : C.offWhite,
+                            border: surfaceBorder,
+                            display: "flex",
+                          }}
+                        >
+                          <Mail size={14} color={isSelected ? C.blue : C.muted} />
                         </div>
-                        <h3 className={`text-[13px] font-semibold ${isSelected ? "text-blue-900" : "text-[#0B1120]"}`}>
+                        <h3
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: isSelected ? C.blueMid : C.navy,
+                            margin: 0,
+                          }}
+                        >
                           {tpl.name}
                         </h3>
                       </div>
-                      {isSelected && !isDisabled && (
-                        <CheckCircle2 className="h-4 w-4 text-blue-600" />
-                      )}
+                      {isSelected && !isDisabled && <CheckCircle2 size={16} color={C.blue} />}
                     </div>
-                    <div className="text-[11px] mt-2.5 truncate font-mono text-slate-500 bg-[#FAFAFA] p-1.5 rounded border border-black/[0.04]">
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "monospace",
+                        color: C.muted,
+                        background: C.offWhite,
+                        padding: "6px 8px",
+                        borderRadius: 4,
+                        border: surfaceBorder,
+                        marginTop: 10,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {tpl.subject}
                     </div>
                   </div>
@@ -188,7 +316,7 @@ export default function CampaignsClient({
           )}
         </div>
 
-        {/* Right Column: Target Users (Extracted component will be restyled next) */}
+        {/* Right Column: Target Users Table */}
         <TargetUsersTable
           sortedAtRiskUsers={sortedAtRiskUsers}
           selectedUsers={selectedUsers}
@@ -199,44 +327,90 @@ export default function CampaignsClient({
         />
       </div>
 
-      {/* Action Footer */}
-      <div className={`mt-6 sticky bottom-0 z-10 flex justify-between items-center p-4 bg-white/95 backdrop-blur-md rounded-lg ${surfaceBorder} ${surfaceShadow}`}>
-        <div className="text-[12px] font-semibold text-slate-600 flex items-center gap-2.5">
+      {/* ── Action Footer ── */}
+      <div
+        style={{
+          marginTop: 8,
+          position: "sticky",
+          bottom: 0,
+          zIndex: 10,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "16px 24px",
+          background: "rgba(255, 255, 255, 0.95)",
+          backdropFilter: "blur(8px)",
+          borderRadius: 8,
+          border: surfaceBorder,
+          boxShadow: surfaceShadow,
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.navySoft, display: "flex", alignItems: "center", gap: 10 }}>
           {!senderEmail ? (
             <>
-              <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              <span className="text-amber-700">Action Required: Set up sender email to unlock dispatch.</span>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.amber }} />
+              <span style={{ color: "#92400E" }}>Action Required: Set up sender email to unlock dispatch.</span>
             </>
           ) : activeTemplate ? (
             <>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.green }} />
               <span>
-                Queueing <strong className="text-[#0B1120]">{activeTemplate.name}</strong> for{" "}
-                <strong className="text-[#0B1120]">{selectedUsers.size}</strong> operators.
+                Queueing <strong style={{ color: C.navy }}>{activeTemplate.name}</strong> for{" "}
+                <strong style={{ color: C.navy }}>{selectedUsers.size}</strong> operators.
               </span>
             </>
           ) : (
             <>
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-              <span>Awaiting template selection.</span>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.ruleDark }} />
+              <span style={{ color: C.muted }}>Awaiting template selection.</span>
             </>
           )}
         </div>
-        <Button
+
+        <button
           disabled={!senderEmail || !selectedTemplate || selectedUsers.size === 0 || isSending}
           onClick={handleSendCampaign}
-          className={`h-9 px-5 rounded-lg text-[13px] font-bold tracking-wide transition-all ${
-            !senderEmail || selectedUsers.size === 0 || !selectedTemplate
-              ? "bg-[#FAFAFA] text-slate-400 border border-black/[0.08] shadow-none"
-              : "bg-[#0B1120] hover:bg-slate-800 text-white shadow-[0_2px_4px_rgba(0,0,0,0.12)]"
-          }`}
+          style={{
+            height: 36,
+            padding: "0 20px",
+            background:
+              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+                ? C.offWhite
+                : C.navy,
+            color:
+              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+                ? C.faint
+                : C.white,
+            border:
+              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+                ? surfaceBorder
+                : "none",
+            borderRadius: 6,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor:
+              !senderEmail || !selectedTemplate || selectedUsers.size === 0 || isSending
+                ? "not-allowed"
+                : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow:
+              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+                ? "none"
+                : surfaceShadow,
+          }}
         >
           {isSending ? (
-            <><RefreshCw className="h-3.5 w-3.5 mr-2 animate-spin" /> Orchestrating...</>
+            <>
+              <RefreshCw size={14} className="animate-spin" /> Orchestrating...
+            </>
           ) : (
-            <><Send className="h-3.5 w-3.5 mr-2" /> Execute Campaign</>
+            <>
+              <Send size={14} /> Execute Campaign
+            </>
           )}
-        </Button>
+        </button>
       </div>
     </div>
   );
