@@ -33,9 +33,11 @@ const TABS: ReadonlyArray<{
 ];
 
 export interface WorkspaceData {
-  name: string;
+  fullName: string;
+  authEmail: string;
+  companyName: string;
   supportEmail: string;
-  website: string;
+  websiteUrl: string;
 }
 
 interface SettingsClientProps {
@@ -60,11 +62,13 @@ export default function SettingsClient({
     }
   }, [isRecoveryMode]);
 
-  // Server guarantees a normalized shape. Client just renders.
+  // Properly map Server-normalized settings & Auth user to the expected UI contract
   const workspaceData: WorkspaceData = {
-    name: initialSettings.workspace?.name ?? "",
-    supportEmail: initialSettings.workspace?.supportEmail ?? "",
-    website: initialSettings.workspace?.website ?? "",
+    fullName: user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? "",
+    authEmail: user?.email ?? "",
+    companyName: initialSettings.workspace?.companyName ?? "",
+    supportEmail: initialSettings.workspace?.replyToEmail ?? "",
+    websiteUrl: "", // Default to empty string until website URL persistence is added to schema
   };
 
   return (
@@ -127,11 +131,7 @@ export default function SettingsClient({
         <div className="w-full max-w-5xl mx-auto h-full flex flex-col">
           
           {activeTab === "workspace" && (
-            <WorkspaceTab 
-              initialCompanyName={workspaceData.name}
-              initialSupportEmail={workspaceData.supportEmail}
-              initialWebsite={workspaceData.website}
-            />
+            <WorkspaceTab initialData={workspaceData} />
           )}
           
           {activeTab === "data-sources" && (
