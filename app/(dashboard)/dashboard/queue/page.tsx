@@ -12,7 +12,7 @@ export const metadata = {
   description: "Spot struggling accounts early, take action, and track your wins.",
 };
 
-// ─── Constants ───────────────────────────────────────────────────
+// ─── Constants & Configuration ─────────────────────────────────────
 
 const ALLOWED_ROLES = new Set(["owner", "admin", "operator"] as const);
 type AllowedRole = "owner" | "admin" | "operator";
@@ -29,8 +29,21 @@ type ValidTab = "critical" | "pending" | "cooldown" | "dead_lettered" | "healthy
 
 const PAGE_SIZE = 50;
 
+const DEFAULT_METRICS: OperationsMetrics = {
+  total_customers: 0,
+  at_risk_count: 0,
+  critical_count: 0,
+  pending_count: 0,
+  dead_letter_count: 0,
+  total_mrr_at_risk: 0,
+};
+
 // ─── Input Sanitization & Validation ───────────────────────────────
 
+/**
+ * Sanitizes raw search input to prevent PostgREST syntax injection inside .or() filters.
+ * Strips commas, parentheses, quotes, and control characters while preserving standard identifiers.
+ */
 function sanitizeSearchQuery(raw: string): string {
   return raw.trim().replace(/[^\w\s@.-]/g, "");
 }
@@ -56,16 +69,17 @@ function parseQueryParam(raw: string | string[] | undefined): string {
 // ─── Types ─────────────────────────────────────────────────────────
 
 interface PageProps {
-  searchParams: { [key: string]: string | string[] | undefined };
+  // Next.js 15+ treats searchParams as an asynchronous Promise
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-// ─── Internal Filter Applicator ────────────────────────────────────
+// ─── Query Builder Filter Applicator ───────────────────────────────
 
-function applyOperationFilters(
-  query: any,
+function applyOperationFilters<T extends { eq: any; gte: any; or: any }>(
+  query: T,
   tab: ValidTab,
   searchQuery: string
-) {
+): T {
   let q = query;
 
   switch (tab) {
@@ -98,18 +112,19 @@ function applyOperationFilters(
   return q;
 }
 
-// ─── Page Component ──────────────────────────────────────────────
+// ─── Page Component ────────────────────────────────────────────────
 
 export default async function CustomerOperationsPage({ searchParams }: PageProps) {
   const supabase = await createClient();
+  const resolvedParams = await searchParams;
 
-  // ── Layer 1: Authentication ────────────────────────────
+  // ── Layer 1: Authentication Boundary ─────────────────────────────
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     redirect("/login");
   }
 
-  // ── Layer 2: Tenant Resolution & Security ───────────────────────
+  // ── Layer 2: Tenant Isolation & Verification (Rule 6) ────────────
   const { data: membership, error: membershipError } = await supabase
     .from("tenant_users")
     .select("tenant_id, role")
@@ -117,22 +132,37 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     .single();
 
   if (membershipError || !membership) {
+    console.error(
+      JSON.stringify({
+        event: "tenant_membership_resolution_failed",
+        user_id: user.id,
+        error: membershipError?.message ?? "no_membership_found",
+      })
+    );
     redirect("/unauthorized");
   }
 
   const { tenant_id: tenantId, role } = membership;
 
-  // ── Layer 3: Role-Based Authorization ───────────────────────────
-  if (!ALLOWED_ROLES.has(role as any)) {
+  // ── Layer 3: Role-Based Access Control ───────────────────────────
+  if (!ALLOWED_ROLES.has(role as AllowedRole)) {
+    console.warn(
+      JSON.stringify({
+        event: "unauthorized_role_access_attempt",
+        tenant_id: tenantId,
+        user_id: user.id,
+        attempted_role: role,
+      })
+    );
     redirect("/unauthorized");
   }
 
-  // ── Layer 4: Input Validation & Normalization ───────────────────
-  const tab = parseTabParam(searchParams.tab);
-  const query = parseQueryParam(searchParams.query);
-  const rawPage = parsePageParam(searchParams.page);
+  // ── Layer 4: Input Normalization ─────────────────────────────────
+  const tab = parseTabParam(resolvedParams.tab);
+  const query = parseQueryParam(resolvedParams.query);
+  const rawPage = parsePageParam(resolvedParams.page);
 
-  // ── Layer 5: Parallel Execution — Metrics + Lightweight Count ───
+  // ── Layer 5: Parallel Execution — Metrics + Count Query ──────────
   const [metricsResult, countResult] = await Promise.all([
     supabase
       .from("vw_customer_operations_metrics")
@@ -149,35 +179,34 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     ),
   ]);
 
-  // ── Layer 6: Handle Metrics (Graceful Degradation) ──────────────
+  // ── Layer 6: Graceful Degradation for Metrics (Rule 3) ───────────
   const { data: metricsData, error: metricsError } = metricsResult;
 
   if (metricsError && metricsError.code !== "PGRST116") {
-    console.warn("metrics_fetch_failed", {
-      tenantId,
-      userId: user.id,
-      error: metricsError,
-    });
+    console.warn(
+      JSON.stringify({
+        event: "metrics_fetch_degraded",
+        tenant_id: tenantId,
+        user_id: user.id,
+        error_code: metricsError.code,
+        error_message: metricsError.message,
+      })
+    );
   }
 
-  const defaultMetrics: OperationsMetrics = {
-    total_customers: 0,
-    at_risk_count: 0,
-    critical_count: 0,
-    pending_count: 0,
-    dead_letter_count: 0,
-    total_mrr_at_risk: 0,
-  };
+  const metrics: OperationsMetrics = metricsData
+    ? (metricsData as OperationsMetrics)
+    : DEFAULT_METRICS;
 
-  // ── Layer 7: Pagination Bounds & Clamping ───────────────────────
-  const { count } = countResult;
-  const totalItems = count ?? 0;
+  // ── Layer 7: Pagination Bounds Clamping & Loop Guard ─────────────
+  const totalItems = countResult.count ?? 0;
   const totalPages = Math.ceil(totalItems / PAGE_SIZE);
   const page = totalPages > 0 ? Math.min(rawPage, totalPages) : 1;
 
-  if (page !== rawPage) {
+  // Redirect if URL requested an out-of-bounds page explicitly
+  if (resolvedParams.page !== undefined && page !== rawPage) {
     const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(searchParams)) {
+    for (const [key, value] of Object.entries(resolvedParams)) {
       if (value === undefined) continue;
       if (Array.isArray(value)) {
         value.forEach((v) => params.append(key, v));
@@ -186,23 +215,20 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
       }
     }
     params.set("tab", tab);
-    if (query) {
-      params.set("query", query);
-    } else {
-      params.delete("query");
-    }
+    if (query) params.set("query", query);
+    else params.delete("query");
     params.set("page", String(page));
     redirect(`?${params.toString()}`);
   }
 
-  // ── Layer 8: Execute Data Query with Validated Range ────────────
+  // ── Layer 8: Execute Data Projection within Clamped Range ────────
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
   const { data: items, error: queueError } = await applyOperationFilters(
     supabase
       .from("vw_customer_operations")
-      .select("*", { count: "exact" })
+      .select("*")
       .eq("tenant_id", tenantId),
     tab,
     query
@@ -210,21 +236,22 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     .order("risk_score", { ascending: false })
     .range(from, to);
 
-  // ── Layer 9: Error Handling (Fatal DB Failure) ──────────────────
+  // ── Layer 9: Fatal Error Boundary (Rule 17 Observability) ────────
   if (queueError) {
-    console.error("queue_fetch_failed", {
-      tenantId,
-      userId: user.id,
-      error: queueError,
-    });
+    console.error(
+      JSON.stringify({
+        event: "queue_fetch_failed",
+        tenant_id: tenantId,
+        user_id: user.id,
+        error_code: queueError.code,
+        error_message: queueError.message,
+      })
+    );
     return <QueueErrorState />;
   }
 
-  const metrics: OperationsMetrics = metricsData
-    ? (metricsData as OperationsMetrics)
-    : defaultMetrics;
-
-  const customerOperations: CustomerOperation[] = items || [];
+  // Cast through unknown to safely map Supabase untyped projections to domain models
+  const customerOperations: CustomerOperation[] = (items ?? []) as unknown as CustomerOperation[];
 
   const pageData: CustomerOperationsPage = {
     customers: customerOperations,

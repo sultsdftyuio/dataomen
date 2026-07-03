@@ -24,11 +24,10 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-    useRouter,
-    usePathname,
-    useSearchParams,
+  useRouter,
+  usePathname,
+  useSearchParams,
 } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   DropdownMenu,
@@ -40,6 +39,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { ExplainabilityDrawer } from "./explainability-drawer";
+import { C } from "@/lib/tokens";
 
 // ─── Constants ─────────────────────────────────────────────────
 const SEARCH_DEBOUNCE_MS = 400;
@@ -96,91 +96,68 @@ interface CustomerOperationsClientProps {
   page: CustomerOperationsPage;
 }
 
-// ─── Helpers ───────────────────────────────────────────────────
+// ─── Token Helpers ─────────────────────────────────────────────
 const getRiskPriority = (score: number) => {
   if (score >= HIGH_RISK_THRESHOLD) return { 
     label: "High Risk", 
-    icon: <AlertCircle className="h-3.5 w-3.5 mr-1.5" />, 
-    color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400", 
-    borderColor: "border-l-red-500",
+    icon: <AlertCircle size={13} style={{ marginRight: 4 }} />, 
+    color: C.red,
+    bg: C.redPale,
+    borderColor: C.red,
   };
   if (score >= MEDIUM_RISK_THRESHOLD) return { 
     label: "Medium Risk", 
-    icon: <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />, 
-    color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400", 
-    borderColor: "border-l-orange-500",
+    icon: <AlertTriangle size={13} style={{ marginRight: 4 }} />, 
+    color: "#92400E",
+    bg: C.amberPale,
+    borderColor: C.amber,
   };
   if (score >= LOW_RISK_THRESHOLD) return { 
     label: "Low Risk", 
-    icon: <Info className="h-3.5 w-3.5 mr-1.5" />, 
-    color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400", 
-    borderColor: "border-l-yellow-500",
+    icon: <Info size={13} style={{ marginRight: 4 }} />, 
+    color: "#854D0E",
+    bg: "#FEF9C3",
+    borderColor: "#EAB308",
   };
   return { 
     label: "Healthy", 
-    icon: <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />, 
-    color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400", 
-    borderColor: "border-l-emerald-500",
+    icon: <CheckCircle2 size={13} style={{ marginRight: 4 }} />, 
+    color: "#065F46",
+    bg: C.greenPale,
+    borderColor: C.green,
   };
 };
 
 const getStateBadge = (state: CustomerOperation["state"]) => {
-  const stateMap: Record<CustomerOperation["state"], { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: React.ReactNode }> = {
-    healthy: { 
-      label: "No Action Needed", variant: "outline", icon: <ShieldCheck className="h-3 w-3 mr-1 text-emerald-500" />
-    },
-    pending: { 
-      label: "Waiting to Contact", variant: "default", icon: <Clock className="h-3 w-3 mr-1" />
-    },
-    processing: { 
-      label: "Sending Email...", variant: "secondary", icon: <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-    },
-    cooldown: { 
-      label: "Recently Contacted", variant: "outline", icon: <Clock className="h-3 w-3 mr-1" />
-    },
-    suppressed: { 
-      label: "Ignored", variant: "outline", icon: <Ban className="h-3 w-3 mr-1" />
-    },
-    failed: { 
-      label: "Error (Trying Again)", variant: "destructive", icon: <AlertTriangle className="h-3 w-3 mr-1" />
-    },
-    dead_lettered: { 
-      label: "Unreachable / Bounced", variant: "destructive", icon: <ShieldAlert className="h-3 w-3 mr-1" />
-    },
-    completed: { 
-      label: "Done", variant: "secondary", icon: <CheckCircle2 className="h-3 w-3 mr-1" />
-    },
+  const stateMap: Record<CustomerOperation["state"], { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+    healthy: { label: "No Action Needed", color: C.green, bg: C.greenPale, icon: <ShieldCheck size={12} style={{ marginRight: 4 }} /> },
+    pending: { label: "Waiting to Contact", color: C.blue, bg: C.bluePale, icon: <Clock size={12} style={{ marginRight: 4 }} /> },
+    processing: { label: "Sending Email...", color: C.blueMid, bg: C.bluePale, icon: <RefreshCw size={12} className="animate-spin" style={{ marginRight: 4 }} /> },
+    cooldown: { label: "Recently Contacted", color: C.navySoft, bg: C.offWhite, icon: <Clock size={12} style={{ marginRight: 4 }} /> },
+    suppressed: { label: "Ignored", color: C.muted, bg: C.offWhite, icon: <Ban size={12} style={{ marginRight: 4 }} /> },
+    failed: { label: "Error (Trying Again)", color: C.red, bg: C.redPale, icon: <AlertTriangle size={12} style={{ marginRight: 4 }} /> },
+    dead_lettered: { label: "Unreachable / Bounced", color: C.red, bg: C.redPale, icon: <ShieldAlert size={12} style={{ marginRight: 4 }} /> },
+    completed: { label: "Done", color: C.green, bg: C.greenPale, icon: <CheckCircle2 size={12} style={{ marginRight: 4 }} /> },
   };
   const mapped = stateMap[state];
   return (
-    <Badge variant={mapped.variant} className="flex items-center w-fit bg-white shadow-sm border-slate-200">
+    <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", borderRadius: 12, fontSize: 11, fontWeight: 600, color: mapped.color, background: mapped.bg, border: `1px solid ${mapped.color}30` }}>
       {mapped.icon}
       {mapped.label}
-    </Badge>
+    </span>
   );
 };
 
 const getSignalBadge = (signalType?: string, signal?: string) => {
   if (!signalType) return null;
-  const styles = {
-    billing: "bg-rose-50 border-rose-200 text-rose-700",
-    cancellation: "bg-purple-50 border-purple-200 text-purple-700",
-    activity: "bg-amber-50 border-amber-200 text-amber-700"
-  };
-  const icons = {
-    billing: <AlertTriangle className="h-3 w-3" />,
-    cancellation: <ShieldAlert className="h-3 w-3" />,
-    activity: <Clock className="h-3 w-3" />
-  };
-
   const humanReadableType = 
     signalType === "billing" ? "Payment Issue" :
     signalType === "cancellation" ? "Might Cancel" :
     signalType === "activity" ? "Low Activity" : signalType;
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border ${styles[signalType as keyof typeof styles] || ""}`}>
-      {icons[signalType as keyof typeof icons]}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600, background: C.amberPale, color: "#92400E", border: `1px solid rgba(245, 158, 11, 0.3)` }}>
+      <AlertTriangle size={11} />
       {signal || humanReadableType}
     </span>
   );
@@ -207,6 +184,11 @@ export default function CustomerOperationsClient({
   const [localSearch, setLocalSearch] = useState(initialQuery);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<CustomerOperation | null>(null);
+
+  // Unified styling constants matching the Arcli design system
+  const sans = "var(--font-geist-sans), sans-serif";
+  const surfaceBorder = `1px solid ${C.rule}`;
+  const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
 
   // Debounced Search Updater
   useEffect(() => {
@@ -266,14 +248,16 @@ export default function CustomerOperationsClient({
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 font-sans">
+    <div style={{ fontFamily: sans, display: "flex", flexDirection: "column", gap: 24, animation: "fadeIn 0.3s ease-in" }}>
 
       {/* ── Header & Global Metrics ─────────────────────────── */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Customer Operations</h1>
-            <p className="text-sm text-slate-500 mt-1">
+            <h1 className="pfd" style={{ fontSize: 24, fontWeight: 700, color: C.navy, margin: 0, letterSpacing: "-0.02em" }}>
+              Customer Operations
+            </h1>
+            <p style={{ fontSize: 13, color: C.navySoft, margin: "4px 0 0 0" }}>
               Manage churn risks, track recovery pipelines, and monitor overall base health.
             </p>
           </div>
@@ -281,70 +265,95 @@ export default function CustomerOperationsClient({
           <button 
             onClick={() => { startTransition(() => router.refresh()); }}
             disabled={isPending}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+            style={{
+              height: 36,
+              padding: "0 14px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: C.white,
+              border: surfaceBorder,
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              color: C.navySoft,
+              cursor: isPending ? "not-allowed" : "pointer",
+              boxShadow: surfaceShadow,
+            }}
           >
-            <RefreshCw className={`h-4 w-4 ${isPending ? "animate-spin" : ""}`} />
+            <RefreshCw size={14} className={isPending ? "animate-spin" : ""} />
             Refresh
           </button>
         </div>
 
         {/* ── Search Bar ─────────────────────────────────────── */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <div style={{ position: "relative", maxWidth: 440, width: "100%" }}>
+          <Search size={15} color={C.muted} style={{ position: "absolute", left: 12, top: 11 }} />
           <input 
             type="text" 
             placeholder="Search by name, email, or reason..." 
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
-            className="pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-full transition-all bg-white shadow-sm"
+            style={{
+              width: "100%",
+              height: 36,
+              padding: "0 34px",
+              borderRadius: 6,
+              border: surfaceBorder,
+              background: C.white,
+              fontSize: 13,
+              color: C.navy,
+              outline: "none",
+              boxShadow: surfaceShadow,
+            }}
           />
           {localSearch && (
             <button 
               onClick={() => setLocalSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              style={{ position: "absolute", right: 10, top: 10, background: "none", border: "none", cursor: "pointer", color: C.muted }}
             >
-              <X className="h-4 w-4" />
+              <X size={15} />
             </button>
           )}
         </div>
       </div>
 
       {/* ── Tabs (Driven by Database Metrics) ──────────────── */}
-      <Tabs value={currentTab} className="w-full" onValueChange={(val) => updateUrlParams({ tab: val, page: "1" })}>
-        <TabsList className="mb-4 flex-wrap h-auto gap-1 bg-slate-100 p-1 rounded-lg">
-          <TabsTrigger value="critical" className="data-[state=active]:bg-white">
-            Needs Attention <span className="ml-1.5 text-[11px] text-slate-500 tabular-nums">({metrics.critical_count})</span>
+      <Tabs value={currentTab} onValueChange={(val) => updateUrlParams({ tab: val, page: "1" })}>
+        <TabsList style={{ background: C.offWhite, border: surfaceBorder, padding: 4, borderRadius: 8, display: "flex", flexWrap: "wrap", height: "auto", gap: 4 }}>
+          <TabsTrigger value="critical" style={{ fontSize: 12, fontWeight: 600 }}>
+            Needs Attention <span style={{ marginLeft: 6, opacity: 0.7 }}>({metrics.critical_count})</span>
           </TabsTrigger>
-          <TabsTrigger value="pending" className="data-[state=active]:bg-white">
-            Waiting <span className="ml-1.5 text-[11px] text-slate-500 tabular-nums">({metrics.pending_count})</span>
+          <TabsTrigger value="pending" style={{ fontSize: 12, fontWeight: 600 }}>
+            Waiting <span style={{ marginLeft: 6, opacity: 0.7 }}>({metrics.pending_count})</span>
           </TabsTrigger>
-          <TabsTrigger value="dead_lettered" className="data-[state=active]:bg-white data-[state=active]:text-red-600">
-            Unreachable <span className="ml-1.5 text-[11px] text-slate-500 tabular-nums">({metrics.dead_letter_count})</span>
+          <TabsTrigger value="dead_lettered" style={{ fontSize: 12, fontWeight: 600, color: currentTab === "dead_lettered" ? C.red : undefined }}>
+            Unreachable <span style={{ marginLeft: 6, opacity: 0.7 }}>({metrics.dead_letter_count})</span>
           </TabsTrigger>
-          <TabsTrigger value="healthy" className="data-[state=active]:bg-white">
-            Healthy <span className="ml-1.5 text-[11px] text-slate-500 tabular-nums">({metrics.total_customers - metrics.at_risk_count})</span>
+          <TabsTrigger value="healthy" style={{ fontSize: 12, fontWeight: 600 }}>
+            Healthy <span style={{ marginLeft: 6, opacity: 0.7 }}>({metrics.total_customers - metrics.at_risk_count})</span>
           </TabsTrigger>
-          <TabsTrigger value="all" className="data-[state=active]:bg-white">
-            All Customers <span className="ml-1.5 text-[11px] text-slate-500 tabular-nums">({metrics.total_customers})</span>
+          <TabsTrigger value="all" style={{ fontSize: 12, fontWeight: 600 }}>
+            All Customers <span style={{ marginLeft: 6, opacity: 0.7 }}>({metrics.total_customers})</span>
           </TabsTrigger>
         </TabsList>
 
         {/* ── Data Table ───────────────────────────────────── */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden min-h-[400px] flex flex-col">
-          <div className="overflow-x-auto flex-1">
+        <div style={{ marginTop: 16, borderRadius: 8, border: surfaceBorder, background: C.white, boxShadow: surfaceShadow, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
             <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50/50 hover:bg-slate-50/50">
-                  <TableHead className="text-[12px] font-semibold text-slate-500">Customer</TableHead>
-                  <TableHead className="text-[12px] font-semibold text-slate-500">Risk Level</TableHead>
-                  <TableHead className="text-[12px] font-semibold text-slate-500">Monthly Revenue</TableHead>
-                  <TableHead className="text-[12px] font-semibold text-slate-500">Queue State</TableHead>
-                  <TableHead className="text-[12px] font-semibold text-slate-500">Next Step</TableHead>
-                  <TableHead className="text-[12px] font-semibold text-slate-500">Assigned To</TableHead>
-                  <TableHead className="text-[12px] font-semibold text-slate-500 text-right">Quick Actions</TableHead>
+              <TableHeader style={{ background: C.offWhite, borderBottom: surfaceBorder }}>
+                <TableRow>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Customer</TableHead>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Risk Level</TableHead>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Monthly Revenue</TableHead>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Queue State</TableHead>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Next Step</TableHead>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Assigned To</TableHead>
+                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em", textAlign: "right" }}>Quick Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody className="divide-y divide-slate-100">
+              <TableBody>
                 {isPending ? (
                   // Loading Skeletons
                   Array.from({ length: 5 }).map((_, i) => (
@@ -361,19 +370,17 @@ export default function CustomerOperationsClient({
                 ) : customers.length === 0 ? (
                   // Empty State
                   <TableRow>
-                    <TableCell colSpan={7} className="h-64">
-                      <div className="flex flex-col items-center justify-center text-center">
-                        <CheckCircle2 className="h-10 w-10 text-emerald-400 mb-3" />
-                        <h3 className="text-base font-semibold text-slate-900">
-                          {localSearch ? "No matches found" : "All clear!"}
-                        </h3>
-                        <p className="text-sm text-slate-500 mt-1 max-w-sm">
-                          {localSearch 
-                            ? `We couldn't find any customers matching "${localSearch}".`
-                            : "No customers in this category currently need your attention."
-                          }
-                        </p>
+                    <TableCell colSpan={7} style={{ textAlign: "center", padding: 56 }}>
+                      <CheckCircle2 size={38} color={C.green} style={{ margin: "0 auto 12px" }} />
+                      <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>
+                        {localSearch ? "No matches found" : "All clear!"}
                       </div>
+                      <p style={{ fontSize: 13, color: C.muted, margin: "4px auto 0", maxWidth: 360 }}>
+                        {localSearch 
+                          ? `We couldn't find any customers matching "${localSearch}".`
+                          : "No customers in this category currently need your attention."
+                        }
+                      </p>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -389,79 +396,79 @@ export default function CustomerOperationsClient({
                         tabIndex={0}
                         onClick={() => handleRowClick(item)}
                         onKeyDown={(e) => handleRowKeyDown(e, item)}
-                        className={`
-                          cursor-pointer hover:bg-slate-50/80 transition-colors group
-                          border-l-4 ${priority.borderColor}
-                          ${isSuppressed ? "opacity-60 bg-slate-50" : ""}
-                          ${isDeadLettered ? "bg-orange-50/30" : ""}
-                          focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500/30
-                        `}
+                        style={{
+                          cursor: "pointer",
+                          borderLeft: `4px solid ${priority.borderColor}`,
+                          background: isDeadLettered ? "rgba(245, 158, 11, 0.05)" : isSuppressed ? C.offWhite : C.white,
+                          opacity: isSuppressed ? 0.6 : 1,
+                          transition: "background 0.15s ease",
+                        }}
                       >
                         {/* Customer Info */}
-                        <TableCell className="py-4">
-                          <div className="font-semibold text-slate-900">{item.name}</div>
-                          <div className="text-sm text-slate-500">{item.email}</div>
+                        <TableCell style={{ padding: 14 }}>
+                          <div style={{ fontWeight: 600, color: C.navy, fontSize: 13 }}>{item.name}</div>
+                          <div style={{ fontSize: 12, color: C.muted }}>{item.email}</div>
                           {item.signal_type && !isHealthy && (
-                            <div className="mt-2">
+                            <div style={{ marginTop: 6 }}>
                               {getSignalBadge(item.signal_type, item.signal)}
                             </div>
                           )}
                         </TableCell>
 
                         {/* Risk Level */}
-                        <TableCell className="py-4">
-                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[13px] font-medium ${priority.color}`}>
+                        <TableCell style={{ padding: 14 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, color: priority.color, background: priority.bg }}>
                             {priority.icon} {priority.label}
                           </span>
                         </TableCell>
 
                         {/* Money */}
-                        <TableCell className="py-4 font-semibold text-slate-900">
+                        <TableCell style={{ padding: 14, fontWeight: 600, color: C.navy, fontSize: 13 }}>
                           {currencyFormatter.format(item.mrr_at_risk || 0)}
-                          <span className="text-slate-400 text-xs font-normal"> / mo</span>
+                          <span style={{ color: C.muted, fontSize: 11, fontWeight: 400 }}> / mo</span>
                         </TableCell>
 
                         {/* Status */}
-                        <TableCell className="py-4">
+                        <TableCell style={{ padding: 14 }}>
                           {getStateBadge(item.state)}
                         </TableCell>
 
                         {/* Next Step Time */}
-                        <TableCell className="py-4 text-sm text-slate-600">
+                        <TableCell style={{ padding: 14, fontSize: 12, color: C.navySoft }}>
                           {!isHealthy && item.next_action_time ? (
-                            <div className="flex items-center gap-1.5">
-                              <Clock className="h-3.5 w-3.5 text-slate-400" />
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <Clock size={13} color={C.muted} />
                               {formatDistanceToNow(new Date(item.next_action_time), { addSuffix: true })}
                             </div>
                           ) : (
-                            <span className="text-slate-400">--</span>
+                            <span style={{ color: C.faint }}>--</span>
                           )}
                         </TableCell>
 
                         {/* Assigned To */}
-                        <TableCell className="py-4 text-sm">
+                        <TableCell style={{ padding: 14, fontSize: 12 }}>
                           {item.assigned_to_name ? (
-                            <div className="flex items-center gap-1.5">
-                              <UserCircle className="h-4 w-4 text-blue-500" />
-                              <span className="text-slate-700 font-medium">{item.assigned_to_name}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <UserCircle size={15} color={C.blue} />
+                              <span style={{ color: C.navy, fontWeight: 500 }}>{item.assigned_to_name}</span>
                             </div>
                           ) : (
-                            <span className="text-slate-400 italic">Unassigned</span>
+                            <span style={{ color: C.muted, fontStyle: "italic" }}>Unassigned</span>
                           )}
                         </TableCell>
 
                         {/* Quick Actions */}
-                        <TableCell className="py-4 text-right">
-                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                        <TableCell style={{ padding: 14, textAlign: "right" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }} onClick={(e) => e.stopPropagation()}>
                             
                             {!isHealthy && !item.assigned_to_name && item.state !== "suppressed" && item.state !== "completed" && (
                               <button 
                                 onClick={() => handleAction(item.id, "/api/queue/claim", "Assigned to you.")}
                                 disabled={actionLoading === item.id}
-                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                style={{ padding: 6, background: "none", border: "none", cursor: "pointer", color: C.blue }}
                                 title="Assign to me"
                               >
-                                <UserPlus className="h-4 w-4" />
+                                <UserPlus size={15} />
                               </button>
                             )}
 
@@ -470,18 +477,18 @@ export default function CustomerOperationsClient({
                                 <button 
                                   onClick={() => handleAction(item.id, "/api/queue/execute", "Action Started.")}
                                   disabled={actionLoading === item.id}
-                                  className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                  style={{ padding: 6, background: "none", border: "none", cursor: "pointer", color: C.green }}
                                   title="Force Execute Now"
                                 >
-                                  {actionLoading === item.id ? <RefreshCw className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+                                  {actionLoading === item.id ? <RefreshCw size={15} className="animate-spin" /> : <PlayCircle size={15} />}
                                 </button>
                                 <button 
                                   onClick={() => handleAction(item.id, "/api/queue/skip", "Customer ignored.")}
                                   disabled={actionLoading === item.id}
-                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                  style={{ padding: 6, background: "none", border: "none", cursor: "pointer", color: C.red }}
                                   title="Suppress / Ignore"
                                 >
-                                  <Ban className="h-4 w-4" />
+                                  <Ban size={15} />
                                 </button>
                               </>
                             )}
@@ -489,10 +496,8 @@ export default function CustomerOperationsClient({
                             {/* Dropdown Menu (Radix-based) */}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <button 
-                                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                                >
-                                  <MoreVertical className="h-4 w-4" />
+                                <button style={{ padding: 6, background: "none", border: "none", cursor: "pointer", color: C.muted }}>
+                                  <MoreVertical size={15} />
                                 </button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
@@ -519,25 +524,25 @@ export default function CustomerOperationsClient({
 
           {/* ── Server-Side Pagination ───────────────────────── */}
           {!isPending && totalItems > 0 && (
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-              <span className="text-sm text-slate-500">
-                Showing <span className="font-medium text-slate-700">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-medium text-slate-700">{Math.min(currentPage * ITEMS_PER_PAGE, totalItems)}</span> of <span className="font-medium text-slate-700">{totalItems}</span> customers
+            <div style={{ padding: "14px 20px", borderTop: surfaceBorder, background: C.offWhite, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: C.muted }}>
+                Showing <strong style={{ color: C.navy }}>{(currentPage - 1) * ITEMS_PER_PAGE + 1}</strong> to <strong style={{ color: C.navy }}>{Math.min(currentPage * ITEMS_PER_PAGE, totalItems)}</strong> of <strong style={{ color: C.navy }}>{totalItems}</strong> customers
               </span>
               
-              <div className="flex gap-2">
+              <div style={{ display: "flex", gap: 6 }}>
                 <button 
                   onClick={() => updateUrlParams({ page: String(currentPage - 1) })}
                   disabled={currentPage <= 1}
-                  className="p-1.5 text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  style={{ padding: "4px 8px", background: C.white, border: surfaceBorder, borderRadius: 6, cursor: currentPage <= 1 ? "not-allowed" : "pointer", color: C.navySoft }}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft size={15} />
                 </button>
                 <button 
                   onClick={() => updateUrlParams({ page: String(currentPage + 1) })}
                   disabled={currentPage >= totalPages}
-                  className="p-1.5 text-slate-500 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  style={{ padding: "4px 8px", background: C.white, border: surfaceBorder, borderRadius: 6, cursor: currentPage >= totalPages ? "not-allowed" : "pointer", color: C.navySoft }}
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight size={15} />
                 </button>
               </div>
             </div>
