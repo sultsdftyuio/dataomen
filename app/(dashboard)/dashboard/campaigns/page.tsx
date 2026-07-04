@@ -12,7 +12,7 @@ export const metadata = {
 export default async function CampaignsPage() {
   const supabase = await createClient();
 
-  // 1. Secure Deterministic Authentication
+  // 1. Secure Deterministic Authentication (Constitution Rule 1)
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {
@@ -33,11 +33,11 @@ export default async function CampaignsPage() {
 
   const tenantId = membership.tenant_id;
 
-  // 3, 4, 5. PARALLEL FETCHING: Fetch independent data concurrently
+  // 3, 4, 5. PARALLEL FETCHING: Fetch independent data concurrently scoped to tenant_id
   const [
     { data: riskData, error: riskError },
     { data: templatesData, error: templatesError },
-    { data: workspaceData }
+    { data: workspaceData, error: workspaceError }
   ] = await Promise.all([
     // 3. Fetch At-Risk Users (Scoped to Tenant)
     supabase
@@ -50,7 +50,7 @@ export default async function CampaignsPage() {
         last_active
       `)
       .eq("tenant_id", tenantId)
-      .gte("risk_score", 70) 
+      .gte("risk_score", 70)
       .order("risk_score", { ascending: false })
       .limit(100)
       .returns<{ 
@@ -75,17 +75,23 @@ export default async function CampaignsPage() {
       .select("sender_email")
       .eq("tenant_id", tenantId)
       .returns<{ sender_email: string | null }[]>()
-      .single()
+      .maybeSingle()
   ]);
 
+  // Observability & Operator Logging (Constitution Rule 17)
   if (riskError) {
-    console.error("Failed to fetch risk users for campaigns:", riskError);
+    console.error("[CampaignsPage] Failed to fetch risk users:", { tenantId, error: riskError });
   }
 
   if (templatesError) {
-    console.error("Failed to fetch email templates:", templatesError);
+    console.error("[CampaignsPage] Failed to fetch email templates:", { tenantId, error: templatesError });
   }
 
+  if (workspaceError) {
+    console.error("[CampaignsPage] Failed to resolve workspace settings:", { tenantId, error: workspaceError });
+  }
+
+  // Sanitize & Normalize Risk Radar Entities
   const atRiskUsers: RiskUser[] = (riskData || []).map((row) => ({
     id: row.customer_id || "", 
     email: row.customer_email || "Unknown Email",
@@ -94,6 +100,7 @@ export default async function CampaignsPage() {
     lastActive: row.last_active ? new Date(row.last_active).toLocaleDateString() : "Recently",
   }));
 
+  // Sanitize & Normalize Recovery Templates
   const emailTemplates: EmailTemplate[] = (templatesData || []).map((row) => ({
     id: row.id,
     name: row.name,
@@ -104,8 +111,7 @@ export default async function CampaignsPage() {
   const initialSenderEmail = workspaceData?.sender_email ?? null;
 
   return (
-    // AESTHETIC UPGRADE: Added the exact canvas background (#FAFAFA) and tight 
-    // structural padding (p-6 lg:p-8) to frame the client component perfectly.
+    // Exact canvas background (#FAFAFA) and tight structural padding to frame the dispatch client properly
     <div className="flex flex-col min-h-screen w-full bg-[#FAFAFA] p-6 lg:p-8 animate-in fade-in duration-300 font-sans">
       <CampaignsClient 
         atRiskUsers={atRiskUsers} 
