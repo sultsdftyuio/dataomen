@@ -18,7 +18,6 @@ interface CreateTemplateFormProps {
   onCancel: () => void;
 }
 
-// Starter boilerplate that satisfies CAN-SPAM/GDPR variables & min-length validation rules
 const DEFAULT_HTML_BODY = `<p>Hi {{first_name}},</p>
 <p>We noticed your payment method for <strong>{{company_name}}</strong> failed during our last renewal attempt.</p>
 <p>Please update your billing details securely to avoid service interruption: <a href="{{checkout_url}}">Update Payment Method</a>.</p>
@@ -33,17 +32,15 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
   const [newTemplateSubject, setNewTemplateSubject] = useState("");
   const [bodyHtml, setBodyHtml] = useState(DEFAULT_HTML_BODY);
 
-  // Pre-trim variables once for clean reuse across validation and submission
   const name = newTemplateName.trim();
   const subject = newTemplateSubject.trim();
   const html = bodyHtml.trim();
 
-  // Unified trimmed validation matching server requirements
   const isValid = name.length >= 2 && subject.length >= 5 && html.length >= 20;
 
-  // ── Live Preview: map form state -> TemplateDefinition ──
   const draftTemplate = useMemo<TemplateDefinition | undefined>(() => {
     if (!isValid) return undefined;
+
     return {
       id: "draft",
       name: name || "Draft",
@@ -51,7 +48,7 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
       rawHtml: html,
       trigger: "manual",
       cooldownDays: 0,
-    } as TemplateDefinition;
+    };
   }, [name, subject, html, isValid]);
 
   const {
@@ -64,13 +61,18 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
     customTemplate: draftTemplate,
   });
 
+  const canSave = isValid && !renderError;
+
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isCreating) return;
 
-    if (!isValid) {
+    if (!canSave) {
       toast({
         title: "Validation Error",
-        description: "Please check that name (min 2 chars), subject (min 5 chars), and HTML body (min 20 chars) are valid.",
+        description: renderError
+          ? "Please fix the template rendering error before saving."
+          : "Please check that name (min 2 chars), subject (min 5 chars), and HTML body (min 20 chars) are valid.",
         variant: "destructive",
       });
       return;
@@ -79,9 +81,6 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
     setIsCreating(true);
 
     try {
-      // 1. Invoke authoritative Server Action
-      // Clean contract: tenant_id omitted cleanly; server enforces boundary via session auth.
-      // body_text omitted cleanly; server auto-derives plain text from HTML.
       const result = await saveRecoveryTemplate({
         name,
         subject,
@@ -92,7 +91,12 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
       });
 
       if (!result.success || !result.template) {
-        throw new Error("Server failed to return persisted template data.");
+        // Type-safe extraction: the server may return an error message even if
+        // the declared type doesn't explicitly include it yet.
+        const serverMessage = (result as { error?: string }).error;
+        throw new Error(
+          serverMessage ?? "Server failed to return persisted template data."
+        );
       }
 
       toast({
@@ -100,7 +104,6 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
         description: `"${result.template.name}" is now saved to your workspace database.`,
       });
 
-      // 2. Explicitly map server record to client type to avoid unsafe double casting
       const returnedTemplate: EmailTemplate = {
         id: result.template.id,
         name: result.template.name,
@@ -172,7 +175,6 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
           />
         </div>
 
-        {/* ── Live Preview Panel ── */}
         {isValid && draftTemplate && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -181,7 +183,7 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
               </Label>
               {missingVariables.length > 0 && (
                 <span className="text-[10px] text-amber-600 font-medium">
-                  Missing: {missingVariables.join(", ")}
+                  Unresolved variables: {missingVariables.join(", ")}
                 </span>
               )}
             </div>
@@ -194,12 +196,14 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
 
             <div className="p-3 bg-[#FAFAFA] border border-black/[0.08] rounded-md space-y-2">
               <div className="text-[12px] font-semibold text-slate-700 pb-2 border-b border-black/[0.06]">
-                Subject: {hydratedSubject}
+                Subject: {hydratedSubject || subject}
               </div>
-              <div
-                className="text-[12px] leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-              />
+              {!renderError && (
+                <div
+                  className="text-[12px] leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+                />
+              )}
             </div>
           </div>
         )}
@@ -217,12 +221,15 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
         </Button>
         <Button
           type="submit"
-          disabled={isCreating || !isValid}
+          disabled={isCreating || !canSave}
           aria-busy={isCreating}
           className="h-8 px-4 min-w-[120px] text-[13px] font-bold bg-[#0B1120] hover:bg-slate-800 text-white shadow-[0_2px_4px_rgba(0,0,0,0.12)] transition-all"
         >
           {isCreating ? (
-            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            <>
+              <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" />
+              Saving...
+            </>
           ) : (
             "Save Template"
           )}

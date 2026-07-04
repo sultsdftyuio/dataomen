@@ -3,6 +3,29 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { RiskUser, EmailTemplate } from "@/lib/types";
 import CampaignsClient from "@/app/(dashboard)/dashboard/campaigns/campaigns-client";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
+
+type RiskQueueRadarRow = {
+  customer_id: string;
+  customer_email: string;
+  risk_score: number;
+  signal: string;
+  last_active: string | null;
+};
+
+type EmailTemplateRow = {
+  id: string;
+  name: string;
+  subject: string;
+  type: string;
+};
+
+type WorkspaceSettingsRow = {
+  company_name: string | null;
+  sender_email: string | null;
+  reply_to_email: string | null;
+};
+
 export const metadata = {
   title: "Campaigns | Arcli",
   description: "Configure automated recovery workflows and email sequences.",
@@ -31,6 +54,7 @@ export default async function CampaignsPage() {
   }
 
   const tenantId = membership.tenant_id;
+  const entitlements = await getWorkspaceEntitlements(supabase as any, tenantId);
 
   // 3, 4, 5. PARALLEL FETCHING: Fetch independent data concurrently scoped to tenant_id
   const [
@@ -39,26 +63,22 @@ export default async function CampaignsPage() {
     { data: workspaceData, error: workspaceError }
   ] = await Promise.all([
     // 3. Fetch At-Risk Users (Scoped to Tenant)
-    supabase
-      .from("vw_risk_queue_radar")
-      .select(`
-        customer_id,
-        customer_email,
-        risk_score,
-        signal,
-        last_active
-      `)
-      .eq("tenant_id", tenantId)
-      .gte("risk_score", 70)
-      .order("risk_score", { ascending: false })
-      .limit(100)
-      .returns<{ 
-        customer_id: string; 
-        customer_email: string; 
-        risk_score: number; 
-        signal: string; 
-        last_active: string | null 
-      }[]>(),
+    entitlements.canViewCustomerLists
+      ? supabase
+          .from("vw_risk_queue_radar")
+          .select(`
+            customer_id,
+            customer_email,
+            risk_score,
+            signal,
+            last_active
+          `)
+          .eq("tenant_id", tenantId)
+          .gte("risk_score", 70)
+          .order("risk_score", { ascending: false })
+          .limit(100)
+          .returns<RiskQueueRadarRow[]>()
+      : Promise.resolve({ data: [] as RiskQueueRadarRow[], error: null }),
 
     // 4. Fetch Email Templates (Scoped to Tenant)
     supabase
@@ -66,18 +86,14 @@ export default async function CampaignsPage() {
       .select("id, name, subject, type")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false })
-      .returns<{ id: string; name: string; subject: string; type: string }[]>(),
+      .returns<EmailTemplateRow[]>(),
 
     // 5. Fetch Full Workspace Settings for Preview Hydration (Scoped to Tenant)
     supabase
       .from("tenant_settings")
       .select("company_name, sender_email, reply_to_email")
       .eq("tenant_id", tenantId)
-      .returns<{
-        company_name: string | null;
-        sender_email: string | null;
-        reply_to_email: string | null;
-      }[]>()
+      .returns<WorkspaceSettingsRow[]>()
       .maybeSingle()
   ]);
 
@@ -129,6 +145,10 @@ export default async function CampaignsPage() {
         atRiskUsers={atRiskUsers} 
         emailTemplates={emailTemplates}
         initialSenderEmail={initialSenderEmail}
+        isProTier={entitlements.isPro}
+        planTier={entitlements.planTier}
+        subscriptionStatus={entitlements.subscriptionStatus}
+        restrictionMessage={entitlements.restrictionMessage}
       />
 
       {/* Live Verification Sandbox Layer */}

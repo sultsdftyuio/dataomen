@@ -38,6 +38,52 @@ class RecoveryRepository:
     def __init__(self, client: Client):
         self.client = client
 
+    def tenant_has_pro_entitlement(self, tenant_id: str) -> bool:
+        """
+        Final delivery gate for recovery emails.
+        New schemas use plan_tier/subscription_status; legacy schemas use plan/status.
+        Fail closed if billing state cannot be resolved.
+        """
+        active_statuses = {"active", "trialing"}
+
+        try:
+            resp = (
+                self.client.table("tenants")
+                .select("plan_tier, subscription_status")
+                .eq("tenant_id", tenant_id)
+                .limit(1)
+                .execute()
+            )
+            row = (resp.data or [None])[0]
+            if row:
+                plan_tier = str(row.get("plan_tier") or "").strip().lower()
+                status = str(row.get("subscription_status") or "").strip().lower()
+                return plan_tier == "pro" and status in active_statuses
+        except PostgrestAPIError:
+            logger.info("tenant_entitlement_preferred_schema_unavailable tenant=%s", tenant_id)
+        except Exception:
+            logger.exception("tenant_entitlement_check_failed tenant=%s", tenant_id)
+            return False
+
+        try:
+            resp = (
+                self.client.table("tenants")
+                .select("plan, status")
+                .eq("tenant_id", tenant_id)
+                .limit(1)
+                .execute()
+            )
+            row = (resp.data or [None])[0]
+            if not row:
+                return False
+
+            plan = str(row.get("plan") or "").strip().lower()
+            status = str(row.get("status") or "").strip().lower()
+            return plan == "pro" and status in active_statuses
+        except Exception:
+            logger.exception("tenant_entitlement_legacy_check_failed tenant=%s", tenant_id)
+            return False
+
     # --- Event writing (audit trail with retry) ---
     def write_event(
         self,

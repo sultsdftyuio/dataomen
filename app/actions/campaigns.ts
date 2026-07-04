@@ -3,6 +3,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { TemplateSaveSchema, TemplateSaveInput } from "@/lib/schemas/template";
 import { revalidatePath } from "next/cache";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 
 export interface NormalizedTemplateRecord {
   id: string;
@@ -88,6 +89,11 @@ export async function saveRecoveryTemplate(
 
   // Authoritative server-verified tenant ID
   const verifiedTenantId = String(membership.tenant_id);
+
+  const entitlements = await getWorkspaceEntitlements(supabase as any, verifiedTenantId);
+  if (!entitlements.canCreateTemplates) {
+    throw new Error(entitlements.restrictionMessage ?? "Upgrade to Pro to create recovery templates.");
+  }
 
   // --------------------------------------------------------------------------
   // STEP 4: Authoritative Database Upsert (Rule 11 & Feedback #3)

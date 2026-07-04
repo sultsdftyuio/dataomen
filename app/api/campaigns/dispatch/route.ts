@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withTenant } from "@/lib/api-security";
 import type { Json } from "@/types/supabase";
+import { getWorkspaceEntitlements, PRO_PLAN_REQUIRED_MESSAGE } from "@/lib/entitlements";
 
 const dispatchSchema = z.object({
   templateId: z.string().trim().min(1),
@@ -33,6 +34,14 @@ const getRpcStatus = (data: unknown) => {
 
 export const POST = withTenant(async (req, { supabase, tenantId }) => {
   try {
+    const entitlements = await getWorkspaceEntitlements(supabase as any, tenantId);
+    if (!entitlements.canSendEmails) {
+      return NextResponse.json(
+        { error: PRO_PLAN_REQUIRED_MESSAGE, code: "pro_plan_required" },
+        { status: 403 }
+      );
+    }
+
     let body: unknown = null;
     try {
       body = await req.json();

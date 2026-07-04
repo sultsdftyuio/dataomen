@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { RiskQueueShell, QueueErrorState } from "@/app/(dashboard)/dashboard/queue/RiskQueueShell";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import {
   type CustomerOperationsPage,
   type CustomerOperation,
@@ -157,6 +158,28 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     redirect("/unauthorized");
   }
 
+  const entitlements = await getWorkspaceEntitlements(supabase as any, tenantId);
+  if (!entitlements.canViewCustomerLists) {
+    const lockedPageData: CustomerOperationsPage = {
+      customers: [],
+      metrics: DEFAULT_METRICS,
+      pagination: {
+        currentPage: 1,
+        totalPages: 0,
+        totalItems: 0,
+        pageSize: PAGE_SIZE,
+      },
+    };
+
+    return (
+      <RiskQueueShell
+        page={lockedPageData}
+        isProTier={false}
+        restrictionMessage={entitlements.restrictionMessage}
+      />
+    );
+  }
+
   // ── Layer 4: Input Normalization ─────────────────────────────────
   const tab = parseTabParam(resolvedParams.tab);
   const query = parseQueryParam(resolvedParams.query);
@@ -264,5 +287,11 @@ export default async function CustomerOperationsPage({ searchParams }: PageProps
     },
   };
 
-  return <RiskQueueShell page={pageData} />;
+  return (
+    <RiskQueueShell
+      page={pageData}
+      isProTier={entitlements.isPro}
+      restrictionMessage={entitlements.restrictionMessage}
+    />
+  );
 }

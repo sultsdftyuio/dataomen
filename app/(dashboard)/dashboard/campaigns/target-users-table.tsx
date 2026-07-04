@@ -1,14 +1,18 @@
 "use client";
 
 import React from "react";
+import { Lock } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { C } from "@/lib/tokens";
+import UpgradeButton from "@/components/ui/UpgradeButton";
 
 interface TargetUsersTableProps {
   sortedAtRiskUsers: any[];
   selectedUsers: Set<string>;
   allSelected: boolean;
   senderEmail: string | null;
+  isProTier: boolean;
+  restrictionMessage: string;
   toggleUser: (id: string) => void;
   toggleAll: (checked: boolean) => void;
 }
@@ -18,12 +22,90 @@ export function TargetUsersTable({
   selectedUsers,
   allSelected,
   senderEmail,
+  isProTier,
+  restrictionMessage,
   toggleUser,
   toggleAll,
 }: TargetUsersTableProps) {
   const sans = "var(--font-geist-sans), sans-serif";
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+
+  if (!isProTier) {
+    return (
+      <div style={{ fontFamily: sans, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h2
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              color: C.navySoft,
+              margin: 0,
+            }}
+          >
+            2. Target Roster
+          </h2>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: C.blueMid,
+              background: C.bluePale,
+              border: `1px solid rgba(27, 110, 191, 0.25)`,
+              padding: "2px 8px",
+              borderRadius: 6,
+            }}
+          >
+            Pro
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: C.white,
+            borderRadius: 8,
+            border: surfaceBorder,
+            boxShadow: surfaceShadow,
+            padding: 32,
+            minHeight: 220,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, maxWidth: 420 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 8,
+                background: C.bluePale,
+                color: C.blue,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                border: `1px solid rgba(27, 110, 191, 0.25)`,
+              }}
+            >
+              <Lock size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.navy }}>
+                Customer list locked
+              </div>
+              <p style={{ fontSize: 13, color: C.navySoft, margin: "6px 0 0" }}>
+                {restrictionMessage}
+              </p>
+            </div>
+            <UpgradeButton className="h-9 px-4 rounded-md bg-[#0B1120] hover:bg-slate-800" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: sans, display: "flex", flexDirection: "column", gap: 12 }}>

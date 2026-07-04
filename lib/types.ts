@@ -20,6 +20,10 @@ export interface CampaignsClientProps {
   emailTemplates: EmailTemplate[];
   // Injected from the server page to enforce the "Proper Email Address" rule
   initialSenderEmail?: string | null;
+  isProTier?: boolean;
+  planTier?: string | null;
+  subscriptionStatus?: string | null;
+  restrictionMessage?: string | null;
 }
 
 // Strict anchored regex perfectly synchronized with backend validation

@@ -136,6 +136,13 @@ def send_recovery_email(
         METRICS.increment("recovery.send.dead_lettered")
         return
 
+    if not repo.tenant_has_pro_entitlement(tenant_id):
+        logger.info("recovery_send_blocked_pro_required tenant=%s send_id=%s", tenant_id, send_id)
+        retry_at = (utc_now() + timedelta(hours=6)).isoformat()
+        repo.mark_dispatch_failed(record.id, "pro_plan_required", FailureStage.VALIDATION, retry_at)
+        METRICS.increment("recovery.send.pro_required")
+        return
+
     # ==========================================
     # JIT SAAS SAFETY CHECKS (from unified reserve)
     # ==========================================

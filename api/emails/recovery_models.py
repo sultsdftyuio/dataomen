@@ -94,6 +94,7 @@ class FailureStage(StrEnum):
     COOLDOWN = "cooldown"
     PROVIDER = "provider"
     PERSISTENCE = "persistence"
+    VALIDATION = "validation"
 
 
 class ProviderSendStatus(StrEnum):

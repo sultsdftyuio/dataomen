@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 
 export type InterventionResult =
   | { success: true; message: string }
@@ -100,6 +101,14 @@ async function getOperatorContext(expectedTenantId: string): Promise<OperatorCon
   if (!(ALLOWED_ROLES as readonly string[]).includes(membership.role)) {
     console.warn("auth_warning", { userId: user.id, role: membership.role });
     return { authorized: false, error: "Insufficient permissions." };
+  }
+
+  const entitlements = await getWorkspaceEntitlements(supabaseUntyped, expectedTenantId);
+  if (!entitlements.isPro) {
+    return {
+      authorized: false,
+      error: entitlements.restrictionMessage ?? "Upgrade to Pro to manage customer operations.",
+    };
   }
 
   // 3. Fetch and manually cast profile

@@ -1,31 +1,32 @@
 "use client";
 
 import React, { useMemo } from "react";
-import { useRouter } from "next/navigation";
 import {
   Send,
   Mail,
-  CheckCircle2,
-  RefreshCw,
   AlertCircle,
   Save,
+  RefreshCw,
+  Lock,
 } from "lucide-react";
 import { CreateTemplateModal } from "./create-template-modal";
-import { TargetUsersTable } from "./target-users-table";
 import { useCampaigns } from "@/hooks/use-campaigns";
 import { useTemplatePreview } from "@/app/(dashboard)/dashboard/campaigns/templates/use-template-preview";
 import { type TemplateDefinition } from "@/app/(dashboard)/dashboard/campaigns/templates/security";
 import { type CampaignsClientProps } from "@/lib/types";
-
-// Centralized design tokens
+import { CampaignsWorkspace } from "@/app/(dashboard)/dashboard/campaigns/campaigns-workspace";
 import { C } from "@/lib/tokens";
+import UpgradeButton from "@/components/ui/UpgradeButton";
 
 export default function CampaignsClient({
   atRiskUsers,
   emailTemplates,
   initialSenderEmail,
+  isProTier: initialIsProTier,
+  planTier,
+  subscriptionStatus,
+  restrictionMessage: initialRestrictionMessage,
 }: CampaignsClientProps) {
-  const router = useRouter();
   const {
     senderEmail,
     selectedTemplate,
@@ -43,20 +44,22 @@ export default function CampaignsClient({
     toggleUser,
     toggleAll,
     handleSendCampaign,
+    isProTier,
+    restrictionMessage,
   } = useCampaigns({
     atRiskUsers,
     emailTemplates,
     initialSenderEmail,
+    isProTier: initialIsProTier,
+    planTier,
+    subscriptionStatus,
+    restrictionMessage: initialRestrictionMessage,
   });
 
   // ── Map EmailTemplate -> TemplateDefinition for the preview hook ──
   const previewTemplate = useMemo<TemplateDefinition | undefined>(() => {
     if (!activeTemplate) return undefined;
-
-    // Defensive extraction: your EmailTemplate may store the body as
-    // html | bodyHtml | body_html depending on the API surface.
     const t = activeTemplate as any;
-
     return {
       name: activeTemplate.name,
       subject: activeTemplate.subject,
@@ -116,8 +119,8 @@ export default function CampaignsClient({
           </h1>
         </div>
 
-        {/* Guardrail: Only allow template creation if a sender email exists */}
-        {senderEmail ? (
+        {/* Guardrail: Only allow template creation for Pro workspaces with a sender email */}
+        {isProTier && senderEmail ? (
           <CreateTemplateModal onTemplateCreated={onNewTemplateCreated} />
         ) : (
           <button
@@ -138,14 +141,40 @@ export default function CampaignsClient({
               gap: 8,
             }}
           >
-            <Mail size={14} />
+            {isProTier ? <Mail size={14} /> : <Lock size={14} />}
             Create Template
           </button>
         )}
       </div>
 
       {/* ── Campaign Blocker Alert ── */}
-      {!senderEmail && (
+      {!isProTier ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 16,
+            padding: "16px 20px",
+            background: C.bluePale,
+            border: `1px solid rgba(27, 110, 191, 0.25)`,
+            borderRadius: 8,
+            boxShadow: surfaceShadow,
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: C.blueMid }}>
+              <Lock size={16} color={C.blue} />
+              Pro Plan Required
+            </div>
+            <p style={{ fontSize: 13, color: C.navySoft, margin: 0 }}>
+              {restrictionMessage}
+            </p>
+          </div>
+          <UpgradeButton className="h-9 px-4 rounded-md bg-[#0B1120] hover:bg-slate-800" />
+        </div>
+      ) : !senderEmail && (
         <div
           style={{
             display: "flex",
@@ -223,221 +252,26 @@ export default function CampaignsClient({
       )}
 
       {/* ── Main Workspace Grid ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 20 }}>
-        
-        {/* Left Column: Email Templates */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <h2
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              color: C.navySoft,
-              margin: 0,
-            }}
-          >
-            1. Select Template
-          </h2>
-
-          {emailTemplates.length === 0 ? (
-            <div
-              style={{
-                padding: 24,
-                textAlign: "center",
-                background: C.offWhite,
-                border: `1px dashed ${C.ruleDark}`,
-                borderRadius: 8,
-                fontSize: 13,
-                color: C.muted,
-              }}
-            >
-              No templates found.
-              <br />
-              {senderEmail ? (
-                <span
-                  style={{ color: C.blue, fontWeight: 600, cursor: "pointer", display: "block", marginTop: 4 }}
-                >
-                  Create one now
-                </span>
-              ) : (
-                <span style={{ color: C.faint, display: "block", marginTop: 4 }}>
-                  Configure sender to unlock.
-                </span>
-              )}
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 500, overflowY: "auto" }}>
-              {emailTemplates.map((tpl) => {
-                const isSelected = selectedTemplate === tpl.id;
-                const isDisabled = !senderEmail;
-
-                return (
-                  <div
-                    key={tpl.id}
-                    role={isDisabled ? "presentation" : "button"}
-                    tabIndex={isDisabled ? -1 : 0}
-                    onKeyDown={(e) => {
-                      if (isDisabled) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setSelectedTemplate(tpl.id);
-                      }
-                    }}
-                    onClick={() => {
-                      if (!isDisabled) setSelectedTemplate(tpl.id);
-                    }}
-                    style={{
-                      padding: 12,
-                      borderRadius: 8,
-                      border: isSelected && !isDisabled ? `1px solid ${C.blue}` : surfaceBorder,
-                      background: isSelected && !isDisabled ? C.bluePale : C.white,
-                      boxShadow: surfaceShadow,
-                      cursor: isDisabled ? "not-allowed" : "pointer",
-                      opacity: isDisabled ? 0.5 : 1,
-                      transition: "all 0.15s ease",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div
-                          style={{
-                            padding: 6,
-                            borderRadius: 6,
-                            background: isSelected ? "rgba(27, 110, 191, 0.12)" : C.offWhite,
-                            border: surfaceBorder,
-                            display: "flex",
-                          }}
-                        >
-                          <Mail size={14} color={isSelected ? C.blue : C.muted} />
-                        </div>
-                        <h3
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: isSelected ? C.blueMid : C.navy,
-                            margin: 0,
-                          }}
-                        >
-                          {tpl.name}
-                        </h3>
-                      </div>
-                      {isSelected && !isDisabled && <CheckCircle2 size={16} color={C.blue} />}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontFamily: "monospace",
-                        color: C.muted,
-                        background: C.offWhite,
-                        padding: "6px 8px",
-                        borderRadius: 4,
-                        border: surfaceBorder,
-                        marginTop: 10,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {tpl.subject}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Preview + Target Users */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          
-          {/* ── Template Preview ── */}
-          {currentTemplate && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <h2
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: C.navySoft,
-                  margin: 0,
-                }}
-              >
-                2. Preview
-              </h2>
-
-              {renderError && (
-                <div
-                  style={{
-                    padding: "12px 16px",
-                    background: "#FEE2E2",
-                    border: "1px solid #FCA5A5",
-                    borderRadius: 6,
-                    color: "#991B1B",
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
-                >
-                  <strong>Render Error:</strong> {renderError}
-                </div>
-              )}
-
-              {missingVariables.length > 0 && (
-                <div
-                  style={{
-                    padding: "12px 16px",
-                    background: C.amberPale,
-                    border: `1px solid rgba(245, 158, 11, 0.3)`,
-                    borderRadius: 6,
-                    color: "#92400E",
-                    fontSize: 13,
-                    fontWeight: 500,
-                  }}
-                >
-                  <strong>Missing variables:</strong> {missingVariables.join(", ")}
-                </div>
-              )}
-
-              <div
-                style={{
-                  padding: "12px 16px",
-                  background: C.offWhite,
-                  borderRadius: 6,
-                  border: surfaceBorder,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: C.navy,
-                }}
-              >
-                Subject: {hydratedSubject}
-              </div>
-
-              <div
-                style={{
-                  border: surfaceBorder,
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  background: C.white,
-                  minHeight: 200,
-                  boxShadow: surfaceShadow,
-                }}
-              >
-                <div dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
-              </div>
-            </div>
-          )}
-
-          <TargetUsersTable
-            sortedAtRiskUsers={sortedAtRiskUsers}
-            selectedUsers={selectedUsers}
-            allSelected={allSelected}
-            senderEmail={senderEmail}
-            toggleUser={toggleUser}
-            toggleAll={toggleAll}
-          />
-        </div>
-      </div>
+      <CampaignsWorkspace
+        emailTemplates={emailTemplates}
+        selectedTemplate={selectedTemplate}
+        senderEmail={senderEmail}
+        setSelectedTemplate={setSelectedTemplate}
+        currentTemplate={currentTemplate}
+        sanitizedHtml={sanitizedHtml}
+        hydratedSubject={hydratedSubject}
+        missingVariables={missingVariables}
+        renderError={renderError}
+        sortedAtRiskUsers={sortedAtRiskUsers}
+        selectedUsers={selectedUsers}
+        allSelected={allSelected}
+        toggleUser={toggleUser}
+        toggleAll={toggleAll}
+        isProTier={isProTier}
+        restrictionMessage={restrictionMessage}
+        surfaceBorder={surfaceBorder}
+        surfaceShadow={surfaceShadow}
+      />
 
       {/* ── Action Footer ── */}
       <div
@@ -458,7 +292,12 @@ export default function CampaignsClient({
         }}
       >
         <div style={{ fontSize: 13, fontWeight: 600, color: C.navySoft, display: "flex", alignItems: "center", gap: 10 }}>
-          {!senderEmail ? (
+          {!isProTier ? (
+            <>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.blue }} />
+              <span style={{ color: C.blueMid }}>Upgrade to Pro to execute recovery campaigns.</span>
+            </>
+          ) : !senderEmail ? (
             <>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.amber }} />
               <span style={{ color: "#92400E" }}>Action Required: Set up sender email to unlock dispatch.</span>
@@ -480,35 +319,35 @@ export default function CampaignsClient({
         </div>
 
         <button
-          disabled={!senderEmail || !selectedTemplate || selectedUsers.size === 0 || isSending}
+          disabled={!isProTier || !senderEmail || !selectedTemplate || selectedUsers.size === 0 || isSending}
           onClick={handleSendCampaign}
           style={{
             height: 36,
             padding: "0 20px",
             background:
-              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+              !isProTier || !senderEmail || selectedUsers.size === 0 || !selectedTemplate
                 ? C.offWhite
                 : C.navy,
             color:
-              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+              !isProTier || !senderEmail || selectedUsers.size === 0 || !selectedTemplate
                 ? C.faint
                 : C.white,
             border:
-              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+              !isProTier || !senderEmail || selectedUsers.size === 0 || !selectedTemplate
                 ? surfaceBorder
                 : "none",
             borderRadius: 6,
             fontSize: 13,
             fontWeight: 600,
             cursor:
-              !senderEmail || !selectedTemplate || selectedUsers.size === 0 || isSending
+              !isProTier || !senderEmail || !selectedTemplate || selectedUsers.size === 0 || isSending
                 ? "not-allowed"
                 : "pointer",
             display: "flex",
             alignItems: "center",
             gap: 8,
             boxShadow:
-              !senderEmail || selectedUsers.size === 0 || !selectedTemplate
+              !isProTier || !senderEmail || selectedUsers.size === 0 || !selectedTemplate
                 ? "none"
                 : surfaceShadow,
           }}

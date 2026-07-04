@@ -15,9 +15,14 @@ export function useCampaigns({
   atRiskUsers,
   emailTemplates,
   initialSenderEmail,
+  isProTier = true,
+  restrictionMessage,
 }: CampaignsClientProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const upgradeMessage =
+    restrictionMessage ??
+    "Upgrade to Pro to unlock customer lists, campaign sending, and custom templates.";
 
   // High-level App State
   const [senderEmail, setSenderEmail] = useState<string | null>(
@@ -46,8 +51,9 @@ export function useCampaigns({
 
   // Memoized derived states
   const sortedAtRiskUsers = useMemo(() => {
+    if (!isProTier) return [];
     return [...atRiskUsers].sort((a, b) => b.riskScore - a.riskScore);
-  }, [atRiskUsers]);
+  }, [atRiskUsers, isProTier]);
 
   const userIds = useMemo(
     () => sortedAtRiskUsers.map((u) => u.id),
@@ -69,6 +75,15 @@ export function useCampaigns({
   const handleSaveSenderEmail = async () => {
     // Guard against duplicate submissions while state is settling
     if (isSavingSender) return;
+
+    if (!isProTier) {
+      toast({
+        title: "Pro Plan Required",
+        description: upgradeMessage,
+        variant: "destructive",
+      });
+      return;
+    }
 
     const trimmedInput = senderInput.trim();
     if (!SENDER_EMAIL_REGEX.test(trimmedInput)) {
@@ -123,24 +138,35 @@ export function useCampaigns({
   );
 
   const toggleUser = useCallback((userId: string) => {
+    if (!isProTier) return;
     setSelectedUsers((prev) => {
       const next = new Set(prev);
       if (next.has(userId)) next.delete(userId);
       else next.add(userId);
       return next;
     });
-  }, []);
+  }, [isProTier]);
 
   const toggleAll = useCallback(() => {
+    if (!isProTier) return;
     setSelectedUsers((prev) => {
       if (allSelected) return new Set();
       return new Set(userIds);
     });
-  }, [allSelected, userIds]);
+  }, [allSelected, isProTier, userIds]);
 
   const handleSendCampaign = async () => {
     // Guard against duplicate submissions while state is settling
     if (isSending) return;
+
+    if (!isProTier) {
+      toast({
+        title: "Pro Plan Required",
+        description: upgradeMessage,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Hard architectural block: NEVER dispatch without sender email configured
     if (!senderEmail || !selectedTemplate || selectedUsers.size === 0) return;
@@ -249,6 +275,8 @@ export function useCampaigns({
     isSending,
     senderInput,
     isSavingSender,
+    isProTier,
+    restrictionMessage: upgradeMessage,
     // Derived
     sortedAtRiskUsers,
     userIds,
