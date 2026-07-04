@@ -3,6 +3,8 @@
  * Aligned with Arcli Engineering Constitution v3.0 (Rule 6: Security & Rule 15: Email Standards)
  */
 
+import { TEMPLATE_CATALOG } from "./render-template";
+
 /**
  * Centralized regex pattern for template interpolation: {{ variable_name }}
  * Stored as a raw string pattern to allow generating stateless RegExp instances,
@@ -106,7 +108,11 @@ export function getMissingVariables<TContext extends Record<string, unknown>>(
 
   return missing;
 }
+export type TemplateKey = keyof typeof TEMPLATE_CATALOG;
 
+export function isTemplateKey(key: string): key is TemplateKey {
+  return key in TEMPLATE_CATALOG;
+}
 /**
  * @internal Unsafe raw template engine.
  * Applications should prefer `renderRecoveryTemplate()` from `./template-catalog`
