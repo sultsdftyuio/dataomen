@@ -1,15 +1,27 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import { TemplateSaveSchema, TemplateSavePayload } from "@/lib/schemas/template";
+import { TemplateSaveSchema, TemplateSaveInput } from "@/lib/schemas/template";
 import { revalidatePath } from "next/cache";
+
+export interface NormalizedTemplateRecord {
+  id: string;
+  tenant_id: string;
+  name: string;
+  subject: string;
+  type: string;
+  is_active: boolean;
+  updated_at: string;
+}
 
 /**
  * ARCLI RECOVERY INTELLIGENCE LAYER — TEMPLATE MANAGEMENT ACTION
  * Aligned with Arcli Engineering Constitution v3.0
  * Authoritative Table: public.email_templates
  */
-export async function saveRecoveryTemplate(payload: TemplateSavePayload) {
+export async function saveRecoveryTemplate(
+  payload: TemplateSaveInput
+): Promise<{ success: boolean; template?: NormalizedTemplateRecord }> {
   const supabase = await createClient();
 
   // --------------------------------------------------------------------------
@@ -48,13 +60,18 @@ export async function saveRecoveryTemplate(payload: TemplateSavePayload) {
   // --------------------------------------------------------------------------
   // STEP 3: Zero-Trust Tenant & Role Verification (Rule 6 Defense-in-Depth)
   // Never blindly trust a client-supplied tenant_id. Verify against membership.
+  // Derive active workspace directly from membership if client omitted it.
   // --------------------------------------------------------------------------
-  const { data: membership, error: memberError } = await supabase
+  let membershipQuery = supabase
     .from("tenant_users")
     .select("tenant_id, role")
-    .eq("tenant_id", requestedTenantId)
-    .eq("user_id", user.id)
-    .single();
+    .eq("user_id", user.id);
+
+  if (requestedTenantId) {
+    membershipQuery = membershipQuery.eq("tenant_id", requestedTenantId);
+  }
+
+  const { data: membership, error: memberError } = await membershipQuery.limit(1).single();
 
   if (memberError || !membership) {
     // Sanitized error to prevent tenant enumeration (Feedback #9)
@@ -62,15 +79,15 @@ export async function saveRecoveryTemplate(payload: TemplateSavePayload) {
   }
 
   // Authorize based on explicit workspace roles (Feedback #2)
-  const normalizedRole = membership.role?.toLowerCase() || "";
+  const normalizedRole = String(membership.role || "").toLowerCase();
   const allowedRoles = ["owner", "admin", "member"];
-  
+
   if (!allowedRoles.includes(normalizedRole)) {
     throw new Error("Forbidden: Insufficient permissions to modify recovery templates.");
   }
 
   // Authoritative server-verified tenant ID
-  const verifiedTenantId = membership.tenant_id;
+  const verifiedTenantId = String(membership.tenant_id);
 
   // --------------------------------------------------------------------------
   // STEP 4: Authoritative Database Upsert (Rule 11 & Feedback #3)
@@ -88,7 +105,7 @@ export async function saveRecoveryTemplate(payload: TemplateSavePayload) {
     updated_at: new Date().toISOString(),
   };
 
-  const { data: template, error: saveError } = await supabase
+  const { data: rawTemplate, error: saveError } = await supabase
     .from("email_templates")
     .upsert(upsertPayload, {
       // Targets primary key; RLS simultaneously verifies workspace boundary (Feedback #6)
@@ -97,24 +114,38 @@ export async function saveRecoveryTemplate(payload: TemplateSavePayload) {
     .select("id, tenant_id, name, subject, type, is_active, updated_at")
     .single();
 
-  if (saveError) {
+  if (saveError || !rawTemplate) {
     // Structured observability logging for operators (Rule 17 & Feedback #5)
     console.error("[saveRecoveryTemplate] Database write failure", {
       tenantId: verifiedTenantId,
       userId: user.id,
       templateId: id || "new_insert",
-      errorCode: saveError.code,
-      errorMessage: saveError.message,
+      errorCode: saveError?.code,
+      errorMessage: saveError?.message,
     });
 
     throw new Error("Failed to save recovery template. Please try again or contact support.");
   }
 
   // --------------------------------------------------------------------------
-  // STEP 5: Cache Invalidation (Feedback #7)
+  // STEP 5: Strict Type Normalization (Resolves Supabase Json/Nullable Errors)
+  // --------------------------------------------------------------------------
+  const record = rawTemplate as Record<string, unknown>;
+  const normalizedTemplate: NormalizedTemplateRecord = {
+    id: String(record.id || ""),
+    tenant_id: String(record.tenant_id || verifiedTenantId),
+    name: String(record.name || name),
+    subject: String(record.subject || subject),
+    type: String(record.type || type),
+    is_active: Boolean(record.is_active ?? true),
+    updated_at: String(record.updated_at || new Date().toISOString()),
+  };
+
+  // --------------------------------------------------------------------------
+  // STEP 6: Cache Invalidation (Feedback #7)
   // --------------------------------------------------------------------------
   revalidatePath("/dashboard/campaigns");
   revalidatePath("/dashboard/campaigns/templates");
 
-  return { success: true, template };
+  return { success: true, template: normalizedTemplate };
 }

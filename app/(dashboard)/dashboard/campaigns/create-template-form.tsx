@@ -55,15 +55,14 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
 
     try {
       // 1. Invoke authoritative Server Action
-      // Note: Using schema-satisfying zero UUID while server schema requires UUID format.
-      // Server auth boundary safely derives and overrides this with the authenticated session tenant_id.
+      // Clean contract: tenant_id omitted cleanly; server enforces boundary via session auth.
+      // body_text omitted cleanly; server auto-derives plain text from HTML.
       const result = await saveRecoveryTemplate({
-        tenant_id: "00000000-0000-0000-0000-000000000000",
         name,
         subject,
         type: "recovery",
         body_html: html,
-        body_text: undefined, // Omitted cleanly; server auto-derives plain text from HTML
+        body_text: undefined,
         is_active: true,
       });
 
@@ -97,9 +96,8 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
   };
 
   return (
-    <form onSubmit={handleCreateTemplate} className="font-sans">
+    <form onSubmit={handleCreateTemplate} aria-busy={isCreating} className="font-sans">
       <div className="px-5 py-5 space-y-4 bg-white max-h-[70vh] overflow-y-auto">
-        
         <div className="space-y-1.5">
           <Label htmlFor="tpl-name" className="text-[11px] font-bold uppercase tracking-[0.05em] text-slate-500">
             Template Name
@@ -148,7 +146,6 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
             required
           />
         </div>
-
       </div>
 
       <DialogFooter className="px-5 py-3.5 border-t border-black/[0.08] bg-[#FAFAFA]">
@@ -164,6 +161,7 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
         <Button
           type="submit"
           disabled={isCreating || !isValid}
+          aria-busy={isCreating}
           className="h-8 px-4 min-w-[120px] text-[13px] font-bold bg-[#0B1120] hover:bg-slate-800 text-white shadow-[0_2px_4px_rgba(0,0,0,0.12)] transition-all"
         >
           {isCreating ? (

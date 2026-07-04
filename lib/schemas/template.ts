@@ -33,10 +33,12 @@ export const TemplateSaveSchema = z
       .uuid("Invalid template ID format.")
       .optional(),
 
-    // Rule 6: Mandatory Tenant Isolation
+    // Rule 6: Optional in input payload so UI doesn't need placeholder UUIDs.
+    // Server action enforces and overwrites this securely from session auth.
     tenant_id: z
       .string()
-      .uuid("A valid tenant UUID is strictly required."),
+      .uuid("Invalid tenant UUID format.")
+      .optional(),
 
     name: z
       .string()
@@ -97,5 +99,7 @@ export const TemplateSaveSchema = z
             .trim(),
   }));
 
-export type TemplateSavePayload = z.infer<typeof TemplateSaveSchema>;
+// Input represents pre-transform payload (allows undefined body_text & tenant_id from UI forms)
 export type TemplateSaveInput = z.input<typeof TemplateSaveSchema>;
+// Payload represents post-transform payload (guarantees non-nullable derived fields after Zod validation)
+export type TemplateSavePayload = z.infer<typeof TemplateSaveSchema>;
