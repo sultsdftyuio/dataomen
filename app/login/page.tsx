@@ -229,7 +229,7 @@ function LoginForm() {
         <p className="text-center mt-8 text-sm" style={{ color: C.muted }}>
           Don't have an account?{' '}
           <Link href="/register" style={{ color: C.blue, fontWeight: 700 }} className="hover:underline">
-            Start free trial
+            Start Free Access
           </Link>
         </p>
 

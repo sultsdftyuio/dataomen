@@ -1,64 +1,77 @@
-import { createClient } from "@/utils/supabase/server";
+import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
 import UpgradeButton from "@/components/ui/UpgradeButton";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export async function WorkspaceHeader() {
-  const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const tenantResult = await resolveTenantContext();
 
-  if (authError || !user) return null;
+  if ("response" in tenantResult) {
+    return null;
+  }
 
-  // Step 1: Rule 6 - Explicitly fetch the tenant mapping first to guarantee tenant isolation
-  const { data: tenantMapping, error: mapError } = await supabase
-    .from("tenant_users")
-    .select("tenant_id")
-    .eq("user_id", user.id)
-    .single();
+  const { supabase, tenantId } = tenantResult.context;
+  const [workspaceResult, entitlements] = await Promise.all([
+    supabase
+      .from("tenants")
+      .select("display_name, name")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+    getWorkspaceEntitlements(supabase, tenantId),
+  ]);
 
-  if (mapError || !tenantMapping?.tenant_id) return null;
-
-  // Step 2: Fetch the exact workspace state using strictly typed schema columns
-  const { data: workspace, error: workspaceError } = await supabase
-    .from("tenants")
-    .select("display_name, plan, status, created_at")
-    .eq("tenant_id", tenantMapping.tenant_id)
-    .single();
-
-  if (workspaceError || !workspace) return null;
-
-  const isTrial = workspace.plan === "free_trial" || workspace.plan === "trial";
-  
-  // Calculate remaining trial days safely (assuming standard 14-day trial window from created_at)
-  const trialDurationDays = 14;
-  const createdAtTime = workspace.created_at ? new Date(workspace.created_at).getTime() : Date.now();
-  const trialEndsAt = createdAtTime + trialDurationDays * 24 * 60 * 60 * 1000;
-  const daysRemaining = Math.max(0, Math.ceil((trialEndsAt - Date.now()) / (1000 * 60 * 60 * 24)));
+  const workspaceName =
+    workspaceResult.data?.display_name ??
+    workspaceResult.data?.name ??
+    "Workspace";
+  const isPro = entitlements.isPro;
+  const isTrial = entitlements.isTrialing;
+  const isPastDue =
+    entitlements.planTier === "pro" &&
+    entitlements.subscriptionStatus === "past_due";
+  const badgeClassName = isPro
+    ? isTrial
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : isPastDue
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+    : "border-slate-200 bg-slate-100 text-slate-700";
+  const statusText = isTrial ? "3-day Pro Trial" : entitlements.billingLabel;
 
   return (
-    <header className="flex items-center justify-between border-b px-6 py-4 bg-background">
-      <div className="flex items-center space-x-3">
-        <h1 className="text-lg font-semibold">{workspace.display_name || "Workspace"}</h1>
-        
-        {/* Render Pro Badge if active subscription */}
-        {!isTrial && workspace.status === "active" && (
-          <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white font-medium px-2.5 py-0.5">
-            Pro Tier ✨
-          </Badge>
+    <section className="border-b border-slate-200 bg-white">
+      <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="truncate text-sm font-semibold text-slate-900">
+              {workspaceName}
+            </h1>
+            <Badge variant="outline" className={badgeClassName}>
+              {statusText}
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {entitlements.billingDescription}
+          </p>
+        </div>
+
+        {!isPro && !isPastDue && (
+          <div className="shrink-0">
+            <UpgradeButton className="bg-blue-600 hover:bg-blue-700 focus-visible:outline-blue-600" />
+          </div>
+        )}
+
+        {isPastDue && (
+          <Link
+            href="/settings"
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+          >
+            Update Billing
+          </Link>
         )}
       </div>
-
-      {/* Render Trial Warning & Upgrade Action if on Free Trial */}
-      {isTrial && (
-        <div className="flex items-center space-x-4 bg-amber-500/10 border border-amber-500/20 px-4 py-1.5 rounded-lg">
-          <div className="text-sm">
-            <span className="font-semibold text-amber-600 dark:text-amber-400">Free Trial</span>
-            <span className="text-muted-foreground ml-1">
-              — {daysRemaining} {daysRemaining === 1 ? "day" : "days"} left
-            </span>
-          </div>
-          <UpgradeButton productId={process.env.NEXT_PUBLIC_PRO_PLAN_ID} />
-        </div>
-      )}
-    </header>
+    </section>
   );
 }

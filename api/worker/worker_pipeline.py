@@ -3,7 +3,7 @@
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Generator, List, Optional
 
 from api.database import get_supabase_client
@@ -42,7 +42,12 @@ def process_subscription_upgrade(tenant_id: str, new_plan_id: str, transaction_i
         #    internal 'pro' tier to satisfy the CHECK constraint on plan_tier.
         response = supabase.table("tenants").update({
             "plan_tier": "pro",
-            "subscription_status": "active"
+            "subscription_status": "trialing",
+            "billing_status": "trialing",
+            "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=3)).isoformat(),
+            "dodo_subscription_id": transaction_id,
+            "plan": "pro",
+            "status": "active",
         }).eq("tenant_id", tenant_id).execute()
         
         if not response.data:

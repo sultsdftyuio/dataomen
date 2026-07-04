@@ -2,17 +2,8 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
+import { getWorkspaceEntitlements, PRO_TRIAL_DAYS } from "@/lib/entitlements";
 import { DodoPayments } from "dodopayments";
-
-/**
- * Helper function to evaluate if a workspace is actively entitled to Pro features.
- * Prevents treating canceled or past_due workspaces as active if their plan field remains "pro".
- */
-function isSubscriptionActive(status?: string | null, plan?: string | null): boolean {
-  if (!status) return false;
-  const activeStatuses = ["active", "trialing"];
-  return activeStatuses.includes(status.toLowerCase()) && plan?.toLowerCase() === "pro";
-}
 
 /**
  * 1. Environment-Aware SDK Initialization (Rule 11: Determinism & Rule 17: Observability)
@@ -81,22 +72,9 @@ export async function upgradeToProPlan() {
   const tenantId = tenantMembership.tenant_id;
 
   // 5. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
-  const { data: currentTenant, error: tenantLookupError } = await supabase
-    .from("tenants")
-    .select("tenant_id, status, plan")
-    .eq("tenant_id", tenantId)
-    .maybeSingle();
+  const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
 
-  if (tenantLookupError) {
-    console.error("[Billing] Tenant subscription verification failed", {
-      event: "subscription_lookup_error",
-      tenant_id: tenantId,
-      error: tenantLookupError,
-    });
-    throw new Error("Unable to verify current subscription status.");
-  }
-
-  if (currentTenant && isSubscriptionActive(currentTenant.status, currentTenant.plan)) {
+  if (entitlements.isPro) {
     console.info("[Billing] Prevented duplicate checkout attempt", {
       event: "duplicate_checkout_prevented",
       tenant_id: tenantId,
@@ -114,6 +92,7 @@ export async function upgradeToProPlan() {
           quantity: 1,
         },
       ],
+      allowed_payment_method_types: ["credit", "debit"],
       customer: {
         email: user.email,
       },
@@ -121,7 +100,10 @@ export async function upgradeToProPlan() {
         tenant_id: tenantId, // Mandatory: deterministic routing for asynchronous webhooks (Rule 14)
         user_id: user.id,
       },
-      return_url: `${siteUrl}/dashboard?billing=success`,
+      subscription_data: {
+        trial_period_days: PRO_TRIAL_DAYS,
+      },
+      return_url: `${siteUrl}/dashboard?billing=trial_started`,
     });
 
     if (!session || !session.checkout_url) {
@@ -179,10 +161,9 @@ export async function manageBillingPortal() {
   }
 
   // 2. Deterministic Tenant & Billing Profile Resolution (Rule 11)
-  // Fully type-safe select query without runtime type casting.
   const { data: tenant, error: tenantError } = await supabase
     .from("tenants")
-    .select("tenant_id, status, plan, dodo_customer_id")
+    .select("tenant_id, dodo_customer_id")
     .eq("tenant_id", membership.tenant_id)
     .single();
 
@@ -195,11 +176,16 @@ export async function manageBillingPortal() {
     throw new Error("Unable to resolve workspace billing status.");
   }
 
-  if (!isSubscriptionActive(tenant.status, tenant.plan)) {
+  const entitlements = await getWorkspaceEntitlements(supabase, membership.tenant_id);
+
+  const canManageBilling =
+    entitlements.planTier === "pro" &&
+    ["active", "trialing", "past_due"].includes(entitlements.subscriptionStatus ?? "");
+
+  if (!canManageBilling) {
     throw new Error("No active subscription found to manage.");
   }
 
-  // Fully typed access directly verified by the TypeScript compiler
   const customerId = tenant.dodo_customer_id;
 
   if (!customerId) {

@@ -98,10 +98,16 @@ ON CONFLICT (tenant_id) DO NOTHING;
 
 -- Explicit billing customer tracking on core tenant boundary
 ALTER TABLE public.tenants 
-ADD COLUMN IF NOT EXISTS dodo_customer_id text;
+ADD COLUMN IF NOT EXISTS dodo_customer_id text,
+ADD COLUMN IF NOT EXISTS dodo_subscription_id text,
+ADD COLUMN IF NOT EXISTS current_period_end timestamptz,
+ADD COLUMN IF NOT EXISTS billing_status text;
 
 CREATE INDEX IF NOT EXISTS idx_tenants_dodo_customer_id 
 ON public.tenants(dodo_customer_id);
+
+CREATE INDEX IF NOT EXISTS idx_tenants_dodo_subscription_id
+ON public.tenants(dodo_subscription_id);
 
 
 -- ----------------------------------------------------------------------------

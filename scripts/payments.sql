@@ -11,12 +11,17 @@
 -- Platform Billing State (Arcli's relationship with the Tenant)
 DO $$ BEGIN
     CREATE TYPE platform_billing_state AS ENUM (
+        'free',
         'trialing', 
         'active', 
         'past_due', 
         'canceled', 
         'incomplete'
     );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    ALTER TYPE platform_billing_state ADD VALUE IF NOT EXISTS 'free';
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Ingested Subscription State (Tenant's relationship with their SaaS Customer)
@@ -51,10 +56,14 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- Safely add billing columns to the existing tenants table
 ALTER TABLE public.tenants
-    ADD COLUMN IF NOT EXISTS billing_status platform_billing_state DEFAULT 'trialing',
+    ADD COLUMN IF NOT EXISTS billing_status platform_billing_state DEFAULT 'free',
     ADD COLUMN IF NOT EXISTS provider_subscription_id TEXT UNIQUE,
+    ADD COLUMN IF NOT EXISTS dodo_customer_id TEXT,
+    ADD COLUMN IF NOT EXISTS dodo_subscription_id TEXT,
     ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;
+
+ALTER TABLE public.tenants ALTER COLUMN billing_status SET DEFAULT 'free';
 
 
 -- ============================================================================

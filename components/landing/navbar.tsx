@@ -142,7 +142,7 @@ export function Navbar() {
               (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 6px 14px rgba(27,110,191,0.22)";
             }}
           >
-            Start Free Trial
+            Start Free Access
           </Link>
         </div>
       </div>

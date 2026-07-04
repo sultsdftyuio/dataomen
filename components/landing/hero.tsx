@@ -16,16 +16,13 @@ export function Hero() {
         paddingBottom: 112,
         background: "linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%)",
         position: "relative",
-        overflow: "hidden"
+        overflow: "hidden",
       }}
     >
-      {/* Subtle atmosphere accents */}
       <div style={{ position: "absolute", top: "10%", left: "5%", width: 360, height: 360, background: "rgba(59,154,232,0.16)", borderRadius: "50%", filter: "blur(80px)", opacity: 0.7, zIndex: 0 }} />
       <div style={{ position: "absolute", top: "30%", right: "-5%", width: 440, height: 440, background: "rgba(99,91,255,0.12)", borderRadius: "50%", filter: "blur(100px)", opacity: 0.7, zIndex: 0 }} />
 
       <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 24px", position: "relative", zIndex: 1 }}>
-
-        {/* ── Headline Block ── */}
         <div
           style={{ textAlign: "center", marginBottom: 36 }}
           className={`fu ${vis ? "vis" : ""}`}
@@ -40,7 +37,7 @@ export function Hero() {
               lineHeight: 1.04,
               letterSpacing: "-0.02em",
               maxWidth: 860,
-              margin: "0 auto 20px"
+              margin: "0 auto 20px",
             }}
           >
             Autonomous<br />
@@ -48,9 +45,9 @@ export function Hero() {
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-              Stop reacting to cancellations. Start preventing them. Track your product data to automatically detect explicit churn signals, score user inactivity, and trigger explainable retention workflows.          </p>
+            Stop reacting to cancellations. Start preventing them. Track your product data to automatically detect explicit churn signals, score user inactivity, and trigger explainable retention workflows.
+          </p>
 
-          {/* CTAs */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
             <a
               href="/register"
@@ -71,19 +68,17 @@ export function Hero() {
                 gap: 8,
                 textDecoration: "none",
                 whiteSpace: "nowrap",
-                letterSpacing: "0.02em"
+                letterSpacing: "0.02em",
               }}
             >
-              Start Free Trial <ArrowRight size={16} />
+              Start Free Access <ArrowRight size={16} />
             </a>
           </div>
 
-          {/* Social nudge */}
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", marginTop: 0, fontSize: 12, color: C.faint, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            3-day free trial · No credit card · Easy setup
+            Free Access included / 3-day Pro trial with card / $29/month after trial
           </p>
         </div>
-
       </div>
     </section>
   );

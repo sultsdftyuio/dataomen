@@ -8,6 +8,7 @@ import {
   Send
 } from "lucide-react";
 import Logo from "@/components/ui/logo";
+import { WorkspaceHeader } from "@/components/dashboard/WorkspaceHeader";
 
 export default function DashboardLayout({
   children,
@@ -66,6 +67,8 @@ export default function DashboardLayout({
       </header>
 
       {/* ── Expanded Data-Density Focus Area ── */}
+      <WorkspaceHeader />
+
       <main className="flex-1 w-full flex flex-col mx-auto p-4 sm:p-6 lg:p-8 animate-in fade-in duration-500">
         {children}
       </main>

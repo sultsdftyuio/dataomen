@@ -324,38 +324,67 @@ ON recovery_emails (tenant_id, user_id, created_at DESC);
 ALTER TABLE tenants 
 ADD COLUMN IF NOT EXISTS plan_tier VARCHAR(50),
 ADD COLUMN IF NOT EXISTS subscription_status VARCHAR(50),
-ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
+ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS billing_status VARCHAR(50),
+ADD COLUMN IF NOT EXISTS dodo_customer_id TEXT,
+ADD COLUMN IF NOT EXISTS dodo_subscription_id TEXT,
+ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;
 
--- Backfill any existing NULLs so the subsequent NOT NULL won't fail
-UPDATE tenants SET plan_tier = COALESCE(plan_tier, 'free_trial') WHERE plan_tier IS NULL;
-UPDATE tenants SET subscription_status = COALESCE(subscription_status, 'trialing') WHERE subscription_status IS NULL;
-UPDATE tenants SET trial_ends_at = COALESCE(trial_ends_at, NOW() + INTERVAL '14 days') WHERE trial_ends_at IS NULL;
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'platform_billing_state') THEN
+        ALTER TYPE platform_billing_state ADD VALUE IF NOT EXISTS 'free';
+    END IF;
+END $$;
 
--- Set defaults and NOT NULL
-ALTER TABLE tenants ALTER COLUMN plan_tier SET DEFAULT 'free_trial';
-ALTER TABLE tenants ALTER COLUMN subscription_status SET DEFAULT 'trialing';
-ALTER TABLE tenants ALTER COLUMN trial_ends_at SET DEFAULT (NOW() + INTERVAL '14 days');
+-- Backfill legacy free_trial rows to restricted Free Access.
+-- Pro entitlement is only granted after a verified Dodo subscription webhook.
+UPDATE tenants
+SET plan_tier = CASE
+    WHEN LOWER(COALESCE(plan_tier, plan, '')) = 'pro' THEN 'pro'
+    ELSE 'free'
+END
+WHERE plan_tier IS NULL OR plan_tier = 'free_trial';
+
+UPDATE tenants
+SET subscription_status = CASE
+    WHEN plan_tier = 'pro' THEN COALESCE(NULLIF(subscription_status, ''), 'active')
+    ELSE 'free'
+END
+WHERE subscription_status IS NULL
+   OR subscription_status = ''
+   OR (plan_tier <> 'pro' AND subscription_status <> 'free');
+
+UPDATE tenants SET trial_ends_at = NULL WHERE plan_tier <> 'pro';
+UPDATE tenants SET billing_status = 'free'
+WHERE billing_status IS NULL AND plan_tier <> 'pro';
+UPDATE tenants SET billing_status = 'trialing'
+WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status = 'trialing';
+UPDATE tenants SET billing_status = 'active'
+WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status = 'active';
+UPDATE tenants SET billing_status = 'past_due'
+WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status = 'past_due';
+UPDATE tenants SET billing_status = 'canceled'
+WHERE billing_status IS NULL;
+
+-- Set defaults and NOT NULL. The Pro trial clock starts via Dodo, not at signup.
+ALTER TABLE tenants ALTER COLUMN plan_tier SET DEFAULT 'free';
+ALTER TABLE tenants ALTER COLUMN subscription_status SET DEFAULT 'free';
+ALTER TABLE tenants ALTER COLUMN trial_ends_at DROP DEFAULT;
+ALTER TABLE tenants ALTER COLUMN billing_status SET DEFAULT 'free';
 ALTER TABLE tenants ALTER COLUMN plan_tier SET NOT NULL;
 ALTER TABLE tenants ALTER COLUMN subscription_status SET NOT NULL;
 
--- Add CHECK constraints idempotently
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE table_name = 'tenants' 
-          AND constraint_name = 'tenants_plan_tier_check'
-    ) THEN
-        ALTER TABLE tenants ADD CONSTRAINT tenants_plan_tier_check 
-        CHECK (plan_tier IN ('free_trial', 'pro'));
-    END IF;
+-- Recreate CHECK constraints so old 14-day/free_trial defaults do not survive.
+ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_plan_tier_check;
+ALTER TABLE tenants ADD CONSTRAINT tenants_plan_tier_check
+CHECK (plan_tier IN ('free', 'free_trial', 'pro'));
 
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints 
-        WHERE table_name = 'tenants' 
-          AND constraint_name = 'tenants_subscription_status_check'
-    ) THEN
-        ALTER TABLE tenants ADD CONSTRAINT tenants_subscription_status_check 
-        CHECK (subscription_status IN ('trialing', 'active', 'past_due', 'canceled'));
-    END IF;
-END $$;
+ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_subscription_status_check;
+ALTER TABLE tenants ADD CONSTRAINT tenants_subscription_status_check
+CHECK (subscription_status IN ('free', 'trialing', 'active', 'past_due', 'canceled', 'cancelled'));
+
+CREATE INDEX IF NOT EXISTS idx_tenants_dodo_customer_id
+ON tenants(dodo_customer_id);
+
+CREATE INDEX IF NOT EXISTS idx_tenants_dodo_subscription_id
+ON tenants(dodo_subscription_id);

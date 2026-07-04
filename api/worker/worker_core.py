@@ -12,7 +12,7 @@ import logging
 import os
 import time
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import dramatiq
@@ -289,6 +289,81 @@ def _format_postgrest_value(value: Any) -> str:
 # ---------------------------------------------------------------------------
 # DODO WEBHOOK HANDLER
 # ---------------------------------------------------------------------------
+DODO_PRO_TRIAL_DAYS = int(os.getenv("DODO_PRO_TRIAL_DAYS", "3"))
+
+
+def _dodo_record(value: Any) -> Dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _dodo_string(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return None
+
+
+def _dodo_customer_id(data: Dict[str, Any]) -> Optional[str]:
+    customer = _dodo_record(data.get("customer"))
+    return (
+        _dodo_string(data.get("customer_id"))
+        or _dodo_string(customer.get("customer_id"))
+        or _dodo_string(customer.get("id"))
+    )
+
+
+def _dodo_subscription_id(data: Dict[str, Any]) -> Optional[str]:
+    subscription = _dodo_record(data.get("subscription"))
+    return (
+        _dodo_string(data.get("subscription_id"))
+        or _dodo_string(data.get("id"))
+        or _dodo_string(subscription.get("subscription_id"))
+        or _dodo_string(subscription.get("id"))
+    )
+
+
+def _dodo_current_period_end(data: Dict[str, Any]) -> Optional[str]:
+    return (
+        _dodo_string(data.get("current_period_end"))
+        or _dodo_string(data.get("next_billing_date"))
+        or _dodo_string(data.get("renews_at"))
+        or _dodo_string(data.get("expires_at"))
+    )
+
+
+def _dodo_trial_ends_at(
+    event_type: str,
+    data: Dict[str, Any],
+    timestamp: Optional[str],
+) -> Optional[str]:
+    explicit_end = (
+        _dodo_string(data.get("trial_ends_at"))
+        or _dodo_string(data.get("trial_end"))
+        or _dodo_string(data.get("trial_end_at"))
+        or _dodo_string(data.get("trial_expires_at"))
+    )
+    if explicit_end:
+        return explicit_end
+
+    trial_days = data.get("trial_period_days")
+    has_trial = isinstance(trial_days, (int, float)) and trial_days > 0
+    if not has_trial and event_type != "subscription.active":
+        return None
+
+    start_value = _dodo_string(data.get("created_at")) or _dodo_string(timestamp)
+    try:
+        start = (
+            datetime.fromisoformat(start_value.replace("Z", "+00:00"))
+            if start_value
+            else datetime.now(timezone.utc)
+        )
+    except ValueError:
+        start = datetime.now(timezone.utc)
+
+    duration = int(trial_days) if has_trial else DODO_PRO_TRIAL_DAYS
+    return (start + timedelta(days=duration)).isoformat()
+
+
 @dramatiq.actor(max_retries=3, time_limit=30000)
 def process_dodo_webhook(webhook_id: str) -> None:
     with SessionLocal() as db:
@@ -308,46 +383,105 @@ def process_dodo_webhook(webhook_id: str) -> None:
             tenant_id = event["tenant_id"]
             payload = event["payload"]
             event_type = payload.get("type")
-            data = payload.get("data", {})
+            data = _dodo_record(payload.get("data"))
+            customer_id = _dodo_customer_id(data)
+            subscription_id = _dodo_subscription_id(data)
+            current_period_end = _dodo_current_period_end(data)
 
-            # 1. New Subscription or Successful Renewal
-            if event_type in ["subscription.active", "subscription.renewed"]:
+            # 1. New Pro trial activation
+            if event_type == "subscription.active":
                 db.execute(
                     text("""
                         UPDATE tenants
-                        SET billing_status = 'active',
-                            dodo_customer_id = :customer_id,
-                            dodo_subscription_id = :subscription_id,
-                            current_period_end = :current_period_end
-                        WHERE id = :tenant_id
+                        SET billing_status = 'trialing',
+                            plan_tier = 'pro',
+                            subscription_status = 'trialing',
+                            trial_ends_at = :trial_ends_at,
+                            dodo_customer_id = COALESCE(:customer_id, dodo_customer_id),
+                            dodo_subscription_id = COALESCE(:subscription_id, dodo_subscription_id),
+                            current_period_end = COALESCE(:current_period_end, current_period_end),
+                            plan = 'pro',
+                            status = 'active',
+                            updated_at = NOW()
+                        WHERE tenant_id = :tenant_id
                     """),
                     {
-                        "customer_id": data.get("customer_id"),
-                        "subscription_id": data.get("subscription_id"),
-                        "current_period_end": data.get("current_period_end"),
+                        "customer_id": customer_id,
+                        "subscription_id": subscription_id,
+                        "current_period_end": current_period_end,
+                        "trial_ends_at": _dodo_trial_ends_at(
+                            event_type,
+                            data,
+                            _dodo_string(payload.get("timestamp")),
+                        ),
                         "tenant_id": tenant_id,
                     },
                 )
 
-            # 2. Payment Failure (Grace Period Logic)
-            elif event_type == "subscription.payment_failed":
+            # 2. Successful renewal after the trial or later billing cycle
+            elif event_type == "subscription.renewed":
                 db.execute(
                     text("""
                         UPDATE tenants
-                        SET billing_status = 'past_due'
-                        WHERE id = :tenant_id
+                        SET billing_status = 'active',
+                            plan_tier = 'pro',
+                            subscription_status = 'active',
+                            trial_ends_at = NULL,
+                            dodo_customer_id = COALESCE(:customer_id, dodo_customer_id),
+                            dodo_subscription_id = COALESCE(:subscription_id, dodo_subscription_id),
+                            current_period_end = COALESCE(:current_period_end, current_period_end),
+                            plan = 'pro',
+                            status = 'active',
+                            updated_at = NOW()
+                        WHERE tenant_id = :tenant_id
+                    """),
+                    {
+                        "customer_id": customer_id,
+                        "subscription_id": subscription_id,
+                        "current_period_end": current_period_end,
+                        "tenant_id": tenant_id,
+                    },
+                )
+
+            # 3. Payment Failure (Grace Period Logic)
+            elif event_type in [
+                "subscription.payment_failed",
+                "subscription.failed",
+                "subscription.on_hold",
+                "subscription.paused",
+            ]:
+                db.execute(
+                    text("""
+                        UPDATE tenants
+                        SET billing_status = 'past_due',
+                            plan_tier = 'pro',
+                            subscription_status = 'past_due',
+                            plan = 'pro',
+                            status = 'past_due',
+                            updated_at = NOW()
+                        WHERE tenant_id = :tenant_id
                     """),
                     {"tenant_id": tenant_id},
                 )
 
-            # 3. Cancellation (Downgrade to Free/Locked)
-            elif event_type == "subscription.canceled":
+            # 4. Cancellation (Downgrade to restricted Free Access)
+            elif event_type in [
+                "subscription.cancelled",
+                "subscription.canceled",
+                "subscription.expired",
+            ]:
                 db.execute(
                     text("""
                         UPDATE tenants
                         SET billing_status = 'canceled',
-                            dodo_subscription_id = NULL
-                        WHERE id = :tenant_id
+                            plan_tier = 'free',
+                            subscription_status = 'canceled',
+                            trial_ends_at = NULL,
+                            dodo_subscription_id = NULL,
+                            plan = 'free',
+                            status = 'active',
+                            updated_at = NOW()
+                        WHERE tenant_id = :tenant_id
                     """),
                     {"tenant_id": tenant_id},
                 )

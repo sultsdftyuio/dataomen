@@ -10,18 +10,51 @@ import { C } from "@/lib/tokens";
 export interface WorkspaceBillingCardProps {
   planData?: {
     planName?: string;
-    planStatus?: "active" | "past_due" | "canceled" | "trialing";
+    planStatus?: "free" | "active" | "past_due" | "canceled" | "cancelled" | "trialing";
+    description?: string;
+    daysRemaining?: number | null;
+    priceText?: string;
+    isProTier?: boolean;
   };
 }
 
 export default function WorkspaceBillingCard({
   planData = {
-    planName: "Growth Tier",
-    planStatus: "active",
+    planName: "Free Access",
+    planStatus: "free",
+    description: "Restricted Free Access. Pro features are locked until you start the Pro trial.",
+    priceText: "$29/month after the 3-day trial",
+    isProTier: false,
   },
 }: WorkspaceBillingCardProps) {
   const [isBillingPending, startBillingTransition] = useTransition();
-  const isActiveSubscriber = planData.planStatus === "active";
+  const planStatus = planData.planStatus ?? "free";
+  const planName = planData.planName ?? "Free Access";
+  const priceText = planData.priceText ?? "$29/month after the 3-day trial";
+  const canOpenPortal =
+    planData.isProTier === true &&
+    ["active", "trialing", "past_due"].includes(planStatus);
+  const isHealthySubscriber = planStatus === "active" || planStatus === "trialing";
+  const statusTone =
+    planStatus === "past_due"
+      ? { color: "#B45309", background: C.amberPale }
+      : isHealthySubscriber
+        ? { color: C.green, background: C.greenPale }
+        : planStatus === "canceled" || planStatus === "cancelled"
+          ? { color: "#B91C1C", background: "#FEE2E2" }
+          : { color: C.navySoft, background: C.offWhite };
+  const planDescription =
+    planData.description ??
+    (planStatus === "trialing"
+      ? "3-day Pro trial active. $29/month after the trial."
+      : planStatus === "active"
+        ? "Pro billing active at $29/month."
+        : "Restricted Free Access. Pro features are locked until you start the Pro trial.");
+  const actionLabel = isBillingPending
+    ? "Redirecting..."
+    : canOpenPortal
+      ? "Manage Billing"
+      : "Start 3-Day Pro Trial";
 
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow =
@@ -31,8 +64,8 @@ export default function WorkspaceBillingCard({
   const handleManageBilling = () => {
     startBillingTransition(async () => {
       try {
-        // FORK: Route active paying workspaces to the portal, others to upgrade checkout
-        const { url } = isActiveSubscriber
+        // Route Dodo-linked Pro workspaces to the portal, others to checkout.
+        const { url } = canOpenPortal
           ? await manageBillingPortal()
           : await upgradeToProPlan();
 
@@ -101,8 +134,8 @@ export default function WorkspaceBillingCard({
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: isActiveSubscriber ? C.green : C.amber,
-            background: isActiveSubscriber ? C.greenPale : C.amberPale,
+            color: statusTone.color,
+            background: statusTone.background,
             padding: "2px 8px",
             borderRadius: 12,
             textTransform: "capitalize",
@@ -111,8 +144,8 @@ export default function WorkspaceBillingCard({
             gap: 4,
           }}
         >
-          {isActiveSubscriber && <CheckCircle2 size={12} />}
-          {planData.planStatus || "Active"}
+          {isHealthySubscriber && <CheckCircle2 size={12} />}
+          {planStatus.replace("_", " ")}
         </span>
       </div>
 
@@ -125,10 +158,13 @@ export default function WorkspaceBillingCard({
       >
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.navy }}>
-            {planData.planName}
+            {planName}
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-            Automated churn risk scoring & retention workflows.
+            {planDescription}
+          </div>
+          <div style={{ fontSize: 11, color: C.navySoft, marginTop: 4, fontWeight: 600 }}>
+            {priceText}
           </div>
         </div>
         <button
@@ -153,12 +189,10 @@ export default function WorkspaceBillingCard({
         >
           {isBillingPending ? (
             <>
-              <RefreshCw size={12} className="animate-spin" /> Redirecting...
+              <RefreshCw size={12} className="animate-spin" /> {actionLabel}
             </>
-          ) : isActiveSubscriber ? (
-            "Manage Billing"
           ) : (
-            "Upgrade Plan"
+            actionLabel
           )}
         </button>
       </div>

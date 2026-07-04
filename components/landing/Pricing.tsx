@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export default function Pricing() {
-  const [isAnnual, setIsAnnual] = useState(true);
+  const [isAnnual, setIsAnnual] = useState(false);
 
   return (
     <section 
@@ -113,10 +113,10 @@ export default function Pricing() {
                 (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 4px 12px rgba(27,110,191,0.2)";
               }}
             >
-              Start 14-Day Free Trial <ArrowRight className="w-4 h-4" />
+              Start 3-Day Pro Trial <ArrowRight className="w-4 h-4" />
             </Link>
             <p className="text-xs text-center text-slate-400 mt-4 font-medium">
-              No credit card required. Cancel anytime.
+              Card required. $29/month after the 3-day trial.
             </p>
           </div>
 

@@ -77,7 +77,7 @@ export function CTA() {
 
         {/* Trust nudges */}
         <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: "0.03em", textTransform: "uppercase", flexWrap: "wrap", justifyContent: "center" }}>
-          {["3-day free trial", "Cancel anytime", "Setup in 5 minutes"].map((t, i) => (
+          {["3-day Pro trial with card", "$29/month after trial", "Setup in 5 minutes"].map((t, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <CheckCircle2 size={14} /> {t}
             </span>

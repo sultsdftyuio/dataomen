@@ -20,28 +20,49 @@ export type Database = {
       tenants: {
         Row: {
           tenant_id: string;
+          name: string | null;
           display_name: string | null;
           status: string;
           plan: string | null;
+          plan_tier: string;
+          subscription_status: string;
+          trial_ends_at: string | null;
+          billing_status: string | null;
           dodo_customer_id: string | null;
+          dodo_subscription_id: string | null;
+          current_period_end: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
         Insert: {
           tenant_id: string;
+          name?: string | null;
           display_name?: string | null;
           status?: string;
           plan?: string | null;
+          plan_tier?: string;
+          subscription_status?: string;
+          trial_ends_at?: string | null;
+          billing_status?: string | null;
           dodo_customer_id?: string | null;
+          dodo_subscription_id?: string | null;
+          current_period_end?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
           tenant_id?: string;
+          name?: string | null;
           display_name?: string | null;
           status?: string;
           plan?: string | null;
+          plan_tier?: string;
+          subscription_status?: string;
+          trial_ends_at?: string | null;
+          billing_status?: string | null;
           dodo_customer_id?: string | null;
+          dodo_subscription_id?: string | null;
+          current_period_end?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };

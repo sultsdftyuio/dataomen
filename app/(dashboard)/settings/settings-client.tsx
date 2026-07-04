@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
+import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 import { DataSourcesTab } from "@/components/settings/data-sources-tab";
 import type { SettingsSnapshot } from "@/lib/settings/types";
 
@@ -43,12 +44,14 @@ interface SettingsClientProps {
   user: User;
   initialSettings: SettingsSnapshot;
   isRecoveryMode: boolean;
+  planData?: WorkspaceBillingCardProps["planData"];
 }
 
 export default function SettingsClient({ 
   user, 
   initialSettings, 
-  isRecoveryMode 
+  isRecoveryMode,
+  planData,
 }: SettingsClientProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     isRecoveryMode ? "account" : "workspace"
@@ -130,7 +133,7 @@ export default function SettingsClient({
         <div className="w-full max-w-5xl mx-auto h-full flex flex-col">
           
           {activeTab === "workspace" && (
-            <WorkspaceTab initialData={workspaceData} />
+            <WorkspaceTab initialData={workspaceData} planData={planData} />
           )}
           
           {activeTab === "data-sources" && (

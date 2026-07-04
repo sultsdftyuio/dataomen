@@ -67,6 +67,17 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     plan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    plan_tier: Mapped[str] = mapped_column(Text, nullable=False, default="free")
+    subscription_status: Mapped[str] = mapped_column(Text, nullable=False, default="free")
+    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    billing_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default="free")
+    dodo_customer_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dodo_subscription_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     status: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, default="PROVISIONING"
     )

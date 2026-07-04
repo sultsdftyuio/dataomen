@@ -178,7 +178,7 @@ export function RiskQueueShell({
             </div>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: C.navy }}>
-                Customer operations are locked on the free trial
+                Customer operations are locked on Free Access
               </div>
               <p style={{ fontSize: 13, color: C.navySoft, margin: "6px 0 0" }}>
                 {restrictionMessage}
