@@ -6,24 +6,35 @@ import { getWorkspaceEntitlements, PRO_TRIAL_DAYS } from "@/lib/entitlements";
 import { DodoPayments } from "dodopayments";
 
 /**
- * 1. Environment-Aware SDK Initialization (Rule 11: Determinism & Rule 17: Observability)
- * Prevents 401 Unauthorized errors by dynamically routing to 'test_mode' or 'live_mode'
- * based on explicit config or key prefix inference.
+ * 1. Deterministic SDK Initialization (Rule 11: Determinism & Rule 17: Observability)
+ * Eliminates heuristic prefix guessing in favor of explicit configuration.
+ * Automatically sanitizes accidental whitespace, quotes, or carriage returns.
  */
-function getDodoClient(): DodoPayments {
-  const apiKey = process.env.DODO_PAYMENTS_API_KEY;
-  if (!apiKey) {
+function getDodoClient(): { client: DodoPayments; environment: "test_mode" | "live_mode" } {
+  const rawKey = process.env.DODO_PAYMENTS_API_KEY;
+  if (!rawKey) {
     throw new Error("Missing DODO_PAYMENTS_API_KEY environment variable.");
   }
 
-  const explicitEnv = process.env.DODO_PAYMENTS_ENV;
-  const isTestKey = apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
-  const environment = explicitEnv === "test_mode" || isTestKey ? "test_mode" : "live_mode";
+  // Strip accidental carriage returns, wrapping quotes, or trailing whitespace
+  const apiKey = rawKey.trim().replace(/^["']|["']$/g, "");
 
-  return new DodoPayments({
+  const explicitEnv = process.env.DODO_PAYMENTS_ENV?.trim();
+  if (explicitEnv !== "test_mode" && explicitEnv !== "live_mode") {
+    console.warn(
+      "[Billing] DODO_PAYMENTS_ENV is not explicitly set to 'test_mode' or 'live_mode'. Defaulting to 'live_mode'."
+    );
+  }
+
+  const environment: "test_mode" | "live_mode" =
+    explicitEnv === "test_mode" ? "test_mode" : "live_mode";
+
+  const client = new DodoPayments({
     bearerToken: apiKey,
     environment,
   });
+
+  return { client, environment };
 }
 
 /**
@@ -32,15 +43,15 @@ function getDodoClient(): DodoPayments {
  */
 export async function upgradeToProPlan() {
   // 2. Strict Environment Variable Validation
-  const productId = process.env.DODO_PRO_PLAN_ID;
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  const productId = process.env.DODO_PRO_PLAN_ID?.trim();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
   if (!productId || !siteUrl) {
     console.error("[Billing] Missing critical billing environment variables (DODO_PRO_PLAN_ID or NEXT_PUBLIC_SITE_URL).");
     throw new Error("Billing service is currently unavailable.");
   }
 
-  const dodo = getDodoClient();
+  const { client: dodo, environment } = getDodoClient();
   const supabase = await createClient();
 
   // 3. Authenticate User & Validate Identity
@@ -117,7 +128,8 @@ export async function upgradeToProPlan() {
       event: "checkout_creation_failed",
       tenant_id: tenantId,
       user_id: user.id,
-      environment: process.env.DODO_PAYMENTS_ENV || "inferred",
+      environment, // Explicitly logs the active SDK routing environment
+      product_id: productId,
       error,
     });
 
@@ -130,13 +142,13 @@ export async function upgradeToProPlan() {
  * Eliminates live email scanning in favor of deterministic database resolution with 100% type safety.
  */
 export async function manageBillingPortal() {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!siteUrl) {
     console.error("[Billing] Missing NEXT_PUBLIC_SITE_URL environment variable.");
     throw new Error("Billing service is currently unavailable.");
   }
 
-  const dodo = getDodoClient();
+  const { client: dodo, environment } = getDodoClient();
   const supabase = await createClient();
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -212,7 +224,7 @@ export async function manageBillingPortal() {
       tenant_id: membership.tenant_id,
       user_id: user.id,
       customer_id: customerId,
-      environment: process.env.DODO_PAYMENTS_ENV || "inferred",
+      environment, // Explicitly logs the active SDK routing environment
       error,
     });
     throw new Error("Unable to open billing portal. Please try again later.");
