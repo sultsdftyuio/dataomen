@@ -1,7 +1,5 @@
 import logging
 import json
-from sqlalchemy import func, case
-from api.models import ChurnRiskState, RecoveryAttribution, RecoveryEmail
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -9,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import func, text
 
 from api.database import get_db, get_async_db
-from api.auth import get_current_tenant
+from api.auth import get_current_tenant_id, get_current_tenant
+from api.models import ChurnRiskState, RecoveryAttribution, RecoveryEmail
 from api.services.metrics_service import MetricsService
 from api.services.anomaly_detector import AnomalyDetector
 from api.services.alert_engine import handle_anomaly_alert
@@ -24,9 +23,7 @@ router = APIRouter(prefix="/v1/metrics", tags=["Insights"])
 # ---------------------------------------------------------
 # RESPONSE SCHEMAS
 # ---------------------------------------------------------
-# ---------------------------------------------------------
-# SUMMARY RESPONSE SCHEMAS
-# ---------------------------------------------------------
+
 class RecentRisk(BaseModel):
     id: str
     email: str
@@ -42,79 +39,9 @@ class MetricsSummaryResponse(BaseModel):
     activeRisks: int
     recentRisks: List[RecentRisk]
 
-# ---------------------------------------------------------
-# DASHBOARD SUMMARY ENDPOINT
-# ---------------------------------------------------------
-@router.get("/summary", response_model=MetricsSummaryResponse)
-async def get_metrics_summary(
-    tenant_id: str = Depends(get_current_tenant),
-    db: Session = Depends(get_db)
-):
-    """
-    Returns the high-level ROI and Risk Queue overview for the dashboard.
-    Strictly tenant-isolated.
-    """
-    # 1. Recovered MRR: Sum of revenue from successful attributions in the last 30 days
-    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-    recovered_mrr = db.query(func.coalesce(func.sum(RecoveryAttribution.revenue), 0.0)) \
-        .filter(RecoveryAttribution.tenant_id == tenant_id) \
-        .filter(RecoveryAttribution.attributed_at >= thirty_days_ago) \
-        .scalar()
-
-    # 2. At-Risk MRR & Active Risks: From current unrecovered ChurnRiskState
-    risk_stats = db.query(
-        func.count(ChurnRiskState.id).label("active_risks"),
-        func.coalesce(func.sum(ChurnRiskState.risk_score), 0.0).label("at_risk_mrr") # Assuming risk_score correlates to MRR for MVP, or join with users table if MRR is stored elsewhere
-    ) \
-    .filter(ChurnRiskState.tenant_id == tenant_id) \
-    .filter(ChurnRiskState.risk_tier.in_(["high", "critical"])) \
-    .first()
-
-    active_risks = risk_stats.active_risks or 0
-    at_risk_mrr = float(risk_stats.at_risk_mrr)
-
-    # 3. Recovery Rate (Deterministic Logic)
-    # Total distinct users intervened vs total users attributed to revenue
-    total_interventions = db.query(func.count(func.distinct(RecoveryEmail.user_id))) \
-        .filter(RecoveryEmail.tenant_id == tenant_id).scalar() or 0
-    
-    recovered_users = db.query(func.count(func.distinct(RecoveryAttribution.user_id))) \
-        .filter(RecoveryAttribution.tenant_id == tenant_id).scalar() or 0
-
-    recovery_rate = round((recovered_users / total_interventions * 100), 1) if total_interventions > 0 else 0.0
-
-    # 4. Recent Live Risk Queue Preview (Top 5)
-    # Joining ChurnRiskState with RecoveryEmail (to get current status/cooldowns)
-    recent_risks_query = db.query(ChurnRiskState).filter(
-        ChurnRiskState.tenant_id == tenant_id,
-        ChurnRiskState.risk_tier.in_(["high", "critical"])
-    ).order_by(ChurnRiskState.updated_at.desc()).limit(5).all()
-
-    recent_risks = []
-    for risk in recent_risks_query:
-        recent_risks.append(
-            RecentRisk(
-                id=str(risk.id),
-                email=f"{risk.user_id}@placeholder.com", # Replace with actual join to tenant_users if email is stored
-                signal="inactivity" if not risk.risk_tier else risk.risk_tier,
-                mrr=float(risk.risk_score or 0.0), # Swap with actual MRR field
-                status="Pending Review",
-                cooldown=None
-            )
-        )
-
-    return MetricsSummaryResponse(
-        recoveredMrr=float(recovered_mrr),
-        atRiskMrr=at_risk_mrr,
-        recoveryRate=recovery_rate,
-        activeRisks=active_risks,
-        recentRisks=recent_risks
-    )
-
 class SegmentImpact(BaseModel):
     segment: str
     impact: str
-
 
 class MetricInsightResponse(BaseModel):
     metric: str
@@ -126,16 +53,92 @@ class MetricInsightResponse(BaseModel):
     explanation: Optional[Dict[str, Any]]
     top_segments: List[SegmentImpact] = []
 
-
 class FeedbackSummary(BaseModel):
     total_feedback_events: int
     top_reasons: List[List[Any]]
-
 
 class FeedbackResponse(BaseModel):
     anomaly_context: Dict[str, Any]
     summary: FeedbackSummary
     raw_feedback: List[Dict[str, Any]]
+
+
+# ---------------------------------------------------------
+# DASHBOARD SUMMARY ENDPOINT
+# ---------------------------------------------------------
+
+@router.get("/summary", response_model=MetricsSummaryResponse)
+async def get_metrics_summary(
+    tenant_id: str = Depends(get_current_tenant_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the high-level ROI and Risk Queue overview for the dashboard.
+    Strictly tenant-isolated using explicitly resolved workspace UUIDs.
+    """
+    try:
+        # 1. Recovered MRR: Sum of revenue from successful attributions in the last 30 days
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        recovered_mrr = db.query(func.coalesce(func.sum(RecoveryAttribution.revenue), 0.0)) \
+            .filter(RecoveryAttribution.tenant_id == tenant_id) \
+            .filter(RecoveryAttribution.attributed_at >= thirty_days_ago) \
+            .scalar()
+
+        # 2. At-Risk MRR & Active Risks: From current unrecovered ChurnRiskState
+        risk_stats = db.query(
+            func.count(ChurnRiskState.id).label("active_risks"),
+            func.coalesce(func.sum(ChurnRiskState.risk_score), 0.0).label("at_risk_mrr")
+        ) \
+        .filter(ChurnRiskState.tenant_id == tenant_id) \
+        .filter(ChurnRiskState.risk_tier.in_(["high", "critical"])) \
+        .first()
+
+        active_risks = int(risk_stats.active_risks or 0) if risk_stats else 0
+        at_risk_mrr = float(risk_stats.at_risk_mrr or 0.0) if risk_stats else 0.0
+
+        # 3. Recovery Rate (Deterministic Logic)
+        # Total distinct users intervened vs total users attributed to revenue
+        total_interventions = db.query(func.count(func.distinct(RecoveryEmail.user_id))) \
+            .filter(RecoveryEmail.tenant_id == tenant_id).scalar() or 0
+        
+        recovered_users = db.query(func.count(func.distinct(RecoveryAttribution.user_id))) \
+            .filter(RecoveryAttribution.tenant_id == tenant_id).scalar() or 0
+
+        recovery_rate = round((recovered_users / total_interventions * 100), 1) if total_interventions > 0 else 0.0
+
+        # 4. Recent Live Risk Queue Preview (Top 5)
+        recent_risks_query = db.query(ChurnRiskState).filter(
+            ChurnRiskState.tenant_id == tenant_id,
+            ChurnRiskState.risk_tier.in_(["high", "critical"])
+        ).order_by(ChurnRiskState.updated_at.desc()).limit(5).all()
+
+        recent_risks = []
+        for risk in recent_risks_query:
+            recent_risks.append(
+                RecentRisk(
+                    id=str(risk.id),
+                    email=f"{risk.user_id}@placeholder.com",  # Replace with actual join to tenant_users if email is stored locally
+                    signal="inactivity" if not risk.risk_tier else risk.risk_tier,
+                    mrr=float(risk.risk_score or 0.0),
+                    status="Pending Review",
+                    cooldown=None
+                )
+            )
+
+        return MetricsSummaryResponse(
+            recoveredMrr=float(recovered_mrr or 0.0),
+            atRiskMrr=at_risk_mrr,
+            recoveryRate=recovery_rate,
+            activeRisks=active_risks,
+            recentRisks=recent_risks
+        )
+
+    except Exception:
+        logger.exception("Failed to compile dashboard metrics summary for tenant=%s", tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load dashboard summary metrics."
+        )
 
 
 # ---------------------------------------------------------
@@ -146,7 +149,7 @@ class FeedbackResponse(BaseModel):
 async def get_metric_insights(
     metric_name: str,
     force_run: bool = Query(False, description="Force recompute"),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_current_tenant_id),
     db: Session = Depends(get_db),
     async_db: AsyncSession = Depends(get_async_db)
 ):
@@ -162,7 +165,6 @@ async def get_metric_insights(
         # -------------------------
         metrics_svc = MetricsService(db)
         
-        # 'get_metric_latest' replaces 'fetch_current_metric'
         current_value = metrics_svc.get_metric_latest(tenant_id, metric_name)
         history = metrics_svc.fetch_metric_history(tenant_id, metric_name, days=7)
 
@@ -207,7 +209,7 @@ async def get_metric_insights(
                 "type": "rule_based_threshold"
             }
 
-        segments: List[Dict[str, str]] = []
+        segments: List[SegmentImpact] = []
 
         # -------------------------
         # ROOT CAUSE (SEGMENTS)
@@ -216,18 +218,22 @@ async def get_metric_insights(
             handle_anomaly_alert(db, tenant_id, anomaly)
 
             try:
-                # MULTI-TENANT FIX: Enforce UTC timezone to prevent cross-region drift
+                # Enforce UTC timezone to prevent cross-region drift
                 current_time = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
-                # Call the new synchronous method
-                segments = detector._analyze_segments(
+                raw_segments = detector._analyze_segments(
                     tenant_id=tenant_id,
                     metric_name=metric_name,
                     target_date=current_time.strftime("%Y-%m-%d")
                 )
+                
+                # Format segments safely into response schema objects
+                for seg in (raw_segments or []):
+                    if isinstance(seg, dict) and "segment" in seg and "impact" in seg:
+                        segments.append(SegmentImpact(segment=str(seg["segment"]), impact=str(seg["impact"])))
 
             except Exception:
-                logger.warning("segment_analysis_failed", exc_info=True)
+                logger.warning("Segment analysis failed for tenant=%s metric=%s", tenant_id, metric_name, exc_info=True)
 
         return MetricInsightResponse(
             metric=metric_name,
@@ -241,12 +247,12 @@ async def get_metric_insights(
         )
 
     except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
 
     except Exception:
-        logger.error("metric_insights_failed", exc_info=True)
+        logger.exception("Metric insights execution failed for tenant=%s metric=%s", tenant_id, metric_name)
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to compute metric insights"
         )
 
@@ -264,7 +270,7 @@ async def get_anomaly_feedback(
     timestamp: datetime,
     dimension: Optional[str] = Query(None),
     dimension_value: Optional[str] = Query(None),
-    tenant_id: str = Depends(get_current_tenant),
+    tenant_id: str = Depends(get_current_tenant_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -304,18 +310,19 @@ async def get_anomaly_feedback(
         # DETERMINISTIC SUMMARIZATION
         # -------------------------
         for row in rows:
-            props = row._mapping.get("properties", {})
+            props = row._mapping.get("properties", {}) if hasattr(row, "_mapping") else (row[0] if row else {})
             if isinstance(props, str):
                 try:
                     props = json.loads(props)
                 except json.JSONDecodeError:
                     props = {}
             
-            feedback.append(props)
-            
-            # Extract standard categorical reason safely
-            reason = str(props.get("reason") or "unspecified").strip().lower()
-            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+            if isinstance(props, dict):
+                feedback.append(props)
+                
+                # Extract standard categorical reason safely
+                reason = str(props.get("reason") or "unspecified").strip().lower()
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
         top_reasons = sorted(
             reason_counts.items(),
@@ -337,8 +344,8 @@ async def get_anomaly_feedback(
         )
 
     except Exception:
-        logger.error("feedback_fetch_failed", exc_info=True)
+        logger.exception("Feedback drilldown fetch failed for tenant=%s metric=%s", tenant_id, metric_name)
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch deterministic anomaly feedback"
         )

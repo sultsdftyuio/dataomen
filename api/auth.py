@@ -18,6 +18,10 @@ from fastapi.security import (
     HTTPAuthorizationCredentials,
     HTTPBearer,
 )
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from api.database import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,6 @@ if not SUPABASE_URL and not SUPABASE_JWT_SECRET:
         "The authentication service cannot function."
     )
 
-# Explicitly log hybrid configuration state to prevent silent 500s later
 if not SUPABASE_JWT_SECRET:
     logger.info("SUPABASE_JWT_SECRET not configured. Legacy HS256 tokens will be rejected.")
 
@@ -52,10 +55,10 @@ EXPECTED_ISSUER = (
     else None
 )
 
-# Make audience validation strictly opt-in to prevent breaking valid Supabase tokens
+# Audience validation is strictly opt-in
 EXPECTED_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE")
 
-# Initialize the JWKS client to automatically fetch Supabase public keys
+# Initialize JWKS client to automatically fetch Supabase public keys
 JWKS_URL = f"{SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else ""
 jwks_client = PyJWKClient(JWKS_URL, cache_keys=True) if JWKS_URL else None
 
@@ -63,24 +66,25 @@ jwks_client = PyJWKClient(JWKS_URL, cache_keys=True) if JWKS_URL else None
 ALLOWED_ROLES = frozenset({"authenticated"})
 
 # ---------------------------------------------------------------------------
-# Auth Context Definition
+# Auth Context Definition (Single Source of Truth)
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class AuthContext:
     """
-    Authenticated request context.
+    Authenticated request context containing strictly resolved identity and scope.
 
     user_id:
-        Supabase Auth user UUID (JWT 'sub' claim)
-
+        Supabase Auth user UUID (JWT 'sub' claim).
+    tenant_id:
+        Organization workspace UUID (resolved from tenant_users table).
     email:
-        User email when present.
-
+        User email when present in token.
     role:
-        Supabase role claim (authenticated)
+        Supabase role claim (authenticated).
     """
     user_id: str
+    tenant_id: str
     email: str | None = None
     role: str | None = None
 
@@ -92,7 +96,7 @@ class AuthContext:
 def _decode_jwt(token: str) -> dict[str, Any]:
     """
     Validate and decode a Supabase access token dynamically.
-    Supports both legacy symmetric (HS256) and modern asymmetric (RS256, ES256) keys.
+    Supports both symmetric (HS256) and asymmetric (RS256, ES256) algorithms.
     """
     try:
         unverified_header = jwt.get_unverified_header(token)
@@ -101,7 +105,6 @@ def _decode_jwt(token: str) -> dict[str, Any]:
         
     alg = unverified_header.get("alg")
     
-    # Baseline validation options with strict claim requirements
     decode_kwargs = {
         "jwt": token,
         "algorithms": [alg] if alg else [],
@@ -115,7 +118,6 @@ def _decode_jwt(token: str) -> dict[str, Any]:
         }
     }
 
-    # Delegate issuer and audience validation natively to PyJWT
     if EXPECTED_ISSUER:
         decode_kwargs["issuer"] = EXPECTED_ISSUER
     if EXPECTED_AUDIENCE:
@@ -133,7 +135,6 @@ def _decode_jwt(token: str) -> dict[str, Any]:
         if not jwks_client:
             raise RuntimeError("SUPABASE_URL is required to fetch JWKS for asymmetric tokens.")
             
-        # Verify the key ID exists before attempting network lookup
         if not unverified_header.get("kid"):
             raise jwt.InvalidTokenError("Missing 'kid' in token header for asymmetric key")
             
@@ -144,12 +145,10 @@ def _decode_jwt(token: str) -> dict[str, Any]:
             logger.info("Failed to retrieve signing key from JWKS: %s", e)
             raise jwt.InvalidTokenError("Unable to resolve signing key")
             
-    # 3. Reject unknown algorithms immediately
     else:
         logger.info("Unsupported JWT algorithm presented: %s", alg)
         raise jwt.InvalidAlgorithmError(f"Unsupported algorithm: {alg}")
 
-    # Decode using the dynamically configured key and native parameters
     return jwt.decode(**decode_kwargs)
 
 
@@ -159,23 +158,23 @@ def _decode_jwt(token: str) -> dict[str, Any]:
 
 def get_auth_context(
     credentials: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(get_db),
 ) -> AuthContext:
     """
-    FastAPI dependency that validates a Supabase JWT and returns
-    a typed authentication context.
+    FastAPI dependency that validates a Supabase JWT, resolves workspace scope,
+    and returns an immutable authentication context.
     """
     token = credentials.credentials
 
     try:
         payload = _decode_jwt(token)
 
-        # We can safely use bracket notation because 'role' and 'sub' are explicitly required
         role = payload["role"]
         user_id = payload["sub"]
 
         # Strict Role Allow-listing
         if role not in ALLOWED_ROLES:
-            logger.info("Token role '%s' rejected. Expected one of: %s", role, ALLOWED_ROLES)
+            logger.warning("Token role '%s' rejected. Expected: %s", role, ALLOWED_ROLES)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
@@ -184,14 +183,40 @@ def get_auth_context(
         try:
             UUID(user_id)
         except (TypeError, ValueError):
-            logger.info("JWT invalid 'sub' claim: %s", user_id)
+            logger.warning("JWT invalid 'sub' claim: %s", user_id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid subject claim",
             )
 
+        # -------------------------------------------------------------------
+        # Upfront Tenant Scope Resolution (Single Source of Truth)
+        # -------------------------------------------------------------------
+        try:
+            row = db.execute(
+                text("SELECT tenant_id FROM tenant_users WHERE user_id = :user_id LIMIT 1"),
+                {"user_id": user_id}
+            ).fetchone()
+        except Exception:
+            logger.exception("Database failure resolving tenant mapping for user_id=%s", user_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to resolve workspace membership.",
+            )
+
+        if not row:
+            logger.warning("Authenticated user %s has no active tenant mapping.", user_id)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is not associated with an active workspace.",
+            )
+
+        # Safely extract tenant_id string regardless of SQLAlchemy row mapping style
+        tenant_id = str(row._mapping["tenant_id"] if hasattr(row, "_mapping") else row[0])
+
         return AuthContext(
             user_id=user_id,
+            tenant_id=tenant_id,
             email=payload.get("email"),
             role=role,
         )
@@ -228,7 +253,7 @@ def get_auth_context(
         )
         
     except (jwt.ImmatureSignatureError, jwt.InvalidIssuedAtError):
-        logger.info("JWT presented before its valid timeframe (nbf/iat check failed)")
+        logger.info("JWT presented before its valid timeframe")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token not yet valid",
@@ -253,25 +278,32 @@ def get_current_user_id(
     auth: AuthContext = Depends(get_auth_context),
 ) -> str:
     """
-    Convenience dependency for routes that only need user_id.
+    Explicit dependency yielding the unique user account UUID string.
     """
     return auth.user_id
 
 
+def get_current_tenant_id(
+    auth: AuthContext = Depends(get_auth_context),
+) -> str:
+    """
+    Explicit dependency yielding the organization workspace UUID string.
+    """
+    return auth.tenant_id
+
+
 # ---------------------------------------------------------------------------
-# Backward Compatibility for Existing Routes
+# Backward Compatibility Alias (Fixed)
 # ---------------------------------------------------------------------------
 
 def get_current_tenant(
     auth: AuthContext = Depends(get_auth_context),
 ) -> str:
     """
-    Compatibility alias for existing routes.
-
-    Returns authenticated user_id.
-    TODO: Replace with real tenant resolution.
+    Compatibility alias for existing routes expecting `get_current_tenant`.
+    Properly returns the resolved organization workspace UUID (`tenant_id`).
     """
-    return auth.user_id
+    return auth.tenant_id
 
 
 # ---------------------------------------------------------------------------
@@ -283,11 +315,12 @@ def verify_auth(
     auth: AuthContext = Depends(get_auth_context),
 ):
     """
-    Test endpoint to verify if the frontend is passing the Bearer token correctly.
+    Test endpoint to verify authentication and workspace context resolution.
     """
     return {
         "authenticated": True,
         "user_id": auth.user_id,
+        "tenant_id": auth.tenant_id,
         "email": auth.email,
         "role": auth.role,
     }
