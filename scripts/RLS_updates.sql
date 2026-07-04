@@ -25,7 +25,7 @@ CREATE POLICY "tenant_settings_insert_own" ON public.tenant_settings
     FOR INSERT WITH CHECK (
         EXISTS (
             SELECT 1 FROM public.tenant_users tu
-            WHERE tu.tenant_id = tenant_settings.tenant_id
+            WHERE tu.tenant_id = tenant_id
               AND tu.user_id::text = auth.uid()::text
               AND LOWER(tu.role) IN ('owner', 'admin')
         )
@@ -83,3 +83,10 @@ SELECT
     NOW()
 FROM public.tenants t
 ON CONFLICT (tenant_id) DO NOTHING;
+-- Add explicit billing customer tracking to the core tenant boundary
+ALTER TABLE public.tenants 
+ADD COLUMN IF NOT EXISTS dodo_customer_id text;
+
+-- Index for rapid webhook resolution during async enrichment (Rule 2 & Rule 14)
+CREATE INDEX IF NOT EXISTS idx_tenants_dodo_customer_id 
+ON public.tenants(dodo_customer_id);

@@ -1,3 +1,4 @@
+// types/supabase.ts
 export type Json =
   | string
   | number
@@ -22,6 +23,7 @@ export type Database = {
           display_name: string | null;
           status: string;
           plan: string | null;
+          dodo_customer_id: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -30,6 +32,7 @@ export type Database = {
           display_name?: string | null;
           status?: string;
           plan?: string | null;
+          dodo_customer_id?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -38,6 +41,7 @@ export type Database = {
           display_name?: string | null;
           status?: string;
           plan?: string | null;
+          dodo_customer_id?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
