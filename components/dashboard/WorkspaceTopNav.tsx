@@ -1,8 +1,9 @@
-import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import React from "react";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { WorkspacePlanBadge } from "@/components/dashboard/WorkspacePlanBadge";
 
-export async function WorkspaceHeader() {
+export async function WorkspaceTopNav() {
   const tenantResult = await resolveTenantContext();
 
   if ("response" in tenantResult) {
@@ -25,15 +26,11 @@ export async function WorkspaceHeader() {
     "Workspace";
 
   return (
-    <section className="border-b border-slate-200 bg-white">
-      <div className="flex items-center justify-between px-4 py-2.5 sm:px-6">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <h1 className="truncate text-sm font-semibold text-slate-900">
-            {workspaceName}
-          </h1>
-          <WorkspacePlanBadge entitlements={entitlements} />
-        </div>
-      </div>
-    </section>
+    <div className="flex items-center gap-2.5 border-l border-slate-200 pl-4 ml-2">
+      <span className="truncate max-w-[140px] sm:max-w-[200px] text-xs font-semibold text-slate-800">
+        {workspaceName}
+      </span>
+      <WorkspacePlanBadge entitlements={entitlements} />
+    </div>
   );
 }

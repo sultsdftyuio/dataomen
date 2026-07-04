@@ -71,13 +71,9 @@ export function Hero() {
                 letterSpacing: "0.02em",
               }}
             >
-              Start Free Access <ArrowRight size={16} />
+              Sign Up <ArrowRight size={16} />
             </a>
           </div>
-
-          <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", marginTop: 0, fontSize: 12, color: C.faint, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            Free Access included / 3-day Pro trial with card / $29/month after trial
-          </p>
         </div>
       </div>
     </section>
