@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { RiskUser, EmailTemplate } from "@/lib/types";
 import CampaignsClient from "@/app/(dashboard)/dashboard/campaigns/campaigns-client";
-import { RecoveryTemplateViewer } from "@/app/(dashboard)/dashboard/campaigns/templates/recovery-template-viewer";
-
 export const metadata = {
   title: "Campaigns | Arcli",
   description: "Configure automated recovery workflows and email sequences.",
@@ -143,7 +141,6 @@ export default async function CampaignsPage() {
             Inspect live inbox rendering, verify CAN-SPAM variable interpolation, and export raw HTML.
           </p>
         </div>
-        <RecoveryTemplateViewer settings={workspaceSettings} />
       </div>
 
     </div>

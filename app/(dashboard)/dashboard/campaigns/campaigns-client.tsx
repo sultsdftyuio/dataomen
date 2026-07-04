@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Send,
@@ -13,6 +13,8 @@ import {
 import { CreateTemplateModal } from "./create-template-modal";
 import { TargetUsersTable } from "./target-users-table";
 import { useCampaigns } from "@/hooks/use-campaigns";
+import { useTemplatePreview } from "@/app/(dashboard)/dashboard/campaigns/templates/use-template-preview";
+import { type TemplateDefinition } from "@/app/(dashboard)/dashboard/campaigns/templates/security";
 import { type CampaignsClientProps } from "@/lib/types";
 
 // Centralized design tokens
@@ -45,6 +47,36 @@ export default function CampaignsClient({
     atRiskUsers,
     emailTemplates,
     initialSenderEmail,
+  });
+
+  // ── Map EmailTemplate -> TemplateDefinition for the preview hook ──
+  const previewTemplate = useMemo<TemplateDefinition | undefined>(() => {
+    if (!activeTemplate) return undefined;
+
+    // Defensive extraction: your EmailTemplate may store the body as
+    // html | bodyHtml | body_html depending on the API surface.
+    const t = activeTemplate as any;
+
+    return {
+      name: activeTemplate.name,
+      subject: activeTemplate.subject,
+      rawHtml: t.html ?? t.bodyHtml ?? t.body_html ?? "",
+      trigger: t.trigger ?? "manual",
+      cooldownDays: t.cooldownDays ?? 0,
+    };
+  }, [activeTemplate]);
+
+  // ── Template Preview Integration ──
+  const {
+    sanitizedHtml,
+    hydratedSubject,
+    missingVariables,
+    renderError,
+    currentTemplate,
+  } = useTemplatePreview({
+    selectedTemplateKey: selectedTemplate || "",
+    settings: senderEmail ? { defaultSenderEmail: senderEmail } : undefined,
+    customTemplate: previewTemplate,
   });
 
   // Unified styling constants matching the Arcli design system
@@ -316,15 +348,95 @@ export default function CampaignsClient({
           )}
         </div>
 
-        {/* Right Column: Target Users Table */}
-        <TargetUsersTable
-          sortedAtRiskUsers={sortedAtRiskUsers}
-          selectedUsers={selectedUsers}
-          allSelected={allSelected}
-          senderEmail={senderEmail}
-          toggleUser={toggleUser}
-          toggleAll={toggleAll}
-        />
+        {/* Right Column: Preview + Target Users */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          
+          {/* ── Template Preview ── */}
+          {currentTemplate && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <h2
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: C.navySoft,
+                  margin: 0,
+                }}
+              >
+                2. Preview
+              </h2>
+
+              {renderError && (
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    background: "#FEE2E2",
+                    border: "1px solid #FCA5A5",
+                    borderRadius: 6,
+                    color: "#991B1B",
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  <strong>Render Error:</strong> {renderError}
+                </div>
+              )}
+
+              {missingVariables.length > 0 && (
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    background: C.amberPale,
+                    border: `1px solid rgba(245, 158, 11, 0.3)`,
+                    borderRadius: 6,
+                    color: "#92400E",
+                    fontSize: 13,
+                    fontWeight: 500,
+                  }}
+                >
+                  <strong>Missing variables:</strong> {missingVariables.join(", ")}
+                </div>
+              )}
+
+              <div
+                style={{
+                  padding: "12px 16px",
+                  background: C.offWhite,
+                  borderRadius: 6,
+                  border: surfaceBorder,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: C.navy,
+                }}
+              >
+                Subject: {hydratedSubject}
+              </div>
+
+              <div
+                style={{
+                  border: surfaceBorder,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  background: C.white,
+                  minHeight: 200,
+                  boxShadow: surfaceShadow,
+                }}
+              >
+                <div dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
+              </div>
+            </div>
+          )}
+
+          <TargetUsersTable
+            sortedAtRiskUsers={sortedAtRiskUsers}
+            selectedUsers={selectedUsers}
+            allSelected={allSelected}
+            senderEmail={senderEmail}
+            toggleUser={toggleUser}
+            toggleAll={toggleAll}
+          />
+        </div>
       </div>
 
       {/* ── Action Footer ── */}

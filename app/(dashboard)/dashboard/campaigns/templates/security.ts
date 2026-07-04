@@ -1,13 +1,6 @@
 import DOMPurify from "dompurify";
-import { TEMPLATE_CATALOG, type RecoveryTemplate } from "./render-template";
-
-function escapeUrl(input: string): string {
-  try {
-    return encodeURI(input).replace(/\(/g, "%28").replace(/\)/g, "%29");
-  } catch {
-    return input;
-  }
-}
+import { TEMPLATE_CATALOG, type RecoveryTemplate } from "@/app/(dashboard)/dashboard/campaigns/templates/render-template";
+import { escapeUrl } from "@/app/(dashboard)/dashboard/campaigns/templates/template-catalog";
 
 export interface TemplateDefinition {
   readonly name: string;

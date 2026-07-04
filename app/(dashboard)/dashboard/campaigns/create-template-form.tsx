@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { RefreshCw, Code } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { RefreshCw, Code, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import { DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { EmailTemplate } from "@/lib/types";
 import { saveRecoveryTemplate } from "@/app/actions/campaigns";
+import { useTemplatePreview } from "@/app/(dashboard)/dashboard/campaigns/templates/use-template-preview";
+import { type TemplateDefinition } from "@/app/(dashboard)/dashboard/campaigns/templates/security";
 
 interface CreateTemplateFormProps {
   onSuccess: (template: EmailTemplate) => void;
@@ -38,6 +40,29 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
 
   // Unified trimmed validation matching server requirements
   const isValid = name.length >= 2 && subject.length >= 5 && html.length >= 20;
+
+  // ── Live Preview: map form state -> TemplateDefinition ──
+  const draftTemplate = useMemo<TemplateDefinition | undefined>(() => {
+    if (!isValid) return undefined;
+    return {
+      id: "draft",
+      name: name || "Draft",
+      subject,
+      rawHtml: html,
+      trigger: "manual",
+      cooldownDays: 0,
+    } as TemplateDefinition;
+  }, [name, subject, html, isValid]);
+
+  const {
+    sanitizedHtml,
+    hydratedSubject,
+    missingVariables,
+    renderError,
+  } = useTemplatePreview({
+    selectedTemplateKey: "",
+    customTemplate: draftTemplate,
+  });
 
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,6 +171,38 @@ export function CreateTemplateForm({ onSuccess, onCancel }: CreateTemplateFormPr
             required
           />
         </div>
+
+        {/* ── Live Preview Panel ── */}
+        {isValid && draftTemplate && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px] font-bold uppercase tracking-[0.05em] text-slate-500 flex items-center gap-1.5">
+                <Eye className="w-3.5 h-3.5" /> Live Preview
+              </Label>
+              {missingVariables.length > 0 && (
+                <span className="text-[10px] text-amber-600 font-medium">
+                  Missing: {missingVariables.join(", ")}
+                </span>
+              )}
+            </div>
+
+            {renderError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md text-[12px] text-red-700">
+                <strong>Render Error:</strong> {renderError}
+              </div>
+            )}
+
+            <div className="p-3 bg-[#FAFAFA] border border-black/[0.08] rounded-md space-y-2">
+              <div className="text-[12px] font-semibold text-slate-700 pb-2 border-b border-black/[0.06]">
+                Subject: {hydratedSubject}
+              </div>
+              <div
+                className="text-[12px] leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <DialogFooter className="px-5 py-3.5 border-t border-black/[0.08] bg-[#FAFAFA]">
