@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { RiskUser, EmailTemplate } from "@/lib/types";
 import CampaignsClient from "@/app/(dashboard)/dashboard/campaigns/campaigns-client";
+import { RecoveryTemplateViewer } from "@/app/(dashboard)/dashboard/campaigns/templates/recovery-template-viewer";
 
 export const metadata = {
   title: "Campaigns | Arcli",
@@ -12,7 +13,7 @@ export const metadata = {
 export default async function CampaignsPage() {
   const supabase = await createClient();
 
-  // 1. Secure Deterministic Authentication (Constitution Rule 1)
+  // 1. Secure Deterministic Authentication (Rule 1)
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {
@@ -69,16 +70,20 @@ export default async function CampaignsPage() {
       .order("created_at", { ascending: false })
       .returns<{ id: string; name: string; subject: string; type: string }[]>(),
 
-    // 5. Fetch Sender Email (Scoped to Tenant)
+    // 5. Fetch Full Workspace Settings for Preview Hydration (Scoped to Tenant)
     supabase
       .from("tenant_settings")
-      .select("sender_email")
+      .select("company_name, sender_email, reply_to_email")
       .eq("tenant_id", tenantId)
-      .returns<{ sender_email: string | null }[]>()
+      .returns<{
+        company_name: string | null;
+        sender_email: string | null;
+        reply_to_email: string | null;
+      }[]>()
       .maybeSingle()
   ]);
 
-  // Observability & Operator Logging (Constitution Rule 17)
+  // Observability & Operator Logging (Rule 17)
   if (riskError) {
     console.error("[CampaignsPage] Failed to fetch risk users:", { tenantId, error: riskError });
   }
@@ -110,14 +115,37 @@ export default async function CampaignsPage() {
 
   const initialSenderEmail = workspaceData?.sender_email ?? null;
 
+  // Hydrate Live Workspace Configuration for the Template Viewer Sandbox
+  const workspaceSettings = {
+    companyName: workspaceData?.company_name || "Arcli Workspace",
+    supportEmail: workspaceData?.reply_to_email || "support@arcli.io",
+    defaultSenderEmail: initialSenderEmail || "recovery@arcli.io",
+  };
+
   return (
     // Exact canvas background (#FAFAFA) and tight structural padding to frame the dispatch client properly
-    <div className="flex flex-col min-h-screen w-full bg-[#FAFAFA] p-6 lg:p-8 animate-in fade-in duration-300 font-sans">
+    <div className="flex flex-col min-h-screen w-full bg-[#FAFAFA] p-6 lg:p-8 animate-in fade-in duration-300 font-sans space-y-12">
+      
+      {/* Primary Dispatch Center */}
       <CampaignsClient 
         atRiskUsers={atRiskUsers} 
         emailTemplates={emailTemplates}
         initialSenderEmail={initialSenderEmail}
       />
+
+      {/* Live Verification Sandbox Layer */}
+      <div className="w-full max-w-[1240px] mx-auto pt-6 border-t border-slate-200/80">
+        <div className="mb-4">
+          <h2 className="text-xs font-bold uppercase tracking-[0.05em] text-slate-500">
+            Template Verification Sandbox
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Inspect live inbox rendering, verify CAN-SPAM variable interpolation, and export raw HTML.
+          </p>
+        </div>
+        <RecoveryTemplateViewer settings={workspaceSettings} />
+      </div>
+
     </div>
   );
 }
