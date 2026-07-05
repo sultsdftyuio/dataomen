@@ -2,21 +2,45 @@
 "use client";
 
 import React, { useTransition } from "react";
-import { CreditCard, CheckCircle2, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, CreditCard, CheckCircle2, LockKeyhole, RefreshCw, XCircle } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { upgradeToProPlan, manageBillingPortal } from "@/app/actions/billing";
+import { upgradeToProPlan, manageBillingPortal, cancelProPlan } from "@/app/actions/billing";
 import { C } from "@/lib/tokens";
 
 export interface WorkspaceBillingCardProps {
   planData?: {
     planName?: string;
-    planStatus?: "free" | "active" | "past_due" | "canceled" | "cancelled" | "trialing";
+    planStatus?: "free" | "active" | "past_due" | "canceled" | "cancelled" | "trialing" | "canceling";
     description?: string;
     daysRemaining?: number | null;
     priceText?: string;
     isProTier?: boolean;
+    features?: Array<{
+      label: string;
+      description: string;
+      unlocked: boolean;
+    }>;
   };
 }
+
+const DEFAULT_PRO_FEATURES = [
+  {
+    label: "Risk queue customer lists",
+    description: "View customers that need recovery attention.",
+    unlocked: false,
+  },
+  {
+    label: "Campaign sending",
+    description: "Send recovery emails to selected cohorts.",
+    unlocked: false,
+  },
+  {
+    label: "Custom templates",
+    description: "Create and reuse recovery messaging templates.",
+    unlocked: false,
+  },
+];
 
 export default function WorkspaceBillingCard({
   planData = {
@@ -27,18 +51,24 @@ export default function WorkspaceBillingCard({
     isProTier: false,
   },
 }: WorkspaceBillingCardProps) {
+  const router = useRouter();
   const [isBillingPending, startBillingTransition] = useTransition();
   const planStatus = planData.planStatus ?? "free";
   const planName = planData.planName ?? "Free Access";
   const priceText = planData.priceText ?? "$29/month after the 3-day trial";
   const canOpenPortal =
     planData.isProTier === true &&
+    ["active", "trialing", "past_due", "canceling"].includes(planStatus);
+  const isCancellationScheduled = planStatus === "canceling";
+  const canCancelPlan =
+    planData.isProTier === true &&
     ["active", "trialing", "past_due"].includes(planStatus);
-  const isHealthySubscriber = planStatus === "active" || planStatus === "trialing";
+  const hasOpenProAccess =
+    planStatus === "active" || planStatus === "trialing" || planStatus === "canceling";
   const statusTone =
-    planStatus === "past_due"
+    planStatus === "past_due" || isCancellationScheduled
       ? { color: "#B45309", background: C.amberPale }
-      : isHealthySubscriber
+      : hasOpenProAccess
         ? { color: C.green, background: C.greenPale }
         : planStatus === "canceled" || planStatus === "cancelled"
           ? { color: "#B91C1C", background: "#FEE2E2" }
@@ -47,9 +77,18 @@ export default function WorkspaceBillingCard({
     planData.description ??
     (planStatus === "trialing"
       ? "3-day Pro trial active. $29/month after the trial."
+      : planStatus === "canceling"
+        ? "Plan cancellation is scheduled. Pro features stay open until the current billing period ends."
       : planStatus === "active"
         ? "Pro billing active at $29/month."
         : "Restricted Free Access. Pro features are locked until you start the Pro trial.");
+  const proFeatures =
+    planData.features ??
+    DEFAULT_PRO_FEATURES.map((feature) => ({
+      ...feature,
+      unlocked: hasOpenProAccess,
+    }));
+  const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
   const actionLabel = isBillingPending
     ? "Redirecting..."
     : canOpenPortal
@@ -87,6 +126,36 @@ export default function WorkspaceBillingCard({
         toast({
           title: "Billing Error",
           description: message,
+          variant: "destructive",
+        });
+      }
+    });
+  };
+
+  const handleCancelPlan = () => {
+    const confirmed = window.confirm(
+      "Cancel your Pro plan at the end of the current billing period? Pro features will stay open until then."
+    );
+
+    if (!confirmed) return;
+
+    startBillingTransition(async () => {
+      try {
+        const result = await cancelProPlan();
+
+        toast({
+          title: result.status === "already_canceled" ? "Cancellation Already Scheduled" : "Plan Cancellation Scheduled",
+          description:
+            result.currentPeriodEnd
+              ? "Your Pro access remains open until the current billing period ends."
+              : "Your Pro access remains open until the current billing period ends.",
+        });
+
+        router.refresh();
+      } catch (error: any) {
+        toast({
+          title: "Cancellation Failed",
+          description: error?.message || "Could not cancel your plan. Please try again.",
           variant: "destructive",
         });
       }
@@ -144,7 +213,11 @@ export default function WorkspaceBillingCard({
             gap: 4,
           }}
         >
-          {isHealthySubscriber && <CheckCircle2 size={12} />}
+          {isCancellationScheduled ? (
+            <AlertCircle size={12} />
+          ) : (
+            hasOpenProAccess && <CheckCircle2 size={12} />
+          )}
           {planStatus.replace("_", " ")}
         </span>
       </div>
@@ -153,10 +226,24 @@ export default function WorkspaceBillingCard({
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "baseline",
+          alignItems: "flex-start",
+          gap: 16,
+          flexWrap: "wrap",
         }}
       >
-        <div>
+        <div style={{ minWidth: 220, flex: "1 1 260px" }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: C.muted,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 4,
+            }}
+          >
+            Current status
+          </div>
           <div style={{ fontSize: 13, fontWeight: 600, color: C.navy }}>
             {planName}
           </div>
@@ -167,34 +254,159 @@ export default function WorkspaceBillingCard({
             {priceText}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleManageBilling}
-          disabled={isBillingPending}
-          style={{
-            height: 28,
-            padding: "0 12px",
-            background: C.offWhite,
-            color: C.navy,
-            border: surfaceBorder,
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: isBillingPending ? "not-allowed" : "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {isBillingPending ? (
-            <>
-              <RefreshCw size={12} className="animate-spin" /> {actionLabel}
-            </>
-          ) : (
-            actionLabel
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={handleManageBilling}
+            disabled={isBillingPending}
+            style={{
+              height: 28,
+              padding: "0 12px",
+              background: C.offWhite,
+              color: C.navy,
+              border: surfaceBorder,
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: isBillingPending ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {isBillingPending ? (
+              <>
+                <RefreshCw size={12} className="animate-spin" /> {actionLabel}
+              </>
+            ) : (
+              actionLabel
+            )}
+          </button>
+
+          {canCancelPlan && (
+            <button
+              type="button"
+              onClick={handleCancelPlan}
+              disabled={isBillingPending}
+              style={{
+                height: 28,
+                padding: "0 12px",
+                background: "#FFF7ED",
+                color: "#B45309",
+                border: "1px solid #FED7AA",
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: isBillingPending ? "not-allowed" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <XCircle size={12} />
+              Cancel Plan
+            </button>
           )}
-        </button>
+
+          {isCancellationScheduled && (
+            <span
+              style={{
+                minHeight: 28,
+                display: "inline-flex",
+                alignItems: "center",
+                color: "#B45309",
+                background: C.amberPale,
+                border: "1px solid rgba(245,158,11,0.25)",
+                borderRadius: 6,
+                padding: "0 10px",
+                fontSize: 11,
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+              }}
+            >
+              Cancellation scheduled
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          borderTop: `1px solid ${C.rule}`,
+          paddingTop: 12,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.navy }}>
+              Pro feature access
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+              {unlockedFeatureCount} of {proFeatures.length} workspace features unlocked
+            </div>
+          </div>
+          <span
+            style={{
+              alignSelf: "flex-start",
+              fontSize: 11,
+              fontWeight: 700,
+              color: hasOpenProAccess ? C.green : C.navySoft,
+              background: hasOpenProAccess ? C.greenPale : C.offWhite,
+              border: `1px solid ${hasOpenProAccess ? "rgba(16,185,129,0.2)" : C.rule}`,
+              padding: "2px 8px",
+              borderRadius: 12,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {hasOpenProAccess ? "Unlocked" : "Locked"}
+          </span>
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {proFeatures.map((feature) => (
+            <div
+              key={feature.label}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "16px minmax(0, 1fr) auto",
+                alignItems: "start",
+                gap: 8,
+                padding: "8px 0",
+              }}
+            >
+              {feature.unlocked ? (
+                <CheckCircle2 size={14} color={C.green} style={{ marginTop: 1 }} />
+              ) : (
+                <LockKeyhole size={14} color={C.faint} style={{ marginTop: 1 }} />
+              )}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.navy }}>
+                  {feature.label}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 1, lineHeight: 1.35 }}>
+                  {feature.description}
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: feature.unlocked ? C.green : C.faint,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  paddingTop: 1,
+                }}
+              >
+                {feature.unlocked ? "Open" : "Pro"}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

@@ -14,8 +14,8 @@ type DodoWebhookEvent = {
 };
 
 function getDodoClient(): DodoPayments {
-  const apiKey = process.env.DODO_PAYMENTS_API_KEY;
-  const webhookKey = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+  const apiKey = sanitizeEnvSecret(process.env.DODO_PAYMENTS_API_KEY);
+  const webhookKey = sanitizeEnvSecret(process.env.DODO_PAYMENTS_WEBHOOK_KEY);
 
   if (!apiKey) {
     throw new Error("Missing DODO_PAYMENTS_API_KEY environment variable.");
@@ -34,6 +34,10 @@ function getDodoClient(): DodoPayments {
     webhookKey,
     environment,
   });
+}
+
+function sanitizeEnvSecret(value: string | undefined): string {
+  return value?.trim().replace(/^["']+|["']+$/g, "").trim() ?? "";
 }
 
 function getSupabaseServiceClient() {
@@ -58,6 +62,45 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return { value: String(error) };
+}
+
+function topLevelKeys(record: Record<string, unknown> | null): string[] {
+  return record ? Object.keys(record).sort() : [];
+}
+
+function webhookHeaderKeys(headers: Record<string, string>): string[] {
+  return Object.keys(headers)
+    .filter((key) => key.startsWith("webhook-") || key.startsWith("svix-"))
+    .sort();
+}
+
+function safeParseWebhookEnvelope(rawBody: string): DodoWebhookEvent | null {
+  try {
+    const parsed = JSON.parse(rawBody);
+    const record = asRecord(parsed);
+
+    if (!record) return null;
+
+    return {
+      type: readString(record, "type") ?? "unknown",
+      timestamp: readString(record, "timestamp") ?? undefined,
+      data: asRecord(record.data) ?? undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function readString(record: Record<string, unknown> | null, key: string): string | null {
   if (!record) return null;
   const value = record[key];
@@ -70,6 +113,12 @@ function readNumber(record: Record<string, unknown> | null, key: string): number
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function readBoolean(record: Record<string, unknown> | null, key: string): boolean | null {
+  if (!record) return null;
+  const value = record[key];
+  return typeof value === "boolean" ? value : null;
+}
+
 function addDays(dateValue: string | undefined, days: number): string {
   const start = dateValue && Number.isFinite(Date.parse(dateValue))
     ? new Date(dateValue)
@@ -77,17 +126,21 @@ function addDays(dateValue: string | undefined, days: number): string {
   return new Date(start.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function extractTenantId(data: Record<string, unknown>): string | null {
+function extractTenantIdFromPayload(data: Record<string, unknown>): string | null {
   const customer = asRecord(data.customer);
   const subscription = asRecord(data.subscription);
   const payment = asRecord(data.payment);
+  const checkoutSession = asRecord(data.checkout_session);
 
   const metadataSources = [
     asRecord(data.metadata),
     asRecord(data.custom_data),
+    asRecord(data.checkout_session_metadata),
     asRecord(customer?.metadata),
     asRecord(subscription?.metadata),
     asRecord(payment?.metadata),
+    asRecord(checkoutSession?.metadata),
+    asRecord(checkoutSession?.checkout_session_metadata),
   ];
 
   for (const metadata of metadataSources) {
@@ -101,6 +154,48 @@ function extractTenantId(data: Record<string, unknown>): string | null {
   }
 
   return null;
+}
+
+async function extractTenantId(
+  data: Record<string, unknown>,
+  dodo: DodoPayments,
+  eventType: string
+): Promise<string | null> {
+  const tenantId = extractTenantIdFromPayload(data);
+  if (tenantId) return tenantId;
+
+  const subscriptionId = extractSubscriptionId(data);
+
+  if (!subscriptionId || !eventType.startsWith("subscription.")) {
+    return null;
+  }
+
+  try {
+    const subscription = await dodo.subscriptions.retrieve(subscriptionId);
+    const subscriptionRecord = asRecord(subscription);
+    const tenantIdFromSubscription = subscriptionRecord
+      ? extractTenantIdFromPayload(subscriptionRecord)
+      : null;
+
+    console.info("[Dodo Webhook] Dodo subscription metadata fallback completed", {
+      event_type: eventType,
+      subscription_id: subscriptionId,
+      resolved_tenant_id: Boolean(tenantIdFromSubscription),
+      subscription_data_keys: topLevelKeys(subscriptionRecord),
+      subscription_metadata_keys: topLevelKeys(asRecord(subscriptionRecord?.metadata)),
+    });
+
+    return tenantIdFromSubscription;
+  } catch (error) {
+    console.error("[Dodo Webhook] Dodo subscription metadata fallback failed", {
+      event_type: eventType,
+      subscription_id: subscriptionId,
+      data_keys: topLevelKeys(data),
+      error: serializeError(error),
+    });
+
+    return null;
+  }
 }
 
 function extractCustomerId(data: Record<string, unknown>): string | null {
@@ -203,15 +298,21 @@ function tenantUpdateFor(event: DodoWebhookEvent): Record<string, unknown> | nul
     case "subscription.plan_changed": {
       const trialEndsAt = resolveTrialEndsAt(event.type, data, event.timestamp);
       const trialEndsTimestamp = trialEndsAt ? Date.parse(trialEndsAt) : NaN;
+      const cancelAtPeriodEnd = readBoolean(data, "cancel_at_next_billing_date") === true;
       const isTrialing =
         Number.isFinite(trialEndsTimestamp) && trialEndsTimestamp > Date.now();
+      const subscriptionStatus = cancelAtPeriodEnd
+        ? "canceling"
+        : isTrialing
+          ? "trialing"
+          : "active";
 
       return compact({
         ...common,
         plan_tier: "pro",
-        subscription_status: isTrialing ? "trialing" : "active",
+        subscription_status: subscriptionStatus,
         trial_ends_at: isTrialing ? trialEndsAt : null,
-        billing_status: isTrialing ? "trialing" : "active",
+        billing_status: subscriptionStatus,
         plan: "pro",
         status: "active",
       });
@@ -248,6 +349,8 @@ function tenantUpdateFor(event: DodoWebhookEvent): Record<string, unknown> | nul
 export async function POST(request: Request) {
   let event: DodoWebhookEvent;
   let dodo: DodoPayments;
+  let rawBody = "";
+  let headers: Record<string, string> = {};
 
   try {
     dodo = getDodoClient();
@@ -257,24 +360,50 @@ export async function POST(request: Request) {
   }
 
   try {
-    const rawBody = await request.text();
-    const headers: Record<string, string> = {};
+    rawBody = await request.text();
     request.headers.forEach((value, key) => {
       headers[key] = value;
     });
 
+    const untrustedEnvelope = safeParseWebhookEnvelope(rawBody);
+    console.info("[Dodo Webhook] Verification starting", {
+      event_type: untrustedEnvelope?.type ?? "unknown",
+      data_keys: topLevelKeys(asRecord(untrustedEnvelope?.data)),
+      body_bytes: Buffer.byteLength(rawBody, "utf8"),
+      signature_header_keys: webhookHeaderKeys(headers),
+    });
+
     event = dodo.webhooks.unwrap(rawBody, { headers }) as unknown as DodoWebhookEvent;
+
+    console.info("[Dodo Webhook] Verification succeeded", {
+      event_type: event.type,
+      data_keys: topLevelKeys(asRecord(event.data)),
+    });
   } catch (error) {
-    console.error("[Dodo Webhook] Verification failed", { error });
+    const untrustedEnvelope = safeParseWebhookEnvelope(rawBody);
+
+    console.error("[Dodo Webhook] Verification failed", {
+      event_type: untrustedEnvelope?.type ?? "unknown",
+      data_keys: topLevelKeys(asRecord(untrustedEnvelope?.data)),
+      body_bytes: Buffer.byteLength(rawBody, "utf8"),
+      signature_header_keys: webhookHeaderKeys(headers),
+      error: serializeError(error),
+    });
+
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
 
-  const data = event.data ?? {};
-  const tenantId = extractTenantId(data);
+  const data = asRecord(event.data) ?? {};
+  const tenantId = await extractTenantId(data, dodo, event.type);
 
   if (!tenantId) {
     console.error("[Dodo Webhook] Missing tenant_id metadata", {
       event_type: event.type,
+      data_keys: topLevelKeys(data),
+      customer_id: extractCustomerId(data),
+      subscription_id: extractSubscriptionId(data),
+      metadata_keys: topLevelKeys(asRecord(data.metadata)),
+      checkout_session_metadata_keys: topLevelKeys(asRecord(data.checkout_session_metadata)),
     });
     return NextResponse.json({ error: "Missing tenant_id metadata." }, { status: 400 });
   }

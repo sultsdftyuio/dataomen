@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Sparkles, CheckCircle2 } from "lucide-react";
+import { Sparkles, AlertCircle, CheckCircle2, LockKeyhole } from "lucide-react";
 import React, {
   useEffect,
   useRef,
@@ -15,6 +15,7 @@ import { useVisible } from "@/hooks/useVisible";
 
 import { QuickStartGuideSteps } from "@/app/(dashboard)/dashboard/tutorial/QuickStartGuideSteps";
 import { QuickStartGuideModal } from "@/app/(dashboard)/dashboard/tutorial/QuickStartGuideModal";
+import type { WorkspaceEntitlements } from "@/lib/entitlements";
 
 // Removed "missing_stripe" from the possible states
 export type SetupState =
@@ -27,6 +28,7 @@ export interface QuickStartGuideProps {
   hasApiKey: boolean;
   hasReceivedData: boolean;
   setupState: SetupState;
+  entitlements?: WorkspaceEntitlements;
 }
 
 function formatLastChecked(timestamp: Date, now: number): string {
@@ -40,6 +42,7 @@ export default function QuickStartGuide({
   hasApiKey,
   hasReceivedData,
   setupState,
+  entitlements,
 }: QuickStartGuideProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -138,6 +141,14 @@ export default function QuickStartGuide({
 
   const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
   const sans = "var(--font-geist-sans), sans-serif";
+  const proFeatures = entitlements
+    ? [
+        { label: "Risk queue", unlocked: entitlements.canViewCustomerLists },
+        { label: "Campaign sending", unlocked: entitlements.canSendEmails },
+        { label: "Custom templates", unlocked: entitlements.canCreateTemplates },
+      ]
+    : [];
+  const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
 
   return (
     <section
@@ -282,6 +293,108 @@ export default function QuickStartGuide({
         </div>
 
         {/* ─── Steps ────────────────────────────────────────────────── */}
+        {entitlements && (
+          <div
+            style={{
+              border: surfaceBorder,
+              borderRadius: 8,
+              background: "#FFFFFF",
+              padding: 14,
+              marginBottom: 24,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    color: entitlements.isCanceling
+                      ? "#B45309"
+                      : entitlements.isPro
+                        ? "#059669"
+                        : C.navySoft,
+                    background: entitlements.isCanceling
+                      ? C.amberPale
+                      : entitlements.isPro
+                        ? "#ECFDF5"
+                        : C.offWhite,
+                    border: `1px solid ${
+                      entitlements.isCanceling
+                        ? "rgba(245,158,11,0.25)"
+                        : entitlements.isPro
+                          ? "#A7F3D0"
+                          : C.rule
+                    }`,
+                    borderRadius: 999,
+                    padding: "4px 9px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  {entitlements.isCanceling ? (
+                    <AlertCircle size={14} />
+                  ) : entitlements.isPro ? (
+                    <CheckCircle2 size={14} />
+                  ) : (
+                    <LockKeyhole size={14} />
+                  )}
+                  {entitlements.billingLabel}
+                </div>
+                <p style={{ margin: "8px 0 0", color: C.muted, fontSize: 12, lineHeight: 1.45 }}>
+                  {entitlements.billingDescription}
+                </p>
+              </div>
+              <div style={{ fontSize: 11, color: C.navySoft, fontWeight: 700, whiteSpace: "nowrap" }}>
+                {unlockedFeatureCount} of {proFeatures.length} Pro features open
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {proFeatures.map((feature) => (
+                <span
+                  key={feature.label}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    border: `1px solid ${feature.unlocked ? "#A7F3D0" : C.rule}`,
+                    background: feature.unlocked ? "#ECFDF5" : C.offWhite,
+                    color: feature.unlocked ? "#047857" : C.muted,
+                    borderRadius: 6,
+                    padding: "5px 8px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {feature.unlocked ? (
+                    <CheckCircle2 size={13} />
+                  ) : (
+                    <LockKeyhole size={13} />
+                  )}
+                  {feature.label}
+                  <span style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {feature.unlocked ? "Open" : "Pro"}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div
           className={`fu ${visSteps ? "vis" : ""}`}
           ref={refSteps}

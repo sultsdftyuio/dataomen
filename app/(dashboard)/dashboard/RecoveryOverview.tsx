@@ -6,11 +6,16 @@ import { ApiClient } from "@/lib/api-client";
 import Link from "next/link";
 import { 
   Activity, 
+  AlertCircle,
   DollarSign, 
   ShieldAlert, 
   ArrowRight,
+  CheckCircle2,
+  LockKeyhole,
   RefreshCw
 } from "lucide-react";
+
+import type { WorkspaceEntitlements } from "@/lib/entitlements";
 
 // Phase 2: Added RecentRisk interface for dynamic data
 interface RecentRisk {
@@ -30,8 +35,12 @@ interface MetricsSummary {
   recentRisks: RecentRisk[]; // Phase 2: Replaces hardcoded preview
 }
 
+interface RecoveryOverviewProps {
+  entitlements?: WorkspaceEntitlements;
+}
+
 // Phase 1: Removed tenantId prop (Server-side resolution only)
-export default function RecoveryOverview() {
+export default function RecoveryOverview({ entitlements }: RecoveryOverviewProps) {
   const [loading, setLoading] = useState(true);
   
   // Deterministic state initialized to baseline zero
@@ -86,6 +95,22 @@ export default function RecoveryOverview() {
     };
   }, []); // Removed tenantId dependency
 
+  const proFeatures = entitlements
+    ? [
+        { label: "Risk queue", unlocked: entitlements.canViewCustomerLists },
+        { label: "Campaign sending", unlocked: entitlements.canSendEmails },
+        { label: "Custom templates", unlocked: entitlements.canCreateTemplates },
+      ]
+    : [];
+  const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
+  const statusTone = entitlements?.isCanceling
+    ? "border-amber-200 bg-amber-50 text-amber-700"
+    : entitlements?.isPro
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+    : entitlements?.planTier === "pro" && entitlements.subscriptionStatus === "past_due"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : "border-slate-200 bg-slate-100 text-slate-700";
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       
@@ -105,6 +130,59 @@ export default function RecoveryOverview() {
           Pipeline Active
         </div>
       </div>
+
+      {entitlements && (
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone}`}>
+                {entitlements.isCanceling ? (
+                  <AlertCircle className="h-3.5 w-3.5" />
+                ) : entitlements.isPro ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                ) : (
+                  <LockKeyhole className="h-3.5 w-3.5" />
+                )}
+                {entitlements.billingLabel}
+              </span>
+              <span className="text-xs font-semibold text-slate-500">
+                Current workspace status
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              {entitlements.billingDescription}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 lg:items-end">
+            <div className="text-xs font-semibold text-slate-500">
+              {unlockedFeatureCount} of {proFeatures.length} Pro features open
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              {proFeatures.map((feature) => (
+                <span
+                  key={feature.label}
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold ${
+                    feature.unlocked
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-slate-50 text-slate-500"
+                  }`}
+                >
+                  {feature.unlocked ? (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <LockKeyhole className="h-3.5 w-3.5" />
+                  )}
+                  {feature.label}
+                  <span className="uppercase tracking-wide">
+                    {feature.unlocked ? "Open" : "Pro"}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 2. Hero Metrics (Value Realization) ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

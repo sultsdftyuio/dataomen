@@ -25,9 +25,12 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
   const activePastDue =
     entitlements.planTier === "pro" &&
     entitlements.subscriptionStatus === "past_due";
+  const activeCanceling =
+    entitlements.planTier === "pro" &&
+    entitlements.subscriptionStatus === "canceling";
 
   const badgeClassName = isPro
-    ? isTrialing
+    ? isTrialing || activeCanceling
       ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer transition-colors"
       : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer transition-colors"
     : activePastDue
@@ -42,7 +45,10 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
         <button type="button" className="focus:outline-none">
           <Badge variant="outline" className={badgeClassName}>
             {isTrialing && <Sparkles className="mr-1 h-3 w-3 text-amber-500" />}
-            {isPro && !isTrialing && (
+            {activeCanceling && (
+              <AlertCircle className="mr-1 h-3 w-3 text-amber-600" />
+            )}
+            {isPro && !isTrialing && !activeCanceling && (
               <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600" />
             )}
             {activePastDue && (

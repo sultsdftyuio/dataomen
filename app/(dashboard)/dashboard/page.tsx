@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 import RecoveryOverview from "./RecoveryOverview";
@@ -11,7 +13,19 @@ export const metadata: Metadata = {
   description: "Monitor churn risk and recovery performance.",
 };
 
-export default async function DashboardPage() {
+type DashboardPageProps = {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+function searchParamValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const billingReturnState = searchParamValue(resolvedSearchParams.billing);
+
   // ============================================================================
   // 1. Resolve Auth + Tenant Context (Fail Closed)
   // ============================================================================
@@ -42,6 +56,35 @@ export default async function DashboardPage() {
 
   const { supabase: tenantSupabase, tenantId } = tenantResult.context;
 
+  if (billingReturnState === "trial_started") {
+    let shouldRefreshDashboard = false;
+
+    try {
+      const result = await verifyAndSyncSubscriptionStatus(tenantId);
+
+      console.info("[Dashboard] Billing return verification completed", {
+        event: "dashboard_billing_return_verified",
+        tenant_id: tenantId,
+        sync_status: result.status,
+        lookup_strategy: result.lookupStrategy,
+      });
+
+      if (result.status === "synced" || result.status === "already_synced") {
+        shouldRefreshDashboard = true;
+      }
+    } catch (error) {
+      console.error("[Dashboard] Billing return verification failed", {
+        event: "dashboard_billing_return_verification_failed",
+        tenant_id: tenantId,
+        error,
+      });
+    }
+
+    if (shouldRefreshDashboard) {
+      redirect("/dashboard");
+    }
+  }
+
   // ============================================================================
   // 2. Deterministic Setup Verification
   // ============================================================================
@@ -50,9 +93,10 @@ export default async function DashboardPage() {
   // ============================================================================
   
   let apiKeyResult, eventResult;
+  let entitlements: Awaited<ReturnType<typeof getWorkspaceEntitlements>> | null = null;
 
   try {
-    [apiKeyResult, eventResult] = await Promise.all([
+    [apiKeyResult, eventResult, entitlements] = await Promise.all([
       tenantSupabase
         .from("api_keys")
         .select("id")
@@ -67,6 +111,8 @@ export default async function DashboardPage() {
         .eq("tenant_id", tenantId)
         .limit(1)
         .maybeSingle(),
+
+      getWorkspaceEntitlements(tenantSupabase, tenantId),
     ]);
   } catch (error) {
     // Catch unhandled promise rejections (e.g. network failure to Supabase)
@@ -80,6 +126,7 @@ export default async function DashboardPage() {
   if (
     !apiKeyResult ||
     !eventResult ||
+    !entitlements ||
     apiKeyResult.error || 
     eventResult.error
   ) {
@@ -117,12 +164,13 @@ export default async function DashboardPage() {
   return (
     <div className="w-full mx-auto h-full flex flex-col animate-in fade-in duration-300">
       {setupState === "active" ? (
-        <RecoveryOverview />
+        <RecoveryOverview entitlements={entitlements} />
       ) : (
         <QuickStartGuide
           hasApiKey={hasApiKey}
           hasReceivedData={hasReceivedData}
           setupState={setupState}
+          entitlements={entitlements}
         />
       )}
     </div>
