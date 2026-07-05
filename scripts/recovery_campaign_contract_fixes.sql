@@ -51,6 +51,24 @@ ALTER TABLE public.manual_interventions
     ADD COLUMN IF NOT EXISTS user_id TEXT,
     ADD COLUMN IF NOT EXISTS queue_item_id UUID;
 
+ALTER TABLE public.risk_score_explanations
+    ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+
+ALTER TABLE public.campaign_events
+    ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+
+UPDATE public.risk_score_explanations r
+   SET tenant_id = e.tenant_id
+  FROM public.recovery_emails e
+ WHERE r.tenant_id IS NULL
+   AND r.queue_item_id = e.id;
+
+UPDATE public.campaign_events c
+   SET tenant_id = e.tenant_id
+  FROM public.recovery_emails e
+ WHERE c.tenant_id IS NULL
+   AND c.queue_item_id = e.id;
+
 ALTER TABLE public.billing_webhook_events
     ADD COLUMN IF NOT EXISTS provider_event_id TEXT,
     ADD COLUMN IF NOT EXISTS payload_json JSONB NOT NULL DEFAULT '{}'::JSONB;
@@ -108,6 +126,16 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_recovery_email_events_tenant_email
     ON public.recovery_email_events (tenant_id, email_id, occurred_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recovery_emails_batch_user_campaign
+    ON public.recovery_emails (tenant_id, idempotency_key, user_id, campaign_type)
+    WHERE idempotency_key IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_risk_score_explanations_tenant_queue_item
+    ON public.risk_score_explanations (tenant_id, queue_item_id);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_events_tenant_queue_item
+    ON public.campaign_events (tenant_id, queue_item_id);
 
 CREATE INDEX IF NOT EXISTS idx_recovery_emails_provider_message_id
     ON public.recovery_emails (provider_message_id)

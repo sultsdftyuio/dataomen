@@ -56,11 +56,13 @@ export const GET = withTenant(async (req, { supabase, tenantId, userId }) => {
     db
       .from("risk_score_explanations")
       .select("id, factor, weight, order_index")
+      .eq("tenant_id", tenantId)
       .eq("queue_item_id", itemId)
       .order("order_index", { ascending: true }),
     db
       .from("campaign_events")
       .select("id, name, date, status")
+      .eq("tenant_id", tenantId)
       .eq("queue_item_id", itemId)
       .order("date", { ascending: false })
       .limit(50),

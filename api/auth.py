@@ -193,10 +193,10 @@ def get_auth_context(
         # Upfront Tenant Scope Resolution (Single Source of Truth)
         # -------------------------------------------------------------------
         try:
-            # Explicitly cast :user_id to ::uuid to prevent PostgreSQL type casting errors
+            # Let SQLAlchemy bind the UUID value directly so PostgreSQL can infer the type safely.
             row = db.execute(
-                text("SELECT tenant_id FROM tenant_users WHERE user_id = :user_id::uuid LIMIT 1"),
-                {"user_id": user_id}
+                text("SELECT tenant_id FROM tenant_users WHERE user_id = :user_id LIMIT 1"),
+                {"user_id": user_id},
             ).fetchone()
         except Exception:
             logger.exception("Database failure resolving tenant mapping for user_id=%s", user_id)

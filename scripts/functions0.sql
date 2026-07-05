@@ -313,6 +313,7 @@ ALTER TABLE churn_risk_state ADD COLUMN IF NOT EXISTS mrr_at_risk NUMERIC(18,2) 
 -- Risk factor explanations (written by the scoring engine)
 CREATE TABLE IF NOT EXISTS risk_score_explanations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id text,  -- references tenants.tenant_id (FK added in Section 15)
   queue_item_id uuid,  -- references recovery_emails.id (FK added in Section 15)
   factor text NOT NULL,
   weight integer NOT NULL,
@@ -323,6 +324,7 @@ CREATE TABLE IF NOT EXISTS risk_score_explanations (
 -- Campaign events (written by the automation pipeline)
 CREATE TABLE IF NOT EXISTS campaign_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id text,  -- references tenants.tenant_id (FK added in Section 15)
   queue_item_id uuid,  -- references recovery_emails.id (FK added in Section 15)
   name text NOT NULL,
   date timestamptz NOT NULL,
@@ -1574,6 +1576,16 @@ DO $$ BEGIN ALTER TABLE recovery_email_events
     NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN ALTER TABLE risk_score_explanations
+    ADD CONSTRAINT fk_risk_score_explanations_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+    NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN ALTER TABLE campaign_events
+    ADD CONSTRAINT fk_campaign_events_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(tenant_id)
+    NOT VALID DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- Child FKs: ON DELETE SET NULL preserves audit/DLQ rows independently.
 DO $$ BEGIN ALTER TABLE recovery_email_events
     ADD CONSTRAINT fk_recovery_email_events_email FOREIGN KEY (email_id) REFERENCES recovery_emails(id)
@@ -1631,6 +1643,12 @@ DO $$ BEGIN ALTER TABLE campaign_events
     ADD CONSTRAINT fk_campaign_events_email FOREIGN KEY (queue_item_id) REFERENCES recovery_emails(id)
     ON DELETE CASCADE NOT VALID DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE INDEX IF NOT EXISTS idx_risk_score_explanations_tenant_queue_item
+    ON risk_score_explanations (tenant_id, queue_item_id);
+
+CREATE INDEX IF NOT EXISTS idx_campaign_events_tenant_queue_item
+    ON campaign_events (tenant_id, queue_item_id);
 
 
 -- ============================================================================

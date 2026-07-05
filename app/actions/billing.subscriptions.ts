@@ -163,14 +163,15 @@ export async function verifyAndSyncSubscriptionStatus(
     typeof update.subscription_status === "string"
       ? update.subscription_status
       : null;
-  const activeLocalStatus = ["active", "trialing", "canceling"].includes(
-    tenant.subscription_status?.toLowerCase() ?? ""
-  );
+  const desiredCurrentPeriodEnd =
+    typeof update.current_period_end === "string" ? update.current_period_end : undefined;
   const shouldSync =
     tenant.plan_tier !== "pro" ||
-    !activeLocalStatus ||
+    tenant.subscription_status?.toLowerCase() !== desiredSubscriptionStatus ||
     tenant.dodo_customer_id !== desiredCustomerId ||
-    tenant.dodo_subscription_id !== desiredSubscriptionId;
+    tenant.dodo_subscription_id !== desiredSubscriptionId ||
+    (desiredCurrentPeriodEnd !== undefined &&
+      tenant.current_period_end !== desiredCurrentPeriodEnd);
 
   if (!shouldSync) {
     console.info(
