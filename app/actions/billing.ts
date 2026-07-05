@@ -155,6 +155,7 @@ function getSupabaseServiceClient() {
 function isBillingTestControlsEnabled(): boolean {
   const explicitFlag = sanitizeEnvSecret(process.env.BILLING_TEST_CONTROLS_ENABLED)
     .toLowerCase();
+  const vercelEnv = sanitizeEnvSecret(process.env.VERCEL_ENV).toLowerCase();
 
   if (["true", "1", "yes"].includes(explicitFlag)) {
     return true;
@@ -164,7 +165,11 @@ function isBillingTestControlsEnabled(): boolean {
     return false;
   }
 
-  return process.env.NODE_ENV !== "production";
+  return (
+    process.env.NODE_ENV !== "production" ||
+    vercelEnv === "preview" ||
+    vercelEnv === "development"
+  );
 }
 
 function isBillingTestState(value: string): value is BillingTestState {

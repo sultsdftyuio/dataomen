@@ -26,6 +26,11 @@ function billingTestControlsEnabled(): boolean {
     .replace(/^["']+|["']+$/g, "")
     .trim()
     .toLowerCase();
+  const vercelEnv = process.env.VERCEL_ENV
+    ?.trim()
+    .replace(/^["']+|["']+$/g, "")
+    .trim()
+    .toLowerCase();
 
   if (explicitFlag && ["true", "1", "yes"].includes(explicitFlag)) {
     return true;
@@ -35,7 +40,11 @@ function billingTestControlsEnabled(): boolean {
     return false;
   }
 
-  return process.env.NODE_ENV !== "production";
+  return (
+    process.env.NODE_ENV !== "production" ||
+    vercelEnv === "preview" ||
+    vercelEnv === "development"
+  );
 }
 
 export default async function SettingsPage({ 
