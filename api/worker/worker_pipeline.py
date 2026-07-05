@@ -477,3 +477,38 @@ class PipelineOrchestrator:
 
             cursor_value = last_value
             cursor_id = last_id
+@dramatiq.actor(max_retries=3)
+def process_subscription_ended_webhook(tenant_id: str, subscription_id: str, payment_method_id: str):
+    """
+    Executes when the grace period expires. Safely detaches card & downgrades tier.
+    Aligned with Arcli Rule 2 (Async Boundary) & Rule 11 (Idempotency).
+    """
+    db = get_db_connection()
+    dodo = DodoClient()
+    
+    try:
+        # 1. Now that the subscription is dead, the payment method CAN be safely deleted
+        if payment_method_id:
+            try:
+                dodo.payment_methods.delete(payment_method_id)
+                logger.info("payment_method_deleted tenant_id=%s pm_id=%s", tenant_id, payment_method_id)
+            except Exception as e:
+                # Log non-fatal error if card was already removed upstream
+                logger.warning("pm_cleanup_warning tenant_id=%s reason=%s", tenant_id, str(e))
+
+        # 2. Determinize database state to normalized uppercase enum (Guarantees no Check Constraint 23514 fails)
+        with db.transaction() as cursor:
+            cursor.execute("""
+                UPDATE tenants
+                SET plan_tier = 'FREE',
+                    subscription_status = 'canceled',
+                    payment_method_id = NULL,
+                    updated_at = NOW()
+                WHERE tenant_id = %s AND subscription_id = %s;
+            """, (tenant_id, subscription_id))
+            
+        logger.info("subscription_grace_period_ended tenant_id=%s downgraded_to=FREE", tenant_id)
+
+    except Exception as exc:
+        logger.error("webhook_cleanup_failed tenant_id=%s error=%s", tenant_id, str(exc))
+        raise exc

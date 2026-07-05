@@ -44,18 +44,20 @@ export const PRO_PLAN_REQUIRED_MESSAGE =
 export const PRO_TRIAL_DAYS = 3;
 export const PRO_MONTHLY_PRICE = 29;
 
+// Supports both Pro and Enterprise tiers to prevent enterprise users from being locked out
+const PAID_PLAN_TIERS = new Set(["pro", "enterprise"]);
+
+// Active lifecycle statuses that permit entitlement access
 const ACTIVE_STATUSES = new Set(["active", "trialing", "canceling"]);
 
+/**
+ * Deterministically normalizes database strings to lowercase trimmed formats.
+ * Prevents case-sensitivity mismatches against schema CHECK constraints ('FREE' vs 'free').
+ */
 function normalize(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim().toLowerCase();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeTrialEndsAt(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? value : null;
 }
 
 function normalizeTimestamp(value: unknown): string | null {
@@ -84,6 +86,10 @@ function daysUntil(value: string | null): number | null {
   return Math.max(0, Math.ceil((timestamp - Date.now()) / msPerDay));
 }
 
+/**
+ * Core entitlement state engine. Evaluates plan access deterministically.
+ * Rule 3 & Rule 11: Enforces defensive grace-period checks during scheduled cancellations.
+ */
 function buildEntitlements(
   tenantId: string,
   planValue: unknown,
@@ -92,28 +98,47 @@ function buildEntitlements(
   currentPeriodEndValue?: unknown
 ): WorkspaceEntitlements {
   const planTier = normalize(planValue) ?? "free";
-  const subscriptionStatus = normalize(statusValue) ?? (planTier === "pro" ? null : "free");
-  const trialEndsAt = normalizeTrialEndsAt(trialEndsAtValue);
+  const isPaidTier = PAID_PLAN_TIERS.has(planTier);
+
+  const subscriptionStatus =
+    normalize(statusValue) ?? (isPaidTier ? null : "free");
+
+  const trialEndsAt = normalizeTimestamp(trialEndsAtValue);
   const currentPeriodEnd = normalizeTimestamp(currentPeriodEndValue);
-  const hasActiveStatus = subscriptionStatus
+
+  // Validate status is active or trialing
+  let hasActiveStatus = subscriptionStatus
     ? ACTIVE_STATUSES.has(subscriptionStatus)
     : false;
-  const isPro = planTier === "pro" && hasActiveStatus;
-  const isTrialing = planTier === "pro" && subscriptionStatus === "trialing";
-  const isCanceling = planTier === "pro" && subscriptionStatus === "canceling";
+
+  // Defensive Guard: If canceling, verify current_period_end hasn't already expired
+  // Protects against delayed webhook delivery (Arcli Rule 14) leaving expired workspaces enabled
+  if (subscriptionStatus === "canceling" && currentPeriodEnd) {
+    const periodEndTimestamp = Date.parse(currentPeriodEnd);
+    if (Number.isFinite(periodEndTimestamp) && periodEndTimestamp < Date.now()) {
+      hasActiveStatus = false;
+    }
+  }
+
+  const isPro = isPaidTier && hasActiveStatus;
+  const isTrialing = isPaidTier && subscriptionStatus === "trialing";
+  const isCanceling = isPaidTier && subscriptionStatus === "canceling" && hasActiveStatus;
   const isFreeAccess = !isPro;
+
   const daysUntilTrialEnds = isTrialing ? daysUntil(trialEndsAt) : null;
-  const isPastDue = planTier === "pro" && subscriptionStatus === "past_due";
+  const isPastDue = isPaidTier && subscriptionStatus === "past_due";
   const currentPeriodEndLabel = formatBillingDate(currentPeriodEnd);
+
   const billingLabel = isTrialing
     ? "Pro Trial"
     : isCanceling
       ? "Pro Ending"
     : isPro
-      ? "Pro"
+      ? planTier === "enterprise" ? "Enterprise" : "Pro"
       : isPastDue
         ? "Payment Past Due"
       : "Free Access";
+
   const billingDescription = isTrialing
     ? daysUntilTrialEnds === null
       ? `${PRO_TRIAL_DAYS}-day Pro trial active. $${PRO_MONTHLY_PRICE}/month after the trial.`
@@ -130,7 +155,7 @@ function buildEntitlements(
 
   return {
     tenantId,
-    planTier,
+    planTier: planTier.toUpperCase(), // Returns normalized uppercase string ('PRO', 'FREE') to callers
     subscriptionStatus,
     trialEndsAt,
     currentPeriodEnd,
@@ -149,6 +174,10 @@ function buildEntitlements(
   };
 }
 
+/**
+ * Resolves workspace entitlements by querying tenant isolation storage.
+ * Enforces Arcli Rule 6 (Tenant Scope) & Rule 17 (Operator Observability).
+ */
 export async function getWorkspaceEntitlements(
   supabase: EntitlementClient,
   tenantId: string
@@ -169,6 +198,7 @@ export async function getWorkspaceEntitlements(
     );
   }
 
+  // Graceful degradation / backward compatibility fallback for older schema versions
   const { data: legacyData, error: legacyError } = await supabase
     .from("tenants")
     .select("tenant_id, plan, status")
@@ -176,10 +206,12 @@ export async function getWorkspaceEntitlements(
     .maybeSingle<LegacyTenantPlanRow>();
 
   if (legacyError || !legacyData) {
+    // Structured Operator Observability (Rule 17)
     console.error("[Entitlements] Failed to resolve workspace plan", {
-      tenantId,
-      preferredError: error,
-      legacyError,
+      event: "entitlement_resolution_failed",
+      tenant_id: tenantId,
+      primary_error: error?.message || error,
+      legacy_error: legacyError?.message || legacyError,
     });
     return buildEntitlements(tenantId, "free", "free");
   }
@@ -187,6 +219,9 @@ export async function getWorkspaceEntitlements(
   return buildEntitlements(tenantId, legacyData.plan, legacyData.status);
 }
 
+/**
+ * Guard utility for Server Actions & API routes. Throws synchronously if entitlements are missing.
+ */
 export async function requireProEntitlement(
   supabase: EntitlementClient,
   tenantId: string

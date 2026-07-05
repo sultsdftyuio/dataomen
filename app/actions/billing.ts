@@ -9,7 +9,7 @@ import {
 } from "./billing.utils";
 
 /* ------------------------------------------------------------------ */
-/*  Re-exports — types                                                 */
+/* Re-exports — types                                                */
 /* ------------------------------------------------------------------ */
 
 export type {
@@ -24,7 +24,7 @@ export type {
 } from "./billing.utils";
 
 /* ------------------------------------------------------------------ */
-/*  Re-exports — subscription actions                                 */
+/* Re-exports — subscription actions                                 */
 /* ------------------------------------------------------------------ */
 
 export {
@@ -34,7 +34,7 @@ export {
 } from "./billing.subscriptions";
 
 /* ------------------------------------------------------------------ */
-/*  Checkout & upgrade                                                */
+/* Checkout & Upgrade Flows                                          */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -42,7 +42,7 @@ export {
  * Enforces strict synchronous tenant isolation and prevents duplicate checkouts.
  */
 export async function upgradeToProPlan() {
-  // 2. Strict Environment Variable Validation
+  // 1. Strict Environment Variable Validation
   const productId = process.env.DODO_PRO_PLAN_ID?.trim();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
 
@@ -56,11 +56,12 @@ export async function upgradeToProPlan() {
   const { client: dodo, environment } = getDodoClient();
   const supabase = await createClient();
 
-  // 3. Authenticate User & Validate Identity
+  // 2. Authenticate User & Validate Identity
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
+
   if (authError || !user) {
     throw new Error("Authentication required.");
   }
@@ -69,7 +70,7 @@ export async function upgradeToProPlan() {
     throw new Error("User account is missing an associated email address.");
   }
 
-  // 4. Secure Tenant Authorization & Discovery (Rule 6: Scope by Tenant)
+  // 3. Secure Tenant Authorization & Discovery (Rule 6: Scope by Tenant)
   const { data: tenantMembership, error: membershipError } = await supabase
     .from("tenant_users")
     .select("tenant_id")
@@ -87,19 +88,21 @@ export async function upgradeToProPlan() {
 
   const tenantId = tenantMembership.tenant_id;
 
-  // 5. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
+  // 4. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
 
-  if (entitlements.isPro) {
+  // If already active or trialing, block new checkout generation
+  if (entitlements.isPro && entitlements.subscriptionStatus !== "canceling") {
     console.info("[Billing] Prevented duplicate checkout attempt", {
       event: "duplicate_checkout_prevented",
       tenant_id: tenantId,
       user_id: user.id,
+      current_status: entitlements.subscriptionStatus,
     });
     throw new Error("Workspace already has an active subscription.");
   }
 
-  // 6. Resilient Checkout Creation
+  // 5. Resilient Checkout Creation
   try {
     const session = await dodo.checkoutSessions.create({
       product_cart: [
@@ -128,7 +131,7 @@ export async function upgradeToProPlan() {
 
     return { url: session.checkout_url };
   } catch (error) {
-    // 7. Operator-Focused Structured Observability (Rule 17)
+    // 6. Operator-Focused Structured Observability (Rule 17)
     console.error("[Billing] Checkout creation failed", {
       event: "checkout_creation_failed",
       tenant_id: tenantId,
@@ -145,7 +148,7 @@ export async function upgradeToProPlan() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Customer portal                                                   */
+/* Customer Portal Management                                        */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -168,6 +171,7 @@ export async function manageBillingPortal() {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
+
   if (authError || !user) {
     throw new Error("Authentication required.");
   }
@@ -212,10 +216,16 @@ export async function manageBillingPortal() {
     membership.tenant_id
   );
 
+  // Guarantee case-insensitive comparison against schema variations ('PRO' vs 'pro')
+  const isProTier =
+    entitlements.isPro ||
+    entitlements.planTier?.toUpperCase() === "PRO" ||
+    entitlements.planTier?.toUpperCase() === "ENTERPRISE";
+
   const canManageBilling =
-    entitlements.planTier === "pro" &&
+    isProTier &&
     ["active", "trialing", "past_due", "canceling"].includes(
-      entitlements.subscriptionStatus ?? ""
+      entitlements.subscriptionStatus?.toLowerCase() ?? ""
     );
 
   if (!canManageBilling) {
@@ -262,4 +272,100 @@ export async function manageBillingPortal() {
       "Unable to open billing portal. Please try again later."
     );
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Graceful Cancellation & Card Removal Lifecycle                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Schedules subscription cancellation at period end when a user requests payment method removal or downgrade.
+ * Prevents gateway state conflicts (HTTP 409) while preserving Pro entitlements until cycle expiration.
+ * Aligned with Arcli Churn Churn Signal Directive (Rule 8 & 21).
+ */
+export async function scheduleSubscriptionCancellation() {
+  const { client: dodo, environment } = getDodoClient();
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Authentication required.");
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("tenant_users")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (membershipError || !membership) {
+    throw new Error("No valid workspace found for user.");
+  }
+
+  const workspaceId = membership.tenant_id;
+
+  // 1. Fetch current subscription ID and payment attachment state
+  const { data: tenant, error: fetchErr } = await supabase
+    .from("tenants")
+    .select("subscription_id, payment_method_id, current_period_end, plan_tier")
+    .eq("tenant_id", workspaceId)
+    .single();
+
+  if (fetchErr || !tenant?.subscription_id) {
+    throw new Error("No active subscription found to modify.");
+  }
+
+  // 2. Schedule cancellation in Dodo/Stripe gateway rather than brute-force card deletion
+  try {
+    await dodo.subscriptions.update(tenant.subscription_id, {
+      cancel_at_period_end: true, // Guarantees retention of paid benefits until cycle conclusion
+    });
+  } catch (error: any) {
+    console.error("[Billing] Failed to schedule end-of-period cancellation", {
+      event: "billing_schedule_cancel_failed",
+      tenant_id: workspaceId,
+      subscription_id: tenant.subscription_id,
+      environment,
+      error: error?.message || error,
+    });
+    throw new Error("Failed to schedule plan cancellation. Please try again or contact support.");
+  }
+
+  // 3. Synchronously mutate local workspace state (Rule 1 & Rule 6)
+  // We keep plan_tier unchanged (uppercase enum safe) and transition status to 'canceling'
+  const { error: updateErr } = await supabase
+    .from("tenants")
+    .update({
+      subscription_status: "canceling",
+      cancellation_intent_detected_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("tenant_id", workspaceId);
+
+  if (updateErr) {
+    console.error("[Billing] Database state sync failed after gateway update", {
+      event: "tenant_cancellation_sync_error",
+      tenant_id: workspaceId,
+      error: updateErr,
+    });
+    throw new Error("Subscription scheduled to end, but local workspace synchronization delayed.");
+  }
+
+  // 4. Track signal explicitly for operator observability (Rule 8: Churn Scoring Indicator)
+  console.info("[Billing] Cancellation intent tracked successfully", {
+    event: "cancellation_intent_detected",
+    tenant_id: workspaceId,
+    user_id: user.id,
+    current_plan: tenant.plan_tier,
+    effective_end_date: tenant.current_period_end,
+  });
+
+  return { 
+    success: true, 
+    periodEnd: tenant.current_period_end 
+  };
 }
