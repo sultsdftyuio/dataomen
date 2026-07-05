@@ -3,10 +3,10 @@ from datetime import timedelta
 
 import dramatiq
 
-from api.services.recovery_engine import RECOVERY_EMAIL_TABLE
 from recovery_models import (
     MAX_SEND_ATTEMPTS,
     METRICS,
+    RECOVERY_EMAIL_TABLE,
     CIRCUIT_BREAKER_TIMEOUT_SECONDS,
     FailureStage,
     RecoveryStatus,
@@ -121,7 +121,7 @@ def send_recovery_email(
 
     if reserve.cooldown_status == "max_attempts":
         error_message = "max_attempts_exceeded"
-        repo.mark_dead_lettered(record.id, error_message, FailureStage.PROVIDER)
+        repo.mark_dead_lettered(tenant_id, record.id, error_message, FailureStage.PROVIDER)
         try:
             repo.write_dlq(
                 record.id,
@@ -139,7 +139,7 @@ def send_recovery_email(
     if not repo.tenant_has_pro_entitlement(tenant_id):
         logger.info("recovery_send_blocked_pro_required tenant=%s send_id=%s", tenant_id, send_id)
         retry_at = (utc_now() + timedelta(hours=6)).isoformat()
-        repo.mark_dispatch_failed(record.id, "pro_plan_required", FailureStage.VALIDATION, retry_at)
+        repo.mark_dispatch_failed(tenant_id, record.id, "pro_plan_required", FailureStage.VALIDATION, retry_at)
         METRICS.increment("recovery.send.pro_required")
         return
 
@@ -149,7 +149,7 @@ def send_recovery_email(
     if reserve.cooldown_status == "global_cap":
         logger.info("skipped_global_cap tenant=%s user=%s", tenant_id, record.user_id)
         retry_at = (utc_now() + timedelta(hours=24)).isoformat()
-        repo.mark_dispatch_failed(record.id, "global_daily_cap_exceeded", FailureStage.COOLDOWN, retry_at)
+        repo.mark_dispatch_failed(tenant_id, record.id, "global_daily_cap_exceeded", FailureStage.COOLDOWN, retry_at)
         METRICS.increment("recovery.send.cooldown", tags={"type": "global"})
         return
 
@@ -161,8 +161,13 @@ def send_recovery_email(
             record.campaign_type,
         )
         retry_at = (utc_now() + timedelta(days=7)).isoformat()
-        repo.mark_dispatch_failed(record.id, "template_cooldown_active", FailureStage.COOLDOWN, retry_at)
+        repo.mark_dispatch_failed(tenant_id, record.id, "template_cooldown_active", FailureStage.COOLDOWN, retry_at)
         METRICS.increment("recovery.send.cooldown", tags={"type": "template"})
+        return
+
+    if reserve.cooldown_status == "suppressed":
+        logger.info("recovery_send_suppressed tenant=%s user=%s", tenant_id, record.user_id)
+        METRICS.increment("recovery.send.suppressed")
         return
 
     # ==========================================
@@ -175,7 +180,7 @@ def send_recovery_email(
             send_id,
         )
         retry_at = (utc_now() + timedelta(seconds=CIRCUIT_BREAKER_TIMEOUT_SECONDS)).isoformat()
-        repo.mark_dispatch_failed(record.id, "provider_circuit_open", FailureStage.PROVIDER, retry_at)
+        repo.mark_dispatch_failed(tenant_id, record.id, "provider_circuit_open", FailureStage.PROVIDER, retry_at)
         METRICS.increment("recovery.send.circuit_open")
         raise RuntimeError("Provider circuit breaker is open")
 
@@ -188,13 +193,13 @@ def send_recovery_email(
         raise RuntimeError("Attempt reservation failed")
 
     subject, html = template_renderer.render(record.campaign_type)
-    result = email_provider.send(record.email, subject, html, dispatch_token)
+    result = email_provider.send(record.email, subject, html, dispatch_token, tenant_id)
 
     if result.status.value == "accepted":
         circuit_breaker.record_success()
 
         # mark_provider_accepted now verifies the DB update before writing the audit event.
-        success = repo.mark_provider_accepted(record.id, result.provider_message_id)
+        success = repo.mark_provider_accepted(tenant_id, record.id, result.provider_message_id)
         if not success:
             # Fallback: retry via the persist actor for eventual consistency.
             logger.warning(
@@ -203,6 +208,7 @@ def send_recovery_email(
                 send_id,
             )
             persist_recovery_status.send(
+                tenant_id=tenant_id,
                 send_id=record.id,
                 status=RecoveryStatus.PROVIDER_ACCEPTED.value,
                 provider_message_id=result.provider_message_id,
@@ -225,11 +231,11 @@ def send_recovery_email(
     if result.retryable:
         retry_seconds = _provider_backoff_seconds(attempt_count)
         retry_at = (utc_now() + timedelta(seconds=retry_seconds)).isoformat()
-        repo.mark_dispatch_failed(record.id, error_message, FailureStage.PROVIDER, retry_at)
+        repo.mark_dispatch_failed(tenant_id, record.id, error_message, FailureStage.PROVIDER, retry_at)
         METRICS.increment("recovery.send.retryable_failure")
         raise RuntimeError(error_message)
 
-    repo.mark_dead_lettered(record.id, error_message, FailureStage.PROVIDER)
+    repo.mark_dead_lettered(tenant_id, record.id, error_message, FailureStage.PROVIDER)
     try:
         repo.write_dlq(
             record.id,
@@ -246,6 +252,7 @@ def send_recovery_email(
 
 @dramatiq.actor
 def persist_recovery_status(
+    tenant_id: str,
     send_id: str,
     status: str,
     provider_message_id: str = None,
@@ -261,7 +268,8 @@ def persist_recovery_status(
     client = get_supabase_client()
     if not client:
         logger.error(
-            "recovery_status_persist_no_client send_id=%s status=%s",
+            "recovery_status_persist_no_client tenant=%s send_id=%s status=%s",
+            tenant_id,
             send_id,
             status,
         )
@@ -279,15 +287,25 @@ def persist_recovery_status(
         payload["provider_accepted_at"] = now
         payload["sent_at"] = now
 
-    repo = RecoveryRepository(client)
-
     try:
-        resp = client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+        resp = (
+            client.table(RECOVERY_EMAIL_TABLE)
+            .update(payload)
+            .eq("tenant_id", tenant_id)
+            .eq("id", send_id)
+            .execute()
+        )
         if not resp.data or len(resp.data) == 0:
-            logger.warning("persist_recovery_status_no_rows send_id=%s status=%s", send_id, status)
+            logger.warning(
+                "persist_recovery_status_no_rows tenant=%s send_id=%s status=%s",
+                tenant_id,
+                send_id,
+                status,
+            )
     except Exception:
         logger.exception(
-            "recovery_status_persist_failed send_id=%s status=%s",
+            "recovery_status_persist_failed tenant=%s send_id=%s status=%s",
+            tenant_id,
             send_id,
             status,
         )

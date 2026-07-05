@@ -252,6 +252,7 @@ class Event(Base):
         DateTime(timezone=True), nullable=False, default=utc_now
     )
     value: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    properties: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -526,15 +527,21 @@ class RecoveryEmail(Base):
     churn_risk_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     dispatch_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     dispatch_attempt: Mapped[int] = mapped_column(Integer, default=0)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     dispatch_claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     dispatched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_message_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     provider_accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     failure_stage: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    attribution_window_days: Mapped[int] = mapped_column(Integer, default=14)
+    claimed_by_operator: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    operator_claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     queued_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -549,7 +556,9 @@ class RecoveryEmail(Base):
         "RecoveryEmailDlq", back_populates="recovery_email"
     )
     attributions: Mapped[List["RecoveryAttribution"]] = relationship(
-        "RecoveryAttribution", back_populates="recovery_email"
+        "RecoveryAttribution",
+        back_populates="recovery_email",
+        foreign_keys="RecoveryAttribution.email_id",
     )
 
 
@@ -654,6 +663,7 @@ class RecoveryEmailEvent(Base):
         ForeignKey("recovery_emails.id", ondelete="SET NULL"), nullable=True
     )
     event_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
     occurred_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -677,15 +687,24 @@ class RecoveryAttribution(Base):
     email_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("recovery_emails.id", ondelete="SET NULL"), nullable=True
     )
+    send_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("recovery_emails.id", ondelete="SET NULL"), nullable=True
+    )
     user_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     campaign_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    event_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    event_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    event_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     revenue: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
     attributed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     # Relationships
     recovery_email: Mapped[Optional["RecoveryEmail"]] = relationship(
-        "RecoveryEmail", back_populates="attributions"
+        "RecoveryEmail",
+        back_populates="attributions",
+        foreign_keys=[email_id],
     )
 
 
@@ -701,6 +720,8 @@ class BillingWebhookEvent(Base):
         ForeignKey("tenants.tenant_id"), nullable=False
     )
     provider: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_event_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     event_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSONB, default=dict)
     received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

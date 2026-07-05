@@ -81,7 +81,7 @@ class OutboxDispatcher:
                         "dispatch_attempt": dispatch_attempt,
                         "last_error": None,
                     }
-                ).eq("id", send_id).execute()
+                ).eq("tenant_id", tenant_id).eq("id", send_id).execute()
 
                 dispatched_count += 1
 
@@ -93,7 +93,7 @@ class OutboxDispatcher:
                     dispatch_attempt,
                 )
                 _handle_dispatch_failure(
-                    self.db, send_id, dispatch_attempt, str(exc)
+                    self.db, tenant_id, send_id, dispatch_attempt, str(exc)
                 )
 
         duration = round(time.monotonic() - start_time, 2)
@@ -128,6 +128,7 @@ def _claim_outbox_batch(
 
 def _handle_dispatch_failure(
     db_client,
+    tenant_id: str,
     send_id: str,
     attempt: int,
     error_msg: str,
@@ -145,8 +146,10 @@ def _handle_dispatch_failure(
                 "next_retry_at": next_retry,
                 "last_error": str(error_msg)[:500],
             }
-        ).eq("id", send_id).execute()
+        ).eq("tenant_id", tenant_id).eq("id", send_id).execute()
     except Exception:
         logger.exception(
-            "outbox_dispatcher_dlq_update_failed send_id=%s", send_id
+            "outbox_dispatcher_dlq_update_failed tenant=%s send_id=%s",
+            tenant_id,
+            send_id,
         )

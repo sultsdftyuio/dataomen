@@ -1,13 +1,35 @@
 -- ============================================================================
--- ARCLI FULL PRODUCTION MIGRATION: TENANT SETTINGS & EMAIL TEMPLATES RLS
+-- ARCLI UNIFIED PRODUCTION MIGRATION v3.2
+-- Covers: Billing Enum Fixes ('canceling'), Tenant Settings & Email Templates RLS
 -- Safe to run multiple times: uses IF NOT EXISTS / OR REPLACE / DROP POLICY
 -- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- PART 0: BILLING ENUM TYPE HARDENING ('canceling')
+-- Resolves PostgreSQL error 22P02 during Pro plan cancellation syncs
+-- ----------------------------------------------------------------------------
+
+-- 1. Add 'canceling' to billing_state (if your database uses this type name)
+DO $$ BEGIN
+    ALTER TYPE billing_state ADD VALUE IF NOT EXISTS 'canceling' AFTER 'active';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+
+-- 2. Add 'canceling' to platform_billing_state (defined in scripts/payments.sql)
+DO $$ BEGIN
+    ALTER TYPE platform_billing_state ADD VALUE IF NOT EXISTS 'canceling' AFTER 'active';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+
+-- 3. Add 'canceling' to customer_subscription_state (if used for internal tenant tracking)
+DO $$ BEGIN
+    ALTER TYPE customer_subscription_state ADD VALUE IF NOT EXISTS 'canceling' AFTER 'active';
+EXCEPTION WHEN undefined_object THEN NULL; END $$;
+
 
 -- ----------------------------------------------------------------------------
 -- PART 1: TENANT SETTINGS SCHEMA & RLS COVERAGE
 -- ----------------------------------------------------------------------------
 
--- Ensure normalized sender_email column exists (from scripts/email_templates.sql)
+-- Ensure normalized sender_email column exists
 ALTER TABLE public.tenant_settings 
 ADD COLUMN IF NOT EXISTS sender_email text;
 
@@ -122,9 +144,16 @@ CREATE TABLE IF NOT EXISTS public.email_templates (
     subject TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'recovery',
     body_html TEXT,
+    body_text TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Safely backfill any missing columns if table existed previously without them
+ALTER TABLE public.email_templates
+    ADD COLUMN IF NOT EXISTS body_text TEXT,
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 DO $$ BEGIN 
     ALTER TABLE public.email_templates

@@ -2,7 +2,7 @@ import logging
 import os
 import time
 
-from api.tasks import get_supabase_client
+from api.emails import get_supabase_client
 from api.worker_main import OutboxDispatcher
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()

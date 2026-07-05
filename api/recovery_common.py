@@ -20,9 +20,12 @@ class RecoveryStatus(StrEnum):
     DISPATCH_CLAIMED = "dispatch_claimed"
     DISPATCHED_TO_QUEUE = "dispatched_to_queue"
     PROVIDER_ACCEPTED = "provider_accepted"
+    SENT = "sent"
     DELIVERED = "delivered"
     DISPATCH_FAILED = "dispatch_failed"
     DEAD_LETTERED = "dead_lettered"
+    SUPPRESSED = "suppressed"
+    COOLDOWN = "cooldown"
 
 
 class ClaimOutcome(StrEnum):

@@ -25,7 +25,7 @@ if RECOVERY_ATTRIBUTIONS_TABLE != "recovery_attributions":
 DEFAULT_ATTRIBUTION_WINDOW_DAYS = int(os.getenv("RECOVERY_ATTRIBUTION_WINDOW_DAYS", "14"))
 ATTRIBUTION_EVENT_NAMES = os.getenv(
     "RECOVERY_ATTRIBUTION_EVENT_NAMES",
-    "subscription_payment_success,invoice_paid,charge_succeeded,order_paid",
+    "subscription_payment_success,invoice_paid,invoice.paid,charge_succeeded,charge.succeeded,order_paid",
 )
 
 # Clock skew tolerance: events slightly before sent_at are still valid
@@ -65,7 +65,7 @@ class RecoveryAttributionService:
             )
             return False
 
-        normalized_event = event_name.strip().lower()
+        normalized_event = _canonical_event_name(event_name)
         if normalized_event not in self._event_names:
             logger.info(
                 "recovery_attribution_event_filtered",
@@ -101,6 +101,7 @@ class RecoveryAttributionService:
         recovery_row = self._find_recent_recovery(
             tenant_id=tenant_id,
             user_id=user_id,
+            email=context.get("email"),
             event_ts=context.get("event_ts"),
         )
         if not recovery_row:
@@ -119,6 +120,7 @@ class RecoveryAttributionService:
             tenant_id=tenant_id,
             send_id=recovery_row["id"],
             user_id=user_id,
+            campaign_type=recovery_row.get("campaign_type"),
             event_name=normalized_event,
             event_ts=context.get("event_ts"),
             revenue=context.get("revenue"),
@@ -154,16 +156,20 @@ class RecoveryAttributionService:
         self,
         tenant_id: str,
         user_id: Optional[str],
+        email: Optional[str],
         event_ts: Optional[datetime],
     ) -> Optional[Dict[str, Any]]:
         sql = text(
             f"""
-            SELECT id, sent_at, created_at, attribution_window_days
+            SELECT id, campaign_type, sent_at, provider_accepted_at, created_at, attribution_window_days
             FROM {RECOVERY_EMAIL_TABLE}
             WHERE tenant_id = :tenant_id
-              AND status = 'sent'
-              AND user_id = :user_id
-            ORDER BY sent_at DESC NULLS LAST, created_at DESC
+              AND status IN ('provider_accepted', 'delivered', 'sent')
+              AND (
+                    user_id = :user_id
+                 OR (:email <> '' AND LOWER(email) = LOWER(:email))
+              )
+            ORDER BY COALESCE(provider_accepted_at, sent_at, created_at) DESC, created_at DESC
             LIMIT 1
             """
         )
@@ -171,13 +177,18 @@ class RecoveryAttributionService:
         params = {
             "tenant_id": tenant_id,
             "user_id": user_id or "",
+            "email": email or "",
         }
 
         row = self.db.execute(sql, params).mappings().first()
         if not row:
             return None
 
-        sent_at = _parse_datetime(row.get("sent_at")) or _parse_datetime(row.get("created_at"))
+        sent_at = (
+            _parse_datetime(row.get("provider_accepted_at"))
+            or _parse_datetime(row.get("sent_at"))
+            or _parse_datetime(row.get("created_at"))
+        )
         if not sent_at:
             return None
 
@@ -225,6 +236,7 @@ class RecoveryAttributionService:
         tenant_id: str,
         send_id: str,
         user_id: str,
+        campaign_type: Optional[str],
         event_name: str,
         event_ts: Optional[datetime],
         revenue: Optional[float],
@@ -249,16 +261,23 @@ class RecoveryAttributionService:
                 }
             )
 
-        # True database-level idempotency via ON CONFLICT on stable external key.
-        # Requires DB schema: ALTER TABLE recovery_attributions ADD COLUMN event_id TEXT UNIQUE;
+        # True database-level idempotency when the recovery_campaign_contract
+        # migration has created uq_recovery_attributions_tenant_event_id.
         insert_sql = text(
             f"""
             INSERT INTO {RECOVERY_ATTRIBUTIONS_TABLE}
-                (send_id, tenant_id, user_id, event_name, event_at, revenue, metadata, event_id)
+                (
+                    email_id, send_id, tenant_id, user_id, campaign_type,
+                    event_name, event_at, revenue, metadata, event_id,
+                    attributed_at
+                )
             VALUES
-                (:send_id, :tenant_id, :user_id, :event_name, :event_at, :revenue, :metadata, :event_id)
-            ON CONFLICT (event_id)
-            DO NOTHING
+                (
+                    :send_id, :send_id, :tenant_id, :user_id, :campaign_type,
+                    :event_name, :event_at, :revenue, :metadata, :event_id,
+                    :event_at
+                )
+            ON CONFLICT DO NOTHING
             RETURNING id
             """
         )
@@ -267,6 +286,7 @@ class RecoveryAttributionService:
             "send_id": send_id,
             "tenant_id": tenant_id,
             "user_id": user_id,
+            "campaign_type": campaign_type,
             "event_name": event_name,
             "event_at": event_at,
             "revenue": revenue,
@@ -307,7 +327,20 @@ class RecoveryAttributionService:
 def _normalize_event_names(value: str) -> set:
     if not value:
         return set()
-    return {part.strip().lower() for part in value.split(",") if part.strip()}
+    return {_canonical_event_name(part) for part in value.split(",") if part.strip()}
+
+
+def _canonical_event_name(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized.startswith("stripe."):
+        normalized = normalized.removeprefix("stripe.")
+    aliases = {
+        "invoice.paid": "invoice_paid",
+        "charge.succeeded": "charge_succeeded",
+        "customer.subscription.updated": "subscription_restored",
+        "subscription.payment_success": "subscription_payment_success",
+    }
+    return aliases.get(normalized, normalized.replace(".", "_"))
 
 
 def _extract_context(payload: Dict[str, Any], provider: str) -> Dict[str, Any]:
@@ -415,6 +448,8 @@ def _extract_context_stripe(payload: Dict[str, Any]) -> Dict[str, Any]:
         or metadata.get("app_user_id")
     )
 
+    customer_id = _coerce_string(data_object.get("customer") or metadata.get("customer_id"))
+
     email = _coerce_string(
         metadata.get("email")
         or data_object.get("customer_email")
@@ -441,6 +476,7 @@ def _extract_context_stripe(payload: Dict[str, Any]) -> Dict[str, Any]:
         "provider": "stripe",
         "event_id": event_id,
         "invoice_id": invoice_id,
+        "customer_id": customer_id,
         "currency": currency,
         "amount_raw": amount_raw,
         "email": email,
@@ -449,6 +485,7 @@ def _extract_context_stripe(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "event_ts": event_ts,
         "user_id": user_id,
+        "customer_id": customer_id,
         "email": email,
         "revenue": revenue,
         "metadata": meta_payload,

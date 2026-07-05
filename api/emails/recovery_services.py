@@ -87,6 +87,7 @@ class RecoveryRepository:
     # --- Event writing (audit trail with retry) ---
     def write_event(
         self,
+        tenant_id: str,
         send_id: str,
         event_type: str,
         metadata: Optional[Dict[str, Any]] = None,
@@ -99,11 +100,12 @@ class RecoveryRepository:
         Note: Event writes are best-effort with retry. For strict compliance,
         consider a dead-letter queue for failed events or a background repair job.
         """
-        if not send_id or not event_type:
+        if not tenant_id or not send_id or not event_type:
             return False
 
         payload = {
-            "send_id": send_id,
+            "tenant_id": tenant_id,
+            "email_id": send_id,
             "event_type": event_type,
             "metadata": metadata or {},
             "occurred_at": utc_now_iso(),
@@ -254,7 +256,7 @@ class RecoveryRepository:
             )
 
         # 6. Reserve attempt
-        attempt_count = self.reserve_provider_attempt(record.id)
+        attempt_count = self.reserve_provider_attempt(tenant_id, record.id)
         if attempt_count is None:
             return UnifiedReserveResponse(
                 record=record,
@@ -342,16 +344,21 @@ class RecoveryRepository:
             return DispatchTokenClaimResponse(claimed=False, state="invalid")
         return validated
 
-    def reserve_provider_attempt(self, send_id: str) -> Optional[int]:
-        payload = {"p_send_id": send_id}
+    def reserve_provider_attempt(self, tenant_id: str, send_id: str) -> Optional[int]:
+        payload = {"p_tenant_id": tenant_id, "p_send_id": send_id}
 
         try:
             resp = self.client.rpc(RECOVERY_ATTEMPT_RESERVATION_RPC, payload).execute()
         except PostgrestAPIError as exc:
-            logger.exception("attempt_reservation_api_error send_id=%s error=%s", send_id, exc)
+            logger.exception(
+                "attempt_reservation_api_error tenant=%s send_id=%s error=%s",
+                tenant_id,
+                send_id,
+                exc,
+            )
             raise
         except Exception:
-            logger.exception("attempt_reservation_failed send_id=%s", send_id)
+            logger.exception("attempt_reservation_failed tenant=%s send_id=%s", tenant_id, send_id)
             raise
 
         if not resp.data:
@@ -371,7 +378,7 @@ class RecoveryRepository:
         try:
             return int(attempt_value)
         except (TypeError, ValueError):
-            logger.exception("attempt_reservation_invalid send_id=%s", send_id)
+            logger.exception("attempt_reservation_invalid tenant=%s send_id=%s", tenant_id, send_id)
             return None
 
     def is_user_globally_capped(self, tenant_id: str, user_id: str) -> bool:
@@ -422,12 +429,12 @@ class RecoveryRepository:
                 user_id,
                 exc,
             )
-            return False
+            return True
         except Exception:
             logger.exception("is_template_on_cooldown_failed tenant=%s user=%s", tenant_id, user_id)
-            return False
+            return True
 
-    def mark_provider_accepted(self, send_id: str, provider_message_id: Optional[str]) -> bool:
+    def mark_provider_accepted(self, tenant_id: str, send_id: str, provider_message_id: Optional[str]) -> bool:
         """
         Mark send as provider-accepted. Verifies the update succeeded before writing audit event.
         Returns True if the update was confirmed.
@@ -442,31 +449,39 @@ class RecoveryRepository:
         }
 
         try:
-            resp = self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+            resp = (
+                self.client.table(RECOVERY_EMAIL_TABLE)
+                .update(payload)
+                .eq("tenant_id", tenant_id)
+                .eq("id", send_id)
+                .execute()
+            )
         except PostgrestAPIError as exc:
             logger.exception(
-                "mark_provider_accepted_api_error send_id=%s error=%s",
+                "mark_provider_accepted_api_error tenant=%s send_id=%s error=%s",
+                tenant_id,
                 send_id,
                 exc,
             )
             return False
         except Exception:
-            logger.exception("mark_provider_accepted_failed send_id=%s", send_id)
+            logger.exception("mark_provider_accepted_failed tenant=%s send_id=%s", tenant_id, send_id)
             return False
 
         # Verify the update actually affected a row.
         if not resp.data or len(resp.data) == 0:
             logger.warning(
-                "mark_provider_accepted_no_rows send_id=%s — row may have disappeared or RLS rejected",
+                "mark_provider_accepted_no_rows tenant=%s send_id=%s - row may have disappeared or RLS rejected",
+                tenant_id,
                 send_id,
             )
             return False
 
         # Only write the audit event if the DB update was confirmed.
-        self.write_event(send_id, "provider_accepted", {"provider_message_id": provider_message_id})
+        self.write_event(tenant_id, send_id, "provider_accepted", {"provider_message_id": provider_message_id})
         return True
 
-    def mark_delivered(self, send_id: str) -> bool:
+    def mark_delivered(self, tenant_id: str, send_id: str) -> bool:
         """Mark send as delivered. Returns True if the update was confirmed."""
         now = utc_now_iso()
         payload = {
@@ -476,23 +491,30 @@ class RecoveryRepository:
         }
 
         try:
-            resp = self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+            resp = (
+                self.client.table(RECOVERY_EMAIL_TABLE)
+                .update(payload)
+                .eq("tenant_id", tenant_id)
+                .eq("id", send_id)
+                .execute()
+            )
         except PostgrestAPIError as exc:
-            logger.exception("mark_delivered_api_error send_id=%s error=%s", send_id, exc)
+            logger.exception("mark_delivered_api_error tenant=%s send_id=%s error=%s", tenant_id, send_id, exc)
             return False
         except Exception:
-            logger.exception("mark_delivered_failed send_id=%s", send_id)
+            logger.exception("mark_delivered_failed tenant=%s send_id=%s", tenant_id, send_id)
             return False
 
         if not resp.data or len(resp.data) == 0:
-            logger.warning("mark_delivered_no_rows send_id=%s", send_id)
+            logger.warning("mark_delivered_no_rows tenant=%s send_id=%s", tenant_id, send_id)
             return False
 
-        self.write_event(send_id, "delivered", {})
+        self.write_event(tenant_id, send_id, "delivered", {})
         return True
 
     def mark_dispatch_failed(
         self,
+        tenant_id: str,
         send_id: str,
         error: str,
         failure_stage: FailureStage,
@@ -508,22 +530,33 @@ class RecoveryRepository:
         }
 
         try:
-            self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+            resp = (
+                self.client.table(RECOVERY_EMAIL_TABLE)
+                .update(payload)
+                .eq("tenant_id", tenant_id)
+                .eq("id", send_id)
+                .execute()
+            )
         except PostgrestAPIError as exc:
             logger.exception(
-                "mark_dispatch_failed_api_error send_id=%s error=%s",
+                "mark_dispatch_failed_api_error tenant=%s send_id=%s error=%s",
+                tenant_id,
                 send_id,
                 exc,
             )
             return False
         except Exception:
-            logger.exception("mark_dispatch_failed send_id=%s", send_id)
+            logger.exception("mark_dispatch_failed tenant=%s send_id=%s", tenant_id, send_id)
             return False
 
-        self.write_event(send_id, "dispatch_failed", {"error": error, "stage": failure_stage.value})
+        if not resp.data or len(resp.data) == 0:
+            logger.warning("mark_dispatch_failed_no_rows tenant=%s send_id=%s", tenant_id, send_id)
+            return False
+
+        self.write_event(tenant_id, send_id, "dispatch_failed", {"error": error, "stage": failure_stage.value})
         return True
 
-    def mark_dead_lettered(self, send_id: str, error: str, failure_stage: FailureStage) -> bool:
+    def mark_dead_lettered(self, tenant_id: str, send_id: str, error: str, failure_stage: FailureStage) -> bool:
         """Mark send as dead-lettered. Returns True if the update was confirmed."""
         payload = {
             "status": RecoveryStatus.DEAD_LETTERED.value,
@@ -533,19 +566,30 @@ class RecoveryRepository:
         }
 
         try:
-            self.client.table(RECOVERY_EMAIL_TABLE).update(payload).eq("id", send_id).execute()
+            resp = (
+                self.client.table(RECOVERY_EMAIL_TABLE)
+                .update(payload)
+                .eq("tenant_id", tenant_id)
+                .eq("id", send_id)
+                .execute()
+            )
         except PostgrestAPIError as exc:
             logger.exception(
-                "mark_dead_lettered_api_error send_id=%s error=%s",
+                "mark_dead_lettered_api_error tenant=%s send_id=%s error=%s",
+                tenant_id,
                 send_id,
                 exc,
             )
             return False
         except Exception:
-            logger.exception("mark_dead_lettered send_id=%s", send_id)
+            logger.exception("mark_dead_lettered tenant=%s send_id=%s", tenant_id, send_id)
             return False
 
-        self.write_event(send_id, "dead_lettered", {"error": error, "stage": failure_stage.value})
+        if not resp.data or len(resp.data) == 0:
+            logger.warning("mark_dead_lettered_no_rows tenant=%s send_id=%s", tenant_id, send_id)
+            return False
+
+        self.write_event(tenant_id, send_id, "dead_lettered", {"error": error, "stage": failure_stage.value})
         return True
 
     def write_dlq(
@@ -558,12 +602,11 @@ class RecoveryRepository:
         dispatch_token: Optional[str],
     ) -> None:
         payload: Dict[str, Any] = {
-            "send_id": send_id,
             "tenant_id": tenant_id,
-            "user_id": user_id,
-            "campaign_type": campaign_type,
-            "dispatch_token": dispatch_token,
-            "last_error": error,
+            "email_id": send_id,
+            "error_message": error[:1000],
+            "failure_stage": FailureStage.PROVIDER.value,
+            "retry_count": 0,
             "failed_at": utc_now_iso(),
         }
 
@@ -571,11 +614,21 @@ class RecoveryRepository:
             self.client.table(RECOVERY_DLQ_TABLE).insert(payload).execute()
         except PostgrestAPIError as exc:
             logger.exception(
-                "write_dlq_api_error send_id=%s error=%s",
+                "write_dlq_api_error tenant=%s send_id=%s user_id=%s campaign_type=%s dispatch_token_present=%s error=%s",
+                tenant_id,
                 send_id,
+                user_id,
+                campaign_type,
+                bool(dispatch_token),
                 exc,
             )
         except Exception:
-            logger.exception("write_dlq_failed send_id=%s", send_id)
+            logger.exception(
+                "write_dlq_failed tenant=%s send_id=%s user_id=%s campaign_type=%s",
+                tenant_id,
+                send_id,
+                user_id,
+                campaign_type,
+            )
 
 

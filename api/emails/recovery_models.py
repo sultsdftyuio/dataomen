@@ -54,7 +54,7 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 FROM_EMAIL = os.getenv("RECOVERY_EMAIL_FROM", "Arcli <noreply@arcli.tech>")
 APP_BASE_URL = os.getenv("APP_BASE_URL", "https://arcli.tech")
 
-RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_email")
+RECOVERY_EMAIL_TABLE = os.getenv("RECOVERY_EMAIL_TABLE", "recovery_emails")
 RECOVERY_DLQ_TABLE = os.getenv("RECOVERY_DLQ_TABLE", "recovery_email_dlq")
 RECOVERY_EMAIL_EVENTS_TABLE = os.getenv("RECOVERY_EMAIL_EVENTS_TABLE", "recovery_email_events")
 
@@ -82,11 +82,16 @@ SUPABASE_TIMEOUT_SEC = float(os.getenv("SUPABASE_TIMEOUT_SEC", "15.0"))
 
 class RecoveryStatus(StrEnum):
     PENDING_DISPATCH = "pending_dispatch"
+    DISPATCH_CLAIMED = "dispatch_claimed"
     DISPATCHING = "dispatching"
+    DISPATCHED_TO_QUEUE = "dispatched_to_queue"
     PROVIDER_ACCEPTED = "provider_accepted"
+    SENT = "sent"
     DELIVERED = "delivered"
     DISPATCH_FAILED = "dispatch_failed"
     DEAD_LETTERED = "dead_lettered"
+    SUPPRESSED = "suppressed"
+    COOLDOWN = "cooldown"
 
 
 class FailureStage(StrEnum):
@@ -125,6 +130,9 @@ class RecoverySendRecord(BaseModel):
     attempt_count: int = 0
     next_retry_at: Optional[str] = None
     provider_message_id: Optional[str] = None
+    provider_accepted_at: Optional[str] = None
+    sent_at: Optional[str] = None
+    attribution_window_days: int = 14
     last_error: Optional[str] = None
     created_at: Optional[str] = None
 

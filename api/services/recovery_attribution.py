@@ -401,7 +401,7 @@ class OutboxDispatcher:
                         "dispatch_token": dispatch_token,
                         "dispatch_attempt": dispatch_attempt,
                         "last_error": None,
-                    }).eq("id", send_id).execute()
+                    }).eq("tenant_id", tenant_id).eq("id", send_id).execute()
                 except Exception as db_exc:
                     # Message is already queued. Log and let the retry cycle handle
                     # re-claiming; do NOT call _mark_dispatch_failed here.
@@ -423,7 +423,7 @@ class OutboxDispatcher:
                     dispatch_attempt,
                     exc,
                 )
-                _mark_dispatch_failed(self.db, send_id, dispatch_attempt, str(exc))
+                _mark_dispatch_failed(self.db, tenant_id, send_id, dispatch_attempt, str(exc))
 
             finally:
                 # FIX #8 — always record per-row latency, even on error paths.
@@ -594,7 +594,7 @@ def _log_validation_failure(
     )
 
 
-def _mark_dispatch_failed(db_client, send_id: str, attempt: int, error: str) -> None:
+def _mark_dispatch_failed(db_client, tenant_id: str, send_id: str, attempt: int, error: str) -> None:
     next_retry = (
         datetime.now(timezone.utc) + timedelta(seconds=dispatch_backoff_seconds(attempt))
     ).isoformat()
@@ -604,6 +604,10 @@ def _mark_dispatch_failed(db_client, send_id: str, attempt: int, error: str) -> 
             "failure_stage": FailureStage.DISPATCH.value,
             "next_retry_at": next_retry,
             "last_error": error[:500],
-        }).eq("id", send_id).execute()
+        }).eq("tenant_id", tenant_id).eq("id", send_id).execute()
     except Exception:
-        logger.exception("recovery_outbox_dispatch_failed_persist send_id=%s", send_id)
+        logger.exception(
+            "recovery_outbox_dispatch_failed_persist tenant=%s send_id=%s",
+            tenant_id,
+            send_id,
+        )

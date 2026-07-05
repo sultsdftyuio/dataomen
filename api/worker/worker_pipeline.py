@@ -9,7 +9,7 @@ from typing import Any, Dict, Generator, List, Optional
 from api.database import get_supabase_client
 from api.recovery_common import ClaimOutcome
 from api.services.churn_scoring_service import ChurnScoringService
-from api.services.recovery_engine import RecoveryAutomationEngine
+from api.services.recovery_attribution import RecoveryAutomationEngine
 
 from api.worker.worker_core import (
     logger,

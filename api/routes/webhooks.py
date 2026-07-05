@@ -25,7 +25,6 @@ from typing import Dict, Any, Optional, Tuple, Final
 
 from fastapi import APIRouter, Request, Header, HTTPException, BackgroundTasks, status
 from datetime import datetime, timezone
-from pytz import timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pydantic import BaseModel, Field
@@ -224,6 +223,29 @@ def _extract_resend_message_id(payload: Dict[str, Any]) -> str:
     data = payload.get("data", {}) or {}
     message_id = data.get("email_id") or payload.get("email_id") or data.get("message_id") or payload.get("message_id")
     return str(message_id) if message_id else "unknown"
+
+
+def _resolve_resend_tenant_id(db: Session, tenant_id: str, provider_message_id: str) -> str:
+    """Resolve tenant from the recovery email row when Resend omits metadata."""
+    if tenant_id != "unknown" or provider_message_id == "unknown":
+        return tenant_id
+
+    try:
+        row = db.execute(
+            text(f"""
+                SELECT tenant_id
+                  FROM {_RECOVERY_EMAIL_TABLE_SAFE}
+                 WHERE provider_message_id = :provider_message_id
+                 ORDER BY provider_accepted_at DESC NULLS LAST, created_at DESC
+                 LIMIT 1
+            """),
+            {"provider_message_id": provider_message_id},
+        ).fetchone()
+    except Exception:
+        logger.exception("resend_tenant_resolution_failed provider_message_id=%s", provider_message_id)
+        return tenant_id
+
+    return str(row[0]) if row and row[0] else tenant_id
 
 
 def _extract_resend_email(payload: Dict[str, Any]) -> Optional[str]:
@@ -495,6 +517,7 @@ def _sync_resend_handoff(tenant_id: str, event_name: str, provider_event_id: str
             return {"status": "deduped"}
 
         provider_message_id = _extract_resend_message_id(payload)
+        tenant_id = _resolve_resend_tenant_id(db, tenant_id, provider_message_id)
 
         if provider_message_id != "unknown":
             if event_name in RESEND_DELIVERY_EVENTS:

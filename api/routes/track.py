@@ -418,6 +418,43 @@ class EventProperties(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+SIGNAL_EVENT_ALIASES = {
+    "stripe.invoice.payment_failed": "invoice_payment_failed",
+    "invoice.payment_failed": "invoice_payment_failed",
+    "payment_failed": "invoice_payment_failed",
+    "subscription.cancelled": "subscription_cancelled",
+    "subscription.canceled": "subscription_cancelled",
+    "customer.subscription.deleted": "subscription_cancelled",
+    "feedback": "feedback_submitted",
+    "invoice.paid": "invoice_paid",
+    "stripe.invoice.paid": "invoice_paid",
+    "charge.succeeded": "charge_succeeded",
+    "stripe.charge.succeeded": "charge_succeeded",
+}
+
+ALLOWED_SIGNAL_EVENTS = frozenset({
+    "invoice_payment_failed",
+    "subscription_cancelled",
+    "feedback_submitted",
+    "user_activity",
+    "login",
+    "session_started",
+    "feature_used",
+    "user_returned",
+    "subscription_restored",
+    "revenue_recovered",
+    "email_sent",
+    "invoice_paid",
+    "charge_succeeded",
+    "subscription_payment_success",
+})
+
+
+def canonical_track_event_name(value: str) -> str:
+    normalized = value.strip().lower()
+    return SIGNAL_EVENT_ALIASES.get(normalized, normalized.replace(".", "_"))
+
+
 class TrackEventRequest(BaseModel):
     event_name: str = Field(..., min_length=1, max_length=100)
     user_id: Optional[str] = None
@@ -431,7 +468,7 @@ class TrackEventRequest(BaseModel):
     @classmethod
     def normalize_event_name(cls, v: Any):
         if isinstance(v, str):
-            return v.lower().strip()
+            return canonical_track_event_name(v)
         return v
 
     @field_validator("user_id", mode="before")
@@ -475,6 +512,16 @@ async def track_event(
     # ------------------------
     # VALIDATION (HIGH SIGNAL)
     # ------------------------
+    if request.event_name not in ALLOWED_SIGNAL_EVENTS:
+        logger.info(
+            "track_event_rejected_non_signal",
+            extra={"tenant_id": tenant_id, "event_name": request.event_name},
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Event is not an approved churn or recovery signal."
+        )
+
     if request.event_name == "feedback_submitted":
         if not (
             request.properties.reason or

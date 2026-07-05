@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import crypto from "crypto";
 import { z } from "zod";
+import { getWorkspaceEntitlements, PRO_PLAN_REQUIRED_MESSAGE } from "@/lib/entitlements";
 
 // ============================================================================
 // RUNTIME — explicit Node.js to avoid Edge incompatibilities with `crypto`
@@ -13,14 +14,14 @@ export const runtime = "nodejs";
 // ============================================================================
 const DispatchSchema = z.object({
   templateId: z.string().min(1),
-  idempotencyKey: z.string().max(128),
+  idempotencyKey: z.string().trim().min(1).max(128),
   targets: z
     .array(
       z.object({
         id: z.string().min(1),
         email: z.string().trim().toLowerCase().email(),
         signal: z.string().optional().default("unknown"),
-        riskScore: z.number().min(0).max(100).optional().default(0),
+        riskScore: z.coerce.number().int().min(0).max(100).optional().default(0),
       })
     )
     .min(1)
@@ -36,12 +37,17 @@ const DispatchSchema = z.object({
 // ============================================================================
 type RpcResponse =
   | { status: "success"; queued: number }
+  | { status: "queued"; queued: number }
   | { status: "deduplicated" }
   | { status: "pending" };
 
 const RpcResponseSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("success"),
+    queued: z.number().int().nonnegative(),
+  }),
+  z.object({
+    status: z.literal("queued"),
     queued: z.number().int().nonnegative(),
   }),
   z.object({
@@ -113,6 +119,14 @@ export async function POST(req: Request) {
 
     const tenantId = tenantData.tenant_id;
 
+    const entitlements = await getWorkspaceEntitlements(supabase as any, tenantId);
+    if (!entitlements.canSendEmails) {
+      return NextResponse.json(
+        { error: PRO_PLAN_REQUIRED_MESSAGE, code: "pro_plan_required", requestId },
+        { status: 403 }
+      );
+    }
+
     // =========================================================================
     // RATE LIMIT CHECK
     // =========================================================================
@@ -148,24 +162,22 @@ export async function POST(req: Request) {
     // Message key is intentionally generated here — keeps hashing logic in the
     // application layer and the database focused on persistence.
     // =========================================================================
-    const outboxPayloads = targets.map((t) => {
-      const messageKey = crypto
-        .createHash("sha256")
-        .update(`${tenantId}_${t.id}_${templateId}_${idempotencyKey}`)
-        .digest("hex");
-
-      return {
-        tenant_id: tenantId,
-        user_id: t.id,
-        email: t.email,
-        campaign_type: templateId,
-        status: "queued",
-        idempotency_key: idempotencyKey,
-        message_key: messageKey,
-        primary_risk_signal: t.signal,
-        churn_risk_score: t.riskScore,
-      };
-    });
+    const requestHash = crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify({
+          templateId,
+          targets: targets
+            .map((target) => ({
+              id: target.id,
+              email: target.email,
+              signal: target.signal,
+              riskScore: target.riskScore,
+            }))
+            .sort((a, b) => a.id.localeCompare(b.id) || a.email.localeCompare(b.email)),
+        })
+      )
+      .digest("hex");
 
     // =========================================================================
     // ATOMIC RPC CALL
@@ -180,8 +192,10 @@ export async function POST(req: Request) {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const response = await supabase.rpc("dispatch_campaign_atomic", {
         p_tenant_id: tenantId,
+        p_template_id: templateId,
         p_idempotency_key: idempotencyKey,
-        p_outbox_payloads: outboxPayloads,
+        p_request_hash: requestHash,
+        p_targets: targets,
       });
 
       rpcResult = response.data as RpcResponse | null;

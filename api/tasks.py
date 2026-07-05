@@ -4,20 +4,12 @@ Location: api/tasks.py
 """
 
 # Import cleanly from the emails package interface
-from api.emails import send_recovery_email, RecoverySendRecord
+from api.emails import RecoverySendRecord, get_supabase_client, send_recovery_email
 
-def trigger_password_reset(user_email: str, token: str):
+def trigger_password_reset(_user_email: str, _token: str):
     """
-    Example function showing how to trigger the email actor.
+    Legacy placeholder retained for import compatibility.
+    Recovery email actors require tenant_id, send_id, and dispatch_token; password
+    reset mail should be implemented as a separate transactional email flow.
     """
-    # 1. Build the payload
-    record_data = {
-        "email": user_email,
-        "recovery_token": token,
-        # ... add any other fields required by your RecoverySendRecord model
-    }
-    
-    # 2. Send the job to Dramatiq's background queue
-    send_recovery_email.send(record_data)
-    
-    return {"status": "Recovery email queued"}
+    raise NotImplementedError("Password reset email is not handled by the recovery automation actor.")

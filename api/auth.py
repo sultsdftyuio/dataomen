@@ -193,8 +193,9 @@ def get_auth_context(
         # Upfront Tenant Scope Resolution (Single Source of Truth)
         # -------------------------------------------------------------------
         try:
+            # Explicitly cast :user_id to ::uuid to prevent PostgreSQL type casting errors
             row = db.execute(
-                text("SELECT tenant_id FROM tenant_users WHERE user_id = :user_id LIMIT 1"),
+                text("SELECT tenant_id FROM tenant_users WHERE user_id = :user_id::uuid LIMIT 1"),
                 {"user_id": user_id}
             ).fetchone()
         except Exception:
@@ -293,7 +294,7 @@ def get_current_tenant_id(
 
 
 # ---------------------------------------------------------------------------
-# Backward Compatibility Alias (Fixed)
+# Backward Compatibility Alias
 # ---------------------------------------------------------------------------
 
 def get_current_tenant(

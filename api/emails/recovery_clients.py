@@ -332,6 +332,7 @@ def get_circuit_breaker() -> CircuitBreaker:
 
 import resend
 from recovery_models import (
+    APP_BASE_URL,
     FROM_EMAIL,
     SendResult,
     ProviderSendStatus,
@@ -353,6 +354,7 @@ class ResendEmailProvider:
         subject: str,
         html: str,
         dispatch_token: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> SendResult:
         if not resend.api_key:
             return SendResult(
@@ -368,11 +370,17 @@ class ResendEmailProvider:
                 "subject": subject,
                 "html": html,
             }
+            headers: Dict[str, str] = {}
             if dispatch_token:
-                payload["headers"] = {
-                    "X-Dispatch-Token": dispatch_token,
-                    "X-Idempotency-Key": dispatch_token,
-                }
+                headers["X-Dispatch-Token"] = dispatch_token
+                headers["X-Idempotency-Key"] = dispatch_token
+                unsubscribe_url = f"{APP_BASE_URL.rstrip('/')}/api/recovery/unsubscribe?token={dispatch_token}"
+                headers["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+                headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+            if tenant_id:
+                headers["X-Tenant-Id"] = tenant_id
+            if headers:
+                payload["headers"] = headers
 
             response = resend.Emails.send(payload)
         except resend.errors.AuthenticationError as exc:

@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, StringConstraints
 from typing_extensions import Annotated
 
-# Adjust these imports to match your project's internal structure
+# Use canonical auth dependencies directly
 from api.database import get_supabase
-from api.auth import get_auth_context, AuthContext
+from api.auth import get_auth_context, AuthContext, get_current_tenant_id
 from api.services.security.api_keys import ApiKeyVault
 
 router = APIRouter(prefix="/v1/api-keys", tags=["Developer Vault"])
@@ -64,32 +64,13 @@ class PaginatedApiKeyResponse(BaseModel):
     offset: int
 
 
-# --- Dependencies ---
-
-async def get_real_tenant_id(
-    auth: AuthContext = Depends(get_auth_context), 
-    supabase = Depends(get_supabase)
-) -> str:
-    """
-    Resolve the real tenant_id for the user.
-    auth.user_id is the user's UUID, not the tenant_id. We must look it up.
-    """
-    response = supabase.table("tenant_users").select("tenant_id").eq("user_id", auth.user_id).execute()
-    if not response.data:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not associated with any tenant."
-        )
-    return response.data[0]["tenant_id"]
-
-
 # --- Endpoints ---
 
 @router.post("/generate", response_model=KeyGenerationResponse, status_code=status.HTTP_201_CREATED)
 async def generate_api_key(
     payload: GenerateKeyRequest,
     auth: AuthContext = Depends(get_auth_context),
-    tenant_id: str = Depends(get_real_tenant_id),
+    tenant_id: str = Depends(get_current_tenant_id),
     supabase = Depends(get_supabase)
 ):
     """
@@ -111,7 +92,6 @@ async def generate_api_key(
             )
 
     # 2. Soft limit: prevent abuse by capping active keys per tenant
-    # Uses .is_("revoked_at", "null") instead of the missing .eq("is_revoked", False)
     existing = (
         supabase.table("api_keys")
         .select("id", count="exact")
@@ -167,10 +147,8 @@ async def generate_api_key(
         )
 
     except HTTPException:
-        # Prevent catching our own HTTPExceptions
         raise
     except Exception:
-        # Use logger.exception to capture the full traceback
         logger.exception(
             "API key generation failed",
             extra={"tenant_id": tenant_id},
@@ -184,7 +162,7 @@ async def generate_api_key(
 @router.post("/revoke", response_model=RevokeResponse, status_code=status.HTTP_200_OK)
 async def revoke_api_key(
     payload: RevokeKeyRequest,
-    tenant_id: str = Depends(get_real_tenant_id),
+    tenant_id: str = Depends(get_current_tenant_id),
     supabase = Depends(get_supabase)
 ):
     """
@@ -242,7 +220,7 @@ async def revoke_api_key(
 
 @router.get("", response_model=PaginatedApiKeyResponse, status_code=status.HTTP_200_OK)
 async def list_api_keys(
-    tenant_id: str = Depends(get_real_tenant_id),
+    tenant_id: str = Depends(get_current_tenant_id),
     supabase = Depends(get_supabase),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
