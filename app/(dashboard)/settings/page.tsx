@@ -20,6 +20,24 @@ function searchParamValue(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
+function billingTestControlsEnabled(): boolean {
+  const explicitFlag = process.env.BILLING_TEST_CONTROLS_ENABLED
+    ?.trim()
+    .replace(/^["']+|["']+$/g, "")
+    .trim()
+    .toLowerCase();
+
+  if (explicitFlag && ["true", "1", "yes"].includes(explicitFlag)) {
+    return true;
+  }
+
+  if (explicitFlag && ["false", "0", "no"].includes(explicitFlag)) {
+    return false;
+  }
+
+  return process.env.NODE_ENV !== "production";
+}
+
 export default async function SettingsPage({ 
   searchParams 
 }: SettingsPageProps) {
@@ -126,6 +144,7 @@ export default async function SettingsPage({
   }
 
   const isRecoveryMode = searchParamValue(resolvedSearchParams.recovery) === "1";
+  const showBillingTestControls = billingTestControlsEnabled();
 
   // 4. Pass clean, safely abstracted state to the Client
   return (
@@ -134,6 +153,7 @@ export default async function SettingsPage({
       initialSettings={settings} 
       isRecoveryMode={isRecoveryMode} 
       planData={billingPlanData}
+      billingTestControlsEnabled={showBillingTestControls}
     />
   );
 }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Save, RefreshCw } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import BillingTestSwitcher from "./billing-test-switcher";
 import WorkspaceBillingCard, { WorkspaceBillingCardProps } from "./workspace-billing-card";
 import WorkspaceSettingsForm from "./workspace-settings-form";
 import WorkspaceSettingsPreview from "./workspace-settings-preview";
@@ -17,6 +18,7 @@ interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
     supportEmail: string;
     websiteUrl: string;
   };
+  billingTestControlsEnabled?: boolean;
 }
 
 export default function CompactWorkspaceSettings({
@@ -28,6 +30,7 @@ export default function CompactWorkspaceSettings({
     websiteUrl: "",
   },
   planData,
+  billingTestControlsEnabled = false,
 }: WorkspaceSettingsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -152,6 +155,9 @@ export default function CompactWorkspaceSettings({
             handleInputChange={handleInputChange}
           />
           <WorkspaceBillingCard planData={planData} />
+          {billingTestControlsEnabled && (
+            <BillingTestSwitcher currentStatus={planData?.planStatus} />
+          )}
 
           {/* Submit Action Bar */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>

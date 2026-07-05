@@ -44,6 +44,21 @@ type CancelProPlanResult = {
   currentPeriodEnd?: string | null;
 };
 
+type BillingTestState =
+  | "free"
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceling"
+  | "canceled";
+
+type BillingTestStateResult = {
+  status: "updated";
+  tenantId: string;
+  subscriptionStatus: BillingTestState;
+  planTier: "free" | "pro";
+};
+
 type TenantBillingLookupRow = {
   tenant_id: string;
   plan_tier: string;
@@ -135,6 +150,105 @@ function getSupabaseServiceClient() {
       autoRefreshToken: false,
     },
   });
+}
+
+function isBillingTestControlsEnabled(): boolean {
+  const explicitFlag = sanitizeEnvSecret(process.env.BILLING_TEST_CONTROLS_ENABLED)
+    .toLowerCase();
+
+  if (["true", "1", "yes"].includes(explicitFlag)) {
+    return true;
+  }
+
+  if (["false", "0", "no"].includes(explicitFlag)) {
+    return false;
+  }
+
+  return process.env.NODE_ENV !== "production";
+}
+
+function isBillingTestState(value: string): value is BillingTestState {
+  return ["free", "trialing", "active", "past_due", "canceling", "canceled"].includes(
+    value
+  );
+}
+
+function billingTestUpdateFromState(
+  state: BillingTestState
+): Database["public"]["Tables"]["tenants"]["Update"] {
+  const now = new Date().toISOString();
+
+  switch (state) {
+    case "trialing": {
+      const trialEndsAt = addDays(null, PRO_TRIAL_DAYS);
+
+      return {
+        plan_tier: "pro",
+        subscription_status: "trialing",
+        trial_ends_at: trialEndsAt,
+        billing_status: "trialing",
+        plan: "pro",
+        status: "active",
+        current_period_end: trialEndsAt,
+        updated_at: now,
+      };
+    }
+    case "active":
+      return {
+        plan_tier: "pro",
+        subscription_status: "active",
+        trial_ends_at: null,
+        billing_status: "active",
+        plan: "pro",
+        status: "active",
+        current_period_end: addDays(null, 30),
+        updated_at: now,
+      };
+    case "past_due":
+      return {
+        plan_tier: "pro",
+        subscription_status: "past_due",
+        trial_ends_at: null,
+        billing_status: "past_due",
+        plan: "pro",
+        status: "past_due",
+        current_period_end: addDays(null, -1),
+        updated_at: now,
+      };
+    case "canceling":
+      return {
+        plan_tier: "pro",
+        subscription_status: "canceling",
+        trial_ends_at: null,
+        billing_status: "canceling",
+        plan: "pro",
+        status: "active",
+        current_period_end: addDays(null, 14),
+        updated_at: now,
+      };
+    case "canceled":
+      return {
+        plan_tier: "free",
+        subscription_status: "canceled",
+        trial_ends_at: null,
+        billing_status: "canceled",
+        plan: "free",
+        status: "active",
+        current_period_end: null,
+        updated_at: now,
+      };
+    case "free":
+      return {
+        plan_tier: "free",
+        subscription_status: "free",
+        trial_ends_at: null,
+        billing_status: "free",
+        plan: "free",
+        status: "active",
+        current_period_end: null,
+        updated_at: now,
+      };
+  }
 }
 
 /**
@@ -872,6 +986,92 @@ export async function cancelProPlan(): Promise<CancelProPlanResult> {
     tenantId,
     subscriptionStatus: updatedTenant.subscription_status,
     currentPeriodEnd: updatedTenant.current_period_end,
+  };
+}
+
+/**
+ * Local/testing-only subscription state override for exercising gated UI.
+ * This intentionally preserves persisted Dodo customer/subscription IDs.
+ */
+export async function setBillingTestState(state: string): Promise<BillingTestStateResult> {
+  if (!isBillingTestControlsEnabled()) {
+    console.warn("[Billing] Blocked billing test state update outside allowed environment", {
+      event: "billing_test_state_blocked",
+      node_env: process.env.NODE_ENV,
+    });
+    throw new Error("Billing test controls are disabled in this environment.");
+  }
+
+  const normalizedState = state.trim().toLowerCase();
+
+  if (!isBillingTestState(normalizedState)) {
+    throw new Error("Unsupported billing test state.");
+  }
+
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Authentication required.");
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("tenant_users")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (membershipError || !membership) {
+    console.error("[Billing] Workspace membership lookup failed during test state update", {
+      event: "billing_test_state_membership_lookup_failed",
+      user_id: user.id,
+      error: membershipError,
+    });
+    throw new Error("No valid workspace found for user.");
+  }
+
+  const tenantId = membership.tenant_id;
+  const update = billingTestUpdateFromState(normalizedState);
+  const serviceSupabase = getSupabaseServiceClient();
+  const { data: updatedTenant, error: updateError } = await serviceSupabase
+    .from("tenants")
+    .update(update)
+    .eq("tenant_id", tenantId)
+    .select("tenant_id, plan_tier, subscription_status")
+    .maybeSingle();
+
+  if (updateError || !updatedTenant) {
+    console.error("[Billing] Billing test state update failed", {
+      event: "billing_test_state_update_failed",
+      tenant_id: tenantId,
+      user_id: user.id,
+      requested_state: normalizedState,
+      error: updateError,
+    });
+    throw new Error("Unable to update billing test state.");
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+
+  console.info("[Billing] Billing test state updated", {
+    event: "billing_test_state_updated",
+    tenant_id: tenantId,
+    user_id: user.id,
+    requested_state: normalizedState,
+    plan_tier: updatedTenant.plan_tier,
+    subscription_status: updatedTenant.subscription_status,
+  });
+
+  return {
+    status: "updated",
+    tenantId,
+    subscriptionStatus: normalizedState,
+    planTier: updatedTenant.plan_tier === "pro" ? "pro" : "free",
   };
 }
 

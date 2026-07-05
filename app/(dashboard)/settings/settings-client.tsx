@@ -45,6 +45,7 @@ interface SettingsClientProps {
   initialSettings: SettingsSnapshot;
   isRecoveryMode: boolean;
   planData?: WorkspaceBillingCardProps["planData"];
+  billingTestControlsEnabled?: boolean;
 }
 
 export default function SettingsClient({ 
@@ -52,6 +53,7 @@ export default function SettingsClient({
   initialSettings, 
   isRecoveryMode,
   planData,
+  billingTestControlsEnabled = false,
 }: SettingsClientProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     isRecoveryMode ? "account" : "workspace"
@@ -133,7 +135,11 @@ export default function SettingsClient({
         <div className="w-full max-w-5xl mx-auto h-full flex flex-col">
           
           {activeTab === "workspace" && (
-            <WorkspaceTab initialData={workspaceData} planData={planData} />
+            <WorkspaceTab
+              initialData={workspaceData}
+              planData={planData}
+              billingTestControlsEnabled={billingTestControlsEnabled}
+            />
           )}
           
           {activeTab === "data-sources" && (
