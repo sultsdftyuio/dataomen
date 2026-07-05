@@ -129,17 +129,9 @@ export default async function CampaignsPage() {
 
   const initialSenderEmail = workspaceData?.sender_email ?? null;
 
-  // Hydrate Live Workspace Configuration for the Template Viewer Sandbox
-  const workspaceSettings = {
-    companyName: workspaceData?.company_name || "Arcli Workspace",
-    supportEmail: workspaceData?.reply_to_email || "support@arcli.io",
-    defaultSenderEmail: initialSenderEmail || "recovery@arcli.io",
-  };
-
   return (
     // Exact canvas background (#FAFAFA) and tight structural padding to frame the dispatch client properly
     <div className="flex flex-col min-h-screen w-full bg-[#FAFAFA] p-6 lg:p-8 animate-in fade-in duration-300 font-sans space-y-12">
-      
       {/* Primary Dispatch Center */}
       <CampaignsClient 
         atRiskUsers={atRiskUsers} 
@@ -150,19 +142,6 @@ export default async function CampaignsPage() {
         subscriptionStatus={entitlements.subscriptionStatus}
         restrictionMessage={entitlements.restrictionMessage}
       />
-
-      {/* Live Verification Sandbox Layer */}
-      <div className="w-full max-w-[1240px] mx-auto pt-6 border-t border-slate-200/80">
-        <div className="mb-4">
-          <h2 className="text-xs font-bold uppercase tracking-[0.05em] text-slate-500">
-            Template Verification Sandbox
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Inspect live inbox rendering, verify CAN-SPAM variable interpolation, and export raw HTML.
-          </p>
-        </div>
-      </div>
-
     </div>
   );
 }
