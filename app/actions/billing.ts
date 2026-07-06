@@ -332,6 +332,10 @@ function isBillingTestControlsEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+function isDodoTestApiKey(apiKey: string): boolean {
+  return apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
+}
+
 function isBillingTestState(value: string): value is BillingTestState {
   return ["free", "trialing", "active", "past_due", "canceling", "canceled"].includes(
     value
@@ -434,8 +438,22 @@ function getDodoClient(): { client: DodoPayments; environment: "test_mode" | "li
     );
   }
 
+  if (process.env.NODE_ENV === "production" && explicitEnv === "test_mode") {
+    console.warn(
+      "[Billing] DODO_PAYMENTS_ENV=test_mode is ignored in production. Using live_mode."
+    );
+  }
+
   const environment: "test_mode" | "live_mode" =
-    explicitEnv === "test_mode" ? "test_mode" : "live_mode";
+    process.env.NODE_ENV !== "production" && explicitEnv === "test_mode"
+      ? "test_mode"
+      : "live_mode";
+
+  if (environment === "live_mode" && isDodoTestApiKey(apiKey)) {
+    throw new Error(
+      "DODO_PAYMENTS_API_KEY appears to be a test key while Dodo Payments is configured for live_mode."
+    );
+  }
 
   const client = new DodoPayments({
     bearerToken: apiKey,

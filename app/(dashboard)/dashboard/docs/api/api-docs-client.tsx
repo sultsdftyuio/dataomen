@@ -37,10 +37,8 @@ type StepId = "security" | "env" | "backend" | "signal" | "confirm";
 type SnippetTab = "node" | "curl" | "python";
 type RevenueSignal =
   | "invoice_payment_failed"
-  | "subscription_cancelled"
-  | "downgrade_requested"
-  | "trial_expired"
-  | "revenue_recovered";
+  | "cancellation_intent_detected"
+  | "subscription_restored";
 
 const API_KEY_PLACEHOLDER = "arcli_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 const INGEST_URL = "https://api.arcli.tech/v1/track";
@@ -55,7 +53,8 @@ const steps: Array<{
     id: "security",
     eyebrow: "Step 0",
     title: "Keep the key on your server",
-    description: "The key identifies your Arcli workspace. Treat it like a password.",
+    description:
+      "The key is a server-to-server write-only ingestion tool. Treat it like a password.",
   },
   {
     id: "env",
@@ -67,19 +66,21 @@ const steps: Array<{
     id: "backend",
     eyebrow: "Step 2",
     title: "Create a tiny backend sender",
-    description: "Your app calls your server, and your server calls Arcli.",
+    description:
+      "Your app calls your server, and your server manually sends billing and churn events to Arcli.",
   },
   {
     id: "signal",
     eyebrow: "Step 3",
-    title: "Send the first revenue signal",
-    description: "Start with the event that means revenue is at risk right now.",
+    title: "Send the first manual event",
+    description:
+      "Start with the event that means revenue is at risk right now and include the metadata yourself.",
   },
   {
     id: "confirm",
     eyebrow: "Step 4",
     title: "Confirm Arcli accepted it",
-    description: "A 202 response means the signal was queued for scoring.",
+    description: "A 202 response means the event was queued for scoring.",
   },
 ];
 
@@ -94,62 +95,42 @@ const revenueSignals: Array<{
     label: "Payment failed",
     plainMeaning: "A charge failed, so revenue may be lost unless you recover it.",
     properties: {
-      plan_tier: "pro_monthly",
+      amount: 4900,
+      currency: "USD",
+      user_id: "customer_123",
       metadata: {
-        amount: 4900,
-        currency: "USD",
         invoice_id: "in_demo_123",
         failure_reason: "card_declined",
       },
     },
   },
   {
-    value: "subscription_cancelled",
-    label: "Subscription cancelled",
-    plainMeaning: "A paying customer cancelled and should enter recovery analysis.",
+    value: "cancellation_intent_detected",
+    label: "Cancellation intent detected",
+    plainMeaning:
+      "A customer signaled they may cancel, so the backend should record it right away.",
     properties: {
-      plan_tier: "team_annual",
-      reason: "too_expensive",
+      amount: 9900,
+      currency: "USD",
+      user_id: "customer_123",
       metadata: {
-        mrr: 9900,
-        currency: "USD",
+        cancel_reason: "too_expensive",
+        requested_at: "2026-07-06T08:00:00.000Z",
       },
     },
   },
   {
-    value: "downgrade_requested",
-    label: "Downgrade requested",
-    plainMeaning: "A customer is reducing spend, which is an early churn signal.",
+    value: "subscription_restored",
+    label: "Subscription restored",
+    plainMeaning:
+      "A customer came back, reactivated, or recovered revenue after a churn risk.",
     properties: {
-      plan_tier: "starter_monthly",
+      amount: 4900,
+      currency: "USD",
+      user_id: "customer_123",
       metadata: {
-        previous_plan: "pro_monthly",
-        new_plan: "starter_monthly",
-      },
-    },
-  },
-  {
-    value: "trial_expired",
-    label: "Trial expired",
-    plainMeaning: "A trial ended without conversion and may need follow-up.",
-    properties: {
-      plan_tier: "trial",
-      metadata: {
-        trial_days: 14,
-        activated_users: 3,
-      },
-    },
-  },
-  {
-    value: "revenue_recovered",
-    label: "Revenue recovered",
-    plainMeaning: "A save, retry, or campaign won money back.",
-    properties: {
-      plan_tier: "pro_monthly",
-      metadata: {
-        amount: 4900,
-        currency: "USD",
-        recovery_channel: "card_retry",
+        restore_reason: "card_retry",
+        restored_at: "2026-07-06T08:00:00.000Z",
       },
     },
   },
@@ -424,16 +405,16 @@ export function ApiDocsClient() {
                 variant="outline"
                 className="border-emerald-200 bg-emerald-50 text-emerald-700"
               >
-                Zero to First Revenue Signal
+                Manual billing and churn ingestion
               </Badge>
             </div>
             <h1 className="max-w-3xl text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">
-              Send your first Arcli revenue signal in under 5 minutes
+              Manually integrate your billing and churn events in under 5 minutes
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
-              This walkthrough helps you connect your backend to Arcli using an API key.
-              No dashboard plumbing first: store the key safely, send one meaningful
-              event, and confirm Arcli accepted it.
+              This walkthrough helps you wire your backend to Arcli using an API key.
+              No external billing sync is required: keep the key on your server, send
+              one meaningful event, and confirm Arcli accepted it.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               {[
@@ -463,7 +444,7 @@ export function ApiDocsClient() {
                 <Rocket className="h-4 w-4 text-emerald-300" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Quickstart progress</div>
+                <div className="text-sm font-semibold">Manual integration progress</div>
                 <p className="mt-1 text-xs leading-5 text-slate-300">
                   Copying snippets marks the setup steps complete. You can also use the
                   buttons below to keep your place.
@@ -580,9 +561,9 @@ export function ApiDocsClient() {
               <ShieldAlert className="h-4 w-4" />
               <AlertTitle>Never expose your Arcli API key in client-side browser code</AlertTitle>
               <AlertDescription className="leading-6">
-                Never expose your Arcli API key in client-side browser code (e.g.,
-                React, Vue, mobile apps). Always invoke Arcli from your backend
-                server or API routes to preserve tenant isolation and prevent spoofing.
+                The API key is ingestion only. Use it from backend code, workers, or API
+                routes to write events into Arcli. Do not place it in React, Vue, mobile
+                apps, analytics tags, or any browser runtime.
               </AlertDescription>
             </Alert>
 
@@ -591,8 +572,8 @@ export function ApiDocsClient() {
                 <LockKeyhole className="mb-3 h-5 w-5 text-slate-700" />
                 <h3 className="text-sm font-semibold text-slate-950">What the key does</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  It tells Arcli which workspace should receive the event. Anyone with
-                  the key can write events to that workspace.
+                  It authenticates server-to-server writes into your Arcli workspace.
+                  Anyone with the key can ingest events for that workspace.
                 </p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -615,7 +596,7 @@ export function ApiDocsClient() {
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-slate-600">
-                Authentication format:
+                Ingestion header:
                 <code className="ml-2 rounded bg-slate-100 px-2 py-1 text-xs text-slate-950">
                   Authorization: Bearer &lt;ARCLI_API_KEY&gt;
                 </code>
@@ -637,7 +618,8 @@ export function ApiDocsClient() {
                 <p className="mb-4 text-sm leading-6 text-slate-600">
                   In your project, create or open <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-950">.env.local</code>.
                   Paste this in, then replace the x&apos;s with the API key you generated in
-                  Arcli settings.
+                  Arcli settings. Your backend will read these values and send the
+                  events manually.
                 </p>
                 <CodeBlock
                   label=".env.local"
@@ -650,8 +632,8 @@ export function ApiDocsClient() {
                 <KeyRound className="mb-3 h-5 w-5 text-blue-700" />
                 <h3 className="text-sm font-semibold text-blue-950">Plain-language check</h3>
                 <p className="mt-2 text-sm leading-6 text-blue-900">
-                  The first line is your secret. The second line is the Arcli address your
-                  server will send events to.
+                  The first line is your secret. The second line is the ingestion address
+                  your server will send events to.
                 </p>
                 <Separator className="my-4 bg-blue-200" />
                 <p className="text-xs leading-5 text-blue-900/80">
@@ -671,7 +653,8 @@ export function ApiDocsClient() {
                 <div>
                   <p className="text-sm leading-6 text-slate-600">
                     Choose the backend you use. The important part is the same in every
-                    language: your server adds the bearer token header.
+                    language: your server adds the bearer token header and sends the
+                    required metadata manually.
                   </p>
                 </div>
                 <TabsList className="grid w-full grid-cols-3 sm:w-auto">
@@ -724,7 +707,7 @@ export function ApiDocsClient() {
               <AlertDescription className="leading-6">
                 Use a stable <code className="rounded bg-amber-100 px-1">idempotency_key</code> for
                 the same customer action. If a timeout happens, retry with the same key so
-                Arcli does not count the same revenue signal twice.
+                Arcli does not count the same event twice.
               </AlertDescription>
             </Alert>
           </StepShell>
@@ -736,7 +719,7 @@ export function ApiDocsClient() {
           >
             <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
               <div>
-                <h3 className="text-sm font-semibold text-slate-950">Pick a first signal</h3>
+                <h3 className="text-sm font-semibold text-slate-950">Pick a first event</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   Start with one event that is directly tied to churn risk or recovered
                   revenue. Avoid generic product analytics like page views or button clicks.
@@ -794,7 +777,7 @@ export function ApiDocsClient() {
                     <code className="rounded bg-white px-1.5 py-0.5 text-xs text-slate-950">
                       {selectedSignalDetails.value}
                     </code>
-                    .
+                    . Include the required metadata yourself from your billing system.
                   </p>
                 </div>
                 <CodeBlock
@@ -832,7 +815,7 @@ export function ApiDocsClient() {
                   {[
                     "The request is sent from your backend.",
                     "The Authorization header starts with Bearer.",
-                    "The event name is a churn or revenue signal.",
+                      "The event name is one of the manual billing or churn signals.",
                     "The response status is 202.",
                   ].map((item) => (
                     <div key={item} className="flex gap-2">
@@ -841,6 +824,17 @@ export function ApiDocsClient() {
                     </div>
                   ))}
                 </div>
+                  <Alert className="mt-5 rounded-lg border-slate-200 bg-white text-slate-950">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Dashboard access stays in the browser</AlertTitle>
+                    <AlertDescription className="leading-6">
+                      The API key is for ingestion only. To inspect analytics, see
+                      churned users, or review ROI, sign in to the Arcli Dashboard in
+                      your browser with an authenticated session. Those reads are not
+                      available through the API key. If you need any help, email
+                      support@arcli.tech.
+                    </AlertDescription>
+                  </Alert>
                 <Button
                   type="button"
                   onClick={() => markStepAndMove("confirm")}

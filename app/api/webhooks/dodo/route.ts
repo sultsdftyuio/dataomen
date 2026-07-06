@@ -25,9 +25,29 @@ function getDodoClient(): DodoPayments {
     throw new Error("Missing DODO_PAYMENTS_WEBHOOK_KEY environment variable.");
   }
 
-  const explicitEnv = process.env.DODO_PAYMENTS_ENV;
-  const isTestKey = apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
-  const environment = explicitEnv === "test_mode" || isTestKey ? "test_mode" : "live_mode";
+  const explicitEnv = sanitizeEnvSecret(process.env.DODO_PAYMENTS_ENV);
+  if (explicitEnv !== "test_mode" && explicitEnv !== "live_mode") {
+    console.warn(
+      "[Dodo Webhook] DODO_PAYMENTS_ENV is not explicitly set to 'test_mode' or 'live_mode'. Defaulting to 'live_mode'."
+    );
+  }
+
+  if (process.env.NODE_ENV === "production" && explicitEnv === "test_mode") {
+    console.warn(
+      "[Dodo Webhook] DODO_PAYMENTS_ENV=test_mode is ignored in production. Using live_mode."
+    );
+  }
+
+  const environment: "test_mode" | "live_mode" =
+    process.env.NODE_ENV !== "production" && explicitEnv === "test_mode"
+      ? "test_mode"
+      : "live_mode";
+
+  if (environment === "live_mode" && isDodoTestApiKey(apiKey)) {
+    throw new Error(
+      "DODO_PAYMENTS_API_KEY appears to be a test key while Dodo Payments is configured for live_mode."
+    );
+  }
 
   return new DodoPayments({
     bearerToken: apiKey,
@@ -38,6 +58,10 @@ function getDodoClient(): DodoPayments {
 
 function sanitizeEnvSecret(value: string | undefined): string {
   return value?.trim().replace(/^["']+|["']+$/g, "").trim() ?? "";
+}
+
+function isDodoTestApiKey(apiKey: string): boolean {
+  return apiKey.startsWith("test_") || apiKey.startsWith("sk_test_");
 }
 
 function getSupabaseServiceClient() {
