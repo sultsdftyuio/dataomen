@@ -1,13 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { VerifyAndSyncSubscriptionStatusResult } from "@/app/actions/billing.utils";
+import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 import RecoveryOverview from "./RecoveryOverview";
 import QuickStartGuide from "./QuickStartGuide";
-import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 
 export const metadata: Metadata = {
   title: "Dashboard | Arcli",
