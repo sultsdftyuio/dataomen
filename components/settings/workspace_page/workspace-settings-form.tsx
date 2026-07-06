@@ -144,7 +144,6 @@ export default function WorkspaceSettingsForm({
                 <Globe size={14} color={C.muted} style={{ position: "absolute", left: 10, top: 9 }} />
                 <input
                   type="url"
-                  required
                   placeholder="https://acme.com"
                   value={websiteUrl}
                   disabled={isPending}

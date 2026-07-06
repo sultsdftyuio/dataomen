@@ -72,7 +72,7 @@ export default function SettingsClient({
     authEmail: user?.email ?? "",
     companyName: initialSettings.workspace?.companyName ?? "",
     supportEmail: initialSettings.workspace?.replyToEmail ?? "",
-    websiteUrl: "", // Default to empty string until website URL persistence is added to schema
+    websiteUrl: initialSettings.workspace?.websiteUrl ?? "",
   };
 
   return (

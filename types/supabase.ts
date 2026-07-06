@@ -74,6 +74,7 @@ export type Database = {
           company_name: string | null;
           reply_to_email: string | null;
           sender_email: string | null;
+          website_url: string | null;
           stripe_account_id: string | null;
           email_provider_status: boolean | null;
           api_key: string | null;
@@ -85,6 +86,7 @@ export type Database = {
           company_name?: string | null;
           reply_to_email?: string | null;
           sender_email?: string | null;
+          website_url?: string | null;
           stripe_account_id?: string | null;
           email_provider_status?: boolean | null;
           api_key?: string | null;
@@ -96,6 +98,7 @@ export type Database = {
           company_name?: string | null;
           reply_to_email?: string | null;
           sender_email?: string | null;
+          website_url?: string | null;
           stripe_account_id?: string | null;
           email_provider_status?: boolean | null;
           api_key?: string | null;

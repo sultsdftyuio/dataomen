@@ -13,6 +13,10 @@ import { z } from "zod";
 const trimString = (value: unknown) =>
   typeof value === "string" ? value.trim() : value;
 
+const normalizeEmailString = (value: string) => value.trim().toLowerCase();
+
+const normalizeNullableString = (value: string) => value.trim();
+
 // ---------------------------------------------------------------------------
 // Email Validation
 // ---------------------------------------------------------------------------
@@ -46,7 +50,7 @@ export const SenderEmailSchema = z.preprocess(
     z.string().regex(
       SENDER_EMAIL_REGEX,
       "Must be a valid email address or 'Name <email@example.com>'"
-    ),
+    ).transform(normalizeEmailString),
     z.literal(""),
   ])
 );
@@ -59,9 +63,37 @@ export const SenderEmailSchema = z.preprocess(
 export const ReplyToEmailSchema = z.preprocess(
   trimString,
   z.union([
-    z.string().email("Invalid email address format"),
+    z.string().email("Invalid email address format").transform(normalizeEmailString),
     z.literal(""),
   ])
+);
+
+export const WebsiteUrlSchema = z.preprocess(
+  trimString,
+  z
+    .string()
+    .superRefine((value, ctx) => {
+      if (value === "") return;
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(value);
+      } catch {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Must be a valid URL format",
+        });
+        return;
+      }
+
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Website URL must start with http:// or https://",
+        });
+      }
+    })
+    .transform(normalizeNullableString)
 );
 
 // ---------------------------------------------------------------------------
@@ -76,6 +108,7 @@ export const WorkspaceSettingsSchema = z
         z
           .string()
           .max(100, "Company name must be 100 characters or less")
+          .transform(normalizeNullableString)
       )
       .optional(),
 
@@ -95,22 +128,17 @@ export const WorkspaceSettingsSchema = z
     fullName: z
       .preprocess(
         trimString,
-        z.string().max(100, "Full name must be 100 characters or less")
+        z
+          .string()
+          .max(100, "Full name must be 100 characters or less")
+          .transform(normalizeNullableString)
       )
       .optional(),
 
     /**
      * Optional company website URL.
      */
-    websiteUrl: z
-      .preprocess(
-        trimString,
-        z.union([
-          z.string().url("Must be a valid URL format"),
-          z.literal(""),
-        ])
-      )
-      .optional(),
+    websiteUrl: WebsiteUrlSchema.optional(),
   })
   .strip(); // Safely remove unmapped frontend properties instead of throwing a 400 Bad Request
 

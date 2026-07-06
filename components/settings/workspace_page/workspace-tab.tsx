@@ -9,6 +9,7 @@ import WorkspaceBillingCard, { WorkspaceBillingCardProps } from "./workspace-bil
 import WorkspaceSettingsForm from "./workspace-settings-form";
 import WorkspaceSettingsPreview from "./workspace-settings-preview";
 import { C } from "@/lib/tokens";
+import { WorkspaceSettingsSchema } from "@/lib/settings/schemas";
 
 interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
   initialData?: {
@@ -19,6 +20,44 @@ interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
     websiteUrl: string;
   };
   billingTestControlsEnabled?: boolean;
+}
+
+type WorkspaceUpdateResponse = {
+  error?: string;
+  code?: string;
+  details?: {
+    fieldErrors?: Record<string, string[] | undefined>;
+    formErrors?: string[];
+  };
+  settings?: Partial<{
+    fullName: string;
+    companyName: string;
+    replyToEmail: string;
+    websiteUrl: string;
+  }>;
+};
+
+function formatFieldErrors(
+  fieldErrors: Record<string, string[] | undefined> | undefined
+) {
+  if (!fieldErrors) return null;
+
+  const messages = Object.entries(fieldErrors)
+    .flatMap(([field, errors]) =>
+      (errors ?? []).map((message) => `${field}: ${message}`)
+    )
+    .filter(Boolean);
+
+  return messages.length > 0 ? messages.join(" ") : null;
+}
+
+async function readSettingsError(response: Response): Promise<string> {
+  const payload = (await response
+    .json()
+    .catch(() => ({}))) as WorkspaceUpdateResponse;
+
+  const fieldMessage = formatFieldErrors(payload.details?.fieldErrors);
+  return fieldMessage || payload.error || "Failed to update workspace configuration.";
 }
 
 export default function CompactWorkspaceSettings({
@@ -63,20 +102,44 @@ export default function CompactWorkspaceSettings({
     e.preventDefault();
     startTransition(async () => {
       try {
+        const payload = {
+          companyName,
+          replyToEmail: supportEmail,
+          fullName,
+          websiteUrl,
+        };
+
+        const validation = WorkspaceSettingsSchema.safeParse(payload);
+        if (!validation.success) {
+          throw new Error(
+            formatFieldErrors(validation.error.flatten().fieldErrors) ||
+              "Invalid workspace configuration."
+          );
+        }
+
         const res = await fetch("/api/settings/workspace", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            companyName: companyName,
-            replyToEmail: supportEmail,
-            fullName: fullName,
-            websiteUrl: websiteUrl,
-          }),
+          body: JSON.stringify(validation.data),
         });
 
         if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || "Failed to update workspace configuration.");
+          throw new Error(await readSettingsError(res));
+        }
+
+        const data = (await res.json().catch(() => ({}))) as WorkspaceUpdateResponse;
+
+        if (typeof data.settings?.fullName === "string") {
+          setFullName(data.settings.fullName);
+        }
+        if (typeof data.settings?.companyName === "string") {
+          setCompanyName(data.settings.companyName);
+        }
+        if (typeof data.settings?.replyToEmail === "string") {
+          setSupportEmail(data.settings.replyToEmail);
+        }
+        if (typeof data.settings?.websiteUrl === "string") {
+          setWebsiteUrl(data.settings.websiteUrl);
         }
 
         setIsDirty(false);

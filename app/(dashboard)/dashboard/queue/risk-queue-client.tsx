@@ -48,12 +48,6 @@ const MEDIUM_RISK_THRESHOLD = 50;
 const LOW_RISK_THRESHOLD = 30;
 const ITEMS_PER_PAGE = 50;
 
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
 // ─── Types ─────────────────────────────────────────────────────
 export type CustomerOperation = {
   tenant_id: string;
@@ -62,7 +56,6 @@ export type CustomerOperation = {
   name: string;           
   email: string;          
   risk_score: number;
-  mrr_at_risk: number;
   state: 'healthy' | 'pending' | 'processing' | 'cooldown' | 'suppressed' | 'failed' | 'dead_lettered' | 'completed';
   next_action_time: string | null;
   assigned_to_name: string | null;
@@ -76,7 +69,6 @@ export type OperationsMetrics = {
   critical_count: number;
   pending_count: number;
   dead_letter_count: number;
-  total_mrr_at_risk: number;
 };
 
 export type PaginationInfo = {
@@ -346,7 +338,6 @@ export default function CustomerOperationsClient({
                 <TableRow>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Customer</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Risk Level</TableHead>
-                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Monthly Revenue</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Queue State</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Next Step</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Assigned To</TableHead>
@@ -360,7 +351,6 @@ export default function CustomerOperationsClient({
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -370,7 +360,7 @@ export default function CustomerOperationsClient({
                 ) : customers.length === 0 ? (
                   // Empty State
                   <TableRow>
-                    <TableCell colSpan={7} style={{ textAlign: "center", padding: 56 }}>
+                    <TableCell colSpan={6} style={{ textAlign: "center", padding: 56 }}>
                       <CheckCircle2 size={38} color={C.green} style={{ margin: "0 auto 12px" }} />
                       <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>
                         {localSearch ? "No matches found" : "All clear!"}
@@ -420,12 +410,6 @@ export default function CustomerOperationsClient({
                           <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, color: priority.color, background: priority.bg }}>
                             {priority.icon} {priority.label}
                           </span>
-                        </TableCell>
-
-                        {/* Money */}
-                        <TableCell style={{ padding: 14, fontWeight: 600, color: C.navy, fontSize: 13 }}>
-                          {currencyFormatter.format(item.mrr_at_risk || 0)}
-                          <span style={{ color: C.muted, fontSize: 11, fontWeight: 400 }}> / mo</span>
                         </TableCell>
 
                         {/* Status */}

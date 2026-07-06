@@ -38,7 +38,6 @@ import {
   getStateBadge,
   getSignalBadge,
   ITEMS_PER_PAGE,
-  currencyFormatter,
 } from "@/app/(dashboard)/dashboard/queue/customer-operations-logic";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 
@@ -215,7 +214,6 @@ export function RiskQueueShell({
                 <TableRow>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Customer</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Risk Level</TableHead>
-                  <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Monthly Revenue</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Queue State</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Next Step</TableHead>
                   <TableHead style={{ fontSize: 11, fontWeight: 700, color: C.navySoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>Assigned To</TableHead>
@@ -228,7 +226,6 @@ export function RiskQueueShell({
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -237,7 +234,7 @@ export function RiskQueueShell({
                   ))
                 ) : customers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} style={{ textAlign: "center", padding: 56 }}>
+                    <TableCell colSpan={6} style={{ textAlign: "center", padding: 56 }}>
                       <CheckCircle2 size={38} color={C.green} style={{ margin: "0 auto 12px" }} />
                       <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>
                         {localSearch ? "No matches found" : "All clear!"}
@@ -285,11 +282,6 @@ export function RiskQueueShell({
                           <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, color: priority.color, background: priority.bg }}>
                             {priority.icon} {priority.label}
                           </span>
-                        </TableCell>
-
-                        <TableCell style={{ padding: 14, fontWeight: 600, color: C.navy, fontSize: 13 }}>
-                          {currencyFormatter.format(item.mrr_at_risk || 0)}
-                          <span style={{ color: C.muted, fontSize: 11, fontWeight: 400 }}> / mo</span>
                         </TableCell>
 
                         <TableCell style={{ padding: 14 }}>

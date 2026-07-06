@@ -36,7 +36,6 @@ const DEFAULT_METRICS: OperationsMetrics = {
   critical_count: 0,
   pending_count: 0,
   dead_letter_count: 0,
-  total_mrr_at_risk: 0,
 };
 
 // ─── Input Sanitization & Validation ───────────────────────────────

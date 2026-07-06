@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS: SettingsSnapshot = {
     companyName: "",
     senderEmail: "", // Added senderEmail to default snapshot
     replyToEmail: "",
+    websiteUrl: "",
   },
   integrations: {
     stripeConnected: false,
@@ -41,6 +42,7 @@ export function buildSettingsSnapshot(
       // Map sender_email directly from the Supabase row payload
       senderEmail: (row as any).sender_email ?? "",
       replyToEmail: row.reply_to_email ?? "",
+      websiteUrl: row.website_url ?? "",
     },
     integrations: {
       stripeConnected: Boolean(row.stripe_account_id),

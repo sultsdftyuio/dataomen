@@ -23,12 +23,6 @@ export const MEDIUM_RISK_THRESHOLD = 50;
 export const LOW_RISK_THRESHOLD = 30;
 export const ITEMS_PER_PAGE = 50;
 
-export const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
 // ─── Types ─────────────────────────────────────────────────────
 export type CustomerOperation = {
   tenant_id: string;
@@ -37,7 +31,6 @@ export type CustomerOperation = {
   name: string;           
   email: string;          
   risk_score: number;
-  mrr_at_risk: number;
   state: 'healthy' | 'pending' | 'processing' | 'cooldown' | 'suppressed' | 'failed' | 'dead_lettered' | 'completed';
   next_action_time: string | null;
   assigned_to_name: string | null;
@@ -51,7 +44,6 @@ export type OperationsMetrics = {
   critical_count: number;
   pending_count: number;
   dead_letter_count: number;
-  total_mrr_at_risk: number;
 };
 
 export type PaginationInfo = {

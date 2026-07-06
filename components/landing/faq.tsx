@@ -5,24 +5,24 @@ import { C } from "@/lib/tokens";
 
 const items = [
   {
-    q: "What if my database schema is messy or undocumented?",
-    a: "Arcli's AI is built for real-world, messy data. During setup, it automatically maps your schema relationships and learns your definition of an \"Active User\" or \"Churned\". You can also add plain-English definitions to tables or columns so the AI adapts to your lifecycle.",
+    q: "Will Arcli annoy or spam our existing customers?",
+    a: "Not at all. Protecting your customer relationships is our top priority. You set strict contact limits and mandatory cooldown periods (for example, contacting a customer at most once every 30 days). Arcli also automatically respects all unsubscribes, bounces, and customer communication preferences.",
   },
   {
-    q: "Are you GDPR and CCPA compliant? How do you handle customer PII?",
-    a: "Absolutely. We operate on a strict zero-data-retention architecture for sensitive information. Arcli only processes anonymized IDs, metadata, and aggregate behavioral signals to build its churn predictions. We never store your raw customer records, billing details, or private support conversations.",
+    q: "How do you keep our customer data secure and private?",
+    a: "We operate on a strict zero-data-retention architecture. Arcli only reads basic activity signals and anonymized identifiers required to detect dropping engagement. We never store raw customer databases, sensitive personal records, or private support conversations.",
   },
   {
-    q: "How long does setup really take?",
-    a: "Ask a question like \"Correlate our Stripe cancellations with our Zendesk response times.\" Arcli will join the sources and surface churn drivers in a single, unified result.",
+    q: "Can our team customize the recovery messages and rules?",
+    a: "Yes. You maintain complete control over every message sent and every rule triggered. You can easily tailor the wording, timing, and incentives to match your brand voice and customer lifecycle perfectly.",
   },
   {
-    q: "How does pricing scale? Do I pay per user?",
-    a: "We charge based on compute (queries run), not per-seat licenses. We believe insights should be accessible to everyone, so you can invite your entire organization to use Arcli without paying arbitrary license fees per user.",
+    q: "How long does it take to set up and start saving customers?",
+    a: "Setup takes just a few minutes. Once you connect your core customer communication and engagement tools, Arcli immediately begins monitoring for early churn indicators and enrolling slipping accounts into your saved workflows.",
   },
   {
-    q: "Can I query multiple data sources at the same time?",
-    a: "Yes. Arcli can join and query across multiple connected sources on the fly. Ask \"Compare our Stripe revenue to our Salesforce pipeline\" and Arcli will seamlessly merge the data to give you a single, unified chart.",
+    q: "How does pricing scale? Do we pay per team member?",
+    a: "We do not charge per-seat licenses. We believe everyone on your team should have visibility into customer retention, so you can invite your entire organization to collaborate within Arcli without paying arbitrary license fees per user.",
   },
 ];
 

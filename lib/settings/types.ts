@@ -10,6 +10,7 @@ export type SettingsWorkspace = {
   companyName: string;
   senderEmail?: string;
   replyToEmail: string;
+  websiteUrl: string;
 };
 
 export type SettingsIntegrations = {
