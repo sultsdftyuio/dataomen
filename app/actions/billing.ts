@@ -101,8 +101,9 @@ async function scheduleSubscriptionCancellationForTenant(
   }
 
   const entitlements = await getWorkspaceEntitlements(serviceSupabase, tenantId);
+  const planTier = entitlements.planTier.toLowerCase();
   const canCancel =
-    entitlements.planTier === "pro" &&
+    planTier === "pro" &&
     ["active", "trialing", "past_due"].includes(entitlements.subscriptionStatus ?? "");
 
   if (!canCancel) {
@@ -1190,9 +1191,10 @@ export async function manageBillingPortal() {
   }
 
   const entitlements = await getWorkspaceEntitlements(supabase, membership.tenant_id);
+  const planTier = entitlements.planTier.toLowerCase();
 
   const canManageBilling =
-    entitlements.planTier === "pro" &&
+    planTier === "pro" &&
     ["active", "trialing", "past_due", "canceling"].includes(entitlements.subscriptionStatus ?? "");
 
   if (!canManageBilling) {

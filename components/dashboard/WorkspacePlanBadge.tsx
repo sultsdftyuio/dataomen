@@ -20,13 +20,14 @@ interface WorkspacePlanBadgeProps {
 export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
   const { isPro, isTrialing, isPastDue, billingLabel, billingDescription } =
     entitlements as WorkspaceEntitlements & { isPastDue?: boolean };
+  const planTier = entitlements.planTier.toLowerCase();
 
   // Calculate past due status explicitly if not present on type
   const activePastDue =
-    entitlements.planTier === "pro" &&
+    planTier === "pro" &&
     entitlements.subscriptionStatus === "past_due";
   const activeCanceling =
-    entitlements.planTier === "pro" &&
+    planTier === "pro" &&
     entitlements.subscriptionStatus === "canceling";
 
   const badgeClassName = isPro

@@ -125,13 +125,14 @@ export default async function SettingsPage({
     }
 
     const subscriptionStatus = (entitlements.subscriptionStatus ?? "free") as BillingPlanStatus;
+    const planTier = entitlements.planTier.toLowerCase();
     billingPlanData = {
       planName: entitlements.billingLabel,
       planStatus: subscriptionStatus,
       description: entitlements.billingDescription,
       daysRemaining: entitlements.daysUntilTrialEnds,
       priceText: "$29/month after the 3-day trial",
-      isProTier: entitlements.planTier === "pro",
+      isProTier: planTier === "pro",
       features: [
         {
           label: "Risk queue customer lists",
