@@ -343,7 +343,7 @@ async def resolve_tenant(
         response = (
             client
             .table("api_keys")
-            .select("tenant_id, key_hash, revoked_at, expires_at")
+            .select("tenant_id, key_hash, revoked_at")
             .eq("key_id", key_id)
             .maybe_single()
             .execute()
@@ -361,13 +361,6 @@ async def resolve_tenant(
     if row.get("revoked_at"):
         logger.warning("revoked_api_key_attempt", extra={"key_id": key_id})
         raise HTTPException(status_code=401, detail="Invalid API Key")
-
-    if row.get("expires_at"):
-        expires_at_str = row["expires_at"].replace("Z", "+00:00")
-        expires_at = datetime.fromisoformat(expires_at_str)
-        if datetime.now(timezone.utc) > expires_at:
-            logger.warning("expired_api_key_attempt", extra={"key_id": key_id})
-            raise HTTPException(status_code=401, detail="API Key expired")
 
     stored_hash = row.get("key_hash") or ""
     if not hmac.compare_digest(key_hash, stored_hash):

@@ -39,7 +39,7 @@ export function IntegrationGuide() {
   };
 
   const snippets: Record<LangTab, string> = {
-    curl: `curl -X POST https://api.arcli.tech/api/v1/track \\
+    curl: `curl -X POST https://api.arcli.tech/v1/track \\
   -H "Authorization: Bearer arcli_live_your_api_key_here" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -52,7 +52,7 @@ export function IntegrationGuide() {
     }
   }'`,
     node: `// Native fetch (Node.js 18+)
-const response = await fetch('https://api.arcli.tech/api/v1/track', {
+const response = await fetch('https://api.arcli.tech/v1/track', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer arcli_live_your_api_key_here',
@@ -73,7 +73,7 @@ const data = await response.json();`,
     python: `import requests
 import uuid
 
-url = "https://api.arcli.tech/api/v1/track"
+url = "https://api.arcli.tech/v1/track"
 headers = {
     "Authorization": "Bearer arcli_live_your_api_key_here",
     "Content-Type": "application/json"
@@ -132,7 +132,7 @@ data = response.json()`
               <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Endpoint</span>
               <div className="flex items-center gap-2">
                 <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase">POST</span>
-                <code className="text-sm font-mono text-[#0A192F] font-semibold">/api/v1/track</code>
+                <code className="text-sm font-mono text-[#0A192F] font-semibold">/v1/track</code>
               </div>
             </div>
             <div className="space-y-1.5">

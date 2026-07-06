@@ -75,11 +75,55 @@ function verifyNoApiKeyPaywallTokens() {
   );
 }
 
+function verifyApiKeyRoutingContracts() {
+  const nextConfig = readFileSync(join(process.cwd(), "next.config.mjs"), "utf8");
+  const proxy = readFileSync(join(process.cwd(), "proxy.ts"), "utf8");
+
+  assert.match(
+    nextConfig,
+    /source:\s*['"]\/api\/v1\/:path\*['"]/,
+    "Next.js must keep the browser-facing /api/v1 proxy route"
+  );
+  assert.match(
+    nextConfig,
+    /destination:\s*`\$\{backendUrl\}\/v1\/:path\*`/,
+    "Next.js /api/v1 proxy must target the FastAPI /v1 router"
+  );
+  assert.equal(
+    proxy.includes("'/api/v1/track'"),
+    true,
+    "Edge middleware must allow API-key bearer auth through to /api/v1/track"
+  );
+}
+
+function verifyApiKeySchemaContracts() {
+  const trackRoute = readFileSync(join(process.cwd(), "api/routes/track.py"), "utf8");
+  const apiRoute = readFileSync(join(process.cwd(), "api/routes/api_keys.py"), "utf8");
+
+  assert.equal(
+    trackRoute.includes("expires_at"),
+    false,
+    "api/routes/track.py must not query api_keys.expires_at until that column exists in the schema"
+  );
+  assert.equal(
+    apiRoute.includes("Maximum number of active API keys reached."),
+    false,
+    "api/routes/api_keys.py must align with the one-active-key rotation model"
+  );
+  assert.equal(
+    apiRoute.includes("23505"),
+    true,
+    "api/routes/api_keys.py must handle the active-key unique constraint"
+  );
+}
+
 async function main() {
   await verifyUniversalEntitlement();
   verifyNoApiKeyPaywallTokens();
+  verifyApiKeyRoutingContracts();
+  verifyApiKeySchemaContracts();
 
-  console.log("API key access is universal across free, trialing, pro, enterprise, and past_due workspaces.");
+  console.log("API key access, routing, and schema contracts are aligned.");
 }
 
 main().catch((error) => {

@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Literal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints
 from typing_extensions import Annotated
 
 # Use canonical auth dependencies directly
@@ -12,6 +12,45 @@ from api.services.security.api_keys import ApiKeyVault
 
 router = APIRouter(prefix="/v1/api-keys", tags=["Developer Vault"])
 logger = logging.getLogger(__name__)
+
+
+def _is_unique_violation(exc: Exception) -> bool:
+    details = [str(exc)]
+    for attr in ("code", "message", "details", "hint"):
+        value = getattr(exc, attr, None)
+        if value:
+            details.append(str(value))
+
+    error_text = " ".join(details).lower()
+    return (
+        "23505" in error_text
+        or "duplicate key" in error_text
+        or "uix_api_keys_tenant_active" in error_text
+    )
+
+
+def _insert_api_key(supabase, db_record):
+    return supabase.table("api_keys").insert(db_record).execute()
+
+
+def _revoke_active_keys(
+    supabase,
+    *,
+    tenant_id: str,
+    revoked_at: str,
+    exclude_key_id: Optional[str] = None,
+):
+    query = (
+        supabase.table("api_keys")
+        .update({"revoked_at": revoked_at})
+        .eq("tenant_id", tenant_id)
+        .is_("revoked_at", "null")
+    )
+
+    if exclude_key_id:
+        query = query.neq("key_id", exclude_key_id)
+
+    return query.execute()
 
 # --- Custom Types & Request/Response Models ---
 
@@ -31,8 +70,9 @@ NameType = Annotated[
 ]
 
 class GenerateKeyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: NameType
-    expires_at: Optional[datetime] = None
 
 class KeyGenerationResponse(BaseModel):
     plaintext_key: str
@@ -53,7 +93,6 @@ class ApiKeyMetadata(BaseModel):
     name: str
     masked_key: str
     created_at: datetime
-    expires_at: Optional[datetime]
     last_used_at: Optional[datetime]
     is_revoked: bool
 
@@ -77,41 +116,11 @@ async def generate_api_key(
     Generates a new production API key.
     SECURITY: The plaintext_key is returned EXACTLY ONCE to the client.
     """
-    # 1. Validate Expiration Date
-    if payload.expires_at:
-        expires = payload.expires_at
-        if expires.tzinfo is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="expires_at must include timezone information."
-            )
-        if expires <= datetime.now(timezone.utc):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="expires_at must be a timestamp in the future."
-            )
-
-    # 2. Soft limit: prevent abuse by capping active keys per tenant
-    existing = (
-        supabase.table("api_keys")
-        .select("id", count="exact")
-        .eq("tenant_id", tenant_id)
-        .is_("revoked_at", "null")
-        .execute()
-    )
-    
-    if existing.count is not None and existing.count >= 100:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Maximum number of active API keys reached."
-        )
-
     try:
-        # 3. Generate the cryptographic pair (Never hits DB yet)
+        # 1. Generate the cryptographic pair (Never hits DB yet)
         key_data = ApiKeyVault.generate_key_pair(
             name=payload.name,
             tenant_id=tenant_id,
-            expires_at=payload.expires_at
         )
 
         db_record = key_data["db_record"]
@@ -119,8 +128,45 @@ async def generate_api_key(
         # Add creator metadata
         db_record["created_by"] = auth.user_id
 
-        # 4. Persist the hash and metadata to the Vault (Supabase)
-        response = supabase.table("api_keys").insert(db_record).execute()
+        # 2. Persist the hash and metadata to the Vault (Supabase).
+        # The database enforces one active key per tenant. Insert first so a
+        # transient insert failure never revokes the caller's existing key.
+        try:
+            response = _insert_api_key(supabase, db_record)
+        except Exception as exc:
+            if not _is_unique_violation(exc):
+                raise
+
+            revoked_at = datetime.now(timezone.utc).isoformat()
+            _revoke_active_keys(
+                supabase,
+                tenant_id=tenant_id,
+                revoked_at=revoked_at,
+            )
+
+            try:
+                response = _insert_api_key(supabase, db_record)
+            except Exception as retry_exc:
+                if _is_unique_violation(retry_exc):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="A concurrent API key rotation is in progress. Please retry.",
+                    )
+                raise
+        else:
+            revoked_at = datetime.now(timezone.utc).isoformat()
+            try:
+                _revoke_active_keys(
+                    supabase,
+                    tenant_id=tenant_id,
+                    revoked_at=revoked_at,
+                    exclude_key_id=db_record["key_id"],
+                )
+            except Exception:
+                logger.exception(
+                    "API key cleanup revoke failed",
+                    extra={"tenant_id": tenant_id, "key_id": db_record["key_id"]},
+                )
 
         # Ensure Supabase actually persisted the record
         if not response.data or len(response.data) == 0:
@@ -129,7 +175,7 @@ async def generate_api_key(
                 detail="Failed to persist API key to the vault."
             )
 
-        # 5. Sync active key prefix with tenant_settings (matches Next.js behavior)
+        # 3. Sync active key prefix with tenant_settings (matches Next.js behavior)
         supabase.table("tenant_settings").upsert(
             {
                 "tenant_id": tenant_id, 
@@ -138,7 +184,7 @@ async def generate_api_key(
             }
         ).execute()
 
-        # 6. Return the payload. The plaintext_key leaves the server here and is never seen again.
+        # 4. Return the payload. The plaintext_key leaves the server here and is never seen again.
         return KeyGenerationResponse(
             plaintext_key=key_data["plaintext_key"],
             masked_key=key_data["masked_key"],
@@ -252,7 +298,6 @@ async def list_api_keys(
                 name=row.get("label") or "",
                 masked_key=masked_key,
                 created_at=datetime.fromisoformat(row["created_at"]),
-                expires_at=None,
                 last_used_at=datetime.fromisoformat(row["last_used_at"]) if row.get("last_used_at") else None,
                 is_revoked=row.get("revoked_at") is not None
             ))

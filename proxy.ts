@@ -176,6 +176,7 @@ export default async function middleware(request: NextRequest) {
   const machineApiRoutes = [
     '/api/internal',   // internal service-to-service calls
     '/api/webhooks',   // webhook payloads carry their own HMAC signatures
+    '/api/v1/track',   // public event ingestion; FastAPI validates the API key
   ]
 
   const authHeader = request.headers.get('authorization') ?? ''

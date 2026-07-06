@@ -50,7 +50,6 @@ class ApiKeyVault:
         *,
         name: str,
         tenant_id: str,
-        expires_at: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
         Generates a new API key.

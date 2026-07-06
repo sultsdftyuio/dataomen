@@ -223,7 +223,12 @@ export function QuickStartGuideSteps({
         action={
           !hasApiKey ? (
             <button
-              onClick={onOpenApiModal}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenApiModal();
+              }}
               style={{
                 height: 40,
                 padding: "0 16px",

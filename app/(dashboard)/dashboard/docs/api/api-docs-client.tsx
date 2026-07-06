@@ -43,7 +43,7 @@ type RevenueSignal =
   | "revenue_recovered";
 
 const API_KEY_PLACEHOLDER = "arcli_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-const INGEST_URL = "https://api.arcli.io/v1/events";
+const INGEST_URL = "https://api.arcli.tech/v1/track";
 
 const steps: Array<{
   id: StepId;

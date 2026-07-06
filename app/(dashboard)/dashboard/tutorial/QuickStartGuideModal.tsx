@@ -52,7 +52,12 @@ export function QuickStartGuideModal({
 
         <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end">
           <button
-            onClick={onDone}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDone();
+            }}
             style={{
               height: 36,
               padding: "0 16px",

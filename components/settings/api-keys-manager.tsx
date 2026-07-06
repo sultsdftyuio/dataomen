@@ -103,8 +103,9 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
   }, []);
 
   // --- Actions ---
-  const handleGenerate = async (e: React.FormEvent) => {
+  const handleGenerate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     
     // 3. Prevent duplicate requests
     if (isGenerating) return;
@@ -150,7 +151,10 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
     }
   };
 
-  const handleRevoke = async (keyId: string) => {
+  const handleRevoke = async (keyId: string, e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+
     // 3. Prevent duplicate requests
     if (revokingId) return;
     if (!confirm("Are you sure? This will instantly break any integrations using this key.")) return;
@@ -177,7 +181,10 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
     }
   };
 
-  const handleCopy = async () => {
+  const handleCopy = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+
     if (newlyGeneratedKey) {
       // 5. Better Clipboard API handling
       try {
@@ -190,7 +197,10 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
     }
   };
 
-  const closeAndResetModal = () => {
+  const closeAndResetModal = (e?: React.MouseEvent<HTMLButtonElement>) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+
     setIsModalOpen(false);
     setNewKeyName("");
     setNewlyGeneratedKey(null);
@@ -213,7 +223,12 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
             </p>
           </div>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsModalOpen(true);
+            }}
             disabled={isLoading} // 7. Add loading state to Create button
             style={{ 
               height: 40, padding: "0 18px", borderRadius: 8, background: C.navy, 
@@ -275,7 +290,8 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
                     <td style={{ padding: "16px 20px", textAlign: "right" }}>
                       {!k.is_revoked ? (
                         <button 
-                          onClick={() => handleRevoke(k.key_id)}
+                          type="button"
+                          onClick={(e) => handleRevoke(k.key_id, e)}
                           disabled={revokingId === k.key_id}
                           style={{ background: "transparent", border: "1px solid transparent", color: C.faint, cursor: "pointer", padding: "6px 8px", borderRadius: 6, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, transition: "color 0.2s" }}
                           onMouseEnter={(e) => (e.currentTarget.style.color = C.red)}
@@ -298,8 +314,8 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
 
       {/* ── Generate / Reveal Modal ── */}
       {isModalOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10, 22, 40, 0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, backdropFilter: "blur(2px)" }}>
-          <div style={{ background: C.white, padding: 32, borderRadius: 12, width: "100%", maxWidth: 480, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)", border: `1px solid ${C.ruleDark}`, fontFamily: sans }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "fixed", inset: 0, background: "rgba(10, 22, 40, 0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, backdropFilter: "blur(2px)" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.white, padding: 32, borderRadius: 12, width: "100%", maxWidth: 480, boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)", border: `1px solid ${C.ruleDark}`, fontFamily: sans }}>
             
             {!newlyGeneratedKey ? (
               // STEP 1: Name the Key
@@ -329,7 +345,7 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
                 />
                 
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-                  <button type="button" onClick={closeAndResetModal} style={{ padding: "0 16px", height: 40, background: "transparent", border: "none", color: C.faint, fontWeight: 500, cursor: "pointer", fontSize: 14 }}>
+                  <button type="button" onClick={(e) => closeAndResetModal(e)} style={{ padding: "0 16px", height: 40, background: "transparent", border: "none", color: C.faint, fontWeight: 500, cursor: "pointer", fontSize: 14 }}>
                     Cancel
                   </button>
                   <button type="submit" disabled={isGenerating || !newKeyName.trim()} style={{ padding: "0 18px", height: 40, background: C.navy, color: C.white, borderRadius: 6, border: "none", fontWeight: 600, cursor: isGenerating || !newKeyName.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 8, opacity: isGenerating || !newKeyName.trim() ? 0.7 : 1 }}>
@@ -361,13 +377,14 @@ export function ApiKeysManager({ onKeyGenerated }: ApiKeysManagerProps = {}) {
                     {newlyGeneratedKey}
                   </div>
                   <button 
-                    onClick={handleCopy}
+                    type="button"
+                    onClick={(e) => handleCopy(e)}
                     style={{ padding: "0 16px", borderRadius: 6, border: copied ? `1px solid ${C.green}` : surfaceBorder, background: copied ? C.green : C.white, color: copied ? C.white : C.navy, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}>
                     {copied ? <CheckCircle2 size={16} /> : <Copy size={16} />} {copied ? "Copied" : "Copy"}
                   </button>
                 </div>
 
-                <button onClick={closeAndResetModal} style={{ width: "100%", padding: "0 16px", height: 44, background: C.navy, color: C.white, borderRadius: 6, border: "none", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 14 }}>
+                <button type="button" onClick={(e) => closeAndResetModal(e)} style={{ width: "100%", padding: "0 16px", height: 44, background: C.navy, color: C.white, borderRadius: 6, border: "none", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 14 }}>
                   <EyeOff size={18} /> I have safely stored this key
                 </button>
               </div>
