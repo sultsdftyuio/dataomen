@@ -163,6 +163,47 @@ CREATE POLICY "email_templates_select_tenant" ON public.email_templates
         )
     );
 
+DROP POLICY IF EXISTS "email_templates_insert_tenant" ON public.email_templates;
+CREATE POLICY "email_templates_insert_tenant" ON public.email_templates
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id = tenant_id
+              AND tu.user_id::text = auth.uid()::text
+              AND LOWER(tu.role) IN ('owner', 'admin', 'member')
+        )
+    );
+
+DROP POLICY IF EXISTS "email_templates_update_tenant" ON public.email_templates;
+CREATE POLICY "email_templates_update_tenant" ON public.email_templates
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id = email_templates.tenant_id
+              AND tu.user_id::text = auth.uid()::text
+              AND LOWER(tu.role) IN ('owner', 'admin', 'member')
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id = email_templates.tenant_id
+              AND tu.user_id::text = auth.uid()::text
+              AND LOWER(tu.role) IN ('owner', 'admin', 'member')
+        )
+    );
+
+DROP POLICY IF EXISTS "email_templates_delete_tenant" ON public.email_templates;
+CREATE POLICY "email_templates_delete_tenant" ON public.email_templates
+    FOR DELETE USING (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id = email_templates.tenant_id
+              AND tu.user_id::text = auth.uid()::text
+              AND LOWER(tu.role) IN ('owner', 'admin')
+        )
+    );
+
 -- ============================================================================
 -- 3. AT-RISK USERS (RADAR VIEW)
 -- ============================================================================

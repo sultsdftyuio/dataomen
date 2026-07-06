@@ -15,6 +15,10 @@ interface CampaignsWorkspaceProps {
   hydratedSubject: string;
   missingVariables: string[];
   renderError: string | null;
+  fromEmail: string;
+  recipientEmail: string;
+  recipientName: string;
+  unsupportedVariables: string[];
   sortedAtRiskUsers: any[];
   selectedUsers: Set<string>;
   allSelected: boolean;
@@ -36,6 +40,10 @@ export function CampaignsWorkspace({
   hydratedSubject,
   missingVariables,
   renderError,
+  fromEmail,
+  recipientEmail,
+  recipientName,
+  unsupportedVariables,
   sortedAtRiskUsers,
   selectedUsers,
   allSelected,
@@ -223,31 +231,81 @@ export function CampaignsWorkspace({
               </div>
             )}
 
-            <div
-              style={{
-                padding: "12px 16px",
-                background: C.offWhite,
-                borderRadius: 6,
-                border: surfaceBorder,
-                fontSize: 13,
-                fontWeight: 600,
-                color: C.navy,
-              }}
-            >
-              Subject: {hydratedSubject}
-            </div>
+            {unsupportedVariables.length > 0 && (
+              <div
+                style={{
+                  padding: "12px 16px",
+                  background: "#FEE2E2",
+                  border: "1px solid #FCA5A5",
+                  borderRadius: 6,
+                  color: "#991B1B",
+                  fontSize: 13,
+                  fontWeight: 500,
+                }}
+              >
+                <strong>Unsupported variables:</strong> {unsupportedVariables.join(", ")}
+              </div>
+            )}
 
             <div
               style={{
                 border: surfaceBorder,
                 borderRadius: 8,
                 overflow: "hidden",
-                background: C.white,
+                background: C.offWhite,
                 minHeight: 200,
                 boxShadow: surfaceShadow,
               }}
             >
-              <div dangerouslySetInnerHTML={{ __html: sanitizedHtml }} />
+              <div
+                style={{
+                  height: 36,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "0 14px",
+                  background: "#F1F5F9",
+                  borderBottom: surfaceBorder,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: C.navySoft,
+                }}
+              >
+                <span>Inbox</span>
+                <span style={{ color: C.muted, fontWeight: 600 }}>Preview</span>
+              </div>
+
+              <div style={{ padding: 14, background: C.white, borderBottom: surfaceBorder }}>
+                <div style={{ display: "grid", gap: 6, fontSize: 12, color: C.navySoft }}>
+                  <div>
+                    <strong style={{ color: C.navy }}>From:</strong> {fromEmail}
+                  </div>
+                  <div>
+                    <strong style={{ color: C.navy }}>To:</strong> {recipientName} &lt;{recipientEmail}&gt;
+                  </div>
+                  <div>
+                    <strong style={{ color: C.navy }}>Subject:</strong> {hydratedSubject}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: 18 }}>
+                <div
+                  style={{
+                    margin: "0 auto",
+                    maxWidth: 560,
+                    minHeight: 220,
+                    padding: 20,
+                    background: C.white,
+                    border: surfaceBorder,
+                    borderRadius: 8,
+                    fontSize: 14,
+                    lineHeight: 1.7,
+                    color: C.navy,
+                  }}
+                  dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+                />
+              </div>
             </div>
           </div>
         )}

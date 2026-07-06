@@ -18,12 +18,14 @@ type EmailTemplateRow = {
   name: string;
   subject: string;
   type: string;
+  body_html: string | null;
+  body_text: string | null;
+  is_active: boolean | null;
 };
 
 type WorkspaceSettingsRow = {
   company_name: string | null;
   sender_email: string | null;
-  reply_to_email: string | null;
 };
 
 export const metadata = {
@@ -83,15 +85,16 @@ export default async function CampaignsPage() {
     // 4. Fetch Email Templates (Scoped to Tenant)
     supabase
       .from("email_templates")
-      .select("id, name, subject, type")
+      .select("id, name, subject, type, body_html, body_text, is_active")
       .eq("tenant_id", tenantId)
+      .eq("is_active", true)
       .order("created_at", { ascending: false })
       .returns<EmailTemplateRow[]>(),
 
     // 5. Fetch Full Workspace Settings for Preview Hydration (Scoped to Tenant)
     supabase
       .from("tenant_settings")
-      .select("company_name, sender_email, reply_to_email")
+      .select("company_name, sender_email")
       .eq("tenant_id", tenantId)
       .returns<WorkspaceSettingsRow[]>()
       .maybeSingle()
@@ -125,9 +128,16 @@ export default async function CampaignsPage() {
     name: row.name,
     subject: row.subject,
     type: row.type || "recovery",
+    campaign_type: row.type || "recovery",
+    body_html: row.body_html,
+    body_text: row.body_text,
+    is_active: row.is_active ?? true,
   }));
 
   const initialSenderEmail = workspaceData?.sender_email ?? null;
+  const initialCompanyName = workspaceData?.company_name ?? null;
+  const initialFullName =
+    user.user_metadata?.full_name ?? user.user_metadata?.name ?? null;
 
   return (
     // Exact canvas background (#FAFAFA) and tight structural padding to frame the dispatch client properly
@@ -137,6 +147,8 @@ export default async function CampaignsPage() {
         atRiskUsers={atRiskUsers} 
         emailTemplates={emailTemplates}
         initialSenderEmail={initialSenderEmail}
+        initialCompanyName={initialCompanyName}
+        initialFullName={initialFullName}
         isProTier={entitlements.isPro}
         planTier={entitlements.planTier}
         subscriptionStatus={entitlements.subscriptionStatus}

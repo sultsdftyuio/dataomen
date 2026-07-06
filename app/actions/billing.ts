@@ -711,13 +711,26 @@ export async function upgradeToProPlan() {
   // 5. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
 
-  if (entitlements.isPro) {
-    console.info("[Billing] Prevented duplicate checkout attempt", {
-      event: "duplicate_checkout_prevented",
+  if (entitlements.isPro && entitlements.subscriptionStatus !== "canceling") {
+    console.info("[Billing] Redirecting duplicate checkout attempt to billing portal", {
+      event: "duplicate_checkout_redirected",
       tenant_id: tenantId,
       user_id: user.id,
+      environment,
     });
-    throw new Error("Workspace already has an active subscription.");
+
+    try {
+      return await manageBillingPortal();
+    } catch (error) {
+      console.error("[Billing] Duplicate checkout portal redirect failed", {
+        event: "duplicate_checkout_portal_redirect_failed",
+        tenant_id: tenantId,
+        user_id: user.id,
+        environment,
+        error: serializeError(error),
+      });
+      throw new Error("Workspace already has an active subscription.");
+    }
   }
 
   // 6. Resilient Checkout Creation

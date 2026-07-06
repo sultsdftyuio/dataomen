@@ -53,6 +53,11 @@ export default function UpgradeButton({
           ? err.message
           : "Unable to start checkout session. Please try again.";
 
+      if (message.toLowerCase().includes("already has an active subscription")) {
+        window.location.reload();
+        return;
+      }
+
       setError(message);
     } finally {
       // If navigation succeeds, the page unloads before this matters.

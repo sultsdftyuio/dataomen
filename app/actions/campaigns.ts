@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/utils/supabase/server";
-import { TemplateSaveSchema, TemplateSaveInput } from "@/lib/schemas/template";
+import { TemplateSaveSchema, type TemplateSaveInput } from "@/lib/schemas/template";
 import { revalidatePath } from "next/cache";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 
@@ -11,9 +11,16 @@ export interface NormalizedTemplateRecord {
   name: string;
   subject: string;
   type: string;
+  campaign_type: string;
+  body_html: string;
+  body_text: string | null;
   is_active: boolean;
   updated_at: string;
 }
+
+export type SaveRecoveryTemplateResult =
+  | { success: true; template: NormalizedTemplateRecord }
+  | { success: false; error: string };
 
 /**
  * ARCLI RECOVERY INTELLIGENCE LAYER — TEMPLATE MANAGEMENT ACTION
@@ -22,7 +29,7 @@ export interface NormalizedTemplateRecord {
  */
 export async function saveRecoveryTemplate(
   payload: TemplateSaveInput
-): Promise<{ success: boolean; template?: NormalizedTemplateRecord }> {
+): Promise<SaveRecoveryTemplateResult> {
   const supabase = await createClient();
 
   // --------------------------------------------------------------------------
@@ -34,7 +41,10 @@ export async function saveRecoveryTemplate(
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    throw new Error("Unauthorized: You must be signed in to perform this action.");
+    return {
+      success: false,
+      error: "Unauthorized: You must be signed in to perform this action.",
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -44,7 +54,7 @@ export async function saveRecoveryTemplate(
   if (!parsed.success) {
     // Return clean, human-readable error without exposing schema internals
     const firstError = parsed.error.errors[0];
-    throw new Error(`Validation Error: ${firstError.message}`);
+    return { success: false, error: `Validation Error: ${firstError.message}` };
   }
 
   const {
@@ -76,7 +86,7 @@ export async function saveRecoveryTemplate(
 
   if (memberError || !membership) {
     // Sanitized error to prevent tenant enumeration (Feedback #9)
-    throw new Error("You do not have access to this workspace.");
+    return { success: false, error: "You do not have access to this workspace." };
   }
 
   // Authorize based on explicit workspace roles (Feedback #2)
@@ -84,7 +94,10 @@ export async function saveRecoveryTemplate(
   const allowedRoles = ["owner", "admin", "member"];
 
   if (!allowedRoles.includes(normalizedRole)) {
-    throw new Error("Forbidden: Insufficient permissions to modify recovery templates.");
+    return {
+      success: false,
+      error: "Forbidden: Insufficient permissions to modify recovery templates.",
+    };
   }
 
   // Authoritative server-verified tenant ID
@@ -92,32 +105,42 @@ export async function saveRecoveryTemplate(
 
   const entitlements = await getWorkspaceEntitlements(supabase as any, verifiedTenantId);
   if (!entitlements.canCreateTemplates) {
-    throw new Error(entitlements.restrictionMessage ?? "Upgrade to Pro to create recovery templates.");
+    return {
+      success: false,
+      error:
+        entitlements.restrictionMessage ??
+        "Upgrade to Pro to create recovery templates.",
+    };
   }
 
   // --------------------------------------------------------------------------
-  // STEP 4: Authoritative Database Upsert (Rule 11 & Feedback #3)
-  // Targets exact schema table and ensures all properties are persisted.
+  // STEP 4: Authoritative Database Insert/Update (Rule 11 & Feedback #3)
+  // Inserts and updates are intentionally split so RLS checks are explicit and
+  // brand-new templates do not require an UPDATE policy.
   // --------------------------------------------------------------------------
-  const upsertPayload = {
-    ...(id ? { id } : {}),
+  const writePayload = {
     tenant_id: verifiedTenantId, // Strictly bound to server-validated tenant
     name,
     subject,
-    type: type || "recovery",
+    type,
     body_html,
     body_text,                   // Auto-transformed/cleaned by Zod schema
     is_active: is_active ?? true, // Included explicitly (Feedback #3)
     updated_at: new Date().toISOString(),
   };
 
-  const { data: rawTemplate, error: saveError } = await supabase
-    .from("email_templates")
-    .upsert(upsertPayload, {
-      // Targets primary key; RLS simultaneously verifies workspace boundary (Feedback #6)
-      onConflict: "id",
-    })
-    .select("id, tenant_id, name, subject, type, is_active, updated_at")
+  const saveQuery = id
+    ? supabase
+        .from("email_templates")
+        .update(writePayload)
+        .eq("tenant_id", verifiedTenantId)
+        .eq("id", id)
+    : supabase
+        .from("email_templates")
+        .insert(writePayload);
+
+  const { data: rawTemplate, error: saveError } = await saveQuery
+    .select("id, tenant_id, name, subject, type, body_html, body_text, is_active, updated_at")
     .single();
 
   if (saveError || !rawTemplate) {
@@ -130,7 +153,16 @@ export async function saveRecoveryTemplate(
       errorMessage: saveError?.message,
     });
 
-    throw new Error("Failed to save recovery template. Please try again or contact support.");
+    const rlsFailure =
+      saveError?.code === "42501" ||
+      saveError?.message?.toLowerCase().includes("row-level security");
+
+    return {
+      success: false,
+      error: rlsFailure
+        ? "Template save was blocked by workspace security policy. Please confirm email template INSERT/UPDATE RLS policies are deployed for this tenant."
+        : "Failed to save recovery template. Please try again or contact support.",
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -143,6 +175,12 @@ export async function saveRecoveryTemplate(
     name: String(record.name || name),
     subject: String(record.subject || subject),
     type: String(record.type || type),
+    campaign_type: String(record.type || type),
+    body_html: String(record.body_html || body_html),
+    body_text:
+      record.body_text === null || record.body_text === undefined
+        ? null
+        : String(record.body_text),
     is_active: Boolean(record.is_active ?? true),
     updated_at: String(record.updated_at || new Date().toISOString()),
   };

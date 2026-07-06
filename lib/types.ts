@@ -13,6 +13,10 @@ export interface EmailTemplate {
   name: string;
   subject: string;
   type: string;
+  campaign_type?: string;
+  body_html?: string | null;
+  body_text?: string | null;
+  is_active?: boolean;
 }
 
 export interface CampaignsClientProps {
@@ -20,6 +24,8 @@ export interface CampaignsClientProps {
   emailTemplates: EmailTemplate[];
   // Injected from the server page to enforce the "Proper Email Address" rule
   initialSenderEmail?: string | null;
+  initialCompanyName?: string | null;
+  initialFullName?: string | null;
   isProTier?: boolean;
   planTier?: string | null;
   subscriptionStatus?: string | null;

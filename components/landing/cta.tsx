@@ -26,8 +26,8 @@ export function CTA() {
           Stop reacting to churn.<br />Start preventing it.
         </h2>
         <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-          Connect your billing data and deploy your first automated recovery campaign in under 5 minutes.
-        </p>
+        </p>          Connect your billing data and deploy your first automated recovery campaign in under 5 minutes.
+
 
         {/* CTA buttons */}
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 22 }}>

@@ -1,26 +1,55 @@
 "use client";
 
-import { useMemo } from "react";
-import { renderTemplateUnsafe, extractVariables } from "@/app/(dashboard)/dashboard/campaigns/templates/template-catalog";
-import { 
-  ACTIVE_CATALOG, 
-  sanitizeEmailPreview, 
-  sanitizeContextUrls, 
-  type TemplateDefinition, 
-  type TemplateContext 
+import { useEffect, useMemo, useState } from "react";
+import {
+  extractVariables,
+  getUnsupportedVariables,
+  renderTemplateUnsafe,
+} from "@/app/(dashboard)/dashboard/campaigns/templates/render-template";
+import {
+  ACTIVE_CATALOG,
+  sanitizeContextUrls,
+  sanitizeEmailPreview,
+  type TemplateContext,
+  type TemplateDefinition,
 } from "@/app/(dashboard)/dashboard/campaigns/templates/security";
+import {
+  SUPPORTED_TEMPLATE_VARIABLES,
+  type SupportedTemplateVariable,
+} from "@/lib/schemas/template";
 
 export interface WorkspaceSettings {
-  companyName?: string;
-  supportEmail?: string;
-  defaultSenderEmail?: string;
+  companyName?: string | null;
+  fullName?: string | null;
+  defaultSenderEmail?: string | null;
 }
 
 export interface UseTemplatePreviewOptions {
   selectedTemplateKey: string;
   settings?: WorkspaceSettings;
   previewContextOverride?: TemplateContext;
-  customTemplate?: TemplateDefinition; // Allows live drafting in create-template-form.tsx
+  customTemplate?: TemplateDefinition;
+  debounceMs?: number;
+}
+
+const SUPPORTED_VARIABLE_SET = new Set<string>(SUPPORTED_TEMPLATE_VARIABLES);
+
+function isSupportedVariable(value: string): value is SupportedTemplateVariable {
+  return SUPPORTED_VARIABLE_SET.has(value);
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }
 
 export function useTemplatePreview({
@@ -28,64 +57,67 @@ export function useTemplatePreview({
   settings,
   previewContextOverride,
   customTemplate,
+  debounceMs = 120,
 }: UseTemplatePreviewOptions) {
-  const companyName = settings?.companyName || "Acme Corp";
-  const supportEmail = settings?.supportEmail || "support@acmecorp.com";
+  const companyName = settings?.companyName?.trim() || "Your Workspace";
+  const fullName = settings?.fullName?.trim() || "Workspace User";
+  const firstName = fullName.split(/\s+/)[0] || "Workspace";
+  const senderEmail = settings?.defaultSenderEmail?.trim() || "recovery@workspace.test";
 
-  const companySlug = useMemo(() => {
-    return companyName.toLowerCase().replace(/[^a-z0-9]+/g, "") || "workspace";
-  }, [companyName]);
+  const currentTemplate = customTemplate || ACTIVE_CATALOG[selectedTemplateKey];
+  const debouncedSubject = useDebouncedValue(currentTemplate?.subject ?? "", debounceMs);
+  const debouncedHtml = useDebouncedValue(currentTemplate?.rawHtml ?? "", debounceMs);
 
-  const senderEmail = settings?.defaultSenderEmail || `billing@${companySlug}.com`;
+  const baseContext: TemplateContext = useMemo(
+    () => ({
+      first_name: firstName,
+      company_name: companyName,
+    }),
+    [companyName, firstName]
+  );
 
-  // Stable base context
-  const baseContext: TemplateContext = useMemo(() => ({
-    first_name: "Alex",
-    company_name: companyName,
-    support_email: supportEmail,
-    checkout_url: "https://billing.arcli.tech/recover/chk_89a7f9a8",
-    recovery_attribution_url: "https://arcli.tech/r/cancelsave_v1",
-    unsubscribe_url: "https://arcli.tech/unsub/usr_123",
-  }), [companyName, supportEmail]);
+  const overrideKey = previewContextOverride
+    ? JSON.stringify(previewContextOverride)
+    : "";
 
-  // Merge & sanitize context
-  const overrideKey = previewContextOverride ? JSON.stringify(previewContextOverride) : "";
-  const rawContext = useMemo(() => {
+  const previewContext = useMemo(() => {
     const merged: TemplateContext = { ...baseContext };
+
     if (previewContextOverride) {
-      for (const [key, val] of Object.entries(previewContextOverride)) {
-        if (key.endsWith("_url") || key.endsWith("_link")) continue;
-        merged[key] = val;
+      for (const [key, value] of Object.entries(previewContextOverride)) {
+        if (!isSupportedVariable(key)) continue;
+        merged[key] = value;
       }
     }
+
     return sanitizeContextUrls(merged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseContext, overrideKey]);
 
-  // Resolve target template (allows fallback to custom drafting templates)
-  const currentTemplate = customTemplate || ACTIVE_CATALOG[selectedTemplateKey];
+  const allTemplateVariables = useMemo(() => {
+    return Array.from(
+      new Set([...extractVariables(debouncedSubject), ...extractVariables(debouncedHtml)])
+    );
+  }, [debouncedHtml, debouncedSubject]);
 
-  // Missing variable detection
+  const unsupportedVariables = useMemo(() => {
+    return Array.from(
+      new Set([
+        ...getUnsupportedVariables(debouncedSubject),
+        ...getUnsupportedVariables(debouncedHtml),
+      ])
+    );
+  }, [debouncedHtml, debouncedSubject]);
+
   const missingVariables = useMemo(() => {
-    if (!currentTemplate) return [];
-    const requiredInHtml = typeof extractVariables === "function" ? extractVariables(currentTemplate.rawHtml) : [];
-    const requiredInSubject = typeof extractVariables === "function" ? extractVariables(currentTemplate.subject) : [];
-    const allRequired = Array.from(new Set([...requiredInHtml, ...requiredInSubject]));
+    return allTemplateVariables
+      .filter(isSupportedVariable)
+      .filter((key) => {
+        const value = previewContext[key];
+        return value === undefined || value === null || value === "";
+      });
+  }, [allTemplateVariables, previewContext]);
 
-    return allRequired.filter((key) => {
-      const val = rawContext[key];
-      return val == null || val === "";
-    });
-  }, [currentTemplate, rawContext]);
-
-  // Renderer resolver
-  const renderer = useMemo(() => {
-    if (typeof renderTemplateUnsafe === "function") return renderTemplateUnsafe;
-    return (tpl: string, ctx: TemplateContext) =>
-      tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => String(ctx[k] ?? `{{${k}}}`));
-  }, []);
-
-  // Execution & Sanitization Pipeline
   const previewState = useMemo(() => {
     if (!currentTemplate) {
       return {
@@ -97,39 +129,60 @@ export function useTemplatePreview({
     }
 
     try {
-      const rawHtmlRendered = renderer(currentTemplate.rawHtml, rawContext, {
+      const rawHtmlRendered = renderTemplateUnsafe(debouncedHtml, previewContext, {
         allowRawHtml: false,
         onMissing: "leave",
+        onUnsupported: "leave",
       });
 
-      const subjectRendered = renderer(currentTemplate.subject, rawContext, {
+      const subjectRendered = renderTemplateUnsafe(debouncedSubject, previewContext, {
         allowRawHtml: false,
         onMissing: "leave",
+        onUnsupported: "leave",
       });
+
+      const unsupportedError =
+        unsupportedVariables.length > 0
+          ? `Unsupported variables: ${unsupportedVariables.join(", ")}.`
+          : null;
 
       return {
         sanitizedHtml: sanitizeEmailPreview(rawHtmlRendered),
         hydratedSubject: subjectRendered,
-        rawHtml: currentTemplate.rawHtml,
-        renderError: null,
+        rawHtml: debouncedHtml,
+        renderError: unsupportedError,
       };
     } catch (error) {
       return {
         sanitizedHtml: "",
-        hydratedSubject: currentTemplate.subject,
-        rawHtml: currentTemplate.rawHtml,
-        renderError: error instanceof Error ? error.message : "Failed to interpolate template variables.",
+        hydratedSubject: debouncedSubject || currentTemplate.subject,
+        rawHtml: debouncedHtml,
+        renderError:
+          error instanceof Error
+            ? error.message
+            : "Failed to interpolate template variables.",
       };
     }
-  }, [currentTemplate, rawContext, renderer]);
+  }, [
+    currentTemplate,
+    debouncedHtml,
+    debouncedSubject,
+    previewContext,
+    unsupportedVariables,
+  ]);
 
   return {
     ...previewState,
-    missingVariables,
-    senderEmail,
-    supportEmail,
+    catalog: ACTIVE_CATALOG,
     companyName,
     currentTemplate,
-    catalog: ACTIVE_CATALOG,
+    firstName,
+    fromEmail: senderEmail,
+    missingVariables,
+    previewContext,
+    recipientEmail: "preview@example.com",
+    recipientName: firstName,
+    senderEmail,
+    unsupportedVariables,
   };
 }

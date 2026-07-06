@@ -1,11 +1,15 @@
 import DOMPurify from "dompurify";
-import { TEMPLATE_CATALOG, type RecoveryTemplate } from "@/app/(dashboard)/dashboard/campaigns/templates/render-template";
-import { escapeUrl } from "@/app/(dashboard)/dashboard/campaigns/templates/template-catalog";
+import { TEMPLATE_CATALOG } from "@/app/(dashboard)/dashboard/campaigns/templates/template-catalog";
+import { escapeUrl } from "@/app/(dashboard)/dashboard/campaigns/templates/render-template";
+import type { TemplateType } from "@/lib/schemas/template";
 
 export interface TemplateDefinition {
+  readonly catalogKey?: string;
   readonly name: string;
+  readonly description?: string;
   readonly trigger: string;
   readonly cooldownDays: number;
+  readonly campaignType?: TemplateType;
   readonly subject: string;
   readonly rawHtml: string;
 }
@@ -13,12 +17,13 @@ export interface TemplateDefinition {
 export type TemplateContext = Record<string, string | number | null | undefined>;
 
 export const FALLBACK_CATALOG: Record<string, TemplateDefinition> = {
-  payment_failure: {
-    name: "Payment Failure Notice (Dunning)",
+  dunning_first_warning: {
+    name: "Dunning First Warning",
     trigger: "invoice.payment_failed",
     cooldownDays: 14,
-    subject: "Action Required: Payment failed for {{company_name}}",
-    rawHtml: "<p style='font-family: sans-serif; font-size: 15px; color: #111827;'>Hi {{first_name}},</p><p>We were unable to process your recent payment for <strong>{{company_name}}</strong>.</p><p><a href='{{checkout_url}}' style='background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;'>Update Payment Method &rarr;</a></p>",
+    campaignType: "dunning",
+    subject: "Payment issue for {{company_name}}",
+    rawHtml: "<p>Hi {{first_name}},</p><p>We could not process the latest <strong>{{company_name}}</strong> renewal.</p><p>Please sign in to your workspace and update your billing details to keep service active.</p><hr /><p>Need help? Reply directly to this email.</p>",
   },
 };
 
@@ -47,14 +52,33 @@ export function sanitizeEmailPreview(rawHtml: string): string {
   if (typeof window === "undefined") return rawHtml;
 
   return DOMPurify.sanitize(rawHtml, {
-    USE_PROFILES: { html: true },
+    ALLOWED_TAGS: [
+      "a",
+      "br",
+      "div",
+      "em",
+      "hr",
+      "li",
+      "ol",
+      "p",
+      "span",
+      "strong",
+      "table",
+      "tbody",
+      "td",
+      "th",
+      "thead",
+      "tr",
+      "ul",
+    ],
     FORBID_TAGS: ["script", "iframe", "object", "embed", "form", "input"],
     FORBID_ATTR: ["onerror", "onclick", "onload", "onmouseover", "onmouseout", "onfocus", "onblur"],
     ALLOWED_ATTR: [
-      "href", "src", "style", "alt", "title", "class", "id",
+      "href", "alt", "title",
       "target", "rel", "width", "height", "cellpadding", "cellspacing", "border",
     ],
     ALLOWED_URI_REGEXP: /^(https?|mailto):/i,
+    ALLOW_DATA_ATTR: false,
     SANITIZE_DOM: true,
   });
 }

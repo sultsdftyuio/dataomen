@@ -1,151 +1,112 @@
 /**
- * ARCLI RECOVERY INTELLIGENCE LAYER — LOW-LEVEL TEMPLATE ENGINE
- * Aligned with Arcli Engineering Constitution v3.0 (Rule 6: Security & Rule 15: Email Standards)
+ * ARCLI RECOVERY INTELLIGENCE LAYER - TEMPLATE CATALOG
+ * Catalog definitions stay deterministic and only use approved interpolation
+ * variables from lib/schemas/template.ts.
  */
 
-import { TEMPLATE_CATALOG } from "./render-template";
+import type {
+  SupportedTemplateVariable,
+  TemplateType,
+} from "@/lib/schemas/template";
 
-/**
- * Centralized regex pattern for template interpolation: {{ variable_name }}
- * Stored as a raw string pattern to allow generating stateless RegExp instances,
- * eliminating stateful `lastIndex` bugs across concurrent worker executions.
- */
-export const PLACEHOLDER_PATTERN = "\\{\\{\\s*([a-zA-Z0-9_.-]+)\\s*\\}\\}";
+export type RecoveryTrigger =
+  | "invoice.payment_failed"
+  | "invoice.payment_failed_urgent"
+  | "customer.inactivity_detected";
 
-/**
- * Creates a fresh, stateless RegExp instance for global placeholder scanning.
- */
-export function createPlaceholderRegex(): RegExp {
-  return new RegExp(PLACEHOLDER_PATTERN, "g");
+export const TEMPLATE_REQUIRED_VARIABLES = {
+  dunning_first_warning: [
+    "first_name",
+    "company_name",
+  ],
+  payment_failed_urgent: [
+    "first_name",
+    "company_name",
+  ],
+  inactivity_check_in: [
+    "first_name",
+    "company_name",
+  ],
+} as const satisfies Record<string, readonly SupportedTemplateVariable[]>;
+
+export type TemplateKey = keyof typeof TEMPLATE_REQUIRED_VARIABLES;
+export type RequiredVarsTuple<K extends TemplateKey> =
+  (typeof TEMPLATE_REQUIRED_VARIABLES)[K];
+export type TemplateVariableKey<K extends TemplateKey> =
+  RequiredVarsTuple<K>[number];
+
+export interface RecoveryTemplate<K extends TemplateKey = TemplateKey> {
+  readonly name: string;
+  readonly description: string;
+  readonly trigger: RecoveryTrigger;
+  readonly cooldownDays: 7 | 14 | 30;
+  readonly campaignType: TemplateType;
+  readonly subject: string;
+  readonly rawHtml: string;
+  readonly requiredVariables: RequiredVarsTuple<K>;
 }
 
-/**
- * Lightweight HTML entity encoder to prevent XSS injection inside HTML text nodes.
- */
-export function escapeHtml(value: string): string {
-  return value.replace(/[&<>"'`]/g, (char) => {
-    switch (char) {
-      case "&": return "&amp;";
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case '"': return "&quot;";
-      case "'": return "&#39;";
-      case "`": return "&#96;";
-      default: return char;
-    }
-  });
+export const TEMPLATE_CATALOG: { [K in TemplateKey]: RecoveryTemplate<K> } = {
+  dunning_first_warning: {
+    name: "Dunning First Warning",
+    description: "A calm payment recovery note for the first failed renewal.",
+    trigger: "invoice.payment_failed",
+    cooldownDays: 7,
+    campaignType: "dunning",
+    subject: "Payment issue for {{company_name}}",
+    rawHtml: `<p>Hi {{first_name}},</p>
+<p>We could not process the latest <strong>{{company_name}}</strong> renewal.</p>
+<p>Please sign in to your workspace and update your billing details to keep service active.</p>
+<hr />
+<p>Need help? Reply directly to this email and our team will help.</p>`,
+    requiredVariables: TEMPLATE_REQUIRED_VARIABLES.dunning_first_warning,
+  },
+
+  payment_failed_urgent: {
+    name: "Payment Failed Urgent",
+    description: "A higher-urgency payment notice before account interruption.",
+    trigger: "invoice.payment_failed_urgent",
+    cooldownDays: 7,
+    campaignType: "alert",
+    subject: "Urgent: update {{company_name}} billing to avoid interruption",
+    rawHtml: `<p>Hi {{first_name}},</p>
+<p>Your <strong>{{company_name}}</strong> workspace has an unresolved payment.</p>
+<p>To keep service active, please update the payment method from your billing settings.</p>
+<p>If this looks wrong, reply to this email and we will help immediately.</p>
+<hr />
+<p>Thank you,<br />The {{company_name}} billing team</p>`,
+    requiredVariables: TEMPLATE_REQUIRED_VARIABLES.payment_failed_urgent,
+  },
+
+  inactivity_check_in: {
+    name: "Inactivity Check-in",
+    description: "A friendly reactivation note for accounts showing churn risk.",
+    trigger: "customer.inactivity_detected",
+    cooldownDays: 30,
+    campaignType: "reactivation",
+    subject: "Can we help you get more from {{company_name}}?",
+    rawHtml: `<p>Hi {{first_name}},</p>
+<p>We noticed your team has been quieter than usual in <strong>{{company_name}}</strong>.</p>
+<p>If you still want to continue, sign in to your workspace and pick up where you left off.</p>
+<p>Questions or blockers? Reply directly and we will help.</p>`,
+    requiredVariables: TEMPLATE_REQUIRED_VARIABLES.inactivity_check_in,
+  },
+};
+
+export const TEMPLATE_CATALOG_ENTRIES = Object.entries(TEMPLATE_CATALOG) as Array<
+  [TemplateKey, RecoveryTemplate<TemplateKey>]
+>;
+
+export function isTemplateKey(value: string): value is TemplateKey {
+  return Object.hasOwn(TEMPLATE_CATALOG, value);
 }
 
-/**
- * Strict attribute encoder for non-URL HTML tag attributes.
- */
-export function escapeAttribute(value: string): string {
-  return value.replace(/[^a-zA-Z0-9,\.\-_]/g, (char) => {
-    const hex = char.charCodeAt(0).toString(16).toUpperCase();
-    return `&#x${hex.padStart(2, "0")};`;
-  });
-}
-
-/**
- * Sanitizes and encodes URL variables intended for href="" contexts.
- * Blocks dangerous schemes (e.g., javascript:, vbscript:, data:) while preserving
- * standard http://, https://, and mailto: links.
- */
-export function escapeUrl(value: string): string {
-  const trimmed = value.trim();
-  const lower = trimmed.toLowerCase();
-
-  if (
-    !lower.startsWith("http://") &&
-    !lower.startsWith("https://") &&
-    !lower.startsWith("mailto:")
-  ) {
-    // If protocol is unsafe or unrecognized, strip to safe fallback to prevent execution
-    return "#invalid-url-protocol-blocked";
-  }
-
-  return encodeURI(trimmed);
-}
-
-export interface RenderOptions {
-  /** If true, skips HTML escaping (use only for trusted raw HTML injection). Default: false */
-  allowRawHtml?: boolean;
-  /** Action when a placeholder has no matching value in context. Default: "strip" */
-  onMissing?: "strip" | "throw" | "leave";
-}
-
-/**
- * Runtime extraction of all placeholder keys from a template string.
- * Uses a fresh regex instance to guarantee O(N) stateless extraction.
- */
-export function extractVariables(templateString: string): string[] {
-  const regex = createPlaceholderRegex();
-  const matches = [...templateString.matchAll(regex)];
-  return Array.from(new Set(matches.map((m) => m[1])));
-}
-
-/**
- * Scans a template string against a context object and identifies missing keys.
- */
-export function getMissingVariables<TContext extends Record<string, unknown>>(
-  templateString: string,
-  context: Readonly<TContext>
-): string[] {
-  const regex = createPlaceholderRegex();
-  const missing: string[] = [];
-  const seen = new Set<string>();
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(templateString)) !== null) {
-    const key = match[1];
-    if (!seen.has(key)) {
-      seen.add(key);
-      if (!(key in context) || context[key] === undefined || context[key] === null) {
-        missing.push(key);
-      }
-    }
-  }
-
-  return missing;
-}
-export type TemplateKey = keyof typeof TEMPLATE_CATALOG;
-
-export function isTemplateKey(key: string): key is TemplateKey {
-  return key in TEMPLATE_CATALOG;
-}
-/**
- * @internal Unsafe raw template engine.
- * Applications should prefer `renderRecoveryTemplate()` from `./template-catalog`
- * for compile-time contract enforcement and context-aware URL/text escaping.
- */
-export function renderTemplateUnsafe<
-  TContext extends Record<string, string | number | undefined | null>
->(
-  templateString: string,
-  context: Readonly<TContext>,
-  options: RenderOptions = {}
-): string {
-  const { allowRawHtml = false, onMissing = "strip" } = options;
-  const regex = createPlaceholderRegex();
-
-  return templateString.replace(regex, (match, key: string) => {
-    const rawValue = context[key];
-
-    if (rawValue === undefined || rawValue === null) {
-      if (onMissing === "throw") {
-        throw new Error(`[TemplateEngine] Missing required variable: "${key}"`);
-      }
-      return onMissing === "leave" ? match : "";
-    }
-
-    const stringValue = String(rawValue);
-    if (allowRawHtml) return stringValue;
-
-    // Context-aware heuristics based on naming conventions
-    if (key.endsWith("_url") || key.endsWith("_link")) {
-      return escapeUrl(stringValue);
-    }
-
-    return escapeHtml(stringValue);
-  });
+export function getMissingTemplateVariables<K extends TemplateKey>(
+  templateKey: K,
+  context: Readonly<Record<string, unknown>>
+): TemplateVariableKey<K>[] {
+  const required = TEMPLATE_REQUIRED_VARIABLES[templateKey];
+  return required.filter(
+    (key) => !(key in context) || context[key] === undefined || context[key] === null
+  ) as TemplateVariableKey<K>[];
 }

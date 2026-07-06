@@ -22,6 +22,8 @@ export default function CampaignsClient({
   atRiskUsers,
   emailTemplates,
   initialSenderEmail,
+  initialCompanyName,
+  initialFullName,
   isProTier: initialIsProTier,
   planTier,
   subscriptionStatus,
@@ -66,6 +68,7 @@ export default function CampaignsClient({
       rawHtml: t.html ?? t.bodyHtml ?? t.body_html ?? "",
       trigger: t.trigger ?? "manual",
       cooldownDays: t.cooldownDays ?? 0,
+      campaignType: t.campaign_type ?? t.type ?? "recovery",
     };
   }, [activeTemplate]);
 
@@ -76,9 +79,17 @@ export default function CampaignsClient({
     missingVariables,
     renderError,
     currentTemplate,
+    fromEmail,
+    recipientEmail,
+    recipientName,
+    unsupportedVariables,
   } = useTemplatePreview({
     selectedTemplateKey: selectedTemplate || "",
-    settings: senderEmail ? { defaultSenderEmail: senderEmail } : undefined,
+    settings: {
+      companyName: initialCompanyName,
+      fullName: initialFullName,
+      defaultSenderEmail: senderEmail,
+    },
     customTemplate: previewTemplate,
   });
 
@@ -121,7 +132,14 @@ export default function CampaignsClient({
 
         {/* Guardrail: Only allow template creation for Pro workspaces with a sender email */}
         {isProTier && senderEmail ? (
-          <CreateTemplateModal onTemplateCreated={onNewTemplateCreated} />
+          <CreateTemplateModal
+            onTemplateCreated={onNewTemplateCreated}
+            settings={{
+              companyName: initialCompanyName,
+              fullName: initialFullName,
+              defaultSenderEmail: senderEmail,
+            }}
+          />
         ) : (
           <button
             disabled
@@ -262,6 +280,10 @@ export default function CampaignsClient({
         hydratedSubject={hydratedSubject}
         missingVariables={missingVariables}
         renderError={renderError}
+        fromEmail={fromEmail}
+        recipientEmail={recipientEmail}
+        recipientName={recipientName}
+        unsupportedVariables={unsupportedVariables}
         sortedAtRiskUsers={sortedAtRiskUsers}
         selectedUsers={selectedUsers}
         allSelected={allSelected}

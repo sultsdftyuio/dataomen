@@ -2,267 +2,232 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { 
-  CheckCircle2, 
-  ShieldAlert, 
-  Workflow, 
-  DollarSign, 
-  Activity, 
-  Zap, 
-  Database, 
-  Lock, 
-  ArrowRight, 
-  Code2, 
-  RefreshCcw,
-  Terminal
-} from "lucide-react";
+import { CheckCircle2, ArrowRight } from "lucide-react";
+import { C } from "@/lib/tokens";
 
 export default function ArcliPricingCards() {
   const [isAnnual, setIsAnnual] = useState(false);
 
-  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
-  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
-
   return (
-    <section 
-      id="pricing" 
-      className="py-24 relative overflow-hidden bg-[#FAFAFA]"
-      style={{ fontFamily: "var(--font-geist-sans), sans-serif", borderTop: surfaceBorder }}
+    <section
+      id="pricing"
+      style={{
+        padding: "96px 24px",
+        background: C.offWhite,
+        borderTop: `1px solid ${C.rule}`,
+        fontFamily: "var(--font-geist-sans), sans-serif",
+      }}
     >
-      {/* Background Decorative Gradient */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-blue-50/40 blur-3xl rounded-full pointer-events-none" />
-
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl relative z-10">
-        
+      <div style={{ maxWidth: 1024, margin: "0 auto" }}>
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-100 text-[#1B6EBF] text-xs font-bold tracking-[0.08em] uppercase mb-6">
-            <Activity className="w-3.5 h-3.5" />
-            Deterministic Revenue Recovery
-          </div>
-          <h2 className="text-4xl md:text-5xl font-semibold text-slate-900 mb-4 tracking-tight leading-[1.08]">
+        <div style={{ textAlign: "center", maxWidth: 640, margin: "0 auto 56px" }}>
+          <h2
+            style={{
+              fontSize: "clamp(32px, 4vw, 44px)",
+              fontWeight: 600,
+              color: C.text,
+              lineHeight: 1.1,
+              letterSpacing: "-0.02em",
+              marginBottom: 12,
+            }}
+          >
             Predictable infrastructure. <br />
-            <span className="text-[#1B6EBF]">Zero black-box taxing.</span>
+            <span style={{ color: C.blue }}>Zero black-box taxing.</span>
           </h2>
-          <p className="text-slate-600 text-lg leading-relaxed max-w-2xl mx-auto">
-            Test your webhook ingestion pipeline for free. Upgrade to automate idempotent churn recovery and keep 100% of the MRR you save.
+          <p style={{ fontSize: 16, color: C.muted, lineHeight: 1.6, margin: "0 0 28px" }}>
+            Test your ingestion pipeline for free. Upgrade to automate churn recovery and keep 100% of the revenue you save.
           </p>
 
           {/* Billing Toggle */}
-          <div className="flex justify-center items-center gap-4 mt-10">
-            <span className={`text-sm font-semibold transition-colors ${!isAnnual ? "text-slate-900" : "text-slate-400"}`}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 12, padding: "4px 8px", background: C.white, borderRadius: 999, border: `1px solid ${C.rule}` }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: !isAnnual ? C.text : C.faint }}>
               Monthly Billing
             </span>
-            
-            <button 
+            <button
               type="button"
               onClick={() => setIsAnnual(!isAnnual)}
-              className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#1B6EBF] focus:ring-offset-2"
-              style={{ backgroundColor: isAnnual ? "#1B6EBF" : "#cbd5e1" }}
-              role="switch"
-              aria-checked={isAnnual}
+              style={{
+                width: 44,
+                height: 24,
+                borderRadius: 999,
+                background: isAnnual ? C.blue : C.faint,
+                position: "relative",
+                border: "none",
+                cursor: "pointer",
+                transition: "background 0.2s ease",
+              }}
+              aria-label="Toggle billing frequency"
             >
-              <span className="sr-only">Toggle annual billing</span>
-              <span 
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isAnnual ? "translate-x-6" : "translate-x-1"}`}
+              <span
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  background: C.white,
+                  position: "absolute",
+                  top: 3,
+                  left: isAnnual ? 23 : 3,
+                  transition: "left 0.2s ease",
+                }}
               />
             </button>
-
-            <span className={`text-sm font-semibold transition-colors flex items-center gap-2 ${isAnnual ? "text-slate-900" : "text-slate-400"}`}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: isAnnual ? C.text : C.faint, display: "flex", alignItems: "center", gap: 6 }}>
               Annual Commitment
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wide">
+              <span style={{ fontSize: 10, fontWeight: 700, background: C.greenPale, color: C.green, padding: "2px 6px", borderRadius: 4, textTransform: "uppercase" }}>
                 2 Months Free
               </span>
             </span>
           </div>
         </div>
 
-        {/* Pricing Cards Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+        {/* Pricing Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24, alignItems: "stretch" }}>
           
-          {/* ── CARD 1: Developer Sandbox ($0) ── */}
-          <div 
-            className="bg-white rounded-3xl border flex flex-col justify-between transition-all hover:shadow-xl relative overflow-hidden"
-            style={{ border: surfaceBorder, boxShadow: surfaceShadow }}
-          >
-            <div className="p-8 md:p-10">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-slate-100 text-slate-700 tracking-wide uppercase mb-3">
-                    <Terminal className="w-3.5 h-3.5" /> Sandbox Environment
-                  </span>
-                  <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Integration Verification</h3>
-                </div>
-                <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded border">
-                  env: staging
-                </span>
-              </div>
-
-              <p className="text-sm text-slate-500 leading-relaxed mb-6">
-                Built for solo engineers to test Stripe webhook replay safety, inspect explainable risk scoring, and verify tenant isolation logic locally.
-              </p>
-
-              {/* Price Display */}
-              <div className="mb-8 pb-8 border-b border-slate-100">
-                <div className="flex items-baseline gap-1">
-                  <span className="text-5xl font-extrabold text-slate-900 tracking-tight">$0</span>
-                  <span className="text-slate-500 font-medium text-sm">/ forever</span>
-                </div>
-                <p className="text-xs text-slate-400 font-medium mt-2">
-                  No credit card required. Instant synchronous workspace creation.
-                </p>
-              </div>
-
-              {/* Technical Feature Specs */}
-              <div className="space-y-4 mb-8">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                  Deterministic Pipeline Specs
-                </div>
-                
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-[#1B6EBF] flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-700 font-medium">Up to 100 tracked events / month</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-[#1B6EBF] flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-700 font-medium">Local webhook catcher &amp; deduplication testing</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-[#1B6EBF] flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-700 font-medium">Deterministic signal debugging inspector</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-[#1B6EBF] flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-700 font-medium">Isolated tenant schema (<code className="text-xs bg-slate-100 px-1 py-0.5 rounded font-mono">WHERE tenant_id = ?</code>)</span>
-                </div>
-              </div>
-
-              {/* Embedded UI Snippet (Signal Inspector) */}
-              <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 text-slate-300 font-mono text-xs space-y-2 mb-6 shadow-inner">
-                <div className="flex justify-between items-center text-[10px] text-slate-500 pb-2 border-b border-slate-800">
-                  <span>SIGNAL_LOG // LOCALHOST</span>
-                  <span className="text-emerald-400 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> READY</span>
-                </div>
-                <div className="text-slate-400 truncate">
-                  &gt; trackEvent(<span className="text-amber-300">&quot;inactivity_detected&quot;</span>, user.id)
-                </div>
-                <div className="text-emerald-400">
-                  [PASS] Signal validated. Score: +15 pts.
-                </div>
-              </div>
-            </div>
-
-            <div className="p-8 pt-0">
-              <Link 
-                href="/register?tier=sandbox" 
-                className="w-full h-12 flex items-center justify-center gap-2 rounded-xl font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all text-sm"
-              >
-                Deploy Sandbox Tenant <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-
-          {/* ── CARD 2: Production Recovery ($29) ── */}
-          <div 
-            className="bg-white rounded-3xl border flex flex-col justify-between transition-all hover:shadow-xl relative overflow-hidden"
-            style={{ 
-              borderColor: "rgba(27,110,191,0.3)", 
-              boxShadow: "0 12px 32px -8px rgba(27,110,191,0.12)",
-              background: "linear-gradient(180deg, #FFFFFF 0%, #FAFCFF 100%)"
+          {/* Developer Sandbox */}
+          <div
+            style={{
+              background: C.white,
+              border: `1px solid ${C.rule}`,
+              borderRadius: 16,
+              padding: 36,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
             }}
           >
-            {/* Top Accent Bar */}
-            <div className="h-1.5 w-full bg-gradient-to-r from-[#1B6EBF] to-blue-400" />
-
-            <div className="p-8 md:p-10">
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-blue-50 text-[#1B6EBF] border border-blue-100 tracking-wide uppercase mb-3">
-                    <Zap className="w-3.5 h-3.5 fill-[#1B6EBF]" /> Production Engine
-                  </span>
-                  <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Automated Recovery Layer</h3>
-                </div>
-                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
-                  <DollarSign className="w-3 h-3" /> 0% Rev-Share
-                </span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.muted, marginBottom: 8 }}>
+                Sandbox Environment
               </div>
-
-              <p className="text-sm text-slate-600 leading-relaxed mb-6">
-                Route high-risk accounts into retry-safe recovery sequences. Automatically recover failed payments and attribute exact MRR won back without spamming users.
+              <h3 style={{ fontSize: 22, fontWeight: 600, color: C.text, marginBottom: 8 }}>
+                Integration Verification
+              </h3>
+              <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5, minHeight: 42, marginBottom: 24 }}>
+                Verify webhook replay safety, inspect explainable risk scoring, and test tenant isolation locally.
               </p>
 
-              {/* Price Display */}
-              <div className="mb-8 pb-8 border-b border-blue-100/60">
-                <div className="flex items-baseline gap-1">
-                  <span className="text-5xl font-extrabold text-slate-900 tracking-tight">
+              <div style={{ marginBottom: 28, paddingBottom: 28, borderBottom: `1px solid ${C.rule}` }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontSize: 44, fontWeight: 700, color: C.text, letterSpacing: "-0.03em" }}>$0</span>
+                  <span style={{ fontSize: 14, color: C.muted, fontWeight: 500 }}>/ forever</span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 32 }}>
+                {[
+                  "Up to 100 tracked events / month",
+                  "Local webhook catcher & deduplication testing",
+                  "Deterministic signal debugging inspector",
+                  "Isolated tenant schema verification",
+                ].map((feat, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.text }}>
+                    <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
+                    <span>{feat}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Link
+              href="/register?tier=sandbox"
+              style={{
+                height: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+                textDecoration: "none",
+                background: C.bluePale,
+                color: C.blue,
+                border: `1px solid ${C.rule}`,
+              }}
+            >
+              Deploy Sandbox Tenant <ArrowRight size={14} />
+            </Link>
+          </div>
+
+          {/* Production Engine */}
+          <div
+            style={{
+              background: C.white,
+              border: `2px solid ${C.blue}`,
+              borderRadius: 16,
+              padding: 36,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              boxShadow: "0 8px 24px rgba(27,110,191,0.08)",
+              position: "relative",
+            }}
+          >
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.blue }}>
+                  Production Engine
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 700, background: C.greenPale, color: C.green, padding: "2px 8px", borderRadius: 999 }}>
+                  0% Rev-Share
+                </span>
+              </div>
+              
+              <h3 style={{ fontSize: 22, fontWeight: 600, color: C.text, marginBottom: 8 }}>
+                Automated Recovery Layer
+              </h3>
+              <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5, minHeight: 42, marginBottom: 24 }}>
+                Route high-risk accounts into retry-safe recovery sequences and attribute exact MRR restored.
+              </p>
+
+              <div style={{ marginBottom: 28, paddingBottom: 28, borderBottom: `1px solid ${C.rule}` }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontSize: 44, fontWeight: 700, color: C.text, letterSpacing: "-0.03em" }}>
                     ${isAnnual ? "24" : "29"}
                   </span>
-                  <span className="text-slate-500 font-medium text-sm">/ month</span>
+                  <span style={{ fontSize: 14, color: C.muted, fontWeight: 500 }}>/ month</span>
                 </div>
-                <p className="text-xs text-[#1B6EBF] font-semibold mt-2 flex items-center gap-1">
-                  {isAnnual ? "Billed annually ($290/year)" : "Billed monthly ($29/month)"} · Keep 100% of recovered revenue.
-                </p>
-              </div>
-
-              {/* Technical Feature Specs */}
-              <div className="space-y-4 mb-8">
-                <div className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2">
-                  Production Guarantees
-                </div>
-                
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-800 font-medium">Unlimited automated recovery campaigns</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-800 font-medium">Exact revenue attribution ledger (<code className="text-xs bg-blue-50 text-[#1B6EBF] px-1 py-0.5 rounded font-mono">user_returned &rarr; MRR</code>)</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-800 font-medium">Distributed worker execution with idempotency locks</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-800 font-medium">Strict anti-spam cooldown enforcement (7d/14d/30d)</span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm text-slate-800 font-medium">Stripe invoice &amp; subscription lifecycle sync</span>
+                <div style={{ fontSize: 12, color: C.blue, fontWeight: 500, marginTop: 4 }}>
+                  {isAnnual ? "Billed annually ($290/year)" : "Billed monthly ($29/month)"}
                 </div>
               </div>
 
-              {/* Embedded UI Snippet (Attribution Engine Mock) */}
-              <div className="bg-[#0B1120] rounded-xl p-4 border border-slate-800 text-slate-300 font-mono text-xs space-y-2.5 mb-6 shadow-inner">
-                <div className="flex justify-between items-center text-[10px] text-slate-400 pb-2 border-b border-slate-800/80">
-                  <span className="flex items-center gap-1.5"><Workflow className="w-3 h-3 text-blue-400" /> PIPELINE: PAY_FAIL_RECOVERY</span>
-                  <span className="text-emerald-400 font-semibold">ATTRIBUTED</span>
-                </div>
-                <div className="flex items-center justify-between text-slate-300 text-[11px]">
-                  <span>stripe.invoice_paid</span>
-                  <span className="text-emerald-400 font-bold">+$149.00 MRR</span>
-                </div>
-                <div className="text-[10px] text-slate-500 flex items-center justify-between pt-1 border-t border-slate-800/50">
-                  <span>IDEMPOTENCY_KEY: val_98a</span>
-                  <span className="text-amber-400">COOLDOWN_LOCKED</span>
-                </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 32 }}>
+                {[
+                  "Unlimited automated recovery campaigns",
+                  "Exact revenue attribution ledger",
+                  "Distributed execution with idempotency locks",
+                  "Strict anti-spam cooldown enforcement",
+                  "Stripe invoice & subscription lifecycle sync",
+                ].map((feat, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.text }}>
+                    <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
+                    <span>{feat}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="p-8 pt-0">
-              <Link 
-                href="/register?tier=pro" 
-                className="w-full h-12 flex items-center justify-center gap-2 rounded-xl font-semibold text-white transition-all text-sm shadow-md hover:shadow-lg"
-                style={{ background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)" }}
-              >
-                Start 3-Day Pro Trial <ArrowRight className="w-4 h-4" />
-              </Link>
-              <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-center gap-4 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                <span className="flex items-center gap-1"><Lock className="w-3 h-3 text-[#1B6EBF]" /> RLS Protected</span>
-                <span>·</span>
-                <span className="flex items-center gap-1"><RefreshCcw className="w-3 h-3 text-[#1B6EBF]" /> Retry-Safe</span>
-              </div>
-            </div>
+            <Link
+              href="/register?tier=pro"
+              style={{
+                height: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 14,
+                textDecoration: "none",
+                background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
+                color: C.white,
+                boxShadow: "0 2px 4px rgba(27,110,191,0.2)",
+              }}
+            >
+              Start 3-Day Pro Trial <ArrowRight size={14} />
+            </Link>
           </div>
 
         </div>

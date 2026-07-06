@@ -6,6 +6,18 @@
 
 import { z } from "zod";
 
+export const SUPPORTED_TEMPLATE_VARIABLES = [
+  "first_name",
+  "company_name",
+] as const;
+
+export type SupportedTemplateVariable =
+  (typeof SUPPORTED_TEMPLATE_VARIABLES)[number];
+
+const SUPPORTED_TEMPLATE_VARIABLE_SET = new Set<string>(
+  SUPPORTED_TEMPLATE_VARIABLES
+);
+
 /**
  * Valid template types corresponding to Arcli's automated recovery pipeline.
  * Enforces Rule 10 (Campaign Safety) & Rule 15 (Email Delivery Standards).
@@ -25,6 +37,21 @@ export type TemplateType = z.infer<typeof TemplateTypeSchema>;
  */
 const UNCLOSED_VARIABLE_REGEX = /\{\{[^}]*$/m;
 const UNOPENED_VARIABLE_REGEX = /^[^{]*\}\}/m;
+const TEMPLATE_VARIABLE_REGEX = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+const DANGEROUS_HTML_REGEX =
+  /<\s*(script|iframe|object|embed|form|input|button|meta|link)\b|on[a-z]+\s*=/i;
+
+function extractTemplateVariables(value: string): string[] {
+  return Array.from(
+    new Set([...value.matchAll(TEMPLATE_VARIABLE_REGEX)].map((match) => match[1]))
+  );
+}
+
+function getUnsupportedTemplateVariables(value: string): string[] {
+  return extractTemplateVariables(value).filter(
+    (variable) => !SUPPORTED_TEMPLATE_VARIABLE_SET.has(variable)
+  );
+}
 
 export const TemplateSaveSchema = z
   .object({
@@ -52,7 +79,10 @@ export const TemplateSaveSchema = z
       .min(5, "Subject line must be at least 5 characters.")
       .max(150, "Subject line cannot exceed 150 characters."),
 
-    type: TemplateTypeSchema.default("recovery"),
+    type: TemplateTypeSchema.optional(),
+
+    // UI/API callers use campaign_type; the database column is still `type`.
+    campaign_type: TemplateTypeSchema.optional(),
 
     body_html: z
       .string()
@@ -69,6 +99,14 @@ export const TemplateSaveSchema = z
       .default(true),
   })
   .superRefine((data, ctx) => {
+    if (data.type && data.campaign_type && data.type !== data.campaign_type) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Template type and campaign_type must match when both are provided.",
+        path: ["campaign_type"],
+      });
+    }
+
     // Rule 15 Defense: Prevent syntax errors in email variable interpolation
     if (UNCLOSED_VARIABLE_REGEX.test(data.body_html) || UNOPENED_VARIABLE_REGEX.test(data.body_html)) {
       ctx.addIssue({
@@ -85,9 +123,34 @@ export const TemplateSaveSchema = z
         path: ["subject"],
       });
     }
+
+    const unsupportedVariables = Array.from(
+      new Set([
+        ...getUnsupportedTemplateVariables(data.subject),
+        ...getUnsupportedTemplateVariables(data.body_html),
+      ])
+    );
+
+    if (unsupportedVariables.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Unsupported template variable(s): ${unsupportedVariables.join(", ")}. Supported variables are ${SUPPORTED_TEMPLATE_VARIABLES.join(", ")}.`,
+        path: ["body_html"],
+      });
+    }
+
+    if (DANGEROUS_HTML_REGEX.test(data.body_html)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Template HTML contains a blocked tag or inline event handler.",
+        path: ["body_html"],
+      });
+    }
   })
   .transform((data) => ({
     ...data,
+    type: data.type ?? data.campaign_type ?? "recovery",
+    campaign_type: data.type ?? data.campaign_type ?? "recovery",
     // Automatically derive fallback plain text if omitted to ensure compliance (Rule 15)
     body_text:
       data.body_text && data.body_text.length > 0
