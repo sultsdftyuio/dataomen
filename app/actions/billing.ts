@@ -125,28 +125,41 @@ async function scheduleSubscriptionCancellationForTenant(
   const { client: dodo, environment } = getDodoClient();
   const productId = sanitizeEnvSecret(process.env.DODO_PRO_PLAN_ID) || null;
 
-  let match: DodoSubscriptionMatch | null;
+  let match: DodoSubscriptionMatch | null = null;
+  let subscriptionId = tenant.dodo_subscription_id;
 
-  try {
-    match = await findActiveDodoSubscriptionForTenant(dodo, {
-      tenantId,
-      customerId: tenant.dodo_customer_id,
-      subscriptionId: tenant.dodo_subscription_id,
-      productId,
-    });
-  } catch (error) {
-    console.error("[Billing] Dodo subscription lookup failed during cancellation", {
-      event: "billing_cancel_dodo_lookup_failed",
+  if (!subscriptionId) {
+    try {
+      match = await findActiveDodoSubscriptionForTenant(dodo, {
+        tenantId,
+        customerId: tenant.dodo_customer_id,
+        subscriptionId: tenant.dodo_subscription_id,
+        productId,
+      });
+    } catch (error) {
+      console.error("[Billing] Dodo subscription lookup failed during cancellation", {
+        event: "billing_cancel_dodo_lookup_failed",
+        tenant_id: tenantId,
+        user_id: userId,
+        environment,
+        product_id: productId,
+        has_dodo_customer_id: Boolean(tenant.dodo_customer_id),
+        has_dodo_subscription_id: Boolean(tenant.dodo_subscription_id),
+        error: serializeError(error),
+      });
+      throw new Error("Unable to verify subscription before cancellation.");
+    }
+
+    subscriptionId = match ? extractSubscriptionId(match.subscription) : null;
+  } else {
+    console.info("[Billing] Using persisted Dodo subscription id during cancellation", {
+      event: "billing_cancel_using_persisted_subscription_id",
       tenant_id: tenantId,
       user_id: userId,
       environment,
-      product_id: productId,
-      error: serializeError(error),
+      subscription_id: subscriptionId,
     });
-    throw new Error("Unable to verify subscription before cancellation.");
   }
-
-  const subscriptionId = match ? extractSubscriptionId(match.subscription) : tenant.dodo_subscription_id;
 
   if (!subscriptionId) {
     console.error("[Billing] Missing Dodo subscription id during cancellation", {
@@ -438,16 +451,16 @@ function getDodoClient(): { client: DodoPayments; environment: "test_mode" | "li
     );
   }
 
-  if (process.env.NODE_ENV === "production" && explicitEnv === "test_mode") {
+  const environment: "test_mode" | "live_mode" =
+    explicitEnv === "test_mode" || explicitEnv === "live_mode"
+      ? explicitEnv
+      : "live_mode";
+
+  if (process.env.NODE_ENV === "production" && environment === "test_mode") {
     console.warn(
-      "[Billing] DODO_PAYMENTS_ENV=test_mode is ignored in production. Using live_mode."
+      "[Billing] DODO_PAYMENTS_ENV=test_mode is enabled in production. Using Dodo test API."
     );
   }
-
-  const environment: "test_mode" | "live_mode" =
-    process.env.NODE_ENV !== "production" && explicitEnv === "test_mode"
-      ? "test_mode"
-      : "live_mode";
 
   if (environment === "live_mode" && isDodoTestApiKey(apiKey)) {
     throw new Error(

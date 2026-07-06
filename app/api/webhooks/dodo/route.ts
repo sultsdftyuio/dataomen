@@ -32,16 +32,16 @@ function getDodoClient(): DodoPayments {
     );
   }
 
-  if (process.env.NODE_ENV === "production" && explicitEnv === "test_mode") {
+  const environment: "test_mode" | "live_mode" =
+    explicitEnv === "test_mode" || explicitEnv === "live_mode"
+      ? explicitEnv
+      : "live_mode";
+
+  if (process.env.NODE_ENV === "production" && environment === "test_mode") {
     console.warn(
-      "[Dodo Webhook] DODO_PAYMENTS_ENV=test_mode is ignored in production. Using live_mode."
+      "[Dodo Webhook] DODO_PAYMENTS_ENV=test_mode is enabled in production. Using Dodo test API."
     );
   }
-
-  const environment: "test_mode" | "live_mode" =
-    process.env.NODE_ENV !== "production" && explicitEnv === "test_mode"
-      ? "test_mode"
-      : "live_mode";
 
   if (environment === "live_mode" && isDodoTestApiKey(apiKey)) {
     throw new Error(
