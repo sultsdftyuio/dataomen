@@ -104,12 +104,22 @@ export default function WorkspaceBillingCard({
     startBillingTransition(async () => {
       try {
         // Route Dodo-linked Pro workspaces to the portal, others to checkout.
-        const { url } = canOpenPortal
+        const result = canOpenPortal
           ? await manageBillingPortal()
           : await upgradeToProPlan();
 
-        if (url) {
-          window.location.assign(url);
+        if (result.url) {
+          window.location.assign(result.url);
+          return;
+        }
+
+        if (result.status === "already_active") {
+          toast({
+            title: "Subscription Active",
+            description: "Your workspace is already upgraded to Pro.",
+          });
+          router.refresh();
+          return;
         }
       } catch (error: any) {
         const message = error?.message || "Could not initiate billing session.";

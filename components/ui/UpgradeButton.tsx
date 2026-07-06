@@ -37,14 +37,19 @@ export default function UpgradeButton({
       // Reserved for future use when the server action accepts a product ID.
       void productId;
 
-      const { url } = await upgradeToProPlan();
+      const result = await upgradeToProPlan();
 
-      if (!url) {
+      if (result.status === "already_active") {
+        window.location.reload();
+        return;
+      }
+
+      if (!result.url) {
         throw new Error("Failed to generate checkout link.");
       }
 
       // Redirect to the hosted Dodo checkout.
-      window.location.assign(url);
+      window.location.assign(result.url);
     } catch (err: unknown) {
       console.error("[Checkout UI Error]", err);
 

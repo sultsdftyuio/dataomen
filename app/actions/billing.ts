@@ -59,6 +59,18 @@ type BillingTestStateResult = {
   planTier: "free" | "pro";
 };
 
+type BillingSessionResult =
+  | {
+      status: "checkout_created" | "portal_created";
+      url: string;
+      message?: string;
+    }
+  | {
+      status: "already_active";
+      url: null;
+      message: string;
+    };
+
 type TenantBillingLookupRow = {
   tenant_id: string;
   plan_tier: string;
@@ -668,17 +680,7 @@ async function findActiveDodoSubscriptionForTenant(
  * Initiates a checkout session to upgrade the current tenant workspace to the Pro plan.
  * Enforces strict synchronous tenant isolation and prevents duplicate checkouts.
  */
-export async function upgradeToProPlan() {
-  // 2. Strict Environment Variable Validation
-  const productId = process.env.DODO_PRO_PLAN_ID?.trim();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-
-  if (!productId || !siteUrl) {
-    console.error("[Billing] Missing critical billing environment variables (DODO_PRO_PLAN_ID or NEXT_PUBLIC_SITE_URL).");
-    throw new Error("Billing service is currently unavailable.");
-  }
-
-  const { client: dodo, environment } = getDodoClient();
+export async function upgradeToProPlan(): Promise<BillingSessionResult> {
   const supabase = await createClient();
 
   // 3. Authenticate User & Validate Identity
@@ -713,26 +715,42 @@ export async function upgradeToProPlan() {
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
 
   if (entitlements.isPro && entitlements.subscriptionStatus !== "canceling") {
-    console.info("[Billing] Redirecting duplicate checkout attempt to billing portal", {
-      event: "duplicate_checkout_redirected",
+    console.info("[Billing] Handling duplicate checkout attempt for active workspace", {
+      event: "duplicate_checkout_detected",
       tenant_id: tenantId,
       user_id: user.id,
-      environment,
+      subscription_status: entitlements.subscriptionStatus,
     });
 
     try {
       return await manageBillingPortal();
     } catch (error) {
-      console.error("[Billing] Duplicate checkout portal redirect failed", {
+      console.warn("[Billing] Duplicate checkout resolved without portal redirect", {
         event: "duplicate_checkout_portal_redirect_failed",
         tenant_id: tenantId,
         user_id: user.id,
-        environment,
+        subscription_status: entitlements.subscriptionStatus,
         error: serializeError(error),
       });
-      throw new Error("Workspace already has an active subscription.");
+
+      return {
+        status: "already_active",
+        url: null,
+        message: "Workspace already has an active subscription.",
+      };
     }
   }
+
+  // 6. Strict Environment Variable Validation
+  const productId = process.env.DODO_PRO_PLAN_ID?.trim();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+
+  if (!productId || !siteUrl) {
+    console.error("[Billing] Missing critical billing environment variables (DODO_PRO_PLAN_ID or NEXT_PUBLIC_SITE_URL).");
+    throw new Error("Billing service is currently unavailable.");
+  }
+
+  const { client: dodo, environment } = getDodoClient();
 
   // 6. Resilient Checkout Creation
   try {
@@ -761,7 +779,7 @@ export async function upgradeToProPlan() {
       throw new Error("Checkout session returned without a valid URL.");
     }
 
-    return { url: session.checkout_url };
+    return { status: "checkout_created", url: session.checkout_url };
   } catch (error) {
     // 7. Operator-Focused Structured Observability (Rule 17)
     console.error("[Billing] Checkout creation failed", {
@@ -1143,7 +1161,7 @@ export async function setBillingTestState(state: string): Promise<BillingTestSta
  * Generates a Dodo Payments Customer Portal session for active subscribers.
  * Eliminates live email scanning in favor of deterministic database resolution with 100% type safety.
  */
-export async function manageBillingPortal() {
+export async function manageBillingPortal(): Promise<BillingSessionResult> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!siteUrl) {
     console.error("[Billing] Missing NEXT_PUBLIC_SITE_URL environment variable.");
@@ -1220,7 +1238,7 @@ export async function manageBillingPortal() {
       throw new Error("Portal session returned without a valid link.");
     }
 
-    return { url: portalSession.link };
+    return { status: "portal_created", url: portalSession.link };
   } catch (error) {
     console.error("[Billing] Customer portal creation failed", {
       event: "portal_creation_failed",
