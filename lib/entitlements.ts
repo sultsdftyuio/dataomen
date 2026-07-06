@@ -34,6 +34,7 @@ export type WorkspaceEntitlements = {
   canViewCustomerLists: boolean;
   canSendEmails: boolean;
   canCreateTemplates: boolean;
+  canGenerateApiKeys: boolean;
   billingLabel: string;
   billingDescription: string;
   restrictionMessage: string | null;
@@ -168,6 +169,8 @@ function buildEntitlements(
     canViewCustomerLists: isPro,
     canSendEmails: isPro,
     canCreateTemplates: isPro,
+    // API keys are universal: custom event ingestion is required for onboarding.
+    canGenerateApiKeys: true,
     billingLabel,
     billingDescription,
     restrictionMessage: isPro ? null : PRO_PLAN_REQUIRED_MESSAGE,

@@ -1,19 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   Check,
   CheckCircle2,
   Clipboard,
   Code2,
+  FileCode2,
   KeyRound,
   LockKeyhole,
+  Play,
+  Rocket,
   RotateCcw,
   Server,
   ShieldAlert,
   Terminal,
-  XCircle,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -26,109 +29,234 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
-type SnippetTab = "curl" | "node" | "python";
+type StepId = "security" | "env" | "backend" | "signal" | "confirm";
+type SnippetTab = "node" | "curl" | "python";
+type RevenueSignal =
+  | "invoice_payment_failed"
+  | "subscription_cancelled"
+  | "downgrade_requested"
+  | "trial_expired"
+  | "revenue_recovered";
 
-const endpointRows = [
-  { label: "Method", value: "POST" },
-  { label: "URL", value: "https://api.arcli.tech/api/v1/track" },
-  { label: "Authorization", value: "Bearer arcli_live_<YOUR_API_KEY>" },
-  { label: "Content-Type", value: "application/json" },
-];
+const API_KEY_PLACEHOLDER = "arcli_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+const INGEST_URL = "https://api.arcli.io/v1/events";
 
-const goodSignals = [
-  "payment_failed",
-  "subscription_cancelled",
-  "trial_expired",
-  "downgrade_requested",
-  "cancellation_intent_detected",
-];
-
-const snippets: Record<SnippetTab, string> = {
-  curl: `curl -X POST https://api.arcli.tech/api/v1/track \\
-  -H "Authorization: Bearer arcli_live_<YOUR_API_KEY>" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "event_name": "payment_failed",
-    "user_id": "usr_98765",
-    "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
-    "timestamp": "2026-07-06T08:00:00.000Z",
-    "properties": {
-      "plan_tier": "pro_monthly",
-      "amount": 4900,
-      "currency": "USD",
-      "invoice_id": "in_123"
-    }
-  }'`,
-  node: `// Node.js 18+ native fetch. Run this from your backend only.
-const response = await fetch("https://api.arcli.tech/api/v1/track", {
-  method: "POST",
-  headers: {
-    "Authorization": "Bearer arcli_live_<YOUR_API_KEY>",
-    "Content-Type": "application/json",
+const steps: Array<{
+  id: StepId;
+  eyebrow: string;
+  title: string;
+  description: string;
+}> = [
+  {
+    id: "security",
+    eyebrow: "Step 0",
+    title: "Keep the key on your server",
+    description: "The key identifies your Arcli workspace. Treat it like a password.",
   },
-  body: JSON.stringify({
-    event_name: "payment_failed",
-    user_id: "usr_98765",
-    idempotency_key: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
+  {
+    id: "env",
+    eyebrow: "Step 1",
+    title: "Add your environment variables",
+    description: "Paste the key into your backend environment, not into browser code.",
+  },
+  {
+    id: "backend",
+    eyebrow: "Step 2",
+    title: "Create a tiny backend sender",
+    description: "Your app calls your server, and your server calls Arcli.",
+  },
+  {
+    id: "signal",
+    eyebrow: "Step 3",
+    title: "Send the first revenue signal",
+    description: "Start with the event that means revenue is at risk right now.",
+  },
+  {
+    id: "confirm",
+    eyebrow: "Step 4",
+    title: "Confirm Arcli accepted it",
+    description: "A 202 response means the signal was queued for scoring.",
+  },
+];
+
+const revenueSignals: Array<{
+  value: RevenueSignal;
+  label: string;
+  plainMeaning: string;
+  properties: Record<string, string | number | Record<string, string | number>>;
+}> = [
+  {
+    value: "invoice_payment_failed",
+    label: "Payment failed",
+    plainMeaning: "A charge failed, so revenue may be lost unless you recover it.",
     properties: {
       plan_tier: "pro_monthly",
-      amount: 4900,
-      currency: "USD",
-      invoice_id: "in_123",
+      metadata: {
+        amount: 4900,
+        currency: "USD",
+        invoice_id: "in_demo_123",
+        failure_reason: "card_declined",
+      },
     },
-  }),
-});
+  },
+  {
+    value: "subscription_cancelled",
+    label: "Subscription cancelled",
+    plainMeaning: "A paying customer cancelled and should enter recovery analysis.",
+    properties: {
+      plan_tier: "team_annual",
+      reason: "too_expensive",
+      metadata: {
+        mrr: 9900,
+        currency: "USD",
+      },
+    },
+  },
+  {
+    value: "downgrade_requested",
+    label: "Downgrade requested",
+    plainMeaning: "A customer is reducing spend, which is an early churn signal.",
+    properties: {
+      plan_tier: "starter_monthly",
+      metadata: {
+        previous_plan: "pro_monthly",
+        new_plan: "starter_monthly",
+      },
+    },
+  },
+  {
+    value: "trial_expired",
+    label: "Trial expired",
+    plainMeaning: "A trial ended without conversion and may need follow-up.",
+    properties: {
+      plan_tier: "trial",
+      metadata: {
+        trial_days: 14,
+        activated_users: 3,
+      },
+    },
+  },
+  {
+    value: "revenue_recovered",
+    label: "Revenue recovered",
+    plainMeaning: "A save, retry, or campaign won money back.",
+    properties: {
+      plan_tier: "pro_monthly",
+      metadata: {
+        amount: 4900,
+        currency: "USD",
+        recovery_channel: "card_retry",
+      },
+    },
+  },
+];
 
-if (!response.ok) {
-  throw new Error(\`Arcli ingest failed: \${response.status}\`);
+const completedCopy = "Copied";
+
+function formatJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
 }
 
-const result = await response.json();`,
-  python: `import uuid
+function getSignalByValue(value: RevenueSignal) {
+  return revenueSignals.find((signal) => signal.value === value) ?? revenueSignals[0];
+}
+
+function buildPayload(signal: RevenueSignal) {
+  const selectedSignal = getSignalByValue(signal);
+
+  return {
+    event_name: selectedSignal.value,
+    user_id: "customer_123",
+    idempotency_key: "evt_550e8400_e29b_41d4_a716_446655440000",
+    timestamp: "2026-07-06T08:00:00.000Z",
+    properties: selectedSignal.properties,
+  };
+}
+
+function buildSnippet(tab: SnippetTab, signal: RevenueSignal) {
+  const payload = buildPayload(signal);
+  const payloadJson = formatJson(payload);
+
+  if (tab === "curl") {
+    return `curl -X POST "$ARCLI_INGEST_URL" \\
+  -H "Authorization: Bearer $ARCLI_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '${payloadJson}'`;
+  }
+
+  if (tab === "python") {
+    return `import os
+import uuid
 from datetime import datetime, timezone
 
 import requests
 
 response = requests.post(
-    "https://api.arcli.tech/api/v1/track",
+    os.environ["ARCLI_INGEST_URL"],
     headers={
-        "Authorization": "Bearer arcli_live_<YOUR_API_KEY>",
+        "Authorization": f"Bearer {os.environ['ARCLI_API_KEY']}",
         "Content-Type": "application/json",
     },
     json={
-        "event_name": "payment_failed",
-        "user_id": "usr_98765",
+        "event_name": "${payload.event_name}",
+        "user_id": "customer_123",
         "idempotency_key": str(uuid.uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "properties": {
-            "plan_tier": "pro_monthly",
-            "amount": 4900,
-            "currency": "USD",
-            "invoice_id": "in_123",
-        },
+        "properties": ${formatJson(payload.properties)
+          .split("\n")
+          .map((line, index) => (index === 0 ? line : `        ${line}`))
+          .join("\n")},
     },
     timeout=5,
 )
 
 response.raise_for_status()
-result = response.json()`,
-};
+print(response.json())`;
+  }
+
+  return `// app/api/arcli/revenue-signal/route.ts
+import { NextResponse } from "next/server";
+
+export async function POST() {
+  const response = await fetch(process.env.ARCLI_INGEST_URL!, {
+    method: "POST",
+    headers: {
+      Authorization: \`Bearer \${process.env.ARCLI_API_KEY}\`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      event_name: "${payload.event_name}",
+      user_id: "customer_123",
+      idempotency_key: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+      properties: ${formatJson(payload.properties)
+        .split("\n")
+        .map((line, index) => (index === 0 ? line : `      ${line}`))
+        .join("\n")},
+    }),
+  });
+
+  if (!response.ok) {
+    return NextResponse.json(
+      { error: "Arcli did not accept the event" },
+      { status: response.status },
+    );
+  }
+
+  return NextResponse.json(await response.json());
+}`;
+}
+
+const envSnippet = `ARCLI_API_KEY="${API_KEY_PLACEHOLDER}"
+ARCLI_INGEST_URL="${INGEST_URL}"`;
 
 const responseExample = `{
   "status": "accepted",
-  "idempotency_key": "550e8400-e29b-41d4-a716-446655440000",
+  "idempotency_key": "evt_550e8400_e29b_41d4_a716_446655440000",
   "anomalies": []
 }`;
 
@@ -136,318 +264,594 @@ function CodeBlock({
   value,
   copied,
   onCopy,
+  label,
 }: {
   value: string;
   copied: boolean;
   onCopy: () => void;
+  label: string;
 }) {
   return (
     <div className="relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        onClick={onCopy}
-        className="absolute right-3 top-3 h-8 bg-white/10 px-3 text-xs text-white hover:bg-white/20"
-      >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-emerald-300" />
-        ) : (
-          <Clipboard className="h-3.5 w-3.5" />
-        )}
-        {copied ? "Copied" : "Copy"}
-      </Button>
-      <pre className="max-h-[460px] overflow-x-auto p-5 pr-28 text-[13px] leading-6 text-slate-200">
+      <div className="flex min-h-10 items-center justify-between border-b border-white/10 bg-white/[0.03] px-4">
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
+          <Terminal className="h-3.5 w-3.5 text-slate-400" />
+          {label}
+        </div>
+        <Button
+          type="button"
+          size="xs"
+          variant="secondary"
+          onClick={onCopy}
+          className="h-7 bg-white/10 px-2.5 text-xs text-white hover:bg-white/20"
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-emerald-300" />
+          ) : (
+            <Clipboard className="h-3.5 w-3.5" />
+          )}
+          {copied ? completedCopy : "Copy"}
+        </Button>
+      </div>
+      <pre className="max-h-[520px] overflow-x-auto p-4 text-[12px] leading-6 text-slate-200 sm:text-[13px]">
         <code>{value}</code>
       </pre>
     </div>
   );
 }
 
-export function ApiDocsClient() {
-  const [activeTab, setActiveTab] = useState<SnippetTab>("curl");
-  const [copiedTab, setCopiedTab] = useState<SnippetTab | "response" | null>(null);
+function StepShell({
+  id,
+  activeStep,
+  completed,
+  children,
+}: {
+  id: StepId;
+  activeStep: StepId;
+  completed: boolean;
+  children: React.ReactNode;
+}) {
+  const step = steps.find((item) => item.id === id) ?? steps[0];
+  const isActive = activeStep === id;
 
-  const copy = async (value: string, tab: SnippetTab | "response") => {
-    await navigator.clipboard.writeText(value);
-    setCopiedTab(tab);
-    window.setTimeout(() => setCopiedTab(null), 1800);
+  return (
+    <section
+      id={id}
+      className={`scroll-mt-24 rounded-lg border bg-white transition-all ${
+        isActive
+          ? "border-slate-300 shadow-sm ring-2 ring-slate-900/5"
+          : "border-slate-200 shadow-xs"
+      }`}
+    >
+      <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+        <div className="flex min-w-0 gap-3">
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${
+              completed
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 bg-slate-50 text-slate-700"
+            }`}
+          >
+            {completed ? <CheckCircle2 className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase text-slate-500">
+              {step.eyebrow}
+            </div>
+            <h2 className="mt-1 text-lg font-semibold tracking-normal text-slate-950">
+              {step.title}
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              {step.description}
+            </p>
+          </div>
+        </div>
+        {completed ? (
+          <Badge
+            variant="outline"
+            className="border-emerald-200 bg-emerald-50 text-emerald-700"
+          >
+            <Check className="h-3 w-3" />
+            Done
+          </Badge>
+        ) : null}
+      </div>
+      <div className="p-5 sm:p-6">{children}</div>
+    </section>
+  );
+}
+
+export function ApiDocsClient() {
+  const [activeStep, setActiveStep] = useState<StepId>("security");
+  const [activeTab, setActiveTab] = useState<SnippetTab>("node");
+  const [selectedSignal, setSelectedSignal] =
+    useState<RevenueSignal>("invoice_payment_failed");
+  const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(
+    () => new Set(["security"]),
+  );
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const selectedSignalDetails = getSignalByValue(selectedSignal);
+  const requestSnippet = useMemo(
+    () => buildSnippet(activeTab, selectedSignal),
+    [activeTab, selectedSignal],
+  );
+  const payloadSnippet = useMemo(
+    () => formatJson(buildPayload(selectedSignal)),
+    [selectedSignal],
+  );
+  const progressValue = Math.round((completedSteps.size / steps.length) * 100);
+
+  const completeStep = (stepId: StepId) => {
+    setCompletedSteps((previous) => {
+      const next = new Set(previous);
+      next.add(stepId);
+      return next;
+    });
+  };
+
+  const copy = async (value: string, copyId: string, stepId?: StepId) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(copyId);
+      if (stepId) {
+        completeStep(stepId);
+      }
+      window.setTimeout(() => setCopied(null), 1800);
+    } catch {
+      setCopied(null);
+    }
+  };
+
+  const markStepAndMove = (stepId: StepId, nextStepId?: StepId) => {
+    completeStep(stepId);
+    if (nextStepId) {
+      setActiveStep(nextStepId);
+      document.getElementById(nextStepId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-12">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-2">
-            <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
-              Developer Docs
-            </Badge>
-            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
-              Server Ingestion
-            </Badge>
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 pb-12">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="p-6 sm:p-8">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                Developer Quickstart
+              </Badge>
+              <Badge
+                variant="outline"
+                className="border-emerald-200 bg-emerald-50 text-emerald-700"
+              >
+                Zero to First Revenue Signal
+              </Badge>
+            </div>
+            <h1 className="max-w-3xl text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">
+              Send your first Arcli revenue signal in under 5 minutes
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
+              This walkthrough helps you connect your backend to Arcli using an API key.
+              No dashboard plumbing first: store the key safely, send one meaningful
+              event, and confirm Arcli accepted it.
+            </p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              {[
+                { label: "Auth method", value: "Bearer token", icon: KeyRound },
+                { label: "Call from", value: "Backend only", icon: Server },
+                { label: "Result", value: "202 accepted", icon: CheckCircle2 },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.label}
+                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white">
+                      <Icon className="h-4 w-4 text-slate-700" />
+                    </div>
+                    <div className="text-xs font-medium text-slate-500">{item.label}</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-950">{item.value}</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <h1 className="text-2xl font-semibold tracking-normal text-slate-950">
-            Arcli API Key Ingestion
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Authenticate backend services and send high-intent churn or recovery
-            attribution events to the Arcli tracking endpoint.
-          </p>
+          <div className="border-t border-slate-200 bg-slate-950 p-6 text-white lg:border-l lg:border-t-0">
+            <div className="flex items-start gap-3">
+              <div className="rounded-md border border-white/10 bg-white/10 p-2">
+                <Rocket className="h-4 w-4 text-emerald-300" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold">Quickstart progress</div>
+                <p className="mt-1 text-xs leading-5 text-slate-300">
+                  Copying snippets marks the setup steps complete. You can also use the
+                  buttons below to keep your place.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+                <span>{completedSteps.size} of {steps.length} steps</span>
+                <span>{progressValue}%</span>
+              </div>
+              <Progress value={progressValue} className="h-2 bg-white/10 [&>div]:bg-emerald-400" />
+            </div>
+            <div className="mt-5 space-y-2">
+              {steps.map((step) => {
+                const done = completedSteps.has(step.id);
+                const active = activeStep === step.id;
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveStep(step.id);
+                      document
+                        .getElementById(step.id)
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-xs transition ${
+                      active
+                        ? "border-white/30 bg-white/15 text-white"
+                        : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                        done
+                          ? "border-emerald-300 bg-emerald-300 text-slate-950"
+                          : "border-white/20 text-slate-400"
+                      }`}
+                    >
+                      {done ? <Check className="h-3 w-3" /> : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block font-semibold">{step.eyebrow}</span>
+                      <span className="block truncate text-slate-300">{step.title}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
-      <Alert className="rounded-lg border-red-200 bg-red-50 text-red-950">
-        <ShieldAlert className="h-4 w-4" />
-        <AlertTitle>Server-Side Execution Only</AlertTitle>
-        <AlertDescription>
-          NEVER embed API keys in client-side applications, including React,
-          Vue, iOS, or Android. Arcli API keys have write access to the tenant
-          workspace and must only be called from secure backend infrastructure
-          such as Node.js, Python, Ruby, Go, or cURL running in a trusted server
-          environment.
-        </AlertDescription>
-      </Alert>
+      <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="hidden lg:sticky lg:top-24 lg:block">
+          <Card className="rounded-lg py-0">
+            <CardHeader className="border-b p-5">
+              <CardTitle className="text-sm">Setup map</CardTitle>
+              <CardDescription className="text-xs">
+                Follow the steps in order for the fastest path.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 p-3">
+              {steps.map((step) => {
+                const done = completedSteps.has(step.id);
+                const active = activeStep === step.id;
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <Card className="rounded-lg py-0">
-          <CardHeader className="border-b px-6 py-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-                <Server className="h-4 w-4 text-slate-700" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Endpoint Specification</CardTitle>
-                <CardDescription>
-                  Use bearer authentication and JSON payloads for all requests.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-40 px-6 text-xs uppercase tracking-wide text-slate-500">
-                    Field
-                  </TableHead>
-                  <TableHead className="px-6 text-xs uppercase tracking-wide text-slate-500">
-                    Value
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {endpointRows.map((row) => (
-                  <TableRow key={row.label}>
-                    <TableCell className="px-6 font-medium text-slate-700">
-                      {row.label}
-                    </TableCell>
-                    <TableCell className="px-6">
-                      <code className="break-all rounded bg-slate-100 px-2 py-1 text-xs text-slate-900">
-                        {row.value}
-                      </code>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-lg py-0">
-          <CardHeader className="border-b px-6 py-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-2">
-                <KeyRound className="h-4 w-4 text-amber-700" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Header Contract</CardTitle>
-                <CardDescription>Reject requests that omit the bearer prefix.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4 p-6">
-            <div>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Authorization
-              </div>
-              <code className="block break-all rounded-md border bg-slate-50 p-3 text-xs text-slate-900">
-                Authorization: Bearer arcli_live_&lt;YOUR_API_KEY&gt;
-              </code>
-            </div>
-            <Separator />
-            <div className="flex items-start gap-2 text-sm text-slate-600">
-              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-              Rotate keys from workspace settings if a secret is exposed.
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="rounded-lg py-0">
-        <CardHeader className="border-b px-6 py-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md border border-blue-200 bg-blue-50 p-2">
-                <Code2 className="h-4 w-4 text-blue-700" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Copyable Request Examples</CardTitle>
-                <CardDescription>
-                  These examples mirror the settings integration guide and are
-                  safe for server-side execution.
-                </CardDescription>
-              </div>
-            </div>
-            <Badge variant="outline" className="border-slate-200 text-slate-600">
-              POST /api/v1/track
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="p-6">
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SnippetTab)}>
-            <TabsList className="mb-3 rounded-lg">
-              <TabsTrigger value="curl">
-                <Terminal className="h-4 w-4" />
-                cURL
-              </TabsTrigger>
-              <TabsTrigger value="node">
-                <Server className="h-4 w-4" />
-                Node.js 18+
-              </TabsTrigger>
-              <TabsTrigger value="python">
-                <Code2 className="h-4 w-4" />
-                Python
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="curl">
-              <CodeBlock
-                value={snippets.curl}
-                copied={copiedTab === "curl"}
-                onCopy={() => copy(snippets.curl, "curl")}
-              />
-            </TabsContent>
-            <TabsContent value="node">
-              <CodeBlock
-                value={snippets.node}
-                copied={copiedTab === "node"}
-                onCopy={() => copy(snippets.node, "node")}
-              />
-            </TabsContent>
-            <TabsContent value="python">
-              <CodeBlock
-                value={snippets.python}
-                copied={copiedTab === "python"}
-                onCopy={() => copy(snippets.python, "python")}
-              />
-            </TabsContent>
-          </Tabs>
-          <div className="mt-5">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-              202 Accepted
-            </div>
-            <CodeBlock
-              value={responseExample}
-              copied={copiedTab === "response"}
-              onCopy={() => copy(responseExample, "response")}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="rounded-lg py-0">
-          <CardHeader className="border-b px-6 py-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-700" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Signal-Only Directive (Rules 8 &amp; 21)</CardTitle>
-                <CardDescription>
-                  Keep ingestion tied to churn risk and recovery attribution.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-5 p-6">
-            <blockquote className="rounded-lg border-l-4 border-slate-900 bg-slate-50 p-4 text-sm font-medium leading-6 text-slate-900">
-              If an event does not directly contribute to a Churn Signal or Recovery Attribution, do not track it.
-            </blockquote>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-red-900">
-                  <XCircle className="h-4 w-4" />
-                  Anti-Pattern
-                </div>
-                <div className="space-y-2">
-                  {["button_clicked", "page_view", "modal_opened"].map((event) => (
-                    <code
-                      key={event}
-                      className="block rounded border border-red-100 bg-white px-2 py-1.5 text-xs text-red-900"
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveStep(step.id);
+                      document
+                        .getElementById(step.id)
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }}
+                    className={`flex w-full items-start gap-3 rounded-md p-3 text-left transition ${
+                      active ? "bg-slate-100 text-slate-950" : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                        done
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-white text-slate-400"
+                      }`}
                     >
-                      {event}
-                    </code>
-                  ))}
-                </div>
-              </div>
+                      {done ? <Check className="h-3 w-3" /> : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-semibold uppercase text-slate-500">
+                        {step.eyebrow}
+                      </span>
+                      <span className="mt-0.5 block text-sm font-medium leading-5">
+                        {step.title}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </aside>
 
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-950">
-                  <CheckCircle2 className="h-4 w-4" />
-                  Best Practice
-                </div>
-                <div className="space-y-2">
-                  {goodSignals.map((event) => (
-                    <code
-                      key={event}
-                      className="block rounded border border-emerald-100 bg-white px-2 py-1.5 text-xs text-emerald-950"
-                    >
-                      {event}
-                    </code>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-lg py-0">
-          <CardHeader className="border-b px-6 py-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-md border border-violet-200 bg-violet-50 p-2">
-                <RotateCcw className="h-4 w-4 text-violet-700" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Idempotency & Retry Safety</CardTitle>
-                <CardDescription>
-                  Retries must never duplicate risk scores or campaigns.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4 p-6 text-sm leading-6 text-slate-600">
-            <p>
-              Always pass an <code className="rounded bg-slate-100 px-1">idempotency_key</code>,
-              preferably a UUID generated for the source event. Reuse the same
-              key when retrying after a timeout, 500, or 503.
-            </p>
-            <p>
-              Arcli uses the key to deduplicate ingestion so network retries do
-              not create duplicate churn risk scores or trigger duplicate
-              recovery campaigns.
-            </p>
-            <Alert className="rounded-lg border-amber-200 bg-amber-50 text-amber-950">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Retry Rule</AlertTitle>
-              <AlertDescription>
-                New customer action, new idempotency key. Same customer action,
-                same idempotency key across retries.
+        <div className="space-y-6">
+          <StepShell
+            id="security"
+            activeStep={activeStep}
+            completed={completedSteps.has("security")}
+          >
+            <Alert className="rounded-lg border-red-200 bg-red-50 text-red-950">
+              <ShieldAlert className="h-4 w-4" />
+              <AlertTitle>Never expose your Arcli API key in client-side browser code</AlertTitle>
+              <AlertDescription className="leading-6">
+                Never expose your Arcli API key in client-side browser code (e.g.,
+                React, Vue, mobile apps). Always invoke Arcli from your backend
+                server or API routes to preserve tenant isolation and prevent spoofing.
               </AlertDescription>
             </Alert>
-          </CardContent>
-        </Card>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <LockKeyhole className="mb-3 h-5 w-5 text-slate-700" />
+                <h3 className="text-sm font-semibold text-slate-950">What the key does</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  It tells Arcli which workspace should receive the event. Anyone with
+                  the key can write events to that workspace.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <Server className="mb-3 h-5 w-5 text-slate-700" />
+                <h3 className="text-sm font-semibold text-slate-950">Where it belongs</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Put it in server environment variables, API routes, workers, cron jobs,
+                  or backend services.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <AlertTriangle className="mb-3 h-5 w-5 text-amber-700" />
+                <h3 className="text-sm font-semibold text-slate-950">What to avoid</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Do not paste it into React components, mobile apps, analytics tags,
+                  browser local storage, or public GitHub files.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-slate-600">
+                Authentication format:
+                <code className="ml-2 rounded bg-slate-100 px-2 py-1 text-xs text-slate-950">
+                  Authorization: Bearer &lt;ARCLI_API_KEY&gt;
+                </code>
+              </div>
+              <Button
+                type="button"
+                onClick={() => markStepAndMove("security", "env")}
+                className="bg-slate-950 text-white hover:bg-slate-800"
+              >
+                I understand
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </StepShell>
+
+          <StepShell id="env" activeStep={activeStep} completed={completedSteps.has("env")}>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div>
+                <p className="mb-4 text-sm leading-6 text-slate-600">
+                  In your project, create or open <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-950">.env.local</code>.
+                  Paste this in, then replace the x&apos;s with the API key you generated in
+                  Arcli settings.
+                </p>
+                <CodeBlock
+                  label=".env.local"
+                  value={envSnippet}
+                  copied={copied === "env"}
+                  onCopy={() => copy(envSnippet, "env", "env")}
+                />
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                <KeyRound className="mb-3 h-5 w-5 text-blue-700" />
+                <h3 className="text-sm font-semibold text-blue-950">Plain-language check</h3>
+                <p className="mt-2 text-sm leading-6 text-blue-900">
+                  The first line is your secret. The second line is the Arcli address your
+                  server will send events to.
+                </p>
+                <Separator className="my-4 bg-blue-200" />
+                <p className="text-xs leading-5 text-blue-900/80">
+                  Restart your local dev server after changing environment variables.
+                </p>
+              </div>
+            </div>
+          </StepShell>
+
+          <StepShell
+            id="backend"
+            activeStep={activeStep}
+            completed={completedSteps.has("backend")}
+          >
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SnippetTab)}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm leading-6 text-slate-600">
+                    Choose the backend you use. The important part is the same in every
+                    language: your server adds the bearer token header.
+                  </p>
+                </div>
+                <TabsList className="grid w-full grid-cols-3 sm:w-auto">
+                  <TabsTrigger value="node">
+                    <FileCode2 className="h-4 w-4" />
+                    Next.js
+                  </TabsTrigger>
+                  <TabsTrigger value="curl">
+                    <Terminal className="h-4 w-4" />
+                    cURL
+                  </TabsTrigger>
+                  <TabsTrigger value="python">
+                    <Code2 className="h-4 w-4" />
+                    Python
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <div className="mt-4">
+                <TabsContent value="node" className="mt-0">
+                  <CodeBlock
+                    label="Backend API route"
+                    value={requestSnippet}
+                    copied={copied === "backend-node"}
+                    onCopy={() => copy(requestSnippet, "backend-node", "backend")}
+                  />
+                </TabsContent>
+                <TabsContent value="curl" className="mt-0">
+                  <CodeBlock
+                    label="Terminal request"
+                    value={requestSnippet}
+                    copied={copied === "backend-curl"}
+                    onCopy={() => copy(requestSnippet, "backend-curl", "backend")}
+                  />
+                </TabsContent>
+                <TabsContent value="python" className="mt-0">
+                  <CodeBlock
+                    label="Python backend request"
+                    value={requestSnippet}
+                    copied={copied === "backend-python"}
+                    onCopy={() => copy(requestSnippet, "backend-python", "backend")}
+                  />
+                </TabsContent>
+              </div>
+            </Tabs>
+
+            <Alert className="mt-5 rounded-lg border-amber-200 bg-amber-50 text-amber-950">
+              <RotateCcw className="h-4 w-4" />
+              <AlertTitle>Retry-safe by design</AlertTitle>
+              <AlertDescription className="leading-6">
+                Use a stable <code className="rounded bg-amber-100 px-1">idempotency_key</code> for
+                the same customer action. If a timeout happens, retry with the same key so
+                Arcli does not count the same revenue signal twice.
+              </AlertDescription>
+            </Alert>
+          </StepShell>
+
+          <StepShell
+            id="signal"
+            activeStep={activeStep}
+            completed={completedSteps.has("signal")}
+          >
+            <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-950">Pick a first signal</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Start with one event that is directly tied to churn risk or recovered
+                  revenue. Avoid generic product analytics like page views or button clicks.
+                </p>
+                <div className="mt-4 space-y-2">
+                  {revenueSignals.map((signal) => {
+                    const active = selectedSignal === signal.value;
+
+                    return (
+                      <button
+                        key={signal.value}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSignal(signal.value);
+                          completeStep("signal");
+                        }}
+                        className={`w-full rounded-lg border p-3 text-left transition ${
+                          active
+                            ? "border-slate-900 bg-slate-950 text-white"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold">{signal.label}</span>
+                          {active ? <Check className="h-4 w-4 text-emerald-300" /> : null}
+                        </div>
+                        <code
+                          className={`mt-2 block text-xs ${
+                            active ? "text-slate-300" : "text-slate-500"
+                          }`}
+                        >
+                          {signal.value}
+                        </code>
+                        <p
+                          className={`mt-2 text-xs leading-5 ${
+                            active ? "text-slate-300" : "text-slate-500"
+                          }`}
+                        >
+                          {signal.plainMeaning}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-950">
+                    <Play className="h-4 w-4 text-emerald-700" />
+                    First payload
+                  </div>
+                  <p className="text-sm leading-6 text-slate-600">
+                    This is the actual JSON shape Arcli expects for{" "}
+                    <code className="rounded bg-white px-1.5 py-0.5 text-xs text-slate-950">
+                      {selectedSignalDetails.value}
+                    </code>
+                    .
+                  </p>
+                </div>
+                <CodeBlock
+                  label="Event payload"
+                  value={payloadSnippet}
+                  copied={copied === "payload"}
+                  onCopy={() => copy(payloadSnippet, "payload", "signal")}
+                />
+              </div>
+            </div>
+          </StepShell>
+
+          <StepShell
+            id="confirm"
+            activeStep={activeStep}
+            completed={completedSteps.has("confirm")}
+          >
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div>
+                <p className="mb-4 text-sm leading-6 text-slate-600">
+                  When Arcli accepts the event, your backend receives a response like this.
+                  Accepted means queued for scoring, not that a campaign has already run.
+                </p>
+                <CodeBlock
+                  label="202 response"
+                  value={responseExample}
+                  copied={copied === "response"}
+                  onCopy={() => copy(responseExample, "response", "confirm")}
+                />
+              </div>
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                <CheckCircle2 className="mb-3 h-5 w-5 text-emerald-700" />
+                <h3 className="text-sm font-semibold text-emerald-950">You are live when...</h3>
+                <div className="mt-3 space-y-3 text-sm leading-6 text-emerald-950">
+                  {[
+                    "The request is sent from your backend.",
+                    "The Authorization header starts with Bearer.",
+                    "The event name is a churn or revenue signal.",
+                    "The response status is 202.",
+                  ].map((item) => (
+                    <div key={item} className="flex gap-2">
+                      <Check className="mt-1 h-4 w-4 shrink-0 text-emerald-700" />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => markStepAndMove("confirm")}
+                  className="mt-5 w-full bg-emerald-700 text-white hover:bg-emerald-800"
+                >
+                  Mark quickstart complete
+                </Button>
+              </div>
+            </div>
+          </StepShell>
+        </div>
       </div>
     </div>
   );

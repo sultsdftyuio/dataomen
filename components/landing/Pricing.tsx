@@ -1,233 +1,311 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import Link from "next/link";
-import { CheckCircle2, ArrowRight } from "lucide-react";
+import { 
+  CheckCircle2, 
+  Activity, 
+  ArrowRight, 
+  ShieldCheck,
+  Sparkles
+} from "lucide-react";
 import { C } from "@/lib/tokens";
 
 export default function ArcliPricingCards() {
-  const [isAnnual, setIsAnnual] = useState(false);
+  const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section
-      id="pricing"
-      style={{
-        padding: "96px 24px",
-        background: C.offWhite,
-        borderTop: `1px solid ${C.rule}`,
+    <section 
+      id="pricing" 
+      style={{ 
+        padding: "140px 24px", 
+        background: "#FAFAFA", 
+        borderTop: surfaceBorder, 
         fontFamily: "var(--font-geist-sans), sans-serif",
+        position: "relative",
+        overflow: "hidden"
       }}
     >
-      <div style={{ maxWidth: 1024, margin: "0 auto" }}>
+      {/* Background Decorative Gradient */}
+      <div 
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: 800,
+          height: 400,
+          background: "rgba(235, 244, 253, 0.6)",
+          filter: "blur(80px)",
+          borderRadius: "50%",
+          pointerEvents: "none"
+        }} 
+      />
+
+      <div style={{ maxWidth: 960, margin: "0 auto", position: "relative", zIndex: 10 }}>
+        
         {/* Section Header */}
-        <div style={{ textAlign: "center", maxWidth: 640, margin: "0 auto 56px" }}>
-          <h2
-            style={{
-              fontSize: "clamp(32px, 4vw, 44px)",
-              fontWeight: 600,
-              color: C.text,
-              lineHeight: 1.1,
-              letterSpacing: "-0.02em",
-              marginBottom: 12,
+        <div style={{ textAlign: "center", maxWidth: 640, margin: "0 auto 64px auto" }}>
+          <div 
+            style={{ 
+              display: "inline-flex", 
+              alignItems: "center", 
+              gap: 8, 
+              color: C.blue, 
+              fontWeight: 700, 
+              fontSize: 12, 
+              marginBottom: 16, 
+              letterSpacing: "0.08em", 
+              textTransform: "uppercase",
+              background: C.bluePale,
+              border: `1px solid rgba(27,110,191,0.18)`,
+              padding: "6px 14px",
+              borderRadius: 20
             }}
           >
-            Predictable infrastructure. <br />
-            <span style={{ color: C.blue }}>Zero black-box taxing.</span>
-          </h2>
-          <p style={{ fontSize: 16, color: C.muted, lineHeight: 1.6, margin: "0 0 28px" }}>
-            Test your ingestion pipeline for free. Upgrade to automate churn recovery and keep 100% of the revenue you save.
-          </p>
-
-          {/* Billing Toggle */}
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 12, padding: "4px 8px", background: C.white, borderRadius: 999, border: `1px solid ${C.rule}` }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: !isAnnual ? C.text : C.faint }}>
-              Monthly Billing
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsAnnual(!isAnnual)}
-              style={{
-                width: 44,
-                height: 24,
-                borderRadius: 999,
-                background: isAnnual ? C.blue : C.faint,
-                position: "relative",
-                border: "none",
-                cursor: "pointer",
-                transition: "background 0.2s ease",
-              }}
-              aria-label="Toggle billing frequency"
-            >
-              <span
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: "50%",
-                  background: C.white,
-                  position: "absolute",
-                  top: 3,
-                  left: isAnnual ? 23 : 3,
-                  transition: "left 0.2s ease",
-                }}
-              />
-            </button>
-            <span style={{ fontSize: 13, fontWeight: 600, color: isAnnual ? C.text : C.faint, display: "flex", alignItems: "center", gap: 6 }}>
-              Annual Commitment
-              <span style={{ fontSize: 10, fontWeight: 700, background: C.greenPale, color: C.green, padding: "2px 6px", borderRadius: 4, textTransform: "uppercase" }}>
-                2 Months Free
-              </span>
-            </span>
+            <Activity size={14} /> SIMPLE & TRANSPARENT PRICING
           </div>
+          
+          <h2 
+            style={{ 
+              fontSize: 42, 
+              color: C.navy, 
+              marginBottom: 16, 
+              lineHeight: 1.08, 
+              letterSpacing: "-0.015em", 
+              fontWeight: 600 
+            }}
+          >
+            Start for free. <br />
+            <span style={{ color: C.blue }}>Upgrade as you grow.</span>
+          </h2>
+          
+          <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
+            Explore our customer retention tools for free. Upgrade whenever you are ready to automate recovery and keep 100% of the revenue you save.
+          </p>
         </div>
 
-        {/* Pricing Grid */}
+        {/* Pricing Cards Grid */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24, alignItems: "stretch" }}>
           
-          {/* Developer Sandbox */}
-          <div
-            style={{
-              background: C.white,
-              border: `1px solid ${C.rule}`,
-              borderRadius: 16,
-              padding: 36,
+          {/* ── CARD 1: Free Plan ($0) ── */}
+          <div 
+            style={{ 
+              background: C.white, 
+              borderRadius: 12, 
+              border: surfaceBorder, 
+              boxShadow: surfaceShadow,
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              position: "relative",
+              overflow: "hidden"
             }}
           >
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.muted, marginBottom: 8 }}>
-                Sandbox Environment
-              </div>
-              <h3 style={{ fontSize: 22, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-                Integration Verification
-              </h3>
-              <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5, minHeight: 42, marginBottom: 24 }}>
-                Verify webhook replay safety, inspect explainable risk scoring, and test tenant isolation locally.
-              </p>
-
-              <div style={{ marginBottom: 28, paddingBottom: 28, borderBottom: `1px solid ${C.rule}` }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span style={{ fontSize: 44, fontWeight: 700, color: C.text, letterSpacing: "-0.03em" }}>$0</span>
-                  <span style={{ fontSize: 14, color: C.muted, fontWeight: 500 }}>/ forever</span>
+            <div style={{ padding: "32px 28px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <span 
+                    style={{ 
+                      display: "inline-flex", 
+                      alignItems: "center", 
+                      gap: 6, 
+                      padding: "4px 10px", 
+                      borderRadius: 6, 
+                      fontSize: 11, 
+                      fontWeight: 700, 
+                      background: "rgba(84,111,138,0.1)", 
+                      color: C.muted, 
+                      letterSpacing: "0.05em", 
+                      textTransform: "uppercase", 
+                      marginBottom: 8 
+                    }}
+                  >
+                    Free Forever
+                  </span>
+                  <h3 style={{ fontSize: 22, fontWeight: 700, color: C.navy, margin: 0 }}>Free Plan</h3>
                 </div>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 32 }}>
-                {[
-                  "Up to 100 tracked events / month",
-                  "Local webhook catcher & deduplication testing",
-                  "Deterministic signal debugging inspector",
-                  "Isolated tenant schema verification",
-                ].map((feat, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.text }}>
-                    <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                    <span>{feat}</span>
-                  </div>
-                ))}
+              <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.6, marginBottom: 24 }}>
+                Perfect for getting started and seeing how customer retention tracking works for your business.
+              </p>
+
+              {/* Price Display */}
+              <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: `1px solid ${C.rule}` }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontSize: 40, fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>$0</span>
+                  <span style={{ color: C.muted, fontWeight: 600, fontSize: 14 }}>/ forever</span>
+                </div>
+                <p style={{ fontSize: 12, color: C.faint, fontWeight: 600, marginTop: 6 }}>
+                  No credit card required. Instant access.
+                </p>
+              </div>
+
+              {/* Feature Specs */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                  What&apos;s Included
+                </div>
+                
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Track up to 100 customer events / month</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Basic customer risk alerts</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Ready-to-use email templates</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Standard email support</span>
+                </div>
               </div>
             </div>
 
-            <Link
-              href="/register?tier=sandbox"
-              style={{
-                height: 44,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                borderRadius: 8,
-                fontWeight: 600,
-                fontSize: 14,
-                textDecoration: "none",
-                background: C.bluePale,
-                color: C.blue,
-                border: `1px solid ${C.rule}`,
-              }}
-            >
-              Deploy Sandbox Tenant <ArrowRight size={14} />
-            </Link>
+            <div style={{ padding: "0 28px 32px 28px" }}>
+              <Link 
+                href="/register?tier=free" 
+                style={{ 
+                  width: "100%", 
+                  height: 44, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "center", 
+                  gap: 8, 
+                  borderRadius: 8, 
+                  fontWeight: 700, 
+                  color: C.navy, 
+                  background: C.offWhite, 
+                  border: surfaceBorder,
+                  textDecoration: "none", 
+                  fontSize: 14,
+                  boxShadow: surfaceShadow
+                }}
+              >
+                Get Started Free <ArrowRight size={16} />
+              </Link>
+            </div>
           </div>
 
-          {/* Production Engine */}
-          <div
-            style={{
-              background: C.white,
-              border: `2px solid ${C.blue}`,
-              borderRadius: 16,
-              padding: 36,
+          {/* ── CARD 2: Pro Plan ($29) ── */}
+          <div 
+            style={{ 
+              background: "linear-gradient(180deg, #FFFFFF 0%, #FAFCFF 100%)", 
+              borderRadius: 12, 
+              border: "1px solid rgba(27,110,191,0.28)", 
+              boxShadow: "0 12px 32px -8px rgba(27,110,191,0.12)",
               display: "flex",
               flexDirection: "column",
               justifyContent: "space-between",
-              boxShadow: "0 8px 24px rgba(27,110,191,0.08)",
               position: "relative",
+              overflow: "hidden"
             }}
           >
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: C.blue }}>
-                  Production Engine
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 700, background: C.greenPale, color: C.green, padding: "2px 8px", borderRadius: 999 }}>
-                  0% Rev-Share
-                </span>
+            {/* Top Accent Bar */}
+            <div style={{ height: 6, width: "100%", background: `linear-gradient(90deg, ${C.blue} 0%, ${C.blueLight} 100%)` }} />
+
+            <div style={{ padding: "32px 28px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <span 
+                    style={{ 
+                      display: "inline-flex", 
+                      alignItems: "center", 
+                      gap: 6, 
+                      padding: "4px 10px", 
+                      borderRadius: 6, 
+                      fontSize: 11, 
+                      fontWeight: 700, 
+                      background: C.bluePale, 
+                      color: C.blue, 
+                      border: "1px solid rgba(27,110,191,0.2)",
+                      letterSpacing: "0.05em", 
+                      textTransform: "uppercase", 
+                      marginBottom: 8 
+                    }}
+                  >
+                    <Sparkles size={12} fill={C.blue} /> Recommended
+                  </span>
+                  <h3 style={{ fontSize: 22, fontWeight: 700, color: C.navy, margin: 0 }}>Pro Plan</h3>
+                </div>
               </div>
-              
-              <h3 style={{ fontSize: 22, fontWeight: 600, color: C.text, marginBottom: 8 }}>
-                Automated Recovery Layer
-              </h3>
-              <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.5, minHeight: 42, marginBottom: 24 }}>
-                Route high-risk accounts into retry-safe recovery sequences and attribute exact MRR restored.
+
+              <p style={{ fontSize: 14, color: C.navySoft, lineHeight: 1.6, marginBottom: 24 }}>
+                Automatically reach out to at-risk accounts, recover failed payments, and protect your revenue without lifting a finger.
               </p>
 
-              <div style={{ marginBottom: 28, paddingBottom: 28, borderBottom: `1px solid ${C.rule}` }}>
+              {/* Price Display */}
+              <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid rgba(27,110,191,0.14)" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span style={{ fontSize: 44, fontWeight: 700, color: C.text, letterSpacing: "-0.03em" }}>
-                    ${isAnnual ? "24" : "29"}
-                  </span>
-                  <span style={{ fontSize: 14, color: C.muted, fontWeight: 500 }}>/ month</span>
+                  <span style={{ fontSize: 40, fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>$29</span>
+                  <span style={{ color: C.muted, fontWeight: 600, fontSize: 14 }}>/ month</span>
                 </div>
-                <div style={{ fontSize: 12, color: C.blue, fontWeight: 500, marginTop: 4 }}>
-                  {isAnnual ? "Billed annually ($290/year)" : "Billed monthly ($29/month)"}
-                </div>
+                <p style={{ fontSize: 12, color: C.blue, fontWeight: 600, marginTop: 6 }}>
+                  Keep 100% of all recovered revenue (0% commission).
+                </p>
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 32 }}>
-                {[
-                  "Unlimited automated recovery campaigns",
-                  "Exact revenue attribution ledger",
-                  "Distributed execution with idempotency locks",
-                  "Strict anti-spam cooldown enforcement",
-                  "Stripe invoice & subscription lifecycle sync",
-                ].map((feat, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.text }}>
-                    <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                    <span>{feat}</span>
-                  </div>
-                ))}
+              {/* Feature Specs */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+                  Everything in Free, plus:
+                </div>
+                
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Unlimited automated customer check-ins</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Exact tracking of dollars saved &amp; restored</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Smart email timing to prevent bothering users</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Automatic billing &amp; subscription sync</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Priority 24/7 support</span>
+                </div>
               </div>
             </div>
 
-            <Link
-              href="/register?tier=pro"
-              style={{
-                height: 44,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                borderRadius: 8,
-                fontWeight: 600,
-                fontSize: 14,
-                textDecoration: "none",
-                background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
-                color: C.white,
-                boxShadow: "0 2px 4px rgba(27,110,191,0.2)",
-              }}
-            >
-              Start 3-Day Pro Trial <ArrowRight size={14} />
-            </Link>
+            <div style={{ padding: "0 28px 32px 28px" }}>
+              <Link 
+                href="/register?tier=pro" 
+                style={{ 
+                  width: "100%", 
+                  height: 44, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "center", 
+                  gap: 8, 
+                  borderRadius: 8, 
+                  fontWeight: 700, 
+                  color: C.white, 
+                  background: C.blue, 
+                  textDecoration: "none", 
+                  fontSize: 14,
+                  boxShadow: "0 4px 12px rgba(27,110,191,0.24)"
+                }}
+              >
+                Start 3-Day Free Trial <ArrowRight size={16} />
+              </Link>
+              
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.rule}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                <ShieldCheck size={14} color={C.blue} /> Cancel Anytime
+              </div>
+            </div>
           </div>
 
         </div>
