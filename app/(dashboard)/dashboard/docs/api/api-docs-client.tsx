@@ -32,6 +32,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { C } from "@/lib/tokens";
 
 type StepId = "security" | "env" | "backend" | "signal" | "confirm";
 type SnippetTab = "node" | "curl" | "python";
@@ -42,6 +43,9 @@ type RevenueSignal =
 
 const API_KEY_PLACEHOLDER = "arcli_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 const INGEST_URL = "https://api.arcli.tech/v1/track";
+const surfaceBorder = `1px solid ${C.rule}`;
+const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.08)";
+const softShadow = "0 10px 28px rgba(10, 22, 40, 0.06)";
 
 const steps: Array<{
   id: StepId;
@@ -298,31 +302,29 @@ function StepShell({
   return (
     <section
       id={id}
-      className={`scroll-mt-24 rounded-lg border bg-white transition-all ${
-        isActive
-          ? "border-slate-300 shadow-sm ring-2 ring-slate-900/5"
-          : "border-slate-200 shadow-xs"
-      }`}
+      className="scroll-mt-24 rounded-lg transition-all"
+      style={{ border: surfaceBorder, boxShadow: isActive ? softShadow : surfaceShadow }}
     >
-      <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6" style={{ borderBottom: `1px solid ${C.rule}` }}>
         <div className="flex min-w-0 gap-3">
           <div
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${
               completed
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-slate-200 bg-slate-50 text-slate-700"
+                ? ""
+                : ""
             }`}
+            style={completed ? { borderColor: C.greenPale, background: C.greenPale, color: C.green } : { borderColor: C.rule, background: C.offWhite, color: C.navySoft }}
           >
             {completed ? <CheckCircle2 className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase text-slate-500">
+            <div className="text-xs font-semibold uppercase" style={{ color: C.muted }}>
               {step.eyebrow}
             </div>
-            <h2 className="mt-1 text-lg font-semibold tracking-normal text-slate-950">
+            <h2 className="mt-1 text-lg font-semibold tracking-normal" style={{ color: C.navy }}>
               {step.title}
             </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+            <p className="mt-1 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
               {step.description}
             </p>
           </div>
@@ -330,7 +332,8 @@ function StepShell({
         {completed ? (
           <Badge
             variant="outline"
-            className="border-emerald-200 bg-emerald-50 text-emerald-700"
+            className="border-0"
+            style={{ background: C.greenPale, color: C.green, boxShadow: `inset 0 0 0 1px ${C.greenPale}` }}
           >
             <Check className="h-3 w-3" />
             Done
@@ -394,24 +397,32 @@ export function ApiDocsClient() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 pb-12">
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div
+        className="overflow-hidden rounded-lg bg-white"
+        style={{ border: surfaceBorder, boxShadow: surfaceShadow }}
+      >
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="p-6 sm:p-8">
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+              <Badge
+                variant="outline"
+                className="border-0 text-blue-700"
+                style={{ background: C.blueTint, color: C.blue, boxShadow: `inset 0 0 0 1px ${C.bluePale}` }}
+              >
                 Developer Quickstart
               </Badge>
               <Badge
                 variant="outline"
-                className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                className="border-0 text-blue-700"
+                style={{ background: C.bluePale, color: C.navySoft, boxShadow: `inset 0 0 0 1px ${C.rule}` }}
               >
                 Manual billing and churn ingestion
               </Badge>
             </div>
-            <h1 className="max-w-3xl text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">
+            <h1 className="max-w-3xl text-3xl font-semibold tracking-normal sm:text-4xl" style={{ color: C.navy }}>
               Manually integrate your billing and churn events in under 5 minutes
             </h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
+            <p className="mt-3 max-w-3xl text-sm leading-6 sm:text-base" style={{ color: C.navySoft }}>
               This walkthrough helps you wire your backend to Arcli using an API key.
               No external billing sync is required: keep the key on your server, send
               one meaningful event, and confirm Arcli accepted it.
@@ -426,37 +437,41 @@ export function ApiDocsClient() {
                 return (
                   <div
                     key={item.label}
-                    className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                    className="rounded-lg p-4"
+                    style={{ background: C.offWhite, border: surfaceBorder, boxShadow: "0 1px 2px rgba(10,22,40,0.04)" }}
                   >
-                    <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white">
-                      <Icon className="h-4 w-4 text-slate-700" />
+                    <div
+                      className="mb-3 flex h-8 w-8 items-center justify-center rounded-md"
+                      style={{ background: C.blueTint, color: C.blue, border: `1px solid ${C.bluePale}` }}
+                    >
+                      <Icon className="h-4 w-4" />
                     </div>
-                    <div className="text-xs font-medium text-slate-500">{item.label}</div>
-                    <div className="mt-1 text-sm font-semibold text-slate-950">{item.value}</div>
+                    <div className="text-xs font-medium" style={{ color: C.muted }}>{item.label}</div>
+                    <div className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>{item.value}</div>
                   </div>
                 );
               })}
             </div>
           </div>
-          <div className="border-t border-slate-200 bg-slate-950 p-6 text-white lg:border-l lg:border-t-0">
+          <div className="border-t p-6 text-white lg:border-l lg:border-t-0" style={{ background: C.navy, borderColor: C.ruleDark }}>
             <div className="flex items-start gap-3">
-              <div className="rounded-md border border-white/10 bg-white/10 p-2">
-                <Rocket className="h-4 w-4 text-emerald-300" />
+              <div className="rounded-md border p-2" style={{ borderColor: C.bluePale, background: "rgba(255,255,255,0.08)" }}>
+                <Rocket className="h-4 w-4" style={{ color: C.blueLight }} />
               </div>
               <div>
                 <div className="text-sm font-semibold">Manual integration progress</div>
-                <p className="mt-1 text-xs leading-5 text-slate-300">
+                <p className="mt-1 text-xs leading-5" style={{ color: "rgba(246,250,254,0.78)" }}>
                   Copying snippets marks the setup steps complete. You can also use the
                   buttons below to keep your place.
                 </p>
               </div>
             </div>
             <div className="mt-5">
-              <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+              <div className="mb-2 flex items-center justify-between text-xs" style={{ color: "rgba(246,250,254,0.78)" }}>
                 <span>{completedSteps.size} of {steps.length} steps</span>
                 <span>{progressValue}%</span>
               </div>
-              <Progress value={progressValue} className="h-2 bg-white/10 [&>div]:bg-emerald-400" />
+              <Progress value={progressValue} className="h-2 bg-white/10 [&>div]:bg-blue-400" />
             </div>
             <div className="mt-5 space-y-2">
               {steps.map((step) => {
@@ -472,24 +487,18 @@ export function ApiDocsClient() {
                         .getElementById(step.id)
                         ?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
-                    className={`flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-xs transition ${
-                      active
-                        ? "border-white/30 bg-white/15 text-white"
-                        : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10"
-                    }`}
+                    className="flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-xs transition"
+                    style={active ? { borderColor: C.bluePale, background: "rgba(255,255,255,0.14)", color: "#FFFFFF" } : { borderColor: "rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", color: "rgba(240,247,255,0.82)" }}
                   >
                     <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                        done
-                          ? "border-emerald-300 bg-emerald-300 text-slate-950"
-                          : "border-white/20 text-slate-400"
-                      }`}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
+                      style={done ? { borderColor: C.bluePale, background: C.bluePale, color: C.navy } : { borderColor: "rgba(255,255,255,0.20)", color: "rgba(240,247,255,0.55)" }}
                     >
                       {done ? <Check className="h-3 w-3" /> : null}
                     </span>
                     <span className="min-w-0">
                       <span className="block font-semibold">{step.eyebrow}</span>
-                      <span className="block truncate text-slate-300">{step.title}</span>
+                      <span className="block truncate" style={{ color: active ? "#FFFFFF" : C.bluePale }}>{step.title}</span>
                     </span>
                   </button>
                 );
@@ -503,7 +512,7 @@ export function ApiDocsClient() {
         <aside className="hidden lg:sticky lg:top-24 lg:block">
           <Card className="rounded-lg py-0">
             <CardHeader className="border-b p-5">
-              <CardTitle className="text-sm">Setup map</CardTitle>
+              <CardTitle className="text-sm" style={{ color: C.navy }}>Setup map</CardTitle>
               <CardDescription className="text-xs">
                 Follow the steps in order for the fastest path.
               </CardDescription>
@@ -523,24 +532,24 @@ export function ApiDocsClient() {
                         .getElementById(step.id)
                         ?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
-                    className={`flex w-full items-start gap-3 rounded-md p-3 text-left transition ${
-                      active ? "bg-slate-100 text-slate-950" : "text-slate-600 hover:bg-slate-50"
-                    }`}
+                    className="flex w-full items-start gap-3 rounded-md p-3 text-left transition"
+                    style={active ? { background: C.blueTint, boxShadow: `inset 0 0 0 1px ${C.bluePale}`, color: C.navy } : { color: C.navySoft }}
                   >
                     <span
                       className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
                         done
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-white text-slate-400"
+                          ? "text-emerald-700"
+                          : ""
                       }`}
+                      style={done ? { borderColor: C.greenPale, background: C.greenPale, color: C.green } : undefined}
                     >
                       {done ? <Check className="h-3 w-3" /> : null}
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-xs font-semibold uppercase text-slate-500">
+                      <span className="block text-xs font-semibold uppercase" style={{ color: C.muted }}>
                         {step.eyebrow}
                       </span>
-                      <span className="mt-0.5 block text-sm font-medium leading-5">
+                      <span className="mt-0.5 block text-sm font-medium leading-5" style={{ color: active ? C.navy : C.navySoft }}>
                         {step.title}
                       </span>
                     </span>
@@ -557,7 +566,7 @@ export function ApiDocsClient() {
             activeStep={activeStep}
             completed={completedSteps.has("security")}
           >
-            <Alert className="rounded-lg border-red-200 bg-red-50 text-red-950">
+            <Alert className="rounded-lg text-red-950" style={{ background: C.redPale, borderColor: C.redPale }}>
               <ShieldAlert className="h-4 w-4" />
               <AlertTitle>Never expose your Arcli API key in client-side browser code</AlertTitle>
               <AlertDescription className="leading-6">
@@ -568,26 +577,26 @@ export function ApiDocsClient() {
             </Alert>
 
             <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <LockKeyhole className="mb-3 h-5 w-5 text-slate-700" />
-                <h3 className="text-sm font-semibold text-slate-950">What the key does</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+              <div className="rounded-lg p-4" style={{ background: C.blueTint, border: surfaceBorder }}>
+                <LockKeyhole className="mb-3 h-5 w-5" style={{ color: C.blue }} />
+                <h3 className="text-sm font-semibold" style={{ color: C.navy }}>What the key does</h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
                   It authenticates server-to-server writes into your Arcli workspace.
                   Anyone with the key can ingest events for that workspace.
                 </p>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <Server className="mb-3 h-5 w-5 text-slate-700" />
-                <h3 className="text-sm font-semibold text-slate-950">Where it belongs</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+              <div className="rounded-lg p-4" style={{ background: C.offWhite, border: surfaceBorder }}>
+                <Server className="mb-3 h-5 w-5" style={{ color: C.navySoft }} />
+                <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Where it belongs</h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
                   Put it in server environment variables, API routes, workers, cron jobs,
                   or backend services.
                 </p>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <AlertTriangle className="mb-3 h-5 w-5 text-amber-700" />
-                <h3 className="text-sm font-semibold text-slate-950">What to avoid</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+              <div className="rounded-lg p-4" style={{ background: C.amberPale, border: `1px solid ${C.ruleDark}` }}>
+                <AlertTriangle className="mb-3 h-5 w-5" style={{ color: C.amber }} />
+                <h3 className="text-sm font-semibold" style={{ color: C.navy }}>What to avoid</h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
                   Do not paste it into React components, mobile apps, analytics tags,
                   browser local storage, or public GitHub files.
                 </p>
@@ -595,9 +604,9 @@ export function ApiDocsClient() {
             </div>
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-slate-600">
+              <div className="text-sm" style={{ color: C.navySoft }}>
                 Ingestion header:
-                <code className="ml-2 rounded bg-slate-100 px-2 py-1 text-xs text-slate-950">
+                <code className="ml-2 rounded px-2 py-1 text-xs text-slate-950" style={{ background: C.bluePale }}>
                   Authorization: Bearer &lt;ARCLI_API_KEY&gt;
                 </code>
               </div>
@@ -615,8 +624,8 @@ export function ApiDocsClient() {
           <StepShell id="env" activeStep={activeStep} completed={completedSteps.has("env")}>
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
               <div>
-                <p className="mb-4 text-sm leading-6 text-slate-600">
-                  In your project, create or open <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-950">.env.local</code>.
+                <p className="mb-4 text-sm leading-6" style={{ color: C.navySoft }}>
+                  In your project, create or open <code className="rounded px-1.5 py-0.5 text-xs text-slate-950" style={{ background: C.bluePale }}>.env.local</code>.
                   Paste this in, then replace the x&apos;s with the API key you generated in
                   Arcli settings. Your backend will read these values and send the
                   events manually.
@@ -628,15 +637,15 @@ export function ApiDocsClient() {
                   onCopy={() => copy(envSnippet, "env", "env")}
                 />
               </div>
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                <KeyRound className="mb-3 h-5 w-5 text-blue-700" />
-                <h3 className="text-sm font-semibold text-blue-950">Plain-language check</h3>
-                <p className="mt-2 text-sm leading-6 text-blue-900">
+              <div className="rounded-lg p-4" style={{ background: C.blueTint, border: surfaceBorder }}>
+                <KeyRound className="mb-3 h-5 w-5" style={{ color: C.blue }} />
+                <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Plain-language check</h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
                   The first line is your secret. The second line is the ingestion address
                   your server will send events to.
                 </p>
-                <Separator className="my-4 bg-blue-200" />
-                <p className="text-xs leading-5 text-blue-900/80">
+                <Separator className="my-4" style={{ backgroundColor: C.rule }} />
+                <p className="text-xs leading-5" style={{ color: C.muted }}>
                   Restart your local dev server after changing environment variables.
                 </p>
               </div>
@@ -651,7 +660,7 @@ export function ApiDocsClient() {
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SnippetTab)}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm leading-6 text-slate-600">
+                  <p className="text-sm leading-6" style={{ color: C.navySoft }}>
                     Choose the backend you use. The important part is the same in every
                     language: your server adds the bearer token header and sends the
                     required metadata manually.
@@ -701,7 +710,7 @@ export function ApiDocsClient() {
               </div>
             </Tabs>
 
-            <Alert className="mt-5 rounded-lg border-amber-200 bg-amber-50 text-amber-950">
+            <Alert className="mt-5 rounded-lg text-amber-950" style={{ background: C.amberPale, borderColor: C.ruleDark }}>
               <RotateCcw className="h-4 w-4" />
               <AlertTitle>Retry-safe by design</AlertTitle>
               <AlertDescription className="leading-6">
@@ -719,8 +728,8 @@ export function ApiDocsClient() {
           >
             <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
               <div>
-                <h3 className="text-sm font-semibold text-slate-950">Pick a first event</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+                <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Pick a first event</h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
                   Start with one event that is directly tied to churn risk or recovered
                   revenue. Avoid generic product analytics like page views or button clicks.
                 </p>
@@ -738,13 +747,14 @@ export function ApiDocsClient() {
                         }}
                         className={`w-full rounded-lg border p-3 text-left transition ${
                           active
-                            ? "border-slate-900 bg-slate-950 text-white"
+                            ? "text-white"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                         }`}
+                        style={active ? { background: C.navy, borderColor: C.navySoft, boxShadow: softShadow } : { borderColor: C.rule, boxShadow: surfaceShadow }}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-sm font-semibold">{signal.label}</span>
-                          {active ? <Check className="h-4 w-4 text-emerald-300" /> : null}
+                          {active ? <Check className="h-4 w-4" style={{ color: C.blueLight }} /> : null}
                         </div>
                         <code
                           className={`mt-2 block text-xs ${
@@ -767,14 +777,14 @@ export function ApiDocsClient() {
               </div>
 
               <div className="space-y-4">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="rounded-lg p-4" style={{ background: C.offWhite, border: surfaceBorder }}>
                   <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-950">
-                    <Play className="h-4 w-4 text-emerald-700" />
+                    <Play className="h-4 w-4" style={{ color: C.blue }} />
                     First payload
                   </div>
-                  <p className="text-sm leading-6 text-slate-600">
+                  <p className="text-sm leading-6" style={{ color: C.navySoft }}>
                     This is the actual JSON shape Arcli expects for{" "}
-                    <code className="rounded bg-white px-1.5 py-0.5 text-xs text-slate-950">
+                    <code className="rounded px-1.5 py-0.5 text-xs text-slate-950" style={{ background: C.bluePale }}>
                       {selectedSignalDetails.value}
                     </code>
                     . Include the required metadata yourself from your billing system.
@@ -797,7 +807,7 @@ export function ApiDocsClient() {
           >
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
               <div>
-                <p className="mb-4 text-sm leading-6 text-slate-600">
+                <p className="mb-4 text-sm leading-6" style={{ color: C.navySoft }}>
                   When Arcli accepts the event, your backend receives a response like this.
                   Accepted means queued for scoring, not that a campaign has already run.
                 </p>
@@ -808,33 +818,33 @@ export function ApiDocsClient() {
                   onCopy={() => copy(responseExample, "response", "confirm")}
                 />
               </div>
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                <CheckCircle2 className="mb-3 h-5 w-5 text-emerald-700" />
-                <h3 className="text-sm font-semibold text-emerald-950">You are live when...</h3>
-                <div className="mt-3 space-y-3 text-sm leading-6 text-emerald-950">
+              <div className="rounded-lg p-4" style={{ background: C.greenPale, border: surfaceBorder }}>
+                <CheckCircle2 className="mb-3 h-5 w-5" style={{ color: C.green }} />
+                <h3 className="text-sm font-semibold" style={{ color: C.navy }}>You are live when...</h3>
+                <div className="mt-3 space-y-3 text-sm leading-6" style={{ color: C.navy }}>
                   {[
                     "The request is sent from your backend.",
                     "The Authorization header starts with Bearer.",
-                      "The event name is one of the manual billing or churn signals.",
+                    "The event name is one of the manual billing or churn signals.",
                     "The response status is 202.",
                   ].map((item) => (
                     <div key={item} className="flex gap-2">
-                      <Check className="mt-1 h-4 w-4 shrink-0 text-emerald-700" />
+                      <Check className="mt-1 h-4 w-4 shrink-0" style={{ color: C.green }} />
                       <span>{item}</span>
                     </div>
                   ))}
                 </div>
-                  <Alert className="mt-5 rounded-lg border-slate-200 bg-white text-slate-950">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Dashboard access stays in the browser</AlertTitle>
-                    <AlertDescription className="leading-6">
-                      The API key is for ingestion only. To inspect analytics, see
-                      churned users, or review ROI, sign in to the Arcli Dashboard in
-                      your browser with an authenticated session. Those reads are not
-                      available through the API key. If you need any help, email
-                      support@arcli.tech.
-                    </AlertDescription>
-                  </Alert>
+                <Alert className="mt-5 rounded-lg text-slate-950" style={{ background: C.bluePale, borderColor: C.rule }}>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Dashboard access stays in the browser</AlertTitle>
+                  <AlertDescription className="leading-6">
+                    The API key is for ingestion only. To inspect analytics, see
+                    churned users, or review ROI, sign in to the Arcli Dashboard in
+                    your browser with an authenticated session. Those reads are not
+                    available through the API key. If you need any help, email
+                    support@arcli.tech.
+                  </AlertDescription>
+                </Alert>
                 <Button
                   type="button"
                   onClick={() => markStepAndMove("confirm")}
