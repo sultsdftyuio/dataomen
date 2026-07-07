@@ -15,6 +15,7 @@ import {
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 import { DataSourcesTab } from "@/components/settings/data-sources-tab";
+import LogoutButton from "@/components/dashboard/logout-button";
 import type { SettingsSnapshot } from "@/lib/settings/types";
 
 // ── Strict Architectural Boundaries & Constants ──
@@ -126,6 +127,10 @@ export default function SettingsClient({
             >
               <Mail className="h-3 w-3" /> {SUPPORT_EMAIL}
             </a>
+          </div>
+
+          <div className="border-t border-slate-200/80 p-3">
+            <LogoutButton />
           </div>
         </div>
       </aside>
