@@ -700,7 +700,7 @@ $$;
 -- provision_initial_workspace: Race-safe singleton workspace creation
 -- NOTE: writes to provisioning_status (was status in v3.2, renamed).
 -- -------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION provision_initial_workspace(target_user_id UUID, default_name TEXT)
+CREATE OR REPLACE FUNCTION public.provision_initial_workspace(target_user_id UUID, default_name TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -709,40 +709,123 @@ AS $$
 DECLARE
     existing_tenant_id TEXT;
     new_tenant_id      TEXT;
+    requesting_user_id UUID := auth.uid();
+    workspace_name     TEXT;
 BEGIN
-    LOOP
-        SELECT tenant_id INTO existing_tenant_id
-          FROM tenant_users
-         WHERE user_id = target_user_id;
+    IF target_user_id IS NULL THEN
+        RAISE EXCEPTION 'target_user_id is required'
+            USING ERRCODE = '22004';
+    END IF;
+
+    IF requesting_user_id IS NOT NULL AND requesting_user_id <> target_user_id THEN
+        RAISE EXCEPTION 'Cannot provision workspace for another user'
+            USING ERRCODE = '42501';
+    END IF;
+
+    workspace_name := NULLIF(BTRIM(default_name), '');
+    workspace_name := COALESCE(workspace_name, 'Workspace');
+    workspace_name := NULLIF(BTRIM(regexp_replace(workspace_name, '[^a-zA-Z0-9 _-]+', '', 'g')), '');
+    workspace_name := LEFT(COALESCE(workspace_name, 'Workspace'), 120);
+
+    PERFORM pg_advisory_xact_lock(hashtextextended(target_user_id::TEXT, 0));
+
+    SELECT tu.tenant_id INTO existing_tenant_id
+      FROM public.tenant_users tu
+     WHERE tu.user_id = target_user_id
+     LIMIT 1;
+
+    IF existing_tenant_id IS NOT NULL THEN
+        UPDATE public.tenants
+           SET provisioning_status = 'READY',
+               updated_at = NOW()
+         WHERE tenant_id = existing_tenant_id
+           AND provisioning_status <> 'READY';
+
+        RETURN existing_tenant_id;
+    END IF;
+
+    INSERT INTO public.tenants (name, display_name, provisioning_status, status)
+    VALUES (workspace_name, workspace_name, 'READY', 'active')
+    RETURNING tenant_id INTO new_tenant_id;
+
+    INSERT INTO public.tenant_users (tenant_id, user_id, role)
+    VALUES (new_tenant_id, target_user_id, 'owner');
+
+    INSERT INTO public.tenant_settings (tenant_id, company_name, updated_at)
+    VALUES (new_tenant_id, workspace_name, NOW())
+    ON CONFLICT (tenant_id) DO UPDATE
+       SET company_name = COALESCE(public.tenant_settings.company_name, EXCLUDED.company_name),
+           updated_at = NOW();
+
+    RETURN new_tenant_id;
+
+EXCEPTION
+    WHEN unique_violation THEN
+        SELECT tu.tenant_id INTO existing_tenant_id
+          FROM public.tenant_users tu
+         WHERE tu.user_id = target_user_id
+         LIMIT 1;
 
         IF existing_tenant_id IS NOT NULL THEN
             RETURN existing_tenant_id;
         END IF;
 
-        BEGIN
-            INSERT INTO tenants (name, provisioning_status)
-            VALUES (default_name, 'READY')
-            RETURNING tenant_id INTO new_tenant_id;
-
-            INSERT INTO tenant_users (tenant_id, user_id, role)
-            VALUES (new_tenant_id, target_user_id, 'owner');
-
-            RETURN new_tenant_id;
-        EXCEPTION WHEN unique_violation THEN
-            CONTINUE;
-        END;
-    END LOOP;
-
-EXCEPTION
+        RAISE;
     WHEN OTHERS THEN
         RAISE EXCEPTION 'Failed to provision workspace for user %: %', target_user_id, SQLERRM;
 END;
 $$;
 
-COMMENT ON FUNCTION provision_initial_workspace(UUID, TEXT) IS
+COMMENT ON FUNCTION public.provision_initial_workspace(UUID, TEXT) IS
     'Deterministic workspace provisioning with race-safe singleton guarantee. '
-    'Uses subtransaction exception handling so Postgres auto-rolls back '
-    'orphaned tenant inserts on race loss.';
+    'Serializes by user id and always returns the existing tenant when a '
+    'mapping is already present.';
+
+REVOKE ALL ON FUNCTION public.provision_initial_workspace(UUID, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.provision_initial_workspace(UUID, TEXT) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user_provisioning()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    workspace_name TEXT;
+    email_company  TEXT;
+BEGIN
+    email_company := NULLIF(
+        BTRIM(split_part(split_part(LOWER(COALESCE(NEW.email, '')), '@', 2), '.', 1)),
+        ''
+    );
+
+    workspace_name := NULLIF(BTRIM(COALESCE(
+        NEW.raw_user_meta_data->>'workspace_name',
+        NEW.raw_user_meta_data->>'company_name',
+        ''
+    )), '');
+
+    workspace_name := COALESCE(
+        workspace_name,
+        CASE
+            WHEN email_company IS NOT NULL THEN INITCAP(email_company) || ' Workspace'
+            ELSE 'Workspace'
+        END
+    );
+
+    PERFORM public.provision_initial_workspace(NEW.id, workspace_name);
+
+    RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.handle_new_user_provisioning() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_user_provisioning();
 
 -- -------------------------------------------------------------------------
 -- dispatch_campaign_atomic: Exactly-once campaign dispatch

@@ -1,17 +1,27 @@
 'use server'
 
+import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
+import type { Database } from '@/types/supabase'
 
 export type ActionState = {
-  error?: string;
-  success?: boolean;
+  error?: string
+  success?: boolean
 }
 
-// 1. Gate verbose logs behind development environment
-const isDev = process.env.NODE_ENV !== 'production';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const isDev = process.env.NODE_ENV !== 'production'
 
-// --- Utilities ---
+const getRequiredEnv = (name: string) => {
+  const value = process.env[name]
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`)
+  }
+
+  return value
+}
 
 const isSafeRedirectPath = (value: string): boolean => {
   return (
@@ -22,106 +32,151 @@ const isSafeRedirectPath = (value: string): boolean => {
   )
 }
 
-// SECURITY: Prevent PII leakage in server logs
 const maskEmail = (email: string) => {
   if (!email || !email.includes('@')) return '[redacted]'
+
   const [local, domain] = email.split('@')
   return local.length <= 2 ? `***@${domain}` : `${local.slice(0, 2)}***@${domain}`
 }
 
-// --- Main Action ---
+const normalizeFormString = (formData: FormData, key: string) => {
+  const value = formData.get(key)
+  return typeof value === 'string' ? value : ''
+}
 
-export async function registerAction(state: ActionState, formData: FormData): Promise<ActionState> {
-  const flowId = `register-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-  let shouldRedirect = false
+const deriveWorkspaceName = (email: string) => {
+  const domainPart = email.includes('@') ? email.split('@')[1]?.split('.')[0] : ''
+  const source = domainPart || email.split('@')[0] || 'Workspace'
+  const cleaned = source.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace'
+
+  return `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)} Workspace`
+}
+
+const createProvisioningClient = () => {
+  return createSupabaseAdminClient<Database>(
+    getRequiredEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    getRequiredEnv('SUPABASE_SERVICE_ROLE_KEY'),
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+      global: {
+        headers: {
+          'x-client-info': 'arcli-registration-provisioning',
+        },
+      },
+    }
+  )
+}
+
+export async function registerAction(
+  _state: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const flowId = `register-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`
   let redirectPath = '/dashboard'
-  
+  let shouldRedirect = false
+
   try {
-    if (isDev) console.log(`[DEBUG-UI][${flowId}] === Starting Registration Flow ===`);
+    const email = normalizeFormString(formData, 'email').trim().toLowerCase()
+    const password = normalizeFormString(formData, 'password')
+    const requestedNext = normalizeFormString(formData, 'next')
 
-    // SECURITY: Safe FormData coercion (prevents File object injection)
-    const emailField = formData.get('email')
-    const passwordField = formData.get('password')
-    const nextField = formData.get('next')
-    
-    const rawEmail = typeof emailField === 'string' ? emailField : ''
-    const password = typeof passwordField === 'string' ? passwordField : ''
-    const requestedNext = typeof nextField === 'string' ? nextField : ''
-
-    const email = rawEmail.trim().toLowerCase()
     redirectPath = isSafeRedirectPath(requestedNext) ? requestedNext : '/dashboard'
 
-    if (isDev) console.log(`[DEBUG-UI][${flowId}] Parsed inputs. Email: "${maskEmail(email)}", NextPath: "${redirectPath}"`);
+    if (isDev) {
+      console.log(`[REGISTER][${flowId}] Starting signup for ${maskEmail(email)}`)
+    }
 
-    // 2. Pre-flight Validation (Lightweight Regex + Length Checks)
     if (!email || !password) {
-      if (isDev) console.log(`[DEBUG-UI][${flowId}] Failed validation: Missing fields.`);
       return { error: 'Email and password are required.' }
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      if (isDev) console.log(`[DEBUG-UI][${flowId}] Failed validation: Malformed email.`);
-      return { error: 'Please enter a valid email address.' };
+    if (!EMAIL_PATTERN.test(email)) {
+      return { error: 'Please enter a valid email address.' }
     }
 
     if (password.length < 8) {
-      if (isDev) console.log(`[DEBUG-UI][${flowId}] Failed validation: Password too short.`);
-      return { error: 'Password must be at least 8 characters long.' };
+      return { error: 'Password must be at least 8 characters long.' }
     }
 
-    // DATA INTEGRITY: Stronger company name derivation & sanitization
-    const rawCompany = email.includes('@') ? email.split('@')[1].split('.')[0] : 'Workspace'
-    const fallbackCompany = rawCompany.replace(/[^a-z0-9-_ ]/gi, '').trim() || 'Workspace'
-    // Capitalize first letter for a cleaner default name
-    const workspaceName = `${fallbackCompany.charAt(0).toUpperCase() + fallbackCompany.slice(1)} Workspace`
-
-    if (isDev) console.log(`[DEBUG-UI][${flowId}] Attempting Supabase registration...`);
-
-    // Initialize Supabase Client
+    const workspaceName = deriveWorkspaceName(email)
+    const fullName = email.split('@')[0] || 'User'
     const supabase = await createClient()
+    const provisioningClient = createProvisioningClient()
 
-    // 3. SYNCHRONOUS: Create the Auth User
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          company_name: workspaceName,
+          full_name: fullName,
+          workspace_name: workspaceName,
+        },
+      },
     })
 
-    if (authError || !authData.user) {
-      console.warn(`[DEBUG-UI][${flowId}] Auth registration rejected: ${authError?.message}`);
-      return { error: authError?.message || 'Failed to create account. Please try again.' }
+    if (authError) {
+      console.warn(`[REGISTER][${flowId}] Supabase signup rejected`, {
+        code: authError.code,
+        status: authError.status,
+        message: authError.message,
+      })
+
+      return { error: authError.message || 'Failed to create account. Please try again.' }
     }
 
-    const userId = authData.user.id
+    const user = authData.user
 
-    if (isDev) console.log(`[DEBUG-UI][${flowId}] Auth SUCCESS for user_id=${userId}. Provisioning workspace...`);
-
-    // 4. SYNCHRONOUS CORE IDENTITY: Provision the workspace shell
-    // This executes the race-safe SQL function directly. Next.js will NOT proceed until this is done.
-    const { error: rpcError } = await supabase.rpc('provision_initial_workspace', {
-      target_user_id: userId,
-      default_name: workspaceName,
-    })
-
-    if (rpcError) {
-      console.error(`[DEBUG-UI][${flowId}] CRITICAL: Workspace provisioning failed:`, rpcError)
-      // Architecture Rule 1 Enforcement: A user must NEVER reach /dashboard without a committed workspace.
-      // We return an error and halt execution here so shouldRedirect remains false.
-      return { error: 'Account created, but workspace setup failed. Please contact support or try logging in.' }
+    if (!user?.id) {
+      console.error(`[REGISTER][${flowId}] Supabase signup returned no user id`)
+      return { error: 'Account creation did not return a valid user. Please try again.' }
     }
 
-    if (isDev) console.log(`[DEBUG-UI][${flowId}] Success! Tenant provisioned.`);
+    const returnedEmail = user.email?.trim().toLowerCase()
+    if (returnedEmail && returnedEmail !== email) {
+      console.error(`[REGISTER][${flowId}] Signup identity mismatch`, {
+        requestedEmail: maskEmail(email),
+        returnedEmail: maskEmail(returnedEmail),
+        userId: user.id,
+      })
 
-    // CRITICAL FIX: Do not trigger redirect() inside the try/catch block
+      return { error: 'Account identity verification failed. Please try again.' }
+    }
+
+    const { data: tenantId, error: provisionError } = await provisioningClient.rpc(
+      'provision_initial_workspace',
+      {
+        target_user_id: user.id,
+        default_name: workspaceName,
+      }
+    )
+
+    if (provisionError || !tenantId) {
+      console.error(`[REGISTER][${flowId}] Workspace provisioning failed`, {
+        userId: user.id,
+        error: provisionError,
+      })
+
+      return {
+        error:
+          'Account created, but workspace setup failed. Please contact support before continuing.',
+      }
+    }
+
+    if (isDev) {
+      console.log(`[REGISTER][${flowId}] Provisioned tenant ${String(tenantId)} for user ${user.id}`)
+    }
+
     shouldRedirect = true
-
   } catch (error) {
-    console.error(`[DEBUG-UI][${flowId}] UNCAUGHT EXCEPTION in registration flow:`, error)
+    console.error(`[REGISTER][${flowId}] Unhandled registration failure`, error)
     return { error: 'An unexpected error occurred. Please try again later.' }
   }
 
-  // --- External Redirect ---
-  // Next.js redirect throws a specific NEXT_REDIRECT error that MUST NOT be caught by your try/catch
   if (shouldRedirect) {
     redirect(redirectPath)
   }

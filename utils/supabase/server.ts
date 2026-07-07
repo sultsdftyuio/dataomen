@@ -1,29 +1,30 @@
-/** * ARCLI.TECH - Supabase Server Client
- * Strategy: Secure SSR Authentication & Data Access
- * Purpose: Provides a highly typed, context-aware Supabase instance for Server Components and Server Actions.
- */
-
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/supabase";
 
-export async function createClient() {
-  // 1. Explicit environment variable validation to prevent ambiguous runtime crashes
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const getRequiredEnv = (name: string) => {
+  const value = process.env[name];
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error(
-      "Missing Supabase environment variables. Please ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set."
-    );
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
   }
 
-  // Next.js 15+ requires awaiting the cookies API
+  return value;
+};
+
+/**
+ * Creates a Supabase SSR client for the current Next.js request.
+ *
+ * Never hoist this client to module scope. The cookie store is request-bound,
+ * so every Server Component, Server Action, and Route Handler must call this
+ * function inside its own request lifecycle.
+ */
+export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
-    supabaseUrl,
-    supabaseAnonKey,
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
       cookies: {
         getAll() {
@@ -35,22 +36,18 @@ export async function createClient() {
               cookieStore.set(name, value, options);
             });
           } catch (error) {
-            // 2. Targeted logging instead of a completely silent catch block
-            // This safely ignores Server Component mutation issues in production, 
-            // but warns you in development in case of real cookie/framework failures.
             if (process.env.NODE_ENV !== "production") {
               console.warn(
-                "[SUPABASE-SSR] Cookie persistence skipped. This is expected if called from a Server Component, but ensure middleware is refreshing sessions.",
+                "[SUPABASE-SSR] Cookie persistence skipped outside a mutable request context.",
                 error instanceof Error ? error.message : error
               );
             }
           }
         },
       },
-      // 3. Enterprise Improvement: Added global headers for observability
       global: {
         headers: {
-          "x-client-info": "nextjs-app-router", // Helpful for tracing auth issues in Supabase logs
+          "x-client-info": "arcli-nextjs-server-per-request",
         },
       },
     }

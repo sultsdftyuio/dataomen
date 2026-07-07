@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+import { useFormState } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/utils/supabase/client";
 import { Logo } from "@/components/ui/logo";
+import { registerAction } from "./actions";
 
-/* ─── Shared Landing Page Design Tokens ─── */
 const C = {
   navy: "#0A1628",
   blue: "#1B6EBF",
@@ -21,125 +22,73 @@ const C = {
   green: "#10B981",
 };
 
-function SubmitButton({ isGooglePending, isAutoSigningIn, isPending }: { isGooglePending: boolean; isAutoSigningIn: boolean; isPending: boolean }) {
-
+function SubmitButton({
+  isGooglePending,
+  isPending,
+}: {
+  isGooglePending: boolean;
+  isPending: boolean;
+}) {
   return (
     <Button
       type="submit"
       className="w-full h-12 text-base font-bold transition-all mt-6"
       style={{ backgroundColor: C.blue, color: "#fff" }}
-      disabled={isPending || isGooglePending || isAutoSigningIn}
+      disabled={isPending || isGooglePending}
     >
-      {isPending || isAutoSigningIn ? (
-        <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating Account...</>
+      {isPending ? (
+        <>
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Creating Account...
+        </>
       ) : (
-        <>Create Account <ArrowRight className="ml-2 h-5 w-5" /></>
+        <>
+          Create Account <ArrowRight className="ml-2 h-5 w-5" />
+        </>
       )}
     </Button>
   );
 }
 
-/**
- * RegisterPage Component
- * Optimized for high conversion by reducing friction. 
- * Only captures essential credentials (Email/Password) and provides Google OAuth.
- */
-export default function RegisterPage() {
-  const router = useRouter();
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+function RegisterForm() {
+  const [state, formAction] = useFormState(registerAction, {});
   const [isPending, setIsPending] = useState(false);
   const [isGooglePending, setIsGooglePending] = useState(false);
-  const [isAutoSigningIn, setIsAutoSigningIn] = useState(false);
-  const [emailValue, setEmailValue] = useState("");
-  const [passwordValue, setPasswordValue] = useState("");
-  const supabase = useMemo(() => createClient(), []);
+  const supabase = createClient();
+  const searchParams = useSearchParams();
 
-  const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (isPending || isGooglePending || isAutoSigningIn) return;
+  const requestedPath = searchParams.get("next");
+  const safeNextPath =
+    requestedPath &&
+    requestedPath.startsWith("/") &&
+    !requestedPath.startsWith("//") &&
+    !requestedPath.includes("\\") &&
+    !requestedPath.includes("..")
+      ? requestedPath
+      : "";
 
-    const email = emailValue.trim().toLowerCase();
-    const password = passwordValue;
-
-    if (!email || !password) {
-      setErrorMessage("Email and password are required.");
-      return;
-    }
-
-    setErrorMessage(null);
+  const handleEmailSubmit = async (formData: FormData) => {
     setIsPending(true);
-
-    const fallbackName = email.split("@")[0] || "User";
-    const fallbackCompany = email.includes("@") ? email.split("@")[1].split(".")[0] : "Workspace";
-
     try {
-      const registerResponse = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-          full_name: fallbackName,
-          company_name: fallbackCompany,
-        }),
-      });
-
-      if (!registerResponse.ok) {
-        const text = await registerResponse.text().catch(() => '');
-        let message = 'Registration failed';
-
-        try {
-          const data = text ? JSON.parse(text) : {};
-          if (Array.isArray(data?.detail)) {
-            message = data.detail.map((e: any) => `${e.loc?.join('.') || 'detail'} - ${e.msg || JSON.stringify(e)}`).join(' | ');
-          } else if (data?.detail) {
-            message = String(data.detail);
-          } else if (data?.message) {
-            message = String(data.message);
-          } else if (data?.error) {
-            message = String(data.error);
-          }
-        } catch {
-          if (text) {
-            message = text;
-          }
-        }
-
-        setErrorMessage(message);
-        setIsPending(false);
-        return;
-      }
-
-      setIsAutoSigningIn(true);
-      const loginResponse = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!loginResponse.ok) {
-        router.replace('/login?error=signup_created_login_required');
-        return;
-      }
-
-      window.location.assign('/dashboard');
-    } catch {
-      setErrorMessage('Could not complete registration flow. Please try again.');
+      await formAction(formData);
     } finally {
       setIsPending(false);
-      setIsAutoSigningIn(false);
     }
   };
 
   const handleGoogleLogin = async () => {
     setIsGooglePending(true);
     try {
+      const callbackPath = safeNextPath
+        ? `/auth/callback?next=${encodeURIComponent(safeNextPath)}`
+        : "/auth/callback";
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}${callbackPath}`,
         },
       });
+
       if (error) throw error;
     } catch (error) {
       console.error("Google Auth Error:", error);
@@ -152,18 +101,19 @@ export default function RegisterPage() {
       className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden py-12"
       style={{ backgroundColor: C.offWhite, fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
-      <style dangerouslySetInnerHTML={{
-        __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .dot-grid { background-image: radial-gradient(${C.ruleDark} 1px, transparent 1px); background-size: 24px 24px; }
         .pfd { font-family: 'Playfair Display', serif; }
-      `}} />
+      `,
+        }}
+      />
 
       <div className="absolute inset-0 dot-grid opacity-60 z-0" />
       <div className="absolute top-[20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-[#F0F7FF] blur-[120px] z-0" />
 
       <div className="relative z-10 w-full max-w-md px-6">
-
-        {/* Logo Header */}
         <div className="flex flex-col items-center mb-8">
           <Link href="/" className="mb-6 transition-transform hover:scale-105">
             <Logo className="h-10 w-auto" />
@@ -172,21 +122,25 @@ export default function RegisterPage() {
             Get Started
           </h1>
           <p className="text-center" style={{ color: C.muted }}>
-            Deploy your first AI agent on <span className="font-semibold" style={{ color: C.navy }}>arcli.tech</span>
+            Deploy your first AI agent on{" "}
+            <span className="font-semibold" style={{ color: C.navy }}>
+              arcli.tech
+            </span>
           </p>
         </div>
 
-        {/* Auth Card */}
         <div
           className="bg-white p-8 rounded-2xl shadow-xl"
-          style={{ border: `1.5px solid ${C.ruleDark}`, boxShadow: "0 20px 40px rgba(10,22,40,0.06)" }}
+          style={{
+            border: `1.5px solid ${C.ruleDark}`,
+            boxShadow: "0 20px 40px rgba(10,22,40,0.06)",
+          }}
         >
-          {/* Google Auth Provider */}
           <Button
             variant="outline"
             className="w-full h-12 mb-6 font-semibold flex items-center justify-center gap-3 border-2"
             onClick={handleGoogleLogin}
-            disabled={isPending || isGooglePending || isAutoSigningIn}
+            disabled={isPending || isGooglePending}
           >
             {isGooglePending ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -222,72 +176,84 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <form onSubmit={handleEmailSubmit} className="space-y-5">
-            {isAutoSigningIn && (
-              <div className="p-3 text-sm font-medium text-sky-700 bg-sky-50 rounded-lg border border-sky-100">
-                Finalizing your session and redirecting to dashboard...
+          <form action={handleEmailSubmit} className="space-y-5">
+            {state?.error && (
+              <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">
+                {state.error}
               </div>
             )}
 
-            {errorMessage && (
-              <div className="p-3 text-sm font-medium text-red-600 bg-red-50 rounded-lg border border-red-100">
-                {errorMessage}
-              </div>
-            )}
+            <input type="hidden" name="next" value={safeNextPath} />
 
             <div className="space-y-2">
-              <Label htmlFor="email" style={{ color: C.navy, fontWeight: 600 }}>Work Email</Label>
+              <Label htmlFor="email" style={{ color: C.navy, fontWeight: 600 }}>
+                Work Email
+              </Label>
               <Input
                 id="email"
                 name="email"
                 type="email"
                 placeholder="name@company.com"
                 required
-                value={emailValue}
-                onChange={(event) => setEmailValue(event.target.value)}
-                disabled={isPending || isGooglePending || isAutoSigningIn}
+                disabled={isPending || isGooglePending}
                 className="h-11 bg-slate-50/50"
                 style={{ borderColor: C.rule }}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password" style={{ color: C.navy, fontWeight: 600 }}>Password</Label>
+              <Label htmlFor="password" style={{ color: C.navy, fontWeight: 600 }}>
+                Password
+              </Label>
               <Input
                 id="password"
                 name="password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="********"
                 required
-                value={passwordValue}
-                onChange={(event) => setPasswordValue(event.target.value)}
-                disabled={isPending || isGooglePending || isAutoSigningIn}
+                disabled={isPending || isGooglePending}
                 className="h-11 bg-slate-50/50"
                 style={{ borderColor: C.rule }}
               />
             </div>
 
-            <SubmitButton
-              isGooglePending={isGooglePending}
-              isAutoSigningIn={isAutoSigningIn}
-              isPending={isPending}
-            />
+            <SubmitButton isGooglePending={isGooglePending} isPending={isPending} />
 
-            <div className="pt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium" style={{ color: C.muted }}>
-              <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> Free Access</span>
-              <span className="flex items-center gap-1"><CheckCircle2 size={14} color={C.green} /> 3-day Pro trial on upgrade</span>
+            <div
+              className="pt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-medium"
+              style={{ color: C.muted }}
+            >
+              <span className="flex items-center gap-1">
+                <CheckCircle2 size={14} color={C.green} /> Free Access
+              </span>
+              <span className="flex items-center gap-1">
+                <CheckCircle2 size={14} color={C.green} /> 3-day Pro trial on upgrade
+              </span>
             </div>
           </form>
         </div>
 
         <p className="text-center mt-8 text-sm" style={{ color: C.muted }}>
-          Already have an account?{' '}
+          Already have an account?{" "}
           <Link href="/login" style={{ color: C.navy, fontWeight: 700 }} className="hover:underline">
             Log in here
           </Link>
         </p>
-
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#F6FAFE]">
+          <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }
