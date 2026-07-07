@@ -14,6 +14,9 @@ import { CTA } from "@/components/landing/cta";
 import Footer from "@/components/landing/footer";
 import { createClient } from "@/utils/supabase/server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function Page() {
   // Server-side redirect prevents auth flashes on the marketing page.
   // Using getUser() validates the JWT against Supabase Auth for strict security.

@@ -5,6 +5,7 @@ import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { logoutAction } from "@/app/logout/actions";
+import { createClient as createBrowserClient } from "@/utils/supabase/client";
 
 export default function LogoutButton() {
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -19,7 +20,13 @@ export default function LogoutButton() {
         console.error("Supabase sign out failed", error);
       }
     } finally {
-      window.location.href = "/login";
+      try {
+        await createBrowserClient().auth.signOut({ scope: "local" });
+      } catch (error) {
+        console.error("Local Supabase session cleanup failed", error);
+      }
+
+      window.location.replace("/login");
     }
   };
 

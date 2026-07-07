@@ -33,6 +33,9 @@ export const metadata = {
   description: "Configure automated recovery workflows and email sequences.",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function CampaignsPage() {
   const supabase = await createClient();
 

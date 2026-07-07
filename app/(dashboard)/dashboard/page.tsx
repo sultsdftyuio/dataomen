@@ -13,6 +13,9 @@ export const metadata: Metadata = {
   description: "Monitor churn risk and recovery performance.",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type DashboardPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };

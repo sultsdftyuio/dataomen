@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   description: "Authenticate and send high-intent churn signals to Arcli.",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function ApiDocumentationPage() {
   const supabase = await createClient();
   const {

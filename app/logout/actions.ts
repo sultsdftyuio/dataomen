@@ -1,5 +1,6 @@
 'use server'
 
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 
 export type LogoutActionState = {
@@ -20,6 +21,8 @@ export async function logoutAction(): Promise<LogoutActionState> {
     console.error('Critical Auth Failure:', err);
     return { error: 'A secure connection could not be established. Please try again later.' };
   }
+
+  revalidatePath('/', 'layout');
 
   return {};
 }

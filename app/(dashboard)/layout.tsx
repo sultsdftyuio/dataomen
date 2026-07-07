@@ -10,6 +10,9 @@ import {
 import Logo from "@/components/ui/logo";
 import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function DashboardLayout({
   children,
 }: {

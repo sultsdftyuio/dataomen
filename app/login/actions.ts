@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 
 export type ActionState = {
@@ -120,5 +121,6 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
    * Next.js redirect() throws a special error to halt execution and trigger the navigation.
    * Kept safely outside the try/catch block to ensure navigation is not suppressed.
    */
+  revalidatePath('/', 'layout');
   redirect(nextPath);
 }

@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/supabase";
 
-const getRequiredEnv = (name: string) => {
+const getRequiredEnv = (name: string): string => {
   const value = process.env[name];
 
   if (!value) {
@@ -12,13 +12,6 @@ const getRequiredEnv = (name: string) => {
   return value;
 };
 
-/**
- * Creates a Supabase SSR client for the current Next.js request.
- *
- * Never hoist this client to module scope. The cookie store is request-bound,
- * so every Server Component, Server Action, and Route Handler must call this
- * function inside its own request lifecycle.
- */
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -38,7 +31,7 @@ export async function createClient() {
           } catch (error) {
             if (process.env.NODE_ENV !== "production") {
               console.warn(
-                "[SUPABASE-SSR] Cookie persistence skipped outside a mutable request context.",
+                "[SUPABASE-SSR] Skipped setting cookies because this context does not allow cookie mutation.",
                 error instanceof Error ? error.message : error
               );
             }

@@ -88,6 +88,21 @@ export default async function middleware(request: NextRequest) {
     },
   })
 
+  const markAuthResponseNoStore = (response: NextResponse) => {
+    response.headers.set('Cache-Control', 'no-store, max-age=0')
+    response.headers.set('Pragma', 'no-cache')
+    response.headers.set('Expires', '0')
+    return response
+  }
+
+  const carrySupabaseCookies = (response: NextResponse) => {
+    supabaseResponse.cookies.getAll().forEach(({ name, value, ...options }) => {
+      response.cookies.set(name, value, options)
+    })
+
+    return markAuthResponseNoStore(response)
+  }
+
   // ---------------------------------------------------------------------------
   // 3. Cryptographic User Verification
   // getUser() calls the Supabase Auth server to validate the JWT — it is NOT
@@ -188,14 +203,16 @@ export default async function middleware(request: NextRequest) {
   // ---------------------------------------------------------------------------
   if (isApiPreflight) {
     logRouteTrace('route_trace', { handler: 'preflight-terminate', status: 204 })
-    return new NextResponse(null, {
-      status: 204,
-      headers: {
-        ...buildApiCorsHeaders(),
-        'Allow': 'GET,HEAD,POST,PUT,DELETE,PATCH,OPTIONS',
-        'X-Route-Handler': 'preflight-terminate',
-      },
-    })
+    return markAuthResponseNoStore(
+      new NextResponse(null, {
+        status: 204,
+        headers: {
+          ...buildApiCorsHeaders(),
+          'Allow': 'GET,HEAD,POST,PUT,DELETE,PATCH,OPTIONS',
+          'X-Route-Handler': 'preflight-terminate',
+        },
+      })
+    )
   }
 
   // ---------------------------------------------------------------------------
@@ -203,7 +220,7 @@ export default async function middleware(request: NextRequest) {
   // ---------------------------------------------------------------------------
   if (isApiRoute && hasBearerToken && isMachineApiRoute) {
     logRouteTrace('route_trace', { handler: 'bearer-pass-m2m', status: 200 })
-    return NextResponse.next()
+    return markAuthResponseNoStore(supabaseResponse)
   }
 
   // ---------------------------------------------------------------------------
@@ -220,25 +237,27 @@ export default async function middleware(request: NextRequest) {
       const safeNext = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard'
       url.searchParams.set('next', safeNext)
 
-      return NextResponse.redirect(url)
+      return carrySupabaseCookies(NextResponse.redirect(url))
     }
 
     // Unauthenticated: hard-block internal API routes at Edge
     if (isApiRoute && !isPublicApiRoute) {
       logRouteTrace('route_trace', { handler: 'auth-gate-deny', status: 401 })
-      return NextResponse.json(
-        {
-          error: 'Unauthorized',
-          message: 'Authentication is required to access this resource.',
-          request_id: requestId,
-        },
-        {
-          status: 401,
-          headers: {
-            ...buildApiCorsHeaders(),
-            'X-Route-Handler': 'auth-gate-deny',
+      return carrySupabaseCookies(
+        NextResponse.json(
+          {
+            error: 'Unauthorized',
+            message: 'Authentication is required to access this resource.',
+            request_id: requestId,
           },
-        }
+          {
+            status: 401,
+            headers: {
+              ...buildApiCorsHeaders(),
+              'X-Route-Handler': 'auth-gate-deny',
+            },
+          }
+        )
       )
     }
   } else {
@@ -255,7 +274,7 @@ export default async function middleware(request: NextRequest) {
       targetUrl.pathname = safeNext
       targetUrl.searchParams.delete('next')
 
-      return NextResponse.redirect(targetUrl)
+      return carrySupabaseCookies(NextResponse.redirect(targetUrl))
     }
   }
 
@@ -271,7 +290,7 @@ export default async function middleware(request: NextRequest) {
   supabaseResponse.headers.set('X-Frame-Options', 'DENY')
   supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
 
-  return supabaseResponse
+  return markAuthResponseNoStore(supabaseResponse)
 }
 
 // ---------------------------------------------------------------------------

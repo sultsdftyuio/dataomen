@@ -2,6 +2,7 @@
 
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
 import type { Database } from '@/types/supabase'
 
@@ -178,6 +179,7 @@ export async function registerAction(
   }
 
   if (shouldRedirect) {
+    revalidatePath('/', 'layout')
     redirect(redirectPath)
   }
 

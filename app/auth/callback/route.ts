@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { type EmailOtpType } from '@supabase/supabase-js';
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,7 @@ export async function GET(request: Request) {
       console.log(`[AUTH_CALLBACK][${flowId}] Authentication successful, redirecting to`, nextPath);
     }
 
+    revalidatePath('/', 'layout');
     return NextResponse.redirect(new URL(nextPath, origin));
 
   } catch (error) {

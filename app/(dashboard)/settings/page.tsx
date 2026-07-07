@@ -9,6 +9,9 @@ import { fetchTenantApiKeySummary, fetchTenantSettingsRow } from "@/lib/settings
 import SettingsClient from "./settings-client";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;
 
 type SettingsPageProps = {

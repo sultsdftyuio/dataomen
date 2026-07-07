@@ -13,6 +13,9 @@ export const metadata = {
   description: "Spot struggling accounts early, take action, and track your wins.",
 };
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // ─── Constants & Configuration ─────────────────────────────────────
 
 const ALLOWED_ROLES = new Set(["owner", "admin", "operator"] as const);

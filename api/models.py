@@ -663,7 +663,7 @@ class RecoveryEmailEvent(Base):
         ForeignKey("recovery_emails.id", ondelete="SET NULL"), nullable=True
     )
     event_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    event_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     occurred_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -694,7 +694,7 @@ class RecoveryAttribution(Base):
     campaign_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     event_name: Mapped[str] = mapped_column(Text, nullable=False, default="")
     event_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    attribution_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     event_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     revenue: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
     attributed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
