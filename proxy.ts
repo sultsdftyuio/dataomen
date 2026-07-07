@@ -18,10 +18,31 @@
 
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import {
+  DEFAULT_POST_AUTH_REDIRECT_PATH,
+  resolvePostAuthRedirectPath,
+} from '@/utils/auth-redirects'
 
 export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const EDGE_LAYER = 'next-edge-middleware'
+
+  const isRootAuthCallback =
+    pathname === '/' &&
+    (request.nextUrl.searchParams.has('code') ||
+      (request.nextUrl.searchParams.has('token_hash') &&
+        request.nextUrl.searchParams.has('type')))
+
+  if (isRootAuthCallback) {
+    const callbackUrl = request.nextUrl.clone()
+    callbackUrl.pathname = '/auth/callback'
+
+    if (!callbackUrl.searchParams.has('next')) {
+      callbackUrl.searchParams.set('next', DEFAULT_POST_AUTH_REDIRECT_PATH)
+    }
+
+    return NextResponse.redirect(callbackUrl)
+  }
 
   // ---------------------------------------------------------------------------
   // Correlation ID: Attach Vercel trace for debugging across Cloudflare + Vercel
@@ -233,8 +254,7 @@ export default async function middleware(request: NextRequest) {
       url.pathname = '/login'
 
       // Validate `next` to prevent open-redirect attacks: only allow relative paths
-      const rawNext = pathname
-      const safeNext = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard'
+      const safeNext = resolvePostAuthRedirectPath(pathname)
       url.searchParams.set('next', safeNext)
 
       return carrySupabaseCookies(NextResponse.redirect(url))
@@ -263,16 +283,8 @@ export default async function middleware(request: NextRequest) {
   } else {
     // Authenticated: redirect away from auth pages and root
     if (isAuthRoute || pathname === '/') {
-      const rawNext = request.nextUrl.searchParams.get('next') ?? ''
-      // Validate `next` param to prevent open-redirect: must be a relative path on this origin
-      const safeNext =
-        rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.includes(':')
-          ? rawNext
-          : '/dashboard'
-
-      const targetUrl = request.nextUrl.clone()
-      targetUrl.pathname = safeNext
-      targetUrl.searchParams.delete('next')
+      const safeNext = resolvePostAuthRedirectPath(request.nextUrl.searchParams.get('next'))
+      const targetUrl = new URL(safeNext, request.url)
 
       return carrySupabaseCookies(NextResponse.redirect(targetUrl))
     }

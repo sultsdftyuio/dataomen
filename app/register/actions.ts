@@ -4,6 +4,7 @@ import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
+import { resolvePostAuthRedirectPath } from '@/utils/auth-redirects'
 import type { Database } from '@/types/supabase'
 
 export type ActionState = {
@@ -22,15 +23,6 @@ const getRequiredEnv = (name: string) => {
   }
 
   return value
-}
-
-const isSafeRedirectPath = (value: string): boolean => {
-  return (
-    value.startsWith('/') &&
-    !value.startsWith('//') &&
-    !value.includes('\\') &&
-    !value.includes('..')
-  )
 }
 
 const maskEmail = (email: string) => {
@@ -85,7 +77,7 @@ export async function registerAction(
     const password = normalizeFormString(formData, 'password')
     const requestedNext = normalizeFormString(formData, 'next')
 
-    redirectPath = isSafeRedirectPath(requestedNext) ? requestedNext : '/dashboard'
+    redirectPath = resolvePostAuthRedirectPath(requestedNext)
 
     if (isDev) {
       console.log(`[REGISTER][${flowId}] Starting signup for ${maskEmail(email)}`)

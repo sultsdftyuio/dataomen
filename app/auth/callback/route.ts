@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { type EmailOtpType } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/utils/supabase/server';
+import { resolvePostAuthRedirectPath } from '@/utils/auth-redirects';
 
 // ---------------------------------------------------------------------------
 // CONSTANTS & ALLOWLISTS
@@ -14,19 +15,6 @@ const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set([
   'email_change',
   'email',
 ]);
-
-// ---------------------------------------------------------------------------
-// UTILITIES
-// ---------------------------------------------------------------------------
-const isSafeRedirectPath = (value: string | null): value is string => {
-  return Boolean(
-    value &&
-      value.startsWith('/') &&
-      !value.startsWith('//') &&
-      !value.includes('\\') &&
-      !value.includes('..')
-  );
-};
 
 /**
  * GET Auth Callback
@@ -79,9 +67,7 @@ export async function GET(request: Request) {
         : null;
 
     // 2. Validate Redirect Path (Traversal & Open Redirect Protection)
-    let nextPath = isSafeRedirectPath(requestedNext)
-      ? requestedNext
-      : '/dashboard';
+    const nextPath = resolvePostAuthRedirectPath(requestedNext);
 
     // -----------------------------------------------------------------------
     // INVALID FLOW REJECTION

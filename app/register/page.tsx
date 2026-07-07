@@ -11,6 +11,10 @@ import { Label } from "@/components/ui/label";
 import { createClient } from "@/utils/supabase/client";
 import { Logo } from "@/components/ui/logo";
 import { registerAction } from "./actions";
+import {
+  buildAuthCallbackPath,
+  resolvePostAuthRedirectPath,
+} from "@/utils/auth-redirects";
 
 const C = {
   navy: "#0A1628",
@@ -56,15 +60,7 @@ function RegisterForm() {
   const supabase = createClient();
   const searchParams = useSearchParams();
 
-  const requestedPath = searchParams.get("next");
-  const safeNextPath =
-    requestedPath &&
-    requestedPath.startsWith("/") &&
-    !requestedPath.startsWith("//") &&
-    !requestedPath.includes("\\") &&
-    !requestedPath.includes("..")
-      ? requestedPath
-      : "";
+  const safeNextPath = resolvePostAuthRedirectPath(searchParams.get("next"));
 
   const handleEmailSubmit = async (formData: FormData) => {
     setIsPending(true);
@@ -78,9 +74,7 @@ function RegisterForm() {
   const handleGoogleLogin = async () => {
     setIsGooglePending(true);
     try {
-      const callbackPath = safeNextPath
-        ? `/auth/callback?next=${encodeURIComponent(safeNextPath)}`
-        : "/auth/callback";
+      const callbackPath = buildAuthCallbackPath(safeNextPath);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

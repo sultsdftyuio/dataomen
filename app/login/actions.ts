@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
+import { resolvePostAuthRedirectPath } from '@/utils/auth-redirects'
 
 export type ActionState = {
   error?: string;
@@ -43,15 +44,7 @@ export async function loginAction(state: ActionState, formData: FormData): Promi
     : '[redacted]';
 
   // 5. Hardened Redirect Validation
-  const candidateNextPath = 
-    requestedNextPath.startsWith('/') && 
-    !requestedNextPath.startsWith('//') &&
-    !requestedNextPath.includes('\\') &&
-    !requestedNextPath.includes('..')
-      ? requestedNextPath 
-      : '/dashboard';
-
-  const nextPath = candidateNextPath;
+  const nextPath = resolvePostAuthRedirectPath(requestedNextPath);
 
   if (isDev) console.log(`[DEBUG-UI][${flowId}] Parsed credentials. Email: "${maskedEmail}", NextPath: "${nextPath}"`);
 

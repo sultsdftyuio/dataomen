@@ -11,6 +11,10 @@ import { useFormState } from "react-dom";
 import { loginAction } from "./actions";
 import { createClient } from "@/utils/supabase/client";
 import { Logo } from "@/components/ui/logo";
+import {
+  buildAuthCallbackPath,
+  resolvePostAuthRedirectPath,
+} from "@/utils/auth-redirects";
 
 /* ─── Shared Landing Page Design Tokens ─── */
 const C = {
@@ -33,10 +37,7 @@ function LoginForm() {
   const supabase = createClient();
   const searchParams = useSearchParams();
 
-  const requestedPath = searchParams.get("next");
-  const safeNextPath = requestedPath && requestedPath.startsWith("/") && !requestedPath.startsWith("//")
-    ? requestedPath
-    : "";
+  const safeNextPath = resolvePostAuthRedirectPath(searchParams.get("next"));
 
   const authError = searchParams.get("error");
   const showResetMessage = searchParams.get("reset") === "sent";
@@ -55,9 +56,7 @@ function LoginForm() {
   const handleGoogleLogin = async () => {
     setIsGooglePending(true);
     try {
-      const callbackPath = safeNextPath
-        ? `/auth/callback?next=${encodeURIComponent(safeNextPath)}`
-        : "/auth/callback";
+      const callbackPath = buildAuthCallbackPath(safeNextPath);
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
