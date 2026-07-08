@@ -49,4 +49,4 @@ EXPOSE 8080
 
 # NOTE: If you are using this single Dockerfile for BOTH your Web API and 
 # your Worker in DigitalOcean, it is safer to leave this as the API command:
-CMD ["python", "main.py"]
+CMD ["python", "api/main.py"]
