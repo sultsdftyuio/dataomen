@@ -833,7 +833,8 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
  * returns from Dodo before the async webhook has updated Supabase.
  */
 export async function verifyAndSyncSubscriptionStatus(
-  tenantId: string
+  tenantId: string,
+  options?: { skipRevalidate?: boolean }
 ): Promise<VerifyAndSyncSubscriptionStatusResult> {
   const normalizedTenantId = tenantId.trim();
 
@@ -999,8 +1000,10 @@ export async function verifyAndSyncSubscriptionStatus(
     throw new Error("Unable to sync workspace billing status.");
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/settings");
+  if (!options?.skipRevalidate) {
+    revalidatePath("/dashboard");
+    revalidatePath("/settings");
+  }
 
   console.info("[Billing] Workspace billing state synced from Dodo", {
     event: "billing_sync_completed",

@@ -63,7 +63,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     let shouldRefreshDashboard = false;
 
     try {
-      const result = await verifyAndSyncSubscriptionStatus(tenantId);
+      const result = await verifyAndSyncSubscriptionStatus(tenantId, {
+        skipRevalidate: true,
+      });
 
       console.info("[Dashboard] Billing return verification completed", {
         event: "dashboard_billing_return_verified",
