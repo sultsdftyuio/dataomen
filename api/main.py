@@ -186,13 +186,12 @@ async def root():
 # =========================================================================
 
 # api/main.py
-# Update your router registrations to include the /v1 prefix
-app.include_router(api_keys.router, prefix="/v1")
-app.include_router(webhooks.router, prefix="/v1")
-app.include_router(metrics.router, prefix="/v1")
-app.include_router(track.router, prefix="/v1")
-app.include_router(query.router, prefix="/v1")
-app.include_router(auth.router, prefix="/v1")
+app.include_router(api_keys.router)
+app.include_router(webhooks.router)
+app.include_router(metrics.router)
+app.include_router(track.router)
+app.include_router(query.router)
+app.include_router(auth.router)
 
 
 if __name__ == "__main__":
