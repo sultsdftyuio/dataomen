@@ -186,12 +186,12 @@ async def root():
 # =========================================================================
 
 # api/main.py
-app.include_router(api_keys.router, prefix="/api")
-app.include_router(webhooks.router, prefix="/api")
-app.include_router(metrics.router, prefix="/api")
-app.include_router(track.router, prefix="/api")
-app.include_router(query.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")
+app.include_router(api_keys.router)
+app.include_router(webhooks.router)
+app.include_router(metrics.router)
+app.include_router(track.router)
+app.include_router(query.router)
+app.include_router(auth.router)
 
 
 if __name__ == "__main__":
