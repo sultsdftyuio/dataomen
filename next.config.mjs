@@ -118,7 +118,7 @@ const nextConfig = {
       beforeFiles: [
         {
           source: '/api/v1/:path*',
-          destination: `${backendUrl}/v1/:path*`,
+          destination: `${backendUrl}/api/v1/:path*`,
         }
       ],
       afterFiles: [],
