@@ -193,9 +193,18 @@ def get_auth_context(
         # Upfront Tenant Scope Resolution (Single Source of Truth)
         # -------------------------------------------------------------------
         try:
-            # Let SQLAlchemy bind the UUID value directly so PostgreSQL can infer the type safely.
             row = db.execute(
-                text("SELECT tenant_id FROM tenant_users WHERE user_id = :user_id LIMIT 1"),
+                text(
+                    """
+                    SELECT tu.tenant_id
+                      FROM tenant_users tu
+                      JOIN tenants t ON t.tenant_id = tu.tenant_id
+                     WHERE tu.user_id = :user_id
+                       AND t.provisioning_status = 'READY'
+                       AND t.status = 'active'
+                     LIMIT 1
+                    """
+                ),
                 {"user_id": user_id},
             ).fetchone()
         except Exception:
@@ -206,10 +215,10 @@ def get_auth_context(
             )
 
         if not row:
-            logger.warning("Authenticated user %s has no active tenant mapping.", user_id)
+            logger.warning("Authenticated user %s has no ready active tenant mapping.", user_id)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is not associated with an active workspace.",
+                detail="Account is not associated with a ready active workspace.",
             )
 
         # Safely extract tenant_id string regardless of SQLAlchemy row mapping style

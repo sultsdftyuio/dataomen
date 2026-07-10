@@ -1,0 +1,86 @@
+name: arcli-prospect-intelligence
+region: nyc
+
+envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    type: secret
+    value: REPLACE_WITH_SUPABASE_DATABASE_URL
+  - key: REDIS_URL
+    scope: RUN_TIME
+    type: secret
+    value: REPLACE_WITH_REDIS_URL
+  - key: OPENAI_API_KEY
+    scope: RUN_TIME
+    type: secret
+    value: REPLACE_WITH_OPENAI_API_KEY
+
+services:
+  - name: arcli-api
+    github:
+      repo: sultsdftyuio/dataomen
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: ./Dockerfile
+    run_command: uvicorn api.main:app --host 0.0.0.0 --port 8080
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    termination:
+      drain_seconds: 15
+      grace_period_seconds: 60
+
+workers:
+  - name: arcli-worker
+    github:
+      repo: sultsdftyuio/dataomen
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    dockerfile_path: ./Dockerfile
+    run_command: python scripts/start_worker.py
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: ARCLI_WORKER_BACKEND
+        scope: RUN_TIME
+        type: general
+        value: dramatiq
+      - key: ARCLI_DRAMATIQ_MODULES
+        scope: RUN_TIME
+        type: general
+        value: api.worker
+      - key: DRAMATIQ_PROCESSES
+        scope: RUN_TIME
+        type: general
+        value: "1"
+      - key: DRAMATIQ_THREADS
+        scope: RUN_TIME
+        type: general
+        value: "4"
+      - key: ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "120"
+    termination:
+      grace_period_seconds: 180
+
+ingress:
+  rules:
+    - match:
+        path:
+          prefix: /
+      component:
+        name: arcli-api
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
