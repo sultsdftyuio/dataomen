@@ -12,21 +12,35 @@ export const runtime = "nodejs";
 // ============================================================================
 // VALIDATION LAYER
 // ============================================================================
+const RiskScoreSchema = z.preprocess(
+  (value) => (value === null || value === undefined || value === "" ? null : value),
+  z.coerce.number().int().min(0).max(100).nullable()
+);
+
+const TargetSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().trim().toLowerCase().email(),
+  signal: z.string().optional().default("Green / Healthy"),
+  riskScore: RiskScoreSchema.optional().default(null),
+});
+
 const DispatchSchema = z.object({
   templateId: z.string().min(1),
   idempotencyKey: z.string().trim().min(1).max(128),
+  audienceSegment: z.enum(["all", "at_risk"]).optional().default("all"),
   targets: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        email: z.string().trim().toLowerCase().email(),
-        signal: z.string().optional().default("unknown"),
-        riskScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-      })
-    )
+    .array(TargetSchema)
     .min(1)
     .max(500),
 });
+
+type DispatchTarget = z.infer<typeof TargetSchema>;
+type CanonicalDispatchTarget = {
+  id: string;
+  email: string;
+  signal: string;
+  riskScore: number | null;
+};
 
 // ============================================================================
 // RPC RESPONSE TYPE + VALIDATION
@@ -155,7 +169,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const { templateId, targets, idempotencyKey } = parsed.data;
+    const { templateId, targets, idempotencyKey, audienceSegment } = parsed.data;
+    const canonicalized = await canonicalizeTenantTargets(
+      supabase,
+      tenantId,
+      targets,
+      requestId
+    );
+
+    if ("response" in canonicalized) {
+      return canonicalized.response;
+    }
+
+    const canonicalTargets = canonicalized.targets;
 
     // =========================================================================
     // TRANSFORM PAYLOAD (WORKER-READY OUTBOX ROWS)
@@ -167,7 +193,8 @@ export async function POST(req: Request) {
       .update(
         JSON.stringify({
           templateId,
-          targets: targets
+          audienceSegment,
+          targets: canonicalTargets
             .map((target) => ({
               id: target.id,
               email: target.email,
@@ -195,7 +222,7 @@ export async function POST(req: Request) {
         p_template_id: templateId,
         p_idempotency_key: idempotencyKey,
         p_request_hash: requestHash,
-        p_targets: targets,
+        p_targets: canonicalTargets,
       });
 
       rpcResult = response.data as RpcResponse | null;
@@ -223,7 +250,7 @@ export async function POST(req: Request) {
         tenantId,
         userId: user.id,
         templateId,
-        targetCount: targets.length,
+        targetCount: canonicalTargets.length,
         idempotencyKey,
         error: rpcError,
       });
@@ -278,7 +305,7 @@ export async function POST(req: Request) {
       userId: user.id,
       templateId,
       queued,
-      targetCount: targets.length,
+      targetCount: canonicalTargets.length,
     });
 
     return NextResponse.json({ status: "success", queued, requestId });
@@ -290,4 +317,67 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+async function canonicalizeTenantTargets(
+  supabase: any,
+  tenantId: string,
+  targets: DispatchTarget[],
+  requestId: string
+): Promise<{ targets: CanonicalDispatchTarget[] } | { response: NextResponse }> {
+  const targetIds = Array.from(new Set(targets.map((target) => target.id)));
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("id, email")
+    .eq("tenant_id", tenantId)
+    .in("id", targetIds)
+    .limit(targetIds.length);
+
+  if (error) {
+    console.error("[TARGET_VALIDATION_ERROR]", {
+      requestId,
+      tenantId,
+      error,
+    });
+    return {
+      response: NextResponse.json(
+        { error: "Failed to validate campaign targets", requestId },
+        { status: 500 }
+      ),
+    };
+  }
+
+  const profilesById = new Map(
+    ((data || []) as Array<{ id?: string | null; email?: string | null }>)
+      .filter((row) => row.id)
+      .map((row) => [String(row.id), row])
+  );
+  const missingIds = targetIds.filter((id) => !profilesById.has(id));
+
+  if (missingIds.length > 0) {
+    return {
+      response: NextResponse.json(
+        {
+          error: "One or more campaign targets do not belong to this workspace",
+          requestId,
+        },
+        { status: 400 }
+      ),
+    };
+  }
+
+  return {
+    targets: targets.map((target) => {
+      const profile = profilesById.get(target.id);
+      const canonicalEmail = profile?.email?.trim().toLowerCase() || target.email;
+
+      return {
+        id: target.id,
+        email: canonicalEmail,
+        signal: target.signal?.trim() || "Green / Healthy",
+        riskScore: target.riskScore ?? null,
+      };
+    }),
+  };
 }

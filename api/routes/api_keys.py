@@ -9,6 +9,10 @@ from typing_extensions import Annotated
 from api.database import get_supabase
 from api.auth import get_auth_context, AuthContext, get_current_tenant_id
 from api.services.security.api_keys import ApiKeyVault
+from api.services.security.api_key_cache import (
+    cache_api_key_auth_record,
+    delete_api_key_auth_record,
+)
 
 router = APIRouter(prefix="/v1/api-keys", tags=["Developer Vault"])
 logger = logging.getLogger(__name__)
@@ -50,7 +54,22 @@ def _revoke_active_keys(
     if exclude_key_id:
         query = query.neq("key_id", exclude_key_id)
 
-    return query.execute()
+    return query.select("key_id").execute()
+
+
+async def _delete_cached_key_rows(rows) -> None:
+    for row in rows or []:
+        key_id = row.get("key_id") if isinstance(row, dict) else None
+        if not key_id:
+            continue
+        try:
+            await delete_api_key_auth_record(str(key_id))
+        except Exception:
+            logger.warning(
+                "API key cache invalidation failed",
+                extra={"key_id": key_id},
+                exc_info=True,
+            )
 
 # --- Custom Types & Request/Response Models ---
 
@@ -138,11 +157,12 @@ async def generate_api_key(
                 raise
 
             revoked_at = datetime.now(timezone.utc).isoformat()
-            _revoke_active_keys(
+            revoke_response = _revoke_active_keys(
                 supabase,
                 tenant_id=tenant_id,
                 revoked_at=revoked_at,
             )
+            await _delete_cached_key_rows(getattr(revoke_response, "data", None))
 
             try:
                 response = _insert_api_key(supabase, db_record)
@@ -156,12 +176,13 @@ async def generate_api_key(
         else:
             revoked_at = datetime.now(timezone.utc).isoformat()
             try:
-                _revoke_active_keys(
+                revoke_response = _revoke_active_keys(
                     supabase,
                     tenant_id=tenant_id,
                     revoked_at=revoked_at,
                     exclude_key_id=db_record["key_id"],
                 )
+                await _delete_cached_key_rows(getattr(revoke_response, "data", None))
             except Exception:
                 logger.exception(
                     "API key cleanup revoke failed",
@@ -183,6 +204,19 @@ async def generate_api_key(
                 "key_last_updated": db_record["created_at"]
             }
         ).execute()
+
+        try:
+            await cache_api_key_auth_record(
+                key_id=db_record["key_id"],
+                tenant_id=tenant_id,
+                key_hash=db_record["key_hash"],
+                revoked_at=None,
+            )
+        except Exception:
+            logger.exception(
+                "API key auth cache warm failed",
+                extra={"tenant_id": tenant_id, "key_id": db_record["key_id"]},
+            )
 
         # 4. Return the payload. The plaintext_key leaves the server here and is never seen again.
         return KeyGenerationResponse(
@@ -225,6 +259,15 @@ async def revoke_api_key(
 
         # If rows were updated, revocation was successful
         if response.data:
+            try:
+                await delete_api_key_auth_record(payload.key_id)
+            except Exception:
+                logger.warning(
+                    "API key cache invalidation failed",
+                    extra={"tenant_id": tenant_id, "key_id": payload.key_id},
+                    exc_info=True,
+                )
+
             return RevokeResponse(
                 status="revoked",
                 key_id=payload.key_id,
@@ -242,6 +285,15 @@ async def revoke_api_key(
             )
 
         # If the key exists but wasn't updated, it was already revoked
+        try:
+            await delete_api_key_auth_record(payload.key_id)
+        except Exception:
+            logger.warning(
+                "API key cache invalidation failed",
+                extra={"tenant_id": tenant_id, "key_id": payload.key_id},
+                exc_info=True,
+            )
+
         return RevokeResponse(
             status="already_revoked",
             key_id=payload.key_id,

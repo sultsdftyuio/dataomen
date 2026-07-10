@@ -246,7 +246,7 @@ export function CreateTemplateForm({
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="High Risk Dunning - Day 3"
+                        placeholder="Customer Campaign - Day 3"
                         disabled={isSubmitting}
                         autoFocus
                         className="h-9 bg-[#FAFAFA] text-[13px] shadow-none focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-blue-500/50"

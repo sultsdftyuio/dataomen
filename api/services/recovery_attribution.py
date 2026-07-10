@@ -78,6 +78,7 @@ class CampaignType(StrEnum):
     BILLING_FAILED = "billing_failed"
     CANCELLATION_FOLLOWUP = "cancellation_followup"
     FEEDBACK_RECOVERY = "feedback_recovery"
+    BROADCAST = "broadcast"
 
 
 RISK_TO_CAMPAIGN = {
@@ -91,7 +92,7 @@ RISK_TO_CAMPAIGN = {
 class RecoveryCandidate(BaseModel):
     user_id: str = Field(..., min_length=1)
     email: EmailStr
-    primary_risk_signal: RiskSignal
+    primary_risk_signal: Optional[RiskSignal] = None
     campaign_type: CampaignType
     churn_risk_score: Optional[int] = None
 
@@ -153,7 +154,11 @@ class RecoveryRepository:
             {
                 "user_id": candidate.user_id,
                 "email": candidate.email,
-                "signal": candidate.primary_risk_signal.value,
+                "signal": (
+                    candidate.primary_risk_signal.value
+                    if candidate.primary_risk_signal
+                    else "healthy"
+                ),
                 "campaign_type": candidate.campaign_type.value,
                 "score": candidate.churn_risk_score,
             }
@@ -216,6 +221,8 @@ class RecoveryAutomationEngine:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> List[RecoveryDecision]:
         run_id = _extract_run_id(metadata)
+        audience_segment = _extract_audience_segment(metadata)
+        allow_broadcast = audience_segment == "all"
         start_time = time.monotonic()
 
         if not tenant_id or not users:
@@ -240,7 +247,12 @@ class RecoveryAutomationEngine:
         seen_keys: set = set()
 
         for user in users:
-            candidate = self._build_candidate(user, tenant_id, run_id)
+            candidate = self._build_candidate(
+                user,
+                tenant_id,
+                run_id,
+                allow_broadcast=allow_broadcast,
+            )
             if not candidate:
                 invalid_count += 1
                 continue
@@ -301,16 +313,23 @@ class RecoveryAutomationEngine:
         user: Dict[str, Any],
         tenant_id: str,
         run_id: Optional[str],
+        allow_broadcast: bool = False,
     ) -> Optional[RecoveryCandidate]:
         user_id = _resolve_user_id(user)
         raw_email = _resolve_email(user)
         risk_signal = RiskSignal.from_raw(user.get("primary_risk_signal"))
 
-        if not user_id or not raw_email or not risk_signal:
+        if not user_id or not raw_email:
             _log_candidate_rejection(tenant_id, run_id, user_id, raw_email, risk_signal)
             return None
 
-        campaign_type = RISK_TO_CAMPAIGN.get(risk_signal)
+        if risk_signal:
+            campaign_type = RISK_TO_CAMPAIGN.get(risk_signal)
+        elif allow_broadcast:
+            campaign_type = CampaignType.BROADCAST
+        else:
+            campaign_type = None
+
         if not campaign_type:
             _log_candidate_rejection(tenant_id, run_id, user_id, raw_email, risk_signal)
             return None
@@ -511,6 +530,14 @@ def _extract_run_id(metadata: Optional[Dict[str, Any]]) -> Optional[str]:
         return None
     run_id = metadata.get("pipeline_run_id") or metadata.get("run_id")
     return str(run_id) if run_id else None
+
+
+def _extract_audience_segment(metadata: Optional[Dict[str, Any]]) -> str:
+    if not metadata:
+        return "at_risk"
+    raw_segment = metadata.get("audience_segment") or metadata.get("segment")
+    segment = str(raw_segment or "at_risk").strip().lower()
+    return "all" if segment == "all" else "at_risk"
 
 
 def _resolve_user_id(user: Dict[str, Any]) -> Optional[str]:

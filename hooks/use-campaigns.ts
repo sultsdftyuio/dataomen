@@ -7,13 +7,15 @@ import { useToast } from "@/hooks/use-toast";
 import {
   type RiskUser,
   type EmailTemplate,
+  type AudienceSegment,
   type CampaignsClientProps,
   SENDER_EMAIL_REGEX,
 } from "@/lib/types";
 
 export function useCampaigns({
-  atRiskUsers,
+  targetUsers: initialTargetUsers,
   emailTemplates,
+  initialAudienceSegment = "all",
   initialSenderEmail,
   isProTier = true,
   restrictionMessage,
@@ -29,9 +31,13 @@ export function useCampaigns({
     initialSenderEmail?.trim() || null
   );
   const [templates, setTemplates] = useState<EmailTemplate[]>(emailTemplates);
+  const [targetUsers, setTargetUsers] = useState<RiskUser[]>(initialTargetUsers);
+  const [audienceSegment, setAudienceSegment] =
+    useState<AudienceSegment>(initialAudienceSegment);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingTargets, setIsLoadingTargets] = useState(false);
 
   // Inline Sender Configuration State
   const [senderInput, setSenderInput] = useState("");
@@ -50,22 +56,24 @@ export function useCampaigns({
   }, []);
 
   // Memoized derived states
-  const sortedAtRiskUsers = useMemo(() => {
+  const sortedTargetUsers = useMemo(() => {
     if (!isProTier) return [];
-    return [...atRiskUsers].sort((a, b) => b.riskScore - a.riskScore);
-  }, [atRiskUsers, isProTier]);
+    return [...targetUsers].sort(
+      (a, b) => (b.riskScore ?? -1) - (a.riskScore ?? -1)
+    );
+  }, [targetUsers, isProTier]);
 
   const userIds = useMemo(
-    () => sortedAtRiskUsers.map((u) => u.id),
-    [sortedAtRiskUsers]
+    () => sortedTargetUsers.map((u) => u.id),
+    [sortedTargetUsers]
   );
 
   const allSelected = useMemo(() => {
     return (
-      sortedAtRiskUsers.length > 0 &&
-      sortedAtRiskUsers.every((u) => selectedUsers.has(u.id))
+      sortedTargetUsers.length > 0 &&
+      sortedTargetUsers.every((u) => selectedUsers.has(u.id))
     );
-  }, [sortedAtRiskUsers, selectedUsers]);
+  }, [sortedTargetUsers, selectedUsers]);
 
   const activeTemplate = useMemo(() => {
     return templates.find((t) => t.id === selectedTemplate);
@@ -155,6 +163,47 @@ export function useCampaigns({
     });
   }, [allSelected, isProTier, userIds]);
 
+  const handleAudienceSegmentChange = useCallback(
+    async (segment: AudienceSegment) => {
+      if (!isProTier) return;
+      setAudienceSegment(segment);
+      setSelectedUsers(new Set());
+      setIsLoadingTargets(true);
+
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      abortControllerRef.current = new AbortController();
+
+      try {
+        const response = await fetch(`/api/campaigns/targets?segment=${segment}`, {
+          signal: abortControllerRef.current.signal,
+        });
+        const payload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Failed to fetch campaign targets.");
+        }
+
+        setTargetUsers(Array.isArray(payload?.users) ? payload.users : []);
+        router.replace(`/dashboard/campaigns?audience=${segment}`, { scroll: false });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+
+        toast({
+          title: "Target Refresh Failed",
+          description:
+            err instanceof Error
+              ? err.message
+              : "Unable to refresh the selected audience.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingTargets(false);
+        abortControllerRef.current = null;
+      }
+    },
+    [isProTier, router, toast]
+  );
+
   const handleSendCampaign = async () => {
     // Guard against duplicate submissions while state is settling
     if (isSending) return;
@@ -171,13 +220,13 @@ export function useCampaigns({
     // Hard architectural block: NEVER dispatch without sender email configured
     if (!senderEmail || !selectedTemplate || selectedUsers.size === 0) return;
 
-    const targets = sortedAtRiskUsers
+    const targets = sortedTargetUsers
       .filter((user) => selectedUsers.has(user.id))
       .map((user) => ({
         id: user.id,
         email: user.email,
-        signal: user.signal,
-        riskScore: user.riskScore,
+        signal: user.signal ?? "Green / Healthy",
+        riskScore: user.riskScore ?? null,
       }));
 
     // Frontend limit; backend must independently enforce this too
@@ -213,6 +262,7 @@ export function useCampaigns({
         body: JSON.stringify({
           templateId: selectedTemplate,
           targets: targets,
+          audienceSegment,
           idempotencyKey: idempotencyKey,
         }),
         signal: abortControllerRef.current.signal,
@@ -275,10 +325,12 @@ export function useCampaigns({
     isSending,
     senderInput,
     isSavingSender,
+    audienceSegment,
+    isLoadingTargets,
     isProTier,
     restrictionMessage: upgradeMessage,
     // Derived
-    sortedAtRiskUsers,
+    sortedTargetUsers,
     userIds,
     allSelected,
     activeTemplate,
@@ -290,6 +342,7 @@ export function useCampaigns({
     onNewTemplateCreated,
     toggleUser,
     toggleAll,
+    handleAudienceSegmentChange,
     handleSendCampaign,
   };
 }

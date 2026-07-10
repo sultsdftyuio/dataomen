@@ -3,10 +3,12 @@
 export interface RiskUser {
   id: string;
   email: string;
-  riskScore: number;
-  signal: string;
+  riskScore?: number | null;
+  signal?: string | null;
   lastActive: string;
 }
+
+export type AudienceSegment = "all" | "at_risk";
 
 export interface EmailTemplate {
   id: string;
@@ -20,8 +22,9 @@ export interface EmailTemplate {
 }
 
 export interface CampaignsClientProps {
-  atRiskUsers: RiskUser[];
+  targetUsers: RiskUser[];
   emailTemplates: EmailTemplate[];
+  initialAudienceSegment?: AudienceSegment;
   // Injected from the server page to enforce the "Proper Email Address" rule
   initialSenderEmail?: string | null;
   initialCompanyName?: string | null;
@@ -59,7 +62,8 @@ export const RISK_BADGE_DEFAULT = {
   className: "shadow-sm",
 };
 
-export function getRiskBadgeProps(score: number) {
+export function getRiskBadgeProps(score?: number | null) {
+  if (score === null || score === undefined) return RISK_BADGE_DEFAULT;
   if (score >= 95) return RISK_BADGE_HIGH;
   if (score >= 80) return RISK_BADGE_MEDIUM;
   if (score >= 60) return RISK_BADGE_LOW;

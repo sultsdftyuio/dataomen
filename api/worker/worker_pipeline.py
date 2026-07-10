@@ -122,7 +122,11 @@ class PipelineOrchestrator:
     # ------------------------------------------------------------------
     # MAIN DAILY PIPELINE
     # ------------------------------------------------------------------
-    def run_daily_pipeline(self, target_date_str: Optional[str] = None) -> None:
+    def run_daily_pipeline(
+        self,
+        target_date_str: Optional[str] = None,
+        audience_segment: str = "at_risk",
+    ) -> None:
         """
         Main nightly churn recovery pipeline.
         Enforces a strict run_id for full operational traceability.
@@ -162,6 +166,7 @@ class PipelineOrchestrator:
                     tenant_id=tenant_id,
                     target_date=target_date,
                     run_id=run_id,
+                    audience_segment=audience_segment,
                 )
 
                 if success:
@@ -212,6 +217,7 @@ class PipelineOrchestrator:
         tenant_id: str,
         target_date: str,
         run_id: str,
+        audience_segment: str = "at_risk",
     ) -> bool:
         """
         Isolated tenant processing. Prevents one bad tenant payload
@@ -224,6 +230,7 @@ class PipelineOrchestrator:
                 tenant_id=tenant_id,
                 target_date=target_date,
                 run_id=run_id,
+                audience_segment=audience_segment,
             )
             return True
 
@@ -254,6 +261,7 @@ class PipelineOrchestrator:
         tenant_id: str,
         target_date: str,
         run_id: str,
+        audience_segment: str = "at_risk",
     ) -> None:
         """
         Core tenant churn recovery workflow.
@@ -306,6 +314,7 @@ class PipelineOrchestrator:
                 tenant_id=tenant_id,
                 users=users_batch,
                 target_date=target_date,
+                segment=audience_segment,
             )
 
             score_duration_total += time.monotonic() - score_start
@@ -319,7 +328,10 @@ class PipelineOrchestrator:
             recovery_results = self.recovery_engine.evaluate_and_queue_batch(
                 tenant_id=tenant_id,
                 users=at_risk_users,
-                metadata={"pipeline_run_id": run_id},
+                metadata={
+                    "pipeline_run_id": run_id,
+                    "audience_segment": audience_segment,
+                },
             )
 
             for result in recovery_results:

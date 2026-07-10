@@ -1,17 +1,13 @@
 // app/(dashboard)/dashboard/campaigns/page.tsx
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
-import { RiskUser, EmailTemplate } from "@/lib/types";
+import { EmailTemplate } from "@/lib/types";
 import CampaignsClient from "@/app/(dashboard)/dashboard/campaigns/campaigns-client";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
-
-type RiskQueueRadarRow = {
-  customer_id: string;
-  customer_email: string;
-  risk_score: number;
-  signal: string;
-  last_active: string | null;
-};
+import {
+  fetchCampaignTargetUsers,
+  normalizeAudienceSegment,
+} from "@/lib/campaign-targets";
 
 type EmailTemplateRow = {
   id: string;
@@ -36,8 +32,16 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function CampaignsPage() {
+export default async function CampaignsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ audience?: string | string[]; segment?: string | string[] }>;
+}) {
   const supabase = await createClient();
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const initialAudienceSegment = normalizeAudienceSegment(
+    resolvedSearchParams.audience ?? resolvedSearchParams.segment
+  );
 
   // 1. Secure Deterministic Authentication (Rule 1)
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -63,27 +67,18 @@ export default async function CampaignsPage() {
 
   // 3, 4, 5. PARALLEL FETCHING: Fetch independent data concurrently scoped to tenant_id
   const [
-    { data: riskData, error: riskError },
+    { users: targetUsers, error: targetUsersError },
     { data: templatesData, error: templatesError },
     { data: workspaceData, error: workspaceError }
   ] = await Promise.all([
-    // 3. Fetch At-Risk Users (Scoped to Tenant)
+    // 3. Fetch Campaign Targets (Scoped to Tenant)
     entitlements.canViewCustomerLists
-      ? supabase
-          .from("vw_risk_queue_radar")
-          .select(`
-            customer_id,
-            customer_email,
-            risk_score,
-            signal,
-            last_active
-          `)
-          .eq("tenant_id", tenantId)
-          .gte("risk_score", 70)
-          .order("risk_score", { ascending: false })
-          .limit(100)
-          .returns<RiskQueueRadarRow[]>()
-      : Promise.resolve({ data: [] as RiskQueueRadarRow[], error: null }),
+      ? fetchCampaignTargetUsers({
+          supabase,
+          tenantId,
+          segment: initialAudienceSegment,
+        })
+      : Promise.resolve({ users: [], error: null }),
 
     // 4. Fetch Email Templates (Scoped to Tenant)
     supabase
@@ -104,8 +99,12 @@ export default async function CampaignsPage() {
   ]);
 
   // Observability & Operator Logging (Rule 17)
-  if (riskError) {
-    console.error("[CampaignsPage] Failed to fetch risk users:", { tenantId, error: riskError });
+  if (targetUsersError) {
+    console.error("[CampaignsPage] Failed to fetch campaign targets:", {
+      tenantId,
+      audienceSegment: initialAudienceSegment,
+      error: targetUsersError,
+    });
   }
 
   if (templatesError) {
@@ -115,15 +114,6 @@ export default async function CampaignsPage() {
   if (workspaceError) {
     console.error("[CampaignsPage] Failed to resolve workspace settings:", { tenantId, error: workspaceError });
   }
-
-  // Sanitize & Normalize Risk Radar Entities
-  const atRiskUsers: RiskUser[] = (riskData || []).map((row) => ({
-    id: row.customer_id || "", 
-    email: row.customer_email || "Unknown Email",
-    riskScore: row.risk_score || 0,
-    signal: row.signal || "High Risk Detected",
-    lastActive: row.last_active ? new Date(row.last_active).toLocaleDateString() : "Recently",
-  }));
 
   // Sanitize & Normalize Recovery Templates
   const emailTemplates: EmailTemplate[] = (templatesData || []).map((row) => ({
@@ -147,8 +137,9 @@ export default async function CampaignsPage() {
     <div className="flex flex-col min-h-screen w-full bg-[#FAFAFA] p-6 lg:p-8 animate-in fade-in duration-300 font-sans space-y-12">
       {/* Primary Dispatch Center */}
       <CampaignsClient 
-        atRiskUsers={atRiskUsers} 
+        targetUsers={targetUsers}
         emailTemplates={emailTemplates}
+        initialAudienceSegment={initialAudienceSegment}
         initialSenderEmail={initialSenderEmail}
         initialCompanyName={initialCompanyName}
         initialFullName={initialFullName}

@@ -19,8 +19,9 @@ import { C } from "@/lib/tokens";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 
 export default function CampaignsClient({
-  atRiskUsers,
+  targetUsers,
   emailTemplates,
+  initialAudienceSegment,
   initialSenderEmail,
   initialCompanyName,
   initialFullName,
@@ -31,12 +32,14 @@ export default function CampaignsClient({
 }: CampaignsClientProps) {
   const {
     senderEmail,
+    audienceSegment,
     selectedTemplate,
     selectedUsers,
     isSending,
+    isLoadingTargets,
     senderInput,
     isSavingSender,
-    sortedAtRiskUsers,
+    sortedTargetUsers,
     allSelected,
     activeTemplate,
     setSelectedTemplate,
@@ -45,12 +48,14 @@ export default function CampaignsClient({
     onNewTemplateCreated,
     toggleUser,
     toggleAll,
+    handleAudienceSegmentChange,
     handleSendCampaign,
     isProTier,
     restrictionMessage,
   } = useCampaigns({
-    atRiskUsers,
+    targetUsers,
     emailTemplates,
+    initialAudienceSegment,
     initialSenderEmail,
     isProTier: initialIsProTier,
     planTier,
@@ -284,11 +289,14 @@ export default function CampaignsClient({
         recipientEmail={recipientEmail}
         recipientName={recipientName}
         unsupportedVariables={unsupportedVariables}
-        sortedAtRiskUsers={sortedAtRiskUsers}
+        sortedTargetUsers={sortedTargetUsers}
+        audienceSegment={audienceSegment}
+        isLoadingTargets={isLoadingTargets}
         selectedUsers={selectedUsers}
         allSelected={allSelected}
         toggleUser={toggleUser}
         toggleAll={toggleAll}
+        onAudienceSegmentChange={handleAudienceSegmentChange}
         isProTier={isProTier}
         restrictionMessage={restrictionMessage}
         surfaceBorder={surfaceBorder}
@@ -329,7 +337,7 @@ export default function CampaignsClient({
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.green }} />
               <span>
                 Queueing <strong style={{ color: C.navy }}>{activeTemplate.name}</strong> for{" "}
-                <strong style={{ color: C.navy }}>{selectedUsers.size}</strong> operators.
+                <strong style={{ color: C.navy }}>{selectedUsers.size}</strong> users.
               </span>
             </>
           ) : (

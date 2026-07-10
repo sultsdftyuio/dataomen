@@ -101,8 +101,14 @@ class ChurnScoringService:
         tenant_id: str,
         users: List[Dict[str, Any]],
         target_date: str,
+        segment: str = "at_risk",
     ) -> List[Dict[str, Any]]:
-        """Compute churn risk scores for a user batch and return at-risk users."""
+        """Compute churn risk scores for a user batch.
+
+        By default this preserves the historical recovery behavior and returns
+        only users with a positive score.  ``segment="all"`` returns every valid
+        user in the batch with nullable/zero churn score metadata attached.
+        """
         if not tenant_id:
             raise ValueError("tenant_id is required")
 
@@ -111,6 +117,7 @@ class ChurnScoringService:
 
         start_time = time.time()
         run_id = uuid.uuid4().hex
+        include_all_users = (segment or "at_risk").strip().lower() == "all"
 
         users_by_id = self._index_users(users)
         profiles = self._build_user_profiles(users_by_id)
@@ -227,7 +234,8 @@ class ChurnScoringService:
             signals_missing.append("activity")
 
         # -- Score every user ------------------------------------------
-        at_risk_users: List[Dict[str, Any]] = []
+        scored_users: List[Dict[str, Any]] = []
+        positive_score_count = 0
         risk_state_rows: List[Dict[str, Any]] = []
         history_rows: List[Dict[str, Any]] = []
 
@@ -261,16 +269,20 @@ class ChurnScoringService:
             risk_state_rows.append(risk_payload.model_dump())
             history_rows.append(risk_payload.model_dump())
 
-            if score <= 0:
+            if score > 0:
+                positive_score_count += 1
+
+            if score <= 0 and not include_all_users:
                 continue
 
             scored_user = dict(user or {})
             scored_user["churn_risk_score"] = score
+            scored_user["risk_score"] = score
             scored_user["primary_risk_signal"] = primary_signal
             scored_user["risk_tier"] = risk_tier
             scored_user["risk_signals"] = signal_details
             scored_user["risk_run_id"] = run_id
-            at_risk_users.append(scored_user)
+            scored_users.append(scored_user)
 
         # -- Persist ----------------------------------------------------
         if PERSIST_RISK_STATE:
@@ -285,18 +297,21 @@ class ChurnScoringService:
 
         logger.info(
             "churn_scoring_batch_completed tenant=%s duration=%ss users=%d "
-            "at_risk=%d signals=%s missing=%s rollup=%s run_id=%s",
+            "positive_scores=%d returned=%d segment=%s signals=%s missing=%s "
+            "rollup=%s run_id=%s",
             tenant_id,
             duration,
             len(user_ids),
-            len(at_risk_users),
+            positive_score_count,
+            len(scored_users),
+            "all" if include_all_users else "at_risk",
             signal_counts,
             signals_missing,
             CHURN_USE_ACTIVITY_ROLLUP,
             run_id,
         )
 
-        return at_risk_users
+        return scored_users
 
     # ------------------------------------------------------------------
     # User profile building

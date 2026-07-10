@@ -11,8 +11,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from supabase import create_client, Client
 
 # Import your route files
-from api.routes import api_keys, webhooks, metrics, track, query
+from api.routes import api_keys, webhooks, metrics, track, query, identify
 from api import auth
+from api.services.security.api_key_cache import warm_api_key_auth_cache_from_supabase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,6 +81,12 @@ async def lifespan(app: FastAPI):
         settings.supabase_url, 
         settings.supabase_service_role_key
     )
+
+    try:
+        warmed_keys = await warm_api_key_auth_cache_from_supabase(app.state.supabase)
+        logger.info("API key auth cache warmed count=%d", warmed_keys)
+    except Exception:
+        logger.exception("API key auth cache warm failed")
     
     try:
         yield
@@ -190,6 +197,7 @@ app.include_router(api_keys.router)
 app.include_router(webhooks.router)
 app.include_router(metrics.router)
 app.include_router(track.router)
+app.include_router(identify.router)
 app.include_router(query.router)
 app.include_router(auth.router)
 

@@ -69,3 +69,8 @@ from api.worker.worker_outbox import (
     _claim_outbox_batch,
     _handle_dispatch_failure,
 )
+
+# ---------------------------------------------------------------------------
+# IDENTIFY: async user profile heartbeats
+# ---------------------------------------------------------------------------
+from api.worker.identify import process_identify_payload

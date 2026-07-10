@@ -7,29 +7,44 @@ import crypto from "crypto";
 
 export const runtime = "nodejs";
 
+const riskScoreSchema = z.preprocess(
+  (value) => (value === null || value === undefined || value === "" ? null : value),
+  z.coerce.number().int().min(0).max(100).nullable()
+);
+
+const targetSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    email: z.string().trim().toLowerCase().email(),
+    signal: z.string().trim().optional().default("Green / Healthy"),
+    riskScore: riskScoreSchema.optional().default(null),
+  })
+  .passthrough();
+
 const dispatchSchema = z.object({
   templateId: z.string().trim().min(1),
   idempotencyKey: z.string().trim().min(1).max(128),
+  audienceSegment: z.enum(["all", "at_risk"]).optional().default("all"),
   targets: z
-    .array(
-      z
-        .object({
-          id: z.string().trim().min(1),
-          email: z.string().trim().toLowerCase().email(),
-          signal: z.string().trim().optional().default("unknown"),
-          riskScore: z.coerce.number().int().min(0).max(100).optional().default(0),
-        })
-        .passthrough()
-    )
+    .array(targetSchema)
     .min(1)
     .max(500),
 });
+
+type DispatchTarget = z.infer<typeof targetSchema>;
+type CanonicalDispatchTarget = {
+  id: string;
+  email: string;
+  signal: string;
+  riskScore: number | null;
+};
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const hashDispatchRequest = (
   templateId: string,
-  targets: Array<{ id: string; email: string; signal: string; riskScore: number }>
+  audienceSegment: string,
+  targets: CanonicalDispatchTarget[]
 ) => {
   const canonicalTargets = targets
     .map((target) => ({
@@ -42,9 +57,67 @@ const hashDispatchRequest = (
 
   return crypto
     .createHash("sha256")
-    .update(JSON.stringify({ templateId, targets: canonicalTargets }))
+    .update(JSON.stringify({ templateId, audienceSegment, targets: canonicalTargets }))
     .digest("hex");
 };
+
+async function canonicalizeTenantTargets(
+  supabase: any,
+  tenantId: string,
+  targets: DispatchTarget[]
+): Promise<{ targets: CanonicalDispatchTarget[] } | { response: NextResponse }> {
+  const targetIds = Array.from(new Set(targets.map((target) => target.id)));
+
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("id, email")
+    .eq("tenant_id", tenantId)
+    .in("id", targetIds)
+    .limit(targetIds.length);
+
+  if (error) {
+    console.error("[CAMPAIGN_DISPATCH] Target validation failed:", {
+      tenantId,
+      error,
+    });
+    return {
+      response: NextResponse.json(
+        { error: "Failed to validate campaign targets" },
+        { status: 500 }
+      ),
+    };
+  }
+
+  const profilesById = new Map(
+    ((data || []) as Array<{ id?: string | null; email?: string | null }>)
+      .filter((row) => row.id)
+      .map((row) => [String(row.id), row])
+  );
+  const missingIds = targetIds.filter((id) => !profilesById.has(id));
+
+  if (missingIds.length > 0) {
+    return {
+      response: NextResponse.json(
+        { error: "One or more campaign targets do not belong to this workspace" },
+        { status: 400 }
+      ),
+    };
+  }
+
+  return {
+    targets: targets.map((target) => {
+      const profile = profilesById.get(target.id);
+      const canonicalEmail = profile?.email?.trim().toLowerCase() || target.email;
+
+      return {
+        id: target.id,
+        email: canonicalEmail,
+        signal: target.signal?.trim() || "Green / Healthy",
+        riskScore: target.riskScore ?? null,
+      };
+    }),
+  };
+}
 
 const getRpcStatus = (data: unknown) => {
   const result = Array.isArray(data) ? data[0] : data;
@@ -81,8 +154,23 @@ export const POST = withTenant(async (req, { supabase, tenantId }) => {
       );
     }
 
-    const { templateId, targets, idempotencyKey } = parsed.data;
-    const requestHash = hashDispatchRequest(templateId, targets);
+    const { templateId, targets, idempotencyKey, audienceSegment } = parsed.data;
+    const canonicalized = await canonicalizeTenantTargets(
+      supabase,
+      tenantId,
+      targets
+    );
+
+    if ("response" in canonicalized) {
+      return canonicalized.response;
+    }
+
+    const canonicalTargets = canonicalized.targets;
+    const requestHash = hashDispatchRequest(
+      templateId,
+      audienceSegment,
+      canonicalTargets
+    );
 
     let data: unknown = null;
     let error: { message?: string } | null = null;
@@ -93,7 +181,7 @@ export const POST = withTenant(async (req, { supabase, tenantId }) => {
         p_template_id: templateId,
         p_idempotency_key: idempotencyKey,
         p_request_hash: requestHash,
-        p_targets: targets,
+        p_targets: canonicalTargets,
       });
 
       data = rpcResult.data;
@@ -140,7 +228,7 @@ export const POST = withTenant(async (req, { supabase, tenantId }) => {
       "queued" in result &&
       typeof (result as { queued?: number }).queued === "number"
         ? (result as { queued: number }).queued
-        : targets.length;
+        : canonicalTargets.length;
 
     if (deduplicated) {
       return NextResponse.json({ status: "success", note: "deduplicated", queued });

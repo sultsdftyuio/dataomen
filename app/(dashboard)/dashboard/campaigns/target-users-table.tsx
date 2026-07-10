@@ -1,24 +1,67 @@
 "use client";
 
 import React from "react";
-import { Lock } from "lucide-react";
+import { Lock, RefreshCw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { C } from "@/lib/tokens";
 import UpgradeButton from "@/components/ui/UpgradeButton";
+import type { AudienceSegment, RiskUser } from "@/lib/types";
 
 interface TargetUsersTableProps {
-  sortedAtRiskUsers: any[];
+  sortedTargetUsers: RiskUser[];
+  audienceSegment: AudienceSegment;
+  isLoadingTargets: boolean;
   selectedUsers: Set<string>;
   allSelected: boolean;
   senderEmail: string | null;
   isProTier: boolean;
   restrictionMessage: string;
   toggleUser: (id: string) => void;
-  toggleAll: (checked: boolean) => void;
+  toggleAll: () => void;
+}
+
+type RiskPresentation = {
+  label: string;
+  background: string;
+  border: string;
+  color: string;
+  dot: string;
+};
+
+function getRiskPresentation(score?: number | null): RiskPresentation {
+  if (score === null || score === undefined || score < 50) {
+    return {
+      label: "Green / Healthy",
+      background: "rgba(16, 185, 129, 0.08)",
+      border: "1px solid rgba(16, 185, 129, 0.25)",
+      color: "#047857",
+      dot: "#10B981",
+    };
+  }
+
+  if (score < 70) {
+    return {
+      label: "Yellow / Monitor",
+      background: C.amberPale,
+      border: "1px solid rgba(245, 158, 11, 0.3)",
+      color: "#92400E",
+      dot: C.amber,
+    };
+  }
+
+  return {
+    label: "Red / At Risk",
+    background: "rgba(239, 68, 68, 0.08)",
+    border: "1px solid rgba(239, 68, 68, 0.25)",
+    color: "#991B1B",
+    dot: "#EF4444",
+  };
 }
 
 export function TargetUsersTable({
-  sortedAtRiskUsers,
+  sortedTargetUsers,
+  audienceSegment,
+  isLoadingTargets,
   selectedUsers,
   allSelected,
   senderEmail,
@@ -29,7 +72,8 @@ export function TargetUsersTable({
 }: TargetUsersTableProps) {
   const sans = "var(--font-geist-sans), sans-serif";
   const surfaceBorder = `1px solid ${C.rule}`;
-  const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+  const surfaceShadow =
+    "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
 
   if (!isProTier) {
     return (
@@ -45,7 +89,7 @@ export function TargetUsersTable({
               margin: 0,
             }}
           >
-            2. Target Roster
+            Target Roster
           </h2>
           <div
             style={{
@@ -76,7 +120,15 @@ export function TargetUsersTable({
             textAlign: "center",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, maxWidth: 420 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 12,
+              maxWidth: 420,
+            }}
+          >
             <div
               style={{
                 width: 38,
@@ -109,8 +161,6 @@ export function TargetUsersTable({
 
   return (
     <div style={{ fontFamily: sans, display: "flex", flexDirection: "column", gap: 12 }}>
-      
-      {/* ── Section Header ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <h2
           style={{
@@ -122,24 +172,30 @@ export function TargetUsersTable({
             margin: 0,
           }}
         >
-          2. Target Roster
+          Target Roster
         </h2>
         <div
           style={{
             fontSize: 11,
             fontWeight: 700,
-            color: C.amber,
-            background: C.amberPale,
-            border: `1px solid rgba(245, 158, 11, 0.3)`,
+            color: audienceSegment === "all" ? C.blueMid : C.amber,
+            background: audienceSegment === "all" ? C.bluePale : C.amberPale,
+            border:
+              audienceSegment === "all"
+                ? `1px solid rgba(27, 110, 191, 0.25)`
+                : `1px solid rgba(245, 158, 11, 0.3)`,
             padding: "2px 8px",
             borderRadius: 6,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
           }}
         >
-          {sortedAtRiskUsers.length} High Risk
+          {isLoadingTargets && <RefreshCw size={11} className="animate-spin" />}
+          {sortedTargetUsers.length} {audienceSegment === "all" ? "Users" : "At Risk"}
         </div>
       </div>
 
-      {/* ── Table Container ── */}
       <div
         style={{
           background: C.white,
@@ -147,8 +203,8 @@ export function TargetUsersTable({
           border: surfaceBorder,
           boxShadow: surfaceShadow,
           overflow: "hidden",
-          opacity: !senderEmail ? 0.6 : 1,
-          pointerEvents: !senderEmail ? "none" : "auto",
+          opacity: !senderEmail || isLoadingTargets ? 0.6 : 1,
+          pointerEvents: !senderEmail || isLoadingTargets ? "none" : "auto",
         }}
       >
         <table style={{ width: "100%", textAlign: "left", fontSize: 13, borderCollapse: "collapse" }}>
@@ -158,7 +214,7 @@ export function TargetUsersTable({
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={toggleAll}
-                  disabled={sortedAtRiskUsers.length === 0 || !senderEmail}
+                  disabled={sortedTargetUsers.length === 0 || !senderEmail}
                   className="w-3.5 h-3.5 rounded-[3px]"
                 />
               </th>
@@ -166,7 +222,7 @@ export function TargetUsersTable({
                 User Entity
               </th>
               <th style={{ padding: 10, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.navySoft }}>
-                Primary Signal
+                Risk Level
               </th>
               <th style={{ padding: 10, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: C.navySoft }}>
                 Score
@@ -177,15 +233,21 @@ export function TargetUsersTable({
             </tr>
           </thead>
           <tbody>
-            {sortedAtRiskUsers.length === 0 ? (
+            {sortedTargetUsers.length === 0 ? (
               <tr>
                 <td colSpan={5} style={{ textAlign: "center", padding: 48, fontSize: 13, color: C.muted }}>
-                  No high-risk users currently detected.
+                  {isLoadingTargets
+                    ? "Loading campaign targets..."
+                    : audienceSegment === "all"
+                      ? "No users currently available."
+                      : "No at-risk users currently detected."}
                 </td>
               </tr>
             ) : (
-              sortedAtRiskUsers.map((user) => {
+              sortedTargetUsers.map((user) => {
                 const isChecked = selectedUsers.has(user.id);
+                const risk = getRiskPresentation(user.riskScore);
+
                 return (
                   <tr
                     key={user.id}
@@ -213,16 +275,16 @@ export function TargetUsersTable({
                           alignItems: "center",
                           gap: 6,
                           padding: "4px 8px",
-                          background: C.amberPale,
-                          border: `1px solid rgba(245, 158, 11, 0.3)`,
+                          background: risk.background,
+                          border: risk.border,
                           borderRadius: 4,
                           fontSize: 11,
                           fontFamily: "monospace",
-                          color: "#92400E",
+                          color: risk.color,
                         }}
                       >
-                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.amber }} />
-                        {user.signal}
+                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: risk.dot }} />
+                        {risk.label}
                       </div>
                     </td>
                     <td style={{ padding: 10 }}>
@@ -239,7 +301,9 @@ export function TargetUsersTable({
                           border: surfaceBorder,
                         }}
                       >
-                        {user.riskScore}
+                        {user.riskScore === null || user.riskScore === undefined
+                          ? "No score"
+                          : user.riskScore}
                       </span>
                     </td>
                     <td style={{ padding: 10, textAlign: "right", color: C.muted, fontSize: 12, fontWeight: 500 }}>

@@ -89,6 +89,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+CAMPAIGN_TARGET_SEGMENTS = {"all", "at_risk"}
+CAMPAIGN_AT_RISK_THRESHOLD = 70
+CAMPAIGN_TARGET_LIMIT = 500
+
 
 # ===========================================================================
 # Generic list chunking helper
@@ -105,6 +109,190 @@ def _chunk_list(items: List[Any], batch_size: int) -> Iterable[List[Any]]:
         batch_size = DEFAULT_EVENT_BATCH_SIZE
     for index in range(0, len(items), batch_size):
         yield items[index : index + batch_size]
+
+
+# ===========================================================================
+# Campaign target lookup
+# ===========================================================================
+
+def fetch_campaign_target_users(
+    db,
+    tenant_id: str,
+    segment: str = "at_risk",
+    limit: int = CAMPAIGN_TARGET_LIMIT,
+) -> List[Dict[str, Any]]:
+    """Fetch tenant-scoped users eligible for campaign targeting.
+
+    ``segment="all"`` intentionally performs the relaxed campaign lookup:
+    every user profile for the tenant is returned and the current churn score
+    is merged in as nullable data.  ``segment="at_risk"`` keeps the historical
+    recovery audience by applying the risk threshold to the churn state first.
+
+    Security note: both paths explicitly scope every query by ``tenant_id``.
+    The risk filter is relaxed only for audience selection; tenant isolation is
+    not relaxed.
+    """
+    if not tenant_id:
+        raise ValueError("tenant_id is required")
+
+    normalized_segment = (segment or "at_risk").strip().lower()
+    if normalized_segment not in CAMPAIGN_TARGET_SEGMENTS:
+        raise ValueError(
+            "segment must be one of: %s"
+            % ", ".join(sorted(CAMPAIGN_TARGET_SEGMENTS))
+        )
+
+    safe_limit = max(1, min(int(limit or CAMPAIGN_TARGET_LIMIT), CAMPAIGN_TARGET_LIMIT))
+
+    if normalized_segment == "all":
+        return _fetch_all_campaign_targets(db, tenant_id, safe_limit)
+
+    return _fetch_at_risk_campaign_targets(db, tenant_id, safe_limit)
+
+
+def _fetch_all_campaign_targets(
+    db,
+    tenant_id: str,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    users_resp = (
+        db.table("user_profiles")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .limit(limit)
+        .execute()
+    )
+
+    users = users_resp.data or []
+    user_ids = [
+        user_id
+        for user_id in (_coerce_user_id(row.get("id")) for row in users)
+        if user_id
+    ]
+    risk_by_user_id = _fetch_risk_state_map(db, tenant_id, user_ids)
+
+    return [
+        _merge_campaign_target(row, risk_by_user_id.get(_coerce_user_id(row.get("id"))))
+        for row in users
+    ]
+
+
+def _fetch_at_risk_campaign_targets(
+    db,
+    tenant_id: str,
+    limit: int,
+) -> List[Dict[str, Any]]:
+    risk_rows = _fetch_risk_state_rows(
+        db=db,
+        tenant_id=tenant_id,
+        limit=limit,
+        min_score=CAMPAIGN_AT_RISK_THRESHOLD,
+    )
+
+    user_ids = [
+        user_id
+        for user_id in (_coerce_user_id(row.get("user_id")) for row in risk_rows)
+        if user_id
+    ]
+    if not user_ids:
+        return []
+
+    users_resp = (
+        db.table("user_profiles")
+        .select("*")
+        .eq("tenant_id", tenant_id)
+        .in_("id", user_ids)
+        .limit(limit)
+        .execute()
+    )
+
+    users_by_id = {
+        user_id: row
+        for row in (users_resp.data or [])
+        for user_id in [_coerce_user_id(row.get("id"))]
+        if user_id
+    }
+
+    targets: List[Dict[str, Any]] = []
+    for risk_row in risk_rows:
+        user_id = _coerce_user_id(risk_row.get("user_id"))
+        if not user_id:
+            continue
+        user = users_by_id.get(user_id)
+        if not user:
+            continue
+        targets.append(_merge_campaign_target(user, risk_row))
+
+    return targets
+
+
+def _fetch_risk_state_map(
+    db,
+    tenant_id: str,
+    user_ids: List[str],
+) -> Dict[str, Dict[str, Any]]:
+    if not user_ids:
+        return {}
+
+    rows = _fetch_risk_state_rows(db=db, tenant_id=tenant_id, user_ids=user_ids)
+    return {
+        user_id: row
+        for row in rows
+        for user_id in [_coerce_user_id(row.get("user_id"))]
+        if user_id
+    }
+
+
+def _fetch_risk_state_rows(
+    db,
+    tenant_id: str,
+    user_ids: Optional[List[str]] = None,
+    min_score: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    def run_query(select_fields: str):
+        query = (
+            db.table(RISK_STATE_TABLE)
+            .select(select_fields)
+            .eq("tenant_id", tenant_id)
+        )
+        if user_ids:
+            query = query.in_("user_id", user_ids)
+        if min_score is not None:
+            query = query.gte("risk_score", min_score)
+        query = query.order("risk_score", desc=True)
+        if limit is not None:
+            query = query.limit(limit)
+        return query.execute()
+
+    try:
+        resp = run_query("user_id,risk_score,risk_tier,primary_risk_signal,updated_at")
+        return resp.data or []
+    except Exception:
+        logger.warning(
+            "campaign_target_risk_state_fallback tenant=%s",
+            tenant_id,
+            exc_info=True,
+        )
+        resp = run_query("user_id,risk_score,risk_tier,updated_at")
+        return resp.data or []
+
+
+def _merge_campaign_target(
+    user_row: Dict[str, Any],
+    risk_row: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    target = dict(user_row)
+    score = None if not risk_row else risk_row.get("risk_score")
+    signal = None if not risk_row else risk_row.get("primary_risk_signal")
+
+    target["churn_score"] = score
+    target["churn_risk_score"] = score
+    target["risk_score"] = score
+    target["risk_tier"] = None if not risk_row else risk_row.get("risk_tier")
+    target["primary_risk_signal"] = signal
+    target["risk_signal"] = signal or "Green / Healthy"
+    return target
 
 
 # ===========================================================================

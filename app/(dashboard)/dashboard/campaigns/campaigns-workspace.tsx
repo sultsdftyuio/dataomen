@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { Mail, CheckCircle2 } from "lucide-react";
+import { Mail, CheckCircle2, Users } from "lucide-react";
 import { TargetUsersTable } from "./target-users-table";
 import { C } from "@/lib/tokens";
+import type { AudienceSegment, RiskUser } from "@/lib/types";
 
 interface CampaignsWorkspaceProps {
   emailTemplates: any[];
@@ -19,11 +20,14 @@ interface CampaignsWorkspaceProps {
   recipientEmail: string;
   recipientName: string;
   unsupportedVariables: string[];
-  sortedAtRiskUsers: any[];
+  sortedTargetUsers: RiskUser[];
+  audienceSegment: AudienceSegment;
+  isLoadingTargets: boolean;
   selectedUsers: Set<string>;
   allSelected: boolean;
   toggleUser: (id: string) => void;
   toggleAll: () => void;
+  onAudienceSegmentChange: (segment: AudienceSegment) => void;
   isProTier: boolean;
   restrictionMessage: string;
   surfaceBorder: string;
@@ -44,11 +48,14 @@ export function CampaignsWorkspace({
   recipientEmail,
   recipientName,
   unsupportedVariables,
-  sortedAtRiskUsers,
+  sortedTargetUsers,
+  audienceSegment,
+  isLoadingTargets,
   selectedUsers,
   allSelected,
   toggleUser,
   toggleAll,
+  onAudienceSegmentChange,
   isProTier,
   restrictionMessage,
   surfaceBorder,
@@ -310,8 +317,61 @@ export function CampaignsWorkspace({
           </div>
         )}
 
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              color: C.navySoft,
+              margin: 0,
+            }}
+          >
+            3. Audience Segment
+          </h2>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: 12,
+              borderRadius: 8,
+              border: surfaceBorder,
+              background: C.white,
+              boxShadow: surfaceShadow,
+            }}
+          >
+            <Users size={15} color={C.blue} />
+            <select
+              value={audienceSegment}
+              disabled={!isProTier || isLoadingTargets}
+              onChange={(event) =>
+                onAudienceSegmentChange(event.target.value as AudienceSegment)
+              }
+              style={{
+                width: "100%",
+                height: 34,
+                border: surfaceBorder,
+                borderRadius: 6,
+                background: C.offWhite,
+                color: C.navy,
+                fontSize: 13,
+                fontWeight: 600,
+                padding: "0 10px",
+                outline: "none",
+              }}
+            >
+              <option value="all">All Users (Broadcast)</option>
+              <option value="at_risk">At-Risk Users (Recovery)</option>
+            </select>
+          </label>
+        </div>
+
         <TargetUsersTable
-          sortedAtRiskUsers={sortedAtRiskUsers}
+          sortedTargetUsers={sortedTargetUsers}
+          audienceSegment={audienceSegment}
+          isLoadingTargets={isLoadingTargets}
           selectedUsers={selectedUsers}
           allSelected={allSelected}
           senderEmail={senderEmail}
