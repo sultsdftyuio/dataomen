@@ -6,6 +6,7 @@ import { Save, RefreshCw } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import BillingTestSwitcher from "./billing-test-switcher";
 import WorkspaceBillingCard, { WorkspaceBillingCardProps } from "./workspace-billing-card";
+import WorkspaceBrainGenerator, { type WorkspaceBrainProfile } from "./workspace-brain-generator";
 import WorkspaceSettingsForm from "./workspace-settings-form";
 import WorkspaceSettingsPreview from "./workspace-settings-preview";
 import { C } from "@/lib/tokens";
@@ -35,6 +36,13 @@ type WorkspaceUpdateResponse = {
     replyToEmail: string;
     websiteUrl: string;
   }>;
+};
+
+type WorkspaceFormState = {
+  fullName: string;
+  companyName: string;
+  supportEmail: string;
+  websiteUrl: string;
 };
 
 function formatFieldErrors(
@@ -98,61 +106,117 @@ export default function CompactWorkspaceSettings({
     setIsDirty(true);
   };
 
+  const persistWorkspaceSettings = async (
+    overrides: Partial<WorkspaceFormState> = {},
+    successMessage = {
+      title: "Configuration Saved",
+      description: "Workspace identity and profile details updated successfully.",
+    }
+  ) => {
+    const nextSettings: WorkspaceFormState = {
+      fullName,
+      companyName,
+      supportEmail,
+      websiteUrl,
+      ...overrides,
+    };
+
+    const payload = {
+      companyName: nextSettings.companyName,
+      replyToEmail: nextSettings.supportEmail,
+      fullName: nextSettings.fullName,
+      websiteUrl: nextSettings.websiteUrl,
+    };
+
+    const validation = WorkspaceSettingsSchema.safeParse(payload);
+    if (!validation.success) {
+      throw new Error(
+        formatFieldErrors(validation.error.flatten().fieldErrors) ||
+          "Invalid workspace configuration."
+      );
+    }
+
+    const res = await fetch("/api/settings/workspace", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(validation.data),
+    });
+
+    if (!res.ok) {
+      throw new Error(await readSettingsError(res));
+    }
+
+    const data = (await res.json().catch(() => ({}))) as WorkspaceUpdateResponse;
+
+    setFullName(
+      typeof data.settings?.fullName === "string"
+        ? data.settings.fullName
+        : nextSettings.fullName
+    );
+    setCompanyName(
+      typeof data.settings?.companyName === "string"
+        ? data.settings.companyName
+        : nextSettings.companyName
+    );
+    setSupportEmail(
+      typeof data.settings?.replyToEmail === "string"
+        ? data.settings.replyToEmail
+        : nextSettings.supportEmail
+    );
+    setWebsiteUrl(
+      typeof data.settings?.websiteUrl === "string"
+        ? data.settings.websiteUrl
+        : nextSettings.websiteUrl
+    );
+
+    setIsDirty(false);
+    router.refresh();
+
+    toast(successMessage);
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     startTransition(async () => {
       try {
-        const payload = {
-          companyName,
-          replyToEmail: supportEmail,
-          fullName,
-          websiteUrl,
-        };
-
-        const validation = WorkspaceSettingsSchema.safeParse(payload);
-        if (!validation.success) {
-          throw new Error(
-            formatFieldErrors(validation.error.flatten().fieldErrors) ||
-              "Invalid workspace configuration."
-          );
-        }
-
-        const res = await fetch("/api/settings/workspace", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(validation.data),
-        });
-
-        if (!res.ok) {
-          throw new Error(await readSettingsError(res));
-        }
-
-        const data = (await res.json().catch(() => ({}))) as WorkspaceUpdateResponse;
-
-        if (typeof data.settings?.fullName === "string") {
-          setFullName(data.settings.fullName);
-        }
-        if (typeof data.settings?.companyName === "string") {
-          setCompanyName(data.settings.companyName);
-        }
-        if (typeof data.settings?.replyToEmail === "string") {
-          setSupportEmail(data.settings.replyToEmail);
-        }
-        if (typeof data.settings?.websiteUrl === "string") {
-          setWebsiteUrl(data.settings.websiteUrl);
-        }
-
-        setIsDirty(false);
-        router.refresh();
-
-        toast({
-          title: "Configuration Saved",
-          description: "Workspace identity and profile details updated successfully.",
-        });
+        await persistWorkspaceSettings();
       } catch (error: any) {
         toast({
           title: "Save Failed",
           description: error.message || "Could not update workspace configuration. Please try again.",
+          variant: "destructive",
+        });
+      }
+    });
+  };
+
+  const handleApplyBrainProfile = (profile: WorkspaceBrainProfile) => {
+    setCompanyName(profile.company_name);
+    setIsDirty(true);
+
+    toast({
+      title: "Profile Applied",
+      description: "The generated company identity is staged in Workspace Settings.",
+    });
+  };
+
+  const handleActivateBrainProfile = (profile: WorkspaceBrainProfile) => {
+    startTransition(async () => {
+      try {
+        await persistWorkspaceSettings(
+          {
+            companyName: profile.company_name,
+            websiteUrl,
+          },
+          {
+            title: "Arcli Brain Activated",
+            description: "Workspace identity saved from the generated intelligence profile.",
+          }
+        );
+      } catch (error: any) {
+        toast({
+          title: "Activation Failed",
+          description: error.message || "Could not activate the generated profile. Please try again.",
           variant: "destructive",
         });
       }
@@ -216,6 +280,14 @@ export default function CompactWorkspaceSettings({
             authEmail={initialData.authEmail}
             isPending={isPending}
             handleInputChange={handleInputChange}
+          />
+          <WorkspaceBrainGenerator
+            companyName={companyName}
+            websiteUrl={websiteUrl}
+            isPending={isPending}
+            onWebsiteUrlChange={(value) => handleInputChange(setWebsiteUrl, value)}
+            onApplyProfile={handleApplyBrainProfile}
+            onSaveAndActivate={handleActivateBrainProfile}
           />
           <WorkspaceBillingCard planData={planData} />
           {billingTestControlsEnabled && (

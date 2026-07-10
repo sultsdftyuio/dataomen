@@ -5,9 +5,6 @@ import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
-import RecoveryOverview from "./RecoveryOverview";
-import QuickStartGuide from "./QuickStartGuide";
-
 export const metadata: Metadata = {
   title: "Dashboard | Arcli",
   description: "Monitor churn risk and recovery performance.",
@@ -169,14 +166,24 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   return (
     <div className="w-full mx-auto h-full flex flex-col animate-in fade-in duration-300">
       {setupState === "active" ? (
-        <RecoveryOverview entitlements={entitlements} />
+        <div className="p-6">{/* Active dashboard placeholder */}
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Overview and metrics will render here.</p>
+        </div>
       ) : (
-        <QuickStartGuide
-          hasApiKey={hasApiKey}
-          hasReceivedData={hasReceivedData}
-          setupState={setupState}
-          entitlements={entitlements}
-        />
+        <div className="p-6">{/* Setup / onboarding states */}
+          {setupState === "missing_api_key" ? (
+            <div>
+              <h2 className="text-lg font-medium">API Key Missing</h2>
+              <p className="mt-1 text-sm">Create an API key to start ingesting events.</p>
+            </div>
+          ) : (
+            <div>
+              <h2 className="text-lg font-medium">Awaiting Events</h2>
+              <p className="mt-1 text-sm">We haven't received any events for this workspace yet.</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

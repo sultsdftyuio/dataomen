@@ -17,12 +17,6 @@ anyio>=4.3.0
 dramatiq>=1.15.0              # Specified in Constitution Sec. 4
 redis>=5.0.0                  
 
-# --- Email Delivery (Recovery Engine) ---
-resend>=0.8.0                 # Core to Recovery Automation
-
-# --- Computation (Deterministic Scoring) ---
-pandas>=2.1.0
-numpy>=1.26.0
 
 # --- Database & Multi-Tenant Infrastructure ---
 supabase>=2.4.0               
@@ -55,3 +49,8 @@ cryptography>=41.0.0
 
 # --- Core SaaS Connectors ---
 stripe>=8.6.0                 # Specified in Constitution Sec. 4 & 14
+
+# --- AI & Web Intelligence ---
+openai>=1.40.0                # Required for beta.chat.completions.parse
+firecrawl-py>=2.0.0           # Official Firecrawl Python SDK
+python-dotenv==1.0.1
