@@ -1,6 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/supabase";
+import { getSupabaseCookieOptions } from "./cookie-options";
+
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
 const getRequiredEnv = (name: string): string => {
   const value = process.env[name];
@@ -12,21 +15,22 @@ const getRequiredEnv = (name: string): string => {
   return value;
 };
 
-export async function createClient() {
-  const cookieStore = await cookies();
+export async function createClient(cookieStore?: CookieStore) {
+  const resolvedCookieStore = cookieStore ?? (await cookies());
 
   return createServerClient<Database>(
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
     getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     {
+      cookieOptions: getSupabaseCookieOptions(),
       cookies: {
         getAll() {
-          return cookieStore.getAll();
+          return resolvedCookieStore.getAll();
         },
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options);
+              resolvedCookieStore.set(name, value, options);
             });
           } catch (error) {
             if (process.env.NODE_ENV !== "production") {

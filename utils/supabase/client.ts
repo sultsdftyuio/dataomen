@@ -1,5 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
+import { getSupabaseCookieOptions } from "./cookie-options";
 
 // 1. Robust URL resolution with strict HTTPS enforcement and validation
 export const getURL = (): string => {
@@ -53,6 +54,7 @@ export function createClient() {
     supabaseUrl,
     supabaseAnonKey,
     {
+      cookieOptions: getSupabaseCookieOptions(),
       global: {
         headers: {
           "x-client-info": "nextjs-app-router-browser",

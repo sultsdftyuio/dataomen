@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { type EmailOtpType } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
 import { resolvePostAuthRedirectPath } from '@/utils/auth-redirects';
 
@@ -87,7 +88,8 @@ export async function GET(request: Request) {
     // -----------------------------------------------------------------------
     // INITIALIZE SUPABASE SSR CLIENT
     // -----------------------------------------------------------------------
-    const supabase = await createClient();
+    const cookieStore = await cookies();
+    const supabase = await createClient(cookieStore);
     let sessionUser = null; // Track user for synchronous provisioning
 
     // -----------------------------------------------------------------------

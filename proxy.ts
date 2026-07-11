@@ -22,6 +22,7 @@ import {
   DEFAULT_POST_AUTH_REDIRECT_PATH,
   resolvePostAuthRedirectPath,
 } from '@/utils/auth-redirects'
+import { getSupabaseCookieOptions } from '@/utils/supabase/cookie-options'
 
 export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -95,6 +96,7 @@ export default async function middleware(request: NextRequest) {
   }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookieOptions: getSupabaseCookieOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll()
