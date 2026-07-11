@@ -1,11 +1,379 @@
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import re
+from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
+import dramatiq
+from dramatiq.brokers.redis import RedisBroker
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Connection, Engine
+
 logger = logging.getLogger(__name__)
+
+SERVICE_PROFILE_COLUMNS = {
+    "tenant_id",
+    "website_url",
+    "url",
+    "status",
+    "review_status",
+    "profile_json",
+    "profile",
+    "data",
+    "target_audience",
+    "core_problem",
+    "unique_value_prop",
+    "use_cases",
+    "pain_points",
+    "buying_triggers",
+    "negative_keywords",
+    "excluded_audiences",
+    "created_at",
+    "updated_at",
+}
+
+
+def _configure_dramatiq_broker() -> None:
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        return
+
+    current_broker = dramatiq.get_broker()
+    if isinstance(current_broker, RedisBroker):
+        return
+
+    dramatiq.set_broker(RedisBroker(url=redis_url))
+    logger.info(
+        "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
+        "redis",
+        True,
+    )
+
+
+def _require_redis_broker() -> None:
+    if not os.getenv("REDIS_URL", "").strip():
+        raise RuntimeError("REDIS_URL is required to enqueue crawl jobs.")
+
+    _configure_dramatiq_broker()
+
+
+def _normalize_database_url(raw_url: str) -> str:
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql://", 1)
+    return raw_url
+
+
+@lru_cache(maxsize=1)
+def _database_engine() -> Engine:
+    database_url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("SUPABASE_DB_URL")
+        or os.getenv("POSTGRES_URL")
+        or ""
+    ).strip()
+
+    if not database_url:
+        raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
+
+    return create_engine(_normalize_database_url(database_url), pool_pre_ping=True)
+
+
+def _crawl_job_id(tenant_id: str, website_url: str) -> str:
+    digest = hashlib.sha256(f"{tenant_id}:{website_url}".encode("utf-8")).hexdigest()
+    return digest[:24]
+
+
+def _jsonable_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    items: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        normalized = re.sub(r"\s+", " ", item.strip())
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            items.append(normalized)
+
+    return items
+
+
+def _string_value(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, Any]:
+    target_audience = _jsonable_list(profile.get("target_audience"))
+    pain_points = _jsonable_list(profile.get("ideal_customer_pain_points"))
+    negative_keywords = _jsonable_list(profile.get("negative_keywords"))
+    key_value_propositions = _jsonable_list(profile.get("key_value_propositions"))
+    core_problem = _string_value(profile.get("core_problem_solved"))
+    one_liner = _string_value(profile.get("one_liner"))
+
+    return {
+        "company_name": _string_value(profile.get("company_name")),
+        "one_liner": one_liner,
+        "target_audience": target_audience,
+        "core_problem_solved": core_problem,
+        "core_problem": core_problem,
+        "key_value_propositions": key_value_propositions,
+        "unique_value_prop": one_liner,
+        "ideal_customer_pain_points": pain_points,
+        "pain_points": pain_points,
+        "use_cases": [],
+        "buying_triggers": [],
+        "negative_keywords": negative_keywords,
+        "excluded_audiences": [],
+        "website_url": website_url,
+        "status": "draft",
+        "review_status": "draft",
+    }
+
+
+def _service_profile_payload(profile: dict[str, Any], website_url: str) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    document = _profile_document(profile, website_url)
+
+    return {
+        "website_url": website_url,
+        "url": website_url,
+        "status": "draft",
+        "review_status": "draft",
+        "profile_json": document,
+        "profile": document,
+        "data": document,
+        "target_audience": document["target_audience"],
+        "core_problem": document["core_problem"],
+        "unique_value_prop": document["unique_value_prop"],
+        "use_cases": document["use_cases"],
+        "pain_points": document["pain_points"],
+        "buying_triggers": document["buying_triggers"],
+        "negative_keywords": document["negative_keywords"],
+        "excluded_audiences": document["excluded_audiences"],
+        "updated_at": now,
+    }
+
+
+def _service_profile_columns(conn: Connection) -> dict[str, dict[str, str]]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT column_name, data_type, udt_name
+              FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'service_profiles'
+            """
+        )
+    ).mappings()
+
+    return {
+        str(row["column_name"]): {
+            "data_type": str(row["data_type"]),
+            "udt_name": str(row["udt_name"]),
+        }
+        for row in rows
+        if str(row["column_name"]) in SERVICE_PROFILE_COLUMNS or row["column_name"] == "id"
+    }
+
+
+def _is_json_column(column: dict[str, str]) -> bool:
+    return column["data_type"] in {"json", "jsonb"} or column["udt_name"] in {
+        "json",
+        "jsonb",
+    }
+
+
+def _value_expression(param_name: str, column: dict[str, str]) -> str:
+    if column["data_type"] == "json" or column["udt_name"] == "json":
+        return f"CAST(:{param_name} AS json)"
+    if column["data_type"] == "jsonb" or column["udt_name"] == "jsonb":
+        return f"CAST(:{param_name} AS jsonb)"
+    return f":{param_name}"
+
+
+def _coerce_value(value: Any, column: dict[str, str]) -> Any:
+    if _is_json_column(column):
+        return json.dumps(value)
+
+    if isinstance(value, list) and column["data_type"] != "ARRAY":
+        return "\n".join(value)
+
+    if isinstance(value, dict):
+        return json.dumps(value)
+
+    return value
+
+
+def _bind_payload(
+    payload: dict[str, Any],
+    columns: dict[str, dict[str, str]],
+) -> tuple[dict[str, str], dict[str, Any]]:
+    expressions: dict[str, str] = {}
+    params: dict[str, Any] = {}
+
+    for column_name, value in payload.items():
+        column = columns.get(column_name)
+        if not column:
+            continue
+
+        param_name = f"p_{column_name}"
+        expressions[column_name] = _value_expression(param_name, column)
+        params[param_name] = _coerce_value(value, column)
+
+    return expressions, params
+
+
+def _current_website_url(conn: Connection, tenant_id: str) -> str | None:
+    return conn.execute(
+        text(
+            """
+            SELECT website_url
+              FROM public.tenant_settings
+             WHERE tenant_id = :tenant_id
+             LIMIT 1
+            """
+        ),
+        {"tenant_id": tenant_id},
+    ).scalar_one_or_none()
+
+
+def _normalized_equals(left: str | None, right: str) -> bool:
+    if not left:
+        return False
+
+    try:
+        return WebsiteCrawler._normalize_url(left) == right
+    except ValueError:
+        return left.strip() == right
+
+
+def _load_existing_service_profile(
+    conn: Connection,
+    tenant_id: str,
+    columns: dict[str, dict[str, str]],
+) -> dict[str, Any] | None:
+    select_columns = ["tenant_id"]
+    if "id" in columns:
+        select_columns.insert(0, "id")
+
+    order_columns = [
+        column_name
+        for column_name in ("updated_at", "created_at")
+        if column_name in columns
+    ]
+    order_sql = (
+        " ORDER BY "
+        + ", ".join(f"{column_name} DESC NULLS LAST" for column_name in order_columns)
+        if order_columns
+        else ""
+    )
+
+    row = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(select_columns)}
+              FROM public.service_profiles
+             WHERE tenant_id = :tenant_id
+             {order_sql}
+             LIMIT 1
+             FOR UPDATE
+            """
+        ),
+        {"tenant_id": tenant_id},
+    ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def _upsert_service_profile(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    website_url: str,
+    profile: dict[str, Any],
+) -> str | None:
+    columns = _service_profile_columns(conn)
+    if "tenant_id" not in columns:
+        raise RuntimeError("service_profiles.tenant_id column is required.")
+
+    conn.execute(
+        text(
+            """
+            SELECT tenant_id
+              FROM public.tenant_settings
+             WHERE tenant_id = :tenant_id
+             FOR UPDATE
+            """
+        ),
+        {"tenant_id": tenant_id},
+    )
+
+    payload = _service_profile_payload(profile, website_url)
+    existing = _load_existing_service_profile(conn, tenant_id, columns)
+    expressions, params = _bind_payload(payload, columns)
+
+    if existing:
+        if not expressions:
+            return str(existing.get("id")) if existing.get("id") else None
+
+        assignment_parts = [
+            f"{column_name} = {expression}"
+            for column_name, expression in expressions.items()
+            if column_name not in {"tenant_id", "created_at"}
+        ]
+        if not assignment_parts:
+            return str(existing.get("id")) if existing.get("id") else None
+
+        assignments = ", ".join(assignment_parts)
+        params["tenant_id"] = tenant_id
+
+        where_sql = "tenant_id = :tenant_id"
+        if "id" in columns and existing.get("id"):
+            where_sql = "id = :profile_id AND tenant_id = :tenant_id"
+            params["profile_id"] = existing["id"]
+
+        conn.execute(
+            text(
+                f"""
+                UPDATE public.service_profiles
+                   SET {assignments}
+                 WHERE {where_sql}
+                """
+            ),
+            params,
+        )
+        return str(existing.get("id")) if existing.get("id") else None
+
+    insert_payload = {
+        "tenant_id": tenant_id,
+        **payload,
+    }
+    if "created_at" in columns:
+        insert_payload["created_at"] = datetime.now(timezone.utc).isoformat()
+
+    insert_expressions, insert_params = _bind_payload(insert_payload, columns)
+    if not insert_expressions:
+        raise RuntimeError("service_profiles has no supported writable columns.")
+
+    conn.execute(
+        text(
+            f"""
+            INSERT INTO public.service_profiles ({", ".join(insert_expressions)})
+            VALUES ({", ".join(insert_expressions.values())})
+            """
+        ),
+        insert_params,
+    )
+
+    return None
 
 
 class WebsiteCrawler:
@@ -441,3 +809,95 @@ class WebsiteCrawler:
         if isinstance(obj, dict):
             return obj.get(field_name, default)
         return getattr(obj, field_name, default)
+
+
+def enqueue_crawl_job(tenant_id: str, website_url: str) -> str:
+    _require_redis_broker()
+    normalized_url = WebsiteCrawler._normalize_url(website_url)
+    message = process_crawl_job.send(tenant_id, normalized_url)
+
+    logger.info(
+        "crawl_job_enqueued tenant_id=%s website_url=%s message_id=%s",
+        tenant_id,
+        normalized_url,
+        message.message_id,
+    )
+    return message.message_id
+
+
+_configure_dramatiq_broker()
+
+
+@dramatiq.actor(
+    queue_name=os.getenv("ARCLI_CRAWL_QUEUE_NAME", "crawling"),
+    max_retries=3,
+)
+def process_crawl_job(tenant_id: str, website_url: str) -> None:
+    normalized_url = WebsiteCrawler._normalize_url(website_url)
+    crawl_job_id = _crawl_job_id(tenant_id, normalized_url)
+    engine = _database_engine()
+
+    with engine.begin() as conn:
+        current_website_url = _current_website_url(conn, tenant_id)
+
+    if not _normalized_equals(current_website_url, normalized_url):
+        logger.info(
+            "crawl_job_skipped tenant_id=%s website_url=%s crawl_job_id=%s skip_reason=%s current_website_url=%s",
+            tenant_id,
+            normalized_url,
+            crawl_job_id,
+            "stale_or_missing_tenant_website_url",
+            current_website_url,
+        )
+        return
+
+    logger.info(
+        "crawl_job_started tenant_id=%s website_url=%s crawl_job_id=%s",
+        tenant_id,
+        normalized_url,
+        crawl_job_id,
+    )
+
+    markdown = asyncio.run(
+        WebsiteCrawler().crawl_and_scrape(
+            normalized_url,
+            tenant_id=tenant_id,
+            crawl_job_id=crawl_job_id,
+        )
+    )
+
+    from api.services.profile_extraction import ProfileExtractor
+
+    profile = ProfileExtractor().extract_profile(
+        markdown,
+        tenant_id=tenant_id,
+        crawl_job_id=crawl_job_id,
+    )
+
+    with engine.begin() as conn:
+        current_website_url = _current_website_url(conn, tenant_id)
+        if not _normalized_equals(current_website_url, normalized_url):
+            logger.info(
+                "crawl_job_skipped tenant_id=%s website_url=%s crawl_job_id=%s skip_reason=%s current_website_url=%s",
+                tenant_id,
+                normalized_url,
+                crawl_job_id,
+                "tenant_website_url_changed_after_crawl",
+                current_website_url,
+            )
+            return
+
+        service_profile_id = _upsert_service_profile(
+            conn,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            profile=profile,
+        )
+
+    logger.info(
+        "crawl_job_completed tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s",
+        tenant_id,
+        normalized_url,
+        crawl_job_id,
+        service_profile_id,
+    )

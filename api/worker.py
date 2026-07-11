@@ -7,6 +7,8 @@ from dramatiq.brokers.redis import RedisBroker
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ACTOR_MODULES = ("api.services.crawling",)
+
 
 def _csv_env(name: str) -> list[str]:
     raw_value = os.getenv(name, "")
@@ -32,12 +34,13 @@ def _configure_broker() -> None:
 
 
 def _import_actor_modules() -> None:
-    for module_name in _csv_env("ARCLI_DRAMATIQ_ACTOR_MODULES"):
+    module_names = [*DEFAULT_ACTOR_MODULES, *_csv_env("ARCLI_DRAMATIQ_ACTOR_MODULES")]
+    for module_name in dict.fromkeys(module_names):
         importlib.import_module(module_name)
         logger.info(
             "dramatiq_actor_module_loaded module=%s actor_modules_env_configured=%s",
             module_name,
-            True,
+            module_name not in DEFAULT_ACTOR_MODULES,
         )
 
 

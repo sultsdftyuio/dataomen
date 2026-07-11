@@ -1,11 +1,8 @@
 import React from "react";
 import Link from "next/link";
 import { 
-  BookOpenText,
   LayoutDashboard, 
-  Settings, 
-  ShieldAlert, 
-  Send
+  Settings 
 } from "lucide-react";
 import Logo from "@/components/ui/logo";
 import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
@@ -43,27 +40,6 @@ export default function DashboardLayout({
               >
                 <LayoutDashboard className="h-3.5 w-3.5 text-slate-400" />
                 Overview
-              </Link>
-              <Link 
-                href="/dashboard/queue" 
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 rounded-md hover:text-slate-900 hover:bg-slate-50 transition-all"
-              >
-                <ShieldAlert className="h-3.5 w-3.5 text-rose-500" />
-                Risk Queue
-              </Link>
-              <Link 
-                href="/dashboard/campaigns" 
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 rounded-md hover:text-slate-900 hover:bg-slate-50 transition-all"
-              >
-                <Send className="h-3.5 w-3.5 text-blue-500" />
-                Campaigns
-              </Link>
-              <Link
-                href="/dashboard/docs/api"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 rounded-md hover:text-slate-900 hover:bg-slate-50 transition-all"
-              >
-                <BookOpenText className="h-3.5 w-3.5 text-emerald-500" />
-                API Docs
               </Link>
             </nav>
           </div>

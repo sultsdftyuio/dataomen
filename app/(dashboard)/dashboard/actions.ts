@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 
 import type { Json } from "@/types/supabase";
@@ -12,6 +13,7 @@ import {
 } from "./prospect-types";
 
 type DbRecord = Record<string, Json>;
+type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 
 const SERVICE_PROFILE_SCHEMA = z.object({
   target_audience: z.array(z.string().trim().min(1)).default([]),
@@ -73,17 +75,15 @@ function normalizeWebsiteUrl(value: unknown): string {
   return parsed.toString();
 }
 
-function workerEndpoint() {
-  const explicit = process.env.ARCLI_CRAWLER_INGEST_URL?.trim();
+function crawlerTriggerEndpoint() {
+  const explicit = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
   if (explicit) return explicit;
 
-  const brainEndpoint = process.env.WORKSPACE_BRAIN_GENERATE_URL?.trim();
-  if (brainEndpoint) return brainEndpoint;
+  const legacy = process.env.ARCLI_CRAWLER_INGEST_URL?.trim();
+  if (legacy) return legacy;
 
   const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
-  return internalApiUrl
-    ? `${internalApiUrl}/api/internal/workspace-brain/generate`
-    : null;
+  return internalApiUrl ? `${internalApiUrl}/api/crawl/trigger` : null;
 }
 
 async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
@@ -121,109 +121,85 @@ async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
   }
 }
 
-async function callCrawlerWorker(context: TenantContext, websiteUrl: string) {
-  const endpoint = workerEndpoint();
-  if (!endpoint) return false;
+async function postCrawlerTrigger(
+  context: CrawlerTriggerContext,
+  websiteUrl: string,
+) {
+  const endpoint = crawlerTriggerEndpoint();
+  if (!endpoint) {
+    console.warn("[ProspectDashboard] crawler trigger not configured", {
+      tenant_id: context.tenantId,
+      website_url: websiteUrl,
+    });
+    return;
+  }
+
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  if (!workerSecret) {
+    console.warn("[ProspectDashboard] crawler trigger secret missing", {
+      tenant_id: context.tenantId,
+      website_url: websiteUrl,
+    });
+    return;
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    Authorization: `Bearer ${workerSecret}`,
   };
-  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
-  if (workerSecret) {
-    headers.Authorization = `Bearer ${workerSecret}`;
-  }
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers,
-    cache: "no-store",
-    body: JSON.stringify({
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({
+        tenant_id: context.tenantId,
+        website_url: websiteUrl,
+        requested_by: context.userId,
+        source: "dashboard_onboarding",
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn("[ProspectDashboard] crawler trigger endpoint failed", {
+        tenant_id: context.tenantId,
+        website_url: websiteUrl,
+        status: response.status,
+        body: text.slice(0, 500),
+      });
+      return;
+    }
+
+    console.info("[ProspectDashboard] crawler trigger posted", {
       tenant_id: context.tenantId,
       website_url: websiteUrl,
-      url: websiteUrl,
-      requested_by: context.userId,
-      source: "dashboard_onboarding",
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    console.warn("[ProspectDashboard] crawler worker endpoint failed", {
-      tenant_id: context.tenantId,
-      status: response.status,
-      body: text.slice(0, 500),
     });
-    return false;
+  } catch (error) {
+    console.warn("[ProspectDashboard] crawler trigger unavailable", {
+      tenant_id: context.tenantId,
+      website_url: websiteUrl,
+      error,
+    });
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return true;
 }
 
-async function enqueueCrawlerJob(context: TenantContext, websiteUrl: string) {
-  const queueTable =
-    process.env.WEBSITE_CRAWL_QUEUE_TABLE?.trim() || "website_crawl_jobs";
-  const now = new Date().toISOString();
-  const payloads: DbRecord[] = [
-    {
-      tenant_id: context.tenantId,
-      website_url: websiteUrl,
-      url: websiteUrl,
-      job_type: "service_profile_crawl",
-      status: "queued",
-      requested_by: context.userId,
-      payload: {
-        tenant_id: context.tenantId,
-        website_url: websiteUrl,
-        source: "dashboard_onboarding",
-      },
-      created_at: now,
-      updated_at: now,
-    },
-    {
-      tenant_id: context.tenantId,
-      website_url: websiteUrl,
-      status: "queued",
-      payload: {
-        tenant_id: context.tenantId,
-        website_url: websiteUrl,
-      },
-      created_at: now,
-    },
-    {
-      tenant_id: context.tenantId,
-      website_url: websiteUrl,
-      status: "queued",
-      created_at: now,
-    },
-    {
-      tenant_id: context.tenantId,
-      url: websiteUrl,
-      status: "queued",
-      created_at: now,
-    },
-  ];
+function scheduleCrawlerTrigger(context: TenantContext, websiteUrl: string) {
+  const triggerContext: CrawlerTriggerContext = {
+    tenantId: context.tenantId,
+    userId: context.userId,
+  };
 
-  let lastError: unknown = null;
-
-  for (const payload of payloads) {
-    const result = await context.supabase
-      .from(queueTable)
-      .insert(payload)
-      .eq("tenant_id", context.tenantId)
-      .select("tenant_id")
-      .maybeSingle();
-
-    if (!result.error) return true;
-    lastError = result.error;
-  }
-
-  console.error("[ProspectDashboard] crawler queue insert failed", {
-    tenant_id: context.tenantId,
-    queue_table: queueTable,
-    error: lastError,
+  after(async () => {
+    await postCrawlerTrigger(triggerContext, websiteUrl);
   });
-
-  return false;
 }
 
 export async function submitWebsiteForCrawl(
@@ -241,15 +217,7 @@ export async function submitWebsiteForCrawl(
 
   try {
     await persistWebsiteUrl(context, websiteUrl);
-
-    const calledWorker = await callCrawlerWorker(context, websiteUrl);
-    const queuedJob = calledWorker
-      ? true
-      : await enqueueCrawlerJob(context, websiteUrl);
-
-    if (!queuedJob) {
-      return actionError("Website saved, but the crawler trigger is not configured.");
-    }
+    scheduleCrawlerTrigger(context, websiteUrl);
 
     revalidatePath("/dashboard");
     return actionOk("Website submitted for profile extraction.");
