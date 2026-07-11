@@ -1,4 +1,6 @@
-# Dockerfile
+# ==============================================================================
+# ARCLI AI ENGINE - LEAN PRODUCTION DOCKERFILE
+# ==============================================================================
 # Use a slim, modern Debian base image for optimized Python execution
 FROM python:3.11-slim-bookworm
 
@@ -8,7 +10,7 @@ FROM python:3.11-slim-bookworm
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH="/app" \
-    # We enforce OS-level constraints here as a fallback to your Python logic
+    # Limit thread usage to prevent CPU throttling on PaaS free/cheap tiers
     POLARS_MAX_THREADS=4 \
     DUCKDB_NUM_THREADS=4 \
     OMP_NUM_THREADS=4
@@ -17,36 +19,34 @@ WORKDIR /app
 
 # ------------------------------------------------------------------------------
 # System Dependencies
-# libgomp1 is critical for OpenMP parallel processing in Polars/NumPy
 # ------------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------------------
-# CRITICAL FIX: CPU-Only PyTorch (OOM Prevention)
-# Installs the lightweight PyTorch version first to prevent DigitalOcean
-# from downloading massive NVIDIA GPU binaries and crashing out of memory.
-# ------------------------------------------------------------------------------
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-
-# ------------------------------------------------------------------------------
-# Python Dependencies
+# Python Dependencies (Strictly No Local ML Bloat)
 # ------------------------------------------------------------------------------
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# We use --no-cache-dir to keep the final image size as small as possible
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # ------------------------------------------------------------------------------
 # Application Code
 # ------------------------------------------------------------------------------
+# Copy the rest of the application. (Ensure .dockerignore blocks .git, node_modules, etc.)
 COPY . .
 
 # ------------------------------------------------------------------------------
-# Execution
+# Execution Default (FastAPI)
 # ------------------------------------------------------------------------------
 EXPOSE 8080
 
-# NOTE: If you are using this single Dockerfile for BOTH your Web API and 
-# your Worker in DigitalOcean, it is safer to leave this as the API command:
-CMD ["python", "api/main.py"]
+# By default, start the FastAPI server. 
+# NOTE: If running a worker, your PaaS (Render/DO) should override this start command 
+# to something like: `dramatiq workers.actors` or `celery -A workers worker`
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
