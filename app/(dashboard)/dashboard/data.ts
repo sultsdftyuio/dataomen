@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database, Json } from "@/types/supabase";
 import type {
+  CrawlJobView,
   QualifiedLeadView,
   ServiceProfileFields,
   ServiceProfileView,
@@ -258,6 +259,71 @@ export async function fetchServiceProfile(
       ]),
     },
     rawProfile: (profile ?? row) as Record<string, unknown>,
+  };
+}
+
+export async function fetchLatestCrawlJob(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  websiteUrl: string | null,
+): Promise<CrawlJobView | null> {
+  if (!websiteUrl) return null;
+
+  const normalizedCandidates = Array.from(
+    new Set([websiteUrl, websiteUrl.replace(/\/$/, "")].filter(Boolean)),
+  );
+  const client = supabase as unknown as {
+    from: (table: string) => {
+      select: (columns: string) => {
+        eq: (column: string, value: string) => {
+          in: (column: string, values: string[]) => {
+            order: (
+              column: string,
+              options: { ascending: boolean },
+            ) => {
+              limit: (count: number) => {
+                maybeSingle: <T>() => Promise<{ data: T | null; error: unknown }>;
+              };
+            };
+          };
+        };
+      };
+    };
+  };
+
+  const result = await client
+    .from("crawl_jobs")
+    .select(
+      "id,status,phase,failure_reason,error_type,error_message,last_heartbeat_at,updated_at",
+    )
+    .eq("tenant_id", tenantId)
+    .in("website_url", normalizedCandidates)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<Record<string, Json>>();
+
+  if (result.error) {
+    console.warn("[ProspectDashboard] crawl job lookup unavailable", {
+      tenant_id: tenantId,
+      website_url: websiteUrl,
+      error: result.error,
+    });
+    return null;
+  }
+
+  const row = asRecord(result.data);
+  if (!row) return null;
+
+  return {
+    id: readString([row], ["id"]) ?? null,
+    status: readString([row], ["status"]) ?? null,
+    phase: readString([row], ["phase"]) ?? null,
+    failureReason: readString([row], ["failure_reason", "failureReason"]) ?? null,
+    errorType: readString([row], ["error_type", "errorType"]) ?? null,
+    errorMessage: readString([row], ["error_message", "errorMessage"]) ?? null,
+    lastHeartbeatAt:
+      readString([row], ["last_heartbeat_at", "lastHeartbeatAt"]) ?? null,
+    updatedAt: readString([row], ["updated_at", "updatedAt"]) ?? null,
   };
 }
 

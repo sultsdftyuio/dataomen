@@ -20,6 +20,17 @@ export type ServiceProfileView = {
   rawProfile: Record<string, unknown> | null;
 };
 
+export type CrawlJobView = {
+  id: string | null;
+  status: string | null;
+  phase: string | null;
+  failureReason: string | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  lastHeartbeatAt: string | null;
+  updatedAt: string | null;
+};
+
 export const FEEDBACK_OPTIONS = [
   { value: "good_lead", label: "Good Lead" },
   { value: "bad_lead", label: "Bad Lead" },

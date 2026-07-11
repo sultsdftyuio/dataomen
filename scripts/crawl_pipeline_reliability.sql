@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS public.service_profile_embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id TEXT NOT NULL,
     service_profile_id UUID NOT NULL REFERENCES public.service_profiles(id) ON DELETE CASCADE,
-    embedding extensions.vector(1536),
     embedding_json JSONB NOT NULL DEFAULT '{}'::JSONB,
     embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
     embedding_dimensions INTEGER,
@@ -82,6 +81,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_service_profile_embeddings_profile_model
 
 CREATE INDEX IF NOT EXISTS idx_service_profile_embeddings_tenant_status
     ON public.service_profile_embeddings(tenant_id, status, updated_at DESC);
+
+DO $$
+DECLARE
+    vector_type regtype;
+BEGIN
+    vector_type := COALESCE(
+        to_regtype('extensions.vector'),
+        to_regtype('public.vector'),
+        to_regtype('vector')
+    );
+
+    IF vector_type IS NULL THEN
+        RAISE NOTICE 'pgvector type was not found; service_profile_embeddings.embedding column was skipped. embedding_json remains available.';
+    ELSIF NOT EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'service_profile_embeddings'
+           AND column_name = 'embedding'
+    ) THEN
+        EXECUTE format(
+            'ALTER TABLE public.service_profile_embeddings ADD COLUMN embedding %s(1536)',
+            vector_type
+        );
+    END IF;
+END $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.crawl_jobs TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.crawl_pages TO authenticated;

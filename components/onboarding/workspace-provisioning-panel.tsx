@@ -36,6 +36,7 @@ import {
   submitWebsiteForCrawl,
 } from "@/app/(dashboard)/dashboard/actions";
 import type {
+  CrawlJobView,
   ProspectActionResult,
   ServiceProfileFields,
   ServiceProfileView,
@@ -44,6 +45,7 @@ import type {
 type WorkspaceProvisioningPanelProps = {
   workspacePending?: boolean;
   initialWebsiteUrl?: string | null;
+  crawlJob?: CrawlJobView | null;
   serviceProfile?: ServiceProfileView;
 };
 
@@ -86,6 +88,56 @@ const LIST_TONES: Record<string, ListTone> = {
     border: C.red,
   },
 };
+
+const STALE_CRAWL_HEARTBEAT_MS = 10 * 60 * 1000;
+
+function normalizedStatus(value: string | null | undefined) {
+  return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
+}
+
+function timestampAgeMs(value: string | null | undefined) {
+  if (!value) return null;
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+
+  return Date.now() - parsed;
+}
+
+function crawlJobNeedsAttention(crawlJob: CrawlJobView | null | undefined) {
+  const status = normalizedStatus(crawlJob?.status);
+  if (status === "failed" || status === "dead_lettered") return true;
+
+  if (status === "pending" || status === "processing") {
+    const heartbeatAge = timestampAgeMs(crawlJob?.lastHeartbeatAt ?? crawlJob?.updatedAt);
+    return heartbeatAge === null || heartbeatAge > STALE_CRAWL_HEARTBEAT_MS;
+  }
+
+  return !crawlJob;
+}
+
+function crawlStatusMessage(crawlJob: CrawlJobView | null | undefined) {
+  const status = normalizedStatus(crawlJob?.status);
+  const phase = crawlJob?.phase?.replace(/_/g, " ") ?? null;
+
+  if (status === "failed") {
+    return crawlJob?.failureReason
+      ? `The crawl failed during ${phase ?? "processing"}: ${crawlJob.failureReason}.`
+      : "The crawl failed before a service profile was created.";
+  }
+
+  if (status === "dead_lettered") {
+    return "The crawl retried too many times and was paused for review.";
+  }
+
+  if (status === "pending" || status === "processing") {
+    return phase
+      ? `The last crawl stopped reporting progress during ${phase}.`
+      : "The last crawl stopped reporting progress.";
+  }
+
+  return "This website was submitted before crawl tracking was available.";
+}
 
 function normalizeItems(items: string[]) {
   const seen = new Set<string>();
@@ -277,6 +329,7 @@ function WorkspacePendingState() {
 export function WorkspaceProvisioningPanel({
   workspacePending = false,
   initialWebsiteUrl = null,
+  crawlJob = null,
   serviceProfile,
 }: WorkspaceProvisioningPanelProps) {
   const router = useRouter();
@@ -295,7 +348,17 @@ export function WorkspaceProvisioningPanel({
   const effectiveWebsiteUrl =
     submittedWebsiteUrl ?? initialWebsiteUrl ?? serviceProfile?.websiteUrl ?? "";
   const hasProfile = Boolean(serviceProfile?.hasProfile);
-  const isCrawling = Boolean(effectiveWebsiteUrl) && !hasProfile;
+  const hasFreshLocalSubmit = Boolean(
+    submittedWebsiteUrl &&
+      effectiveWebsiteUrl &&
+      submittedWebsiteUrl.trim() === effectiveWebsiteUrl.trim(),
+  );
+  const needsCrawlAttention =
+    Boolean(effectiveWebsiteUrl) &&
+    !hasProfile &&
+    !hasFreshLocalSubmit &&
+    crawlJobNeedsAttention(crawlJob);
+  const isCrawling = Boolean(effectiveWebsiteUrl) && !hasProfile && !needsCrawlAttention;
 
   useEffect(() => {
     setWebsiteUrl(initialWebsiteUrl ?? serviceProfile?.websiteUrl ?? "");
@@ -347,6 +410,23 @@ export function WorkspaceProvisioningPanel({
 
       if (result.ok) {
         setSubmittedWebsiteUrl(websiteUrl.trim());
+        router.refresh();
+      }
+    });
+  };
+
+  const retryCrawl = () => {
+    if (!effectiveWebsiteUrl) return;
+
+    const formData = new FormData();
+    formData.set("website_url", effectiveWebsiteUrl);
+
+    startWebsiteTransition(async () => {
+      const result = await submitWebsiteForCrawl(formData);
+      setWebsiteResult(result);
+
+      if (result.ok) {
+        setSubmittedWebsiteUrl(effectiveWebsiteUrl.trim());
         router.refresh();
       }
     });
@@ -438,6 +518,66 @@ export function WorkspaceProvisioningPanel({
               </Button>
               <ResultText result={websiteResult} />
             </form>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (needsCrawlAttention) {
+    return (
+      <main
+        className="flex min-h-screen items-center justify-center p-6"
+        style={{ backgroundColor: C.offWhite, color: C.text }}
+      >
+        <Card className="w-full max-w-xl rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
+          <CardHeader className="space-y-3 text-center">
+            <div
+              className="mx-auto flex size-11 items-center justify-center rounded-md"
+              style={{ backgroundColor: C.redPale, color: C.red }}
+            >
+              <AlertCircle className="size-5" />
+            </div>
+            <div>
+              <CardTitle className="text-xl" style={{ color: C.navy }}>
+                Crawl needs attention
+              </CardTitle>
+              <CardDescription className="mt-2" style={{ color: C.muted }}>
+                {effectiveWebsiteUrl}
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: C.red,
+                backgroundColor: C.redPale,
+                color: C.red,
+              }}
+            >
+              {crawlStatusMessage(crawlJob)}
+            </div>
+            {crawlJob?.errorMessage ? (
+              <p className="text-xs leading-5" style={{ color: C.muted }}>
+                {crawlJob.errorMessage}
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              disabled={isWebsitePending}
+              className="w-full"
+              onClick={retryCrawl}
+              style={{ backgroundColor: C.navy, color: C.white }}
+            >
+              {isWebsitePending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+              {isWebsitePending ? "Restarting crawl..." : "Retry crawl"}
+            </Button>
+            <ResultText result={websiteResult} />
           </CardContent>
         </Card>
       </main>

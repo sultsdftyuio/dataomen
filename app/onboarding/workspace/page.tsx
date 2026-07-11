@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { WorkspaceProvisioningPanel } from "@/components/onboarding/workspace-provisioning-panel";
 import {
+  fetchLatestCrawlJob,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
   isServiceProfileApproved,
@@ -36,7 +37,10 @@ export default async function WorkspaceOnboardingPage() {
 
   const { supabase, tenantId } = tenantResult.context;
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
-  const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
+  const [serviceProfile, crawlJob] = await Promise.all([
+    fetchServiceProfile(supabase, tenantId, websiteUrl),
+    fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+  ]);
 
   if (websiteUrl && isServiceProfileApproved(serviceProfile)) {
     redirect("/dashboard");
@@ -45,6 +49,7 @@ export default async function WorkspaceOnboardingPage() {
   return (
     <WorkspaceProvisioningPanel
       initialWebsiteUrl={websiteUrl}
+      crawlJob={crawlJob}
       serviceProfile={serviceProfile}
     />
   );
