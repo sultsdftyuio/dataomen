@@ -22,6 +22,8 @@ SERVICE_PROFILE_COLUMNS = {
     "url",
     "status",
     "review_status",
+    "extraction_status",
+    "extracted_at",
     "profile_json",
     "profile",
     "data",
@@ -118,6 +120,8 @@ def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, An
     core_problem = _string_value(profile.get("core_problem_solved"))
     one_liner = _string_value(profile.get("one_liner"))
 
+    now = datetime.now(timezone.utc).isoformat()
+
     return {
         "company_name": _string_value(profile.get("company_name")),
         "one_liner": one_liner,
@@ -133,8 +137,10 @@ def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, An
         "negative_keywords": negative_keywords,
         "excluded_audiences": [],
         "website_url": website_url,
-        "status": "draft",
-        "review_status": "draft",
+        "status": "pending_review",
+        "review_status": "pending_review",
+        "extraction_status": "completed",
+        "extracted_at": now,
     }
 
 
@@ -145,8 +151,10 @@ def _service_profile_payload(profile: dict[str, Any], website_url: str) -> dict[
     return {
         "website_url": website_url,
         "url": website_url,
-        "status": "draft",
-        "review_status": "draft",
+        "status": "pending_review",
+        "review_status": "pending_review",
+        "extraction_status": "completed",
+        "extracted_at": now,
         "profile_json": document,
         "profile": document,
         "data": document,

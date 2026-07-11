@@ -67,6 +67,32 @@ class CrawlTriggerResponse(BaseModel):
     message_id: str
 
 
+class ServiceProfileEmbeddingTriggerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    service_profile_id: str | None = Field(default=None)
+    requested_by: str | None = Field(default=None)
+    source: str | None = Field(default=None)
+
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tenant_id must be a valid UUID") from exc
+
+
+class ServiceProfileEmbeddingTriggerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["queued"] = Field(default="queued")
+    tenant_id: str
+    service_profile_id: str | None = None
+    message_id: str
+
+
 app = FastAPI(
     title="Arcli Prospect Intelligence API",
     version=os.getenv("ARCLI_API_VERSION", "0.1.0"),
@@ -153,6 +179,53 @@ def trigger_crawl(
     return CrawlTriggerResponse(
         tenant_id=payload.tenant_id,
         website_url=payload.website_url,
+        message_id=message_id,
+    )
+
+
+@app.post(
+    "/api/service-profile/embed/trigger",
+    response_model=ServiceProfileEmbeddingTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_service_profile_embedding(
+    payload: ServiceProfileEmbeddingTriggerRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+) -> ServiceProfileEmbeddingTriggerResponse:
+    """
+    Accept a trusted frontend handoff and enqueue slow profile embedding work.
+    """
+    from api.services.embeddings import enqueue_service_profile_embedding_job
+
+    try:
+        message_id = enqueue_service_profile_embedding_job(
+            payload.tenant_id,
+            payload.service_profile_id,
+        )
+    except RuntimeError as exc:
+        logger.exception(
+            "service_profile_embedding_enqueue_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Embedding queue is unavailable.",
+        ) from exc
+
+    logger.info(
+        "service_profile_embedding_trigger_accepted tenant_id=%s service_profile_id=%s message_id=%s source=%s",
+        payload.tenant_id,
+        payload.service_profile_id,
+        message_id,
+        payload.source,
+    )
+
+    return ServiceProfileEmbeddingTriggerResponse(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
         message_id=message_id,
     )
 

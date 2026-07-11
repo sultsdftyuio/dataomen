@@ -14,6 +14,7 @@ import {
 
 type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
+type EmbeddingTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 
 const SERVICE_PROFILE_SCHEMA = z.object({
   target_audience: z.array(z.string().trim().min(1)).default([]),
@@ -84,6 +85,16 @@ function crawlerTriggerEndpoint() {
 
   const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
   return internalApiUrl ? `${internalApiUrl}/api/crawl/trigger` : null;
+}
+
+function embeddingTriggerEndpoint() {
+  const explicit = process.env.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL?.trim();
+  if (explicit) return explicit;
+
+  const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
+  return internalApiUrl
+    ? `${internalApiUrl}/api/service-profile/embed/trigger`
+    : null;
 }
 
 async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
@@ -202,6 +213,88 @@ function scheduleCrawlerTrigger(context: TenantContext, websiteUrl: string) {
   });
 }
 
+async function postEmbeddingTrigger(
+  context: EmbeddingTriggerContext,
+  serviceProfileId: string | null,
+) {
+  const endpoint = embeddingTriggerEndpoint();
+  if (!endpoint) {
+    console.warn("[ProspectOnboarding] profile embedding trigger not configured", {
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return;
+  }
+
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  if (!workerSecret) {
+    console.warn("[ProspectOnboarding] profile embedding trigger secret missing", {
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${workerSecret}`,
+      },
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({
+        tenant_id: context.tenantId,
+        service_profile_id: serviceProfileId,
+        requested_by: context.userId,
+        source: "onboarding_profile_approval",
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn("[ProspectOnboarding] profile embedding trigger failed", {
+        tenant_id: context.tenantId,
+        service_profile_id: serviceProfileId,
+        status: response.status,
+        body: text.slice(0, 500),
+      });
+      return;
+    }
+
+    console.info("[ProspectOnboarding] profile embedding trigger posted", {
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+    });
+  } catch (error) {
+    console.warn("[ProspectOnboarding] profile embedding trigger unavailable", {
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+      error,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function scheduleEmbeddingTrigger(
+  context: TenantContext,
+  serviceProfileId: string | null,
+) {
+  const triggerContext: EmbeddingTriggerContext = {
+    tenantId: context.tenantId,
+    userId: context.userId,
+  };
+
+  after(async () => {
+    await postEmbeddingTrigger(triggerContext, serviceProfileId);
+  });
+}
+
 export async function submitWebsiteForCrawl(
   formData: FormData,
 ): Promise<ProspectActionResult> {
@@ -220,6 +313,7 @@ export async function submitWebsiteForCrawl(
     scheduleCrawlerTrigger(context, websiteUrl);
 
     revalidatePath("/dashboard");
+    revalidatePath("/onboarding/workspace");
     return actionOk("Website submitted for profile extraction.");
   } catch (error) {
     console.error("[ProspectDashboard] website submission failed", {
@@ -247,7 +341,7 @@ function normalizeList(values: string[]) {
 
 function updatePayloads(
   values: z.infer<typeof SERVICE_PROFILE_SCHEMA>,
-  status: "draft" | "approved",
+  status: "pending_review" | "approved",
 ) {
   const normalized = {
     target_audience: normalizeList(values.target_audience),
@@ -270,6 +364,7 @@ function updatePayloads(
     ideal_customer_pain_points: normalized.pain_points,
     review_status: status,
     status,
+    extraction_status: "completed",
     approved_at: status === "approved" ? now : null,
   };
 
@@ -319,7 +414,7 @@ export async function saveServiceProfile(
     return actionError("Check the service profile fields and try again.");
   }
 
-  const status = intent === "approve" ? "approved" : "draft";
+  const status = intent === "approve" ? "approved" : "pending_review";
   let lastError: unknown = null;
 
   for (const payload of updatePayloads(parsed.data, status)) {
@@ -338,9 +433,13 @@ export async function saveServiceProfile(
 
     if (!result.error && (result.data || !hasProfile)) {
       revalidatePath("/dashboard");
+      revalidatePath("/onboarding/workspace");
+      if (intent === "approve") {
+        scheduleEmbeddingTrigger(context, profileId);
+      }
       return actionOk(
         intent === "approve"
-          ? "Service profile approved."
+          ? "Service profile approved. Activation is warming up."
           : "Service profile saved.",
       );
     }

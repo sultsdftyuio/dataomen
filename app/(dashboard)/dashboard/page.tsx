@@ -5,6 +5,7 @@ import {
   fetchQualifiedLeads,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
+  isServiceProfileApproved,
   verifierScoreThreshold,
 } from "./data";
 import ProspectDashboardClient from "./prospect-dashboard-client";
@@ -12,7 +13,7 @@ import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const metadata: Metadata = {
   title: "Prospect Intelligence | Arcli",
-  description: "Review service profiles and qualified prospect matches.",
+  description: "Review qualified prospect matches.",
 };
 
 export const dynamic = "force-dynamic";
@@ -45,9 +46,12 @@ export default async function DashboardPage() {
   ]);
   const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
 
+  if (!websiteUrl || !isServiceProfileApproved(serviceProfile)) {
+    redirect("/onboarding/workspace");
+  }
+
   return (
     <ProspectDashboardClient
-      initialWebsiteUrl={websiteUrl}
       serviceProfile={serviceProfile}
       leads={leads}
       verifierThreshold={threshold}

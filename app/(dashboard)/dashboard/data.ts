@@ -145,10 +145,23 @@ function emptyProfile(websiteUrl: string | null = null): ServiceProfileView {
     id: null,
     hasProfile: false,
     status: null,
+    extractionStatus: null,
     websiteUrl,
     updatedAt: null,
     fields: EMPTY_FIELDS,
+    rawProfile: null,
   };
+}
+
+export function normalizeServiceProfileStatus(status: string | null) {
+  return status?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
+}
+
+export function isServiceProfileApproved(profile: ServiceProfileView) {
+  return (
+    profile.hasProfile &&
+    normalizeServiceProfileStatus(profile.status) === "approved"
+  );
 }
 
 export async function fetchTenantWebsiteUrl(
@@ -214,6 +227,8 @@ export async function fetchServiceProfile(
       null,
     hasProfile: true,
     status: readString(sources, ["status", "review_status"]) ?? null,
+    extractionStatus:
+      readString(sources, ["extraction_status", "crawl_status"]) ?? null,
     websiteUrl:
       readString(sources, ["website_url", "url", "websiteUrl"]) ?? websiteUrl,
     updatedAt:
@@ -242,6 +257,7 @@ export async function fetchServiceProfile(
         "excluded_audience",
       ]),
     },
+    rawProfile: (profile ?? row) as Record<string, unknown>,
   };
 }
 

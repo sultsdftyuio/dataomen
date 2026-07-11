@@ -13,9 +13,11 @@ export type ServiceProfileView = {
   id: string | null;
   hasProfile: boolean;
   status: string | null;
+  extractionStatus: string | null;
   websiteUrl: string | null;
   updatedAt: string | null;
   fields: ServiceProfileFields;
+  rawProfile: Record<string, unknown> | null;
 };
 
 export const FEEDBACK_OPTIONS = [
