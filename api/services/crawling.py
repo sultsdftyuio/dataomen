@@ -49,30 +49,61 @@ class WebsiteCrawler:
         self.page_timeout_ms = page_timeout_ms
         self.max_pages = max_pages
 
-    async def crawl_and_scrape(self, url: str) -> str:
+    async def crawl_and_scrape(
+        self,
+        url: str,
+        *,
+        tenant_id: str | None = None,
+        service_profile_id: str | None = None,
+        crawl_job_id: str | None = None,
+    ) -> str:
         """
         Crawl and scrape the given website, returning concatenated markdown.
 
         Dead secondary pages are skipped. If no usable content can be recovered
         from either crawl or fallback scrapes, a RuntimeError is raised.
         """
+        resolved_tenant_id = tenant_id or "unknown"
         normalized_url = self._normalize_url(url)
         client = self._build_client()
 
         documents: list[tuple[str, str]] = []
         seen_sources: set[str] = set()
 
+        logger.info(
+            "website_crawl_started tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s max_pages=%s timeout_seconds=%s",
+            resolved_tenant_id,
+            service_profile_id,
+            crawl_job_id,
+            normalized_url,
+            self.max_pages,
+            self.timeout_seconds,
+        )
+
         try:
             crawl_result = await self._crawl_target_pages(client, normalized_url)
             documents.extend(self._documents_from_result(crawl_result, seen_sources))
         except asyncio.TimeoutError as exc:
-            logger.warning("firecrawl_crawl_timeout url=%s", normalized_url)
+            logger.warning(
+                "firecrawl_crawl_timeout tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s timeout_seconds=%s failure_reason=%s",
+                resolved_tenant_id,
+                service_profile_id,
+                crawl_job_id,
+                normalized_url,
+                self.timeout_seconds,
+                "crawl_timeout",
+            )
             crawl_error: Exception | None = exc
         except Exception as exc:
             logger.warning(
-                "firecrawl_crawl_failed url=%s error=%s",
+                "firecrawl_crawl_failed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s error_type=%s error=%s failure_reason=%s",
+                resolved_tenant_id,
+                service_profile_id,
+                crawl_job_id,
                 normalized_url,
+                exc.__class__.__name__,
                 exc,
+                "primary_crawl_failed",
                 exc_info=True,
             )
             crawl_error = exc
@@ -84,6 +115,9 @@ class WebsiteCrawler:
                 client=client,
                 url=normalized_url,
                 seen_sources=seen_sources,
+                tenant_id=resolved_tenant_id,
+                service_profile_id=service_profile_id,
+                crawl_job_id=crawl_job_id,
             )
             documents.extend(fallback_docs)
 
@@ -94,13 +128,41 @@ class WebsiteCrawler:
                 cleaned_parts.append(f"## Source: {source_url}\n\n{cleaned}")
 
         if cleaned_parts:
-            return "\n\n---\n\n".join(cleaned_parts)
+            content = "\n\n---\n\n".join(cleaned_parts)
+            logger.info(
+                "website_crawl_completed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s",
+                resolved_tenant_id,
+                service_profile_id,
+                crawl_job_id,
+                normalized_url,
+                len(cleaned_parts),
+                len(content),
+            )
+            return content
 
         if crawl_error:
+            logger.error(
+                "website_crawl_failed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s failure_reason=%s documents=%s",
+                resolved_tenant_id,
+                service_profile_id,
+                crawl_job_id,
+                normalized_url,
+                "no_usable_content_after_crawl_error",
+                len(documents),
+            )
             raise RuntimeError(
                 f"Unable to crawl or scrape usable website content for {normalized_url}"
             ) from crawl_error
 
+        logger.error(
+            "website_crawl_failed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s failure_reason=%s documents=%s",
+            resolved_tenant_id,
+            service_profile_id,
+            crawl_job_id,
+            normalized_url,
+            "no_usable_content",
+            len(documents),
+        )
         raise RuntimeError(f"No usable website content found for {normalized_url}")
 
     def _build_client(self) -> Any:
@@ -188,6 +250,10 @@ class WebsiteCrawler:
         client: Any,
         url: str,
         seen_sources: set[str],
+        *,
+        tenant_id: str,
+        service_profile_id: str | None,
+        crawl_job_id: str | None,
     ) -> list[tuple[str, str]]:
         scrape = getattr(client, "scrape", None)
         if not callable(scrape):
@@ -212,13 +278,25 @@ class WebsiteCrawler:
                     timeout=max(10, self.page_timeout_ms // 1000 + 5),
                 )
             except asyncio.TimeoutError:
-                logger.warning("firecrawl_scrape_timeout url=%s", candidate_url)
+                logger.warning(
+                    "firecrawl_scrape_timeout tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s failure_reason=%s",
+                    tenant_id,
+                    service_profile_id,
+                    crawl_job_id,
+                    candidate_url,
+                    "fallback_scrape_timeout",
+                )
                 continue
             except Exception as exc:
                 logger.info(
-                    "firecrawl_scrape_skipped url=%s error=%s",
+                    "firecrawl_scrape_skipped tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s error_type=%s error=%s failure_reason=%s",
+                    tenant_id,
+                    service_profile_id,
+                    crawl_job_id,
                     candidate_url,
+                    exc.__class__.__name__,
                     exc,
+                    "fallback_scrape_failed",
                 )
                 continue
 

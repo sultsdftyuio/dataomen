@@ -6,9 +6,14 @@ from typing import Any, Dict, Optional
 
 from supabase import create_client, Client
 
+from api.services.cost_controls import TenantQuotaGuard, env_int
+
 logger = logging.getLogger(__name__)
 
 EVENTS_TABLE = os.getenv("EVENTS_TABLE", "events")
+INGESTION_QUOTA_COUNTER = "event_ingestion"
+INGESTION_QUOTA_DEFAULT_LIMIT = 10_000
+INGESTION_QUOTA_DEFAULT_WINDOW_SECONDS = 3_600
 
 _supabase_client: Optional[Client] = None
 
@@ -23,7 +28,11 @@ def _get_supabase_client() -> Optional[Client]:
     supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
     if not supabase_url or not supabase_key:
-        logger.error("supabase_credentials_missing")
+        logger.error(
+            "supabase_credentials_missing supabase_url_configured=%s supabase_key_configured=%s",
+            bool(supabase_url),
+            bool(supabase_key),
+        )
         return None
 
     _supabase_client = create_client(supabase_url, supabase_key)
@@ -60,6 +69,7 @@ class IngestionService:
 
     def __init__(self):
         self._client: Optional[Client] = None
+        self._quota_guard = TenantQuotaGuard()
 
     def _client_or_raise(self) -> Client:
         if self._client is None:
@@ -105,6 +115,28 @@ class IngestionService:
 
         client = self._client_or_raise()
         safe_properties = properties or {}
+        quota = self._quota_guard.check_and_increment(
+            tenant_id=tenant_id,
+            counter_name=INGESTION_QUOTA_COUNTER,
+            limit=env_int("ARCLI_HOURLY_INGESTION_LIMIT", INGESTION_QUOTA_DEFAULT_LIMIT),
+            window_seconds=env_int(
+                "ARCLI_HOURLY_INGESTION_WINDOW_SECONDS",
+                INGESTION_QUOTA_DEFAULT_WINDOW_SECONDS,
+            ),
+        )
+        if not quota.allowed:
+            logger.warning(
+                "event_ingestion_rejected tenant_id=%s event_name=%s user_id=%s idempotency_key=%s rejection_reason=%s current_count=%s limit=%s window_seconds=%s",
+                tenant_id,
+                event_name,
+                user_id,
+                idempotency_key,
+                quota.rejection_reason,
+                quota.current_count,
+                quota.limit,
+                quota.window_seconds,
+            )
+            raise RuntimeError("tenant_ingestion_quota_exceeded")
 
         existing = (
             client
@@ -117,6 +149,14 @@ class IngestionService:
         )
 
         if existing.data:
+            logger.info(
+                "event_ingestion_deduped tenant_id=%s event_name=%s user_id=%s idempotency_key=%s event_id=%s",
+                tenant_id,
+                event_name,
+                user_id,
+                idempotency_key,
+                existing.data[0].get("id"),
+            )
             return {
                 "status": "deduped",
                 "event_id": existing.data[0].get("id"),
@@ -135,6 +175,16 @@ class IngestionService:
         resp = client.table(EVENTS_TABLE).insert(payload).execute()
 
         if resp.data:
+            logger.info(
+                "event_ingestion_inserted tenant_id=%s event_name=%s user_id=%s idempotency_key=%s event_id=%s current_count=%s limit=%s",
+                tenant_id,
+                event_name,
+                user_id,
+                idempotency_key,
+                resp.data[0].get("id"),
+                quota.current_count,
+                quota.limit,
+            )
             return {
                 "status": "inserted",
                 "event_id": resp.data[0].get("id"),
@@ -143,6 +193,14 @@ class IngestionService:
 
         error = getattr(resp, "error", None)
         if _is_duplicate_error(error):
+            logger.info(
+                "event_ingestion_deduped tenant_id=%s event_name=%s user_id=%s idempotency_key=%s dedupe_source=%s",
+                tenant_id,
+                event_name,
+                user_id,
+                idempotency_key,
+                "insert_conflict",
+            )
             return {
                 "status": "deduped",
                 "event_id": None,
@@ -150,8 +208,11 @@ class IngestionService:
             }
 
         logger.warning(
-            "event_insert_failed tenant=%s error=%s",
+            "event_insert_failed tenant_id=%s event_name=%s user_id=%s idempotency_key=%s error=%s",
             tenant_id,
+            event_name,
+            user_id,
+            idempotency_key,
             error,
         )
         raise RuntimeError("event_insert_failed")

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient as createSupabaseServiceClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/utils/supabase/server";
+import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements, PRO_TRIAL_DAYS } from "@/lib/entitlements";
 import { DodoPayments } from "dodopayments";
 import type { Database } from "@/types/supabase";
@@ -712,9 +713,12 @@ async function findActiveDodoSubscriptionForTenant(
  * Enforces strict synchronous tenant isolation and prevents duplicate checkouts.
  */
 export async function upgradeToProPlan(): Promise<BillingSessionResult> {
-  const supabase = await createClient();
+  const tenantContextResult = await resolveTenantContext();
+  if ("response" in tenantContextResult) {
+    throw new Error("No valid workspace found for user.");
+  }
 
-  // 3. Authenticate User & Validate Identity
+  const { supabase, tenantId, userId } = tenantContextResult.context;
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
     throw new Error("Authentication required.");
@@ -724,24 +728,6 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
     throw new Error("User account is missing an associated email address.");
   }
 
-  // 4. Secure Tenant Authorization & Discovery (Rule 6: Scope by Tenant)
-  const { data: tenantMembership, error: membershipError } = await supabase
-    .from("tenant_users")
-    .select("tenant_id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (membershipError || !tenantMembership) {
-    console.error("[Billing] Workspace membership lookup failed", {
-      event: "tenant_membership_lookup_failed",
-      user_id: user.id,
-      error: membershipError,
-    });
-    throw new Error("No valid workspace found for user.");
-  }
-
-  const tenantId = tenantMembership.tenant_id;
-
   // 5. Prevent Duplicate Subscriptions & Handle Lookup Errors (Rule 11: Idempotency)
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
 
@@ -749,7 +735,7 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
     console.info("[Billing] Handling duplicate checkout attempt for active workspace", {
       event: "duplicate_checkout_detected",
       tenant_id: tenantId,
-      user_id: user.id,
+      user_id: userId,
       subscription_status: entitlements.subscriptionStatus,
     });
 
@@ -759,7 +745,7 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
       console.warn("[Billing] Duplicate checkout resolved without portal redirect", {
         event: "duplicate_checkout_portal_redirect_failed",
         tenant_id: tenantId,
-        user_id: user.id,
+        user_id: userId,
         subscription_status: entitlements.subscriptionStatus,
         error: serializeError(error),
       });
@@ -798,7 +784,7 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
       },
       metadata: {
         tenant_id: tenantId, // Mandatory: deterministic routing for asynchronous webhooks (Rule 14)
-        user_id: user.id,
+        user_id: userId,
       },
       subscription_data: {
         trial_period_days: PRO_TRIAL_DAYS,
@@ -816,7 +802,7 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
     console.error("[Billing] Checkout creation failed", {
       event: "checkout_creation_failed",
       tenant_id: tenantId,
-      user_id: user.id,
+      user_id: userId,
       environment, // Explicitly logs the active SDK routing environment
       product_id: productId,
       error,
@@ -1032,33 +1018,13 @@ export async function verifyAndSyncSubscriptionStatus(
  * Pro access remains open until Dodo emits the final cancellation/expiry event.
  */
 export async function cancelProPlan(): Promise<CancelProPlanResult> {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    throw new Error("Authentication required.");
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("tenant_users")
-    .select("tenant_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (membershipError || !membership) {
-    console.error("[Billing] Workspace membership lookup failed during cancellation", {
-      event: "billing_cancel_membership_lookup_failed",
-      user_id: user.id,
-      error: membershipError,
-    });
+  const tenantContextResult = await resolveTenantContext();
+  if ("response" in tenantContextResult) {
     throw new Error("No valid workspace found for user.");
   }
 
-  return scheduleSubscriptionCancellationForTenant(membership.tenant_id, user.id);
+  const { tenantId, userId } = tenantContextResult.context;
+  return scheduleSubscriptionCancellationForTenant(tenantId, userId);
 }
 
 /**
@@ -1124,33 +1090,12 @@ export async function setBillingTestState(state: string): Promise<BillingTestSta
     throw new Error("Unsupported billing test state.");
   }
 
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    throw new Error("Authentication required.");
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("tenant_users")
-    .select("tenant_id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (membershipError || !membership) {
-    console.error("[Billing] Workspace membership lookup failed during test state update", {
-      event: "billing_test_state_membership_lookup_failed",
-      user_id: user.id,
-      error: membershipError,
-    });
+  const tenantContextResult = await resolveTenantContext();
+  if ("response" in tenantContextResult) {
     throw new Error("No valid workspace found for user.");
   }
 
-  const tenantId = membership.tenant_id;
+  const { tenantId, userId } = tenantContextResult.context;
   const update = billingTestUpdateFromState(normalizedState);
   const serviceSupabase = getSupabaseServiceClient();
   const { data: updatedTenant, error: updateError } = await serviceSupabase
@@ -1164,7 +1109,7 @@ export async function setBillingTestState(state: string): Promise<BillingTestSta
     console.error("[Billing] Billing test state update failed", {
       event: "billing_test_state_update_failed",
       tenant_id: tenantId,
-      user_id: user.id,
+      user_id: userId,
       requested_state: normalizedState,
       error: updateError,
     });
@@ -1177,7 +1122,7 @@ export async function setBillingTestState(state: string): Promise<BillingTestSta
   console.info("[Billing] Billing test state updated", {
     event: "billing_test_state_updated",
     tenant_id: tenantId,
-    user_id: user.id,
+    user_id: userId,
     requested_state: normalizedState,
     plan_tier: updatedTenant.plan_tier,
     subscription_status: updatedTenant.subscription_status,
@@ -1203,46 +1148,31 @@ export async function manageBillingPortal(): Promise<BillingSessionResult> {
   }
 
   const { client: dodo, environment } = getDodoClient();
-  const supabase = await createClient();
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    throw new Error("Authentication required.");
-  }
-
-  // 1. Resolve Tenant Context (Rule 6: Scope by Tenant)
-  const { data: membership, error: membershipError } = await supabase
-    .from("tenant_users")
-    .select("tenant_id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (membershipError || !membership) {
-    console.error("[Billing] Workspace membership lookup failed during portal creation", {
-      event: "tenant_membership_lookup_failed",
-      user_id: user.id,
-      error: membershipError,
-    });
+  const tenantContextResult = await resolveTenantContext();
+  if ("response" in tenantContextResult) {
     throw new Error("No valid workspace found for user.");
   }
+
+  const { supabase, tenantId, userId } = tenantContextResult.context;
 
   // 2. Deterministic Tenant & Billing Profile Resolution (Rule 11)
   const { data: tenant, error: tenantError } = await supabase
     .from("tenants")
     .select("tenant_id, dodo_customer_id")
-    .eq("tenant_id", membership.tenant_id)
+    .eq("tenant_id", tenantId)
     .single();
 
   if (tenantError || !tenant) {
     console.error("[Billing] Tenant lookup failed during portal creation", {
       event: "tenant_lookup_failed",
-      tenant_id: membership.tenant_id,
+      tenant_id: tenantId,
       error: tenantError,
     });
     throw new Error("Unable to resolve workspace billing status.");
   }
 
-  const entitlements = await getWorkspaceEntitlements(supabase, membership.tenant_id);
+  const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
   const planTier = entitlements.planTier.toLowerCase();
 
   const canManageBilling =
@@ -1258,8 +1188,8 @@ export async function manageBillingPortal(): Promise<BillingSessionResult> {
   if (!customerId) {
     console.error("[Billing] Workspace missing persisted dodo_customer_id", {
       event: "portal_customer_id_missing",
-      tenant_id: membership.tenant_id,
-      user_id: user.id,
+      tenant_id: tenantId,
+      user_id: userId,
     });
     throw new Error("No billing profile linked to this workspace. Please contact support.");
   }
@@ -1276,8 +1206,8 @@ export async function manageBillingPortal(): Promise<BillingSessionResult> {
   } catch (error) {
     console.error("[Billing] Customer portal creation failed", {
       event: "portal_creation_failed",
-      tenant_id: membership.tenant_id,
-      user_id: user.id,
+      tenant_id: tenantId,
+      user_id: userId,
       customer_id: customerId,
       environment, // Explicitly logs the active SDK routing environment
       error,

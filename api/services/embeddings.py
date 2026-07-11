@@ -12,11 +12,16 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+from api.services.cost_controls import TenantQuotaGuard, env_int
+
 logger = logging.getLogger(__name__)
 
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 MAX_EMBEDDING_INPUT_CHARS = 32_000
+EMBEDDING_QUOTA_COUNTER = "embeddings"
+EMBEDDING_QUOTA_DEFAULT_LIMIT = 20_000
+EMBEDDING_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 
 
 class EmbeddingRequest(BaseModel):
@@ -88,18 +93,50 @@ class EmbeddingService:
         api_key: str | None = None,
         model: str = EMBEDDING_MODEL,
         timeout_seconds: float = 30.0,
+        quota_guard: TenantQuotaGuard | None = None,
     ) -> None:
         self.client = client
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.quota_guard = quota_guard or TenantQuotaGuard()
 
-    def embed_text(self, request: EmbeddingRequest | str) -> EmbeddingResponse:
+    def embed_text(
+        self,
+        request: EmbeddingRequest | str,
+        *,
+        tenant_id: str | None = None,
+        service_profile_id: str | None = None,
+        source_post_id: str | None = None,
+        purpose: str = "semantic_matching",
+    ) -> EmbeddingResponse:
         payload = (
             request
             if isinstance(request, EmbeddingRequest)
             else EmbeddingRequest(text=request, model=self.model)
         )
+        quota = self.quota_guard.check_and_increment(
+            tenant_id=tenant_id,
+            counter_name=EMBEDDING_QUOTA_COUNTER,
+            limit=env_int("ARCLI_AI_DAILY_EMBEDDING_LIMIT", EMBEDDING_QUOTA_DEFAULT_LIMIT),
+            window_seconds=env_int(
+                "ARCLI_AI_DAILY_EMBEDDING_WINDOW_SECONDS",
+                EMBEDDING_QUOTA_DEFAULT_WINDOW_SECONDS,
+            ),
+        )
+        if not quota.allowed:
+            logger.warning(
+                "embedding_skipped tenant_id=%s service_profile_id=%s source_post_id=%s purpose=%s rejection_reason=%s current_count=%s limit=%s window_seconds=%s",
+                quota.tenant_id,
+                service_profile_id,
+                source_post_id,
+                purpose,
+                quota.rejection_reason,
+                quota.current_count,
+                quota.limit,
+                quota.window_seconds,
+            )
+            raise RuntimeError("Embedding quota exceeded for tenant.")
 
         embedding = self._create_embedding(payload.text, payload.model)
         result = EmbeddingResponse(
@@ -108,18 +145,36 @@ class EmbeddingService:
             dimensions=len(embedding),
         )
         logger.info(
-            "embedding_generated model=%s dimensions=%s input_chars=%s",
+            "embedding_generated tenant_id=%s service_profile_id=%s source_post_id=%s purpose=%s model=%s dimensions=%s input_chars=%s current_count=%s limit=%s",
+            quota.tenant_id,
+            service_profile_id,
+            source_post_id,
+            purpose,
             result.model,
             result.dimensions,
             len(payload.text),
+            quota.current_count,
+            quota.limit,
         )
         return result
 
     def embed_many(
         self,
         requests: Sequence[EmbeddingRequest] | Sequence[str],
+        *,
+        tenant_id: str | None = None,
+        service_profile_id: str | None = None,
+        purpose: str = "semantic_matching",
     ) -> list[EmbeddingResponse]:
-        return [self.embed_text(request) for request in requests]
+        return [
+            self.embed_text(
+                request,
+                tenant_id=tenant_id,
+                service_profile_id=service_profile_id,
+                purpose=purpose,
+            )
+            for request in requests
+        ]
 
     @retry(
         retry=retry_if_exception(_is_retryable_openai_error),
