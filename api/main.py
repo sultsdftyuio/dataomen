@@ -378,7 +378,7 @@ def health_check() -> HealthResponse:
 
 
 @app.post(
-    "/api/internal/workspace-brain/generate",
+    "/api/settings/workspace/brain/generate",
     response_model=WorkspaceBrainGenerateResponse,
     status_code=status.HTTP_200_OK,
 )

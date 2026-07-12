@@ -118,7 +118,8 @@ function generationEndpoint() {
 
   return joinBackendPath(
     internalApiUrl,
-    "/api/internal/workspace-brain/generate",
+    "/api/settings/workspace/brain/generate",
+    
   );
 }
 
