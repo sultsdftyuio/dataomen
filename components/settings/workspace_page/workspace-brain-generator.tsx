@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Brain,
   CheckCircle2,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 
+import { generateWorkspaceBrain } from "@/app/actions/workspace";
 import { C } from "@/lib/tokens";
 
 const PROGRESS_PHASES = [
@@ -81,30 +82,6 @@ function parseGeneratedProfile(payload: unknown) {
         : payload;
 
   return brainProfileSchema.parse(maybeProfile);
-}
-
-async function readResponsePayload(response: Response) {
-  const text = await response.text();
-  if (!text) return {};
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return { error: text };
-  }
-}
-
-function payloadMessage(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null;
-
-  const message =
-    "message" in payload
-      ? (payload as { message?: unknown }).message
-      : "error" in payload
-        ? (payload as { error?: unknown }).error
-        : null;
-
-  return typeof message === "string" ? message : null;
 }
 
 function TagListEditor({
@@ -265,6 +242,7 @@ export default function WorkspaceBrainGenerator({
   const [progressTick, setProgressTick] = useState(0);
   const [profile, setProfile] = useState<WorkspaceBrainProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const generationInFlightRef = useRef(false);
 
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow =
@@ -273,7 +251,8 @@ export default function WorkspaceBrainGenerator({
   const normalizedWebsiteUrl = websiteUrl.trim();
   const activePhase = PROGRESS_PHASES[progressTick % PROGRESS_PHASES.length];
   const progressValue = Math.min(94, 18 + progressTick * 10);
-  const canGenerate = normalizedWebsiteUrl.length > 0 && !isPending;
+  const canGenerate =
+    normalizedWebsiteUrl.length > 0 && !isPending && status !== "processing";
 
   useEffect(() => {
     if (status !== "processing") return;
@@ -315,6 +294,10 @@ export default function WorkspaceBrainGenerator({
   };
 
   const generateBrain = async () => {
+    if (generationInFlightRef.current) {
+      return;
+    }
+
     setError(null);
 
     if (!normalizedWebsiteUrl) {
@@ -331,25 +314,19 @@ export default function WorkspaceBrainGenerator({
 
     setStatus("processing");
     setProgressTick(0);
+    generationInFlightRef.current = true;
 
     try {
-      const response = await fetch("/api/settings/workspace/brain/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: normalizedWebsiteUrl,
-          websiteUrl: normalizedWebsiteUrl,
-        }),
+      const result = await generateWorkspaceBrain({
+        url: normalizedWebsiteUrl,
+        websiteUrl: normalizedWebsiteUrl,
       });
-      const payload = await readResponsePayload(response);
 
-      if (!response.ok) {
-        throw new Error(
-          payloadMessage(payload) || "Arcli could not generate a workspace brain.",
-        );
+      if (!result.ok) {
+        throw new Error(result.message);
       }
 
-      const generatedProfile = parseGeneratedProfile(payload);
+      const generatedProfile = parseGeneratedProfile(result.data);
       updateProfile(generatedProfile);
       setStatus("review");
     } catch (caughtError) {
@@ -359,6 +336,8 @@ export default function WorkspaceBrainGenerator({
           ? caughtError.message
           : "Arcli could not generate a workspace brain.",
       );
+    } finally {
+      generationInFlightRef.current = false;
     }
   };
 
