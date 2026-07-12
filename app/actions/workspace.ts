@@ -116,7 +116,29 @@ function generationEndpoint() {
     return null;
   }
 
-  return `${internalApiUrl}/api/internal/workspace-brain/generate`;
+  return joinBackendPath(
+    internalApiUrl,
+    "/api/internal/workspace-brain/generate",
+  );
+}
+
+function joinBackendPath(baseUrl: string, path: string) {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (base.endsWith("/api") && normalizedPath.startsWith("/api/")) {
+    return `${base}${normalizedPath.slice(4)}`;
+  }
+
+  return `${base}${normalizedPath}`;
+}
+
+function endpointPath(endpoint: string) {
+  try {
+    return new URL(endpoint).pathname;
+  } catch {
+    return "unparseable_endpoint";
+  }
 }
 
 function generationIdempotencyKey(tenantId: string, websiteUrl: string) {
@@ -148,7 +170,9 @@ function payloadMessage(payload: JsonValue) {
       ? payload.message
       : "error" in payload
         ? payload.error
-        : null;
+        : "detail" in payload
+          ? payload.detail
+          : null;
 
   return typeof message === "string" ? message : null;
 }
@@ -233,6 +257,7 @@ export async function generateWorkspaceBrain(
         user_id: context.userId,
         website_url: websiteUrl,
         status: response.status,
+        endpoint_path: endpointPath(endpoint),
         reason:
           payloadMessage(payload) ?? "workspace_brain_generation_worker_failed",
       });
@@ -255,6 +280,7 @@ export async function generateWorkspaceBrain(
       tenant_id: context.tenantId,
       user_id: context.userId,
       website_url: websiteUrl,
+      endpoint_path: endpointPath(endpoint),
       reason: isTimeout ? "timeout" : "request_failed",
       error,
     });

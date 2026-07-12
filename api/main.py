@@ -7,7 +7,7 @@ from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -143,6 +143,83 @@ class PublicIngestionTriggerResponse(BaseModel):
     message_id: str
 
 
+class WorkspaceBrainGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    url: str | None = Field(default=None)
+    website_url: str | None = Field(default=None)
+    requested_by: str | None = Field(default=None)
+    source: str | None = Field(default=None)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tenant_id must be a valid UUID") from exc
+
+    @field_validator("url", "website_url")
+    @classmethod
+    def normalize_optional_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if "://" not in candidate:
+            candidate = f"https://{candidate}"
+
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("website_url must be a valid HTTP(S) URL")
+
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path or "/",
+                "",
+                "",
+                "",
+            )
+        )
+
+    @model_validator(mode="after")
+    def require_website_url(self) -> "WorkspaceBrainGenerateRequest":
+        if not self.website_url and not self.url:
+            raise ValueError("website_url is required")
+        return self
+
+    @property
+    def resolved_website_url(self) -> str:
+        return self.website_url or self.url or ""
+
+
+class WorkspaceBrainProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    company_name: str = Field(min_length=1)
+    one_liner: str = Field(min_length=1)
+    target_audience: list[str] = Field(default_factory=list)
+    core_problem_solved: str = Field(min_length=1)
+    key_value_propositions: list[str] = Field(default_factory=list)
+    ideal_customer_pain_points: list[str] = Field(default_factory=list)
+    negative_keywords: list[str] = Field(default_factory=list)
+
+
+class WorkspaceBrainGenerateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["completed"] = Field(default="completed")
+    tenant_id: str
+    website_url: str
+    profile: WorkspaceBrainProfile
+
+
 app = FastAPI(
     title="Arcli Prospect Intelligence API",
     version=os.getenv("ARCLI_API_VERSION", "0.1.0"),
@@ -166,20 +243,20 @@ def verify_internal_request(
     expected_secret = os.getenv("INTERNAL_WORKER_SECRET", "").strip()
     if not expected_secret:
         logger.error(
-            "crawl_trigger_auth_unconfigured secret_configured=%s",
+            "internal_request_auth_unconfigured secret_configured=%s",
             False,
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Crawler trigger authentication is not configured.",
+            detail="Internal worker authentication is not configured.",
         )
 
     token = _bearer_token(authorization)
     if not token or not hmac.compare_digest(token, expected_secret):
-        logger.warning("crawl_trigger_auth_rejected token_present=%s", bool(token))
+        logger.warning("internal_request_auth_rejected token_present=%s", bool(token))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid crawler trigger credentials.",
+            detail="Invalid internal worker credentials.",
         )
 
 
@@ -298,6 +375,119 @@ def _validate_internal_tenant_scope(
 @app.get("/health", response_model=HealthResponse, include_in_schema=False)
 def health_check() -> HealthResponse:
     return HealthResponse(version=os.getenv("ARCLI_RELEASE_SHA"))
+
+
+@app.post(
+    "/api/internal/workspace-brain/generate",
+    response_model=WorkspaceBrainGenerateResponse,
+    status_code=status.HTTP_200_OK,
+)
+def generate_workspace_brain(
+    payload: WorkspaceBrainGenerateRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+) -> WorkspaceBrainGenerateResponse:
+    """
+    Generate a review-only workspace brain draft.
+
+    This endpoint is internal-only and does not persist the generated profile.
+    The settings UI must explicitly save the reviewed result.
+    """
+    from api.services.crawling import generate_workspace_brain_profile
+
+    _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
+
+    try:
+        profile = generate_workspace_brain_profile(
+            payload.tenant_id,
+            payload.resolved_website_url,
+            idempotency_key=payload.idempotency_key,
+        )
+    except ValueError as exc:
+        logger.warning(
+            "workspace_brain_generation_rejected tenant_id=%s requested_by=%s website_url=%s source=%s rejection_reason=%s error_type=%s error=%s",
+            payload.tenant_id,
+            payload.requested_by,
+            payload.resolved_website_url,
+            payload.source,
+            "invalid_request",
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid workspace brain generation request.",
+        ) from exc
+    except TimeoutError as exc:
+        logger.warning(
+            "workspace_brain_generation_timeout tenant_id=%s requested_by=%s website_url=%s source=%s error_type=%s error=%s",
+            payload.tenant_id,
+            payload.requested_by,
+            payload.resolved_website_url,
+            payload.source,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Workspace brain generation timed out.",
+        ) from exc
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        quota_exceeded = "quota" in message and "exceeded" in message
+        logger.warning(
+            "workspace_brain_generation_failed tenant_id=%s requested_by=%s website_url=%s source=%s failure_reason=%s error_type=%s error=%s",
+            payload.tenant_id,
+            payload.requested_by,
+            payload.resolved_website_url,
+            payload.source,
+            "quota_exceeded" if quota_exceeded else "generation_dependency_unavailable",
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=(
+                status.HTTP_429_TOO_MANY_REQUESTS
+                if quota_exceeded
+                else status.HTTP_503_SERVICE_UNAVAILABLE
+            ),
+            detail=(
+                "Workspace brain generation quota exceeded."
+                if quota_exceeded
+                else "Workspace brain generation dependency is unavailable."
+            ),
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "workspace_brain_generation_failed tenant_id=%s requested_by=%s website_url=%s source=%s failure_reason=%s error_type=%s error=%s",
+            payload.tenant_id,
+            payload.requested_by,
+            payload.resolved_website_url,
+            payload.source,
+            "unhandled_exception",
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Workspace brain generation failed.",
+        ) from exc
+
+    logger.info(
+        "workspace_brain_generation_accepted tenant_id=%s requested_by=%s website_url=%s source=%s idempotency_key_present=%s target_audience_count=%s pain_point_count=%s",
+        payload.tenant_id,
+        payload.requested_by,
+        payload.resolved_website_url,
+        payload.source,
+        bool(payload.idempotency_key),
+        len(profile.get("target_audience", [])),
+        len(profile.get("ideal_customer_pain_points", [])),
+    )
+
+    return WorkspaceBrainGenerateResponse(
+        tenant_id=payload.tenant_id,
+        website_url=payload.resolved_website_url,
+        profile=WorkspaceBrainProfile.model_validate(profile),
+    )
 
 
 @app.post(

@@ -26,6 +26,9 @@ DEFAULT_CRAWL_PHASE_TIMEOUT_SECONDS = 110
 DEFAULT_PROFILE_EXTRACTION_TIMEOUT_SECONDS = 60
 DEFAULT_CRAWL_JOB_STALE_SECONDS = 600
 DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
+DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
+DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
+DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
 
 SERVICE_PROFILE_COLUMNS = {
     "tenant_id",
@@ -942,6 +945,107 @@ def _cached_service_profile_for_markdown(
     return None
 
 
+def _workspace_brain_profile_from_document(
+    document: dict[str, Any],
+    website_url: str,
+) -> dict[str, Any]:
+    from api.services.profile_extraction import ServiceProfileDraft
+
+    one_liner = _string_value(
+        document.get("one_liner") or document.get("unique_value_prop")
+    )
+    core_problem = _string_value(
+        document.get("core_problem_solved") or document.get("core_problem")
+    )
+    key_value_propositions = _jsonable_list(
+        document.get("key_value_propositions")
+    ) or _jsonable_list(document.get("value_propositions"))
+    pain_points = _jsonable_list(
+        document.get("ideal_customer_pain_points")
+    ) or _jsonable_list(document.get("pain_points"))
+
+    if one_liner and not key_value_propositions:
+        key_value_propositions = [one_liner]
+    if one_liner and not core_problem:
+        core_problem = one_liner
+
+    parsed_url = urlparse(website_url)
+    fallback_company = parsed_url.netloc.replace("www.", "") or "Workspace"
+    profile = {
+        "company_name": _string_value(document.get("company_name"))
+        or fallback_company,
+        "one_liner": one_liner or core_problem or f"{fallback_company} workspace profile.",
+        "target_audience": _jsonable_list(document.get("target_audience")),
+        "core_problem_solved": core_problem
+        or one_liner
+        or "The primary customer problem was not clearly stated on the website.",
+        "key_value_propositions": key_value_propositions,
+        "ideal_customer_pain_points": pain_points,
+        "negative_keywords": _jsonable_list(document.get("negative_keywords")),
+    }
+
+    return ServiceProfileDraft.model_validate(profile).model_dump()
+
+
+def _cached_workspace_brain_profile_for_website(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    website_url: str,
+    columns: dict[str, dict[str, str]],
+) -> dict[str, Any] | None:
+    document_columns = [
+        column_name
+        for column_name in ("profile_json", "profile", "data")
+        if column_name in columns
+    ]
+    if not document_columns:
+        return None
+
+    where_parts = ["tenant_id = :tenant_id"]
+    if "website_url" in columns and "url" in columns:
+        where_parts.append("(website_url = :website_url OR url = :website_url)")
+    elif "website_url" in columns:
+        where_parts.append("website_url = :website_url")
+    elif "url" in columns:
+        where_parts.append("url = :website_url")
+    else:
+        return None
+
+    order_columns = [
+        column_name
+        for column_name in ("updated_at", "created_at")
+        if column_name in columns
+    ]
+    order_sql = (
+        " ORDER BY "
+        + ", ".join(f"{column_name} DESC NULLS LAST" for column_name in order_columns)
+        if order_columns
+        else ""
+    )
+
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(document_columns)}
+              FROM public.service_profiles
+             WHERE {" AND ".join(where_parts)}
+             {order_sql}
+             LIMIT 5
+            """
+        ),
+        {"tenant_id": tenant_id, "website_url": website_url},
+    ).mappings()
+
+    for row in rows:
+        for column_name in document_columns:
+            document = _as_dict(row.get(column_name))
+            if document.get("extraction_status") in {"completed", "manual_refined"}:
+                return _workspace_brain_profile_from_document(document, website_url)
+
+    return None
+
+
 def _upsert_service_profile(
     conn: Connection,
     *,
@@ -1466,6 +1570,122 @@ class WebsiteCrawler:
         if isinstance(obj, dict):
             return obj.get(field_name, default)
         return getattr(obj, field_name, default)
+
+
+def generate_workspace_brain_profile(
+    tenant_id: str,
+    website_url: str,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    normalized_url = WebsiteCrawler._normalize_url(website_url)
+    generation_id = idempotency_key or _crawl_job_id(tenant_id, normalized_url)
+    started_at = time.monotonic()
+    total_timeout_seconds = _env_int(
+        "ARCLI_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS",
+        DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS,
+        minimum=30,
+    )
+    deadline = time.monotonic() + total_timeout_seconds
+    engine = _database_engine()
+
+    with engine.begin() as conn:
+        columns = _service_profile_columns(conn)
+        cached_profile = _cached_workspace_brain_profile_for_website(
+            conn,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            columns=columns,
+        )
+
+    if cached_profile:
+        logger.info(
+            "workspace_brain_generation_cache_hit tenant_id=%s website_url=%s generation_id=%s cache_stage=%s elapsed_ms=%s",
+            tenant_id,
+            normalized_url,
+            generation_id,
+            "service_profile",
+            int((time.monotonic() - started_at) * 1000),
+        )
+        return cached_profile
+
+    crawl_timeout_seconds = min(
+        _env_int(
+            "ARCLI_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS",
+            DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS,
+            minimum=10,
+        ),
+        _remaining_deadline_seconds(deadline, minimum=20),
+    )
+    markdown = asyncio.run(
+        _crawl_with_deadline(
+            normalized_url,
+            tenant_id=tenant_id,
+            crawl_job_id=generation_id,
+            timeout_seconds=crawl_timeout_seconds,
+        )
+    )
+    markdown = _cap_markdown_payload(
+        markdown,
+        tenant_id=tenant_id,
+        website_url=normalized_url,
+        crawl_job_id=generation_id,
+    )
+    crawl_markdown_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+
+    with engine.begin() as conn:
+        cached_profile = _cached_service_profile_for_markdown(
+            conn,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            crawl_markdown_sha256=crawl_markdown_sha256,
+            columns=_service_profile_columns(conn),
+        )
+
+    if cached_profile:
+        logger.info(
+            "workspace_brain_generation_cache_hit tenant_id=%s website_url=%s generation_id=%s cache_stage=%s crawl_markdown_sha256=%s elapsed_ms=%s",
+            tenant_id,
+            normalized_url,
+            generation_id,
+            "markdown_hash",
+            crawl_markdown_sha256,
+            int((time.monotonic() - started_at) * 1000),
+        )
+        return _workspace_brain_profile_from_document(cached_profile, normalized_url)
+
+    extraction_timeout_seconds = min(
+        _env_int(
+            "ARCLI_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS",
+            DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS,
+            minimum=10,
+        ),
+        _remaining_deadline_seconds(deadline, minimum=10),
+    )
+    profile = _extract_profile_with_deadline(
+        markdown,
+        tenant_id=tenant_id,
+        crawl_job_id=generation_id,
+        timeout_seconds=extraction_timeout_seconds,
+    )
+    normalized_profile = _workspace_brain_profile_from_document(
+        {
+            **profile,
+            "website_url": normalized_url,
+            "extraction_status": "completed",
+            "crawl_markdown_sha256": crawl_markdown_sha256,
+        },
+        normalized_url,
+    )
+    logger.info(
+        "workspace_brain_generation_completed tenant_id=%s website_url=%s generation_id=%s crawl_markdown_sha256=%s elapsed_ms=%s",
+        tenant_id,
+        normalized_url,
+        generation_id,
+        crawl_markdown_sha256,
+        int((time.monotonic() - started_at) * 1000),
+    )
+    return normalized_profile
 
 
 def enqueue_crawl_job(tenant_id: str, website_url: str) -> str:
