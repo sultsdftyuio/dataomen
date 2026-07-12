@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "crypto";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
@@ -15,6 +16,29 @@ import {
 type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type EmbeddingTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
+
+type UntypedSupabase = {
+  from: (table: string) => {
+    upsert: (
+      payload: DbRecord,
+      options?: { onConflict?: string },
+    ) => {
+      select: (columns: string) => {
+        maybeSingle: <T>() => Promise<{ data: T | null; error: unknown }>;
+      };
+    };
+    update: (payload: DbRecord) => {
+      eq: (
+        column: string,
+        value: string,
+      ) => {
+        select: (columns: string) => {
+          maybeSingle: <T>() => Promise<{ data: T | null; error: unknown }>;
+        };
+      };
+    };
+  };
+};
 
 const SERVICE_PROFILE_SCHEMA = z.object({
   target_audience: z.array(z.string().trim().min(1)).default([]),
@@ -76,6 +100,105 @@ function normalizeWebsiteUrl(value: unknown): string {
   return parsed.toString();
 }
 
+function crawlJobId(tenantId: string, websiteUrl: string) {
+  return createHash("sha256")
+    .update(`${tenantId}:${websiteUrl}`, "utf8")
+    .digest("hex")
+    .slice(0, 24);
+}
+
+async function upsertCrawlJobStatus(
+  context: TenantContext,
+  websiteUrl: string,
+  payload: DbRecord,
+) {
+  const now = new Date().toISOString();
+  const client = context.supabase as unknown as UntypedSupabase;
+  const result = await client
+    .from("crawl_jobs")
+    .upsert(
+      {
+        id: crawlJobId(context.tenantId, websiteUrl),
+        tenant_id: context.tenantId,
+        website_url: websiteUrl,
+        last_heartbeat_at: now,
+        updated_at: now,
+        ...payload,
+      },
+      { onConflict: "id" },
+    )
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (result.error) {
+    console.warn("[ProspectDashboard] crawl job status update skipped", {
+      tenant_id: context.tenantId,
+      website_url: websiteUrl,
+      error: result.error,
+    });
+  }
+}
+
+async function markCrawlTriggerFailed(
+  context: TenantContext,
+  websiteUrl: string,
+  reason: string,
+  detail?: unknown,
+) {
+  const detailContext: Record<string, Json> = { source: "dashboard_onboarding" };
+  if (detail && typeof detail === "object" && !(detail instanceof Error)) {
+    detailContext.detail = JSON.parse(JSON.stringify(detail)) as Json;
+  }
+
+  await upsertCrawlJobStatus(context, websiteUrl, {
+    status: "failed",
+    phase: "trigger_failed",
+    failure_reason: reason,
+    error_type:
+      detail instanceof Error
+        ? detail.name
+        : typeof detail === "string"
+          ? "TriggerError"
+          : "CrawlerTriggerError",
+    error_message:
+      detail instanceof Error
+        ? detail.message
+        : typeof detail === "string"
+          ? detail
+          : "Crawler trigger could not be accepted.",
+    error_context: detailContext,
+  });
+}
+
+async function latestServiceProfileId(context: TenantContext) {
+  let result = await context.supabase
+    .from("service_profiles")
+    .select("id")
+    .eq("tenant_id", context.tenantId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string | null }>();
+
+  if (result.error) {
+    result = await context.supabase
+      .from("service_profiles")
+      .select("id")
+      .eq("tenant_id", context.tenantId)
+      .limit(1)
+      .maybeSingle<{ id: string | null }>();
+  }
+
+  if (result.error) {
+    console.warn("[ProspectDashboard] manual profile lookup skipped", {
+      tenant_id: context.tenantId,
+      error: result.error,
+    });
+    return null;
+  }
+
+  return result.data?.id ?? null;
+}
+
 function crawlerTriggerEndpoint() {
   const explicit = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
   if (explicit) return explicit;
@@ -135,14 +258,14 @@ async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
 async function postCrawlerTrigger(
   context: CrawlerTriggerContext,
   websiteUrl: string,
-) {
+): Promise<ProspectActionResult> {
   const endpoint = crawlerTriggerEndpoint();
   if (!endpoint) {
     console.warn("[ProspectDashboard] crawler trigger not configured", {
       tenant_id: context.tenantId,
       website_url: websiteUrl,
     });
-    return;
+    return actionError("Crawler queue is not configured.");
   }
 
   const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
@@ -151,7 +274,7 @@ async function postCrawlerTrigger(
       tenant_id: context.tenantId,
       website_url: websiteUrl,
     });
-    return;
+    return actionError("Crawler queue credentials are missing.");
   }
 
   const headers: Record<string, string> = {
@@ -184,33 +307,30 @@ async function postCrawlerTrigger(
         status: response.status,
         body: text.slice(0, 500),
       });
-      return;
+      return actionError(
+        `Crawler queue rejected the request with HTTP ${response.status}.`,
+      );
     }
 
     console.info("[ProspectDashboard] crawler trigger posted", {
       tenant_id: context.tenantId,
       website_url: websiteUrl,
     });
+    return actionOk("Crawler queue accepted the website.");
   } catch (error) {
     console.warn("[ProspectDashboard] crawler trigger unavailable", {
       tenant_id: context.tenantId,
       website_url: websiteUrl,
       error,
     });
+    return actionError(
+      error instanceof Error
+        ? `Crawler queue is unavailable: ${error.message}`
+        : "Crawler queue is unavailable.",
+    );
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function scheduleCrawlerTrigger(context: TenantContext, websiteUrl: string) {
-  const triggerContext: CrawlerTriggerContext = {
-    tenantId: context.tenantId,
-    userId: context.userId,
-  };
-
-  after(async () => {
-    await postCrawlerTrigger(triggerContext, websiteUrl);
-  });
 }
 
 async function postEmbeddingTrigger(
@@ -310,11 +430,39 @@ export async function submitWebsiteForCrawl(
 
   try {
     await persistWebsiteUrl(context, websiteUrl);
-    scheduleCrawlerTrigger(context, websiteUrl);
+    await upsertCrawlJobStatus(context, websiteUrl, {
+      status: "pending",
+      phase: "queued",
+      failure_reason: null,
+      error_type: null,
+      error_message: null,
+      error_context: {},
+      queued_at: new Date().toISOString(),
+    });
+
+    const triggerResult = await postCrawlerTrigger(
+      {
+        tenantId: context.tenantId,
+        userId: context.userId,
+      },
+      websiteUrl,
+    );
+
+    if (!triggerResult.ok) {
+      await markCrawlTriggerFailed(
+        context,
+        websiteUrl,
+        "trigger_unavailable",
+        triggerResult.message,
+      );
+      revalidatePath("/dashboard");
+      revalidatePath("/onboarding/workspace");
+      return triggerResult;
+    }
 
     revalidatePath("/dashboard");
     revalidatePath("/onboarding/workspace");
-    return actionOk("Website submitted for profile extraction.");
+    return actionOk("Website crawl queued. We are extracting your profile now.");
   } catch (error) {
     console.error("[ProspectDashboard] website submission failed", {
       tenant_id: context.tenantId,
@@ -322,6 +470,75 @@ export async function submitWebsiteForCrawl(
     });
     return actionError("Could not submit this website. Please try again.");
   }
+}
+
+export async function createManualServiceProfile(
+  formData: FormData,
+): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+
+  let websiteUrl: string;
+  try {
+    websiteUrl = normalizeWebsiteUrl(formData.get("website_url"));
+  } catch (error) {
+    return actionError(error instanceof Error ? error.message : "Invalid URL.");
+  }
+
+  try {
+    await persistWebsiteUrl(context, websiteUrl);
+  } catch (error) {
+    console.error("[ProspectDashboard] manual profile website save failed", {
+      tenant_id: context.tenantId,
+      error,
+    });
+    return actionError("Could not save this website before manual setup.");
+  }
+
+  const values = SERVICE_PROFILE_SCHEMA.parse({});
+  const existingProfileId = await latestServiceProfileId(context);
+  let lastError: unknown = null;
+
+  for (const payload of updatePayloads(values, "pending_review")) {
+    const profilePayload = {
+      ...payload,
+      website_url: websiteUrl,
+      extraction_status: "manual_entry",
+    };
+    const query = existingProfileId
+      ? context.supabase
+          .from("service_profiles")
+          .update(profilePayload)
+          .eq("tenant_id", context.tenantId)
+          .eq("id", existingProfileId)
+      : context.supabase
+          .from("service_profiles")
+          .insert({ ...profilePayload, tenant_id: context.tenantId });
+    const result = await query.select("tenant_id").maybeSingle();
+
+    if (!result.error && (result.data || !existingProfileId)) {
+      await upsertCrawlJobStatus(context, websiteUrl, {
+        status: "failed",
+        phase: "manual_entry",
+        failure_reason: "manual_profile_requested",
+        error_type: null,
+        error_message: null,
+        error_context: { source: "dashboard_onboarding" },
+      });
+      revalidatePath("/dashboard");
+      revalidatePath("/onboarding/workspace");
+      return actionOk("Manual profile created. Fill in the matching brief below.");
+    }
+
+    lastError = result.error;
+  }
+
+  console.error("[ProspectDashboard] manual service profile insert failed", {
+    tenant_id: context.tenantId,
+    website_url: websiteUrl,
+    error: lastError,
+  });
+  return actionError("Could not create a manual profile.");
 }
 
 function normalizeList(values: string[]) {

@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAsyncProvisioning } from "@/hooks/useAsyncProvisioning";
 import { C } from "@/lib/tokens";
 import {
+  createManualServiceProfile,
   saveServiceProfile,
   submitWebsiteForCrawl,
 } from "@/app/(dashboard)/dashboard/actions";
@@ -89,27 +90,42 @@ const LIST_TONES: Record<string, ListTone> = {
   },
 };
 
-const STALE_CRAWL_HEARTBEAT_MS = 10 * 60 * 1000;
+const LOCAL_CRAWL_TRIGGER_GRACE_MS = 25 * 1000;
+const STALE_CRAWL_HEARTBEAT_MS = 4 * 60 * 1000;
+
+const CRAWL_PHASES = [
+  { key: "queued", label: "Queued" },
+  { key: "crawling", label: "Crawling pages" },
+  { key: "crawl_persisted", label: "Pages captured" },
+  { key: "extracting_profile", label: "Extracting profile" },
+  { key: "persisting_profile", label: "Saving brief" },
+] as const;
 
 function normalizedStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
 }
 
-function timestampAgeMs(value: string | null | undefined) {
+function timestampAgeMs(value: string | null | undefined, now = Date.now()) {
   if (!value) return null;
 
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) return null;
 
-  return Date.now() - parsed;
+  return now - parsed;
 }
 
-function crawlJobNeedsAttention(crawlJob: CrawlJobView | null | undefined) {
+function crawlJobNeedsAttention(
+  crawlJob: CrawlJobView | null | undefined,
+  now = Date.now(),
+) {
   const status = normalizedStatus(crawlJob?.status);
   if (status === "failed" || status === "dead_lettered") return true;
 
   if (status === "pending" || status === "processing") {
-    const heartbeatAge = timestampAgeMs(crawlJob?.lastHeartbeatAt ?? crawlJob?.updatedAt);
+    const heartbeatAge = timestampAgeMs(
+      crawlJob?.lastHeartbeatAt ?? crawlJob?.updatedAt,
+      now,
+    );
     return heartbeatAge === null || heartbeatAge > STALE_CRAWL_HEARTBEAT_MS;
   }
 
@@ -137,6 +153,83 @@ function crawlStatusMessage(crawlJob: CrawlJobView | null | undefined) {
   }
 
   return "This website was submitted before crawl tracking was available.";
+}
+
+function activeCrawlPhase(crawlJob: CrawlJobView | null | undefined) {
+  const phase = normalizedStatus(crawlJob?.phase);
+  if (!phase) return "queued";
+  return phase;
+}
+
+function activeCrawlTitle(crawlJob: CrawlJobView | null | undefined) {
+  const phase = activeCrawlPhase(crawlJob);
+  const phaseLabels: Record<string, string> = {
+    queued: "Queued for crawl",
+    starting: "Starting crawler",
+    crawling: "Crawling your website",
+    crawl_persisted: "Website pages captured",
+    extracting_profile: "Extracting service profile",
+    persisting_profile: "Saving service profile",
+  };
+
+  return phaseLabels[phase] ?? "Crawling your website";
+}
+
+function activeCrawlDetail(crawlJob: CrawlJobView | null | undefined) {
+  const phase = activeCrawlPhase(crawlJob);
+  const phaseDetails: Record<string, string> = {
+    queued: "Waiting for the worker to claim the job.",
+    starting: "The worker has picked up the website.",
+    crawling: "Collecting the homepage and high-signal product pages.",
+    crawl_persisted: "Raw page content was saved. Profile extraction is next.",
+    extracting_profile: "Extracting audience, pain, value proposition, and bad-fit signals.",
+    persisting_profile: "Writing the extracted profile to your workspace.",
+  };
+
+  return phaseDetails[phase] ?? "Working on your service profile.";
+}
+
+function crawlProgressValue(crawlJob: CrawlJobView | null | undefined) {
+  const phase = activeCrawlPhase(crawlJob);
+  const progress: Record<string, number> = {
+    queued: 12,
+    starting: 20,
+    crawling: 42,
+    crawl_persisted: 62,
+    extracting_profile: 78,
+    persisting_profile: 90,
+  };
+
+  return progress[phase] ?? 28;
+}
+
+function crawlStepState(
+  stepKey: string,
+  crawlJob: CrawlJobView | null | undefined,
+) {
+  const activeIndex = CRAWL_PHASES.findIndex(
+    (phase) => phase.key === activeCrawlPhase(crawlJob),
+  );
+  const stepIndex = CRAWL_PHASES.findIndex((phase) => phase.key === stepKey);
+
+  if (activeIndex < 0) return "pending";
+  if (stepIndex < activeIndex) return "complete";
+  if (stepIndex === activeIndex) return "active";
+  return "pending";
+}
+
+function formatStatusAge(crawlJob: CrawlJobView | null | undefined, now = Date.now()) {
+  const ageMs = timestampAgeMs(
+    crawlJob?.lastHeartbeatAt ?? crawlJob?.updatedAt,
+    now,
+  );
+  if (ageMs === null || ageMs < 0) return "just now";
+
+  const totalSeconds = Math.floor(ageMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s ago`;
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  return `${totalMinutes}m ago`;
 }
 
 function normalizeItems(items: string[]) {
@@ -344,20 +437,31 @@ export function WorkspaceProvisioningPanel({
   const [profileResult, setProfileResult] = useState<ProspectActionResult | null>(null);
   const [isWebsitePending, startWebsiteTransition] = useTransition();
   const [isProfilePending, startProfileTransition] = useTransition();
+  const [isManualPending, startManualTransition] = useTransition();
+  const [submittedAt, setSubmittedAt] = useState<number | null>(null);
+  const [statusNow, setStatusNow] = useState(() => Date.now());
 
   const effectiveWebsiteUrl =
     submittedWebsiteUrl ?? initialWebsiteUrl ?? serviceProfile?.websiteUrl ?? "";
   const hasProfile = Boolean(serviceProfile?.hasProfile);
+  const crawlStatus = normalizedStatus(crawlJob?.status);
   const hasFreshLocalSubmit = Boolean(
     submittedWebsiteUrl &&
       effectiveWebsiteUrl &&
       submittedWebsiteUrl.trim() === effectiveWebsiteUrl.trim(),
   );
+  const localSubmitAge = submittedAt ? statusNow - submittedAt : null;
+  const hasLocalSubmitGrace =
+    hasFreshLocalSubmit &&
+    localSubmitAge !== null &&
+    localSubmitAge < LOCAL_CRAWL_TRIGGER_GRACE_MS;
+  const hasTerminalCrawl =
+    crawlStatus === "failed" || crawlStatus === "dead_lettered";
   const needsCrawlAttention =
     Boolean(effectiveWebsiteUrl) &&
     !hasProfile &&
-    !hasFreshLocalSubmit &&
-    crawlJobNeedsAttention(crawlJob);
+    (hasTerminalCrawl ||
+      (!hasLocalSubmitGrace && crawlJobNeedsAttention(crawlJob, statusNow)));
   const isCrawling = Boolean(effectiveWebsiteUrl) && !hasProfile && !needsCrawlAttention;
 
   useEffect(() => {
@@ -369,11 +473,12 @@ export function WorkspaceProvisioningPanel({
   }, [serviceProfile?.id, serviceProfile?.updatedAt, serviceProfile?.fields]);
 
   useEffect(() => {
-    if (!isCrawling) return;
-
     const intervalId = window.setInterval(() => {
-      router.refresh();
-    }, 2500);
+      setStatusNow(Date.now());
+      if (isCrawling) {
+        router.refresh();
+      }
+    }, isCrawling ? 5000 : 30000);
 
     return () => window.clearInterval(intervalId);
   }, [isCrawling, router]);
@@ -407,11 +512,16 @@ export function WorkspaceProvisioningPanel({
     startWebsiteTransition(async () => {
       const result = await submitWebsiteForCrawl(formData);
       setWebsiteResult(result);
+      const now = Date.now();
+      setStatusNow(now);
 
       if (result.ok) {
         setSubmittedWebsiteUrl(websiteUrl.trim());
-        router.refresh();
+        setSubmittedAt(now);
+      } else {
+        setSubmittedAt(null);
       }
+      router.refresh();
     });
   };
 
@@ -424,9 +534,33 @@ export function WorkspaceProvisioningPanel({
     startWebsiteTransition(async () => {
       const result = await submitWebsiteForCrawl(formData);
       setWebsiteResult(result);
+      const now = Date.now();
+      setStatusNow(now);
 
       if (result.ok) {
         setSubmittedWebsiteUrl(effectiveWebsiteUrl.trim());
+        setSubmittedAt(now);
+      } else {
+        setSubmittedAt(null);
+      }
+      router.refresh();
+    });
+  };
+
+  const startManualProfile = () => {
+    if (!effectiveWebsiteUrl) return;
+
+    const formData = new FormData();
+    formData.set("website_url", effectiveWebsiteUrl);
+
+    startManualTransition(async () => {
+      const result = await createManualServiceProfile(formData);
+      setWebsiteResult(result);
+      setStatusNow(Date.now());
+
+      if (result.ok) {
+        setSubmittedWebsiteUrl(null);
+        setSubmittedAt(null);
         router.refresh();
       }
     });
@@ -549,7 +683,7 @@ export function WorkspaceProvisioningPanel({
           </CardHeader>
           <CardContent className="space-y-4">
             <div
-              className="rounded-md border px-3 py-2 text-sm"
+              className="rounded-md border px-3 py-3 text-sm leading-6"
               style={{
                 borderColor: C.red,
                 backgroundColor: C.redPale,
@@ -563,20 +697,64 @@ export function WorkspaceProvisioningPanel({
                 {crawlJob.errorMessage}
               </p>
             ) : null}
-            <Button
-              type="button"
-              disabled={isWebsitePending}
-              className="w-full"
-              onClick={retryCrawl}
-              style={{ backgroundColor: C.navy, color: C.white }}
+            <div
+              className="grid gap-2 rounded-md border p-3 text-left text-xs"
+              style={{ borderColor: C.rule, backgroundColor: C.white }}
             >
-              {isWebsitePending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-              {isWebsitePending ? "Restarting crawl..." : "Retry crawl"}
-            </Button>
+              <div className="flex items-center justify-between gap-3">
+                <span style={{ color: C.muted }}>Last backend signal</span>
+                <span className="font-semibold" style={{ color: C.navy }}>
+                  {formatStatusAge(crawlJob, statusNow)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span style={{ color: C.muted }}>Status</span>
+                <span className="font-semibold" style={{ color: C.navy }}>
+                  {crawlJob?.status ?? "not tracked"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span style={{ color: C.muted }}>Phase</span>
+                <span className="font-semibold" style={{ color: C.navy }}>
+                  {crawlJob?.phase?.replace(/_/g, " ") ?? "missing"}
+                </span>
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                disabled={isWebsitePending || isManualPending}
+                className="w-full"
+                onClick={retryCrawl}
+                style={{ backgroundColor: C.navy, color: C.white }}
+              >
+                {isWebsitePending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                {isWebsitePending ? "Restarting..." : "Retry crawl"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isWebsitePending || isManualPending}
+                className="w-full"
+                onClick={startManualProfile}
+                style={{
+                  borderColor: C.ruleDark,
+                  backgroundColor: C.white,
+                  color: C.navy,
+                }}
+              >
+                {isManualPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Target className="size-4" />
+                )}
+                {isManualPending ? "Opening..." : "Enter manually"}
+              </Button>
+            </div>
             <ResultText result={websiteResult} />
           </CardContent>
         </Card>
@@ -600,18 +778,108 @@ export function WorkspaceProvisioningPanel({
             </div>
             <div>
               <CardTitle className="text-xl" style={{ color: C.navy }}>
-                Crawling your website...
+                {activeCrawlTitle(crawlJob)}
               </CardTitle>
               <CardDescription className="mt-2" style={{ color: C.muted }}>
                 {effectiveWebsiteUrl}
               </CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <Progress value={68} />
-            <p className="text-center text-sm" style={{ color: C.muted }}>
-              Extracting your audience, core problem, value proposition, and bad-fit signals.
-            </p>
+          <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3 text-xs font-semibold">
+                <span style={{ color: C.muted }}>
+                  {activeCrawlDetail(crawlJob)}
+                </span>
+                <span style={{ color: C.blue }}>
+                  {crawlJob
+                    ? `Signal ${formatStatusAge(crawlJob, statusNow)}`
+                    : "Sending trigger"}
+                </span>
+              </div>
+              <Progress value={crawlProgressValue(crawlJob)} />
+            </div>
+            <div
+              className="grid gap-2 rounded-md border p-3"
+              style={{ borderColor: C.rule, backgroundColor: C.white }}
+            >
+              {CRAWL_PHASES.map((phase) => {
+                const state = crawlStepState(phase.key, crawlJob);
+                return (
+                  <div
+                    key={phase.key}
+                    className="flex items-center justify-between gap-3 text-sm"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold"
+                        style={{
+                          borderColor:
+                            state === "complete" || state === "active"
+                              ? C.blue
+                              : C.ruleDark,
+                          backgroundColor:
+                            state === "complete"
+                              ? C.blue
+                              : state === "active"
+                                ? C.bluePale
+                                : C.white,
+                          color:
+                            state === "complete"
+                              ? C.white
+                              : state === "active"
+                                ? C.blue
+                                : C.muted,
+                        }}
+                      >
+                        {state === "complete" ? <CheckCircle2 className="size-3" /> : null}
+                      </span>
+                      <span
+                        className="truncate"
+                        style={{ color: state === "pending" ? C.muted : C.navy }}
+                      >
+                        {phase.label}
+                      </span>
+                    </div>
+                    {state === "active" ? (
+                      <Loader2 className="size-3.5 animate-spin" style={{ color: C.blue }} />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isManualPending}
+                onClick={startManualProfile}
+                style={{
+                  borderColor: C.ruleDark,
+                  backgroundColor: C.white,
+                  color: C.navy,
+                }}
+              >
+                {isManualPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Target className="size-4" />
+                )}
+                Enter manually
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.refresh()}
+                style={{
+                  borderColor: C.ruleDark,
+                  backgroundColor: C.white,
+                  color: C.navy,
+                }}
+              >
+                Refresh status
+              </Button>
+            </div>
             <ResultText result={websiteResult} />
           </CardContent>
         </Card>

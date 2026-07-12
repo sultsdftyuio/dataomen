@@ -1144,12 +1144,11 @@ class WebsiteCrawler:
             "max_concurrency": 2,
             "scrape_options": {
                 "formats": ["markdown"],
-                "onlyMainContent": True,
-                "onlyCleanContent": True,
-                "removeBase64Images": True,
-                "blockAds": True,
+                "only_main_content": True,
+                "remove_base64_images": True,
+                "block_ads": True,
                 "timeout": self.page_timeout_ms,
-                "excludeTags": [
+                "exclude_tags": [
                     "nav",
                     "footer",
                     "aside",
@@ -1188,7 +1187,6 @@ class WebsiteCrawler:
                         candidate_url,
                         formats=["markdown"],
                         only_main_content=True,
-                        only_clean_content=True,
                         remove_base64_images=True,
                         block_ads=True,
                         timeout=self.page_timeout_ms,
