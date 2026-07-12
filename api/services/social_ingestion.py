@@ -3,6 +3,7 @@ import math
 import os
 import re
 import json
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -25,7 +26,12 @@ from api.services.embeddings import (
     _string_value,
 )
 from api.services.matching import PostEmbedding, find_candidate_matches
-from api.services.verifier import CandidatePost, ServiceProfile, VerifierService
+from api.services.verifier import (
+    CandidatePost,
+    ServiceProfile,
+    VerificationResult,
+    VerifierService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +49,7 @@ DEFAULT_MAX_QUERIES = 8
 DEFAULT_POSTS_PER_QUERY = 15
 DEFAULT_MAX_POSTS = 80
 DEFAULT_VERIFIER_QUALIFIED_THRESHOLD = 0.7
+SOURCE_POST_EMBEDDING_CACHE_KEY = "matching_embedding_cache"
 
 
 @dataclass(frozen=True)
@@ -196,6 +203,119 @@ def _profile_embedding_from_row(row: dict[str, Any]) -> list[float] | None:
     return None
 
 
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _embedding_sha256(embedding: list[float]) -> str:
+    payload = json.dumps(
+        [round(float(item), 8) for item in embedding],
+        separators=(",", ":"),
+    )
+    return _sha256_text(payload)
+
+
+def _cached_source_post_embedding(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    source_post_id: str | None,
+    text_sha256: str,
+    embedding_model: str,
+) -> list[float] | None:
+    if not source_post_id:
+        return None
+
+    columns = _table_columns(conn, "source_posts")
+    if "metadata" not in columns:
+        return None
+
+    cache = conn.execute(
+        text(
+            f"""
+            SELECT metadata->:cache_key
+              FROM public.source_posts
+             WHERE tenant_id = :tenant_id
+               AND id = CAST(:source_post_id AS uuid)
+             LIMIT 1
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "source_post_id": source_post_id,
+            "cache_key": SOURCE_POST_EMBEDDING_CACHE_KEY,
+        },
+    ).scalar_one_or_none()
+    cache_payload = _as_dict(cache)
+    if (
+        cache_payload.get("model") != embedding_model
+        or cache_payload.get("text_sha256") != text_sha256
+    ):
+        return None
+
+    return _embedding_values(cache_payload.get("embedding"))
+
+
+def _persist_source_post_embedding_cache(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    source_post_id: str | None,
+    text_sha256: str,
+    embedding_model: str,
+    embedding: list[float],
+) -> None:
+    if not source_post_id:
+        return
+
+    columns = _table_columns(conn, "source_posts")
+    metadata_column = columns.get("metadata")
+    if not metadata_column:
+        return
+
+    metadata_expression = (
+        """
+        (
+            COALESCE(metadata::jsonb, '{}'::jsonb)
+            || jsonb_build_object(
+                :cache_key,
+                jsonb_build_object(
+                    'model', :embedding_model,
+                    'text_sha256', :text_sha256,
+                    'embedding', CAST(:embedding AS jsonb),
+                    'dimensions', :dimensions,
+                    'cached_at', CAST(:cached_at AS timestamptz)
+                )
+            )
+        )
+        """
+    )
+    if metadata_column["data_type"] == "json" or metadata_column["udt_name"] == "json":
+        metadata_expression = f"({metadata_expression})::json"
+
+    conn.execute(
+        text(
+            f"""
+            UPDATE public.source_posts
+               SET metadata = {metadata_expression},
+                   updated_at = CAST(:cached_at AS timestamptz)
+             WHERE tenant_id = :tenant_id
+               AND id = CAST(:source_post_id AS uuid)
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "source_post_id": source_post_id,
+            "cache_key": SOURCE_POST_EMBEDDING_CACHE_KEY,
+            "embedding_model": embedding_model,
+            "text_sha256": text_sha256,
+            "embedding": json.dumps(embedding, separators=(",", ":")),
+            "dimensions": len(embedding),
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
 def _query_terms(profile: ServiceProfile) -> list[str]:
     candidates = [
         *profile.ideal_customer_pain_points,
@@ -235,7 +355,12 @@ def _iso_from_epoch(value: Any) -> str | None:
     return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
 
 
-def _fetch_reddit_posts(profile: ServiceProfile) -> list[SocialPost]:
+def _fetch_reddit_posts(
+    profile: ServiceProfile,
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+) -> list[SocialPost]:
     if os.getenv("ARCLI_REDDIT_INGESTION_ENABLED", "true").strip().lower() in {
         "0",
         "false",
@@ -280,7 +405,9 @@ def _fetch_reddit_posts(profile: ServiceProfile) -> list[SocialPost]:
                     payload = response.json()
                 except Exception as exc:
                     logger.info(
-                        "reddit_search_skipped term=%s subreddit=%s error_type=%s error=%s",
+                        "reddit_search_skipped tenant_id=%s service_profile_id=%s term=%s subreddit=%s error_type=%s error=%s",
+                        tenant_id,
+                        service_profile_id,
                         term,
                         subreddit or "global",
                         exc.__class__.__name__,
@@ -339,7 +466,12 @@ def _x_query(term: str, profile: ServiceProfile) -> str:
     return query[:512]
 
 
-def _fetch_x_posts(profile: ServiceProfile) -> list[SocialPost]:
+def _fetch_x_posts(
+    profile: ServiceProfile,
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+) -> list[SocialPost]:
     bearer_token = (
         os.getenv("X_BEARER_TOKEN")
         or os.getenv("TWITTER_BEARER_TOKEN")
@@ -347,7 +479,12 @@ def _fetch_x_posts(profile: ServiceProfile) -> list[SocialPost]:
         or ""
     ).strip()
     if not bearer_token:
-        logger.info("x_search_skipped skip_reason=%s", "bearer_token_not_configured")
+        logger.info(
+            "x_search_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            "bearer_token_not_configured",
+        )
         return []
 
     posts_per_query = max(
@@ -378,7 +515,9 @@ def _fetch_x_posts(profile: ServiceProfile) -> list[SocialPost]:
                 payload = response.json()
             except Exception as exc:
                 logger.info(
-                    "x_search_skipped term=%s error_type=%s error=%s",
+                    "x_search_skipped tenant_id=%s service_profile_id=%s term=%s error_type=%s error=%s",
+                    tenant_id,
+                    service_profile_id,
                     term,
                     exc.__class__.__name__,
                     exc,
@@ -502,24 +641,6 @@ def _persist_source_posts(
     now = datetime.now(timezone.utc).isoformat()
     ids: dict[str, str] = {}
     for post in posts:
-        existing_id = conn.execute(
-            text(
-                """
-                SELECT id
-                  FROM public.source_posts
-                 WHERE tenant_id = :tenant_id
-                   AND source = :source
-                   AND external_id = :external_id
-                 LIMIT 1
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "source": post.source,
-                "external_id": post.external_id,
-            },
-        ).scalar_one_or_none()
-
         payload: dict[str, Any] = {
             "tenant_id": tenant_id,
             "source": post.source,
@@ -533,36 +654,29 @@ def _persist_source_posts(
             "metadata": post.metadata or {},
             "updated_at": now,
         }
-        if not existing_id and "created_at" in columns:
+        if "created_at" in columns:
             payload["created_at"] = now
 
         expressions, params = _bind_payload(payload, columns)
-        if existing_id:
-            assignment_parts = [
-                f"{column_name} = {expression}"
-                for column_name, expression in expressions.items()
-                if column_name not in {"id", "tenant_id", "source", "external_id", "created_at"}
-            ]
-            if assignment_parts:
-                params["source_post_id"] = existing_id
-                conn.execute(
-                    text(
-                        f"""
-                        UPDATE public.source_posts
-                           SET {", ".join(assignment_parts)}
-                         WHERE id = :source_post_id
-                        """
-                    ),
-                    params,
-                )
-            ids[post.dedupe_key] = str(existing_id)
-            continue
+        assignment_parts = [
+            f"{column_name} = EXCLUDED.{column_name}"
+            for column_name in expressions
+            if column_name not in {"id", "tenant_id", "source", "external_id", "created_at"}
+        ]
+        conflict_sql = (
+            f"DO UPDATE SET {', '.join(assignment_parts)}"
+            if assignment_parts
+            else "DO UPDATE SET external_id = public.source_posts.external_id"
+        )
 
         result = conn.execute(
             text(
                 f"""
                 INSERT INTO public.source_posts ({", ".join(expressions)})
                 VALUES ({", ".join(expressions.values())})
+                ON CONFLICT (tenant_id, source, external_id)
+                {conflict_sql}
+                 WHERE public.source_posts.tenant_id = EXCLUDED.tenant_id
                 RETURNING id
                 """
             ),
@@ -579,37 +693,137 @@ def _existing_lead_match_id(
     conn: Connection,
     *,
     tenant_id: str,
+    service_profile_id: str | None,
     source_post_id: str | None,
     external_key: str,
     columns: dict[str, dict[str, str]],
 ) -> str | None:
     if source_post_id and "source_post_id" in columns:
+        profile_filter = ""
+        params: dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "source_post_id": source_post_id,
+        }
+        if service_profile_id and "service_profile_id" in columns:
+            profile_filter = " AND service_profile_id = CAST(:service_profile_id AS uuid)"
+            params["service_profile_id"] = service_profile_id
         return conn.execute(
             text(
-                """
+                f"""
                 SELECT id
                   FROM public.lead_matches
                  WHERE tenant_id = :tenant_id
                    AND source_post_id = CAST(:source_post_id AS uuid)
+                   {profile_filter}
                  LIMIT 1
                 """
             ),
-            {"tenant_id": tenant_id, "source_post_id": source_post_id},
+            params,
         ).scalar_one_or_none()
 
     if "metadata" in columns:
+        profile_filter = ""
+        params = {"tenant_id": tenant_id, "external_key": external_key}
+        if service_profile_id and "service_profile_id" in columns:
+            profile_filter = " AND service_profile_id = CAST(:service_profile_id AS uuid)"
+            params["service_profile_id"] = service_profile_id
         return conn.execute(
             text(
-                """
+                f"""
                 SELECT id
                   FROM public.lead_matches
                  WHERE tenant_id = :tenant_id
                    AND metadata->>'external_key' = :external_key
+                   {profile_filter}
                  LIMIT 1
                 """
             ),
-            {"tenant_id": tenant_id, "external_key": external_key},
+            params,
         ).scalar_one_or_none()
+
+    return None
+
+
+def _cached_lead_verification(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+    source_post_id: str | None,
+    external_key: str,
+    profile_embedding_sha256: str,
+    verifier_model: str,
+    columns: dict[str, dict[str, str]],
+) -> VerificationResult | None:
+    if not {"tenant_id", "metadata"}.issubset(columns):
+        return None
+
+    verification_columns = [
+        column_name
+        for column_name in ("verification", "verifier_result")
+        if column_name in columns
+    ]
+    if not verification_columns:
+        return None
+
+    select_parts = ["metadata"]
+    select_parts.extend(verification_columns)
+    where_parts = ["tenant_id = :tenant_id"]
+    params: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "external_key": external_key,
+    }
+
+    if source_post_id and "source_post_id" in columns:
+        where_parts.append("source_post_id = CAST(:source_post_id AS uuid)")
+        params["source_post_id"] = source_post_id
+    else:
+        where_parts.append("metadata->>'external_key' = :external_key")
+
+    if service_profile_id and "service_profile_id" in columns:
+        where_parts.append("service_profile_id = CAST(:service_profile_id AS uuid)")
+        params["service_profile_id"] = service_profile_id
+
+    row = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(select_parts)}
+              FROM public.lead_matches
+             WHERE {" AND ".join(where_parts)}
+             ORDER BY updated_at DESC NULLS LAST
+             LIMIT 1
+            """
+        ),
+        params,
+    ).mappings().first()
+    if not row:
+        return None
+
+    metadata = _as_dict(row.get("metadata"))
+    if (
+        metadata.get("profile_embedding_sha256") != profile_embedding_sha256
+        or metadata.get("verifier_model") != verifier_model
+    ):
+        return None
+
+    for column_name in verification_columns:
+        payload = _as_dict(row.get(column_name))
+        if not payload:
+            continue
+        try:
+            return VerificationResult.model_validate(payload)
+        except Exception as exc:
+            logger.info(
+                "lead_verification_cache_ignored tenant_id=%s service_profile_id=%s source_post_id=%s external_key=%s reason=%s error_type=%s error=%s",
+                tenant_id,
+                service_profile_id,
+                source_post_id,
+                external_key,
+                "invalid_cached_payload",
+                exc.__class__.__name__,
+                exc,
+            )
+            return None
 
     return None
 
@@ -623,6 +837,8 @@ def _persist_lead_match(
     post: SocialPost,
     similarity_score: float,
     verification: Any,
+    profile_embedding_sha256: str,
+    verifier_model: str,
 ) -> None:
     columns = _table_columns(conn, "lead_matches")
     if not {"tenant_id", "match_status"}.issubset(columns):
@@ -645,6 +861,8 @@ def _persist_lead_match(
         "external_id": post.external_id,
         "external_key": post.dedupe_key,
         "service_profile_id": service_profile_id,
+        "profile_embedding_sha256": profile_embedding_sha256,
+        "verifier_model": verifier_model,
     }
 
     payload: dict[str, Any] = {
@@ -675,11 +893,51 @@ def _persist_lead_match(
     existing_id = _existing_lead_match_id(
         conn,
         tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         source_post_id=source_post_id,
         external_key=post.dedupe_key,
         columns=columns,
     )
     expressions, params = _bind_payload(payload, columns)
+
+    if (
+        service_profile_id
+        and source_post_id
+        and {"tenant_id", "service_profile_id", "source_post_id"}.issubset(columns)
+    ):
+        assignment_parts = [
+            f"{column_name} = EXCLUDED.{column_name}"
+            for column_name in expressions
+            if column_name
+            not in {"id", "tenant_id", "service_profile_id", "source_post_id", "created_at"}
+        ]
+        conflict_sql = (
+            f"DO UPDATE SET {', '.join(assignment_parts)}"
+            if assignment_parts
+            else "DO NOTHING"
+        )
+        where_sql = (
+            """
+             WHERE public.lead_matches.tenant_id = EXCLUDED.tenant_id
+               AND public.lead_matches.service_profile_id = EXCLUDED.service_profile_id
+               AND public.lead_matches.source_post_id = EXCLUDED.source_post_id
+            """
+            if assignment_parts
+            else ""
+        )
+        conn.execute(
+            text(
+                f"""
+                INSERT INTO public.lead_matches ({", ".join(expressions)})
+                VALUES ({", ".join(expressions.values())})
+                ON CONFLICT (tenant_id, service_profile_id, source_post_id)
+                {conflict_sql}
+                {where_sql}
+                """
+            ),
+            params,
+        )
+        return
 
     if existing_id:
         assignment_parts = [
@@ -688,12 +946,14 @@ def _persist_lead_match(
             if column_name not in {"id", "tenant_id", "source_post_id", "created_at"}
         ]
         params["lead_match_id"] = existing_id
+        params["tenant_id"] = tenant_id
         conn.execute(
             text(
                 f"""
                 UPDATE public.lead_matches
                    SET {", ".join(assignment_parts)}
                  WHERE id = :lead_match_id
+                   AND tenant_id = :tenant_id
                 """
             ),
             params,
@@ -750,8 +1010,16 @@ def run_initial_public_ingestion(
     service_profile = _service_profile_from_row(profile_row)
     posts = _dedupe_posts(
         [
-            *_fetch_reddit_posts(service_profile),
-            *_fetch_x_posts(service_profile),
+            *_fetch_reddit_posts(
+                service_profile,
+                tenant_id=tenant_id,
+                service_profile_id=resolved_profile_id,
+            ),
+            *_fetch_x_posts(
+                service_profile,
+                tenant_id=tenant_id,
+                service_profile_id=resolved_profile_id,
+            ),
         ]
     )
 
@@ -771,30 +1039,69 @@ def run_initial_public_ingestion(
         source_post_ids = _persist_source_posts(conn, tenant_id, posts)
 
     embedding_service = EmbeddingService()
+    embedding_model = embedding_service.model
+    profile_embedding_sha256 = _embedding_sha256(profile_embedding)
     post_embeddings: list[PostEmbedding] = []
     posts_by_match_id: dict[str, SocialPost] = {}
     for post in posts:
         source_post_id = source_post_ids.get(post.dedupe_key)
         match_post_id = source_post_id or post.dedupe_key
-        try:
-            embedding = embedding_service.embed_text(
-                post.matching_text[:32_000],
-                tenant_id=tenant_id,
-                service_profile_id=resolved_profile_id,
-                source_post_id=match_post_id,
-                purpose="public_social_post_matching",
-            )
-        except Exception as exc:
+        embedding_text = post.matching_text[:32_000]
+        text_sha256 = _sha256_text(embedding_text)
+        cached_embedding: list[float] | None = None
+        if source_post_id:
+            with engine.begin() as conn:
+                cached_embedding = _cached_source_post_embedding(
+                    conn,
+                    tenant_id=tenant_id,
+                    source_post_id=source_post_id,
+                    text_sha256=text_sha256,
+                    embedding_model=embedding_model,
+                )
+
+        if cached_embedding:
+            embedding_values = cached_embedding
             logger.info(
-                "social_post_embedding_skipped tenant_id=%s service_profile_id=%s source=%s external_id=%s error_type=%s error=%s",
+                "social_post_embedding_cache_hit tenant_id=%s service_profile_id=%s source_post_id=%s source=%s external_id=%s model=%s dimensions=%s",
                 tenant_id,
                 resolved_profile_id,
+                source_post_id,
                 post.source,
                 post.external_id,
-                exc.__class__.__name__,
-                exc,
+                embedding_model,
+                len(embedding_values),
             )
-            continue
+        else:
+            try:
+                embedding = embedding_service.embed_text(
+                    embedding_text,
+                    tenant_id=tenant_id,
+                    service_profile_id=resolved_profile_id,
+                    source_post_id=match_post_id,
+                    purpose="public_social_post_matching",
+                )
+            except Exception as exc:
+                logger.info(
+                    "social_post_embedding_skipped tenant_id=%s service_profile_id=%s source=%s external_id=%s error_type=%s error=%s",
+                    tenant_id,
+                    resolved_profile_id,
+                    post.source,
+                    post.external_id,
+                    exc.__class__.__name__,
+                    exc,
+                )
+                continue
+
+            embedding_values = embedding.embedding
+            with engine.begin() as conn:
+                _persist_source_post_embedding_cache(
+                    conn,
+                    tenant_id=tenant_id,
+                    source_post_id=source_post_id,
+                    text_sha256=text_sha256,
+                    embedding_model=embedding.model,
+                    embedding=embedding_values,
+                )
 
         metadata = _primitive_metadata(
             {
@@ -810,7 +1117,7 @@ def run_initial_public_ingestion(
             PostEmbedding(
                 post_id=match_post_id,
                 text=post.matching_text,
-                embedding=embedding.embedding,
+                embedding=embedding_values,
                 source=post.source,
                 url=post.url,
                 metadata=metadata,
@@ -826,13 +1133,41 @@ def run_initial_public_ingestion(
     )
 
     verifier = VerifierService()
+    verifier_model = verifier.model
     qualified_count = 0
     with engine.begin() as conn:
-        for candidate in candidates:
-            post = posts_by_match_id.get(candidate.post_id)
-            if not post:
-                continue
+        lead_match_columns = _table_columns(conn, "lead_matches")
 
+    for candidate in candidates:
+        post = posts_by_match_id.get(candidate.post_id)
+        if not post:
+            continue
+
+        source_post_id_value = candidate.metadata.get("source_post_id")
+        source_post_id = str(source_post_id_value) if source_post_id_value else None
+        with engine.begin() as conn:
+            verification = _cached_lead_verification(
+                conn,
+                tenant_id=tenant_id,
+                service_profile_id=resolved_profile_id,
+                source_post_id=source_post_id,
+                external_key=post.dedupe_key,
+                profile_embedding_sha256=profile_embedding_sha256,
+                verifier_model=verifier_model,
+                columns=lead_match_columns,
+            )
+
+        if verification:
+            logger.info(
+                "lead_verification_cache_hit tenant_id=%s service_profile_id=%s source_post_id=%s source=%s external_id=%s verifier_model=%s",
+                tenant_id,
+                resolved_profile_id,
+                source_post_id,
+                post.source,
+                post.external_id,
+                verifier_model,
+            )
+        else:
             verification = verifier.verify(
                 CandidatePost(
                     post_id=candidate.post_id,
@@ -846,16 +1181,13 @@ def run_initial_public_ingestion(
                 tenant_id=tenant_id,
                 service_profile_id=resolved_profile_id,
             )
-            if verification.match and verification.confidence >= env_float(
-                "LEAD_VERIFIER_SCORE_THRESHOLD",
-                DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
-            ):
-                qualified_count += 1
+        if verification.match and verification.confidence >= env_float(
+            "LEAD_VERIFIER_SCORE_THRESHOLD",
+            DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
+        ):
+            qualified_count += 1
 
-            source_post_id_value = candidate.metadata.get("source_post_id")
-            source_post_id = (
-                str(source_post_id_value) if source_post_id_value else None
-            )
+        with engine.begin() as conn:
             _persist_lead_match(
                 conn,
                 tenant_id=tenant_id,
@@ -864,6 +1196,8 @@ def run_initial_public_ingestion(
                 post=post,
                 similarity_score=candidate.score,
                 verification=verification,
+                profile_embedding_sha256=profile_embedding_sha256,
+                verifier_model=verifier_model,
             )
 
     logger.info(

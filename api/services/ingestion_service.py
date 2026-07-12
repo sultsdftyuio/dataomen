@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 import dramatiq
 from dramatiq.brokers.redis import RedisBroker
+from dramatiq.middleware import TimeLimitExceeded
 from supabase import create_client, Client
 
 from api.services.cost_controls import TenantQuotaGuard, env_int
@@ -20,6 +21,7 @@ PUBLIC_INGESTION_QUEUE_NAME = os.getenv(
     "ARCLI_PUBLIC_INGESTION_QUEUE_NAME",
     "ingestion",
 )
+DEFAULT_PUBLIC_INGESTION_JOB_TIME_LIMIT_MS = 180_000
 
 _supabase_client: Optional[Client] = None
 
@@ -69,14 +71,35 @@ def enqueue_initial_public_ingestion_job(
 _configure_dramatiq_broker()
 
 
-@dramatiq.actor(queue_name=PUBLIC_INGESTION_QUEUE_NAME, max_retries=3)
+@dramatiq.actor(
+    queue_name=PUBLIC_INGESTION_QUEUE_NAME,
+    max_retries=env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_RETRIES", 3, minimum=0),
+    min_backoff=env_int("ARCLI_PUBLIC_INGESTION_JOB_MIN_BACKOFF_MS", 15_000),
+    max_backoff=env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_BACKOFF_MS", 90_000),
+    time_limit=env_int(
+        "ARCLI_PUBLIC_INGESTION_JOB_TIME_LIMIT_MS",
+        DEFAULT_PUBLIC_INGESTION_JOB_TIME_LIMIT_MS,
+    ),
+    on_retry_exhausted="mark_initial_public_ingestion_dead_lettered",
+)
 def process_initial_public_ingestion_job(
     tenant_id: str,
     service_profile_id: str | None = None,
 ) -> None:
     from api.services.social_ingestion import run_initial_public_ingestion
 
-    result = run_initial_public_ingestion(tenant_id, service_profile_id)
+    try:
+        result = run_initial_public_ingestion(tenant_id, service_profile_id)
+    except (Exception, TimeLimitExceeded) as exc:
+        logger.exception(
+            "initial_public_ingestion_job_failed tenant_id=%s service_profile_id=%s failure_reason=%s error_type=%s error=%s",
+            tenant_id,
+            service_profile_id,
+            "time_limit_exceeded" if isinstance(exc, TimeLimitExceeded) else "ingestion_failed",
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
 
     logger.info(
         "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s posts=%s embedded=%s candidates=%s qualified=%s",
@@ -86,6 +109,33 @@ def process_initial_public_ingestion_job(
         result.get("embedded", 0),
         result.get("candidates", 0),
         result.get("qualified", 0),
+    )
+
+
+@dramatiq.actor(queue_name=PUBLIC_INGESTION_QUEUE_NAME)
+def mark_initial_public_ingestion_dead_lettered(
+    message_data: dict[str, Any],
+    retry_context: dict[str, Any] | None = None,
+) -> None:
+    args = message_data.get("args") if isinstance(message_data, dict) else None
+    if not isinstance(args, (list, tuple)) or not args:
+        logger.error(
+            "initial_public_ingestion_dead_letter_failed failure_reason=%s message_data=%s retry_context=%s",
+            "missing_original_args",
+            message_data,
+            retry_context,
+        )
+        return
+
+    tenant_id = str(args[0])
+    service_profile_id = str(args[1]) if len(args) > 1 and args[1] else None
+    logger.error(
+        "initial_public_ingestion_dead_lettered tenant_id=%s service_profile_id=%s retries=%s max_retries=%s message_id=%s",
+        tenant_id,
+        service_profile_id,
+        (retry_context or {}).get("retries"),
+        (retry_context or {}).get("max_retries"),
+        message_data.get("message_id") if isinstance(message_data, dict) else None,
     )
 
 

@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 from typing import Any, Literal
@@ -197,7 +196,25 @@ class VerifierService:
             )
             return result
 
-        result = self._verify_with_openai(candidate_post, service_profile)
+        try:
+            result = self._verify_with_openai(
+                candidate_post,
+                service_profile,
+                tenant_id=resolved_tenant_id,
+                service_profile_id=resolved_service_profile_id,
+            )
+        except Exception as exc:
+            logger.exception(
+                "llm_verifier_failed tenant_id=%s service_profile_id=%s source_post_id=%s model=%s similarity_score=%.3f error_type=%s error=%s",
+                resolved_tenant_id,
+                resolved_service_profile_id,
+                candidate_post.post_id,
+                self.model,
+                candidate_post.similarity_score,
+                exc.__class__.__name__,
+                exc,
+            )
+            raise
         if not result.match and not result.rejection_reason:
             result = result.model_copy(
                 update={"rejection_reason": f"llm_{result.decision_label}"}
@@ -228,9 +245,19 @@ class VerifierService:
         self,
         candidate_post: CandidatePost,
         service_profile: ServiceProfile,
+        *,
+        tenant_id: str,
+        service_profile_id: str,
     ) -> VerificationResult:
         client = self.client or self._build_client()
-        completion = client.chat.completions.create(
+        try:
+            parse_completion = client.beta.chat.completions.parse
+        except AttributeError as exc:
+            raise RuntimeError(
+                "OpenAI client does not support structured verifier parsing."
+            ) from exc
+
+        completion = parse_completion(
             model=self.model,
             messages=[
                 {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -242,7 +269,7 @@ class VerifierService:
                     ),
                 },
             ],
-            response_format={"type": "json_object"},
+            response_format=VerificationResult,
             temperature=0.0,
             timeout=self.timeout_seconds,
         )
@@ -252,23 +279,20 @@ class VerifierService:
         if refusal:
             raise RuntimeError(f"OpenAI refused verification: {refusal}")
 
-        content = getattr(message, "content", None)
-        if not content:
-            raise RuntimeError("OpenAI verifier returned empty content.")
+        parsed = getattr(message, "parsed", None)
+        if isinstance(parsed, VerificationResult):
+            return parsed
+        if parsed:
+            return VerificationResult.model_validate(parsed)
 
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError as exc:
-            logger.error(
-                "openai_verifier_invalid_json source_post_id=%s response_chars=%s error_type=%s error=%s",
-                candidate_post.post_id,
-                len(content),
-                exc.__class__.__name__,
-                exc,
-            )
-            raise RuntimeError("OpenAI verifier returned invalid JSON.") from exc
-
-        return VerificationResult.model_validate(payload)
+        logger.error(
+            "openai_verifier_schema_parse_empty tenant_id=%s service_profile_id=%s source_post_id=%s model=%s",
+            tenant_id,
+            service_profile_id,
+            candidate_post.post_id,
+            self.model,
+        )
+        raise RuntimeError("OpenAI verifier returned no structured parsed payload.")
 
     def _build_client(self) -> Any:
         try:

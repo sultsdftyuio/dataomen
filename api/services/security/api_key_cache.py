@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
@@ -20,6 +21,9 @@ LIVE_PREFIX = os.getenv("API_KEY_LIVE_PREFIX", "arcli_live_")
 TEST_PREFIX = os.getenv("API_KEY_TEST_PREFIX", "arcli_test_")
 AUTH_CACHE_TTL_SECONDS = int(os.getenv("API_KEY_AUTH_CACHE_TTL_SECONDS", "604800"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+KEY_ID_HEX_LENGTH = ApiKeyVault.KEY_ID_BYTES * 2
+SECRET_HEX_LENGTH = ApiKeyVault.SECRET_BYTES * 2
+HEX_RE = re.compile(r"^[0-9a-f]+$")
 
 _redis_client: Optional[redis.Redis] = None
 
@@ -40,11 +44,17 @@ def _parse_api_key(raw: str) -> Optional[Tuple[str, str]]:
         return None
 
     trimmed = raw[prefix_len:]
-    if "_" not in trimmed:
+    parts = trimmed.split("_")
+    if len(parts) != 2:
         return None
 
-    key_id, secret = trimmed.split("_", 1)
-    if not key_id or not secret:
+    key_id, secret = parts
+    if (
+        len(key_id) != KEY_ID_HEX_LENGTH
+        or len(secret) != SECRET_HEX_LENGTH
+        or not HEX_RE.fullmatch(key_id)
+        or not HEX_RE.fullmatch(secret)
+    ):
         return None
 
     return key_id, secret

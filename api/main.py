@@ -1,12 +1,15 @@
 import os
 import hmac
 import logging
+from functools import lru_cache
 from typing import Annotated, Literal
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +86,16 @@ class ServiceProfileEmbeddingTriggerRequest(BaseModel):
         except (TypeError, ValueError) as exc:
             raise ValueError("tenant_id must be a valid UUID") from exc
 
+    @field_validator("service_profile_id")
+    @classmethod
+    def validate_service_profile_id(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("service_profile_id must be a valid UUID") from exc
+
 
 class ServiceProfileEmbeddingTriggerResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -109,6 +122,16 @@ class PublicIngestionTriggerRequest(BaseModel):
             return str(UUID(value))
         except (TypeError, ValueError) as exc:
             raise ValueError("tenant_id must be a valid UUID") from exc
+
+    @field_validator("service_profile_id")
+    @classmethod
+    def validate_service_profile_id(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("service_profile_id must be a valid UUID") from exc
 
 
 class PublicIngestionTriggerResponse(BaseModel):
@@ -160,6 +183,118 @@ def verify_internal_request(
         )
 
 
+def _normalize_database_url(raw_url: str) -> str:
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql://", 1)
+    return raw_url
+
+
+@lru_cache(maxsize=1)
+def _database_engine() -> Engine:
+    database_url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("SUPABASE_DB_URL")
+        or os.getenv("POSTGRES_URL")
+        or ""
+    ).strip()
+
+    if not database_url:
+        raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
+
+    return create_engine(_normalize_database_url(database_url), pool_pre_ping=True)
+
+
+def _validate_internal_tenant_scope(
+    *,
+    tenant_id: str,
+    service_profile_id: str | None = None,
+) -> None:
+    try:
+        engine = _database_engine()
+        with engine.begin() as conn:
+            tenant_row = conn.execute(
+                text(
+                    """
+                    SELECT tenant_id, status, provisioning_status
+                      FROM public.tenants
+                     WHERE tenant_id = :tenant_id
+                     LIMIT 1
+                    """
+                ),
+                {"tenant_id": tenant_id},
+            ).mappings().first()
+
+            if not tenant_row:
+                logger.warning(
+                    "internal_worker_trigger_rejected tenant_id=%s service_profile_id=%s rejection_reason=%s",
+                    tenant_id,
+                    service_profile_id,
+                    "tenant_not_found",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Tenant not found.",
+                )
+
+            tenant_status = str(tenant_row.get("status") or "").lower()
+            if tenant_status in {"deleted", "suspended"}:
+                logger.warning(
+                    "internal_worker_trigger_rejected tenant_id=%s service_profile_id=%s rejection_reason=%s tenant_status=%s provisioning_status=%s",
+                    tenant_id,
+                    service_profile_id,
+                    "tenant_not_operational",
+                    tenant_status,
+                    tenant_row.get("provisioning_status"),
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tenant is not operational.",
+                )
+
+            if service_profile_id:
+                profile_exists = conn.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                              FROM public.service_profiles
+                             WHERE tenant_id = :tenant_id
+                               AND id = CAST(:service_profile_id AS uuid)
+                        )
+                        """
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "service_profile_id": service_profile_id,
+                    },
+                ).scalar_one()
+                if not profile_exists:
+                    logger.warning(
+                        "internal_worker_trigger_rejected tenant_id=%s service_profile_id=%s rejection_reason=%s",
+                        tenant_id,
+                        service_profile_id,
+                        "service_profile_not_in_tenant",
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Service profile not found for tenant.",
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(
+            "internal_worker_trigger_scope_check_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Tenant scope validation is unavailable.",
+        ) from exc
+
+
 @app.get("/health", response_model=HealthResponse, include_in_schema=False)
 def health_check() -> HealthResponse:
     return HealthResponse(version=os.getenv("ARCLI_RELEASE_SHA"))
@@ -179,6 +314,8 @@ def trigger_crawl(
     The crawl itself must run only inside the Dramatiq worker.
     """
     from api.services.crawling import enqueue_crawl_job
+
+    _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
 
     try:
         message_id = enqueue_crawl_job(payload.tenant_id, payload.website_url)
@@ -223,6 +360,11 @@ def trigger_service_profile_embedding(
     Accept a trusted frontend handoff and enqueue slow profile embedding work.
     """
     from api.services.embeddings import enqueue_service_profile_embedding_job
+
+    _validate_internal_tenant_scope(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+    )
 
     try:
         message_id = enqueue_service_profile_embedding_job(
@@ -275,6 +417,11 @@ def trigger_public_ingestion(
     Queue the native public/social ingestion, embedding, matching, and verifier pass.
     """
     from api.services.ingestion_service import enqueue_initial_public_ingestion_job
+
+    _validate_internal_tenant_scope(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+    )
 
     try:
         message_id = enqueue_initial_public_ingestion_job(

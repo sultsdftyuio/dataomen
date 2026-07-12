@@ -318,11 +318,17 @@ CREATE INDEX IF NOT EXISTS idx_source_posts_tenant_source_updated
 CREATE INDEX IF NOT EXISTS idx_source_posts_external
     ON public.source_posts(source, external_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_source_posts_tenant_source_external
+    ON public.source_posts(tenant_id, source, external_id);
+
 CREATE INDEX IF NOT EXISTS idx_lead_matches_tenant_status_score
     ON public.lead_matches(tenant_id, match_status, verifier_score DESC, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_lead_matches_service_profile
     ON public.lead_matches(tenant_id, service_profile_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_lead_matches_tenant_profile_source_post
+    ON public.lead_matches(tenant_id, service_profile_id, source_post_id);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.source_posts TO authenticated;

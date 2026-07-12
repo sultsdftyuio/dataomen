@@ -2,12 +2,14 @@ import logging
 import json
 import math
 import os
+import hashlib
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Sequence
 
 import dramatiq
 from dramatiq.brokers.redis import RedisBroker
+from dramatiq.middleware import TimeLimitExceeded
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
@@ -29,6 +31,8 @@ MAX_EMBEDDING_INPUT_CHARS = 32_000
 EMBEDDING_QUOTA_COUNTER = "embeddings"
 EMBEDDING_QUOTA_DEFAULT_LIMIT = 20_000
 EMBEDDING_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
+DEFAULT_EMBEDDING_JOB_STALE_SECONDS = 600
+DEFAULT_EMBEDDING_JOB_TIME_LIMIT_MS = 90_000
 
 
 class EmbeddingRequest(BaseModel):
@@ -468,6 +472,125 @@ def _normalized_status(value: str | None) -> str | None:
     return "_".join(value.strip().lower().split()) if value else None
 
 
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _embedding_values(value: Any) -> list[float] | None:
+    if isinstance(value, list):
+        values = [float(item) for item in value if isinstance(item, (int, float))]
+        return values if values else None
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped.startswith("[") and stripped.endswith("]"):
+            try:
+                values = [
+                    float(item)
+                    for item in stripped.strip("[]").split(",")
+                    if item.strip()
+                ]
+            except ValueError:
+                return None
+            return values if values else None
+
+    return None
+
+
+def _row_embedding_status(row: dict[str, Any]) -> str | None:
+    sources = [
+        row,
+        _as_dict(row.get("embedding_json")),
+        _first_document(row),
+        _as_dict(row.get("profile")),
+        _as_dict(row.get("data")),
+    ]
+    return _read_string(sources, ["embedding_status"])
+
+
+def _row_embedding_model(row: dict[str, Any]) -> str | None:
+    sources = [
+        row,
+        _as_dict(row.get("embedding_json")),
+        _first_document(row),
+        _as_dict(row.get("profile")),
+        _as_dict(row.get("data")),
+    ]
+    return _read_string(sources, ["profile_embedding_model", "embedding_model"])
+
+
+def _row_profile_embedding_text(row: dict[str, Any]) -> str | None:
+    return _string_value(row.get("profile_embedding_text"))
+
+
+def _row_profile_embedding(row: dict[str, Any]) -> list[float] | None:
+    for key in ("profile_embedding", "embedding"):
+        embedding = _embedding_values(row.get(key))
+        if embedding:
+            return embedding
+
+    for source in (
+        _as_dict(row.get("embedding_json")),
+        _first_document(row),
+        _as_dict(row.get("profile")),
+        _as_dict(row.get("data")),
+    ):
+        embedding = _embedding_values(source.get("profile_embedding"))
+        if embedding:
+            return embedding
+
+    return None
+
+
+def _timestamp_age_seconds(value: Any) -> float | None:
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        timestamp = value
+    elif isinstance(value, str):
+        try:
+            timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    return (datetime.now(timezone.utc) - timestamp).total_seconds()
+
+
+def _has_current_profile_embedding(
+    row: dict[str, Any],
+    *,
+    embedding_text: str,
+    embedding_model: str,
+) -> bool:
+    return (
+        _row_profile_embedding_text(row) == embedding_text
+        and _row_embedding_model(row) == embedding_model
+        and _row_profile_embedding(row) is not None
+    )
+
+
+def _embedding_processing_is_fresh(row: dict[str, Any]) -> bool:
+    if _normalized_status(_row_embedding_status(row)) != "processing":
+        return False
+
+    age_seconds = _timestamp_age_seconds(row.get("updated_at"))
+    if age_seconds is None:
+        return False
+
+    return age_seconds < env_int(
+        "ARCLI_EMBEDDING_JOB_STALE_SECONDS",
+        DEFAULT_EMBEDDING_JOB_STALE_SECONDS,
+    )
+
+
 def _profile_is_embeddable(row: dict[str, Any]) -> bool:
     status = _normalized_status(_profile_status(row))
     extraction_status = _normalized_status(_profile_extraction_status(row))
@@ -628,18 +751,31 @@ def _embedding_status_payload(
     row: dict[str, Any],
     status: str,
     columns: dict[str, dict[str, str]],
+    *,
+    failure_reason: str | None = None,
+    error_type: str | None = None,
+    error_message: str | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
     payload: dict[str, Any] = {
         "updated_at": now,
         "embedding_status": status,
     }
+    status_metadata: dict[str, Any] = {
+        "embedding_status": status,
+    }
+    if failure_reason:
+        status_metadata["embedding_failure_reason"] = failure_reason
+    if error_type:
+        status_metadata["embedding_error_type"] = error_type
+    if error_message:
+        status_metadata["embedding_error_message"] = error_message[:1_000]
 
     for column_name in ("profile_json", "profile", "data"):
         if column_name in columns:
             payload[column_name] = {
                 **_as_dict(row.get(column_name)),
-                "embedding_status": status,
+                **status_metadata,
             }
 
     return payload
@@ -651,6 +787,9 @@ def _mark_service_profile_embedding_status(
     tenant_id: str,
     service_profile_id: str | None,
     status: str,
+    failure_reason: str | None = None,
+    error_type: str | None = None,
+    error_message: str | None = None,
 ) -> None:
     columns = _service_profile_columns(conn)
     row = _load_service_profile(
@@ -663,7 +802,14 @@ def _mark_service_profile_embedding_status(
     if not row:
         return
 
-    payload = _embedding_status_payload(row, status, columns)
+    payload = _embedding_status_payload(
+        row,
+        status,
+        columns,
+        failure_reason=failure_reason,
+        error_type=error_type,
+        error_message=error_message,
+    )
     expressions, params = _bind_payload(payload, columns)
     assignment_parts = [
         f"{column_name} = {expression}"
@@ -750,6 +896,7 @@ def _persist_service_profile_embedding_record(
         "embedding_model": embedding.model,
         "embedding_dimensions": embedding.dimensions,
         "source_text": embedding_text,
+        "source_text_sha256": _sha256_text(embedding_text),
         "status": "completed",
         "updated_at": now,
     }
@@ -784,6 +931,76 @@ def _persist_service_profile_embedding_record(
             )
             ON CONFLICT (service_profile_id, embedding_model)
             {conflict_sql}
+            {"WHERE public.service_profile_embeddings.tenant_id = EXCLUDED.tenant_id" if assignment_parts else ""}
+            """
+        ),
+        params,
+    )
+
+
+def _persist_service_profile_embedding_failure_record(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+    embedding_text: str,
+    embedding_model: str,
+    failure_reason: str,
+    exc: BaseException,
+) -> None:
+    if not service_profile_id:
+        return
+
+    columns = _table_columns(conn, "service_profile_embeddings")
+    required_columns = {"tenant_id", "service_profile_id", "embedding_model", "status"}
+    if not required_columns.issubset(columns):
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    payload: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "service_profile_id": service_profile_id,
+        "embedding_model": embedding_model,
+        "source_text": embedding_text,
+        "source_text_sha256": _sha256_text(embedding_text),
+        "status": "failed",
+        "failure_reason": failure_reason,
+        "error_context": {
+            "error_type": exc.__class__.__name__,
+            "error_message": str(exc)[:1_000],
+        },
+        "updated_at": now,
+    }
+    if "created_at" in columns:
+        payload["created_at"] = now
+
+    expressions, params = _bind_payload(payload, columns)
+    if not expressions:
+        return
+
+    assignment_parts = [
+        f"{column_name} = EXCLUDED.{column_name}"
+        for column_name in expressions
+        if column_name not in {"id", "tenant_id", "service_profile_id", "created_at"}
+    ]
+    conflict_sql = (
+        f"DO UPDATE SET {', '.join(assignment_parts)}"
+        if assignment_parts
+        else "DO NOTHING"
+    )
+
+    conn.execute(
+        text(
+            f"""
+            INSERT INTO public.service_profile_embeddings (
+                {", ".join(expressions)}
+            )
+            VALUES (
+                {", ".join(expressions.values())}
+            )
+            ON CONFLICT (service_profile_id, embedding_model)
+            {conflict_sql}
+            {"WHERE public.service_profile_embeddings.tenant_id = EXCLUDED.tenant_id" if assignment_parts else ""}
             """
         ),
         params,
@@ -905,54 +1122,129 @@ _configure_dramatiq_broker()
 
 @dramatiq.actor(
     queue_name=os.getenv("ARCLI_EMBEDDING_QUEUE_NAME", "embeddings"),
-    max_retries=3,
+    max_retries=env_int("ARCLI_EMBEDDING_JOB_MAX_RETRIES", 3, minimum=0),
+    min_backoff=env_int("ARCLI_EMBEDDING_JOB_MIN_BACKOFF_MS", 10_000),
+    max_backoff=env_int("ARCLI_EMBEDDING_JOB_MAX_BACKOFF_MS", 60_000),
+    time_limit=env_int(
+        "ARCLI_EMBEDDING_JOB_TIME_LIMIT_MS",
+        DEFAULT_EMBEDDING_JOB_TIME_LIMIT_MS,
+    ),
+    on_retry_exhausted="mark_service_profile_embedding_dead_lettered",
 )
 def process_service_profile_embedding_job(
     tenant_id: str,
     service_profile_id: str | None = None,
 ) -> None:
     engine = _database_engine()
+    embedding_service = EmbeddingService()
 
     with engine.begin() as conn:
         columns = _service_profile_columns(conn)
-        row = _load_service_profile(conn, tenant_id, service_profile_id, columns)
-
-    if not row:
-        logger.warning(
-            "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
-            tenant_id,
-            service_profile_id,
-            "profile_not_found",
-        )
-        return
-
-    if not _profile_is_embeddable(row):
-        logger.info(
-            "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s status=%s",
-            tenant_id,
-            service_profile_id,
-            "profile_not_embeddable",
-            _profile_status(row),
-        )
-        return
-
-    embedding_text = _service_profile_embedding_text(row)
-    resolved_profile_id = str(row.get("id")) if row.get("id") else service_profile_id
-
-    with engine.begin() as conn:
-        _mark_service_profile_embedding_status(
+        row = _load_service_profile(
             conn,
+            tenant_id,
+            service_profile_id,
+            columns,
+            for_update=True,
+        )
+
+        if not row:
+            logger.warning(
+                "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+                tenant_id,
+                service_profile_id,
+                "profile_not_found",
+            )
+            return
+
+        if not _profile_is_embeddable(row):
+            logger.info(
+                "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s status=%s",
+                tenant_id,
+                service_profile_id,
+                "profile_not_embeddable",
+                _profile_status(row),
+            )
+            return
+
+        embedding_text = _service_profile_embedding_text(row)
+        resolved_profile_id = str(row.get("id")) if row.get("id") else service_profile_id
+
+        if _has_current_profile_embedding(
+            row,
+            embedding_text=embedding_text,
+            embedding_model=embedding_service.model,
+        ):
+            logger.info(
+                "service_profile_embedding_job_deduped tenant_id=%s service_profile_id=%s model=%s skip_reason=%s",
+                tenant_id,
+                resolved_profile_id,
+                embedding_service.model,
+                "current_embedding_already_persisted",
+            )
+            final_profile_id = resolved_profile_id
+            embedding = None
+        elif _embedding_processing_is_fresh(row):
+            logger.info(
+                "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s model=%s skip_reason=%s",
+                tenant_id,
+                resolved_profile_id,
+                embedding_service.model,
+                "embedding_job_already_processing",
+            )
+            return
+        else:
+            final_profile_id = None
+            embedding = None
+            _mark_service_profile_embedding_status(
+                conn,
+                tenant_id=tenant_id,
+                service_profile_id=resolved_profile_id,
+                status="processing",
+            )
+
+    if final_profile_id:
+        _enqueue_public_ingestion_after_embedding(tenant_id, final_profile_id)
+        return
+
+    try:
+        embedding = embedding_service.embed_text(
+            embedding_text,
             tenant_id=tenant_id,
             service_profile_id=resolved_profile_id,
-            status="processing",
+            purpose="service_profile_activation",
         )
-
-    embedding = EmbeddingService().embed_text(
-        embedding_text,
-        tenant_id=tenant_id,
-        service_profile_id=resolved_profile_id,
-        purpose="service_profile_activation",
-    )
+    except (Exception, TimeLimitExceeded) as exc:
+        failure_reason = "time_limit_exceeded" if isinstance(exc, TimeLimitExceeded) else "embedding_failed"
+        with engine.begin() as conn:
+            _mark_service_profile_embedding_status(
+                conn,
+                tenant_id=tenant_id,
+                service_profile_id=resolved_profile_id,
+                status="failed",
+                failure_reason=failure_reason,
+                error_type=exc.__class__.__name__,
+                error_message=str(exc),
+            )
+            _persist_service_profile_embedding_failure_record(
+                conn,
+                tenant_id=tenant_id,
+                service_profile_id=resolved_profile_id,
+                embedding_text=embedding_text,
+                embedding_model=embedding_service.model,
+                failure_reason=failure_reason,
+                exc=exc,
+            )
+        logger.exception(
+            "service_profile_embedding_job_failed tenant_id=%s service_profile_id=%s model=%s failure_reason=%s error_type=%s error=%s",
+            tenant_id,
+            resolved_profile_id,
+            embedding_service.model,
+            failure_reason,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
 
     with engine.begin() as conn:
         persisted_profile_id = _persist_service_profile_embedding(
@@ -972,24 +1264,98 @@ def process_service_profile_embedding_job(
         embedding.dimensions,
     )
 
+    _enqueue_public_ingestion_after_embedding(tenant_id, final_profile_id)
+
+
+def _enqueue_public_ingestion_after_embedding(
+    tenant_id: str,
+    service_profile_id: str | None,
+) -> None:
+    if not service_profile_id:
+        return
+
     try:
         from api.services.ingestion_service import enqueue_initial_public_ingestion_job
 
         ingestion_message_id = enqueue_initial_public_ingestion_job(
             tenant_id,
-            final_profile_id,
+            service_profile_id,
         )
         logger.info(
             "initial_public_ingestion_enqueued_after_embedding tenant_id=%s service_profile_id=%s message_id=%s",
             tenant_id,
-            final_profile_id,
+            service_profile_id,
             ingestion_message_id,
         )
     except Exception as exc:
         logger.exception(
             "initial_public_ingestion_enqueue_after_embedding_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
             tenant_id,
-            final_profile_id,
+            service_profile_id,
             exc.__class__.__name__,
             exc,
         )
+
+
+@dramatiq.actor(queue_name=os.getenv("ARCLI_EMBEDDING_QUEUE_NAME", "embeddings"))
+def mark_service_profile_embedding_dead_lettered(
+    message_data: dict[str, Any],
+    retry_context: dict[str, Any] | None = None,
+) -> None:
+    args = message_data.get("args") if isinstance(message_data, dict) else None
+    if not isinstance(args, (list, tuple)) or not args:
+        logger.error(
+            "service_profile_embedding_dead_letter_failed failure_reason=%s message_data=%s retry_context=%s",
+            "missing_original_args",
+            message_data,
+            retry_context,
+        )
+        return
+
+    tenant_id = str(args[0])
+    service_profile_id = str(args[1]) if len(args) > 1 and args[1] else None
+    engine = _database_engine()
+    exc = RuntimeError("Service profile embedding retries exhausted.")
+
+    with engine.begin() as conn:
+        columns = _service_profile_columns(conn)
+        row = _load_service_profile(conn, tenant_id, service_profile_id, columns)
+        resolved_profile_id = str(row.get("id")) if row and row.get("id") else service_profile_id
+        try:
+            embedding_text = _service_profile_embedding_text(row) if row else ""
+        except Exception as text_exc:
+            embedding_text = ""
+            logger.info(
+                "service_profile_embedding_dead_letter_text_unavailable tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+                tenant_id,
+                resolved_profile_id,
+                text_exc.__class__.__name__,
+                text_exc,
+            )
+        _mark_service_profile_embedding_status(
+            conn,
+            tenant_id=tenant_id,
+            service_profile_id=resolved_profile_id,
+            status="failed",
+            failure_reason="retry_exhausted",
+            error_type=exc.__class__.__name__,
+            error_message=str(exc),
+        )
+        _persist_service_profile_embedding_failure_record(
+            conn,
+            tenant_id=tenant_id,
+            service_profile_id=resolved_profile_id,
+            embedding_text=embedding_text,
+            embedding_model=EMBEDDING_MODEL,
+            failure_reason="retry_exhausted",
+            exc=exc,
+        )
+
+    logger.error(
+        "service_profile_embedding_dead_lettered tenant_id=%s service_profile_id=%s retries=%s max_retries=%s message_id=%s",
+        tenant_id,
+        resolved_profile_id,
+        (retry_context or {}).get("retries"),
+        (retry_context or {}).get("max_retries"),
+        message_data.get("message_id") if isinstance(message_data, dict) else None,
+    )

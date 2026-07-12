@@ -143,6 +143,7 @@ def _table_exists(conn: Connection, table_name: str) -> bool:
 def _crawl_job_row(
     conn: Connection,
     crawl_job_id: str,
+    tenant_id: str,
 ) -> dict[str, Any] | None:
     if not _table_exists(conn, "crawl_jobs"):
         return None
@@ -159,10 +160,11 @@ def _crawl_job_row(
                    updated_at
               FROM public.crawl_jobs
              WHERE id = :crawl_job_id
+               AND tenant_id = :tenant_id
              LIMIT 1
             """
         ),
-        {"crawl_job_id": crawl_job_id},
+        {"crawl_job_id": crawl_job_id, "tenant_id": tenant_id},
     ).mappings().first()
 
     return dict(row) if row else None
@@ -258,8 +260,7 @@ def _upsert_crawl_job(
                 CAST(:now AS timestamptz)
             )
             ON CONFLICT (id) DO UPDATE
-               SET tenant_id = EXCLUDED.tenant_id,
-                   website_url = EXCLUDED.website_url,
+               SET website_url = EXCLUDED.website_url,
                    status = EXCLUDED.status,
                    phase = EXCLUDED.phase,
                    message_id = COALESCE(EXCLUDED.message_id, public.crawl_jobs.message_id),
@@ -281,6 +282,7 @@ def _upsert_crawl_job(
                        ELSE public.crawl_jobs.dead_lettered_at
                    END,
                    updated_at = CAST(:now AS timestamptz)
+             WHERE public.crawl_jobs.tenant_id = EXCLUDED.tenant_id
             """
         ),
         {
@@ -344,8 +346,7 @@ def _claim_crawl_job(
                 CAST(:now AS timestamptz)
             )
             ON CONFLICT (id) DO UPDATE
-               SET tenant_id = EXCLUDED.tenant_id,
-                   website_url = EXCLUDED.website_url,
+               SET website_url = EXCLUDED.website_url,
                    status = 'processing',
                    phase = 'starting',
                    attempt_count = public.crawl_jobs.attempt_count + 1,
@@ -359,10 +360,14 @@ def _claim_crawl_job(
                    error_context = '{}'::jsonb,
                    last_heartbeat_at = CAST(:now AS timestamptz),
                    updated_at = CAST(:now AS timestamptz)
-             WHERE public.crawl_jobs.status <> 'processing'
-                OR public.crawl_jobs.last_heartbeat_at < (
-                    CAST(:now AS timestamptz) - (:stale_seconds * interval '1 second')
-                )
+             WHERE public.crawl_jobs.tenant_id = EXCLUDED.tenant_id
+               AND public.crawl_jobs.website_url = EXCLUDED.website_url
+               AND (
+                   public.crawl_jobs.status <> 'processing'
+                   OR public.crawl_jobs.last_heartbeat_at < (
+                       CAST(:now AS timestamptz) - (:stale_seconds * interval '1 second')
+                   )
+               )
             RETURNING id
             """
         ),
@@ -398,8 +403,7 @@ def _touch_crawl_job_phase(
         text(
             """
             UPDATE public.crawl_jobs
-               SET tenant_id = :tenant_id,
-                   website_url = :website_url,
+               SET website_url = :website_url,
                    status = :status,
                    phase = :phase,
                    pages_crawled = COALESCE(:pages_crawled, pages_crawled),
@@ -420,6 +424,7 @@ def _touch_crawl_job_phase(
                    END,
                    updated_at = CAST(:now AS timestamptz)
              WHERE id = :crawl_job_id
+               AND tenant_id = :tenant_id
             """
         ),
         {
@@ -505,8 +510,14 @@ def _persist_crawl_pages(
 
     documents = _crawl_documents_from_markdown(markdown)
     conn.execute(
-        text("DELETE FROM public.crawl_pages WHERE crawl_job_id = :crawl_job_id"),
-        {"crawl_job_id": crawl_job_id},
+        text(
+            """
+            DELETE FROM public.crawl_pages
+             WHERE crawl_job_id = :crawl_job_id
+               AND tenant_id = :tenant_id
+            """
+        ),
+        {"crawl_job_id": crawl_job_id, "tenant_id": tenant_id},
     )
 
     for source_url, body in documents:
@@ -650,7 +661,24 @@ def _string_value(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, Any]:
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _profile_document(
+    profile: dict[str, Any],
+    website_url: str,
+    *,
+    crawl_markdown_sha256: str | None = None,
+) -> dict[str, Any]:
     target_audience = _jsonable_list(profile.get("target_audience"))
     pain_points = _jsonable_list(profile.get("ideal_customer_pain_points"))
     negative_keywords = _jsonable_list(profile.get("negative_keywords"))
@@ -660,7 +688,7 @@ def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, An
 
     now = datetime.now(timezone.utc).isoformat()
 
-    return {
+    document = {
         "company_name": _string_value(profile.get("company_name")),
         "one_liner": one_liner,
         "target_audience": target_audience,
@@ -681,11 +709,24 @@ def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, An
         "embedding_status": "pending",
         "extracted_at": now,
     }
+    if crawl_markdown_sha256:
+        document["crawl_markdown_sha256"] = crawl_markdown_sha256
+
+    return document
 
 
-def _service_profile_payload(profile: dict[str, Any], website_url: str) -> dict[str, Any]:
+def _service_profile_payload(
+    profile: dict[str, Any],
+    website_url: str,
+    *,
+    crawl_markdown_sha256: str | None = None,
+) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
-    document = _profile_document(profile, website_url)
+    document = _profile_document(
+        profile,
+        website_url,
+        crawl_markdown_sha256=crawl_markdown_sha256,
+    )
 
     return {
         "website_url": website_url,
@@ -841,12 +882,73 @@ def _load_existing_service_profile(
     return dict(row) if row else None
 
 
+def _cached_service_profile_for_markdown(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    website_url: str,
+    crawl_markdown_sha256: str,
+    columns: dict[str, dict[str, str]],
+) -> dict[str, Any] | None:
+    document_columns = [
+        column_name
+        for column_name in ("profile_json", "profile", "data")
+        if column_name in columns
+    ]
+    if not document_columns:
+        return None
+
+    where_parts = ["tenant_id = :tenant_id"]
+    if "website_url" in columns:
+        where_parts.append("website_url = :website_url")
+    elif "url" in columns:
+        where_parts.append("url = :website_url")
+
+    order_columns = [
+        column_name
+        for column_name in ("updated_at", "created_at")
+        if column_name in columns
+    ]
+    order_sql = (
+        " ORDER BY "
+        + ", ".join(f"{column_name} DESC NULLS LAST" for column_name in order_columns)
+        if order_columns
+        else ""
+    )
+
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(document_columns)}
+              FROM public.service_profiles
+             WHERE {" AND ".join(where_parts)}
+             {order_sql}
+             LIMIT 5
+            """
+        ),
+        {"tenant_id": tenant_id, "website_url": website_url},
+    ).mappings()
+
+    for row in rows:
+        for column_name in document_columns:
+            document = _as_dict(row.get(column_name))
+            if (
+                document.get("crawl_markdown_sha256") == crawl_markdown_sha256
+                and document.get("website_url") == website_url
+                and document.get("extraction_status") == "completed"
+            ):
+                return document
+
+    return None
+
+
 def _upsert_service_profile(
     conn: Connection,
     *,
     tenant_id: str,
     website_url: str,
     profile: dict[str, Any],
+    crawl_markdown_sha256: str | None = None,
 ) -> str | None:
     columns = _service_profile_columns(conn)
     if "tenant_id" not in columns:
@@ -864,7 +966,11 @@ def _upsert_service_profile(
         {"tenant_id": tenant_id},
     )
 
-    payload = _service_profile_payload(profile, website_url)
+    payload = _service_profile_payload(
+        profile,
+        website_url,
+        crawl_markdown_sha256=crawl_markdown_sha256,
+    )
     existing = _load_existing_service_profile(conn, tenant_id, columns)
     expressions, params = _bind_payload(payload, columns)
 
@@ -1369,7 +1475,7 @@ def enqueue_crawl_job(tenant_id: str, website_url: str) -> str:
     engine = _database_engine()
 
     with engine.begin() as conn:
-        existing_job = _crawl_job_row(conn, crawl_job_id)
+        existing_job = _crawl_job_row(conn, crawl_job_id, tenant_id)
         if _active_crawl_job_is_fresh(existing_job):
             message_id = str(existing_job.get("message_id") or crawl_job_id)
             logger.info(
@@ -1542,6 +1648,16 @@ def process_crawl_job(tenant_id: str, website_url: str) -> None:
                 phase=phase,
             )
 
+        crawl_markdown_sha256 = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+        with engine.begin() as conn:
+            cached_profile = _cached_service_profile_for_markdown(
+                conn,
+                tenant_id=tenant_id,
+                website_url=normalized_url,
+                crawl_markdown_sha256=crawl_markdown_sha256,
+                columns=_service_profile_columns(conn),
+            )
+
         extraction_timeout_seconds = min(
             _env_int(
                 "ARCLI_PROFILE_EXTRACTION_TIMEOUT_SECONDS",
@@ -1549,12 +1665,22 @@ def process_crawl_job(tenant_id: str, website_url: str) -> None:
             ),
             _remaining_deadline_seconds(deadline, minimum=10),
         )
-        profile = _extract_profile_with_deadline(
-            markdown,
-            tenant_id=tenant_id,
-            crawl_job_id=crawl_job_id,
-            timeout_seconds=extraction_timeout_seconds,
-        )
+        if cached_profile:
+            profile = cached_profile
+            logger.info(
+                "profile_extraction_cache_hit tenant_id=%s website_url=%s crawl_job_id=%s crawl_markdown_sha256=%s",
+                tenant_id,
+                normalized_url,
+                crawl_job_id,
+                crawl_markdown_sha256,
+            )
+        else:
+            profile = _extract_profile_with_deadline(
+                markdown,
+                tenant_id=tenant_id,
+                crawl_job_id=crawl_job_id,
+                timeout_seconds=extraction_timeout_seconds,
+            )
 
         phase = "persisting_profile"
         with engine.begin() as conn:
@@ -1591,6 +1717,7 @@ def process_crawl_job(tenant_id: str, website_url: str) -> None:
                 tenant_id=tenant_id,
                 website_url=normalized_url,
                 profile=profile,
+                crawl_markdown_sha256=crawl_markdown_sha256,
             )
             _touch_crawl_job_phase(
                 conn,

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS public.service_profile_embeddings (
     embedding_model TEXT NOT NULL DEFAULT 'text-embedding-3-small',
     embedding_dimensions INTEGER,
     source_text TEXT,
+    source_text_sha256 TEXT,
     status TEXT NOT NULL DEFAULT 'completed'
         CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     failure_reason TEXT,
@@ -78,6 +79,9 @@ CREATE TABLE IF NOT EXISTS public.service_profile_embeddings (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_service_profile_embeddings_profile_model
     ON public.service_profile_embeddings(service_profile_id, embedding_model);
+
+ALTER TABLE public.service_profile_embeddings
+    ADD COLUMN IF NOT EXISTS source_text_sha256 TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_service_profile_embeddings_tenant_status
     ON public.service_profile_embeddings(tenant_id, status, updated_at DESC);
