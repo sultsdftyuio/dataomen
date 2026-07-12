@@ -1,9 +1,6 @@
 import asyncio
-import json
 import logging
 import os
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -51,91 +48,6 @@ def _require_redis_broker() -> None:
     _configure_dramatiq_broker()
 
 
-def _post_internal_pipeline_trigger(
-    *,
-    endpoint: str | None,
-    tenant_id: str,
-    service_profile_id: str | None,
-    phase: str,
-) -> bool:
-    if not endpoint:
-        logger.info(
-            "initial_public_ingestion_phase_skipped tenant_id=%s service_profile_id=%s phase=%s skip_reason=%s",
-            tenant_id,
-            service_profile_id,
-            phase,
-            "trigger_endpoint_not_configured",
-        )
-        return False
-
-    payload = json.dumps(
-        {
-            "tenant_id": tenant_id,
-            "service_profile_id": service_profile_id,
-            "source": "service_profile_embedding_completed",
-            "phase": phase,
-        }
-    ).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    worker_secret = os.getenv("INTERNAL_WORKER_SECRET", "").strip()
-    if worker_secret:
-        headers["Authorization"] = f"Bearer {worker_secret}"
-
-    request = urllib.request.Request(
-        endpoint,
-        data=payload,
-        headers=headers,
-        method="POST",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            status_code = response.getcode()
-            if 200 <= status_code < 300:
-                logger.info(
-                    "initial_public_ingestion_phase_triggered tenant_id=%s service_profile_id=%s phase=%s endpoint=%s status=%s",
-                    tenant_id,
-                    service_profile_id,
-                    phase,
-                    endpoint,
-                    status_code,
-                )
-                return True
-
-            logger.warning(
-                "initial_public_ingestion_phase_trigger_failed tenant_id=%s service_profile_id=%s phase=%s endpoint=%s status=%s",
-                tenant_id,
-                service_profile_id,
-                phase,
-                endpoint,
-                status_code,
-            )
-            return False
-    except urllib.error.HTTPError as exc:
-        body = exc.read(500).decode("utf-8", errors="replace")
-        logger.warning(
-            "initial_public_ingestion_phase_trigger_failed tenant_id=%s service_profile_id=%s phase=%s endpoint=%s status=%s body=%s",
-            tenant_id,
-            service_profile_id,
-            phase,
-            endpoint,
-            exc.code,
-            body,
-        )
-        return False
-    except Exception as exc:
-        logger.warning(
-            "initial_public_ingestion_phase_trigger_unavailable tenant_id=%s service_profile_id=%s phase=%s endpoint=%s error_type=%s error=%s",
-            tenant_id,
-            service_profile_id,
-            phase,
-            endpoint,
-            exc.__class__.__name__,
-            exc,
-        )
-        return False
-
-
 def enqueue_initial_public_ingestion_job(
     tenant_id: str,
     service_profile_id: str | None,
@@ -162,25 +74,18 @@ def process_initial_public_ingestion_job(
     tenant_id: str,
     service_profile_id: str | None = None,
 ) -> None:
-    ingestion_triggered = _post_internal_pipeline_trigger(
-        endpoint=os.getenv("ARCLI_PUBLIC_INGESTION_TRIGGER_URL", "").strip() or None,
-        tenant_id=tenant_id,
-        service_profile_id=service_profile_id,
-        phase="public_social_ingestion",
-    )
-    matching_triggered = _post_internal_pipeline_trigger(
-        endpoint=os.getenv("ARCLI_MATCHING_TRIGGER_URL", "").strip() or None,
-        tenant_id=tenant_id,
-        service_profile_id=service_profile_id,
-        phase="matching",
-    )
+    from api.services.social_ingestion import run_initial_public_ingestion
+
+    result = run_initial_public_ingestion(tenant_id, service_profile_id)
 
     logger.info(
-        "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s ingestion_triggered=%s matching_triggered=%s",
+        "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s posts=%s embedded=%s candidates=%s qualified=%s",
         tenant_id,
         service_profile_id,
-        ingestion_triggered,
-        matching_triggered,
+        result.get("posts", 0),
+        result.get("embedded", 0),
+        result.get("candidates", 0),
+        result.get("qualified", 0),
     )
 
 

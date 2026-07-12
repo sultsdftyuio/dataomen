@@ -93,6 +93,33 @@ class ServiceProfileEmbeddingTriggerResponse(BaseModel):
     message_id: str
 
 
+class PublicIngestionTriggerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    service_profile_id: str | None = Field(default=None)
+    requested_by: str | None = Field(default=None)
+    source: str | None = Field(default=None)
+    phase: str | None = Field(default=None)
+
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tenant_id must be a valid UUID") from exc
+
+
+class PublicIngestionTriggerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["queued"] = Field(default="queued")
+    tenant_id: str
+    service_profile_id: str | None = None
+    message_id: str
+
+
 app = FastAPI(
     title="Arcli Prospect Intelligence API",
     version=os.getenv("ARCLI_API_VERSION", "0.1.0"),
@@ -224,6 +251,59 @@ def trigger_service_profile_embedding(
     )
 
     return ServiceProfileEmbeddingTriggerResponse(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+        message_id=message_id,
+    )
+
+
+@app.post(
+    "/api/public-ingestion/trigger",
+    response_model=PublicIngestionTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+@app.post(
+    "/api/matching/trigger",
+    response_model=PublicIngestionTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_public_ingestion(
+    payload: PublicIngestionTriggerRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+) -> PublicIngestionTriggerResponse:
+    """
+    Queue the native public/social ingestion, embedding, matching, and verifier pass.
+    """
+    from api.services.ingestion_service import enqueue_initial_public_ingestion_job
+
+    try:
+        message_id = enqueue_initial_public_ingestion_job(
+            payload.tenant_id,
+            payload.service_profile_id,
+        )
+    except RuntimeError as exc:
+        logger.exception(
+            "public_ingestion_enqueue_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Public ingestion queue is unavailable.",
+        ) from exc
+
+    logger.info(
+        "public_ingestion_trigger_accepted tenant_id=%s service_profile_id=%s message_id=%s source=%s phase=%s",
+        payload.tenant_id,
+        payload.service_profile_id,
+        message_id,
+        payload.source,
+        payload.phase,
+    )
+
+    return PublicIngestionTriggerResponse(
         tenant_id=payload.tenant_id,
         service_profile_id=payload.service_profile_id,
         message_id=message_id,

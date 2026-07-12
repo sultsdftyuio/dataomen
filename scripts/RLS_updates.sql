@@ -257,10 +257,28 @@ CREATE TABLE IF NOT EXISTS public.service_profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.source_posts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    author TEXT,
+    community TEXT,
+    url TEXT,
+    published_at TIMESTAMPTZ,
+    metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tenant_id, source, external_id)
+);
+
 CREATE TABLE IF NOT EXISTS public.lead_matches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
-    source_post_id UUID,
+    service_profile_id UUID REFERENCES public.service_profiles(id) ON DELETE SET NULL,
+    source_post_id UUID REFERENCES public.source_posts(id) ON DELETE SET NULL,
     match_status TEXT NOT NULL DEFAULT 'qualified',
     verifier_score DOUBLE PRECISION NOT NULL DEFAULT 0,
     similarity_score DOUBLE PRECISION,
@@ -281,13 +299,33 @@ CREATE TABLE IF NOT EXISTS public.lead_matches (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.lead_matches
+    ADD COLUMN IF NOT EXISTS service_profile_id UUID REFERENCES public.service_profiles(id) ON DELETE SET NULL;
+
+DO $$ BEGIN
+    ALTER TABLE public.lead_matches
+        ADD CONSTRAINT fk_lead_matches_source_post
+        FOREIGN KEY (source_post_id) REFERENCES public.source_posts(id)
+        ON DELETE SET NULL NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 CREATE INDEX IF NOT EXISTS idx_service_profiles_tenant_updated
     ON public.service_profiles(tenant_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_source_posts_tenant_source_updated
+    ON public.source_posts(tenant_id, source, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_source_posts_external
+    ON public.source_posts(source, external_id);
 
 CREATE INDEX IF NOT EXISTS idx_lead_matches_tenant_status_score
     ON public.lead_matches(tenant_id, match_status, verifier_score DESC, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_lead_matches_service_profile
+    ON public.lead_matches(tenant_id, service_profile_id, created_at DESC);
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.source_posts TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.lead_matches TO authenticated;
 
 ALTER TABLE public.service_profiles ENABLE ROW LEVEL SECURITY;
@@ -313,6 +351,33 @@ CREATE POLICY "service_profiles_tenant_isolation" ON public.service_profiles
         EXISTS (
             SELECT 1 FROM public.tenant_users tu
             WHERE tu.tenant_id::text = service_profiles.tenant_id::text
+              AND tu.user_id::text = auth.uid()::text
+        )
+    );
+
+ALTER TABLE public.source_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.source_posts FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "source_posts_select_tenant" ON public.source_posts;
+DROP POLICY IF EXISTS "source_posts_insert_tenant" ON public.source_posts;
+DROP POLICY IF EXISTS "source_posts_update_tenant" ON public.source_posts;
+DROP POLICY IF EXISTS "source_posts_delete_tenant" ON public.source_posts;
+DROP POLICY IF EXISTS "source_posts_tenant_isolation" ON public.source_posts;
+CREATE POLICY "source_posts_tenant_isolation" ON public.source_posts
+    AS PERMISSIVE
+    FOR ALL
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id::text = source_posts.tenant_id::text
+              AND tu.user_id::text = auth.uid()::text
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id::text = source_posts.tenant_id::text
               AND tu.user_id::text = auth.uid()::text
         )
     );
