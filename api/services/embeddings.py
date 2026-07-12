@@ -1122,7 +1122,7 @@ _configure_dramatiq_broker()
 
 @dramatiq.actor(
     queue_name=os.getenv("ARCLI_EMBEDDING_QUEUE_NAME", "embeddings"),
-    max_retries=env_int("ARCLI_EMBEDDING_JOB_MAX_RETRIES", 3, minimum=0),
+    max_retries=max(0, env_int("ARCLI_EMBEDDING_JOB_MAX_RETRIES", 3)),
     min_backoff=env_int("ARCLI_EMBEDDING_JOB_MIN_BACKOFF_MS", 10_000),
     max_backoff=env_int("ARCLI_EMBEDDING_JOB_MAX_BACKOFF_MS", 60_000),
     time_limit=env_int(
