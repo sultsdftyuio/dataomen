@@ -67,7 +67,7 @@ not stated directly. Output exactly the requested schema.
     ) -> None:
         self.client = client
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.model = model or os.getenv("OPENAI_PROFILE_EXTRACTION_MODEL", "gpt-4o-mini")
+        self.model = model or os.getenv("OPENAI_PROFILE_EXTRACTION_MODEL", "gpt-5.4-nano")
         self.timeout_seconds = timeout_seconds
         self.quota_guard = quota_guard or TenantQuotaGuard()
 
