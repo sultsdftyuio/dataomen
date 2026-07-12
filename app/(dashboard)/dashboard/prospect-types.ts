@@ -14,6 +14,8 @@ export type ServiceProfileView = {
   hasProfile: boolean;
   status: string | null;
   extractionStatus: string | null;
+  embeddingStatus: string | null;
+  embeddingGeneratedAt: string | null;
   websiteUrl: string | null;
   updatedAt: string | null;
   fields: ServiceProfileFields;

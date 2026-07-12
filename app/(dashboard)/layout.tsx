@@ -6,11 +6,7 @@ import { LayoutDashboard, Settings } from "lucide-react";
 import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
 import Logo from "@/components/ui/logo";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
-import {
-  fetchServiceProfile,
-  fetchTenantWebsiteUrl,
-  isServiceProfileApproved,
-} from "./dashboard/data";
+import { fetchTenantWebsiteUrl } from "./dashboard/data";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -44,12 +40,6 @@ export default async function DashboardLayout({
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
 
   if (!websiteUrl) {
-    redirect("/onboarding/workspace");
-  }
-
-  const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
-
-  if (!isServiceProfileApproved(serviceProfile)) {
     redirect("/onboarding/workspace");
   }
 

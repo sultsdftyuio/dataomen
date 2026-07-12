@@ -17,6 +17,7 @@ import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_
 import { DataSourcesTab } from "@/components/settings/data-sources-tab";
 import LogoutButton from "@/components/dashboard/logout-button";
 import type { SettingsSnapshot } from "@/lib/settings/types";
+import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
 
 // ── Strict Architectural Boundaries & Constants ──
 type SettingsTab = "workspace" | "data-sources" | "account";
@@ -47,6 +48,7 @@ interface SettingsClientProps {
   isRecoveryMode: boolean;
   planData?: WorkspaceBillingCardProps["planData"];
   billingTestControlsEnabled?: boolean;
+  serviceProfile?: ServiceProfileView | null;
 }
 
 export default function SettingsClient({ 
@@ -55,6 +57,7 @@ export default function SettingsClient({
   isRecoveryMode,
   planData,
   billingTestControlsEnabled = false,
+  serviceProfile = null,
 }: SettingsClientProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     isRecoveryMode ? "account" : "workspace"
@@ -144,6 +147,7 @@ export default function SettingsClient({
               initialData={workspaceData}
               planData={planData}
               billingTestControlsEnabled={billingTestControlsEnabled}
+              serviceProfile={serviceProfile}
             />
           )}
           

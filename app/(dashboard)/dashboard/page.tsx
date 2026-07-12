@@ -5,7 +5,7 @@ import {
   fetchQualifiedLeads,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
-  isServiceProfileApproved,
+  isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
 import ProspectDashboardClient from "./prospect-dashboard-client";
@@ -46,7 +46,7 @@ export default async function DashboardPage() {
   ]);
   const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
 
-  if (!websiteUrl || !isServiceProfileApproved(serviceProfile)) {
+  if (!websiteUrl) {
     redirect("/onboarding/workspace");
   }
 
@@ -55,6 +55,7 @@ export default async function DashboardPage() {
       serviceProfile={serviceProfile}
       leads={leads}
       verifierThreshold={threshold}
+      isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
     />
   );
 }

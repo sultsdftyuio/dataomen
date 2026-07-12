@@ -34,6 +34,7 @@ SERVICE_PROFILE_COLUMNS = {
     "status",
     "review_status",
     "extraction_status",
+    "embedding_status",
     "extracted_at",
     "profile_json",
     "profile",
@@ -677,6 +678,7 @@ def _profile_document(profile: dict[str, Any], website_url: str) -> dict[str, An
         "status": "pending_review",
         "review_status": "pending_review",
         "extraction_status": "completed",
+        "embedding_status": "pending",
         "extracted_at": now,
     }
 
@@ -691,6 +693,7 @@ def _service_profile_payload(profile: dict[str, Any], website_url: str) -> dict[
         "status": "pending_review",
         "review_status": "pending_review",
         "extraction_status": "completed",
+        "embedding_status": "pending",
         "extracted_at": now,
         "profile_json": document,
         "profile": document,
@@ -1597,6 +1600,32 @@ def process_crawl_job(tenant_id: str, website_url: str) -> None:
                 phase="completed",
                 status="completed",
                 service_profile_id=service_profile_id,
+            )
+
+        try:
+            from api.services.embeddings import enqueue_service_profile_embedding_job
+
+            embedding_message_id = enqueue_service_profile_embedding_job(
+                tenant_id,
+                service_profile_id,
+            )
+            logger.info(
+                "service_profile_embedding_enqueued_after_extraction tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s message_id=%s",
+                tenant_id,
+                normalized_url,
+                crawl_job_id,
+                service_profile_id,
+                embedding_message_id,
+            )
+        except Exception as enqueue_exc:
+            logger.exception(
+                "service_profile_embedding_enqueue_after_extraction_failed tenant_id=%s website_url=%s crawl_job_id=%s service_profile_id=%s error_type=%s error=%s",
+                tenant_id,
+                normalized_url,
+                crawl_job_id,
+                service_profile_id,
+                enqueue_exc.__class__.__name__,
+                enqueue_exc,
             )
 
         logger.info(

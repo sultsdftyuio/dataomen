@@ -228,6 +228,7 @@ SERVICE_PROFILE_EMBEDDING_COLUMNS = {
     "url",
     "status",
     "review_status",
+    "extraction_status",
     "profile_json",
     "profile",
     "data",
@@ -458,9 +459,26 @@ def _profile_status(row: dict[str, Any]) -> str | None:
     return _read_string([row, document], ["status", "review_status"])
 
 
-def _profile_is_approved(row: dict[str, Any]) -> bool:
-    status = _profile_status(row)
-    return bool(status and status.strip().lower() == "approved")
+def _profile_extraction_status(row: dict[str, Any]) -> str | None:
+    document = _first_document(row)
+    return _read_string([row, document], ["extraction_status"])
+
+
+def _normalized_status(value: str | None) -> str | None:
+    return "_".join(value.strip().lower().split()) if value else None
+
+
+def _profile_is_embeddable(row: dict[str, Any]) -> bool:
+    status = _normalized_status(_profile_status(row))
+    extraction_status = _normalized_status(_profile_extraction_status(row))
+
+    if status in {"failed", "error", "archived", "deleted"}:
+        return False
+
+    if extraction_status in {"failed", "error"}:
+        return False
+
+    return True
 
 
 def _service_profile_embedding_text(row: dict[str, Any]) -> str:
@@ -606,6 +624,172 @@ def _embedding_update_payload(
     return payload
 
 
+def _embedding_status_payload(
+    row: dict[str, Any],
+    status: str,
+    columns: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    payload: dict[str, Any] = {
+        "updated_at": now,
+        "embedding_status": status,
+    }
+
+    for column_name in ("profile_json", "profile", "data"):
+        if column_name in columns:
+            payload[column_name] = {
+                **_as_dict(row.get(column_name)),
+                "embedding_status": status,
+            }
+
+    return payload
+
+
+def _mark_service_profile_embedding_status(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+    status: str,
+) -> None:
+    columns = _service_profile_columns(conn)
+    row = _load_service_profile(
+        conn,
+        tenant_id,
+        service_profile_id,
+        columns,
+        for_update=True,
+    )
+    if not row:
+        return
+
+    payload = _embedding_status_payload(row, status, columns)
+    expressions, params = _bind_payload(payload, columns)
+    assignment_parts = [
+        f"{column_name} = {expression}"
+        for column_name, expression in expressions.items()
+        if column_name not in {"tenant_id", "id"}
+    ]
+    if not assignment_parts:
+        return
+
+    params["tenant_id"] = tenant_id
+    where_sql = "tenant_id = :tenant_id"
+    if service_profile_id and "id" in columns:
+        where_sql += " AND id = :service_profile_id"
+        params["service_profile_id"] = service_profile_id
+    elif row.get("id") and "id" in columns:
+        where_sql += " AND id = :service_profile_id"
+        params["service_profile_id"] = row["id"]
+
+    conn.execute(
+        text(
+            f"""
+            UPDATE public.service_profiles
+               SET {", ".join(assignment_parts)}
+             WHERE {where_sql}
+            """
+        ),
+        params,
+    )
+
+
+def _table_columns(
+    conn: Connection,
+    table_name: str,
+) -> dict[str, dict[str, str]]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT column_name, data_type, udt_name
+              FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = :table_name
+            """
+        ),
+        {"table_name": table_name},
+    ).mappings()
+
+    return {
+        str(row["column_name"]): {
+            "data_type": str(row["data_type"]),
+            "udt_name": str(row["udt_name"]),
+        }
+        for row in rows
+    }
+
+
+def _persist_service_profile_embedding_record(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    service_profile_id: str | None,
+    embedding_text: str,
+    embedding: EmbeddingResponse,
+) -> None:
+    if not service_profile_id:
+        return
+
+    columns = _table_columns(conn, "service_profile_embeddings")
+    required_columns = {"tenant_id", "service_profile_id", "embedding_model"}
+    if not required_columns.issubset(columns):
+        return
+
+    now = datetime.now(timezone.utc).isoformat()
+    embedding_metadata = {
+        "profile_embedding": embedding.embedding,
+        "profile_embedding_model": embedding.model,
+        "profile_embedding_dimensions": embedding.dimensions,
+        "profile_embedding_generated_at": now,
+        "embedding_status": "completed",
+    }
+    payload: dict[str, Any] = {
+        "tenant_id": tenant_id,
+        "service_profile_id": service_profile_id,
+        "embedding_json": embedding_metadata,
+        "embedding_model": embedding.model,
+        "embedding_dimensions": embedding.dimensions,
+        "source_text": embedding_text,
+        "status": "completed",
+        "updated_at": now,
+    }
+    if "created_at" in columns:
+        payload["created_at"] = now
+    if "embedding" in columns:
+        payload["embedding"] = embedding.embedding
+
+    expressions, params = _bind_payload(payload, columns)
+    if not expressions:
+        return
+
+    assignment_parts = [
+        f"{column_name} = EXCLUDED.{column_name}"
+        for column_name in expressions
+        if column_name not in {"id", "tenant_id", "service_profile_id", "created_at"}
+    ]
+    conflict_sql = (
+        f"DO UPDATE SET {', '.join(assignment_parts)}"
+        if assignment_parts
+        else "DO NOTHING"
+    )
+
+    conn.execute(
+        text(
+            f"""
+            INSERT INTO public.service_profile_embeddings (
+                {", ".join(expressions)}
+            )
+            VALUES (
+                {", ".join(expressions.values())}
+            )
+            ON CONFLICT (service_profile_id, embedding_model)
+            {conflict_sql}
+            """
+        ),
+        params,
+    )
+
+
 def _persist_service_profile_embedding(
     conn: Connection,
     *,
@@ -632,12 +816,12 @@ def _persist_service_profile_embedding(
         )
         return None
 
-    if not _profile_is_approved(row):
+    if not _profile_is_embeddable(row):
         logger.info(
             "service_profile_embedding_skipped tenant_id=%s service_profile_id=%s skip_reason=%s status=%s",
             tenant_id,
             service_profile_id,
-            "profile_not_approved",
+            "profile_not_embeddable",
             _profile_status(row),
         )
         return None
@@ -658,7 +842,15 @@ def _persist_service_profile_embedding(
             embedding.model,
             embedding.dimensions,
         )
-        return str(row.get("id")) if row.get("id") else None
+        persisted_profile_id = str(row.get("id")) if row.get("id") else None
+        _persist_service_profile_embedding_record(
+            conn,
+            tenant_id=tenant_id,
+            service_profile_id=persisted_profile_id,
+            embedding_text=embedding_text,
+            embedding=embedding,
+        )
+        return persisted_profile_id
 
     params["tenant_id"] = tenant_id
     where_sql = "tenant_id = :tenant_id"
@@ -680,7 +872,16 @@ def _persist_service_profile_embedding(
         params,
     )
 
-    return str(row.get("id")) if row.get("id") else None
+    persisted_profile_id = str(row.get("id")) if row.get("id") else None
+    _persist_service_profile_embedding_record(
+        conn,
+        tenant_id=tenant_id,
+        service_profile_id=persisted_profile_id,
+        embedding_text=embedding_text,
+        embedding=embedding,
+    )
+
+    return persisted_profile_id
 
 
 def enqueue_service_profile_embedding_job(
@@ -725,18 +926,27 @@ def process_service_profile_embedding_job(
         )
         return
 
-    if not _profile_is_approved(row):
+    if not _profile_is_embeddable(row):
         logger.info(
             "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s status=%s",
             tenant_id,
             service_profile_id,
-            "profile_not_approved",
+            "profile_not_embeddable",
             _profile_status(row),
         )
         return
 
     embedding_text = _service_profile_embedding_text(row)
     resolved_profile_id = str(row.get("id")) if row.get("id") else service_profile_id
+
+    with engine.begin() as conn:
+        _mark_service_profile_embedding_status(
+            conn,
+            tenant_id=tenant_id,
+            service_profile_id=resolved_profile_id,
+            status="processing",
+        )
+
     embedding = EmbeddingService().embed_text(
         embedding_text,
         tenant_id=tenant_id,
@@ -753,10 +963,33 @@ def process_service_profile_embedding_job(
             embedding=embedding,
         )
 
+    final_profile_id = persisted_profile_id or resolved_profile_id
     logger.info(
         "service_profile_embedding_job_completed tenant_id=%s service_profile_id=%s model=%s dimensions=%s",
         tenant_id,
-        persisted_profile_id or resolved_profile_id,
+        final_profile_id,
         embedding.model,
         embedding.dimensions,
     )
+
+    try:
+        from api.services.ingestion_service import enqueue_initial_public_ingestion_job
+
+        ingestion_message_id = enqueue_initial_public_ingestion_job(
+            tenant_id,
+            final_profile_id,
+        )
+        logger.info(
+            "initial_public_ingestion_enqueued_after_embedding tenant_id=%s service_profile_id=%s message_id=%s",
+            tenant_id,
+            final_profile_id,
+            ingestion_message_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "initial_public_ingestion_enqueue_after_embedding_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            final_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )

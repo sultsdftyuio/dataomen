@@ -7,7 +7,11 @@ from dramatiq.brokers.redis import RedisBroker
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ACTOR_MODULES = ("api.services.crawling", "api.services.embeddings")
+DEFAULT_ACTOR_MODULES = (
+    "api.services.crawling",
+    "api.services.embeddings",
+    "api.services.ingestion_service",
+)
 
 
 def _csv_env(name: str) -> list[str]:

@@ -1,9 +1,15 @@
 // lib/settings/api.ts
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { ZodError } from "zod";
 import { createClient } from "@/utils/supabase/server";
-import { WorkspaceSettingsSchema } from "@/lib/settings/schemas";
-import type { Database } from "@/types/supabase";
+import {
+  ServiceProfileSettingsSchema,
+  WorkspaceSettingsSchema,
+  type ServiceProfileSettingsInput,
+} from "@/lib/settings/schemas";
+import type { Database, Json } from "@/types/supabase";
 
 type TenantSettingsUpdate =
   Database["public"]["Tables"]["tenant_settings"]["Update"];
@@ -28,6 +34,13 @@ const WORKSPACE_SETTINGS_SELECT =
 
 const WORKSPACE_UPDATE_ROLES = new Set(["owner", "admin"]);
 
+type DbRecord = Record<string, Json>;
+
+type ServiceProfileUpdate = {
+  id: string | null;
+  fields: ServiceProfileSettingsInput;
+};
+
 const normalizeOptionalString = (
   value: string | undefined
 ): string | null | undefined => {
@@ -41,6 +54,219 @@ const normalizeOptionalString = (
 
 const normalizedRole = (role: string | null | undefined) =>
   role?.trim().toLowerCase() ?? "";
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function normalizeList(values: string[]) {
+  const seen = new Set<string>();
+  return values.reduce<string[]>((items, value) => {
+    const normalized = value.trim().replace(/\s+/g, " ");
+    const key = normalized.toLowerCase();
+
+    if (normalized && !seen.has(key)) {
+      seen.add(key);
+      items.push(normalized);
+    }
+
+    return items;
+  }, []);
+}
+
+function parseServiceProfileUpdate(body: unknown): ServiceProfileUpdate | null {
+  const record = asRecord(body);
+  if (!record) return null;
+
+  const rawProfile = record.serviceProfile ?? record.service_profile;
+  if (rawProfile === undefined) return null;
+
+  const parsed = ServiceProfileSettingsSchema.safeParse(rawProfile);
+  if (!parsed.success) {
+    throw parsed.error;
+  }
+
+  const rawId = record.serviceProfileId ?? record.service_profile_id;
+  const id =
+    typeof rawId === "string" && rawId.trim().length > 0 ? rawId.trim() : null;
+
+  return {
+    id,
+    fields: parsed.data,
+  };
+}
+
+function serviceProfilePayloads(
+  values: ServiceProfileSettingsInput,
+): DbRecord[] {
+  const normalized = {
+    target_audience: normalizeList(values.target_audience),
+    core_problem: values.core_problem.trim(),
+    unique_value_prop: values.unique_value_prop.trim(),
+    use_cases: normalizeList(values.use_cases),
+    pain_points: normalizeList(values.pain_points),
+    buying_triggers: normalizeList(values.buying_triggers),
+    negative_keywords: normalizeList(values.negative_keywords),
+    excluded_audiences: normalizeList(values.excluded_audiences),
+  };
+  const now = new Date().toISOString();
+  const document = {
+    ...normalized,
+    core_problem_solved: normalized.core_problem,
+    key_value_propositions: normalized.unique_value_prop
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    ideal_customer_pain_points: normalized.pain_points,
+    review_status: "approved",
+    status: "approved",
+    extraction_status: "manual_refined",
+    embedding_status: "pending",
+    manually_refined_at: now,
+    approved_at: now,
+  } satisfies Record<string, Json>;
+
+  const directPayload = {
+    ...normalized,
+    profile_json: document,
+    profile: document,
+    data: document,
+    status: "approved",
+    extraction_status: "manual_refined",
+    approved_at: now,
+    updated_at: now,
+  } satisfies DbRecord;
+
+  return [
+    directPayload,
+    {
+      profile_json: document,
+      profile: document,
+      data: document,
+      status: "approved",
+      updated_at: now,
+    },
+    {
+      profile_json: document,
+      status: "approved",
+      updated_at: now,
+    },
+    {
+      profile: document,
+      status: "approved",
+      updated_at: now,
+    },
+    {
+      data: document,
+      status: "approved",
+      updated_at: now,
+    },
+  ];
+}
+
+async function latestServiceProfileId(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+) {
+  const result = await supabase
+    .from("service_profiles")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string | null }>();
+
+  if (result.error) {
+    console.warn("[SERVICE_PROFILE_SETTINGS_LOOKUP_SKIPPED]", {
+      event: "settings_service_profile_lookup_failed",
+      tenant_id: tenantId,
+      db_error: dbErrorDetails(result.error),
+    });
+    return null;
+  }
+
+  return result.data?.id ?? null;
+}
+
+async function clearServiceProfileEmbeddings(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+) {
+  if (!serviceProfileId) return;
+
+  const result = await supabase
+    .from("service_profile_embeddings")
+    .delete()
+    .eq("tenant_id", tenantId)
+    .eq("service_profile_id", serviceProfileId);
+
+  if (result.error) {
+    console.warn("[SERVICE_PROFILE_EMBEDDINGS_CLEAR_SKIPPED]", {
+      event: "settings_service_profile_embeddings_clear_failed",
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+      db_error: dbErrorDetails(result.error),
+    });
+  }
+}
+
+async function persistServiceProfileUpdate(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  update: ServiceProfileUpdate,
+) {
+  const resolvedProfileId =
+    update.id ?? (await latestServiceProfileId(supabase, tenantId));
+  let lastError: PostgrestLikeError | null = null;
+
+  for (const payload of serviceProfilePayloads(update.fields)) {
+    const query = resolvedProfileId
+      ? supabase
+          .from("service_profiles")
+          .update(payload)
+          .eq("tenant_id", tenantId)
+          .eq("id", resolvedProfileId)
+      : supabase
+          .from("service_profiles")
+          .insert({ ...payload, tenant_id: tenantId });
+
+    const result = await query.select("id").maybeSingle<{ id: string | null }>();
+
+    if (!result.error && (result.data || !resolvedProfileId)) {
+      const serviceProfileId = result.data?.id ?? resolvedProfileId;
+      await clearServiceProfileEmbeddings(supabase, tenantId, serviceProfileId);
+      return serviceProfileId ?? null;
+    }
+
+    lastError = result.error as PostgrestLikeError | null;
+  }
+
+  if (lastError) {
+    const classified = classifyDatabaseError(lastError);
+    console.error("[SERVICE_PROFILE_SETTINGS_UPDATE_ERROR]", {
+      event: "settings_service_profile_update_failed",
+      tenant_id: tenantId,
+      service_profile_id: resolvedProfileId,
+      db_error: dbErrorDetails(lastError),
+    });
+
+    return {
+      error: classified.error,
+      status: classified.status,
+      code: classified.code,
+      details: dbErrorDetails(lastError),
+    };
+  }
+
+  return {
+    error: "Service profile could not be updated.",
+    status: 500,
+    code: "service_profile_update_failed",
+  };
+}
 
 function jsonError(
   error: string,
@@ -130,6 +356,22 @@ export async function handleWorkspaceUpdate(req: Request) {
       body = await req.json();
     } catch {
       return jsonError("Invalid JSON payload.", 400, "invalid_json");
+    }
+
+    let serviceProfileUpdate: ServiceProfileUpdate | null = null;
+    try {
+      serviceProfileUpdate = parseServiceProfileUpdate(body);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return jsonError(
+          "Invalid service profile payload.",
+          400,
+          "service_profile_validation_failed",
+          error.flatten()
+        );
+      }
+
+      throw error;
     }
 
     const supabase = await createClient();
@@ -254,13 +496,19 @@ export async function handleWorkspaceUpdate(req: Request) {
     const hasTenantMutations = mutatedFields.length > 0;
     const role = normalizedRole(tenantUser.role);
 
-    if (hasTenantMutations && !WORKSPACE_UPDATE_ROLES.has(role)) {
+    const hasServiceProfileMutations = Boolean(serviceProfileUpdate);
+
+    if (
+      (hasTenantMutations || hasServiceProfileMutations) &&
+      !WORKSPACE_UPDATE_ROLES.has(role)
+    ) {
       console.warn("[WORKSPACE_UPDATE_ROLE_DENIED]", {
         event: "workspace_update_role_denied",
         user_id: user.id,
         tenant_id: tenantId,
         role,
         fields_mutated: mutatedFields,
+        service_profile_mutated: hasServiceProfileMutations,
       });
       return jsonError(
         "Only workspace owners or admins can update workspace settings.",
@@ -310,7 +558,7 @@ export async function handleWorkspaceUpdate(req: Request) {
       }
     }
 
-    if (!hasTenantMutations && !profileUpdated) {
+    if (!hasTenantMutations && !profileUpdated && !hasServiceProfileMutations) {
       return NextResponse.json(
         {
           success: true,
@@ -425,16 +673,43 @@ export async function handleWorkspaceUpdate(req: Request) {
       updatedTimestamp = updatedSettings?.updated_at ?? updatedTimestamp;
     }
 
+    let serviceProfileUpdated = false;
+    let serviceProfileId: string | null = null;
+
+    if (serviceProfileUpdate) {
+      const result = await persistServiceProfileUpdate(
+        supabase,
+        tenantId,
+        serviceProfileUpdate
+      );
+
+      if (typeof result === "object" && result && "error" in result) {
+        return jsonError(
+          result.error,
+          result.status,
+          result.code,
+          "details" in result ? result.details : undefined
+        );
+      }
+
+      serviceProfileUpdated = true;
+      serviceProfileId = result;
+      updatedTimestamp = new Date().toISOString();
+    }
+
     console.info("[WORKSPACE_UPDATED]", {
       event: "workspace_update_succeeded",
       tenant_id: tenantId,
       user_id: user.id,
       profile_updated: profileUpdated,
+      service_profile_updated: serviceProfileUpdated,
+      service_profile_id: serviceProfileId,
       fields_mutated: mutatedFields,
       timestamp: updatedTimestamp,
     });
 
     revalidatePath("/settings");
+    revalidatePath("/dashboard");
     revalidatePath("/dashboard/settings");
     revalidatePath("/dashboard/campaigns");
 
@@ -446,6 +721,8 @@ export async function handleWorkspaceUpdate(req: Request) {
         metadata: {
           tenantId,
           updatedAt: updatedTimestamp,
+          serviceProfileUpdated,
+          serviceProfileId,
         },
       },
       { headers: { "Cache-Control": "no-store" } }

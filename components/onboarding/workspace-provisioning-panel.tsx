@@ -137,6 +137,8 @@ export function WorkspaceProvisioningPanel({
       if (result.ok) {
         setSubmittedWebsiteUrl(websiteUrl.trim());
         setSubmittedAt(now);
+        router.replace("/dashboard");
+        return;
       } else {
         setSubmittedAt(null);
       }

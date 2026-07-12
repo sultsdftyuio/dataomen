@@ -147,6 +147,8 @@ function emptyProfile(websiteUrl: string | null = null): ServiceProfileView {
     hasProfile: false,
     status: null,
     extractionStatus: null,
+    embeddingStatus: null,
+    embeddingGeneratedAt: null,
     websiteUrl,
     updatedAt: null,
     fields: EMPTY_FIELDS,
@@ -162,6 +164,32 @@ export function isServiceProfileApproved(profile: ServiceProfileView) {
   return (
     profile.hasProfile &&
     normalizeServiceProfileStatus(profile.status) === "approved"
+  );
+}
+
+export function isServiceProfileWarmingUp(profile: ServiceProfileView) {
+  if (!profile.hasProfile) return true;
+
+  const extractionStatus = normalizeServiceProfileStatus(profile.extractionStatus);
+  const embeddingStatus = normalizeServiceProfileStatus(profile.embeddingStatus);
+
+  if (
+    extractionStatus &&
+    !["completed", "manual_entry", "manual_refined"].includes(extractionStatus)
+  ) {
+    return !["failed", "error"].includes(extractionStatus);
+  }
+
+  if (["failed", "error"].includes(embeddingStatus ?? "")) {
+    return false;
+  }
+
+  if (!profile.embeddingGeneratedAt && embeddingStatus !== "completed") {
+    return true;
+  }
+
+  return ["queued", "pending", "processing", "generating"].includes(
+    embeddingStatus ?? "",
   );
 }
 
@@ -230,6 +258,13 @@ export async function fetchServiceProfile(
     status: readString(sources, ["status", "review_status"]) ?? null,
     extractionStatus:
       readString(sources, ["extraction_status", "crawl_status"]) ?? null,
+    embeddingStatus:
+      readString(sources, ["embedding_status", "profile_embedding_status"]) ?? null,
+    embeddingGeneratedAt:
+      readString(sources, [
+        "profile_embedding_generated_at",
+        "embedding_generated_at",
+      ]) ?? null,
     websiteUrl:
       readString(sources, ["website_url", "url", "websiteUrl"]) ?? websiteUrl,
     updatedAt:

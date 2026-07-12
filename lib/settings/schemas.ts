@@ -146,6 +146,27 @@ export type WorkspaceSettingsInput = z.infer<
   typeof WorkspaceSettingsSchema
 >;
 
+const serviceProfileListField = z
+  .array(z.preprocess(trimString, z.string().min(1)))
+  .default([]);
+
+export const ServiceProfileSettingsSchema = z
+  .object({
+    target_audience: serviceProfileListField,
+    core_problem: z.preprocess(trimString, z.string().default("")),
+    unique_value_prop: z.preprocess(trimString, z.string().default("")),
+    use_cases: serviceProfileListField,
+    pain_points: serviceProfileListField,
+    buying_triggers: serviceProfileListField,
+    negative_keywords: serviceProfileListField,
+    excluded_audiences: serviceProfileListField,
+  })
+  .strict();
+
+export type ServiceProfileSettingsInput = z.infer<
+  typeof ServiceProfileSettingsSchema
+>;
+
 // ---------------------------------------------------------------------------
 // Notification Settings Schema
 // ---------------------------------------------------------------------------

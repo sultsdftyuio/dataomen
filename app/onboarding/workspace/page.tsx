@@ -2,12 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { WorkspaceProvisioningPanel } from "@/components/onboarding/workspace-provisioning-panel";
-import {
-  fetchLatestCrawlJob,
-  fetchServiceProfile,
-  fetchTenantWebsiteUrl,
-  isServiceProfileApproved,
-} from "@/app/(dashboard)/dashboard/data";
+import { fetchTenantWebsiteUrl } from "@/app/(dashboard)/dashboard/data";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const dynamic = "force-dynamic";
@@ -37,20 +32,10 @@ export default async function WorkspaceOnboardingPage() {
 
   const { supabase, tenantId } = tenantResult.context;
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
-  const [serviceProfile, crawlJob] = await Promise.all([
-    fetchServiceProfile(supabase, tenantId, websiteUrl),
-    fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
-  ]);
 
-  if (websiteUrl && isServiceProfileApproved(serviceProfile)) {
+  if (websiteUrl) {
     redirect("/dashboard");
   }
 
-  return (
-    <WorkspaceProvisioningPanel
-      initialWebsiteUrl={websiteUrl}
-      crawlJob={crawlJob}
-      serviceProfile={serviceProfile}
-    />
-  );
+  return <WorkspaceProvisioningPanel initialWebsiteUrl={websiteUrl} />;
 }

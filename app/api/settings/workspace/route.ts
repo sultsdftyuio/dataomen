@@ -12,6 +12,8 @@ type WorkspaceUpdateResponse = {
   success?: boolean;
   metadata?: {
     tenantId?: unknown;
+    serviceProfileUpdated?: unknown;
+    serviceProfileId?: unknown;
   };
 };
 
@@ -48,7 +50,16 @@ async function readTriggerResponse(response: Response) {
         ? payload.metadata.tenantId
         : null;
 
-    return payload.success && tenantId ? { tenantId } : null;
+    const serviceProfileUpdated =
+      payload.metadata?.serviceProfileUpdated === true;
+    const serviceProfileId =
+      typeof payload.metadata?.serviceProfileId === "string"
+        ? payload.metadata.serviceProfileId
+        : null;
+
+    return payload.success && tenantId
+      ? { tenantId, serviceProfileUpdated, serviceProfileId }
+      : null;
   } catch {
     return null;
   }
@@ -123,6 +134,88 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
   }
 }
 
+function embeddingTriggerEndpoint() {
+  const explicit = process.env.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL?.trim();
+  if (explicit) return explicit;
+
+  const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
+  return internalApiUrl
+    ? `${internalApiUrl}/api/service-profile/embed/trigger`
+    : null;
+}
+
+async function postEmbeddingTrigger(
+  tenantId: string,
+  serviceProfileId: string | null,
+) {
+  const endpoint = embeddingTriggerEndpoint();
+  if (!endpoint) {
+    console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_SKIPPED]", {
+      event: "workspace_profile_embedding_trigger_not_configured",
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return;
+  }
+
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  if (!workerSecret) {
+    console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_SKIPPED]", {
+      event: "workspace_profile_embedding_trigger_secret_missing",
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${workerSecret}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+      body: JSON.stringify({
+        tenant_id: tenantId,
+        service_profile_id: serviceProfileId,
+        source: "settings_service_profile_update",
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
+        event: "workspace_profile_embedding_trigger_failed",
+        tenant_id: tenantId,
+        service_profile_id: serviceProfileId,
+        status: response.status,
+        body: body.slice(0, 500),
+      });
+      return;
+    }
+
+    console.info("[WORKSPACE_PROFILE_EMBEDDING_TRIGGERED]", {
+      event: "workspace_profile_embedding_triggered",
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+    });
+  } catch (error) {
+    console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
+      event: "workspace_profile_embedding_trigger_unavailable",
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+      error,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function handleWorkspaceUpdateWithCrawler(request: Request) {
   const triggerRequestPromise = readTriggerRequest(request.clone());
   const response = await handleWorkspaceUpdate(request);
@@ -134,6 +227,15 @@ async function handleWorkspaceUpdateWithCrawler(request: Request) {
   if (triggerRequest && triggerResponse) {
     after(async () => {
       await postCrawlTrigger(triggerResponse.tenantId, triggerRequest.websiteUrl);
+    });
+  }
+
+  if (triggerResponse?.serviceProfileUpdated) {
+    after(async () => {
+      await postEmbeddingTrigger(
+        triggerResponse.tenantId,
+        triggerResponse.serviceProfileId,
+      );
     });
   }
 

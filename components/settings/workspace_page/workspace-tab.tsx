@@ -9,8 +9,10 @@ import WorkspaceBillingCard, { WorkspaceBillingCardProps } from "./workspace-bil
 import WorkspaceBrainGenerator, { type WorkspaceBrainProfile } from "./workspace-brain-generator";
 import WorkspaceSettingsForm from "./workspace-settings-form";
 import WorkspaceSettingsPreview from "./workspace-settings-preview";
+import { ServiceProfileSettings } from "./service-profile-settings";
 import { C } from "@/lib/tokens";
 import { WorkspaceSettingsSchema } from "@/lib/settings/schemas";
+import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
 
 interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
   initialData?: {
@@ -21,6 +23,7 @@ interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
     websiteUrl: string;
   };
   billingTestControlsEnabled?: boolean;
+  serviceProfile?: ServiceProfileView | null;
 }
 
 type WorkspaceUpdateResponse = {
@@ -78,6 +81,7 @@ export default function CompactWorkspaceSettings({
   },
   planData,
   billingTestControlsEnabled = false,
+  serviceProfile = null,
 }: WorkspaceSettingsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -293,6 +297,13 @@ export default function CompactWorkspaceSettings({
           {billingTestControlsEnabled && (
             <BillingTestSwitcher currentStatus={planData?.planStatus} />
           )}
+
+          {serviceProfile ? (
+            <ServiceProfileSettings
+              serviceProfile={serviceProfile}
+              websiteUrl={websiteUrl}
+            />
+          ) : null}
 
           {/* Submit Action Bar */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>

@@ -31,6 +31,7 @@ type ProspectDashboardClientProps = {
   serviceProfile: ServiceProfileView;
   leads: QualifiedLeadView[];
   verifierThreshold: number;
+  isWarmingUp: boolean;
 };
 
 function formatScore(score: number) {
@@ -103,10 +104,10 @@ function WarmUpState() {
           color: C.blue,
         }}
       >
-        Warm-up
+        Scanning
       </Badge>
       <h3 className="mt-3 text-base font-semibold" style={{ color: C.navy }}>
-        Scanning public streams for your first verified matches...
+        Warm-up: Scanning public streams for your first verified matches...
       </h3>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
         Qualified prospects will appear here after embeddings, matchers, and verifiers
@@ -120,6 +121,7 @@ export default function ProspectDashboardClient({
   serviceProfile,
   leads,
   verifierThreshold,
+  isWarmingUp,
 }: ProspectDashboardClientProps) {
   const [feedbackMessages, setFeedbackMessages] = useState<Record<string, string>>({});
   const [pendingFeedbackLeadId, setPendingFeedbackLeadId] = useState<string | null>(null);
@@ -203,7 +205,7 @@ export default function ProspectDashboardClient({
           </Badge>
         </div>
 
-        {leads.length === 0 ? (
+        {isWarmingUp || leads.length === 0 ? (
           <WarmUpState />
         ) : (
           <div className="grid gap-4">

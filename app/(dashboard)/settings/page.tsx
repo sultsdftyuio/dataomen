@@ -8,6 +8,11 @@ import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
 import { fetchTenantApiKeySummary, fetchTenantSettingsRow } from "@/lib/settings/server";
 import SettingsClient from "./settings-client";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
+import {
+  fetchServiceProfile,
+  fetchTenantWebsiteUrl,
+} from "@/app/(dashboard)/dashboard/data";
+import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -76,6 +81,7 @@ export default async function SettingsPage({
     priceText: "$29/month after the 3-day trial",
     isProTier: false,
   };
+  let serviceProfile: ServiceProfileView | null = null;
 
   if (!("response" in tenantResult)) {
     const { supabase: tenantSupabase, tenantId } = tenantResult.context;
@@ -109,10 +115,11 @@ export default async function SettingsPage({
       }
     }
     
-    const [settingsResult, apiKeyResult, entitlements] = await Promise.all([
+    const [settingsResult, apiKeyResult, entitlements, websiteUrl] = await Promise.all([
       fetchTenantSettingsRow(tenantSupabase, tenantId),
       fetchTenantApiKeySummary(tenantSupabase, tenantId),
       getWorkspaceEntitlements(tenantSupabase, tenantId),
+      fetchTenantWebsiteUrl(tenantSupabase, tenantId),
     ]);
 
     const { data, error } = settingsResult;
@@ -126,6 +133,12 @@ export default async function SettingsPage({
       }
       settings = buildSettingsSnapshot(data as any, apiKeySummary);
     }
+
+    serviceProfile = await fetchServiceProfile(
+      tenantSupabase,
+      tenantId,
+      websiteUrl ?? settings.workspace.websiteUrl,
+    );
 
     const subscriptionStatus = (entitlements.subscriptionStatus ?? "free") as BillingPlanStatus;
     const planTier = entitlements.planTier.toLowerCase();
@@ -167,6 +180,7 @@ export default async function SettingsPage({
       isRecoveryMode={isRecoveryMode} 
       planData={billingPlanData}
       billingTestControlsEnabled={showBillingTestControls}
+      serviceProfile={serviceProfile}
     />
   );
 }
