@@ -22,6 +22,7 @@ interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
     supportEmail: string;
     websiteUrl: string;
   };
+  tenantId?: string | null;
   billingTestControlsEnabled?: boolean;
   serviceProfile?: ServiceProfileView | null;
 }
@@ -79,6 +80,7 @@ export default function CompactWorkspaceSettings({
     supportEmail: "",
     websiteUrl: "",
   },
+  tenantId = null,
   planData,
   billingTestControlsEnabled = false,
   serviceProfile = null,
@@ -286,6 +288,7 @@ export default function CompactWorkspaceSettings({
             handleInputChange={handleInputChange}
           />
           <WorkspaceBrainGenerator
+            tenantId={tenantId}
             companyName={companyName}
             websiteUrl={websiteUrl}
             isPending={isPending}

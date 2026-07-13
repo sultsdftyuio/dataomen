@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ACTOR_MODULES = (
     "api.services.crawling",
+    "api.services.profile_extraction",
     "api.services.embeddings",
     "api.services.ingestion_service",
 )

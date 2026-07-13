@@ -199,25 +199,14 @@ class WorkspaceBrainGenerateRequest(BaseModel):
         return self.website_url or self.url or ""
 
 
-class WorkspaceBrainProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
-
-    company_name: str = Field(min_length=1)
-    one_liner: str = Field(min_length=1)
-    target_audience: list[str] = Field(default_factory=list)
-    core_problem_solved: str = Field(min_length=1)
-    key_value_propositions: list[str] = Field(default_factory=list)
-    ideal_customer_pain_points: list[str] = Field(default_factory=list)
-    negative_keywords: list[str] = Field(default_factory=list)
-
-
 class WorkspaceBrainGenerateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    status: Literal["completed"] = Field(default="completed")
+    status: Literal["queued"] = Field(default="queued")
     tenant_id: str
     website_url: str
-    profile: WorkspaceBrainProfile
+    message_id: str
+    idempotency_key: str | None = None
 
 
 app = FastAPI(
@@ -380,113 +369,56 @@ def health_check() -> HealthResponse:
 @app.post(
     "/api/settings/workspace/brain/generate",
     response_model=WorkspaceBrainGenerateResponse,
-    status_code=status.HTTP_200_OK,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def generate_workspace_brain(
     payload: WorkspaceBrainGenerateRequest,
     _: Annotated[None, Depends(verify_internal_request)],
 ) -> WorkspaceBrainGenerateResponse:
     """
-    Generate a review-only workspace brain draft.
-
-    This endpoint is internal-only and does not persist the generated profile.
-    The settings UI must explicitly save the reviewed result.
+    Accept a trusted frontend handoff and enqueue workspace brain generation.
+    Firecrawl and extraction must run only inside the Dramatiq worker.
     """
-    from api.services.crawling import generate_workspace_brain_profile
+    from api.services.profile_extraction import enqueue_workspace_brain_generation_job
 
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
 
     try:
-        profile = generate_workspace_brain_profile(
-            payload.tenant_id,
-            payload.resolved_website_url,
+        message_id = enqueue_workspace_brain_generation_job(
+            tenant_id=payload.tenant_id,
+            website_url=payload.resolved_website_url,
             idempotency_key=payload.idempotency_key,
         )
-    except ValueError as exc:
-        logger.warning(
-            "workspace_brain_generation_rejected tenant_id=%s requested_by=%s website_url=%s source=%s rejection_reason=%s error_type=%s error=%s",
-            payload.tenant_id,
-            payload.requested_by,
-            payload.resolved_website_url,
-            payload.source,
-            "invalid_request",
-            exc.__class__.__name__,
-            exc,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid workspace brain generation request.",
-        ) from exc
-    except TimeoutError as exc:
-        logger.warning(
-            "workspace_brain_generation_timeout tenant_id=%s requested_by=%s website_url=%s source=%s error_type=%s error=%s",
-            payload.tenant_id,
-            payload.requested_by,
-            payload.resolved_website_url,
-            payload.source,
-            exc.__class__.__name__,
-            exc,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Workspace brain generation timed out.",
-        ) from exc
     except RuntimeError as exc:
-        message = str(exc).lower()
-        quota_exceeded = "quota" in message and "exceeded" in message
-        logger.warning(
-            "workspace_brain_generation_failed tenant_id=%s requested_by=%s website_url=%s source=%s failure_reason=%s error_type=%s error=%s",
-            payload.tenant_id,
-            payload.requested_by,
-            payload.resolved_website_url,
-            payload.source,
-            "quota_exceeded" if quota_exceeded else "generation_dependency_unavailable",
-            exc.__class__.__name__,
-            exc,
-        )
-        raise HTTPException(
-            status_code=(
-                status.HTTP_429_TOO_MANY_REQUESTS
-                if quota_exceeded
-                else status.HTTP_503_SERVICE_UNAVAILABLE
-            ),
-            detail=(
-                "Workspace brain generation quota exceeded."
-                if quota_exceeded
-                else "Workspace brain generation dependency is unavailable."
-            ),
-        ) from exc
-    except Exception as exc:
         logger.exception(
-            "workspace_brain_generation_failed tenant_id=%s requested_by=%s website_url=%s source=%s failure_reason=%s error_type=%s error=%s",
+            "workspace_brain_generation_enqueue_failed tenant_id=%s requested_by=%s website_url=%s source=%s error_type=%s error=%s",
             payload.tenant_id,
             payload.requested_by,
             payload.resolved_website_url,
             payload.source,
-            "unhandled_exception",
             exc.__class__.__name__,
             exc,
         )
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Workspace brain generation failed.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Workspace brain generation queue is unavailable.",
         ) from exc
 
     logger.info(
-        "workspace_brain_generation_accepted tenant_id=%s requested_by=%s website_url=%s source=%s idempotency_key_present=%s target_audience_count=%s pain_point_count=%s",
+        "workspace_brain_generation_queued tenant_id=%s requested_by=%s website_url=%s source=%s idempotency_key_present=%s message_id=%s",
         payload.tenant_id,
         payload.requested_by,
         payload.resolved_website_url,
         payload.source,
         bool(payload.idempotency_key),
-        len(profile.get("target_audience", [])),
-        len(profile.get("ideal_customer_pain_points", [])),
+        message_id,
     )
 
     return WorkspaceBrainGenerateResponse(
         tenant_id=payload.tenant_id,
         website_url=payload.resolved_website_url,
-        profile=WorkspaceBrainProfile.model_validate(profile),
+        message_id=message_id,
+        idempotency_key=payload.idempotency_key,
     )
 
 

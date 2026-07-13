@@ -3,106 +3,53 @@
 import { createHash } from "crypto";
 import { z } from "zod";
 
-import { resolveTenantContext, type TenantContext } from "@/utils/supabase/tenant";
+import { createClient } from "@/utils/supabase/server";
 
-type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
-
-type WorkspaceBrainActionResult =
-  | { ok: true; data: JsonValue }
+type GenerateWorkspaceBrainResult =
+  | {
+      ok: true;
+      status: "pending";
+      tenantId: string;
+      websiteUrl: string;
+      idempotencyKey: string;
+      messageId: string | null;
+    }
   | { ok: false; code: string; message: string };
 
-const WorkspaceBrainRequestSchema = z.object({
-  url: z.string().trim().min(1).optional(),
-  websiteUrl: z.string().trim().min(1).optional(),
+type WorkerQueuePayload = {
+  status?: unknown;
+  tenant_id?: unknown;
+  website_url?: unknown;
+  message_id?: unknown;
+  idempotency_key?: unknown;
+  message?: unknown;
+  error?: unknown;
+  detail?: unknown;
+};
+
+const GenerateWorkspaceBrainSchema = z.object({
+  tenantId: z.string().trim().uuid(),
+  websiteUrl: z.string().trim().min(1),
 });
 
-function actionError(code: string, message: string): WorkspaceBrainActionResult {
+function actionError(
+  code: string,
+  message: string,
+): GenerateWorkspaceBrainResult {
   return { ok: false, code, message };
 }
 
-async function requireTenant(): Promise<TenantContext | WorkspaceBrainActionResult> {
-  const tenantResult = await resolveTenantContext();
-
-  if (!("response" in tenantResult)) {
-    return tenantResult.context;
-  }
-
-  if (tenantResult.response.status === 401) {
-    return actionError(
-      "unauthorized",
-      "Sign in again before generating the Arcli Brain.",
-    );
-  }
-
-  if (tenantResult.response.status === 202) {
-    return actionError(
-      "workspace_setup_pending",
-      "Workspace setup is still finishing.",
-    );
-  }
-
-  return actionError(
-    "tenant_resolution_failed",
-    "Workspace access could not be verified.",
-  );
-}
-
-async function assertTenantMembership(
-  context: TenantContext,
-): Promise<WorkspaceBrainActionResult | null> {
-  const { data, error } = await context.supabase
-    .from("tenant_users")
-    .select("tenant_id")
-    .eq("tenant_id", context.tenantId)
-    .eq("user_id", context.userId)
-    .maybeSingle<{ tenant_id: string | null }>();
-
-  if (!error && data?.tenant_id === context.tenantId) {
-    return null;
-  }
-
-  console.warn("[WorkspaceBrain] generation rejected by tenant authorization", {
-    tenant_id: context.tenantId,
-    user_id: context.userId,
-    reason: error ? "tenant_membership_lookup_failed" : "tenant_membership_missing",
-    error,
-  });
-
-  return actionError(
-    "tenant_authorization_failed",
-    "Workspace access could not be verified.",
-  );
-}
-
 function normalizeWebsiteUrl(value: string) {
-  const parsed = new URL(value);
+  const trimmed = value.trim();
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const parsed = new URL(candidate);
 
   if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname) {
-    throw new Error("Enter a valid website URL, including https://.");
+    throw new Error("Enter a valid website URL.");
   }
 
   parsed.hash = "";
   return parsed.toString();
-}
-
-function requestedWebsiteUrl(input: unknown) {
-  const parsed = WorkspaceBrainRequestSchema.safeParse(input);
-  if (!parsed.success) {
-    throw new Error("A valid company website URL is required.");
-  }
-
-  const websiteUrl = parsed.data.url ?? parsed.data.websiteUrl;
-  if (!websiteUrl) {
-    throw new Error("A valid company website URL is required.");
-  }
-
-  return normalizeWebsiteUrl(websiteUrl);
 }
 
 function generationEndpoint() {
@@ -119,7 +66,6 @@ function generationEndpoint() {
   return joinBackendPath(
     internalApiUrl,
     "/api/settings/workspace/brain/generate",
-    
   );
 }
 
@@ -148,65 +94,138 @@ function generationIdempotencyKey(tenantId: string, websiteUrl: string) {
     .digest("hex");
 }
 
-async function readPayload(response: Response): Promise<JsonValue> {
+async function readPayload(response: Response): Promise<WorkerQueuePayload> {
   const text = await response.text();
   if (!text) {
     return {};
   }
 
   try {
-    return JSON.parse(text) as JsonValue;
+    return JSON.parse(text) as WorkerQueuePayload;
   } catch {
     return { error: text };
   }
 }
 
-function payloadMessage(payload: JsonValue) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
-  }
-
-  const message =
-    "message" in payload
-      ? payload.message
-      : "error" in payload
-        ? payload.error
-        : "detail" in payload
-          ? payload.detail
-          : null;
-
+function payloadMessage(payload: WorkerQueuePayload) {
+  const message = payload.message ?? payload.error ?? payload.detail;
   return typeof message === "string" ? message : null;
 }
 
-export async function generateWorkspaceBrain(
-  input: unknown,
-): Promise<WorkspaceBrainActionResult> {
-  const context = await requireTenant();
-  if ("ok" in context) return context;
+async function authorizeTenantAccess(tenantId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  const authorizationError = await assertTenantMembership(context);
-  if (authorizationError) {
-    return authorizationError;
+  if (userError || !user) {
+    return {
+      ok: false as const,
+      result: actionError(
+        "unauthorized",
+        "Sign in again before generating the Arcli Brain.",
+      ),
+    };
   }
 
-  let websiteUrl: string;
+  const { data: membership, error: membershipError } = await supabase
+    .from("tenant_users")
+    .select("tenant_id,user_id,role")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", user.id)
+    .maybeSingle<{ tenant_id: string | null; user_id: string | null; role: string | null }>();
+
+  if (
+    membershipError ||
+    membership?.tenant_id !== tenantId ||
+    membership?.user_id !== user.id
+  ) {
+    console.warn("[WorkspaceBrain] tenant authorization failed", {
+      tenant_id: tenantId,
+      user_id: user.id,
+      reason: membershipError ? "tenant_membership_lookup_failed" : "tenant_membership_missing",
+      error: membershipError,
+    });
+
+    return {
+      ok: false as const,
+      result: actionError(
+        "tenant_authorization_failed",
+        "Workspace access could not be verified.",
+      ),
+    };
+  }
+
+  const { data: tenant, error: tenantError } = await supabase
+    .from("tenants")
+    .select("tenant_id,status")
+    .eq("tenant_id", tenantId)
+    .maybeSingle<{ tenant_id: string | null; status: string | null }>();
+
+  if (tenantError || tenant?.tenant_id !== tenantId) {
+    console.warn("[WorkspaceBrain] tenant status verification failed", {
+      tenant_id: tenantId,
+      user_id: user.id,
+      reason: tenantError ? "tenant_lookup_failed" : "tenant_missing",
+      error: tenantError,
+    });
+
+    return {
+      ok: false as const,
+      result: actionError(
+        "tenant_verification_failed",
+        "Workspace access could not be verified.",
+      ),
+    };
+  }
+
+  if (["deleted", "suspended"].includes((tenant.status ?? "").toLowerCase())) {
+    return {
+      ok: false as const,
+      result: actionError(
+        "tenant_not_operational",
+        "Workspace is not available for brain generation.",
+      ),
+    };
+  }
+
+  return { ok: true as const, userId: user.id };
+}
+
+export async function generateWorkspaceBrain(
+  tenantId: string,
+  websiteUrl: string,
+): Promise<GenerateWorkspaceBrainResult> {
+  const parsed = GenerateWorkspaceBrainSchema.safeParse({ tenantId, websiteUrl });
+  if (!parsed.success) {
+    return actionError(
+      "invalid_request",
+      "A valid workspace and company website URL are required.",
+    );
+  }
+
+  let normalizedWebsiteUrl: string;
   try {
-    websiteUrl = requestedWebsiteUrl(input);
+    normalizedWebsiteUrl = normalizeWebsiteUrl(parsed.data.websiteUrl);
   } catch (error) {
     return actionError(
       "invalid_website_url",
-      error instanceof Error
-        ? error.message
-        : "A valid company website URL is required.",
+      error instanceof Error ? error.message : "A valid company website URL is required.",
     );
+  }
+
+  const authorization = await authorizeTenantAccess(parsed.data.tenantId);
+  if (!authorization.ok) {
+    return authorization.result;
   }
 
   const endpoint = generationEndpoint();
   if (!endpoint) {
     console.warn("[WorkspaceBrain] generation endpoint not configured", {
-      tenant_id: context.tenantId,
-      user_id: context.userId,
-      website_url: websiteUrl,
+      tenant_id: parsed.data.tenantId,
+      user_id: authorization.userId,
+      website_url: normalizedWebsiteUrl,
     });
     return actionError(
       "workspace_brain_not_configured",
@@ -217,9 +236,9 @@ export async function generateWorkspaceBrain(
   const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
   if (!workerSecret) {
     console.warn("[WorkspaceBrain] generation credentials missing", {
-      tenant_id: context.tenantId,
-      user_id: context.userId,
-      website_url: websiteUrl,
+      tenant_id: parsed.data.tenantId,
+      user_id: authorization.userId,
+      website_url: normalizedWebsiteUrl,
     });
     return actionError(
       "workspace_brain_credentials_missing",
@@ -227,9 +246,12 @@ export async function generateWorkspaceBrain(
     );
   }
 
-  const idempotencyKey = generationIdempotencyKey(context.tenantId, websiteUrl);
+  const idempotencyKey = generationIdempotencyKey(
+    parsed.data.tenantId,
+    normalizedWebsiteUrl,
+  );
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120000);
+  const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
     const response = await fetch(endpoint, {
@@ -242,10 +264,9 @@ export async function generateWorkspaceBrain(
       cache: "no-store",
       signal: controller.signal,
       body: JSON.stringify({
-        tenant_id: context.tenantId,
-        url: websiteUrl,
-        website_url: websiteUrl,
-        requested_by: context.userId,
+        tenant_id: parsed.data.tenantId,
+        website_url: normalizedWebsiteUrl,
+        requested_by: authorization.userId,
         source: "workspace_settings_brain_generator",
         idempotency_key: idempotencyKey,
       }),
@@ -253,43 +274,50 @@ export async function generateWorkspaceBrain(
     const payload = await readPayload(response);
 
     if (!response.ok) {
-      console.warn("[WorkspaceBrain] generation worker rejected request", {
-        tenant_id: context.tenantId,
-        user_id: context.userId,
-        website_url: websiteUrl,
+      console.warn("[WorkspaceBrain] generation worker rejected enqueue request", {
+        tenant_id: parsed.data.tenantId,
+        user_id: authorization.userId,
+        website_url: normalizedWebsiteUrl,
         status: response.status,
         endpoint_path: endpointPath(endpoint),
-        reason:
-          payloadMessage(payload) ?? "workspace_brain_generation_worker_failed",
+        reason: payloadMessage(payload) ?? "workspace_brain_enqueue_failed",
       });
       return actionError(
-        "workspace_brain_failed",
-        payloadMessage(payload) ?? "Workspace brain generation failed.",
+        "workspace_brain_enqueue_failed",
+        payloadMessage(payload) ?? "Workspace brain generation could not be queued.",
       );
     }
 
-    console.info("[WorkspaceBrain] generation completed", {
-      tenant_id: context.tenantId,
-      user_id: context.userId,
-      website_url: websiteUrl,
+    console.info("[WorkspaceBrain] generation queued", {
+      tenant_id: parsed.data.tenantId,
+      user_id: authorization.userId,
+      website_url: normalizedWebsiteUrl,
+      message_id: typeof payload.message_id === "string" ? payload.message_id : null,
     });
 
-    return { ok: true, data: payload };
+    return {
+      ok: true,
+      status: "pending",
+      tenantId: parsed.data.tenantId,
+      websiteUrl: normalizedWebsiteUrl,
+      idempotencyKey,
+      messageId: typeof payload.message_id === "string" ? payload.message_id : null,
+    };
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === "AbortError";
-    console.warn("[WorkspaceBrain] generation service unavailable", {
-      tenant_id: context.tenantId,
-      user_id: context.userId,
-      website_url: websiteUrl,
+    console.warn("[WorkspaceBrain] generation queue unavailable", {
+      tenant_id: parsed.data.tenantId,
+      user_id: authorization.userId,
+      website_url: normalizedWebsiteUrl,
       endpoint_path: endpointPath(endpoint),
       reason: isTimeout ? "timeout" : "request_failed",
       error,
     });
     return actionError(
-      isTimeout ? "workspace_brain_timeout" : "workspace_brain_unavailable",
+      isTimeout ? "workspace_brain_queue_timeout" : "workspace_brain_queue_unavailable",
       isTimeout
-        ? "Workspace brain generation timed out."
-        : "Workspace brain generation service is unavailable.",
+        ? "Workspace brain generation timed out before it could be queued."
+        : "Workspace brain generation queue is unavailable.",
     );
   } finally {
     clearTimeout(timeout);

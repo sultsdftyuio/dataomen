@@ -46,6 +46,7 @@ interface SettingsClientProps {
   user: User;
   initialSettings: SettingsSnapshot;
   isRecoveryMode: boolean;
+  tenantId: string | null;
   planData?: WorkspaceBillingCardProps["planData"];
   billingTestControlsEnabled?: boolean;
   serviceProfile?: ServiceProfileView | null;
@@ -55,6 +56,7 @@ export default function SettingsClient({
   user, 
   initialSettings, 
   isRecoveryMode,
+  tenantId,
   planData,
   billingTestControlsEnabled = false,
   serviceProfile = null,
@@ -145,6 +147,7 @@ export default function SettingsClient({
           {activeTab === "workspace" && (
             <WorkspaceTab
               initialData={workspaceData}
+              tenantId={tenantId}
               planData={planData}
               billingTestControlsEnabled={billingTestControlsEnabled}
               serviceProfile={serviceProfile}

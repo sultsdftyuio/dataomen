@@ -1,7 +1,11 @@
+import hashlib
 import logging
 import os
+import time
 from typing import Any
 
+import dramatiq
+from dramatiq.brokers.redis import RedisBroker
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.services.cost_controls import TenantQuotaGuard, env_int
@@ -11,6 +15,10 @@ logger = logging.getLogger(__name__)
 PROFILE_EXTRACTION_QUOTA_COUNTER = "profile_extraction"
 PROFILE_EXTRACTION_QUOTA_DEFAULT_LIMIT = 100
 PROFILE_EXTRACTION_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
+DEFAULT_WORKSPACE_BRAIN_JOB_TIME_LIMIT_MS = 180_000
+DEFAULT_WORKSPACE_BRAIN_JOB_MIN_BACKOFF_MS = 15_000
+DEFAULT_WORKSPACE_BRAIN_JOB_MAX_BACKOFF_MS = 90_000
+DEFAULT_WORKSPACE_BRAIN_JOB_MAX_RETRIES = 2
 
 
 class ServiceProfileDraft(BaseModel):
@@ -238,3 +246,208 @@ not stated directly. Output exactly the requested schema.
             content[: self.MAX_MARKDOWN_CHARS]
             + "\n\n[Content clipped for profile extraction context window.]"
         )
+
+
+def _configure_dramatiq_broker() -> None:
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        return
+
+    current_broker = dramatiq.get_broker()
+    if isinstance(current_broker, RedisBroker):
+        return
+
+    dramatiq.set_broker(RedisBroker(url=redis_url))
+    logger.info(
+        "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
+        "redis",
+        True,
+    )
+
+
+def _require_redis_broker() -> None:
+    if not os.getenv("REDIS_URL", "").strip():
+        raise RuntimeError("REDIS_URL is required to enqueue workspace brain jobs.")
+
+    _configure_dramatiq_broker()
+
+
+def _workspace_brain_job_id(
+    tenant_id: str,
+    website_url: str,
+    idempotency_key: str | None,
+) -> str:
+    stable_key = idempotency_key or website_url
+    digest = hashlib.sha256(
+        f"workspace-brain:{tenant_id}:{stable_key}".encode("utf-8")
+    ).hexdigest()
+    return digest[:24]
+
+
+def enqueue_workspace_brain_generation_job(
+    *,
+    tenant_id: str,
+    website_url: str,
+    idempotency_key: str | None = None,
+) -> str:
+    """
+    Enqueue-only handoff for the Next.js Server Action.
+
+    The idempotency key is carried into the actor and used as the stable
+    generation identifier. The actor persists by tenant_id + service profile,
+    making retries and duplicate queue deliveries safe to replay.
+    """
+    _require_redis_broker()
+
+    from api.services.crawling import WebsiteCrawler
+
+    normalized_url = WebsiteCrawler._normalize_url(website_url)
+    generation_id = _workspace_brain_job_id(tenant_id, normalized_url, idempotency_key)
+    message = process_workspace_brain_generation_job.send(
+        tenant_id,
+        normalized_url,
+        generation_id,
+    )
+
+    logger.info(
+        "brain_generation_enqueued tenant_id=%s website_url=%s generation_id=%s message_id=%s",
+        tenant_id,
+        normalized_url,
+        generation_id,
+        message.message_id,
+    )
+    return message.message_id
+
+
+_configure_dramatiq_broker()
+
+
+@dramatiq.actor(
+    queue_name=os.getenv("ARCLI_WORKSPACE_BRAIN_QUEUE_NAME", "workspace-brain"),
+    max_retries=env_int(
+        "ARCLI_WORKSPACE_BRAIN_JOB_MAX_RETRIES",
+        DEFAULT_WORKSPACE_BRAIN_JOB_MAX_RETRIES,
+    ),
+    min_backoff=env_int(
+        "ARCLI_WORKSPACE_BRAIN_JOB_MIN_BACKOFF_MS",
+        DEFAULT_WORKSPACE_BRAIN_JOB_MIN_BACKOFF_MS,
+    ),
+    max_backoff=env_int(
+        "ARCLI_WORKSPACE_BRAIN_JOB_MAX_BACKOFF_MS",
+        DEFAULT_WORKSPACE_BRAIN_JOB_MAX_BACKOFF_MS,
+    ),
+    time_limit=env_int(
+        "ARCLI_WORKSPACE_BRAIN_JOB_TIME_LIMIT_MS",
+        DEFAULT_WORKSPACE_BRAIN_JOB_TIME_LIMIT_MS,
+    ),
+)
+def process_workspace_brain_generation_job(
+    tenant_id: str,
+    website_url: str,
+    idempotency_key: str | None = None,
+) -> None:
+    logger.info(
+        "brain_generation_started tenant_id=%s website_url=%s",
+        tenant_id,
+        website_url,
+    )
+    started_at = time.monotonic()
+
+    from api.services.crawling import (
+        WebsiteCrawler,
+        _database_engine,
+        _upsert_service_profile,
+        generate_workspace_brain_profile,
+    )
+
+    normalized_url = WebsiteCrawler._normalize_url(website_url)
+    service_profile_id: str | None = None
+
+    try:
+        profile = generate_workspace_brain_profile(
+            tenant_id,
+            normalized_url,
+            idempotency_key=idempotency_key,
+        )
+
+        with _database_engine().begin() as conn:
+            service_profile_id = _upsert_service_profile(
+                conn,
+                tenant_id=tenant_id,
+                website_url=normalized_url,
+                profile=profile,
+            )
+
+        if service_profile_id:
+            try:
+                from api.services.embeddings import enqueue_service_profile_embedding_job
+
+                embedding_message_id = enqueue_service_profile_embedding_job(
+                    tenant_id,
+                    service_profile_id,
+                )
+                logger.info(
+                    "brain_generation_embedding_enqueued tenant_id=%s website_url=%s service_profile_id=%s message_id=%s",
+                    tenant_id,
+                    normalized_url,
+                    service_profile_id,
+                    embedding_message_id,
+                )
+            except Exception as embedding_exc:
+                logger.exception(
+                    "brain_generation_embedding_enqueue_failed tenant_id=%s website_url=%s service_profile_id=%s error_type=%s error=%s",
+                    tenant_id,
+                    normalized_url,
+                    service_profile_id,
+                    embedding_exc.__class__.__name__,
+                    embedding_exc,
+                )
+
+        logger.info(
+            "brain_generation_completed tenant_id=%s website_url=%s service_profile_id=%s elapsed_ms=%s",
+            tenant_id,
+            normalized_url,
+            service_profile_id,
+            int((time.monotonic() - started_at) * 1000),
+        )
+    except ValueError as exc:
+        logger.warning(
+            "brain_generation_rejected tenant_id=%s website_url=%s rejection_reason=%s error_type=%s error=%s",
+            tenant_id,
+            website_url,
+            "invalid_request",
+            exc.__class__.__name__,
+            exc,
+        )
+    except RuntimeError as exc:
+        message = str(exc).lower()
+        if "quota" in message and "exceeded" in message:
+            logger.warning(
+                "brain_generation_skipped tenant_id=%s website_url=%s rejection_reason=%s error_type=%s error=%s",
+                tenant_id,
+                normalized_url,
+                "quota_exceeded",
+                exc.__class__.__name__,
+                exc,
+            )
+            return
+
+        logger.exception(
+            "brain_generation_failed tenant_id=%s website_url=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            normalized_url,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    except Exception as exc:
+        logger.exception(
+            "brain_generation_failed tenant_id=%s website_url=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            normalized_url,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise

@@ -82,19 +82,22 @@ export default async function SettingsPage({
     isProTier: false,
   };
   let serviceProfile: ServiceProfileView | null = null;
+  let tenantId: string | null = null;
 
   if (!("response" in tenantResult)) {
-    const { supabase: tenantSupabase, tenantId } = tenantResult.context;
+    const { supabase: tenantSupabase, tenantId: resolvedTenantId } =
+      tenantResult.context;
+    tenantId = resolvedTenantId;
 
     if (billingReturnState === "trial_started") {
       let shouldRefreshSettings = false;
 
       try {
-        const result = await verifyAndSyncSubscriptionStatus(tenantId);
+        const result = await verifyAndSyncSubscriptionStatus(resolvedTenantId);
 
         console.info("[Settings] Billing return verification completed", {
           event: "settings_billing_return_verified",
-          tenant_id: tenantId,
+          tenant_id: resolvedTenantId,
           sync_status: result.status,
           lookup_strategy: result.lookupStrategy,
         });
@@ -105,7 +108,7 @@ export default async function SettingsPage({
       } catch (error) {
         console.error("[Settings] Billing return verification failed", {
           event: "settings_billing_return_verification_failed",
-          tenant_id: tenantId,
+          tenant_id: resolvedTenantId,
           error,
         });
       }
@@ -116,10 +119,10 @@ export default async function SettingsPage({
     }
     
     const [settingsResult, apiKeyResult, entitlements, websiteUrl] = await Promise.all([
-      fetchTenantSettingsRow(tenantSupabase, tenantId),
-      fetchTenantApiKeySummary(tenantSupabase, tenantId),
-      getWorkspaceEntitlements(tenantSupabase, tenantId),
-      fetchTenantWebsiteUrl(tenantSupabase, tenantId),
+      fetchTenantSettingsRow(tenantSupabase, resolvedTenantId),
+      fetchTenantApiKeySummary(tenantSupabase, resolvedTenantId),
+      getWorkspaceEntitlements(tenantSupabase, resolvedTenantId),
+      fetchTenantWebsiteUrl(tenantSupabase, resolvedTenantId),
     ]);
 
     const { data, error } = settingsResult;
@@ -136,7 +139,7 @@ export default async function SettingsPage({
 
     serviceProfile = await fetchServiceProfile(
       tenantSupabase,
-      tenantId,
+      resolvedTenantId,
       websiteUrl ?? settings.workspace.websiteUrl,
     );
 
@@ -181,6 +184,7 @@ export default async function SettingsPage({
       planData={billingPlanData}
       billingTestControlsEnabled={showBillingTestControls}
       serviceProfile={serviceProfile}
+      tenantId={tenantId}
     />
   );
 }
