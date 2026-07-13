@@ -27,6 +27,11 @@ type WorkerQueuePayload = {
   detail?: unknown;
 };
 
+type GenerationQueueTarget = {
+  endpoint: string;
+  kind: "workspace_brain" | "crawl_trigger";
+};
+
 const GenerateWorkspaceBrainSchema = z.object({
   tenantId: z.string().trim().uuid(),
   websiteUrl: z.string().trim().min(1),
@@ -52,10 +57,15 @@ function normalizeWebsiteUrl(value: string) {
   return parsed.toString();
 }
 
-function generationEndpoint() {
-  const explicitEndpoint = process.env.WORKSPACE_BRAIN_GENERATE_URL?.trim();
-  if (explicitEndpoint) {
-    return explicitEndpoint;
+function crawlTriggerTarget(): GenerationQueueTarget | null {
+  const explicitCrawlerEndpoint = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
+  if (explicitCrawlerEndpoint) {
+    return { endpoint: explicitCrawlerEndpoint, kind: "crawl_trigger" };
+  }
+
+  const legacyCrawlerEndpoint = process.env.ARCLI_CRAWLER_INGEST_URL?.trim();
+  if (legacyCrawlerEndpoint) {
+    return { endpoint: legacyCrawlerEndpoint, kind: "crawl_trigger" };
   }
 
   const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
@@ -63,10 +73,28 @@ function generationEndpoint() {
     return null;
   }
 
-  return joinBackendPath(
-    internalApiUrl,
-    "/api/settings/workspace/brain/generate",
-  );
+  return {
+    endpoint: joinBackendPath(internalApiUrl, "/api/crawl/trigger"),
+    kind: "crawl_trigger",
+  };
+}
+
+function generationQueueTargets(): GenerationQueueTarget[] {
+  const targets: GenerationQueueTarget[] = [];
+  const explicitEndpoint = process.env.WORKSPACE_BRAIN_GENERATE_URL?.trim();
+  if (explicitEndpoint) {
+    targets.push({ endpoint: explicitEndpoint, kind: "workspace_brain" });
+  }
+
+  const crawlTarget = crawlTriggerTarget();
+  if (
+    crawlTarget &&
+    !targets.some((target) => target.endpoint === crawlTarget.endpoint)
+  ) {
+    targets.push(crawlTarget);
+  }
+
+  return targets;
 }
 
 function joinBackendPath(baseUrl: string, path: string) {
@@ -110,6 +138,37 @@ async function readPayload(response: Response): Promise<WorkerQueuePayload> {
 function payloadMessage(payload: WorkerQueuePayload) {
   const message = payload.message ?? payload.error ?? payload.detail;
   return typeof message === "string" ? message : null;
+}
+
+function generationRequestBody(
+  target: GenerationQueueTarget,
+  {
+    tenantId,
+    websiteUrl,
+    userId,
+    idempotencyKey,
+  }: {
+    tenantId: string;
+    websiteUrl: string;
+    userId: string;
+    idempotencyKey: string;
+  },
+) {
+  const basePayload = {
+    tenant_id: tenantId,
+    website_url: websiteUrl,
+    requested_by: userId,
+    source: "workspace_settings_brain_generator",
+  };
+
+  if (target.kind === "workspace_brain") {
+    return {
+      ...basePayload,
+      idempotency_key: idempotencyKey,
+    };
+  }
+
+  return basePayload;
 }
 
 async function authorizeTenantAccess(tenantId: string) {
@@ -220,8 +279,8 @@ export async function generateWorkspaceBrain(
     return authorization.result;
   }
 
-  const endpoint = generationEndpoint();
-  if (!endpoint) {
+  const targets = generationQueueTargets();
+  if (targets.length === 0) {
     console.warn("[WorkspaceBrain] generation endpoint not configured", {
       tenant_id: parsed.data.tenantId,
       user_id: authorization.userId,
@@ -254,32 +313,78 @@ export async function generateWorkspaceBrain(
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${workerSecret}`,
-        "Idempotency-Key": idempotencyKey,
-      },
-      cache: "no-store",
-      signal: controller.signal,
-      body: JSON.stringify({
-        tenant_id: parsed.data.tenantId,
-        website_url: normalizedWebsiteUrl,
-        requested_by: authorization.userId,
-        source: "workspace_settings_brain_generator",
-        idempotency_key: idempotencyKey,
-      }),
-    });
-    const payload = await readPayload(response);
+    let lastFailure:
+      | { response: Response; payload: WorkerQueuePayload; target: GenerationQueueTarget }
+      | null = null;
 
-    if (!response.ok) {
+    for (const target of targets) {
+      const response = await fetch(target.endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${workerSecret}`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        cache: "no-store",
+        signal: controller.signal,
+        body: JSON.stringify(
+          generationRequestBody(target, {
+            tenantId: parsed.data.tenantId,
+            websiteUrl: normalizedWebsiteUrl,
+            userId: authorization.userId,
+            idempotencyKey,
+          }),
+        ),
+      });
+      const payload = await readPayload(response);
+
+      if (!response.ok && [404, 405].includes(response.status)) {
+        lastFailure = { response, payload, target };
+        console.warn("[WorkspaceBrain] generation queue target unavailable", {
+          tenant_id: parsed.data.tenantId,
+          user_id: authorization.userId,
+          website_url: normalizedWebsiteUrl,
+          status: response.status,
+          endpoint_path: endpointPath(target.endpoint),
+          queue_target: target.kind,
+          fallback_available: targets.length > 1,
+          reason: payloadMessage(payload) ?? "workspace_brain_enqueue_target_missing",
+        });
+        continue;
+      }
+
+      if (!response.ok) {
+        lastFailure = { response, payload, target };
+        break;
+      }
+
+      console.info("[WorkspaceBrain] generation queued", {
+        tenant_id: parsed.data.tenantId,
+        user_id: authorization.userId,
+        website_url: normalizedWebsiteUrl,
+        queue_target: target.kind,
+        message_id: typeof payload.message_id === "string" ? payload.message_id : null,
+      });
+
+      return {
+        ok: true,
+        status: "pending",
+        tenantId: parsed.data.tenantId,
+        websiteUrl: normalizedWebsiteUrl,
+        idempotencyKey,
+        messageId: typeof payload.message_id === "string" ? payload.message_id : null,
+      };
+    }
+
+    if (lastFailure) {
+      const { response, payload, target } = lastFailure;
       console.warn("[WorkspaceBrain] generation worker rejected enqueue request", {
         tenant_id: parsed.data.tenantId,
         user_id: authorization.userId,
         website_url: normalizedWebsiteUrl,
         status: response.status,
-        endpoint_path: endpointPath(endpoint),
+        endpoint_path: endpointPath(target.endpoint),
+        queue_target: target.kind,
         reason: payloadMessage(payload) ?? "workspace_brain_enqueue_failed",
       });
       return actionError(
@@ -288,28 +393,21 @@ export async function generateWorkspaceBrain(
       );
     }
 
-    console.info("[WorkspaceBrain] generation queued", {
-      tenant_id: parsed.data.tenantId,
-      user_id: authorization.userId,
-      website_url: normalizedWebsiteUrl,
-      message_id: typeof payload.message_id === "string" ? payload.message_id : null,
-    });
-
-    return {
-      ok: true,
-      status: "pending",
-      tenantId: parsed.data.tenantId,
-      websiteUrl: normalizedWebsiteUrl,
-      idempotencyKey,
-      messageId: typeof payload.message_id === "string" ? payload.message_id : null,
-    };
+    return actionError(
+      "workspace_brain_enqueue_failed",
+      "Workspace brain generation could not be queued.",
+    );
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === "AbortError";
+    const primaryTarget = targets[0];
     console.warn("[WorkspaceBrain] generation queue unavailable", {
       tenant_id: parsed.data.tenantId,
       user_id: authorization.userId,
       website_url: normalizedWebsiteUrl,
-      endpoint_path: endpointPath(endpoint),
+      endpoint_path: primaryTarget
+        ? endpointPath(primaryTarget.endpoint)
+        : "unconfigured_endpoint",
+      queue_target: primaryTarget?.kind ?? "unconfigured",
       reason: isTimeout ? "timeout" : "request_failed",
       error,
     });
