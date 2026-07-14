@@ -68,15 +68,17 @@ function crawlTriggerTarget(): GenerationQueueTarget | null {
     return { endpoint: legacyCrawlerEndpoint, kind: "crawl_trigger" };
   }
 
-  const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
-  if (!internalApiUrl) {
-    return null;
+  const workerApiUrl =
+    process.env.ARCLI_WORKER_API_URL?.trim().replace(/\/$/, "") ||
+    process.env.PYTHON_BACKEND_URL?.trim().replace(/\/$/, "");
+  if (workerApiUrl) {
+    return {
+      endpoint: joinBackendPath(workerApiUrl, "/api/crawl/trigger"),
+      kind: "crawl_trigger",
+    };
   }
 
-  return {
-    endpoint: joinBackendPath(internalApiUrl, "/api/crawl/trigger"),
-    kind: "crawl_trigger",
-  };
+  return null;
 }
 
 function generationQueueTargets(): GenerationQueueTarget[] {
@@ -285,10 +287,13 @@ export async function generateWorkspaceBrain(
       tenant_id: parsed.data.tenantId,
       user_id: authorization.userId,
       website_url: normalizedWebsiteUrl,
+      internal_api_url_present: Boolean(process.env.INTERNAL_API_URL?.trim()),
+      expected_env:
+        "WORKSPACE_BRAIN_GENERATE_URL, ARCLI_CRAWLER_TRIGGER_URL, ARCLI_CRAWLER_INGEST_URL, ARCLI_WORKER_API_URL, or PYTHON_BACKEND_URL",
     });
     return actionError(
       "workspace_brain_not_configured",
-      "Workspace brain generation is not configured.",
+      "Workspace brain generation worker endpoint is not configured.",
     );
   }
 
@@ -378,6 +383,13 @@ export async function generateWorkspaceBrain(
 
     if (lastFailure) {
       const { response, payload, target } = lastFailure;
+      if ([404, 405].includes(response.status)) {
+        return actionError(
+          "workspace_brain_endpoint_missing",
+          "Workspace brain generation worker endpoint was not found.",
+        );
+      }
+
       console.warn("[WorkspaceBrain] generation worker rejected enqueue request", {
         tenant_id: parsed.data.tenantId,
         user_id: authorization.userId,
