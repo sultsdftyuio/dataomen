@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/supabase";
 import { getSupabaseCookieOptions } from "./cookie-options";
@@ -45,6 +46,24 @@ export async function createClient(cookieStore?: CookieStore) {
       global: {
         headers: {
           "x-client-info": "arcli-nextjs-server-per-request",
+        },
+      },
+    }
+  );
+}
+
+export function createServiceRoleClient() {
+  return createSupabaseClient<Database>(
+    getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+      global: {
+        headers: {
+          "x-client-info": "arcli-nextjs-service-role",
         },
       },
     }

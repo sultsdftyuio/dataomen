@@ -430,15 +430,6 @@ export async function submitWebsiteForCrawl(
 
   try {
     await persistWebsiteUrl(context, websiteUrl);
-    await upsertCrawlJobStatus(context, websiteUrl, {
-      status: "pending",
-      phase: "queued",
-      failure_reason: null,
-      error_type: null,
-      error_message: null,
-      error_context: {},
-      queued_at: new Date().toISOString(),
-    });
 
     const triggerResult = await postCrawlerTrigger(
       {

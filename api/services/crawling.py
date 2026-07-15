@@ -209,6 +209,17 @@ def _active_crawl_job_is_fresh(row: dict[str, Any] | None) -> bool:
     )
 
 
+def _active_crawl_job_has_queue_signal(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+
+    status = str(row.get("status") or "").lower()
+    if status == "processing":
+        return True
+
+    return status == "pending" and bool(row.get("message_id"))
+
+
 def _upsert_crawl_job(
     conn: Connection,
     *,
@@ -1696,7 +1707,9 @@ def enqueue_crawl_job(tenant_id: str, website_url: str) -> str:
 
     with engine.begin() as conn:
         existing_job = _crawl_job_row(conn, crawl_job_id, tenant_id)
-        if _active_crawl_job_is_fresh(existing_job):
+        if _active_crawl_job_is_fresh(
+            existing_job
+        ) and _active_crawl_job_has_queue_signal(existing_job):
             message_id = str(existing_job.get("message_id") or crawl_job_id)
             logger.info(
                 "crawl_job_enqueue_deduped tenant_id=%s website_url=%s crawl_job_id=%s status=%s phase=%s message_id=%s",
