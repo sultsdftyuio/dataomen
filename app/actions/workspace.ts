@@ -30,6 +30,7 @@ type WorkerQueuePayload = {
 type GenerationQueueTarget = {
   endpoint: string;
   kind: "workspace_brain" | "crawl_trigger";
+  source: string;
 };
 
 const GenerateWorkspaceBrainSchema = z.object({
@@ -60,12 +61,20 @@ function normalizeWebsiteUrl(value: string) {
 function crawlTriggerTarget(): GenerationQueueTarget | null {
   const explicitCrawlerEndpoint = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
   if (explicitCrawlerEndpoint) {
-    return { endpoint: explicitCrawlerEndpoint, kind: "crawl_trigger" };
+    return {
+      endpoint: explicitCrawlerEndpoint,
+      kind: "crawl_trigger",
+      source: "ARCLI_CRAWLER_TRIGGER_URL",
+    };
   }
 
   const legacyCrawlerEndpoint = process.env.ARCLI_CRAWLER_INGEST_URL?.trim();
   if (legacyCrawlerEndpoint) {
-    return { endpoint: legacyCrawlerEndpoint, kind: "crawl_trigger" };
+    return {
+      endpoint: legacyCrawlerEndpoint,
+      kind: "crawl_trigger",
+      source: "ARCLI_CRAWLER_INGEST_URL",
+    };
   }
 
   const workerApiUrl =
@@ -75,6 +84,9 @@ function crawlTriggerTarget(): GenerationQueueTarget | null {
     return {
       endpoint: joinBackendPath(workerApiUrl, "/api/crawl/trigger"),
       kind: "crawl_trigger",
+      source: process.env.ARCLI_WORKER_API_URL?.trim()
+        ? "ARCLI_WORKER_API_URL"
+        : "PYTHON_BACKEND_URL",
     };
   }
 
@@ -85,7 +97,11 @@ function generationQueueTargets(): GenerationQueueTarget[] {
   const targets: GenerationQueueTarget[] = [];
   const explicitEndpoint = process.env.WORKSPACE_BRAIN_GENERATE_URL?.trim();
   if (explicitEndpoint) {
-    targets.push({ endpoint: explicitEndpoint, kind: "workspace_brain" });
+    targets.push({
+      endpoint: explicitEndpoint,
+      kind: "workspace_brain",
+      source: "WORKSPACE_BRAIN_GENERATE_URL",
+    });
   }
 
   const crawlTarget = crawlTriggerTarget();
@@ -116,6 +132,119 @@ function endpointPath(endpoint: string) {
   } catch {
     return "unparseable_endpoint";
   }
+}
+
+function endpointFingerprint(endpoint: string) {
+  try {
+    const url = new URL(endpoint);
+    return {
+      protocol: url.protocol,
+      host: url.host,
+      pathname: url.pathname,
+    };
+  } catch {
+    return {
+      protocol: "unparseable",
+      host: "unparseable",
+      pathname: "unparseable_endpoint",
+    };
+  }
+}
+
+function responseFingerprint(response: Response) {
+  return {
+    status: response.status,
+    status_text: response.statusText,
+    response_url: endpointFingerprint(response.url),
+    content_type: response.headers.get("content-type"),
+    server: response.headers.get("server"),
+    via: response.headers.get("via"),
+    x_request_id:
+      response.headers.get("x-request-id") ??
+      response.headers.get("x-correlation-id") ??
+      response.headers.get("x-amzn-requestid"),
+  };
+}
+
+function routeProbeCandidates(endpoint: string) {
+  try {
+    const configured = new URL(endpoint);
+    const routePaths = new Set([configured.pathname]);
+
+    if (configured.pathname.startsWith("/api/")) {
+      routePaths.add(configured.pathname.replace(/^\/api/, ""));
+    } else {
+      routePaths.add(`/api${configured.pathname}`);
+    }
+
+    const healthPaths = new Set(["/health"]);
+    if (configured.pathname.startsWith("/api/")) {
+      healthPaths.add("/api/health");
+    }
+
+    const probes: Array<{ label: string; url: string }> = [];
+    for (const path of healthPaths) {
+      probes.push({
+        label: path === "/api/health" ? "health_api_prefix" : "health_origin",
+        url: new URL(path, configured.origin).toString(),
+      });
+    }
+    for (const path of routePaths) {
+      probes.push({
+        label:
+          path === configured.pathname
+            ? "route_configured_path_get"
+            : "route_alternate_path_get",
+        url: new URL(path, configured.origin).toString(),
+      });
+    }
+
+    return probes;
+  } catch {
+    return [];
+  }
+}
+
+async function probeQueueTarget(
+  target: GenerationQueueTarget,
+  workerSecret: string,
+  idempotencyKey: string,
+) {
+  return Promise.all(
+    routeProbeCandidates(target.endpoint).map(async (probe) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+
+      try {
+        const response = await fetch(probe.url, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${workerSecret}`,
+            "Idempotency-Key": idempotencyKey,
+          },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        return {
+          label: probe.label,
+          target: endpointFingerprint(probe.url),
+          ...responseFingerprint(response),
+        };
+      } catch (error) {
+        return {
+          label: probe.label,
+          target: endpointFingerprint(probe.url),
+          error:
+            error instanceof Error
+              ? { name: error.name, message: error.message }
+              : { name: "UnknownError", message: String(error) },
+        };
+      } finally {
+        clearTimeout(timeout);
+      }
+    }),
+  );
 }
 
 function generationIdempotencyKey(tenantId: string, websiteUrl: string) {
@@ -345,15 +474,24 @@ export async function generateWorkspaceBrain(
 
       if (!response.ok && [404, 405].includes(response.status)) {
         lastFailure = { response, payload, target };
+        const routeProbes = await probeQueueTarget(
+          target,
+          workerSecret,
+          idempotencyKey,
+        );
         console.warn("[WorkspaceBrain] generation queue target unavailable", {
           tenant_id: parsed.data.tenantId,
           user_id: authorization.userId,
           website_url: normalizedWebsiteUrl,
           status: response.status,
           endpoint_path: endpointPath(target.endpoint),
+          endpoint: endpointFingerprint(target.endpoint),
+          response: responseFingerprint(response),
           queue_target: target.kind,
+          queue_target_source: target.source,
           fallback_available: targets.length > 1,
           reason: payloadMessage(payload) ?? "workspace_brain_enqueue_target_missing",
+          route_probes: routeProbes,
         });
         continue;
       }
@@ -396,7 +534,10 @@ export async function generateWorkspaceBrain(
         website_url: normalizedWebsiteUrl,
         status: response.status,
         endpoint_path: endpointPath(target.endpoint),
+        endpoint: endpointFingerprint(target.endpoint),
+        response: responseFingerprint(response),
         queue_target: target.kind,
+        queue_target_source: target.source,
         reason: payloadMessage(payload) ?? "workspace_brain_enqueue_failed",
       });
       return actionError(
@@ -419,7 +560,11 @@ export async function generateWorkspaceBrain(
       endpoint_path: primaryTarget
         ? endpointPath(primaryTarget.endpoint)
         : "unconfigured_endpoint",
+      endpoint: primaryTarget
+        ? endpointFingerprint(primaryTarget.endpoint)
+        : null,
       queue_target: primaryTarget?.kind ?? "unconfigured",
+      queue_target_source: primaryTarget?.source ?? "unconfigured",
       reason: isTimeout ? "timeout" : "request_failed",
       error,
     });

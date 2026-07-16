@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -227,6 +227,37 @@ app = FastAPI(
     title="Arcli Prospect Intelligence API",
     version=os.getenv("ARCLI_API_VERSION", "0.1.0"),
 )
+
+CRAWL_TRIGGER_DEBUG_PATHS = {"/api/crawl/trigger", "/crawl/trigger"}
+
+
+@app.middleware("http")
+async def log_crawl_trigger_route_miss(request: Request, call_next):
+    response = await call_next(request)
+
+    if (
+        request.url.path in CRAWL_TRIGGER_DEBUG_PATHS
+        and response.status_code in {404, 405}
+    ):
+        crawl_routes = sorted(
+            route.path
+            for route in app.routes
+            if "crawl" in getattr(route, "path", "")
+        )
+        logger.warning(
+            "crawl_trigger_route_diagnostic method=%s path=%s status=%s root_path=%s crawl_routes=%s authorization_present=%s idempotency_key_present=%s user_agent=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            request.scope.get("root_path") or "",
+            crawl_routes,
+            bool(request.headers.get("authorization")),
+            bool(request.headers.get("idempotency-key")),
+            request.headers.get("user-agent"),
+        )
+        response.headers["x-arcli-route-diagnostic"] = "crawl-trigger-route-miss"
+
+    return response
 
 
 def _bearer_token(authorization: str | None) -> str | None:
@@ -450,6 +481,11 @@ def generate_workspace_brain(
     )
 
 
+@app.post(
+    "/crawl/trigger",
+    response_model=CrawlTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 @app.post(
     "/api/crawl/trigger",
     response_model=CrawlTriggerResponse,
