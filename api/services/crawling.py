@@ -121,6 +121,15 @@ def _crawl_job_id(tenant_id: str, website_url: str) -> str:
     return digest[:24]
 
 
+def _resolve_crawl_job_id(
+    tenant_id: str,
+    website_url: str,
+    job_id: str | None = None,
+) -> str:
+    resolved_job_id = (job_id or "").strip()
+    return resolved_job_id or _crawl_job_id(tenant_id, website_url)
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -1699,10 +1708,14 @@ def generate_workspace_brain_profile(
     return normalized_profile
 
 
-def enqueue_crawl_job(tenant_id: str, website_url: str) -> str:
+def enqueue_crawl_job(
+    tenant_id: str,
+    website_url: str,
+    job_id: str | None = None,
+) -> str:
     _require_redis_broker()
     normalized_url = WebsiteCrawler._normalize_url(website_url)
-    crawl_job_id = _crawl_job_id(tenant_id, normalized_url)
+    crawl_job_id = _resolve_crawl_job_id(tenant_id, normalized_url, job_id)
     engine = _database_engine()
 
     with engine.begin() as conn:
@@ -1731,7 +1744,7 @@ def enqueue_crawl_job(tenant_id: str, website_url: str) -> str:
             phase="queued",
         )
 
-    message = process_crawl_job.send(tenant_id, normalized_url)
+    message = process_crawl_job.send(tenant_id, normalized_url, crawl_job_id)
     with engine.begin() as conn:
         _upsert_crawl_job(
             conn,
@@ -1767,9 +1780,13 @@ _configure_dramatiq_broker()
     ),
     on_retry_exhausted="mark_crawl_job_dead_lettered",
 )
-def process_crawl_job(tenant_id: str, website_url: str) -> None:
+def process_crawl_job(
+    tenant_id: str,
+    website_url: str,
+    job_id: str | None = None,
+) -> None:
     normalized_url = WebsiteCrawler._normalize_url(website_url)
-    crawl_job_id = _crawl_job_id(tenant_id, normalized_url)
+    crawl_job_id = _resolve_crawl_job_id(tenant_id, normalized_url, job_id)
     engine = _database_engine()
     total_timeout_seconds = _env_int(
         "ARCLI_CRAWL_JOB_TOTAL_TIMEOUT_SECONDS",
@@ -2047,7 +2064,8 @@ def mark_crawl_job_dead_lettered(
 
     tenant_id = str(args[0])
     normalized_url = WebsiteCrawler._normalize_url(str(args[1]))
-    crawl_job_id = _crawl_job_id(tenant_id, normalized_url)
+    job_id = str(args[2]) if len(args) > 2 and args[2] else None
+    crawl_job_id = _resolve_crawl_job_id(tenant_id, normalized_url, job_id)
     engine = _database_engine()
     retries = (retry_context or {}).get("retries")
     max_retries = (retry_context or {}).get("max_retries")

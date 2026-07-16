@@ -7,7 +7,14 @@ from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -67,7 +74,14 @@ class CrawlTriggerResponse(BaseModel):
     status: Literal["queued"] = Field(default="queued")
     tenant_id: str
     website_url: str
+    job_id: str
     message_id: str
+
+
+class IdempotencyKeyHeader(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    value: str = Field(min_length=1, max_length=128)
 
 
 class ServiceProfileEmbeddingTriggerRequest(BaseModel):
@@ -247,6 +261,20 @@ def verify_internal_request(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid internal worker credentials.",
         )
+
+
+def require_idempotency_key(
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+) -> str:
+    try:
+        parsed = IdempotencyKeyHeader.model_validate({"value": idempotency_key})
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key header is required.",
+        ) from exc
+
+    return parsed.value
 
 
 def _normalize_database_url(raw_url: str) -> str:
@@ -430,6 +458,7 @@ def generate_workspace_brain(
 def trigger_crawl(
     payload: CrawlTriggerRequest,
     _: Annotated[None, Depends(verify_internal_request)],
+    job_id: Annotated[str, Depends(require_idempotency_key)],
 ) -> CrawlTriggerResponse:
     """
     Accept a trusted frontend handoff and enqueue the slow crawl asynchronously.
@@ -440,11 +469,16 @@ def trigger_crawl(
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
 
     try:
-        message_id = enqueue_crawl_job(payload.tenant_id, payload.website_url)
+        message_id = enqueue_crawl_job(
+            tenant_id=payload.tenant_id,
+            website_url=payload.website_url,
+            job_id=job_id,
+        )
     except RuntimeError as exc:
         logger.exception(
-            "crawl_job_enqueue_failed tenant_id=%s website_url=%s error_type=%s error=%s",
+            "crawl_job_enqueue_failed tenant_id=%s job_id=%s website_url=%s error_type=%s error=%s",
             payload.tenant_id,
+            job_id,
             payload.website_url,
             exc.__class__.__name__,
             exc,
@@ -455,16 +489,19 @@ def trigger_crawl(
         ) from exc
 
     logger.info(
-        "crawl_trigger_accepted tenant_id=%s website_url=%s message_id=%s source=%s",
+        "crawl_job_enqueued tenant_id=%s job_id=%s website_url=%s message_id=%s source=%s requested_by=%s",
         payload.tenant_id,
+        job_id,
         payload.website_url,
         message_id,
         payload.source,
+        payload.requested_by,
     )
 
     return CrawlTriggerResponse(
         tenant_id=payload.tenant_id,
         website_url=payload.website_url,
+        job_id=job_id,
         message_id=message_id,
     )
 
