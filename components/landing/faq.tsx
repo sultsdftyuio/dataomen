@@ -5,24 +5,24 @@ import { C } from "@/lib/tokens";
 
 const items = [
   {
-    q: "Will Arcli annoy or spam our existing customers?",
-    a: "Not at all. Protecting your customer relationships is our top priority. You set strict contact limits and mandatory cooldown periods (for example, contacting a customer at most once every 30 days). Arcli also automatically respects all unsubscribes, bounces, and customer communication preferences.",
+    q: "Is Arcli a social listening or keyword-alert tool?",
+    a: "No. Arcli is a prospect intelligence layer. It uses your website-derived Service Profile, semantic matching, and LLM verification to surface discussions that show real problem fit.",
   },
   {
-    q: "How do you keep our customer data secure and private?",
-    a: "We operate on a strict zero-data-retention architecture. Arcli only reads basic activity signals and anonymized identifiers required to detect dropping engagement. We never store raw customer databases, sensitive personal records, or private support conversations.",
+    q: "Does Arcli send messages or automate cold outreach?",
+    a: "No. Arcli helps you discover and understand useful opportunities. It does not blast DMs, scrape inboxes, or run mass outreach campaigns.",
   },
   {
-    q: "Can our team customize the recovery messages and rules?",
-    a: "Yes. You maintain complete control over every message sent and every rule triggered. You can easily tailor the wording, timing, and incentives to match your brand voice and customer lifecycle perfectly.",
+    q: "How does Arcli understand our product?",
+    a: "You enter your website URL. Arcli crawls your public pages and extracts a structured Service Profile with your target audience, core problem, use cases, and negative keywords.",
   },
   {
-    q: "How long does it take to set up and start saving customers?",
-    a: "Setup takes just a few minutes. Once you connect your core customer communication and engagement tools, Arcli immediately begins monitoring for early churn indicators and enrolling slipping accounts into your saved workflows.",
+    q: "How do you reduce false positives?",
+    a: "Arcli first compares each discussion to your Service Profile using semantic similarity. Then an explainable LLM verifier checks whether the post shows actual buying intent, operational pain, or a mismatch.",
   },
   {
     q: "How does pricing scale? Do we pay per team member?",
-    a: "We do not charge per-seat licenses. We believe everyone on your team should have visibility into customer retention, so you can invite your entire organization to collaborate within Arcli without paying arbitrary license fees per user.",
+    a: "We do not charge per-seat licenses. Solo founders and small SaaS teams can invite collaborators without paying arbitrary user fees just to review prospect intelligence together.",
   },
 ];
 

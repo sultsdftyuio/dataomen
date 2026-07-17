@@ -28,7 +28,7 @@ export default function Footer() {
               <Logo className="h-7 w-auto group-hover:scale-[1.02] transition-transform" />
             </Link>
             <p className="text-slate-600 mb-6 max-w-md text-[14px] leading-relaxed">
-              The intelligence layer for subscription SaaS revenue recovery. Built to detect churn signals, automate personalized campaigns, and attribute recovered revenue with deterministic precision.
+              The prospect intelligence layer for SaaS founders. Built to understand your product, discover relevant public pain signals, verify intent, and alert you to useful revenue opportunities.
             </p>
           </div>
 
@@ -41,27 +41,27 @@ export default function Footer() {
               <ul className="space-y-3">
                 <li>
                   <Link href="/saas-churn-recovery" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Churn Recovery
+                    Prospect Intelligence
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-churn-risk-scoring" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Risk Scoring
+                    AI Verification
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-dunning-software" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Dunning Software
+                    Signal Discovery
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-revenue-attribution" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Revenue Attribution
+                    Opportunity Alerts
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-billing-infrastructure" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Billing Infrastructure
+                    Service Profile
                   </Link>
                 </li>
               </ul>
@@ -78,17 +78,17 @@ export default function Footer() {
                 </li>
                 <li>
                   <Link href="/login" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Operator Login
+                    Founder Login
                   </Link>
                 </li>
                 <li>
                   <Link href="/dashboard" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Recovery Queue
+                    Prospect Inbox
                   </Link>
                 </li>
                 <li>
                   <a href={`mailto:${SUPPORT_EMAIL}`} className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    System Support
+                    Product Support
                   </a>
                 </li>
               </ul>
@@ -127,7 +127,7 @@ export default function Footer() {
         {/* Bottom Section */}
         <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
           <p className="text-sm text-slate-500">
-            &copy; {currentYear} Arcli. All rights reserved. Deterministic Churn Mitigation Engine.
+            &copy; {currentYear} Arcli. All rights reserved. Prospect Intelligence Layer.
           </p>
           <div className="flex items-center gap-6 text-sm text-slate-500">
             <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-[#1B6EBF] transition-colors flex items-center gap-2 font-medium text-slate-600">

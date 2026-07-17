@@ -21,10 +21,10 @@ export function Testimonials() {
         {/* ── Section Header ── */}
         <div style={{ textAlign: "center", marginBottom: 64 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", marginBottom: 14, textTransform: "uppercase" }}>
-            <MessageSquare size={14} /> OPERATOR VERIFIED
+            <MessageSquare size={14} /> FOUNDER VERIFIED
           </div>
           <h2 className="pfd" style={{ fontSize: 36, color: C.navy, marginBottom: 16, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Built for founders who care about MRR.<br />Engineered for devs who care about safety.
+            Built for founders who need pipeline.<br />Engineered for teams who hate noisy alerts.
           </h2>
         </div>
 
@@ -37,10 +37,10 @@ export function Testimonials() {
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, paddingBottom: 16, borderBottom: surfaceBorder }}>
                   <TrendingUp size={16} color="#10B981" />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#10B981", letterSpacing: "0.02em" }}>+$2,450 MRR RECOVERED (30D)</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#10B981", letterSpacing: "0.02em" }}>QUALIFIED OPPORTUNITY WON</span>
                 </div>
                 <p style={{ color: C.navy, fontSize: 16, lineHeight: 1.6, fontWeight: 500, marginBottom: 24 }}>
-                  "We used to export Stripe data into a spreadsheet to guess who would churn. Arcli caught 14 at-risk accounts in week one and safely recovered 9 of them automatically. The attribution is exact."
+                  "We stopped searching Reddit manually. Arcli understood our site, found a founder describing our exact problem, and showed why the signal mattered before we spent time on it."
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -63,10 +63,10 @@ export function Testimonials() {
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, paddingBottom: 16, borderBottom: surfaceBorder }}>
                   <ShieldCheck size={16} color={C.blue} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.blue, letterSpacing: "0.02em" }}>ZERO DEDUPLICATION FAILURES</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.blue, letterSpacing: "0.02em" }}>FALSE POSITIVES CUT DOWN</span>
                 </div>
                 <p style={{ color: C.navy, fontSize: 16, lineHeight: 1.6, fontWeight: 500, marginBottom: 24 }}>
-                  "Finally, a recovery tool that actually respects idempotency. I don't have to worry about our users getting spammed because a webhook fired twice or a queue stalled. The deterministic scoring just works."
+                  "The verifier is what sold me. It does not just match keywords; it explains the pain, the fit, and why a mention should be ignored. That makes the alerts usable."
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

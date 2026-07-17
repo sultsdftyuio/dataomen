@@ -40,12 +40,12 @@ export function Hero() {
               margin: "0 auto 20px",
             }}
           >
-            Autonomous<br />
-            <span style={{ color: C.blue }}>Customer Retention.</span>
+            Find prospects who already<br />
+            <span style={{ color: C.blue }}>need what you sell.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-            Stop reacting to cancellations. Start preventing them. Track your product data to automatically detect explicit churn signals, score user inactivity, and trigger explainable retention workflows.
+            Drop in your website URL. Arcli understands your SaaS, discovers public discussions that match the problem you solve, verifies intent with AI, and alerts you when a signal is worth your time.
           </p>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
@@ -71,7 +71,7 @@ export function Hero() {
                 letterSpacing: "0.02em",
               }}
             >
-              Sign Up <ArrowRight size={16} />
+              Start Finding Prospects <ArrowRight size={16} />
             </a>
           </div>
         </div>

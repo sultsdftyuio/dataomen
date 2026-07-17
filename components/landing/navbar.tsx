@@ -24,9 +24,9 @@ export function Navbar() {
 
   // UPDATED: Absolute root anchors (/#...) to enable cross-page navigation
   const navLinks = [
-    { name: "Platform", href: "/#platform" },
-    { name: "Features", href: "/#features" },
-    { name: "Campaigns", href: "/#campaigns" },
+    { name: "Intelligence", href: "/#platform" },
+    { name: "Verification", href: "/#features" },
+    { name: "Alerts", href: "/#campaigns" },
     { name: "Pricing", href: "/#pricing" }
   ];
 
@@ -142,7 +142,7 @@ export function Navbar() {
               (e.currentTarget as HTMLAnchorElement).style.boxShadow = "0 6px 14px rgba(27,110,191,0.22)";
             }}
           >
-            Start Free Access
+            Find Prospects
           </Link>
         </div>
       </div>

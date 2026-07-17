@@ -64,7 +64,7 @@ export default function ArcliPricingCards() {
               borderRadius: 20
             }}
           >
-            <Activity size={14} /> SIMPLE & TRANSPARENT PRICING
+            <Activity size={14} /> SIMPLE PROSPECT INTELLIGENCE PRICING
           </div>
           
           <h2 
@@ -78,11 +78,11 @@ export default function ArcliPricingCards() {
             }}
           >
             Start for free. <br />
-            <span style={{ color: C.blue }}>Upgrade as you grow.</span>
+            <span style={{ color: C.blue }}>Upgrade when signals turn into revenue.</span>
           </h2>
           
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
-            Explore our customer retention tools for free. Upgrade whenever you are ready to automate recovery and keep 100% of the revenue you save.
+            Use Arcli to understand your SaaS, verify public prospect signals, and alert your team when real opportunities appear.
           </p>
         </div>
 
@@ -129,7 +129,7 @@ export default function ArcliPricingCards() {
               </div>
 
               <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.6, marginBottom: 24 }}>
-                Perfect for getting started and seeing how customer retention tracking works for your business.
+                Perfect for validating how prospect intelligence works for your SaaS before you scale discovery.
               </p>
 
               {/* Price Display */}
@@ -151,15 +151,15 @@ export default function ArcliPricingCards() {
                 
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Track up to 100 customer events / month</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Build one Service Profile from your website</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Basic customer risk alerts</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Limited verified prospect alerts</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Ready-to-use email templates</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Explainable AI verification summaries</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
@@ -237,7 +237,7 @@ export default function ArcliPricingCards() {
               </div>
 
               <p style={{ fontSize: 14, color: C.navySoft, lineHeight: 1.6, marginBottom: 24 }}>
-                Automatically reach out to at-risk accounts, recover failed payments, and protect your revenue without lifting a finger.
+                Continuously discover and verify prospect signals from public discussions without turning your team into keyword hunters.
               </p>
 
               {/* Price Display */}
@@ -247,7 +247,7 @@ export default function ArcliPricingCards() {
                   <span style={{ color: C.muted, fontWeight: 600, fontSize: 14 }}>/ month</span>
                 </div>
                 <p style={{ fontSize: 12, color: C.blue, fontWeight: 600, marginTop: 6 }}>
-                  Keep 100% of all recovered revenue (0% commission).
+                  No commission on the revenue you generate.
                 </p>
               </div>
 
@@ -259,19 +259,19 @@ export default function ArcliPricingCards() {
                 
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Unlimited automated customer check-ins</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Continuous discovery across public discussions</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Exact tracking of dollars saved &amp; restored</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Explainable intent and pain validation</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Smart email timing to prevent bothering users</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>False-positive filters and negative keyword controls</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Automatic billing &amp; subscription sync</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Service Profile refresh from your website</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />

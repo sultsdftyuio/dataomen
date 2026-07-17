@@ -52,15 +52,15 @@ export function Campaigns() {
           {/* Left Side: Product Copy */}
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              <Megaphone size={14} /> SMART RECOVERY CAMPAIGNS
+              <Megaphone size={14} /> PRECISION PROSPECT ALERTS
             </div>
             
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Rescue customers without<br />ruining your reputation.
+              Get fewer alerts,<br />but the right ones.
             </h2>
             
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 40 }}>
-              Arcli isn't a generic email blast tool. It’s a precise, automated safety net that re-engages slipping users while strictly protecting your customers from spam.
+              Arcli is not social listening, scraping, or a DM bot. It surfaces a small number of verified prospects whose public conversations line up with the problem your SaaS solves.
             </p>
 
             {/* Premium Feature Stack */}
@@ -72,9 +72,9 @@ export function Campaigns() {
                   <Clock size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Smart Contact Limits</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Signal Quality Filters</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    Automatically pause outreach to avoid annoying your users. Arcli strictly follows 7, 14, or 30-day contact rules and instantly respects global unsubscribes.
+                    Arcli rejects keyword noise, hiring posts, irrelevant complaints, and bad-fit mentions before they reach your inbox.
                   </p>
                 </div>
               </div>
@@ -85,9 +85,9 @@ export function Campaigns() {
                   <Lock size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Failsafe Idempotency</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Explainable Verification</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    Even if API events misfire or systems crash, your brand is safe. Built-in distributed locks guarantee a customer never receives the same recovery email twice.
+                    Every opportunity includes why it matched your Service Profile, what pain was detected, and what evidence supports intent.
                   </p>
                 </div>
               </div>
@@ -98,9 +98,9 @@ export function Campaigns() {
                   <LineChart size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Crystal-Clear Attribution</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Feedback Learning Loop</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    No guessing games. Arcli draws a direct, unbroken line between the exact recovery campaign sent and the specific user returning to your platform.
+                    Mark a signal useful or wrong. Arcli updates your profile so future alerts get sharper without manual rule tuning.
                   </p>
                 </div>
               </div>
@@ -124,8 +124,8 @@ export function Campaigns() {
                     <Workflow size={18} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 2 }}>CANVAS BUILDER</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Engagement Recovery Pipeline</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 2 }}>INTELLIGENCE LAYER</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Prospect Signal Pipeline</div>
                   </div>
                 </div>
                 <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", color: "#10B981", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 12, letterSpacing: "0.05em" }}>
@@ -144,9 +144,9 @@ export function Campaigns() {
                     <AlertCircle size={16} color="#EF4444" />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 1: DETECT</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>api.inactivity_threshold_met</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Triggered via real-time API events.</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 1: UNDERSTAND</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>website.service_profile.created</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Built from your SaaS website URL.</div>
                   </div>
                 </div>
 
@@ -156,9 +156,9 @@ export function Campaigns() {
                     <ShieldCheck size={16} color="#64748B" />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 2: VERIFY</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Safety & Idempotency Check</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Validates user is outside 14-day contact limit.</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 2: DISCOVER</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Public Discussion Match</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Finds conversations with pain similar to your ICP.</div>
                   </div>
                 </div>
 
@@ -168,9 +168,9 @@ export function Campaigns() {
                     <Mail size={16} color={C.blue} />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 3: RECOVER</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Dispatch Rescue Campaign</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Sends template with secure re-engagement link.</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 3: VERIFY</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>AI Intent Verification</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Checks problem fit, urgency, and false positives.</div>
                   </div>
                 </div>
 
@@ -180,9 +180,9 @@ export function Campaigns() {
                     <Activity size={16} color="#10B981" />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", letterSpacing: "0.06em", marginBottom: 4 }}>STEP 4: MEASURE</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Attribution Registered</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>User resumed activity. <span style={{ fontWeight: 600, color: "#10B981" }}>Churn prevented.</span></div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", letterSpacing: "0.06em", marginBottom: 4 }}>STEP 4: LEARN</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Feedback Applied</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Founder reviewed signal. <span style={{ fontWeight: 600, color: "#10B981" }}>Quality improved.</span></div>
                   </div>
                 </div>
 
