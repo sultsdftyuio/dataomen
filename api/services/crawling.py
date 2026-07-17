@@ -71,6 +71,22 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
     return max(value, minimum)
 
 
+def _env_float(name: str, default: float, minimum: float = 0.1) -> float:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        value = float(raw_value)
+    except ValueError:
+        logger.warning(
+            "invalid_float_env_value name=%s value=%s default=%s",
+            name,
+            raw_value,
+            default,
+        )
+        return default
+
+    return max(value, minimum)
+
+
 def _configure_dramatiq_broker() -> None:
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
@@ -80,11 +96,22 @@ def _configure_dramatiq_broker() -> None:
     if isinstance(current_broker, RedisBroker):
         return
 
-    dramatiq.set_broker(RedisBroker(url=redis_url))
+    connect_timeout = _env_float("ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0)
+    socket_timeout = _env_float("ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
+    dramatiq.set_broker(
+        RedisBroker(
+            url=redis_url,
+            socket_connect_timeout=connect_timeout,
+            socket_timeout=socket_timeout,
+            health_check_interval=_env_int("ARCLI_REDIS_HEALTH_CHECK_INTERVAL_SECONDS", 30),
+        )
+    )
     logger.info(
-        "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
+        "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s connect_timeout_seconds=%s socket_timeout_seconds=%s",
         "redis",
         True,
+        connect_timeout,
+        socket_timeout,
     )
 
 
@@ -113,7 +140,13 @@ def _database_engine() -> Engine:
     if not database_url:
         raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
 
-    return create_engine(_normalize_database_url(database_url), pool_pre_ping=True)
+    return create_engine(
+        _normalize_database_url(database_url),
+        pool_pre_ping=True,
+        connect_args={
+            "connect_timeout": _env_int("ARCLI_DB_CONNECT_TIMEOUT_SECONDS", 3),
+        },
+    )
 
 
 def _crawl_job_id(tenant_id: str, website_url: str) -> str:
@@ -1779,7 +1812,9 @@ def enqueue_crawl_job(
     website_url: str,
     job_id: str | None = None,
 ) -> str:
+    started_at = time.monotonic()
     _require_redis_broker()
+    broker_ready_ms = int((time.monotonic() - started_at) * 1000)
     normalized_url = WebsiteCrawler._normalize_url(website_url)
     crawl_job_id = _resolve_crawl_job_id(tenant_id, normalized_url, job_id)
     engine = _database_engine()
@@ -1802,13 +1837,15 @@ def enqueue_crawl_job(
         ) and _active_crawl_job_has_queue_signal(existing_job):
             message_id = str(existing_job.get("message_id") or crawl_job_id)
             logger.info(
-                "crawl_job_enqueue_deduped tenant_id=%s website_url=%s crawl_job_id=%s status=%s phase=%s message_id=%s",
+                "crawl_job_enqueue_deduped tenant_id=%s website_url=%s crawl_job_id=%s status=%s phase=%s message_id=%s broker_ready_ms=%s elapsed_ms=%s",
                 tenant_id,
                 normalized_url,
                 crawl_job_id,
                 existing_job.get("status"),
                 existing_job.get("phase"),
                 message_id,
+                broker_ready_ms,
+                int((time.monotonic() - started_at) * 1000),
             )
             return message_id
 
@@ -1831,7 +1868,17 @@ def enqueue_crawl_job(
             )
             crawl_job_id = upserted_job_id
 
+    db_ready_ms = int((time.monotonic() - started_at) * 1000)
+    logger.info(
+        "crawl_job_enqueue_publish_start tenant_id=%s website_url=%s crawl_job_id=%s broker_ready_ms=%s db_ready_ms=%s",
+        tenant_id,
+        normalized_url,
+        crawl_job_id,
+        broker_ready_ms,
+        db_ready_ms,
+    )
     message = process_crawl_job.send(tenant_id, normalized_url, crawl_job_id)
+    publish_ready_ms = int((time.monotonic() - started_at) * 1000)
     with engine.begin() as conn:
         _upsert_crawl_job(
             conn,
@@ -1844,11 +1891,15 @@ def enqueue_crawl_job(
         )
 
     logger.info(
-        "crawl_job_enqueued tenant_id=%s website_url=%s crawl_job_id=%s message_id=%s",
+        "crawl_job_enqueued tenant_id=%s website_url=%s crawl_job_id=%s message_id=%s broker_ready_ms=%s db_ready_ms=%s publish_ready_ms=%s elapsed_ms=%s",
         tenant_id,
         normalized_url,
         crawl_job_id,
         message.message_id,
+        broker_ready_ms,
+        db_ready_ms,
+        publish_ready_ms,
+        int((time.monotonic() - started_at) * 1000),
     )
     return message.message_id
 

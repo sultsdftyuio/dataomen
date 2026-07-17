@@ -1,11 +1,10 @@
-// app/(dashboard)/settings/page.tsx
 import { redirect } from "next/navigation";
 import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
-import { fetchTenantApiKeySummary, fetchTenantSettingsRow } from "@/lib/settings/server";
+import { fetchTenantSettingsRow } from "@/lib/settings/server";
 import SettingsClient from "./settings-client";
 import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 import {
@@ -118,23 +117,20 @@ export default async function SettingsPage({
       }
     }
     
-    const [settingsResult, apiKeyResult, entitlements, websiteUrl] = await Promise.all([
+    // Removed fetchTenantApiKeySummary from Promise.all
+    const [settingsResult, entitlements, websiteUrl] = await Promise.all([
       fetchTenantSettingsRow(tenantSupabase, resolvedTenantId),
-      fetchTenantApiKeySummary(tenantSupabase, resolvedTenantId),
       getWorkspaceEntitlements(tenantSupabase, resolvedTenantId),
       fetchTenantWebsiteUrl(tenantSupabase, resolvedTenantId),
     ]);
 
     const { data, error } = settingsResult;
-    const { data: apiKeySummary, error: apiKeyError } = apiKeyResult;
 
     if (error) {
       console.error("[SETTINGS_FETCH_ERROR]", error);
     } else {
-      if (apiKeyError) {
-        console.error("[API_KEY_SUMMARY_ERROR]", apiKeyError);
-      }
-      settings = buildSettingsSnapshot(data as any, apiKeySummary);
+      // Pass null for apiKeySummary since it is no longer needed
+      settings = buildSettingsSnapshot(data as any, null);
     }
 
     serviceProfile = await fetchServiceProfile(

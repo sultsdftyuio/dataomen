@@ -1,6 +1,7 @@
 import os
 import hmac
 import logging
+import time
 from functools import lru_cache
 from typing import Annotated, Literal
 from urllib.parse import urlparse, urlunparse
@@ -502,7 +503,17 @@ def trigger_crawl(
     """
     from api.services.crawling import enqueue_crawl_job
 
+    started_at = time.monotonic()
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
+
+    logger.info(
+        "crawl_job_trigger_received tenant_id=%s job_id=%s website_url=%s source=%s requested_by=%s",
+        payload.tenant_id,
+        job_id,
+        payload.website_url,
+        payload.source,
+        payload.requested_by,
+    )
 
     try:
         message_id = enqueue_crawl_job(
@@ -510,12 +521,13 @@ def trigger_crawl(
             website_url=payload.website_url,
             job_id=job_id,
         )
-    except RuntimeError as exc:
+    except Exception as exc:
         logger.exception(
-            "crawl_job_enqueue_failed tenant_id=%s job_id=%s website_url=%s error_type=%s error=%s",
+            "crawl_job_enqueue_failed tenant_id=%s job_id=%s website_url=%s elapsed_ms=%s error_type=%s error=%s",
             payload.tenant_id,
             job_id,
             payload.website_url,
+            int((time.monotonic() - started_at) * 1000),
             exc.__class__.__name__,
             exc,
         )
@@ -525,13 +537,14 @@ def trigger_crawl(
         ) from exc
 
     logger.info(
-        "crawl_job_enqueued tenant_id=%s job_id=%s website_url=%s message_id=%s source=%s requested_by=%s",
+        "crawl_job_enqueued tenant_id=%s job_id=%s website_url=%s message_id=%s source=%s requested_by=%s elapsed_ms=%s",
         payload.tenant_id,
         job_id,
         payload.website_url,
         message_id,
         payload.source,
         payload.requested_by,
+        int((time.monotonic() - started_at) * 1000),
     )
 
     return CrawlTriggerResponse(
