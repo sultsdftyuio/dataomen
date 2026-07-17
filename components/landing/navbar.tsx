@@ -24,8 +24,8 @@ export function Navbar() {
 
   // UPDATED: Absolute root anchors (/#...) to enable cross-page navigation
   const navLinks = [
-    { name: "Intelligence", href: "/#platform" },
-    { name: "Verification", href: "/#features" },
+    { name: "Prospects", href: "/#platform" },
+    { name: "Quality", href: "/#features" },
     { name: "Alerts", href: "/#campaigns" },
     { name: "Pricing", href: "/#pricing" }
   ];

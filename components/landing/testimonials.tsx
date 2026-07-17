@@ -24,7 +24,7 @@ export function Testimonials() {
             <MessageSquare size={14} /> FOUNDER VERIFIED
           </div>
           <h2 className="pfd" style={{ fontSize: 36, color: C.navy, marginBottom: 16, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            Built for founders who need pipeline.<br />Engineered for teams who hate noisy alerts.
+            Built for founders who need customers.<br />Made for teams who hate noisy alerts.
           </h2>
         </div>
 
@@ -40,7 +40,7 @@ export function Testimonials() {
                   <span style={{ fontSize: 13, fontWeight: 700, color: "#10B981", letterSpacing: "0.02em" }}>QUALIFIED OPPORTUNITY WON</span>
                 </div>
                 <p style={{ color: C.navy, fontSize: 16, lineHeight: 1.6, fontWeight: 500, marginBottom: 24 }}>
-                  "We stopped searching Reddit manually. Arcli understood our site, found a founder describing our exact problem, and showed why the signal mattered before we spent time on it."
+                  "We stopped searching Reddit manually. Arcli understood our site, found a founder describing our exact problem, and showed why the match mattered before we spent time on it."
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -63,10 +63,10 @@ export function Testimonials() {
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, paddingBottom: 16, borderBottom: surfaceBorder }}>
                   <ShieldCheck size={16} color={C.blue} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: C.blue, letterSpacing: "0.02em" }}>FALSE POSITIVES CUT DOWN</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.blue, letterSpacing: "0.02em" }}>LESS NOISE</span>
                 </div>
                 <p style={{ color: C.navy, fontSize: 16, lineHeight: 1.6, fontWeight: 500, marginBottom: 24 }}>
-                  "The verifier is what sold me. It does not just match keywords; it explains the pain, the fit, and why a mention should be ignored. That makes the alerts usable."
+                  "The quality check is what sold me. It does not just match words; it explains the problem, the fit, and why a post should be ignored. That makes the alerts usable."
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

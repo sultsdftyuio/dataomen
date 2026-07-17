@@ -64,7 +64,7 @@ export default function ArcliPricingCards() {
               borderRadius: 20
             }}
           >
-            <Activity size={14} /> SIMPLE PROSPECT INTELLIGENCE PRICING
+            <Activity size={14} /> SIMPLE PRICING
           </div>
           
           <h2 
@@ -78,11 +78,11 @@ export default function ArcliPricingCards() {
             }}
           >
             Start for free. <br />
-            <span style={{ color: C.blue }}>Upgrade when signals turn into revenue.</span>
+            <span style={{ color: C.blue }}>Upgrade when prospects turn into revenue.</span>
           </h2>
           
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
-            Use Arcli to understand your SaaS, verify public prospect signals, and alert your team when real opportunities appear.
+            Use Arcli to learn what you sell, find people asking for help, and send you the prospects worth reviewing.
           </p>
         </div>
 
@@ -129,7 +129,7 @@ export default function ArcliPricingCards() {
               </div>
 
               <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.6, marginBottom: 24 }}>
-                Perfect for validating how prospect intelligence works for your SaaS before you scale discovery.
+                Perfect for seeing how Arcli finds prospects before you scale your search.
               </p>
 
               {/* Price Display */}
@@ -151,15 +151,15 @@ export default function ArcliPricingCards() {
                 
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Build one Service Profile from your website</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Learn from one website</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Limited verified prospect alerts</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>A small set of checked prospect alerts</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Explainable AI verification summaries</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Clear reasons for each alert</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
@@ -237,7 +237,7 @@ export default function ArcliPricingCards() {
               </div>
 
               <p style={{ fontSize: 14, color: C.navySoft, lineHeight: 1.6, marginBottom: 24 }}>
-                Continuously discover and verify prospect signals from public discussions without turning your team into keyword hunters.
+                Keep finding and checking prospects from public posts without spending your day searching manually.
               </p>
 
               {/* Price Display */}
@@ -259,19 +259,19 @@ export default function ArcliPricingCards() {
                 
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Continuous discovery across public discussions</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Ongoing search across public posts</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Explainable intent and pain validation</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Clear fit and need checks</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>False-positive filters and negative keyword controls</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Bad-match filters and ignore rules</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Service Profile refresh from your website</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Refresh what Arcli knows from your website</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />

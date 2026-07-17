@@ -28,10 +28,10 @@ export function HowItWorks() {
             <Database size={14} /> THE PIPELINE
           </div>
           <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            How Arcli turns your website into prospect intelligence.
+            How Arcli finds prospects for you.
           </h2>
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
-            From a single URL to verified opportunities. Arcli understands what you sell, discovers matching pain in public discussions, verifies intent, alerts you, and learns from feedback.
+            Add your website. Arcli learns what you do, finds people asking for help online, checks the fit, sends the best matches, and learns from your feedback.
           </p>
         </div>
 
@@ -42,13 +42,13 @@ export function HowItWorks() {
               STEP 01
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Understand & Discover
+              Learn What You Sell
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              Give Arcli your website. It crawls your public pages, builds a structured Service Profile, and uses that profile to find discussions where people describe the exact problem your SaaS solves.
+              Give Arcli your website. It reads your public pages and learns who you help, what problem you solve, and what to ignore.
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12 }}>
-              {["Website-derived Service Profile", "Target audience and core problem extraction", "Negative keywords and mismatch filters"].map((item, i) => (
+              {["Learns from your website", "Understands who you help", "Knows what to ignore"].map((item, i) => (
                 <li key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, fontWeight: 600, color: C.navy }}>
                   <CheckCircle2 size={16} color={C.blue} /> {item}
                 </li>
@@ -60,10 +60,10 @@ export function HowItWorks() {
             <div style={{ background: "#FFFFFF", padding: 28, borderRadius: 8, border: surfaceBorder, position: "relative", zIndex: 2, boxShadow: surfaceShadow }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22, borderBottom: surfaceBorder, paddingBottom: 12 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.faint, letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: 6 }}>
-                  <Key size={14} /> WEBSITE UNDERSTANDING
+                  <Key size={14} /> WEBSITE REVIEW
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#047857", background: "rgba(16,185,129,0.08)", padding: "4px 10px", borderRadius: 8, border: surfaceBorder }}>
-                  <Activity size={14} /> ANALYZING
+                  <Activity size={14} /> LEARNING
                 </span>
               </div>
 
@@ -74,13 +74,13 @@ export function HowItWorks() {
                       <Activity size={18} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>arcli.service_profile.created</div>
-                      <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>source: your website URL</div>
+                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>your product is understood</div>
+                      <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>source: your website</div>
                     </div>
                   </div>
                   <ArrowRight size={16} color={C.faint} />
                   <div style={{ background: "#fff", border: surfaceBorder, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "#EF4444", boxShadow: surfaceShadow }}>
-                    ICP Match: B2B SaaS
+                    Best Fit: B2B SaaS
                   </div>
                 </div>
 
@@ -90,13 +90,13 @@ export function HowItWorks() {
                       <Activity size={18} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>discussion.signal.discovered</div>
+                      <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>someone asked for help</div>
                       <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>source: Reddit / HN / X</div>
                     </div>
                   </div>
                   <ArrowRight size={16} color={C.faint} />
                   <div style={{ background: "#fff", border: surfaceBorder, padding: "8px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "#10B981", boxShadow: surfaceShadow }}>
-                    Problem Match: High
+                    Looks Relevant
                   </div>
                 </div>
               </div>
@@ -113,10 +113,10 @@ export function HowItWorks() {
               STEP 02
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              AI Verification Before You See It
+              Checks Each Match
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              Arcli does not ship keyword hits. Each candidate passes semantic similarity first, then an explainable LLM verifier checks for real operational pain, buying intent, and fit-breaking mismatches.
+              Arcli does not send every post that happens to use the right words. It reads the context, checks whether the person has a real problem, and removes bad fits before alerting you.
             </p>
             <a
               href="/register"
@@ -136,7 +136,7 @@ export function HowItWorks() {
                 letterSpacing: "0.02em"
               }}
             >
-              View Verification Workflow
+              See How Matches Are Checked
             </a>
           </div>
 
@@ -146,32 +146,32 @@ export function HowItWorks() {
               
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, paddingBottom: 12, borderBottom: surfaceBorder }}>
                 <Workflow size={16} color={C.blue} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>Signal: Founder needs cleaner billing ops</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.navy }}>Person needs cleaner billing ops</span>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                  <span style={{ color: C.navySoft, display: "flex", alignItems: "center", gap: 6 }}><ShieldCheck size={14} color="#10B981" /> Semantic Match</span>
-                  <span style={{ fontWeight: 600, color: C.navy }}>Passed (0.86 similarity)</span>
+                  <span style={{ color: C.navySoft, display: "flex", alignItems: "center", gap: 6 }}><ShieldCheck size={14} color="#10B981" /> Problem Match</span>
+                  <span style={{ fontWeight: 600, color: C.navy }}>Looks close</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
-                  <span style={{ color: C.navySoft, display: "flex", alignItems: "center", gap: 6 }}><ShieldCheck size={14} color="#10B981" /> LLM Intent Check</span>
-                  <span style={{ fontWeight: 600, color: C.navy }}>Passed (Operational pain)</span>
+                  <span style={{ color: C.navySoft, display: "flex", alignItems: "center", gap: 6 }}><ShieldCheck size={14} color="#10B981" /> Fit Check</span>
+                  <span style={{ fontWeight: 600, color: C.navy }}>Real pain found</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, marginTop: 4, paddingTop: 10, borderTop: "1px dashed rgba(0,0,0,0.06)" }}>
                   <span style={{ color: C.navySoft, fontWeight: 500 }}>Action</span>
-                  <span style={{ fontWeight: 600, color: C.blue }}>Preparing Opportunity Alert</span>
+                  <span style={{ fontWeight: 600, color: C.blue }}>Sending Prospect Alert</span>
                 </div>
               </div>
             </div>
 
             {/* Simulated Async Worker Log */}
             <div style={{ background: "#111827", color: "#D1D5DB", padding: "16px 14px", borderRadius: 8, fontSize: 12, position: "relative", zIndex: 2, boxShadow: surfaceShadow, lineHeight: 1.6, border: "1px solid rgba(255,255,255,0.08)", fontFamily: "monospace" }}>
-              <div style={{ fontSize: 11, color: "#9CA3AF", letterSpacing: "0.08em", marginBottom: 8, fontFamily: "var(--font-geist-sans)" }}>VERIFIER LOG</div>
-              <span style={{ color: "#10B981" }}>[INFO]</span> Loaded profile: svc_8f92a<br />
-              <span style={{ color: "#10B981" }}>[INFO]</span> Checking discussion: hn_9281<br />
-              <span style={{ color: "#F59E0B" }}>[WARN]</span> Bad-fit filters cleared.<br />
-              <span style={{ color: "#3B82F6" }}>[SUCCESS]</span> Opportunity alert prepared.
+              <div style={{ fontSize: 11, color: "#9CA3AF", letterSpacing: "0.08em", marginBottom: 8, fontFamily: "var(--font-geist-sans)" }}>QUALITY CHECK</div>
+              <span style={{ color: "#10B981" }}>[OK]</span> Learned your product<br />
+              <span style={{ color: "#10B981" }}>[OK]</span> Reviewed discussion<br />
+              <span style={{ color: "#F59E0B" }}>[SKIP]</span> Bad fits removed<br />
+              <span style={{ color: "#3B82F6" }}>[DONE]</span> Prospect alert ready.
             </div>
           </div>
         </div>
@@ -183,10 +183,10 @@ export function HowItWorks() {
               STEP 03
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Useful Alerts That Get Smarter
+              Useful Alerts That Improve
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
-              When a prospect looks real, Arcli shows the discussion, the matched pain, and the verification reason. Your feedback teaches the profile what to include, exclude, and prioritize next.
+              When someone looks like a fit, Arcli shows the post, the problem, and why it matters. Your thumbs-up or thumbs-down helps future alerts improve.
             </p>
             <a
               href="#demo"
@@ -206,7 +206,7 @@ export function HowItWorks() {
                 letterSpacing: "0.02em"
               }}
             >
-              Explore Signal Alerts
+              See Prospect Alerts
             </a>
           </div>
 
@@ -214,7 +214,7 @@ export function HowItWorks() {
             <div style={{ background: C.navy, borderRadius: 8, padding: 28, position: "relative", zIndex: 2, color: "#fff", boxShadow: surfaceShadow, border: "1px solid rgba(255,255,255,0.12)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
                 <div className="pulse-indicator pulse-green" style={{ background: "#10B981", boxShadow: "0 0 8px rgba(16,185,129,0.6)" }} />
-                <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em" }}>PROSPECT INTELLIGENCE LIVE</span>
+                <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em" }}>PROSPECT ALERT LIVE</span>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -222,20 +222,20 @@ export function HowItWorks() {
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#34D399" }}>
                       <Activity size={16} />
-                      <span style={{ fontWeight: 600 }}>Verified Opportunity</span>
+                      <span style={{ fontWeight: 600 }}>Good Prospect</span>
                     </div>
                     <span style={{ fontSize: 11, color: C.faint, fontWeight: 600 }}>Just now</span>
                   </div>
                   
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
                     <div>
-                      <h5 style={{ fontSize: 13, fontWeight: 500, color: C.faint, marginBottom: 4 }}>Source: Reddit discussion</h5>
+                      <h5 style={{ fontSize: 13, fontWeight: 500, color: C.faint, marginBottom: 4 }}>Source: Reddit post</h5>
                       <p style={{ fontSize: 13, color: "#E2E8F0", fontWeight: 600 }}>
                         Pain: manual billing reconciliation
                       </p>
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: "#34D399", background: "rgba(52,211,153,0.1)", padding: "4px 10px", borderRadius: 6 }}>
-                      High Intent
+                      Worth Reviewing
                     </div>
                   </div>
                 </div>
@@ -245,7 +245,7 @@ export function HowItWorks() {
                     <CheckCircle2 size={14} color={C.faint} />
                   </div>
                   <div style={{ fontSize: 12, color: C.faint, lineHeight: 1.5 }}>
-                    Verified by semantic match and LLM reason.<br />Feedback updates future matching.
+                    Checked by Arcli.<br />Your feedback improves future matches.
                   </div>
                 </div>
               </div>

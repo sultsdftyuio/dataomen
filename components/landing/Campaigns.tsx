@@ -52,15 +52,15 @@ export function Campaigns() {
           {/* Left Side: Product Copy */}
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              <Megaphone size={14} /> PRECISION PROSPECT ALERTS
+              <Megaphone size={14} /> BETTER PROSPECT ALERTS
             </div>
             
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Get fewer alerts,<br />but the right ones.
+              Fewer alerts.<br />Better prospects.
             </h2>
             
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 40 }}>
-              Arcli is not social listening, scraping, or a DM bot. It surfaces a small number of verified prospects whose public conversations line up with the problem your SaaS solves.
+              Arcli is not a social listening tool or a DM bot. It sends a small number of people whose public posts point to the problem your SaaS solves.
             </p>
 
             {/* Premium Feature Stack */}
@@ -72,9 +72,9 @@ export function Campaigns() {
                   <Clock size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Signal Quality Filters</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Quality Over Noise</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    Arcli rejects keyword noise, hiring posts, irrelevant complaints, and bad-fit mentions before they reach your inbox.
+                    Arcli removes word-match noise, hiring posts, random complaints, and bad matches before they reach you.
                   </p>
                 </div>
               </div>
@@ -85,9 +85,9 @@ export function Campaigns() {
                   <Lock size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Explainable Verification</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Clear Reasons</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    Every opportunity includes why it matched your Service Profile, what pain was detected, and what evidence supports intent.
+                    Every alert explains why the person looks relevant, what problem they described, and why it may be worth a look.
                   </p>
                 </div>
               </div>
@@ -98,9 +98,9 @@ export function Campaigns() {
                   <LineChart size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Feedback Learning Loop</h3>
+                  <h3 style={{ fontSize: 17, fontWeight: 600, color: C.navy, marginBottom: 6 }}>Learns From Feedback</h3>
                   <p style={{ fontSize: 15, color: C.navySoft, lineHeight: 1.6 }}>
-                    Mark a signal useful or wrong. Arcli updates your profile so future alerts get sharper without manual rule tuning.
+                    Mark an alert useful or wrong. Arcli learns what you care about so future alerts get sharper.
                   </p>
                 </div>
               </div>
@@ -124,8 +124,8 @@ export function Campaigns() {
                     <Workflow size={18} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 2 }}>INTELLIGENCE LAYER</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Prospect Signal Pipeline</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 2 }}>PROSPECT FINDER</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Prospect Review Flow</div>
                   </div>
                 </div>
                 <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", color: "#10B981", fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 12, letterSpacing: "0.05em" }}>
@@ -145,8 +145,8 @@ export function Campaigns() {
                   </div>
                   <div style={{ paddingTop: 4 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 1: UNDERSTAND</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>website.service_profile.created</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Built from your SaaS website URL.</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, fontFamily: "monospace", display: "inline-block", background: "#FAFAFA", padding: "2px 6px", borderRadius: 4, border: surfaceBorder }}>website reviewed</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 6 }}>Built from your website.</div>
                   </div>
                 </div>
 
@@ -156,9 +156,9 @@ export function Campaigns() {
                     <ShieldCheck size={16} color="#64748B" />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 2: DISCOVER</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Public Discussion Match</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Finds conversations with pain similar to your ICP.</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 2: FIND</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Online Post Found</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Finds people with similar pain.</div>
                   </div>
                 </div>
 
@@ -168,9 +168,9 @@ export function Campaigns() {
                     <Mail size={16} color={C.blue} />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 3: VERIFY</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>AI Intent Verification</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Checks problem fit, urgency, and false positives.</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: C.blue, letterSpacing: "0.06em", marginBottom: 4 }}>STEP 3: CHECK</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Fit Check</div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Checks fit, urgency, and bad matches.</div>
                   </div>
                 </div>
 
@@ -180,9 +180,9 @@ export function Campaigns() {
                     <Activity size={16} color="#10B981" />
                   </div>
                   <div style={{ paddingTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", letterSpacing: "0.06em", marginBottom: 4 }}>STEP 4: LEARN</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", letterSpacing: "0.06em", marginBottom: 4 }}>STEP 4: IMPROVE</div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: C.navy }}>Feedback Applied</div>
-                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Founder reviewed signal. <span style={{ fontWeight: 600, color: "#10B981" }}>Quality improved.</span></div>
+                    <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Founder reviewed alert. <span style={{ fontWeight: 600, color: "#10B981" }}>Quality improved.</span></div>
                   </div>
                 </div>
 

@@ -40,12 +40,12 @@ export function Hero() {
               margin: "0 auto 20px",
             }}
           >
-            Find prospects who already<br />
-            <span style={{ color: C.blue }}>need what you sell.</span>
+            Find buyers<br />
+            <span style={{ color: C.blue }}>ready now.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>
-            Drop in your website URL. Arcli understands your SaaS, discovers public discussions that match the problem you solve, verifies intent with AI, and alerts you when a signal is worth your time.
+            Add your website. Arcli learns what you sell, finds people talking about that problem online, checks if they look like a real fit, and sends you the best ones.
           </p>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
@@ -71,7 +71,7 @@ export function Hero() {
                 letterSpacing: "0.02em",
               }}
             >
-              Start Finding Prospects <ArrowRight size={16} />
+              Find Prospects <ArrowRight size={16} />
             </a>
           </div>
         </div>

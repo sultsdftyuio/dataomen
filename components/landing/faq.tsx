@@ -5,24 +5,24 @@ import { C } from "@/lib/tokens";
 
 const items = [
   {
-    q: "Is Arcli a social listening or keyword-alert tool?",
-    a: "No. Arcli is a prospect intelligence layer. It uses your website-derived Service Profile, semantic matching, and LLM verification to surface discussions that show real problem fit.",
+    q: "Is Arcli just matching words?",
+    a: "No. Arcli learns what you sell and checks whether a post sounds like a real fit before showing it to you.",
   },
   {
     q: "Does Arcli send messages or automate cold outreach?",
-    a: "No. Arcli helps you discover and understand useful opportunities. It does not blast DMs, scrape inboxes, or run mass outreach campaigns.",
+    a: "No. Arcli helps you find and understand useful opportunities. It does not blast DMs, read your inbox, or run mass outreach campaigns.",
   },
   {
     q: "How does Arcli understand our product?",
-    a: "You enter your website URL. Arcli crawls your public pages and extracts a structured Service Profile with your target audience, core problem, use cases, and negative keywords.",
+    a: "You enter your website. Arcli reads your public pages and learns who you help, what problem you solve, and what to ignore.",
   },
   {
-    q: "How do you reduce false positives?",
-    a: "Arcli first compares each discussion to your Service Profile using semantic similarity. Then an explainable LLM verifier checks whether the post shows actual buying intent, operational pain, or a mismatch.",
+    q: "How do you keep the alerts useful?",
+    a: "Arcli reads the context around each post, checks whether the person sounds like a real fit, and removes bad matches before sending an alert.",
   },
   {
     q: "How does pricing scale? Do we pay per team member?",
-    a: "We do not charge per-seat licenses. Solo founders and small SaaS teams can invite collaborators without paying arbitrary user fees just to review prospect intelligence together.",
+    a: "We do not charge per-seat licenses. Solo founders and small SaaS teams can invite collaborators without paying arbitrary user fees just to review prospects together.",
   },
 ];
 

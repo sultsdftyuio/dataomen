@@ -28,7 +28,7 @@ export default function Footer() {
               <Logo className="h-7 w-auto group-hover:scale-[1.02] transition-transform" />
             </Link>
             <p className="text-slate-600 mb-6 max-w-md text-[14px] leading-relaxed">
-              The prospect intelligence layer for SaaS founders. Built to understand your product, discover relevant public pain signals, verify intent, and alert you to useful revenue opportunities.
+              Arcli helps SaaS founders find people already talking about the problem they solve. It learns from your website, checks each match, and sends only useful opportunities.
             </p>
           </div>
 
@@ -41,27 +41,27 @@ export default function Footer() {
               <ul className="space-y-3">
                 <li>
                   <Link href="/saas-churn-recovery" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Prospect Intelligence
+                    Find Prospects
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-churn-risk-scoring" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    AI Verification
+                    Quality Checks
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-dunning-software" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Signal Discovery
+                    Prospect Alerts
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-revenue-attribution" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Opportunity Alerts
+                    Useful Alerts
                   </Link>
                 </li>
                 <li>
                   <Link href="/saas-billing-infrastructure" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Service Profile
+                    Website Setup
                   </Link>
                 </li>
               </ul>
@@ -127,7 +127,7 @@ export default function Footer() {
         {/* Bottom Section */}
         <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4" style={{ borderColor: "rgba(27,110,191,0.16)" }}>
           <p className="text-sm text-slate-500">
-            &copy; {currentYear} Arcli. All rights reserved. Prospect Intelligence Layer.
+            &copy; {currentYear} Arcli. All rights reserved. Prospect Finder for SaaS.
           </p>
           <div className="flex items-center gap-6 text-sm text-slate-500">
             <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-[#1B6EBF] transition-colors flex items-center gap-2 font-medium text-slate-600">

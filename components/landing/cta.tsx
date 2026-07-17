@@ -23,10 +23,10 @@ export function CTA() {
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: 720, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(38px, 5vw, 54px)", marginBottom: 14, lineHeight: 1.05, letterSpacing: "-0.015em", fontWeight: 600 }}>
-          Stop chasing noisy mentions.<br />Start finding real prospects.
+          Skip the noise.<br />Find real prospects.
         </h2>
         <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-        </p>          Drop in your website URL and let Arcli turn public pain signals into verified revenue opportunities.
+        </p>          Add your website. Arcli finds people already asking for help with the problem you solve.
 
 
         {/* CTA buttons */}
@@ -50,7 +50,7 @@ export function CTA() {
               letterSpacing: "0.02em",
             }}
           >
-            Find Qualified Prospects <ArrowRight size={14} />
+            Find Prospects <ArrowRight size={14} />
           </a>
           <a
             href="#demo"
@@ -71,13 +71,13 @@ export function CTA() {
               letterSpacing: "0.02em",
             }}
           >
-            <Play size={14} /> See Signal Demo
+            <Play size={14} /> See Examples
           </a>
         </div>
 
         {/* Trust nudges */}
         <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.82)", letterSpacing: "0.03em", textTransform: "uppercase", flexWrap: "wrap", justifyContent: "center" }}>
-          {["3-day Pro trial with card", "$29/month after trial", "Start from your website URL"].map((t, i) => (
+          {["3-day Pro trial with card", "$29/month after trial", "Start from your website"].map((t, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <CheckCircle2 size={14} /> {t}
             </span>
