@@ -22,6 +22,7 @@ interface WorkspaceSettingsProps extends WorkspaceBillingCardProps {
     supportEmail: string;
     websiteUrl: string;
   };
+  isRecoveryMode?: boolean;
   tenantId?: string | null;
   billingTestControlsEnabled?: boolean;
   serviceProfile?: ServiceProfileView | null;
