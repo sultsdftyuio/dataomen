@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { after } from "next/server";
 import { z } from "zod";
 
@@ -26,6 +27,13 @@ function crawlTriggerEndpoint() {
 
   const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
   return internalApiUrl ? `${internalApiUrl}/api/crawl/trigger` : null;
+}
+
+function crawlJobId(tenantId: string, websiteUrl: string) {
+  return createHash("sha256")
+    .update(`${tenantId}:${websiteUrl}`, "utf8")
+    .digest("hex")
+    .slice(0, 24);
 }
 
 async function readTriggerRequest(request: Request) {
@@ -95,6 +103,7 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
       headers: {
         Authorization: `Bearer ${workerSecret}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": crawlJobId(tenantId, websiteUrl),
       },
       cache: "no-store",
       signal: controller.signal,

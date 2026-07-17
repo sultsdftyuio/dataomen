@@ -253,6 +253,13 @@ function generationIdempotencyKey(tenantId: string, websiteUrl: string) {
     .digest("hex");
 }
 
+function crawlJobId(tenantId: string, websiteUrl: string) {
+  return createHash("sha256")
+    .update(`${tenantId}:${websiteUrl}`, "utf8")
+    .digest("hex")
+    .slice(0, 24);
+}
+
 async function readPayload(response: Response): Promise<WorkerQueuePayload> {
   const text = await response.text();
   if (!text) {
@@ -439,7 +446,7 @@ export async function generateWorkspaceBrain(
     );
   }
 
-  const idempotencyKey = generationIdempotencyKey(
+  const workspaceBrainIdempotencyKey = generationIdempotencyKey(
     parsed.data.tenantId,
     normalizedWebsiteUrl,
   );
@@ -452,12 +459,16 @@ export async function generateWorkspaceBrain(
       | null = null;
 
     for (const target of targets) {
+      const targetIdempotencyKey =
+        target.kind === "crawl_trigger"
+          ? crawlJobId(parsed.data.tenantId, normalizedWebsiteUrl)
+          : workspaceBrainIdempotencyKey;
       const response = await fetch(target.endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${workerSecret}`,
-          "Idempotency-Key": idempotencyKey,
+          "Idempotency-Key": targetIdempotencyKey,
         },
         cache: "no-store",
         signal: controller.signal,
@@ -466,7 +477,7 @@ export async function generateWorkspaceBrain(
             tenantId: parsed.data.tenantId,
             websiteUrl: normalizedWebsiteUrl,
             userId: authorization.userId,
-            idempotencyKey,
+            idempotencyKey: targetIdempotencyKey,
           }),
         ),
       });
@@ -477,7 +488,7 @@ export async function generateWorkspaceBrain(
         const routeProbes = await probeQueueTarget(
           target,
           workerSecret,
-          idempotencyKey,
+          targetIdempotencyKey,
         );
         console.warn("[WorkspaceBrain] generation queue target unavailable", {
           tenant_id: parsed.data.tenantId,
@@ -514,7 +525,7 @@ export async function generateWorkspaceBrain(
         status: "pending",
         tenantId: parsed.data.tenantId,
         websiteUrl: normalizedWebsiteUrl,
-        idempotencyKey,
+        idempotencyKey: targetIdempotencyKey,
         messageId: typeof payload.message_id === "string" ? payload.message_id : null,
       };
     }

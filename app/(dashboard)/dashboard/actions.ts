@@ -280,6 +280,7 @@ async function postCrawlerTrigger(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${workerSecret}`,
+    "Idempotency-Key": crawlJobId(context.tenantId, websiteUrl),
   };
 
   const controller = new AbortController();

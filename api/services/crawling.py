@@ -182,6 +182,70 @@ def _crawl_job_row(
     return dict(row) if row else None
 
 
+def _crawl_job_row_for_website(
+    conn: Connection,
+    tenant_id: str,
+    website_url: str,
+) -> dict[str, Any] | None:
+    if not _table_exists(conn, "crawl_jobs"):
+        return None
+
+    row = conn.execute(
+        text(
+            """
+            SELECT id,
+                   status,
+                   phase,
+                   message_id,
+                   attempt_count,
+                   last_heartbeat_at,
+                   updated_at
+              FROM public.crawl_jobs
+             WHERE tenant_id = :tenant_id
+               AND website_url = :website_url
+             LIMIT 1
+            """
+        ),
+        {"tenant_id": tenant_id, "website_url": website_url},
+    ).mappings().first()
+
+    return dict(row) if row else None
+
+
+def _canonicalize_crawl_job_id(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    website_url: str,
+    crawl_job_id: str,
+    source: str,
+) -> tuple[str, dict[str, Any] | None]:
+    existing_website_job = _crawl_job_row_for_website(
+        conn,
+        tenant_id,
+        website_url,
+    )
+    existing_crawl_job_id = (
+        str(existing_website_job.get("id"))
+        if existing_website_job and existing_website_job.get("id") is not None
+        else None
+    )
+    if existing_website_job and existing_crawl_job_id and existing_crawl_job_id != crawl_job_id:
+        logger.warning(
+            "crawl_job_id_remapped tenant_id=%s website_url=%s source=%s requested_job_id=%s existing_crawl_job_id=%s existing_status=%s existing_phase=%s",
+            tenant_id,
+            website_url,
+            source,
+            crawl_job_id,
+            existing_crawl_job_id,
+            existing_website_job.get("status"),
+            existing_website_job.get("phase"),
+        )
+        return existing_crawl_job_id, existing_website_job
+
+    return crawl_job_id, existing_website_job
+
+
 def _timestamp_age_seconds(value: Any) -> float | None:
     if value is None:
         return None
@@ -242,12 +306,12 @@ def _upsert_crawl_job(
     error_type: str | None = None,
     error_message: str | None = None,
     context: dict[str, Any] | None = None,
-) -> None:
+) -> str | None:
     if not _table_exists(conn, "crawl_jobs"):
-        return
+        return None
 
     now = _utc_now()
-    conn.execute(
+    row = conn.execute(
         text(
             """
             INSERT INTO public.crawl_jobs (
@@ -282,7 +346,7 @@ def _upsert_crawl_job(
                 CAST(:now AS timestamptz),
                 CAST(:now AS timestamptz)
             )
-            ON CONFLICT (id) DO UPDATE
+            ON CONFLICT (tenant_id, website_url) DO UPDATE
                SET website_url = EXCLUDED.website_url,
                    status = EXCLUDED.status,
                    phase = EXCLUDED.phase,
@@ -306,6 +370,7 @@ def _upsert_crawl_job(
                    END,
                    updated_at = CAST(:now AS timestamptz)
              WHERE public.crawl_jobs.tenant_id = EXCLUDED.tenant_id
+            RETURNING id
             """
         ),
         {
@@ -321,7 +386,8 @@ def _upsert_crawl_job(
             "error_context": json.dumps(context or {}),
             "now": now,
         },
-    )
+    ).first()
+    return str(row[0]) if row else None
 
 
 def _claim_crawl_job(
@@ -1720,6 +1786,17 @@ def enqueue_crawl_job(
 
     with engine.begin() as conn:
         existing_job = _crawl_job_row(conn, crawl_job_id, tenant_id)
+        canonical_job_id, existing_website_job = _canonicalize_crawl_job_id(
+            conn,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            crawl_job_id=crawl_job_id,
+            source="enqueue",
+        )
+        if canonical_job_id != crawl_job_id:
+            crawl_job_id = canonical_job_id
+            existing_job = existing_website_job
+
         if _active_crawl_job_is_fresh(
             existing_job
         ) and _active_crawl_job_has_queue_signal(existing_job):
@@ -1735,7 +1812,7 @@ def enqueue_crawl_job(
             )
             return message_id
 
-        _upsert_crawl_job(
+        upserted_job_id = _upsert_crawl_job(
             conn,
             crawl_job_id=crawl_job_id,
             tenant_id=tenant_id,
@@ -1743,6 +1820,16 @@ def enqueue_crawl_job(
             status="pending",
             phase="queued",
         )
+        if upserted_job_id and upserted_job_id != crawl_job_id:
+            logger.warning(
+                "crawl_job_id_remapped tenant_id=%s website_url=%s source=%s requested_job_id=%s existing_crawl_job_id=%s",
+                tenant_id,
+                normalized_url,
+                "enqueue_upsert",
+                crawl_job_id,
+                upserted_job_id,
+            )
+            crawl_job_id = upserted_job_id
 
     message = process_crawl_job.send(tenant_id, normalized_url, crawl_job_id)
     with engine.begin() as conn:
@@ -1797,6 +1884,13 @@ def process_crawl_job(
     phase = "starting"
 
     with engine.begin() as conn:
+        crawl_job_id, _ = _canonicalize_crawl_job_id(
+            conn,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            crawl_job_id=crawl_job_id,
+            source="process",
+        )
         current_website_url = _current_website_url(conn, tenant_id)
 
     if not _normalized_equals(current_website_url, normalized_url):
@@ -2067,6 +2161,15 @@ def mark_crawl_job_dead_lettered(
     job_id = str(args[2]) if len(args) > 2 and args[2] else None
     crawl_job_id = _resolve_crawl_job_id(tenant_id, normalized_url, job_id)
     engine = _database_engine()
+    with engine.begin() as conn:
+        crawl_job_id, _ = _canonicalize_crawl_job_id(
+            conn,
+            tenant_id=tenant_id,
+            website_url=normalized_url,
+            crawl_job_id=crawl_job_id,
+            source="dead_letter",
+        )
+
     retries = (retry_context or {}).get("retries")
     max_retries = (retry_context or {}).get("max_retries")
     exc = RuntimeError("Crawl job retries exhausted.")
