@@ -73,7 +73,7 @@ _configure_dramatiq_broker()
 
 @dramatiq.actor(
     queue_name=PUBLIC_INGESTION_QUEUE_NAME,
-    max_retries=env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_RETRIES", 3, minimum=0),
+    max_retries=max(0, env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_RETRIES", 3)),
     min_backoff=env_int("ARCLI_PUBLIC_INGESTION_JOB_MIN_BACKOFF_MS", 15_000),
     max_backoff=env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_BACKOFF_MS", 90_000),
     time_limit=env_int(
