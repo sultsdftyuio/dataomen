@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/card";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
-import { submitLeadFeedback } from "./actions";
+import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
 import {
   FEEDBACK_OPTIONS,
   type CrawlJobView,
@@ -102,6 +102,16 @@ function pipelineStatus({
   }
 
   if (embeddingStatus && embeddingStatus !== "completed") {
+    if (["failed", "error", "dead_lettered"].includes(embeddingStatus)) {
+      return {
+        label: "Needs attention",
+        title: "The embedding job failed.",
+        detail:
+          "The profile is ready, but matching cannot start until its embedding is generated. Retry the job after confirming the worker configuration.",
+        canRetry: true,
+      };
+    }
+
     if (
       ["pending", "queued", "processing", "generating"].includes(embeddingStatus) &&
       embeddingAge !== null &&
@@ -112,6 +122,7 @@ function pipelineStatus({
         title: "The embedding job has not reported progress.",
         detail:
           "Check the arcli-worker logs, Redis embeddings queue, OPENAI_API_KEY, REDIS_URL, DATABASE_URL, and INTERNAL_WORKER_SECRET.",
+        canRetry: true,
       };
     }
 
@@ -182,6 +193,19 @@ function WarmUpState({
   isWarmingUp: boolean;
 }) {
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
+  const router = useRouter();
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
+  const [isRetryPending, startRetryTransition] = useTransition();
+  const canRetry = "canRetry" in status && status.canRetry;
+
+  const retryEmbedding = () => {
+    setRetryMessage(null);
+    startRetryTransition(async () => {
+      const result = await retryServiceProfileEmbedding(serviceProfile.id);
+      setRetryMessage(result.message);
+      if (result.ok) router.refresh();
+    });
+  };
 
   return (
     <div
@@ -211,6 +235,29 @@ function WarmUpState({
       <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
         {status.detail}
       </p>
+      {canRetry ? (
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isRetryPending}
+            onClick={retryEmbedding}
+            style={{
+              borderColor: C.blueLight,
+              backgroundColor: C.white,
+              color: C.blue,
+            }}
+          >
+            {isRetryPending ? "Retrying embedding…" : "Retry embedding"}
+          </Button>
+          {retryMessage ? (
+            <p className="max-w-md text-xs leading-5" style={{ color: C.muted }}>
+              {retryMessage}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <p className="mx-auto mt-2 max-w-md text-xs leading-5" style={{ color: C.muted }}>
         This dashboard refreshes while the first pass is running, so verified leads
         appear as soon as they are written.

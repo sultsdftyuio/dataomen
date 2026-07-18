@@ -1101,12 +1101,56 @@ def _persist_service_profile_embedding(
     return persisted_profile_id
 
 
+def _record_service_profile_embedding_enqueue_failure(
+    tenant_id: str,
+    service_profile_id: str | None,
+    exc: BaseException,
+) -> None:
+    """Persist an enqueue error so the dashboard never shows a silent stale job."""
+    try:
+        with _database_engine().begin() as conn:
+            _mark_service_profile_embedding_status(
+                conn,
+                tenant_id=tenant_id,
+                service_profile_id=service_profile_id,
+                status="failed",
+                failure_reason="queue_unavailable",
+                error_type=exc.__class__.__name__,
+                error_message=str(exc),
+            )
+    except Exception as persistence_exc:
+        logger.exception(
+            "service_profile_embedding_enqueue_failure_not_persisted tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            service_profile_id,
+            persistence_exc.__class__.__name__,
+            persistence_exc,
+        )
+
+
 def enqueue_service_profile_embedding_job(
     tenant_id: str,
     service_profile_id: str | None = None,
 ) -> str:
-    _require_redis_broker()
-    message = process_service_profile_embedding_job.send(tenant_id, service_profile_id)
+    try:
+        _require_redis_broker()
+        message = process_service_profile_embedding_job.send(tenant_id, service_profile_id)
+    except Exception as exc:
+        _record_service_profile_embedding_enqueue_failure(
+            tenant_id,
+            service_profile_id,
+            exc,
+        )
+        logger.exception(
+            "service_profile_embedding_enqueue_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        if isinstance(exc, RuntimeError):
+            raise
+        raise RuntimeError("Embedding queue is unavailable.") from exc
 
     logger.info(
         "service_profile_embedding_job_enqueued tenant_id=%s service_profile_id=%s message_id=%s",

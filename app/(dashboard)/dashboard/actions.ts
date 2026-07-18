@@ -2,7 +2,6 @@
 
 import { createHash } from "crypto";
 import { revalidatePath } from "next/cache";
-import { after } from "next/server";
 import { z } from "zod";
 
 import type { Json } from "@/types/supabase";
@@ -210,13 +209,28 @@ function crawlerTriggerEndpoint() {
   return internalApiUrl ? `${internalApiUrl}/api/crawl/trigger` : null;
 }
 
+function joinBackendPath(baseUrl: string, path: string) {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (base.endsWith("/api") && normalizedPath.startsWith("/api/")) {
+    return `${base}${normalizedPath.slice(4)}`;
+  }
+
+  return `${base}${normalizedPath}`;
+}
+
 function embeddingTriggerEndpoint() {
   const explicit = process.env.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL?.trim();
   if (explicit) return explicit;
 
-  const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
-  return internalApiUrl
-    ? `${internalApiUrl}/api/service-profile/embed/trigger`
+  const workerApiUrl =
+    process.env.ARCLI_WORKER_API_URL?.trim() ||
+    process.env.PYTHON_BACKEND_URL?.trim() ||
+    process.env.INTERNAL_API_URL?.trim();
+
+  return workerApiUrl
+    ? joinBackendPath(workerApiUrl, "/api/service-profile/embed/trigger")
     : null;
 }
 
@@ -337,14 +351,14 @@ async function postCrawlerTrigger(
 async function postEmbeddingTrigger(
   context: EmbeddingTriggerContext,
   serviceProfileId: string | null,
-) {
+): Promise<ProspectActionResult> {
   const endpoint = embeddingTriggerEndpoint();
   if (!endpoint) {
     console.warn("[ProspectOnboarding] profile embedding trigger not configured", {
       tenant_id: context.tenantId,
       service_profile_id: serviceProfileId,
     });
-    return;
+    return actionError("Embedding worker endpoint is not configured.");
   }
 
   const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
@@ -353,7 +367,7 @@ async function postEmbeddingTrigger(
       tenant_id: context.tenantId,
       service_profile_id: serviceProfileId,
     });
-    return;
+    return actionError("Embedding worker credentials are missing.");
   }
 
   const controller = new AbortController();
@@ -384,36 +398,56 @@ async function postEmbeddingTrigger(
         status: response.status,
         body: text.slice(0, 500),
       });
-      return;
+      return actionError(
+        `Embedding queue rejected the request with HTTP ${response.status}.`,
+      );
     }
 
     console.info("[ProspectOnboarding] profile embedding trigger posted", {
       tenant_id: context.tenantId,
       service_profile_id: serviceProfileId,
     });
+    return actionOk("Embedding job queued.");
   } catch (error) {
     console.warn("[ProspectOnboarding] profile embedding trigger unavailable", {
       tenant_id: context.tenantId,
       service_profile_id: serviceProfileId,
       error,
     });
+    return actionError(
+      error instanceof Error
+        ? `Embedding queue is unavailable: ${error.message}`
+        : "Embedding queue is unavailable.",
+    );
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function scheduleEmbeddingTrigger(
-  context: TenantContext,
+export async function retryServiceProfileEmbedding(
   serviceProfileId: string | null,
-) {
-  const triggerContext: EmbeddingTriggerContext = {
-    tenantId: context.tenantId,
-    userId: context.userId,
-  };
+): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
 
-  after(async () => {
-    await postEmbeddingTrigger(triggerContext, serviceProfileId);
-  });
+  if (!serviceProfileId) {
+    return actionError("This service profile is no longer available to retry.");
+  }
+
+  const result = await postEmbeddingTrigger(
+    {
+      tenantId: context.tenantId,
+      userId: context.userId,
+    },
+    serviceProfileId,
+  );
+
+  if (result.ok) {
+    revalidatePath("/dashboard");
+    revalidatePath("/onboarding/workspace");
+  }
+
+  return result;
 }
 
 export async function submitWebsiteForCrawl(
@@ -574,6 +608,7 @@ function updatePayloads(
     review_status: status,
     status,
     extraction_status: "completed",
+    ...(status === "approved" ? { embedding_status: "pending" } : {}),
     approved_at: status === "approved" ? now : null,
   };
 
@@ -582,6 +617,7 @@ function updatePayloads(
   payloads.push({
     ...normalized,
     status,
+    ...(status === "approved" ? { embedding_status: "pending" } : {}),
     updated_at: now,
   });
   payloads.push({
@@ -644,7 +680,14 @@ export async function saveServiceProfile(
       revalidatePath("/dashboard");
       revalidatePath("/onboarding/workspace");
       if (intent === "approve") {
-        scheduleEmbeddingTrigger(context, profileId);
+        const triggerResult = await postEmbeddingTrigger(
+          {
+            tenantId: context.tenantId,
+            userId: context.userId,
+          },
+          profileId,
+        );
+        if (!triggerResult.ok) return triggerResult;
       }
       return actionOk(
         intent === "approve"
