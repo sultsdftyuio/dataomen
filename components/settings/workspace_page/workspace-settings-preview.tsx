@@ -1,129 +1,79 @@
 "use client";
 
-import React from "react";
-import { Sparkles, CornerDownLeft, ShieldCheck } from "lucide-react";
-import { C } from "@/lib/tokens";
+import { useMemo } from "react";
+import { ShieldCheck } from "lucide-react";
+
+import { EMPTY_FIELDS } from "@/components/onboarding/workspace-provisioning-profile";
+import type {
+  ServiceProfileFields,
+  ServiceProfileView,
+} from "@/app/(dashboard)/dashboard/prospect-types";
 
 interface WorkspaceSettingsPreviewProps {
-  companyName: string;
-  websiteUrl: string;
-  supportEmail: string;
+  tenantId?: string | null;
+  serviceProfile?: ServiceProfileView | null;
+  fields?: ServiceProfileFields | null;
+}
+
+const PROFILE_FIELD_KEYS = [
+  "target_audience",
+  "core_problem",
+  "unique_value_prop",
+  "use_cases",
+  "pain_points",
+  "buying_triggers",
+  "negative_keywords",
+  "excluded_audiences",
+] as const satisfies ReadonlyArray<keyof ServiceProfileFields>;
+
+function tenantSafeProfileFields(
+  fields: ServiceProfileFields | null | undefined,
+) {
+  const source = fields ?? EMPTY_FIELDS;
+
+  return PROFILE_FIELD_KEYS.reduce<ServiceProfileFields>(
+    (profile, key) => ({
+      ...profile,
+      [key]: source[key],
+    }),
+    { ...EMPTY_FIELDS },
+  );
 }
 
 export default function WorkspaceSettingsPreview({
-  companyName,
-  websiteUrl,
-  supportEmail,
+  fields = null,
+  serviceProfile = null,
 }: WorkspaceSettingsPreviewProps) {
-  const sans = "var(--font-geist-sans), sans-serif";
-  const surfaceBorder = `1px solid ${C.rule}`;
-  const surfaceShadow = "0 1px 3px rgba(10, 22, 40, 0.04), 0 1px 2px rgba(10, 22, 40, 0.02)";
+  const previewFields = fields ?? serviceProfile?.fields;
+  const formattedJson = useMemo(
+    () =>
+      JSON.stringify(
+        tenantSafeProfileFields(previewFields),
+        null,
+        2,
+      ),
+    [previewFields],
+  );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 24 }}>
-      {/* Box 1: Dynamic Injection Panel */}
-      <div
-        style={{
-          background: C.bluePale,
-          borderRadius: 8,
-          border: `1px solid rgba(27, 110, 191, 0.25)`,
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
+    <div className="flex flex-col gap-3">
+      <pre
+        tabIndex={0}
+        aria-label="Tenant-safe structured service profile JSON"
+        className="max-h-[560px] overflow-auto rounded-lg border bg-background p-4 text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.blue }}>
-          <Sparkles size={14} />
-          <span>Dynamic Injection Preview</span>
-        </div>
+        <code>{formattedJson}</code>
+      </pre>
 
-        <p style={{ fontSize: 11, color: C.navySoft, margin: 0, lineHeight: 1.5 }}>
-          These global variables are injected dynamically into your outbound recovery emails.
-        </p>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 2 }}>
-          <div
-            style={{
-              padding: "8px 10px",
-              borderRadius: 6,
-              background: C.white,
-              border: surfaceBorder,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              overflow: "hidden",
-            }}
-          >
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: C.blue, fontWeight: 600, userSelect: "none" }}>
-              {"{{ company.name }}"}
-            </span>
-            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 600, color: C.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
-              {companyName || <span style={{ color: C.muted, fontStyle: "italic", fontFamily: sans }}>Not set</span>}
-            </span>
-          </div>
-
-          <div
-            style={{
-              padding: "8px 10px",
-              borderRadius: 6,
-              background: C.white,
-              border: surfaceBorder,
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              overflow: "hidden",
-            }}
-          >
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: C.blue, fontWeight: 600, userSelect: "none" }}>
-              {"{{ company.url }}"}
-            </span>
-            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 600, color: C.navy, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
-              {websiteUrl || <span style={{ color: C.muted, fontStyle: "italic", fontFamily: sans }}>Not set</span>}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Box 2: Reply-To Routing Panel */}
-      <div
-        style={{
-          background: C.white,
-          borderRadius: 8,
-          border: surfaceBorder,
-          boxShadow: surfaceShadow,
-          padding: 16,
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: C.navy }}>
-          <CornerDownLeft size={14} color={C.blue} />
-          <span>Reply-To Routing</span>
-        </div>
-
-        <p style={{ fontSize: 11, color: C.muted, margin: 0, lineHeight: 1.5 }}>
-          When recovered users reply directly to your automated campaign emails, responses route to the Support Email configured above.
-        </p>
-
-        <div
-          style={{
-            marginTop: 4,
-            padding: "8px 10px",
-            borderRadius: 6,
-            background: C.offWhite,
-            border: surfaceBorder,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <ShieldCheck size={14} color={C.green} />
-          <span style={{ fontSize: 11, fontFamily: "monospace", color: C.navy, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {supportEmail || <span style={{ color: C.muted, fontStyle: "italic", fontFamily: sans, fontWeight: 400 }}>No support email set</span>}
-          </span>
-        </div>
+      <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+        <ShieldCheck
+          className="mt-0.5 size-3.5 shrink-0 text-emerald-600"
+          aria-hidden="true"
+        />
+        <span>
+          Only structured service profile fields are rendered here. Raw crawler
+          metadata, worker diagnostics, and secrets are excluded.
+        </span>
       </div>
     </div>
   );

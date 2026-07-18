@@ -532,6 +532,8 @@ export type ProfileReviewStateProps = {
   saveLabel?: string;
   savingLabel?: string;
   saveHelpText?: string;
+  showHeader?: boolean;
+  showStructuredPreview?: boolean;
 };
 
 export function ProfileReviewState({
@@ -552,6 +554,8 @@ export function ProfileReviewState({
   saveLabel = "Save refinements",
   savingLabel = "Saving...",
   saveHelpText = "Save keeps this profile in review. Approval activates discovery using the rules above.",
+  showHeader = true,
+  showStructuredPreview = true,
 }: ProfileReviewStateProps) {
   const [requestedIntent, setRequestedIntent] =
     useState<ProfilePersistIntent | null>(null);
@@ -640,56 +644,64 @@ export function ProfileReviewState({
             : "mx-auto flex w-full max-w-7xl flex-col gap-6"
         }
       >
-        <header
-          className="flex flex-col gap-5 border-b pb-6 lg:flex-row lg:items-end lg:justify-between"
-          style={{ borderColor: C.rule }}
-        >
-          <div className="max-w-3xl">
-            <div
-              className="mb-3 inline-flex items-center gap-2 text-xs font-bold tracking-[0.08em]"
-              style={{ color: C.blue }}
-            >
-              <Sparkles className="size-3.5" aria-hidden="true" />
-              {eyebrow}
+        {showHeader ? (
+          <header
+            className="flex flex-col gap-5 border-b pb-6 lg:flex-row lg:items-end lg:justify-between"
+            style={{ borderColor: C.rule }}
+          >
+            <div className="max-w-3xl">
+              <div
+                className="mb-3 inline-flex items-center gap-2 text-xs font-bold tracking-[0.08em]"
+                style={{ color: C.blue }}
+              >
+                <Sparkles className="size-3.5" aria-hidden="true" />
+                {eyebrow}
+              </div>
+
+              <h1
+                className="text-3xl font-semibold leading-tight tracking-[-0.025em] sm:text-4xl"
+                style={{ color: C.navy }}
+              >
+                {title}
+              </h1>
+
+              <p
+                className="mt-3 max-w-2xl text-sm leading-6 sm:text-base"
+                style={{ color: C.navySoft }}
+              >
+                {description}
+              </p>
+
+              <p
+                className="mt-3 break-all text-xs font-medium"
+                style={{ color: C.muted }}
+              >
+                Source: {effectiveWebsiteUrl}
+              </p>
             </div>
 
-            <h1
-              className="text-3xl font-semibold leading-tight tracking-[-0.025em] sm:text-4xl"
-              style={{ color: C.navy }}
+            <Badge
+              variant="outline"
+              className="w-fit rounded-md px-3 py-1.5 text-xs font-semibold"
+              style={{
+                borderColor: C.blueLight,
+                backgroundColor: C.bluePale,
+                color: C.blue,
+              }}
             >
-              {title}
-            </h1>
+              <CircleDotDashed className="mr-1.5 size-3.5" aria-hidden="true" />
+              {statusLabel}
+            </Badge>
+          </header>
+        ) : null}
 
-            <p
-              className="mt-3 max-w-2xl text-sm leading-6 sm:text-base"
-              style={{ color: C.navySoft }}
-            >
-              {description}
-            </p>
-
-            <p
-              className="mt-3 break-all text-xs font-medium"
-              style={{ color: C.muted }}
-            >
-              Source: {effectiveWebsiteUrl}
-            </p>
-          </div>
-
-          <Badge
-            variant="outline"
-            className="w-fit rounded-md px-3 py-1.5 text-xs font-semibold"
-            style={{
-              borderColor: C.blueLight,
-              backgroundColor: C.bluePale,
-              color: C.blue,
-            }}
-          >
-            <CircleDotDashed className="mr-1.5 size-3.5" aria-hidden="true" />
-            {statusLabel}
-          </Badge>
-        </header>
-
-        <section className="grid items-start gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]">
+        <section
+          className={
+            showStructuredPreview
+              ? "grid items-start gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(340px,5fr)]"
+              : "grid items-start gap-5"
+          }
+        >
           <div className="relative">
             <div
               aria-hidden="true"
@@ -869,102 +881,104 @@ export function ProfileReviewState({
             </Card>
           </div>
 
-          <div className="relative lg:sticky lg:top-6">
-            <div
-              aria-hidden="true"
-              className="absolute -left-2 -top-2 bottom-3 right-3 rounded-lg"
-              style={{
-                backgroundColor: "rgba(59, 154, 232, 0.16)",
-                border: SURFACE_BORDER,
-              }}
-            />
+          {showStructuredPreview ? (
+            <div className="relative lg:sticky lg:top-6">
+              <div
+                aria-hidden="true"
+                className="absolute -left-2 -top-2 bottom-3 right-3 rounded-lg"
+                style={{
+                  backgroundColor: "rgba(59, 154, 232, 0.16)",
+                  border: SURFACE_BORDER,
+                }}
+              />
 
-            <Card
-              className="relative z-10 overflow-hidden rounded-lg"
-              style={{
-                border: "1px solid rgba(255, 255, 255, 0.12)",
-                backgroundColor: C.navy,
-                color: C.white,
-                boxShadow: SURFACE_SHADOW,
-              }}
-            >
-              <CardHeader
-                className="gap-3 border-b"
-                style={{ borderColor: "rgba(255, 255, 255, 0.10)" }}
+              <Card
+                className="relative z-10 overflow-hidden rounded-lg"
+                style={{
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  backgroundColor: C.navy,
+                  color: C.white,
+                  boxShadow: SURFACE_SHADOW,
+                }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="flex size-9 shrink-0 items-center justify-center rounded-lg border"
+                <CardHeader
+                  className="gap-3 border-b"
+                  style={{ borderColor: "rgba(255, 255, 255, 0.10)" }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="flex size-9 shrink-0 items-center justify-center rounded-lg border"
+                        style={{
+                          borderColor: "rgba(96, 165, 250, 0.28)",
+                          backgroundColor: "rgba(59, 154, 232, 0.18)",
+                          color: C.blueLight,
+                        }}
+                      >
+                        <Braces className="size-4" aria-hidden="true" />
+                      </div>
+
+                      <div>
+                        <CardTitle className="text-lg font-semibold text-white">
+                          Structured profile
+                        </CardTitle>
+                        <CardDescription className="mt-1 leading-6 text-slate-400">
+                          Read-only preview of the payload prepared for the
+                          matching engine.
+                        </CardDescription>
+                      </div>
+                    </div>
+
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold tracking-[0.08em]"
                       style={{
-                        borderColor: "rgba(96, 165, 250, 0.28)",
-                        backgroundColor: "rgba(59, 154, 232, 0.18)",
+                        borderColor: "rgba(255, 255, 255, 0.14)",
+                        backgroundColor: "rgba(255, 255, 255, 0.06)",
                         color: C.blueLight,
                       }}
                     >
-                      <Braces className="size-4" aria-hidden="true" />
-                    </div>
-
-                    <div>
-                      <CardTitle className="text-lg font-semibold text-white">
-                        Structured profile
-                      </CardTitle>
-                      <CardDescription className="mt-1 leading-6 text-slate-400">
-                        Read-only preview of the payload prepared for the
-                        matching engine.
-                      </CardDescription>
-                    </div>
+                      READ ONLY
+                    </Badge>
                   </div>
+                </CardHeader>
 
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 rounded-md px-2 py-1 text-[10px] font-semibold tracking-[0.08em]"
+                <CardContent className="p-4">
+                  <pre
+                    tabIndex={0}
+                    aria-label="Structured service profile JSON"
+                    className="max-h-[690px] overflow-auto rounded-lg border p-4 text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
                     style={{
-                      borderColor: "rgba(255, 255, 255, 0.14)",
-                      backgroundColor: "rgba(255, 255, 255, 0.06)",
-                      color: C.blueLight,
+                      borderColor: "rgba(255, 255, 255, 0.10)",
+                      backgroundColor: "rgba(255, 255, 255, 0.04)",
+                      color: "#E2E8F0",
                     }}
                   >
-                    READ ONLY
-                  </Badge>
-                </div>
-              </CardHeader>
+                    <code>{formattedJson}</code>
+                  </pre>
 
-              <CardContent className="p-4">
-                <pre
-                  tabIndex={0}
-                  aria-label="Structured service profile JSON"
-                  className="max-h-[690px] overflow-auto rounded-lg border p-4 text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
-                  style={{
-                    borderColor: "rgba(255, 255, 255, 0.10)",
-                    backgroundColor: "rgba(255, 255, 255, 0.04)",
-                    color: "#E2E8F0",
-                  }}
-                >
-                  <code>{formattedJson}</code>
-                </pre>
-
-                <div
-                  className="mt-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5"
-                  style={{
-                    borderColor: "rgba(16, 185, 129, 0.24)",
-                    backgroundColor: "rgba(16, 185, 129, 0.08)",
-                    color: "#94A3B8",
-                  }}
-                >
-                  <ShieldCheck
-                    className="mt-0.5 size-3.5 shrink-0"
-                    style={{ color: "#34D399" }}
-                    aria-hidden="true"
-                  />
-                  <span>
-                    Show only tenant-safe profile fields here. Do not pass raw
-                    crawler metadata, secrets, or internal worker diagnostics.
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                  <div
+                    className="mt-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5"
+                    style={{
+                      borderColor: "rgba(16, 185, 129, 0.24)",
+                      backgroundColor: "rgba(16, 185, 129, 0.08)",
+                      color: "#94A3B8",
+                    }}
+                  >
+                    <ShieldCheck
+                      className="mt-0.5 size-3.5 shrink-0"
+                      style={{ color: "#34D399" }}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      Show only tenant-safe profile fields here. Do not pass raw
+                      crawler metadata, secrets, or internal worker diagnostics.
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
         </section>
       </div>
     </main>

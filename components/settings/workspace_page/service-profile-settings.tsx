@@ -19,6 +19,7 @@ import { C } from "@/lib/tokens";
 type ServiceProfileSettingsProps = {
   serviceProfile: ServiceProfileView;
   websiteUrl: string;
+  onFieldsChange?: (fields: ServiceProfileFields) => void;
 };
 
 type SettingsProfileResponse = {
@@ -58,6 +59,7 @@ async function readSettingsProfileResult(
 export function ServiceProfileSettings({
   serviceProfile,
   websiteUrl,
+  onFieldsChange,
 }: ServiceProfileSettingsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -71,18 +73,32 @@ export function ServiceProfileSettings({
     setProfileFields(serviceProfile.fields ?? EMPTY_FIELDS);
   }, [serviceProfile.id, serviceProfile.updatedAt, serviceProfile.fields]);
 
+  useEffect(() => {
+    onFieldsChange?.(profileFields);
+  }, [onFieldsChange, profileFields]);
+
   const reviewJson = useMemo(
+    () => ({
+      target_audience: profileFields.target_audience,
+      core_problem: profileFields.core_problem,
+      unique_value_prop: profileFields.unique_value_prop,
+      use_cases: profileFields.use_cases,
+      pain_points: profileFields.pain_points,
+      buying_triggers: profileFields.buying_triggers,
+      negative_keywords: profileFields.negative_keywords,
+      excluded_audiences: profileFields.excluded_audiences,
+    }),
+    [profileFields],
+  );
+
+  const hasProfileContent = useMemo(
     () =>
-      serviceProfile.rawProfile ?? {
-        target_audience: profileFields.target_audience,
-        core_problem: profileFields.core_problem,
-        unique_value_prop: profileFields.unique_value_prop,
-        pain_points: profileFields.pain_points,
-        buying_triggers: profileFields.buying_triggers,
-        negative_keywords: profileFields.negative_keywords,
-        excluded_audiences: profileFields.excluded_audiences,
-      },
-    [profileFields, serviceProfile.rawProfile],
+      Object.values(profileFields).some((value) =>
+        Array.isArray(value)
+          ? value.length > 0
+          : value.trim().length > 0,
+      ),
+    [profileFields],
   );
 
   const updateField: UpdateField = (key, value) => {
@@ -136,24 +152,68 @@ export function ServiceProfileSettings({
     );
   }
 
+  const statusLabel =
+    serviceProfile.embeddingStatus === "completed" ? "Active" : "Regenerating";
+
   return (
-    <ProfileReviewState
-      embedded
-      showApproveAction={false}
-      effectiveWebsiteUrl={serviceProfile.websiteUrl ?? websiteUrl}
-      isProfilePending={isPending}
-      profileFields={profileFields}
-      profileResult={profileResult}
-      reviewJson={reviewJson}
-      persistProfile={persistProfile}
-      updateField={updateField}
-      eyebrow="MATCHING BRIEF"
-      title="Review your service profile."
-      description="Adjust the audience, pain, value proposition, and bad-fit signals used by the prospect engine."
-      statusLabel={serviceProfile.embeddingStatus === "completed" ? "Active" : "Regenerating"}
-      saveLabel="Save & regenerate"
-      savingLabel="Saving..."
-      saveHelpText="Saving updates the workspace profile and regenerates matching embeddings in the background."
-    />
+    <div className="space-y-4">
+      <div
+        className="flex flex-col gap-3 rounded-lg border px-3 py-2.5 text-xs sm:flex-row sm:items-center sm:justify-between"
+        style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
+      >
+        <div className="min-w-0">
+          <span className="font-semibold" style={{ color: C.navy }}>
+            Source:
+          </span>{" "}
+          <span className="break-all" style={{ color: C.muted }}>
+            {serviceProfile.websiteUrl ?? websiteUrl}
+          </span>
+        </div>
+        <span
+          className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 font-semibold"
+          style={{
+            borderColor: C.blueLight,
+            backgroundColor: C.bluePale,
+            color: C.blue,
+          }}
+        >
+          <CircleDotDashed className="size-3.5" aria-hidden="true" />
+          {statusLabel}
+        </span>
+      </div>
+
+      {!hasProfileContent ? (
+        <div
+          className="rounded-lg border px-4 py-3 text-sm leading-6"
+          style={{
+            borderColor: C.blueLight,
+            backgroundColor: C.bluePale,
+            color: C.navySoft,
+          }}
+        >
+          No matching signals have been extracted yet. You can add the brief
+          manually here, or wait for regeneration to finish and refresh the
+          workspace.
+        </div>
+      ) : null}
+
+      <ProfileReviewState
+        embedded
+        showApproveAction={false}
+        showHeader={false}
+        showStructuredPreview={false}
+        effectiveWebsiteUrl={serviceProfile.websiteUrl ?? websiteUrl}
+        isProfilePending={isPending}
+        profileFields={profileFields}
+        profileResult={profileResult}
+        reviewJson={reviewJson}
+        persistProfile={persistProfile}
+        updateField={updateField}
+        statusLabel={statusLabel}
+        saveLabel="Save & regenerate"
+        savingLabel="Saving..."
+        saveHelpText="Saving updates the workspace profile and regenerates matching embeddings in the background."
+      />
+    </div>
   );
 }

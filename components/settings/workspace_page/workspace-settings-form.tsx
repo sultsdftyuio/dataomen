@@ -108,7 +108,7 @@ export default function WorkspaceSettingsForm({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
-                Support / Reply-To Email
+                Support Email
               </label>
               <div style={{ position: "relative" }}>
                 <Mail size={14} color={C.muted} style={{ position: "absolute", left: 10, top: 9 }} />

@@ -26,18 +26,18 @@ export interface WorkspaceBillingCardProps {
 
 const DEFAULT_PRO_FEATURES = [
   {
-    label: "Risk queue customer lists",
-    description: "View customers that need recovery attention.",
+    label: "Verified prospect queue",
+    description: "Review the prospects most aligned with your service profile.",
     unlocked: false,
   },
   {
-    label: "Campaign sending",
-    description: "Send recovery emails to selected cohorts.",
+    label: "Lead qualification signals",
+    description: "Inspect why each lead matched your audience and pain criteria.",
     unlocked: false,
   },
   {
-    label: "Custom templates",
-    description: "Create and reuse recovery messaging templates.",
+    label: "Reusable matching criteria",
+    description: "Create and reuse profile rules for discovery workflows.",
     unlocked: false,
   },
 ];
