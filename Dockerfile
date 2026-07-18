@@ -46,7 +46,7 @@ COPY . .
 # ------------------------------------------------------------------------------
 EXPOSE 8080
 
-# By default, start the FastAPI server. 
-# NOTE: If running a worker, your PaaS (Render/DO) should override this start command 
-# to something like: `dramatiq workers.actors` or `celery -A workers worker`
+# By default, start the FastAPI server.
+# Worker deployments should override this with:
+# `python scripts/start_worker.py`
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

@@ -135,11 +135,26 @@ redis-cli -u "$REDIS_URL" HGETALL dramatiq:crawling.msgs
 redis-cli -u "$REDIS_URL" HGETALL dramatiq:crawling.DQ.msgs
 ```
 
+For profiles stuck at `embedding_status = 'pending'`, inspect the embedding
+queue instead:
+
+```bash
+redis-cli -u "$REDIS_URL" LLEN dramatiq:embeddings
+redis-cli -u "$REDIS_URL" HLEN dramatiq:embeddings.msgs
+redis-cli -u "$REDIS_URL" HLEN dramatiq:embeddings.DQ.msgs
+redis-cli -u "$REDIS_URL" ZCARD dramatiq:embeddings.XQ
+redis-cli -u "$REDIS_URL" ZREVRANGE dramatiq:embeddings.XQ 0 10 WITHSCORES
+redis-cli -u "$REDIS_URL" KEYS 'dramatiq:__acks__.*.embeddings'
+```
+
 Interpretation:
 
 - Queue `LLEN > 0` and no fresh worker heartbeat means workers are down or cannot reach Redis.
 - `dramatiq:crawling.DQ.msgs` growing means retry backoff is active.
 - `dramatiq:crawling.XQ` growing means retries exhausted or workers are failing messages.
+- `dramatiq:embeddings` growing while profiles remain `pending` means the
+  embedding actor is not being consumed. Confirm the worker starts with
+  `python scripts/start_worker.py` and `ARCLI_DRAMATIQ_MODULES=api.worker`.
 - Ack keys with stale heartbeats suggest worker death while processing. Redis maintenance will eventually requeue, but the DB `crawl_jobs.last_heartbeat_at` is the operator source of truth.
 
 Worker/log commands:
@@ -151,7 +166,7 @@ ps aux | grep -E 'dramatiq|start_worker|api.worker' | grep -v grep
 # Docker
 docker ps --filter name=worker
 docker logs --since=45m <worker-container> \
-  | grep -E 'crawl_job_|website_crawl_|firecrawl_|profile_extraction_|openai_profile_'
+  | grep -E 'crawl_job_|website_crawl_|firecrawl_|profile_extraction_|openai_profile_|service_profile_embedding_'
 
 # Render/Fly/Railway style logs
 grep -E 'crawl_job_id=.*|website_url=https://www.arcli.tech' worker.log

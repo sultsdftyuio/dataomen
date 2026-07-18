@@ -37,6 +37,8 @@ type ProspectDashboardClientProps = {
   isWarmingUp: boolean;
 };
 
+const STALE_EMBEDDING_MS = 10 * 60 * 1000;
+
 function formatScore(score: number) {
   return `${Math.round(score * 100)}%`;
 }
@@ -58,6 +60,13 @@ function normalizedStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
 }
 
+function timestampAgeMs(value: string | null | undefined) {
+  if (!value) return null;
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? Date.now() - parsed : null;
+}
+
 function pipelineStatus({
   crawlJob,
   serviceProfile,
@@ -70,6 +79,7 @@ function pipelineStatus({
   const crawlStatus = normalizedStatus(crawlJob?.status);
   const crawlPhase = normalizedStatus(crawlJob?.phase);
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
+  const embeddingAge = timestampAgeMs(serviceProfile.updatedAt);
 
   if (crawlStatus === "failed" || crawlStatus === "dead_lettered") {
     return {
@@ -92,6 +102,19 @@ function pipelineStatus({
   }
 
   if (embeddingStatus && embeddingStatus !== "completed") {
+    if (
+      ["pending", "queued", "processing", "generating"].includes(embeddingStatus) &&
+      embeddingAge !== null &&
+      embeddingAge > STALE_EMBEDDING_MS
+    ) {
+      return {
+        label: "Needs attention",
+        title: "The embedding job has not reported progress.",
+        detail:
+          "Check the arcli-worker logs, Redis embeddings queue, OPENAI_API_KEY, REDIS_URL, DATABASE_URL, and INTERNAL_WORKER_SECRET.",
+      };
+    }
+
     return {
       label: embeddingStatus.replace(/_/g, " "),
       title: "Preparing matching embeddings.",
