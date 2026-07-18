@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import {
+  fetchLatestCrawlJob,
   fetchQualifiedLeads,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
@@ -40,19 +41,22 @@ export default async function DashboardPage() {
   const { supabase, tenantId } = tenantResult.context;
   const threshold = verifierScoreThreshold();
 
-  const [websiteUrl, leads] = await Promise.all([
-    fetchTenantWebsiteUrl(supabase, tenantId),
-    fetchQualifiedLeads(supabase, tenantId, threshold),
-  ]);
-  const serviceProfile = await fetchServiceProfile(supabase, tenantId, websiteUrl);
+  const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
 
   if (!websiteUrl) {
     redirect("/onboarding/workspace");
   }
 
+  const [leads, serviceProfile, crawlJob] = await Promise.all([
+    fetchQualifiedLeads(supabase, tenantId, threshold),
+    fetchServiceProfile(supabase, tenantId, websiteUrl),
+    fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+  ]);
+
   return (
     <ProspectDashboardClient
       serviceProfile={serviceProfile}
+      crawlJob={crawlJob}
       leads={leads}
       verifierThreshold={threshold}
       isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}

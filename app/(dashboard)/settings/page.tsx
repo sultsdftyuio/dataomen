@@ -19,7 +19,7 @@ export const revalidate = 0;
 type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;
 
 type SettingsPageProps = {
-  searchParams: Promise<{ recovery?: string | string[]; billing?: string | string[] }>;
+  searchParams: Promise<{ billing?: string | string[] }>;
 };
 
 function searchParamValue(value: string | string[] | undefined): string | null {
@@ -150,25 +150,24 @@ export default async function SettingsPage({
       isProTier: planTier === "pro",
       features: [
         {
-          label: "Risk queue customer lists",
-          description: "View and prioritize the customers most likely to churn.",
+          label: "Verified prospect queue",
+          description: "Review prospects aligned with your service profile.",
           unlocked: entitlements.canViewCustomerLists,
         },
         {
-          label: "Campaign sending",
-          description: "Send recovery emails to selected customers and cohorts.",
+          label: "Lead qualification signals",
+          description: "Inspect why each lead matched your audience and pain criteria.",
           unlocked: entitlements.canSendEmails,
         },
         {
-          label: "Custom templates",
-          description: "Create reusable recovery messaging for your team.",
+          label: "Reusable matching criteria",
+          description: "Create reusable profile rules for discovery workflows.",
           unlocked: entitlements.canCreateTemplates,
         },
       ],
     };
   }
 
-  const isRecoveryMode = searchParamValue(resolvedSearchParams.recovery) === "1";
   const showBillingTestControls = billingTestControlsEnabled();
 
   // 4. Pass clean, safely abstracted state to the Client
@@ -176,7 +175,6 @@ export default async function SettingsPage({
     <SettingsClient 
       user={user} 
       initialSettings={settings} 
-      isRecoveryMode={isRecoveryMode} 
       planData={billingPlanData}
       billingTestControlsEnabled={showBillingTestControls}
       serviceProfile={serviceProfile}

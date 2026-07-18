@@ -22,14 +22,9 @@ const normalizeNullableString = (value: string) => value.trim();
 // ---------------------------------------------------------------------------
 
 /**
- * Accepts either:
- * recovery@example.com
- *
- * or:
- * Arcli Recovery <recovery@example.com>
- *
- * This validates the entire input rather than matching an email
- * embedded somewhere inside an arbitrary string.
+ * Accepts either a plain address or a display-name formatted address.
+ * This validates the entire input rather than matching an email embedded
+ * somewhere inside an arbitrary string.
  */
 const SENDER_EMAIL_REGEX =
   /^(?:[^<>]+<[^<>\s]+@[^<>\s]+\.[^<>\s]+>|[^<>\s]+@[^<>\s]+\.[^<>\s]+)$/;
@@ -39,10 +34,7 @@ const SENDER_EMAIL_REGEX =
 // ---------------------------------------------------------------------------
 
 /**
- * Sender email used for campaign delivery.
- *
- * Empty string is permitted so the UI can clear the field while
- * reverting a campaign back to a draft state.
+ * Legacy sender email. Empty string is permitted so the UI can clear the field.
  */
 export const SenderEmailSchema = z.preprocess(
   trimString,
@@ -113,12 +105,12 @@ export const WorkspaceSettingsSchema = z
       .optional(),
 
     /**
-     * Sender used for recovery email campaigns.
+     * Legacy sender identity retained for backwards-compatible settings payloads.
      */
     senderEmail: SenderEmailSchema.optional(),
 
     /**
-     * Reply-To header for recovery emails.
+     * Legacy Reply-To address retained for backwards-compatible settings payloads.
      */
     replyToEmail: ReplyToEmailSchema.optional(),
 

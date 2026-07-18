@@ -711,7 +711,6 @@ export async function handleWorkspaceUpdate(req: Request) {
     revalidatePath("/settings");
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/settings");
-    revalidatePath("/dashboard/campaigns");
 
     return NextResponse.json(
       {

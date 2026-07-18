@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   ExternalLink,
   MessageSquareText,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { submitLeadFeedback } from "./actions";
 import {
   FEEDBACK_OPTIONS,
+  type CrawlJobView,
   type LeadFeedbackValue,
   type QualifiedLeadView,
   type ServiceProfileView,
@@ -29,6 +31,7 @@ import {
 
 type ProspectDashboardClientProps = {
   serviceProfile: ServiceProfileView;
+  crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
   verifierThreshold: number;
   isWarmingUp: boolean;
@@ -49,6 +52,69 @@ function formatDate(value: string | null) {
     day: "numeric",
     year: "numeric",
   }).format(date);
+}
+
+function normalizedStatus(value: string | null | undefined) {
+  return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
+}
+
+function pipelineStatus({
+  crawlJob,
+  serviceProfile,
+  isWarmingUp,
+}: {
+  crawlJob: CrawlJobView | null;
+  serviceProfile: ServiceProfileView;
+  isWarmingUp: boolean;
+}) {
+  const crawlStatus = normalizedStatus(crawlJob?.status);
+  const crawlPhase = normalizedStatus(crawlJob?.phase);
+  const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
+
+  if (crawlStatus === "failed" || crawlStatus === "dead_lettered") {
+    return {
+      label: "Needs attention",
+      title: "The website crawl needs attention.",
+      detail:
+        crawlJob?.errorMessage ??
+        crawlJob?.failureReason ??
+        "Retry the crawl from workspace setup or settings.",
+    };
+  }
+
+  if (!serviceProfile.hasProfile) {
+    return {
+      label: crawlPhase?.replace(/_/g, " ") ?? "Crawling",
+      title: "Building your service profile.",
+      detail:
+        "Arcli is crawling the website and extracting the matching brief. This page refreshes automatically.",
+    };
+  }
+
+  if (embeddingStatus && embeddingStatus !== "completed") {
+    return {
+      label: embeddingStatus.replace(/_/g, " "),
+      title: "Preparing matching embeddings.",
+      detail:
+        "The profile is saved. Arcli is regenerating embeddings before public-source matching starts.",
+    };
+  }
+
+  if (isWarmingUp) {
+    return {
+      label: "Warming up",
+      title: "Starting public-source matching.",
+      detail:
+        "Arcli is moving from profile preparation into lead discovery and verification.",
+    };
+  }
+
+  return {
+    label: "Scanning",
+    title: "Scanning public streams for verified matches.",
+    detail:
+      "The pipeline is active. New verified leads will appear here automatically.",
+  };
 }
 
 function LeadFeedbackButtons({
@@ -83,7 +149,17 @@ function LeadFeedbackButtons({
   );
 }
 
-function WarmUpState() {
+function WarmUpState({
+  crawlJob,
+  serviceProfile,
+  isWarmingUp,
+}: {
+  crawlJob: CrawlJobView | null;
+  serviceProfile: ServiceProfileView;
+  isWarmingUp: boolean;
+}) {
+  const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
+
   return (
     <div
       className="rounded-lg border p-8 text-center"
@@ -104,14 +180,17 @@ function WarmUpState() {
           color: C.blue,
         }}
       >
-        Scanning
+        {status.label}
       </Badge>
       <h3 className="mt-3 text-base font-semibold" style={{ color: C.navy }}>
-        Warm-up: Scanning public streams for your first verified matches...
+        {status.title}
       </h3>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
-        Qualified prospects will appear here after embeddings, matchers, and verifiers
-        complete the initial pass for this workspace.
+        {status.detail}
+      </p>
+      <p className="mx-auto mt-2 max-w-md text-xs leading-5" style={{ color: C.muted }}>
+        This dashboard refreshes while the first pass is running, so verified leads
+        appear as soon as they are written.
       </p>
     </div>
   );
@@ -119,13 +198,27 @@ function WarmUpState() {
 
 export default function ProspectDashboardClient({
   serviceProfile,
+  crawlJob,
   leads,
   verifierThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
+  const router = useRouter();
   const [feedbackMessages, setFeedbackMessages] = useState<Record<string, string>>({});
   const [pendingFeedbackLeadId, setPendingFeedbackLeadId] = useState<string | null>(null);
   const [isFeedbackPending, startFeedbackTransition] = useTransition();
+  const shouldRefreshForLeads = isWarmingUp || leads.length === 0;
+  const refreshMs = useMemo(() => (isWarmingUp ? 5000 : 15000), [isWarmingUp]);
+
+  useEffect(() => {
+    if (!shouldRefreshForLeads) return;
+
+    const intervalId = window.setInterval(() => {
+      router.refresh();
+    }, refreshMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [refreshMs, router, shouldRefreshForLeads]);
 
   const handleFeedback = (leadId: string, value: LeadFeedbackValue) => {
     setPendingFeedbackLeadId(leadId);
@@ -205,8 +298,12 @@ export default function ProspectDashboardClient({
           </Badge>
         </div>
 
-        {isWarmingUp || leads.length === 0 ? (
-          <WarmUpState />
+        {leads.length === 0 ? (
+          <WarmUpState
+            crawlJob={crawlJob}
+            serviceProfile={serviceProfile}
+            isWarmingUp={isWarmingUp}
+          />
         ) : (
           <div className="grid gap-4">
             {leads.map((lead) => {
