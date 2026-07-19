@@ -103,6 +103,15 @@ function pipelineStatus({
 
   if (embeddingStatus && embeddingStatus !== "completed") {
     if (["failed", "error", "dead_lettered"].includes(embeddingStatus)) {
+      if (normalizedStatus(serviceProfile.embeddingFailureReason) === "profile_content_missing") {
+        return {
+          label: "Profile details needed",
+          title: "Add a website URL or matching details.",
+          detail:
+            "We could not find a website URL to analyze. Add one, or include a problem, value proposition, target audience, pain point, or buying trigger.",
+        };
+      }
+
       return {
         label: "Needs attention",
         title: "The embedding job failed.",

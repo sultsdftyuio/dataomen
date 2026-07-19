@@ -651,6 +651,13 @@ def _service_profile_embedding_text(row: dict[str, Any]) -> str:
     return text_value
 
 
+def _service_profile_website_url(row: dict[str, Any]) -> str | None:
+    return _read_string(
+        [row, _first_document(row), _as_dict(row.get("profile")), _as_dict(row.get("data"))],
+        ["website_url", "url", "websiteUrl"],
+    )
+
+
 def _load_service_profile(
     conn: Connection,
     tenant_id: str,
@@ -1183,6 +1190,8 @@ def process_service_profile_embedding_job(
 ) -> None:
     engine = _database_engine()
     embedding_service = EmbeddingService()
+    profile_hydration_url: str | None = None
+    resolved_profile_id: str | None = service_profile_id
 
     with engine.begin() as conn:
         columns = _service_profile_columns(conn)
@@ -1213,41 +1222,129 @@ def process_service_profile_embedding_job(
             )
             return
 
-        embedding_text = _service_profile_embedding_text(row)
         resolved_profile_id = str(row.get("id")) if row.get("id") else service_profile_id
+        try:
+            embedding_text = _service_profile_embedding_text(row)
+        except RuntimeError as exc:
+            profile_hydration_url = _service_profile_website_url(row)
+            if profile_hydration_url:
+                _mark_service_profile_embedding_status(
+                    conn,
+                    tenant_id=tenant_id,
+                    service_profile_id=resolved_profile_id,
+                    status="generating",
+                )
+                logger.info(
+                    "service_profile_embedding_hydration_requested tenant_id=%s service_profile_id=%s website_url=%s reason=%s",
+                    tenant_id,
+                    resolved_profile_id,
+                    profile_hydration_url,
+                    "profile_content_missing",
+                )
+            else:
+                _mark_service_profile_embedding_status(
+                    conn,
+                    tenant_id=tenant_id,
+                    service_profile_id=resolved_profile_id,
+                    status="failed",
+                    failure_reason="profile_content_missing",
+                    error_type=exc.__class__.__name__,
+                    error_message=str(exc),
+                )
+                _persist_service_profile_embedding_failure_record(
+                    conn,
+                    tenant_id=tenant_id,
+                    service_profile_id=resolved_profile_id,
+                    embedding_text="",
+                    embedding_model=embedding_service.model,
+                    failure_reason="profile_content_missing",
+                    exc=exc,
+                )
+                logger.warning(
+                    "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s skip_reason=%s error=%s",
+                    tenant_id,
+                    resolved_profile_id,
+                    "profile_content_missing",
+                    exc,
+                )
+                return
 
-        if _has_current_profile_embedding(
-            row,
-            embedding_text=embedding_text,
-            embedding_model=embedding_service.model,
-        ):
-            logger.info(
-                "service_profile_embedding_job_deduped tenant_id=%s service_profile_id=%s model=%s skip_reason=%s",
-                tenant_id,
-                resolved_profile_id,
-                embedding_service.model,
-                "current_embedding_already_persisted",
-            )
-            final_profile_id = resolved_profile_id
-            embedding = None
-        elif _embedding_processing_is_fresh(row):
-            logger.info(
-                "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s model=%s skip_reason=%s",
-                tenant_id,
-                resolved_profile_id,
-                embedding_service.model,
-                "embedding_job_already_processing",
-            )
-            return
-        else:
+        if profile_hydration_url:
             final_profile_id = None
             embedding = None
-            _mark_service_profile_embedding_status(
-                conn,
-                tenant_id=tenant_id,
-                service_profile_id=resolved_profile_id,
-                status="processing",
+        else:
+            if _has_current_profile_embedding(
+                row,
+                embedding_text=embedding_text,
+                embedding_model=embedding_service.model,
+            ):
+                logger.info(
+                    "service_profile_embedding_job_deduped tenant_id=%s service_profile_id=%s model=%s skip_reason=%s",
+                    tenant_id,
+                    resolved_profile_id,
+                    embedding_service.model,
+                    "current_embedding_already_persisted",
+                )
+                final_profile_id = resolved_profile_id
+                embedding = None
+            elif _embedding_processing_is_fresh(row):
+                logger.info(
+                    "service_profile_embedding_job_skipped tenant_id=%s service_profile_id=%s model=%s skip_reason=%s",
+                    tenant_id,
+                    resolved_profile_id,
+                    embedding_service.model,
+                    "embedding_job_already_processing",
+                )
+                return
+            else:
+                final_profile_id = None
+                embedding = None
+                _mark_service_profile_embedding_status(
+                    conn,
+                    tenant_id=tenant_id,
+                    service_profile_id=resolved_profile_id,
+                    status="processing",
+                )
+
+    if profile_hydration_url:
+        try:
+            from api.services.profile_extraction import (
+                enqueue_workspace_brain_generation_job,
             )
+
+            message_id = enqueue_workspace_brain_generation_job(
+                tenant_id=tenant_id,
+                website_url=profile_hydration_url,
+                idempotency_key=resolved_profile_id,
+            )
+            logger.info(
+                "service_profile_embedding_hydration_enqueued tenant_id=%s service_profile_id=%s website_url=%s message_id=%s",
+                tenant_id,
+                resolved_profile_id,
+                profile_hydration_url,
+                message_id,
+            )
+            return
+        except Exception as exc:
+            with engine.begin() as conn:
+                _mark_service_profile_embedding_status(
+                    conn,
+                    tenant_id=tenant_id,
+                    service_profile_id=resolved_profile_id,
+                    status="failed",
+                    failure_reason="profile_hydration_enqueue_failed",
+                    error_type=exc.__class__.__name__,
+                    error_message=str(exc),
+                )
+            logger.exception(
+                "service_profile_embedding_hydration_enqueue_failed tenant_id=%s service_profile_id=%s website_url=%s error_type=%s error=%s",
+                tenant_id,
+                resolved_profile_id,
+                profile_hydration_url,
+                exc.__class__.__name__,
+                exc,
+            )
+            raise
 
     if final_profile_id:
         _enqueue_public_ingestion_after_embedding(tenant_id, final_profile_id)

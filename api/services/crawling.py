@@ -1004,6 +1004,32 @@ def _load_existing_service_profile(
     return dict(row) if row else None
 
 
+def _profile_has_embeddable_content(document: dict[str, Any]) -> bool:
+    """Only reuse extracted profiles that can produce a meaningful lead match."""
+    semantic_fields = (
+        "one_liner",
+        "unique_value_prop",
+        "unique_value_proposition",
+        "core_problem_solved",
+        "core_problem",
+    )
+    list_fields = (
+        "target_audience",
+        "audience",
+        "key_value_propositions",
+        "value_propositions",
+        "ideal_customer_pain_points",
+        "pain_points",
+        "buying_triggers",
+        "negative_keywords",
+        "excluded_audiences",
+    )
+
+    return any(_string_value(document.get(field)) for field in semantic_fields) or any(
+        _jsonable_list(document.get(field)) for field in list_fields
+    )
+
+
 def _cached_service_profile_for_markdown(
     conn: Connection,
     *,
@@ -1058,6 +1084,7 @@ def _cached_service_profile_for_markdown(
                 document.get("crawl_markdown_sha256") == crawl_markdown_sha256
                 and document.get("website_url") == website_url
                 and document.get("extraction_status") == "completed"
+                and _profile_has_embeddable_content(document)
             ):
                 return document
 
@@ -1159,7 +1186,10 @@ def _cached_workspace_brain_profile_for_website(
     for row in rows:
         for column_name in document_columns:
             document = _as_dict(row.get(column_name))
-            if document.get("extraction_status") in {"completed", "manual_refined"}:
+            if (
+                document.get("extraction_status") in {"completed", "manual_refined"}
+                and _profile_has_embeddable_content(document)
+            ):
                 return _workspace_brain_profile_from_document(document, website_url)
 
     return None

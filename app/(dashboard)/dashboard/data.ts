@@ -148,6 +148,7 @@ function emptyProfile(websiteUrl: string | null = null): ServiceProfileView {
     status: null,
     extractionStatus: null,
     embeddingStatus: null,
+    embeddingFailureReason: null,
     embeddingGeneratedAt: null,
     websiteUrl,
     updatedAt: null,
@@ -260,6 +261,8 @@ export async function fetchServiceProfile(
       readString(sources, ["extraction_status", "crawl_status"]) ?? null,
     embeddingStatus:
       readString(sources, ["embedding_status", "profile_embedding_status"]) ?? null,
+    embeddingFailureReason:
+      readString(sources, ["embedding_failure_reason"]) ?? null,
     embeddingGeneratedAt:
       readString(sources, [
         "profile_embedding_generated_at",

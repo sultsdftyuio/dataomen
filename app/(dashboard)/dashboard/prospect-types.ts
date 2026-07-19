@@ -15,6 +15,7 @@ export type ServiceProfileView = {
   status: string | null;
   extractionStatus: string | null;
   embeddingStatus: string | null;
+  embeddingFailureReason: string | null;
   embeddingGeneratedAt: string | null;
   websiteUrl: string | null;
   updatedAt: string | null;
