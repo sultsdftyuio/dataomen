@@ -93,19 +93,19 @@ def _configure_dramatiq_broker() -> None:
         return
 
     current_broker = dramatiq.get_broker()
-    if isinstance(current_broker, RedisBroker):
+    if getattr(current_broker, "_arcli_redis_url", None) == redis_url:
         return
 
     connect_timeout = _env_float("ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0)
     socket_timeout = _env_float("ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
-    dramatiq.set_broker(
-        RedisBroker(
-            url=redis_url,
-            socket_connect_timeout=connect_timeout,
-            socket_timeout=socket_timeout,
-            health_check_interval=_env_int("ARCLI_REDIS_HEALTH_CHECK_INTERVAL_SECONDS", 30),
-        )
+    broker = RedisBroker(
+        url=redis_url,
+        socket_connect_timeout=connect_timeout,
+        socket_timeout=socket_timeout,
+        health_check_interval=_env_int("ARCLI_REDIS_HEALTH_CHECK_INTERVAL_SECONDS", 30),
     )
+    setattr(broker, "_arcli_redis_url", redis_url)
+    dramatiq.set_broker(broker)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s connect_timeout_seconds=%s socket_timeout_seconds=%s",
         "redis",

@@ -32,10 +32,12 @@ def _configure_dramatiq_broker() -> None:
         return
 
     current_broker = dramatiq.get_broker()
-    if isinstance(current_broker, RedisBroker):
+    if getattr(current_broker, "_arcli_redis_url", None) == redis_url:
         return
 
-    dramatiq.set_broker(RedisBroker(url=redis_url))
+    broker = RedisBroker(url=redis_url)
+    setattr(broker, "_arcli_redis_url", redis_url)
+    dramatiq.set_broker(broker)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
         "redis",

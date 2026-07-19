@@ -30,7 +30,12 @@ def _configure_broker() -> None:
         )
         raise RuntimeError("REDIS_URL is required to start the Dramatiq worker.")
 
-    dramatiq.set_broker(RedisBroker(url=redis_url))
+    broker = RedisBroker(url=redis_url)
+    # Dramatiq 2.x initializes a RedisBroker for localhost by default.  Mark
+    # brokers created by Arcli so service modules can distinguish that default
+    # from the broker configured through REDIS_URL.
+    setattr(broker, "_arcli_redis_url", redis_url)
+    dramatiq.set_broker(broker)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
         "redis",
