@@ -147,9 +147,16 @@ function embeddingTriggerEndpoint() {
   const explicit = process.env.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL?.trim();
   if (explicit) return explicit;
 
-  const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
-  return internalApiUrl
-    ? `${internalApiUrl}/api/service-profile/embed/trigger`
+  const workerApiUrl =
+    process.env.ARCLI_WORKER_API_URL?.trim() ||
+    process.env.PYTHON_BACKEND_URL?.trim() ||
+    process.env.INTERNAL_API_URL?.trim();
+  const base = workerApiUrl?.replace(/\/+$/, "");
+
+  return base
+    ? base.endsWith("/api")
+      ? `${base}/service-profile/embed/trigger`
+      : `${base}/api/service-profile/embed/trigger`
     : null;
 }
 

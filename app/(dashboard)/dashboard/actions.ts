@@ -220,18 +220,26 @@ function joinBackendPath(baseUrl: string, path: string) {
   return `${base}${normalizedPath}`;
 }
 
-function embeddingTriggerEndpoint() {
+function embeddingTriggerEndpoints() {
   const explicit = process.env.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL?.trim();
-  if (explicit) return explicit;
+  const workerApiUrls = [
+    process.env.ARCLI_WORKER_API_URL?.trim(),
+    process.env.PYTHON_BACKEND_URL?.trim(),
+    process.env.INTERNAL_API_URL?.trim(),
+  ];
 
-  const workerApiUrl =
-    process.env.ARCLI_WORKER_API_URL?.trim() ||
-    process.env.PYTHON_BACKEND_URL?.trim() ||
-    process.env.INTERNAL_API_URL?.trim();
-
-  return workerApiUrl
-    ? joinBackendPath(workerApiUrl, "/api/service-profile/embed/trigger")
-    : null;
+  return Array.from(
+    new Set(
+      [
+        explicit,
+        ...workerApiUrls.map((baseUrl) =>
+          baseUrl
+            ? joinBackendPath(baseUrl, "/api/service-profile/embed/trigger")
+            : null,
+        ),
+      ].filter((endpoint): endpoint is string => Boolean(endpoint)),
+    ),
+  );
 }
 
 async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
@@ -352,8 +360,8 @@ async function postEmbeddingTrigger(
   context: EmbeddingTriggerContext,
   serviceProfileId: string | null,
 ): Promise<ProspectActionResult> {
-  const endpoint = embeddingTriggerEndpoint();
-  if (!endpoint) {
+  const endpoints = embeddingTriggerEndpoints();
+  if (endpoints.length === 0) {
     console.warn("[ProspectOnboarding] profile embedding trigger not configured", {
       tenant_id: context.tenantId,
       service_profile_id: serviceProfileId,
@@ -374,49 +382,66 @@ async function postEmbeddingTrigger(
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${workerSecret}`,
-      },
-      cache: "no-store",
-      signal: controller.signal,
-      body: JSON.stringify({
-        tenant_id: context.tenantId,
-        service_profile_id: serviceProfileId,
-        requested_by: context.userId,
-        source: "onboarding_profile_approval",
-      }),
-    });
+    let lastUnavailableError: unknown = null;
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.warn("[ProspectOnboarding] profile embedding trigger failed", {
-        tenant_id: context.tenantId,
-        service_profile_id: serviceProfileId,
-        status: response.status,
-        body: text.slice(0, 500),
-      });
-      return actionError(
-        `Embedding queue rejected the request with HTTP ${response.status}.`,
-      );
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${workerSecret}`,
+          },
+          cache: "no-store",
+          signal: controller.signal,
+          body: JSON.stringify({
+            tenant_id: context.tenantId,
+            service_profile_id: serviceProfileId,
+            requested_by: context.userId,
+            source: "onboarding_profile_approval",
+          }),
+        });
+
+        if (response.ok) {
+          console.info("[ProspectOnboarding] profile embedding trigger posted", {
+            tenant_id: context.tenantId,
+            service_profile_id: serviceProfileId,
+            endpoint,
+          });
+          return actionOk("Embedding job queued.");
+        }
+
+        const text = await response.text().catch(() => "");
+        console.warn("[ProspectOnboarding] profile embedding trigger failed", {
+          tenant_id: context.tenantId,
+          service_profile_id: serviceProfileId,
+          endpoint,
+          status: response.status,
+          body: text.slice(0, 500),
+        });
+        if (response.status !== 404) {
+          return actionError(
+            `Embedding queue rejected the request with HTTP ${response.status}.`,
+          );
+        }
+      } catch (error) {
+        lastUnavailableError = error;
+        console.warn("[ProspectOnboarding] profile embedding trigger unavailable", {
+          tenant_id: context.tenantId,
+          service_profile_id: serviceProfileId,
+          endpoint,
+          error,
+        });
+      }
     }
 
-    console.info("[ProspectOnboarding] profile embedding trigger posted", {
-      tenant_id: context.tenantId,
-      service_profile_id: serviceProfileId,
-    });
-    return actionOk("Embedding job queued.");
-  } catch (error) {
-    console.warn("[ProspectOnboarding] profile embedding trigger unavailable", {
-      tenant_id: context.tenantId,
-      service_profile_id: serviceProfileId,
-      error,
-    });
+    if (!lastUnavailableError) {
+      return actionError("Embedding worker endpoint returned HTTP 404.");
+    }
+
     return actionError(
-      error instanceof Error
-        ? `Embedding queue is unavailable: ${error.message}`
+      lastUnavailableError instanceof Error
+        ? `Embedding queue is unavailable: ${lastUnavailableError.message}`
         : "Embedding queue is unavailable.",
     );
   } finally {
