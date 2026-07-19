@@ -556,6 +556,12 @@ def trigger_crawl(
 
 
 @app.post(
+    "/service-profile/embed/trigger",
+    response_model=ServiceProfileEmbeddingTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+@app.post(
     "/api/service-profile/embed/trigger",
     response_model=ServiceProfileEmbeddingTriggerResponse,
     status_code=status.HTTP_202_ACCEPTED,
