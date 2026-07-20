@@ -67,6 +67,9 @@ class VerificationResult(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     pain_detected: str
     why_this_matches: str
+    # Kept optional for cache compatibility with verification payloads created
+    # before assisted outreach was introduced.
+    suggested_reply: str = Field(default="", max_length=2000)
     rejection_reason: str | None = Field(default=None)
     verifier_executed: bool = Field(default=True)
 
@@ -103,9 +106,13 @@ class VerifierService:
         "Profile solves. Reject tutorials, spam, or job postings. You must return "
         "ONLY a JSON object with: `match` (boolean), `decision_label` (string: "
         "strong_match, weak_match, spam, not_a_match), `confidence` (float), "
-        "`pain_detected` (string), `why_this_matches` (string), and "
+        "`pain_detected` (string), `why_this_matches` (string), "
+        "`suggested_reply` (string), and "
         "`rejection_reason` (string or null). For rejected posts, make "
-        "`rejection_reason` explicit and concise."
+        "`rejection_reason` explicit and concise and return an empty "
+        "`suggested_reply`. For a match, write a concise, helpful public reply "
+        "that responds directly to the person's pain without pressure, claims, "
+        "or a mass-outreach tone."
     )
 
     def __init__(

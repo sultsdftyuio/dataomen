@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Check,
+  Copy,
   ExternalLink,
   MessageSquareText,
   Radar,
@@ -18,6 +20,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { markLeadAsQualified } from "@/app/actions/leads";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
@@ -192,6 +196,174 @@ function LeadFeedbackButtons({
   );
 }
 
+function LeadOutreach({
+  lead,
+  disabled,
+  qualificationMessage,
+  onQualify,
+}: {
+  lead: QualifiedLeadView;
+  disabled: boolean;
+  qualificationMessage: string | null;
+  onQualify: (leadId: string) => void;
+}) {
+  const [draft, setDraft] = useState(lead.suggestedReply);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "empty" | "error">(
+    "idle",
+  );
+  const isQualified = lead.matchStatus === "qualified";
+  const draftId = `suggested-reply-${lead.id}`;
+
+  useEffect(() => {
+    setDraft(lead.suggestedReply);
+  }, [lead.id, lead.suggestedReply]);
+
+  useEffect(() => {
+    if (copyState !== "copied") return;
+
+    const timeoutId = window.setTimeout(() => setCopyState("idle"), 1800);
+    return () => window.clearTimeout(timeoutId);
+  }, [copyState]);
+
+  const copyDraft = async () => {
+    if (!draft.trim()) {
+      setCopyState("empty");
+      return;
+    }
+
+    if (!navigator.clipboard?.writeText) {
+      setCopyState("error");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(draft);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  };
+
+  const copyMessage =
+    copyState === "copied"
+      ? "Draft copied."
+      : copyState === "empty"
+        ? "Add a draft before copying."
+        : copyState === "error"
+          ? "Could not copy the draft."
+          : null;
+
+  return (
+    <section
+      aria-labelledby={`${draftId}-label`}
+      className="rounded-md border p-4"
+      style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+    >
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <label
+            htmlFor={draftId}
+            id={`${draftId}-label`}
+            className="flex items-center gap-2 text-xs font-bold uppercase"
+            style={{ color: C.blue }}
+          >
+            <MessageSquareText className="size-3.5" />
+            Suggested reply
+          </label>
+          <p className="mt-1 text-xs" style={{ color: C.muted }}>
+            Edit this draft to match your voice. Your changes stay in this browser.
+          </p>
+        </div>
+        {isQualified ? (
+          <Badge
+            variant="outline"
+            className="rounded-md"
+            style={{
+              borderColor: C.green,
+              backgroundColor: C.greenPale,
+              color: C.green,
+            }}
+          >
+            <Check className="size-3" />
+            Qualified
+          </Badge>
+        ) : null}
+      </div>
+
+      <Textarea
+        id={draftId}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="A suggested public reply will appear here after verification."
+        className="min-h-28 resize-y bg-white text-sm leading-6"
+        style={{ borderColor: C.blueLight, color: C.navy }}
+      />
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={copyDraft}
+          style={{
+            borderColor: C.blueLight,
+            backgroundColor: C.white,
+            color: C.blue,
+          }}
+        >
+          {copyState === "copied" ? <Check className="size-4" /> : <Copy className="size-4" />}
+          {copyState === "copied" ? "Copied" : "Copy Draft to Clipboard"}
+        </Button>
+
+        {lead.sourcePost.url ? (
+          <Button
+            asChild
+            size="sm"
+            style={{ backgroundColor: C.blue, color: C.white }}
+          >
+            <a
+              href={lead.sourcePost.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <ExternalLink className="size-4" />
+              Reply on Platform
+            </a>
+          </Button>
+        ) : (
+          <Button type="button" size="sm" disabled>
+            <ExternalLink className="size-4" />
+            Source unavailable
+          </Button>
+        )}
+
+        <Button
+          type="button"
+          size="sm"
+          disabled={disabled || isQualified}
+          onClick={() => onQualify(lead.id)}
+          style={{ backgroundColor: C.green, color: C.white }}
+        >
+          {disabled ? (
+            <Radar className="size-4 animate-spin" />
+          ) : isQualified ? (
+            <Check className="size-4" />
+          ) : (
+            <ShieldCheck className="size-4" />
+          )}
+          {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark as Qualified"}
+        </Button>
+      </div>
+
+      {copyMessage || qualificationMessage ? (
+        <p className="mt-2 text-xs font-medium" aria-live="polite" style={{ color: C.navySoft }}>
+          {[copyMessage, qualificationMessage].filter(Boolean).join(" ")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function WarmUpState({
   crawlJob,
   serviceProfile,
@@ -286,6 +458,13 @@ export default function ProspectDashboardClient({
   const [feedbackMessages, setFeedbackMessages] = useState<Record<string, string>>({});
   const [pendingFeedbackLeadId, setPendingFeedbackLeadId] = useState<string | null>(null);
   const [isFeedbackPending, startFeedbackTransition] = useTransition();
+  const [qualificationMessages, setQualificationMessages] = useState<
+    Record<string, string>
+  >({});
+  const [pendingQualificationLeadId, setPendingQualificationLeadId] = useState<
+    string | null
+  >(null);
+  const [isQualificationPending, startQualificationTransition] = useTransition();
   const shouldRefreshForLeads = isWarmingUp || leads.length === 0;
   const refreshMs = useMemo(() => (isWarmingUp ? 5000 : 15000), [isWarmingUp]);
 
@@ -311,6 +490,30 @@ export default function ProspectDashboardClient({
     });
   };
 
+  const handleQualification = (leadId: string) => {
+    setPendingQualificationLeadId(leadId);
+    startQualificationTransition(async () => {
+      try {
+        const result = await markLeadAsQualified(leadId);
+        setQualificationMessages((current) => ({
+          ...current,
+          [leadId]: result.message,
+        }));
+
+        if (result.ok) {
+          router.refresh();
+        }
+      } catch {
+        setQualificationMessages((current) => ({
+          ...current,
+          [leadId]: "Could not qualify this lead. Please try again.",
+        }));
+      } finally {
+        setPendingQualificationLeadId(null);
+      }
+    });
+  };
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6" style={{ color: C.text }}>
       <div className="flex flex-col gap-2 border-b pb-5" style={{ borderColor: C.rule }}>
@@ -320,7 +523,7 @@ export default function ProspectDashboardClient({
               Prospect Intelligence
             </h1>
             <p className="mt-1 text-sm" style={{ color: C.muted }}>
-              Qualified opportunities with the reason they surfaced.
+              Verified opportunities with the context needed for a thoughtful reply.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -355,7 +558,7 @@ export default function ProspectDashboardClient({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
-              Qualified Leads
+              Verified Leads
             </h2>
             {leads.length > 0 ? (
               <p className="mt-1 text-sm" style={{ color: C.muted }}>
@@ -373,7 +576,7 @@ export default function ProspectDashboardClient({
             }}
           >
             <ShieldCheck className="size-3" />
-            Qualified only
+            Human review
           </Badge>
         </div>
 
@@ -390,6 +593,8 @@ export default function ProspectDashboardClient({
               const postedAt = formatDate(lead.sourcePost.publishedAt);
               const feedbackPending =
                 isFeedbackPending && pendingFeedbackLeadId === lead.id;
+              const qualificationPending =
+                isQualificationPending && pendingQualificationLeadId === lead.id;
 
               return (
                 <Card
@@ -440,27 +645,6 @@ export default function ProspectDashboardClient({
                           {lead.sourcePost.title}
                         </CardTitle>
                       </div>
-                      {lead.sourcePost.url ? (
-                        <Button
-                          asChild
-                          size="sm"
-                          variant="outline"
-                          style={{
-                            borderColor: C.ruleDark,
-                            backgroundColor: C.white,
-                            color: C.blue,
-                          }}
-                        >
-                          <a
-                            href={lead.sourcePost.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <ExternalLink className="size-4" />
-                            Open
-                          </a>
-                        </Button>
-                      ) : null}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -520,6 +704,13 @@ export default function ProspectDashboardClient({
                         {lead.sourcePost.text}
                       </p>
                     </div>
+
+                    <LeadOutreach
+                      lead={lead}
+                      disabled={qualificationPending}
+                      qualificationMessage={qualificationMessages[lead.id] ?? null}
+                      onQualify={handleQualification}
+                    />
 
                     <div
                       className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"

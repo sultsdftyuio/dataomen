@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
@@ -12,6 +13,7 @@ import {
   fetchTenantWebsiteUrl,
 } from "@/app/(dashboard)/dashboard/data";
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
+import type { Database } from "@/types/supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -21,6 +23,36 @@ type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["plan
 type SettingsPageProps = {
   searchParams: Promise<{ billing?: string | string[] }>;
 };
+
+const PRO_QUALIFIED_LEAD_MONTHLY_LIMIT = 500;
+
+async function fetchCurrentMonthQualifiedLeadUsage(
+  supabase: SupabaseClient<Database>,
+  tenantId: string
+): Promise<number> {
+  const cycleStart = new Date();
+  cycleStart.setUTCDate(1);
+  cycleStart.setUTCHours(0, 0, 0, 0);
+
+  const { count, error } = await supabase
+    .from("lead_matches")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("match_status", "qualified")
+    .gte("created_at", cycleStart.toISOString());
+
+  if (error) {
+    console.error("[Settings] Qualified lead usage lookup failed", {
+      event: "settings_billing_qualified_lead_usage_failed",
+      tenant_id: tenantId,
+      cycle_start: cycleStart.toISOString(),
+      error,
+    });
+    return 0;
+  }
+
+  return count ?? 0;
+}
 
 function searchParamValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) return value[0] ?? null;
@@ -118,10 +150,11 @@ export default async function SettingsPage({
     }
     
     // Removed fetchTenantApiKeySummary from Promise.all
-    const [settingsResult, entitlements, websiteUrl] = await Promise.all([
+    const [settingsResult, entitlements, websiteUrl, qualifiedLeadsDiscovered] = await Promise.all([
       fetchTenantSettingsRow(tenantSupabase, resolvedTenantId),
       getWorkspaceEntitlements(tenantSupabase, resolvedTenantId),
       fetchTenantWebsiteUrl(tenantSupabase, resolvedTenantId),
+      fetchCurrentMonthQualifiedLeadUsage(tenantSupabase, resolvedTenantId),
     ]);
 
     const { data, error } = settingsResult;
@@ -148,6 +181,16 @@ export default async function SettingsPage({
       daysRemaining: entitlements.daysUntilTrialEnds,
       priceText: "$29/month after the 3-day trial",
       isProTier: planTier === "pro",
+      isCanceling: entitlements.isCanceling,
+      currentPeriodEnd: entitlements.currentPeriodEnd,
+      workspaceName: settings.workspace.companyName || "Workspace",
+      entitlements,
+      qualifiedLeadUsage: {
+        discovered: qualifiedLeadsDiscovered,
+        limit: PRO_QUALIFIED_LEAD_MONTHLY_LIMIT,
+      },
+      amountDueCents: 2900,
+      currency: "USD",
       features: [
         {
           label: "Verified prospect queue",

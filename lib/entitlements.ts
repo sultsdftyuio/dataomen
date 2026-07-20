@@ -133,7 +133,7 @@ function buildEntitlements(
   const billingLabel = isTrialing
     ? "Pro Trial"
     : isCanceling
-      ? "Pro Ending"
+      ? planTier === "enterprise" ? "Enterprise" : "Pro"
     : isPro
       ? planTier === "enterprise" ? "Enterprise" : "Pro"
       : isPastDue
@@ -146,8 +146,8 @@ function buildEntitlements(
       : `${daysUntilTrialEnds} ${daysUntilTrialEnds === 1 ? "day" : "days"} left in your ${PRO_TRIAL_DAYS}-day Pro trial. $${PRO_MONTHLY_PRICE}/month after the trial.`
     : isCanceling
       ? currentPeriodEndLabel
-        ? `Plan cancellation is scheduled. Pro features stay open until ${currentPeriodEndLabel}.`
-        : "Plan cancellation is scheduled. Pro features stay open until the current billing period ends."
+        ? `Active until ${currentPeriodEndLabel}.`
+        : "Active until the end of the current billing period."
     : isPro
       ? `Pro subscription active at $${PRO_MONTHLY_PRICE}/month.`
       : isPastDue

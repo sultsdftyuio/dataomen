@@ -370,6 +370,15 @@ function tenantUpdateFor(event: DodoWebhookEvent): Record<string, unknown> | nul
   }
 }
 
+function tenantAlreadyMatchesBillingUpdate(
+  tenant: Record<string, unknown>,
+  update: Record<string, unknown>
+): boolean {
+  return Object.entries(update)
+    .filter(([key]) => key !== "updated_at")
+    .every(([key, value]) => tenant[key] === value);
+}
+
 export async function POST(request: Request) {
   let event: DodoWebhookEvent;
   let dodo: DodoPayments;
@@ -444,6 +453,52 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[Dodo Webhook] Supabase service configuration missing", { error });
     return NextResponse.json({ error: "Webhook persistence is not configured." }, { status: 500 });
+  }
+
+  const { data: existingTenant, error: existingTenantError } = await supabase
+    .from("tenants")
+    .select(
+      "tenant_id, plan_tier, subscription_status, trial_ends_at, billing_status, plan, status, dodo_customer_id, dodo_subscription_id, current_period_end"
+    )
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (existingTenantError) {
+    console.error("[Dodo Webhook] Tenant billing state lookup failed", {
+      event_type: event.type,
+      tenant_id: tenantId,
+      error: existingTenantError,
+    });
+    return NextResponse.json({ error: "Could not resolve workspace billing state." }, { status: 500 });
+  }
+
+  if (!existingTenant) {
+    console.error("[Dodo Webhook] Tenant metadata did not match a workspace", {
+      event_type: event.type,
+      tenant_id: tenantId,
+    });
+    return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+  }
+
+  const isResumeUpdate =
+    event.type === "subscription.updated" &&
+    (update.subscription_status === "active" || update.subscription_status === "trialing");
+  if (
+    isResumeUpdate &&
+    existingTenant.subscription_status === update.subscription_status &&
+    tenantAlreadyMatchesBillingUpdate(existingTenant, update)
+  ) {
+    console.info("[Dodo Webhook] Resumed subscription update already applied", {
+      event: "dodo_webhook_resume_already_applied",
+      event_type: event.type,
+      tenant_id: tenantId,
+      subscription_id: update.dodo_subscription_id ?? existingTenant.dodo_subscription_id,
+    });
+    return NextResponse.json({
+      status: "already_processed",
+      event_type: event.type,
+      tenant_id: tenantId,
+    });
   }
 
   const { data: updatedTenant, error } = await supabase

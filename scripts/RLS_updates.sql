@@ -33,6 +33,10 @@ EXCEPTION WHEN undefined_object THEN NULL; END $$;
 ALTER TABLE public.tenant_settings 
 ADD COLUMN IF NOT EXISTS sender_email text;
 
+-- Server-only CRM routing; keep this out of client-facing settings queries.
+ALTER TABLE public.tenant_settings
+ADD COLUMN IF NOT EXISTS crm_webhook_url text;
+
 UPDATE public.tenant_settings
 SET sender_email = LOWER(TRIM(sender_email))
 WHERE sender_email IS NOT NULL
@@ -279,13 +283,14 @@ CREATE TABLE IF NOT EXISTS public.lead_matches (
     tenant_id TEXT NOT NULL REFERENCES public.tenants(tenant_id) ON DELETE CASCADE,
     service_profile_id UUID REFERENCES public.service_profiles(id) ON DELETE SET NULL,
     source_post_id UUID REFERENCES public.source_posts(id) ON DELETE SET NULL,
-    match_status TEXT NOT NULL DEFAULT 'qualified',
+    match_status TEXT NOT NULL DEFAULT 'ready_for_review',
     verifier_score DOUBLE PRECISION NOT NULL DEFAULT 0,
     similarity_score DOUBLE PRECISION,
     embedding_score DOUBLE PRECISION,
     match_score DOUBLE PRECISION,
     pain_detected TEXT,
     match_reason TEXT,
+    suggested_reply TEXT,
     verification JSONB NOT NULL DEFAULT '{}'::JSONB,
     verifier_result JSONB NOT NULL DEFAULT '{}'::JSONB,
     source_post JSONB NOT NULL DEFAULT '{}'::JSONB,

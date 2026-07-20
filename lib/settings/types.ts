@@ -2,7 +2,12 @@ import type { Database } from "@/types/supabase";
 
 export type TenantSettingsRow = Database["public"]["Tables"]["tenant_settings"]["Row"];
 
-export type TenantSettingsSnapshotRow = Omit<TenantSettingsRow, "api_key"> & {
+// Routing credentials remain server-only and are intentionally excluded from
+// settings data that can flow toward client components.
+export type TenantSettingsSnapshotRow = Omit<
+  TenantSettingsRow,
+  "api_key" | "crm_webhook_url"
+> & {
   api_key?: string | null;
 };
 

@@ -31,14 +31,18 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
     entitlements.subscriptionStatus === "canceling";
 
   const badgeClassName = isPro
-    ? isTrialing || activeCanceling
+    ? isTrialing
       ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer transition-colors"
       : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer transition-colors"
     : activePastDue
       ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer transition-colors"
       : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors";
 
-  const statusText = isTrialing ? "3-day Pro Trial" : billingLabel;
+  const statusText = isTrialing
+    ? "3-day Pro Trial"
+    : activeCanceling
+      ? "Pro"
+      : billingLabel;
 
   return (
     <Popover>
@@ -46,10 +50,7 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
         <button type="button" className="focus:outline-none">
           <Badge variant="outline" className={badgeClassName}>
             {isTrialing && <Sparkles className="mr-1 h-3 w-3 text-amber-500" />}
-            {activeCanceling && (
-              <AlertCircle className="mr-1 h-3 w-3 text-amber-600" />
-            )}
-            {isPro && !isTrialing && !activeCanceling && (
+            {isPro && !isTrialing && (
               <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600" />
             )}
             {activePastDue && (

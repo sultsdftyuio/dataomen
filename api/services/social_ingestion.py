@@ -852,7 +852,12 @@ def _persist_lead_match(
         "LEAD_VERIFIER_SCORE_THRESHOLD",
         DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
     )
-    match_status = "qualified" if is_match and verifier_score >= threshold else "rejected"
+    # An LLM-verifier pass makes a lead ready for human review. Only the
+    # dashboard's explicit human action promotes it to `qualified` and emits a
+    # CRM webhook.
+    match_status = (
+        "ready_for_review" if is_match and verifier_score >= threshold else "rejected"
+    )
     verification_payload = verification.model_dump()
     source_post_json = post.to_source_post_json()
     metadata = {
@@ -876,6 +881,7 @@ def _persist_lead_match(
         "match_score": similarity_score,
         "pain_detected": getattr(verification, "pain_detected", ""),
         "match_reason": getattr(verification, "why_this_matches", ""),
+        "suggested_reply": getattr(verification, "suggested_reply", ""),
         "verification": verification_payload,
         "verifier_result": verification_payload,
         "source_post": source_post_json,
@@ -906,7 +912,13 @@ def _persist_lead_match(
         and {"tenant_id", "service_profile_id", "source_post_id"}.issubset(columns)
     ):
         assignment_parts = [
-            f"{column_name} = EXCLUDED.{column_name}"
+            (
+                "match_status = CASE "
+                "WHEN public.lead_matches.match_status = 'qualified' "
+                "THEN 'qualified' ELSE EXCLUDED.match_status END"
+                if column_name == "match_status"
+                else f"{column_name} = EXCLUDED.{column_name}"
+            )
             for column_name in expressions
             if column_name
             not in {"id", "tenant_id", "service_profile_id", "source_post_id", "created_at"}
@@ -941,7 +953,13 @@ def _persist_lead_match(
 
     if existing_id:
         assignment_parts = [
-            f"{column_name} = {expression}"
+            (
+                "match_status = CASE "
+                "WHEN public.lead_matches.match_status = 'qualified' "
+                "THEN 'qualified' ELSE :match_status END"
+                if column_name == "match_status"
+                else f"{column_name} = {expression}"
+            )
             for column_name, expression in expressions.items()
             if column_name not in {"id", "tenant_id", "source_post_id", "created_at"}
         ]

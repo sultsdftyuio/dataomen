@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/types/supabase";
 import type {
   CrawlJobView,
+  LeadMatchStatus,
   QualifiedLeadView,
   ServiceProfileFields,
   ServiceProfileView,
@@ -65,6 +66,17 @@ function numberValue(value: unknown): number | null {
   }
 
   return null;
+}
+
+function safeHttpUrl(value: string | null): string | null {
+  if (!value) return null;
+
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function splitStringList(value: string): string[] {
@@ -399,7 +411,7 @@ function sourcePostView(row: DbRecord): SourcePostView {
       "forum",
       "group_name",
     ]),
-    url: readString(sources, ["url", "permalink", "link"]),
+    url: safeHttpUrl(readString(sources, ["url", "permalink", "link"])),
     publishedAt: readString(sources, [
       "published_at",
       "posted_at",
@@ -417,6 +429,8 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
     id:
       readString([row], ["id", "lead_match_id", "match_id"]) ??
       `lead-${index}`,
+    matchStatus: (readString([row], ["match_status"]) ??
+      "ready_for_review") as LeadMatchStatus,
     verifierScore: numberValue(row.verifier_score) ?? 0,
     similarityScore:
       numberValue(row.similarity_score) ??
@@ -424,14 +438,20 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
       numberValue(row.match_score),
     painDetected:
       readString(sources, ["pain_detected"]) ??
-      "No pain summary was stored for this qualified match.",
+      "No pain summary was stored for this verified match.",
     matchReason:
       readString(sources, [
         "match_reason",
         "why_this_matches",
         "reason",
         "explanation",
-      ]) ?? "No match rationale was stored for this qualified match.",
+      ]) ?? "No match rationale was stored for this verified match.",
+    suggestedReply:
+      readString(sources, [
+        "suggested_reply",
+        "suggestedReply",
+        "reply_draft",
+      ]) ?? "",
     matchedAt:
       readString([row], ["matched_at", "verified_at", "created_at", "createdAt"]) ??
       null,
@@ -450,7 +470,7 @@ async function runLeadQuery(
     .from("lead_matches")
     .select(select)
     .eq("tenant_id", tenantId)
-    .eq("match_status", "qualified")
+    .in("match_status", ["ready_for_review", "qualified"])
     .gte("verifier_score", threshold);
 
   if (withOrder) {

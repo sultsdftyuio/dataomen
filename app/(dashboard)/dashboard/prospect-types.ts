@@ -54,12 +54,20 @@ export type SourcePostView = {
   publishedAt: string | null;
 };
 
+/**
+ * `ready_for_review` is set after the LLM verifies a prospect. `qualified`
+ * is reserved for the explicit, human-triggered CRM qualification action.
+ */
+export type LeadMatchStatus = "ready_for_review" | "qualified" | "rejected";
+
 export type QualifiedLeadView = {
   id: string;
+  matchStatus: LeadMatchStatus;
   verifierScore: number;
   similarityScore: number | null;
   painDetected: string;
   matchReason: string;
+  suggestedReply: string;
   matchedAt: string | null;
   sourcePost: SourcePostView;
 };

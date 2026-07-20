@@ -1,11 +1,20 @@
 // components/settings/workspace_page/workspace-billing-card.tsx
 "use client";
 
-import React, { useTransition } from "react";
+import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CreditCard, CheckCircle2, LockKeyhole, RefreshCw, XCircle } from "lucide-react";
+import { CreditCard, CheckCircle2, LockKeyhole, XCircle } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { upgradeToProPlan, manageBillingPortal, cancelProPlan } from "@/app/actions/billing";
+import {
+  upgradeToProPlan,
+  manageBillingPortal,
+  cancelProPlan,
+  resumeSubscription,
+} from "@/app/actions/billing";
+import { WorkspacePlanBadge } from "@/components/dashboard/WorkspacePlanBadge";
+import { Progress } from "@/components/ui/progress";
+import { Spinner } from "@/components/ui/spinner";
+import type { WorkspaceEntitlements } from "@/lib/entitlements";
 import { C } from "@/lib/tokens";
 
 export interface WorkspaceBillingCardProps {
@@ -16,12 +25,53 @@ export interface WorkspaceBillingCardProps {
     daysRemaining?: number | null;
     priceText?: string;
     isProTier?: boolean;
+    isCanceling?: boolean;
+    currentPeriodEnd?: string | null;
+    workspaceName?: string;
+    entitlements?: WorkspaceEntitlements;
+    qualifiedLeadUsage?: {
+      discovered: number;
+      limit: number;
+    };
+    amountDueCents?: number;
+    currency?: string;
     features?: Array<{
       label: string;
       description: string;
       unlocked: boolean;
     }>;
   };
+}
+
+type PendingBillingAction = "manage" | "upgrade" | "cancel" | "resume" | null;
+
+function formatBillingDate(value: string | null | undefined): string | null {
+  if (!value || !Number.isFinite(Date.parse(value))) return null;
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatAmountDue(
+  amountDueCents: number,
+  currency: string,
+  nextBillingDate: string | null | undefined
+): string | null {
+  const formattedDate = formatBillingDate(nextBillingDate);
+  if (!formattedDate) return null;
+
+  const amount = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountDueCents / 100);
+
+  return `${amount} due on ${formattedDate}`;
 }
 
 const DEFAULT_PRO_FEATURES = [
@@ -53,35 +103,36 @@ export default function WorkspaceBillingCard({
 }: WorkspaceBillingCardProps) {
   const router = useRouter();
   const [isBillingPending, startBillingTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<PendingBillingAction>(null);
   const planStatus = planData.planStatus ?? "free";
   const planName = planData.planName ?? "Free Access";
   const priceText = planData.priceText ?? "$29/month after the 3-day trial";
+  const isCanceling = planData.isCanceling ?? planStatus === "canceling";
+  const formattedPeriodEnd = formatBillingDate(planData.currentPeriodEnd);
+  const activeUntilText = `Active until ${formattedPeriodEnd ?? "the end of the current billing period"}`;
+  const amountDueText = formatAmountDue(
+    planData.amountDueCents ?? 2900,
+    planData.currency ?? "USD",
+    planData.currentPeriodEnd
+  );
   const canOpenPortal =
     planData.isProTier === true &&
     ["active", "trialing", "past_due", "canceling"].includes(planStatus);
-  const isCancellationScheduled = planStatus === "canceling";
   const canCancelPlan =
     planData.isProTier === true &&
-    ["active", "trialing", "past_due"].includes(planStatus);
+    ["active", "trialing", "past_due"].includes(planStatus) &&
+    !isCanceling;
   const hasOpenProAccess =
-    planStatus === "active" || planStatus === "trialing" || planStatus === "canceling";
-  const statusTone =
-    planStatus === "past_due" || isCancellationScheduled
-      ? { color: "#B45309", background: C.amberPale }
-      : hasOpenProAccess
-        ? { color: C.green, background: C.greenPale }
-        : planStatus === "canceled" || planStatus === "cancelled"
-          ? { color: "#B91C1C", background: "#FEE2E2" }
-          : { color: C.navySoft, background: C.offWhite };
+    planStatus === "active" || planStatus === "trialing" || isCanceling;
   const planDescription =
-    planData.description ??
-    (planStatus === "trialing"
-      ? "3-day Pro trial active. $29/month after the trial."
-      : planStatus === "canceling"
-        ? "Plan cancellation is scheduled. Pro features stay open until the current billing period ends."
-      : planStatus === "active"
-        ? "Pro billing active at $29/month."
-        : "Restricted Free Access. Pro features are locked until you start the Pro trial.");
+    isCanceling
+      ? activeUntilText
+      : planData.description ??
+        (planStatus === "trialing"
+          ? "3-day Pro trial active. $29/month after the trial."
+          : planStatus === "active"
+            ? "Pro billing active at $29/month."
+            : "Restricted Free Access. Pro features are locked until you start the Pro trial.");
   const proFeatures =
     planData.features ??
     DEFAULT_PRO_FEATURES.map((feature) => ({
@@ -89,11 +140,11 @@ export default function WorkspaceBillingCard({
       unlocked: hasOpenProAccess,
     }));
   const unlockedFeatureCount = proFeatures.filter((feature) => feature.unlocked).length;
-  const actionLabel = isBillingPending
-    ? "Redirecting..."
-    : canOpenPortal
-      ? "Manage Billing"
-      : "Start 3-Day Pro Trial";
+  const actionLabel = canOpenPortal ? "Manage Billing" : "Upgrade";
+  const usage = planData.qualifiedLeadUsage;
+  const usagePercent = usage
+    ? Math.min(100, Math.round((usage.discovered / Math.max(usage.limit, 1)) * 100))
+    : 0;
 
   const surfaceBorder = `1px solid ${C.rule}`;
   const surfaceShadow =
@@ -101,6 +152,7 @@ export default function WorkspaceBillingCard({
 
   // Enforces Rule 2 (Async Enrichment Boundary)
   const handleManageBilling = () => {
+    setPendingAction(canOpenPortal ? "manage" : "upgrade");
     startBillingTransition(async () => {
       try {
         // Route Dodo-linked Pro workspaces to the portal, others to checkout.
@@ -138,6 +190,8 @@ export default function WorkspaceBillingCard({
           description: message,
           variant: "destructive",
         });
+      } finally {
+        setPendingAction(null);
       }
     });
   };
@@ -149,6 +203,7 @@ export default function WorkspaceBillingCard({
 
     if (!confirmed) return;
 
+    setPendingAction("cancel");
     startBillingTransition(async () => {
       try {
         const result = await cancelProPlan();
@@ -168,6 +223,31 @@ export default function WorkspaceBillingCard({
           description: error?.message || "Could not cancel your plan. Please try again.",
           variant: "destructive",
         });
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  };
+
+  const handleResumeSubscription = () => {
+    setPendingAction("resume");
+    startBillingTransition(async () => {
+      try {
+        const result = await resumeSubscription();
+
+        toast({
+          title: result.status === "already_resumed" ? "Subscription Active" : "Subscription Resumed",
+          description: "Your Pro subscription will continue without interruption.",
+        });
+        router.refresh();
+      } catch (error: any) {
+        toast({
+          title: "Could Not Resume Subscription",
+          description: error?.message || "Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setPendingAction(null);
       }
     });
   };
@@ -194,42 +274,40 @@ export default function WorkspaceBillingCard({
           paddingBottom: 10,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <CreditCard size={16} color={C.blue} />
-          <h2
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              color: C.navySoft,
-              margin: 0,
-            }}
-          >
-            Plan & Billing
-          </h2>
+          <div style={{ minWidth: 0 }}>
+            <h2
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                color: C.navySoft,
+                margin: 0,
+              }}
+            >
+              Plan & Billing
+            </h2>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+              <span
+                style={{
+                  color: C.navy,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {planData.workspaceName ?? "Workspace"}
+              </span>
+              {planData.entitlements ? (
+                <WorkspacePlanBadge entitlements={planData.entitlements} />
+              ) : null}
+            </div>
+          </div>
         </div>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: statusTone.color,
-            background: statusTone.background,
-            padding: "2px 8px",
-            borderRadius: 12,
-            textTransform: "capitalize",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          {isCancellationScheduled ? (
-            <AlertCircle size={12} />
-          ) : (
-            hasOpenProAccess && <CheckCircle2 size={12} />
-          )}
-          {planStatus.replace("_", " ")}
-        </span>
       </div>
 
       <div
@@ -261,7 +339,7 @@ export default function WorkspaceBillingCard({
             {planDescription}
           </div>
           <div style={{ fontSize: 11, color: C.navySoft, marginTop: 4, fontWeight: 600 }}>
-            {priceText}
+            {isCanceling ? amountDueText ?? priceText : priceText}
           </div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end" }}>
@@ -285,9 +363,9 @@ export default function WorkspaceBillingCard({
               whiteSpace: "nowrap",
             }}
           >
-            {isBillingPending ? (
+            {isBillingPending && pendingAction === (canOpenPortal ? "manage" : "upgrade") ? (
               <>
-                <RefreshCw size={12} className="animate-spin" /> {actionLabel}
+                <Spinner className="size-3" /> {canOpenPortal ? "Opening..." : "Upgrading..."}
               </>
             ) : (
               actionLabel
@@ -315,32 +393,73 @@ export default function WorkspaceBillingCard({
                 whiteSpace: "nowrap",
               }}
             >
-              <XCircle size={12} />
-              Cancel Plan
+              {isBillingPending && pendingAction === "cancel" ? (
+                <>
+                  <Spinner className="size-3" /> Canceling...
+                </>
+              ) : (
+                <>
+                  <XCircle size={12} /> Cancel Plan
+                </>
+              )}
             </button>
           )}
 
-          {isCancellationScheduled && (
-            <span
+          {isCanceling && (
+            <button
+              type="button"
+              onClick={handleResumeSubscription}
+              disabled={isBillingPending}
               style={{
-                minHeight: 28,
+                height: 28,
                 display: "inline-flex",
                 alignItems: "center",
-                color: "#B45309",
-                background: C.amberPale,
-                border: "1px solid rgba(245,158,11,0.25)",
+                color: C.white,
+                background: C.blue,
+                border: `1px solid ${C.blue}`,
                 borderRadius: 6,
-                padding: "0 10px",
+                padding: "0 12px",
                 fontSize: 11,
                 fontWeight: 700,
                 whiteSpace: "nowrap",
+                cursor: isBillingPending ? "not-allowed" : "pointer",
+                gap: 6,
               }}
             >
-              Cancellation scheduled
-            </span>
+              {isBillingPending && pendingAction === "resume" ? (
+                <>
+                  <Spinner className="size-3" /> Resuming...
+                </>
+              ) : (
+                "Resume Subscription"
+              )}
+            </button>
           )}
         </div>
       </div>
+
+      {usage ? (
+        <div
+          style={{
+            borderTop: `1px solid ${C.rule}`,
+            paddingTop: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 7,
+          }}
+        >
+          <div
+            style={{
+              color: C.navy,
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            {new Intl.NumberFormat("en-US").format(usage.discovered)} / {new Intl.NumberFormat("en-US").format(usage.limit)} Qualified Leads Discovered
+          </div>
+          <Progress value={usagePercent} aria-label="Qualified leads discovered this month" />
+        </div>
+      ) : null}
 
       <div
         style={{

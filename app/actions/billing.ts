@@ -45,6 +45,13 @@ type CancelProPlanResult = {
   currentPeriodEnd?: string | null;
 };
 
+type ResumeSubscriptionResult = {
+  status: "resumed" | "already_resumed";
+  tenantId: string;
+  subscriptionStatus: string | null;
+  currentPeriodEnd?: string | null;
+};
+
 type BillingTestState =
   | "free"
   | "trialing"
@@ -80,6 +87,35 @@ type TenantBillingLookupRow = {
   dodo_subscription_id: string | null;
   current_period_end: string | null;
 };
+
+type TenantBillingAdminMembership = {
+  role: string | null;
+};
+
+async function requireWorkspaceBillingAdmin(
+  tenantId: string,
+  userId: string
+): Promise<void> {
+  const supabase = await createClient();
+  const { data: membership, error } = await supabase
+    .from("tenant_users")
+    .select("role")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", userId)
+    .maybeSingle<TenantBillingAdminMembership>();
+
+  const role = membership?.role?.trim().toLowerCase();
+  if (error || !role || !["owner", "admin"].includes(role)) {
+    console.error("[Billing] Unauthorized subscription resume attempt", {
+      event: "billing_resume_unauthorized",
+      tenant_id: tenantId,
+      user_id: userId,
+      role: role ?? null,
+      error,
+    });
+    throw new Error("Only workspace owners and admins can resume billing.");
+  }
+}
 
 async function scheduleSubscriptionCancellationForTenant(
   tenantId: string,
@@ -1025,6 +1061,175 @@ export async function cancelProPlan(): Promise<CancelProPlanResult> {
 
   const { tenantId, userId } = tenantContextResult.context;
   return scheduleSubscriptionCancellationForTenant(tenantId, userId);
+}
+
+/**
+ * Removes a pending Dodo cancellation for the current workspace.
+ *
+ * The operation is intentionally desired-state based: retrying it always asks
+ * Dodo for the same `cancel_at_next_billing_date: false` state and never
+ * creates a new subscription or payment.
+ */
+export async function resumeSubscription(): Promise<ResumeSubscriptionResult> {
+  const tenantContextResult = await resolveTenantContext();
+  if ("response" in tenantContextResult) {
+    throw new Error("No valid workspace found for user.");
+  }
+
+  const { tenantId, userId } = tenantContextResult.context;
+  await requireWorkspaceBillingAdmin(tenantId, userId);
+
+  const serviceSupabase = getSupabaseServiceClient();
+  const { data: tenant, error: tenantError } = await serviceSupabase
+    .from("tenants")
+    .select(
+      "tenant_id, plan_tier, subscription_status, dodo_customer_id, dodo_subscription_id, current_period_end"
+    )
+    .eq("tenant_id", tenantId)
+    .maybeSingle<TenantBillingLookupRow>();
+
+  if (tenantError || !tenant) {
+    console.error("[Billing] Tenant lookup failed during subscription resume", {
+      event: "billing_resume_tenant_lookup_failed",
+      tenant_id: tenantId,
+      user_id: userId,
+      error: tenantError,
+    });
+    throw new Error("Unable to resolve workspace billing status.");
+  }
+
+  const { client: dodo, environment } = getDodoClient();
+  const productId = sanitizeEnvSecret(process.env.DODO_PRO_PLAN_ID) || null;
+  let match: DodoSubscriptionMatch | null = null;
+  let subscriptionId = tenant.dodo_subscription_id;
+
+  try {
+    match = await findActiveDodoSubscriptionForTenant(dodo, {
+      tenantId,
+      customerId: tenant.dodo_customer_id,
+      subscriptionId: tenant.dodo_subscription_id,
+      productId,
+    });
+    subscriptionId = subscriptionId ?? (match ? extractSubscriptionId(match.subscription) : null);
+  } catch (error) {
+    console.error("[Billing] Dodo subscription lookup failed during resume", {
+      event: "billing_resume_dodo_lookup_failed",
+      tenant_id: tenantId,
+      user_id: userId,
+      environment,
+      has_dodo_customer_id: Boolean(tenant.dodo_customer_id),
+      has_dodo_subscription_id: Boolean(tenant.dodo_subscription_id),
+      error: serializeError(error),
+    });
+    throw new Error("Unable to verify the subscription before resuming it.");
+  }
+
+  if (!subscriptionId) {
+    console.error("[Billing] Missing Dodo subscription id during resume", {
+      event: "billing_resume_subscription_id_missing",
+      tenant_id: tenantId,
+      user_id: userId,
+    });
+    throw new Error("No Dodo subscription is linked to this workspace.");
+  }
+
+  const dodoSubscription = match?.subscription ?? null;
+  const alreadyResumed =
+    tenant.subscription_status?.trim().toLowerCase() !== "canceling" &&
+    readBoolean(dodoSubscription, "cancel_at_next_billing_date") === false;
+
+  if (alreadyResumed) {
+    console.info("[Billing] Subscription resume request was already satisfied", {
+      event: "billing_resume_already_completed",
+      tenant_id: tenantId,
+      user_id: userId,
+      environment,
+      subscription_id: subscriptionId,
+    });
+    return {
+      status: "already_resumed",
+      tenantId,
+      subscriptionStatus: tenant.subscription_status,
+      currentPeriodEnd: tenant.current_period_end,
+    };
+  }
+
+  let resumedSubscription: Record<string, unknown>;
+  try {
+    const updateResponse = asRecord(
+      await dodo.subscriptions.update(subscriptionId, {
+        cancel_at_next_billing_date: false,
+      })
+    );
+    resumedSubscription =
+      updateResponse ??
+      asRecord(await dodo.subscriptions.retrieve(subscriptionId)) ?? {
+        subscription_id: subscriptionId,
+        cancel_at_next_billing_date: false,
+      };
+  } catch (error) {
+    console.error("[Billing] Dodo subscription resume failed", {
+      event: "billing_resume_dodo_update_failed",
+      tenant_id: tenantId,
+      user_id: userId,
+      environment,
+      subscription_id: subscriptionId,
+      error: serializeError(error),
+    });
+    throw new Error("Unable to resume subscription. Please try again.");
+  }
+
+  if (readBoolean(resumedSubscription, "cancel_at_next_billing_date") === true) {
+    console.error("[Billing] Dodo did not confirm cancellation removal", {
+      event: "billing_resume_dodo_state_unconfirmed",
+      tenant_id: tenantId,
+      user_id: userId,
+      environment,
+      subscription_id: subscriptionId,
+    });
+    throw new Error("Dodo could not confirm that the subscription was resumed.");
+  }
+
+  const update = tenantUpdateFromDodoSubscription(resumedSubscription);
+  const { data: updatedTenant, error: updateError } = await serviceSupabase
+    .from("tenants")
+    .update(update)
+    .eq("tenant_id", tenantId)
+    // A webhook can win this race. In that case its Dodo-derived state is
+    // already authoritative, so we avoid a redundant write.
+    .eq("subscription_status", "canceling")
+    .select("tenant_id, subscription_status, current_period_end")
+    .maybeSingle();
+
+  if (updateError) {
+    console.error("[Billing] Tenant resume sync update failed", {
+      event: "billing_resume_local_sync_failed",
+      tenant_id: tenantId,
+      user_id: userId,
+      subscription_id: subscriptionId,
+      error: updateError,
+    });
+    throw new Error("Subscription was resumed, but workspace billing state could not sync.");
+  }
+
+  revalidatePath("/settings", "layout");
+  revalidatePath("/dashboard");
+
+  console.info("[Billing] Workspace subscription resumed", {
+    event: updatedTenant ? "billing_resume_completed" : "billing_resume_already_synced",
+    tenant_id: tenantId,
+    user_id: userId,
+    environment,
+    subscription_id: subscriptionId,
+    subscription_status: updatedTenant?.subscription_status ?? "active",
+  });
+
+  return {
+    status: updatedTenant ? "resumed" : "already_resumed",
+    tenantId,
+    subscriptionStatus: updatedTenant?.subscription_status ?? "active",
+    currentPeriodEnd: updatedTenant?.current_period_end ?? tenant.current_period_end,
+  };
 }
 
 /**
