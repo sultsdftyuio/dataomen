@@ -229,6 +229,14 @@ app = FastAPI(
     version=os.getenv("ARCLI_API_VERSION", "0.1.0"),
 )
 
+
+@app.on_event("shutdown")
+async def close_background_clients() -> None:
+    from api.services.security.api_key_cache import close_api_key_cache_redis
+
+    await close_api_key_cache_redis()
+
+
 CRAWL_TRIGGER_DEBUG_PATHS = {"/api/crawl/trigger", "/crawl/trigger"}
 
 

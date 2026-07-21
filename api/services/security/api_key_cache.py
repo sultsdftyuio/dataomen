@@ -21,6 +21,7 @@ LIVE_PREFIX = os.getenv("API_KEY_LIVE_PREFIX", "arcli_live_")
 TEST_PREFIX = os.getenv("API_KEY_TEST_PREFIX", "arcli_test_")
 AUTH_CACHE_TTL_SECONDS = int(os.getenv("API_KEY_AUTH_CACHE_TTL_SECONDS", "604800"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_MAX_CONNECTIONS = max(1, int(os.getenv("API_KEY_CACHE_REDIS_MAX_CONNECTIONS", "10")))
 KEY_ID_HEX_LENGTH = ApiKeyVault.KEY_ID_BYTES * 2
 SECRET_HEX_LENGTH = ApiKeyVault.SECRET_BYTES * 2
 HEX_RE = re.compile(r"^[0-9a-f]+$")
@@ -71,9 +72,19 @@ def get_api_key_cache_redis() -> redis.Redis:
             socket_timeout=2,
             socket_connect_timeout=2,
             health_check_interval=30,
+            max_connections=REDIS_MAX_CONNECTIONS,
         )
 
     return _redis_client
+
+
+async def close_api_key_cache_redis() -> None:
+    """Close the process-global cache client during application shutdown."""
+    global _redis_client
+
+    client, _redis_client = _redis_client, None
+    if client is not None:
+        await client.aclose()
 
 
 async def cache_api_key_auth_record(

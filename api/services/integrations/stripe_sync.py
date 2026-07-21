@@ -335,8 +335,8 @@ class StripeSyncMixin:
         # FIX #5 (cold storage): Archive raw records before transformation.
         if self.raw_storage_sink and items:
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(
+                asyncio.get_running_loop()
+                self._schedule_background_task(
                     self.raw_storage_sink.write_raw(
                         self.tenant_id, "stripe", stream_name, items
                     )

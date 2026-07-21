@@ -79,6 +79,9 @@ from .stripe_sync import StripeSyncMixin
 
 logger = logging.getLogger(__name__)
 
+_MAX_CONCURRENT_SHARDS = 8
+_MAX_BACKGROUND_TASKS = 4
+
 
 # ---------------------------------------------------------------------------
 # Connector
@@ -147,7 +150,7 @@ class StripeConnector(BaseIntegration, StripeSyncMixin):
         self._llm_client = llm_client
         self._incremental_window_secs = incremental_window_secs
         self._max_pages = max_pages
-        self._concurrent_shards = max(1, concurrent_shards)
+        self._concurrent_shards = min(_MAX_CONCURRENT_SHARDS, max(1, concurrent_shards))
         self._semaphore_limit = semaphore_limit
         self._semaphore = asyncio.Semaphore(semaphore_limit)
         self._sampling_rate = sampling_rate
@@ -156,6 +159,8 @@ class StripeConnector(BaseIntegration, StripeSyncMixin):
 
         # Active metrics reference for dynamic retry callback (FIX #1).
         self._active_metrics: Optional[SyncMetrics] = None
+        self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._prewarm_task: asyncio.Task[Any] | None = None
 
     # -----------------------------------------------------------------------
     # Initialisation helpers
@@ -199,9 +204,49 @@ class StripeConnector(BaseIntegration, StripeSyncMixin):
     # -----------------------------------------------------------------------
 
     async def fetch_schema(self) -> Dict[str, Any]:
-        if self._llm_client is not None:
-            asyncio.create_task(self._prewarm_semantic_router(SCHEMA))
+        if self._llm_client is not None and (
+            self._prewarm_task is None or self._prewarm_task.done()
+        ):
+            self._prewarm_task = asyncio.create_task(
+                self._prewarm_semantic_router(SCHEMA)
+            )
+            self._track_background_task(self._prewarm_task)
         return SCHEMA
+
+    def _track_background_task(self, task: asyncio.Task[Any]) -> None:
+        self._background_tasks.add(task)
+
+        def _consume_result(completed: asyncio.Task[Any]) -> None:
+            self._background_tasks.discard(completed)
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                logger.exception("[%s] Stripe background task failed", self.tenant_id)
+
+        task.add_done_callback(_consume_result)
+
+    def _schedule_background_task(self, coroutine: Any) -> None:
+        if len(self._background_tasks) >= _MAX_BACKGROUND_TASKS:
+            logger.warning(
+                "[%s] Stripe background task capacity reached; dropping optional work",
+                self.tenant_id,
+            )
+            close = getattr(coroutine, "close", None)
+            if callable(close):
+                close()
+            return
+        self._track_background_task(asyncio.create_task(coroutine))
+
+    async def close(self) -> None:
+        tasks = list(self._background_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._background_tasks.clear()
+        self._prewarm_task = None
 
     async def _prewarm_semantic_router(self, schema: Dict[str, Any]) -> None:
         try:

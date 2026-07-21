@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -11,10 +12,11 @@ from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import dramatiq
-from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import TimeLimitExceeded
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
+
+from api.broker import configure_redis_broker
 
 logger = logging.getLogger(__name__)
 
@@ -98,14 +100,7 @@ def _configure_dramatiq_broker() -> None:
 
     connect_timeout = _env_float("ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0)
     socket_timeout = _env_float("ARCLI_REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
-    broker = RedisBroker(
-        url=redis_url,
-        socket_connect_timeout=connect_timeout,
-        socket_timeout=socket_timeout,
-        health_check_interval=_env_int("ARCLI_REDIS_HEALTH_CHECK_INTERVAL_SECONDS", 30),
-    )
-    setattr(broker, "_arcli_redis_url", redis_url)
-    dramatiq.set_broker(broker)
+    configure_redis_broker(redis_url)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s connect_timeout_seconds=%s socket_timeout_seconds=%s",
         "redis",
@@ -143,6 +138,10 @@ def _database_engine() -> Engine:
     return create_engine(
         _normalize_database_url(database_url),
         pool_pre_ping=True,
+        pool_size=4,
+        max_overflow=0,
+        pool_timeout=5,
+        pool_recycle=1_800,
         connect_args={
             "connect_timeout": _env_int("ARCLI_DB_CONNECT_TIMEOUT_SECONDS", 3),
         },
@@ -714,18 +713,18 @@ async def _crawl_with_deadline(
     crawl_job_id: str,
     timeout_seconds: int,
 ) -> str:
-    crawler = WebsiteCrawler(
+    async with WebsiteCrawler(
         timeout_seconds=min(90, max(10, timeout_seconds - 10)),
         max_pages=_env_int("ARCLI_CRAWL_MAX_PAGES", 6),
-    )
-    return await asyncio.wait_for(
-        crawler.crawl_and_scrape(
-            normalized_url,
-            tenant_id=tenant_id,
-            crawl_job_id=crawl_job_id,
-        ),
-        timeout=timeout_seconds,
-    )
+    ) as crawler:
+        return await asyncio.wait_for(
+            crawler.crawl_and_scrape(
+                normalized_url,
+                tenant_id=tenant_id,
+                crawl_job_id=crawl_job_id,
+            ),
+            timeout=timeout_seconds,
+        )
 
 
 def _extract_profile_with_deadline(
@@ -737,11 +736,12 @@ def _extract_profile_with_deadline(
 ) -> dict[str, Any]:
     from api.services.profile_extraction import ProfileExtractor
 
-    return ProfileExtractor(timeout_seconds=float(timeout_seconds)).extract_profile(
-        markdown,
-        tenant_id=tenant_id,
-        crawl_job_id=crawl_job_id,
-    )
+    with ProfileExtractor(timeout_seconds=float(timeout_seconds)) as extractor:
+        return extractor.extract_profile(
+            markdown,
+            tenant_id=tenant_id,
+            crawl_job_id=crawl_job_id,
+        )
 
 
 def _remaining_deadline_seconds(deadline: float, *, minimum: int = 5) -> int:
@@ -1328,6 +1328,26 @@ class WebsiteCrawler:
         self.timeout_seconds = timeout_seconds
         self.page_timeout_ms = page_timeout_ms
         self.max_pages = max_pages
+        self._client: Any | None = None
+
+    async def __aenter__(self) -> "WebsiteCrawler":
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        client, self._client = self._client, None
+        if client is None:
+            return
+
+        close = getattr(client, "aclose", None) or getattr(client, "close", None)
+        if not callable(close):
+            return
+
+        result = close()
+        if inspect.isawaitable(result):
+            await result
 
     async def crawl_and_scrape(
         self,
@@ -1345,7 +1365,7 @@ class WebsiteCrawler:
         """
         resolved_tenant_id = tenant_id or "unknown"
         normalized_url = self._normalize_url(url)
-        client = self._build_client()
+        client = self._get_client()
 
         documents: list[tuple[str, str]] = []
         seen_sources: set[str] = set()
@@ -1456,6 +1476,11 @@ class WebsiteCrawler:
 
         kwargs = {"api_key": self.api_key} if self.api_key else {}
         return AsyncFirecrawl(**kwargs)
+
+    def _get_client(self) -> Any:
+        if self._client is None:
+            self._client = self._build_client()
+        return self._client
 
     async def _crawl_target_pages(self, client: Any, url: str) -> Any:
         crawl = getattr(client, "crawl", None)

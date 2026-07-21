@@ -7,6 +7,9 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
+LOCAL_QUOTA_MAX_KEYS = max(1, int(os.getenv("ARCLI_LOCAL_QUOTA_MAX_KEYS", "10000")))
+REDIS_MAX_CONNECTIONS = max(1, int(os.getenv("ARCLI_QUOTA_REDIS_MAX_CONNECTIONS", "8")))
+
 
 class RedisLike(Protocol):
     def incr(self, name: str) -> int: ...
@@ -54,7 +57,11 @@ class TenantQuotaGuard:
         key = f"arcli:quota:{safe_tenant_id}:{safe_counter_name}:{int(time.time() // safe_window_seconds)}"
 
         try:
-            current_count = self._increment(key, safe_window_seconds)
+            current_count = self._increment(
+                key,
+                safe_window_seconds,
+                reject_count=safe_limit + 1,
+            )
         except Exception as exc:
             logger.warning(
                 "tenant_quota_counter_failed tenant_id=%s counter_name=%s backend=%s error_type=%s error=%s",
@@ -64,7 +71,11 @@ class TenantQuotaGuard:
                 exc.__class__.__name__,
                 exc,
             )
-            current_count = self._increment_memory(key, safe_window_seconds)
+            current_count = self._increment_memory(
+                key,
+                safe_window_seconds,
+                reject_count=safe_limit + 1,
+            )
 
         allowed = current_count <= safe_limit
         decision = UsageDecision(
@@ -90,10 +101,20 @@ class TenantQuotaGuard:
 
         return decision
 
-    def _increment(self, key: str, window_seconds: int) -> int:
+    def _increment(
+        self,
+        key: str,
+        window_seconds: int,
+        *,
+        reject_count: int,
+    ) -> int:
         client = self.redis_client or _redis_client_from_env()
         if client is None:
-            return self._increment_memory(key, window_seconds)
+            return self._increment_memory(
+                key,
+                window_seconds,
+                reject_count=reject_count,
+            )
 
         current_count = int(client.incr(key))
         if current_count == 1:
@@ -101,11 +122,33 @@ class TenantQuotaGuard:
         return current_count
 
     @classmethod
-    def _increment_memory(cls, key: str, window_seconds: int) -> int:
-        now = time.time()
+    def _increment_memory(
+        cls,
+        key: str,
+        window_seconds: int,
+        *,
+        reject_count: int,
+    ) -> int:
+        now = time.monotonic()
         expires_at = now + window_seconds
         with cls._memory_lock:
-            current_count, current_expires_at = cls._memory_counts.get(key, (0, expires_at))
+            expired_keys = [
+                old_key
+                for old_key, (_, old_expires_at) in cls._memory_counts.items()
+                if old_expires_at <= now
+            ]
+            for old_key in expired_keys:
+                del cls._memory_counts[old_key]
+
+            existing = cls._memory_counts.get(key)
+            if existing is None and len(cls._memory_counts) >= LOCAL_QUOTA_MAX_KEYS:
+                logger.error(
+                    "tenant_quota_memory_capacity_reached max_keys=%s",
+                    LOCAL_QUOTA_MAX_KEYS,
+                )
+                return reject_count
+
+            current_count, current_expires_at = existing or (0, expires_at)
             if current_expires_at <= now:
                 current_count = 0
                 current_expires_at = expires_at
@@ -141,7 +184,14 @@ def _redis_client_from_env() -> RedisLike | None:
     try:
         import redis
 
-        _redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        _redis_client = redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            max_connections=REDIS_MAX_CONNECTIONS,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            health_check_interval=30,
+        )
     except Exception as exc:
         logger.warning(
             "tenant_quota_redis_unavailable redis_url_configured=%s error_type=%s error=%s",

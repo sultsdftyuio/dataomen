@@ -1143,6 +1143,8 @@ def run_initial_public_ingestion(
         )
         posts_by_match_id[match_post_id] = post
 
+    embedding_service.close()
+
     candidates = find_candidate_matches(
         profile_embedding,
         post_embeddings,
@@ -1217,6 +1219,8 @@ def run_initial_public_ingestion(
                 profile_embedding_sha256=profile_embedding_sha256,
                 verifier_model=verifier_model,
             )
+
+    verifier.close()
 
     logger.info(
         "social_ingestion_completed tenant_id=%s service_profile_id=%s posts=%s embedded=%s candidates=%s qualified=%s",

@@ -144,18 +144,27 @@ class EmailConnector:
             write=config.timeout_write,
             pool=config.timeout_pool,
         )
+        self._limits = httpx.Limits(
+            max_connections=20,
+            max_keepalive_connections=5,
+            keepalive_expiry=30.0,
+        )
         self._client: Optional[httpx.AsyncClient] = None
 
     # -- lifecycle -----------------------------------------------------------
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
+            self._client = httpx.AsyncClient(
+                timeout=self._timeout,
+                limits=self._limits,
+            )
         return self._client
 
     async def close(self) -> None:
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        client, self._client = self._client, None
+        if client and not client.is_closed:
+            await client.aclose()
 
     async def __aenter__(self) -> "EmailConnector":
         return self

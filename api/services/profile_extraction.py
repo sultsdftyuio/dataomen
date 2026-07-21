@@ -5,10 +5,11 @@ import time
 from typing import Any
 
 import dramatiq
-from dramatiq.brokers.redis import RedisBroker
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.broker import configure_redis_broker
 from api.services.cost_controls import TenantQuotaGuard, env_int
+from api.services.openai_lifecycle import OpenAIClientOwner
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class ServiceProfileDraft(BaseModel):
     )
 
 
-class ProfileExtractor:
+class ProfileExtractor(OpenAIClientOwner):
     SYSTEM_PROMPT = """
 You are a seasoned B2B product marketer and demand-generation strategist.
 
@@ -74,6 +75,7 @@ not stated directly. Output exactly the requested schema.
         quota_guard: TenantQuotaGuard | None = None,
     ) -> None:
         self.client = client
+        self._owns_client = False
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("OPENAI_PROFILE_EXTRACTION_MODEL", "gpt-5.4-nano")
         self.timeout_seconds = timeout_seconds
@@ -125,7 +127,7 @@ not stated directly. Output exactly the requested schema.
             )
             raise RuntimeError("Profile extraction quota exceeded for tenant.")
 
-        client = self.client or self._build_client()
+        client = self._get_client()
         clipped_content = self._clip_markdown(
             markdown_content,
             tenant_id=quota.tenant_id,
@@ -257,9 +259,7 @@ def _configure_dramatiq_broker() -> None:
     if getattr(current_broker, "_arcli_redis_url", None) == redis_url:
         return
 
-    broker = RedisBroker(url=redis_url)
-    setattr(broker, "_arcli_redis_url", redis_url)
-    dramatiq.set_broker(broker)
+    configure_redis_broker(redis_url)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
         "redis",

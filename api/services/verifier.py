@@ -12,6 +12,7 @@ from tenacity import (
 )
 
 from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
+from api.services.openai_lifecycle import OpenAIClientOwner
 from api.services.matching import REJECTION_INSUFFICIENT_SIMILARITY
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def _log_retry(retry_state: RetryCallState) -> None:
     )
 
 
-class VerifierService:
+class VerifierService(OpenAIClientOwner):
     SYSTEM_PROMPT = (
         "Evaluate the candidate post against the Service Profile. A valid lead "
         "must show explicit pain, buying intent, or frustration that the Service "
@@ -124,6 +125,7 @@ class VerifierService:
         quota_guard: TenantQuotaGuard | None = None,
     ) -> None:
         self.client = client
+        self._owns_client = False
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("OPENAI_VERIFIER_MODEL", "gpt-5.4-nano")
         self.timeout_seconds = timeout_seconds
@@ -256,7 +258,7 @@ class VerifierService:
         tenant_id: str,
         service_profile_id: str,
     ) -> VerificationResult:
-        client = self.client or self._build_client()
+        client = self._get_client()
         try:
             parse_completion = client.beta.chat.completions.parse
         except AttributeError as exc:

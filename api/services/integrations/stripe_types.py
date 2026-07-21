@@ -12,7 +12,7 @@ stripe_*.py modules.  It defines:
 
 import logging
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TypedDict
@@ -40,6 +40,9 @@ _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # FIX #7: Max IDs held in memory for deduplication before LRU eviction.
 _DEDUP_MAX_SIZE: int = int(os.environ.get("STRIPE_DEDUP_MAX_SIZE", "200000"))
+_LATENCY_SAMPLE_MAX_SIZE: int = int(
+    os.environ.get("STRIPE_LATENCY_SAMPLE_MAX_SIZE", "2048")
+)
 
 # FIX #8: Concurrency adaptation thresholds.
 _CONCURRENCY_RETRY_HIGH: float = 0.10   # retry rate above this → back off
@@ -176,7 +179,10 @@ class SyncMetrics:
     retry_count: int = 0
     deduped_count: int = 0
     started_at: float = field(default_factory=time.monotonic)
-    _latencies_ms: List[float] = field(default_factory=list, repr=False)
+    _latencies_ms: deque[float] = field(
+        default_factory=lambda: deque(maxlen=max(1, _LATENCY_SAMPLE_MAX_SIZE)),
+        repr=False,
+    )
 
     def record_latency(self, ms: float) -> None:
         self._latencies_ms.append(ms)

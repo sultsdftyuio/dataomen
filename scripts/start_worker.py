@@ -74,6 +74,7 @@ def run_dramatiq_worker(state: WorkerState) -> int:
     processes = int_env("DRAMATIQ_PROCESSES", 1)
     threads = int_env("DRAMATIQ_THREADS", 4)
     shutdown_timeout = int_env("ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS", 120)
+    dramatiq_shutdown_timeout_ms = max(1_000, (shutdown_timeout - 5) * 1_000)
 
     command = [
         sys.executable,
@@ -83,6 +84,8 @@ def run_dramatiq_worker(state: WorkerState) -> int:
         str(processes),
         "--threads",
         str(threads),
+        "--worker-shutdown-timeout",
+        str(dramatiq_shutdown_timeout_ms),
         *modules,
     ]
     logger.info(

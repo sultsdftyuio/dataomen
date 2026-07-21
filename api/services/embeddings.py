@@ -8,7 +8,6 @@ from functools import lru_cache
 from typing import Any, Sequence
 
 import dramatiq
-from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import TimeLimitExceeded
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import create_engine, text
@@ -22,6 +21,8 @@ from tenacity import (
 )
 
 from api.services.cost_controls import TenantQuotaGuard, env_int
+from api.broker import configure_redis_broker
+from api.services.openai_lifecycle import OpenAIClientOwner
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def _log_retry(retry_state: RetryCallState) -> None:
     )
 
 
-class EmbeddingService:
+class EmbeddingService(OpenAIClientOwner):
     """
     Thin OpenAI embedding boundary for the Phase 1 in-memory matching engine.
     """
@@ -107,6 +108,7 @@ class EmbeddingService:
         quota_guard: TenantQuotaGuard | None = None,
     ) -> None:
         self.client = client
+        self._owns_client = False
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.timeout_seconds = timeout_seconds
@@ -195,7 +197,7 @@ class EmbeddingService:
         reraise=True,
     )
     def _create_embedding(self, text: str, model: str) -> list[float]:
-        client = self.client or self._build_client()
+        client = self._get_client()
         response = client.embeddings.create(
             model=model,
             input=text,
@@ -272,9 +274,7 @@ def _configure_dramatiq_broker() -> None:
     if getattr(current_broker, "_arcli_redis_url", None) == redis_url:
         return
 
-    broker = RedisBroker(url=redis_url)
-    setattr(broker, "_arcli_redis_url", redis_url)
-    dramatiq.set_broker(broker)
+    configure_redis_broker(redis_url)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
         "redis",
@@ -307,7 +307,14 @@ def _database_engine() -> Engine:
     if not database_url:
         raise RuntimeError("DATABASE_URL, SUPABASE_DB_URL, or POSTGRES_URL is required.")
 
-    return create_engine(_normalize_database_url(database_url), pool_pre_ping=True)
+    return create_engine(
+        _normalize_database_url(database_url),
+        pool_pre_ping=True,
+        pool_size=4,
+        max_overflow=0,
+        pool_timeout=5,
+        pool_recycle=1_800,
+    )
 
 
 def _service_profile_columns(conn: Connection) -> dict[str, dict[str, str]]:
@@ -1388,6 +1395,8 @@ def process_service_profile_embedding_job(
             exc,
         )
         raise
+    finally:
+        embedding_service.close()
 
     with engine.begin() as conn:
         persisted_profile_id = _persist_service_profile_embedding(

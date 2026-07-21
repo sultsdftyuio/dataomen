@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import dramatiq
-from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import TimeLimitExceeded
 from supabase import create_client, Client
+from supabase.client import ClientOptions
 
+from api.broker import configure_redis_broker
 from api.services.cost_controls import TenantQuotaGuard, env_int
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,7 @@ def _configure_dramatiq_broker() -> None:
     if getattr(current_broker, "_arcli_redis_url", None) == redis_url:
         return
 
-    broker = RedisBroker(url=redis_url)
-    setattr(broker, "_arcli_redis_url", redis_url)
-    dramatiq.set_broker(broker)
+    configure_redis_broker(redis_url)
     logger.info(
         "dramatiq_redis_broker_configured broker=%s redis_url_configured=%s",
         "redis",
@@ -158,7 +157,16 @@ def _get_supabase_client() -> Optional[Client]:
         )
         return None
 
-    _supabase_client = create_client(supabase_url, supabase_key)
+    _supabase_client = create_client(
+        supabase_url,
+        supabase_key,
+        options=ClientOptions(
+            auto_refresh_token=False,
+            persist_session=False,
+            postgrest_client_timeout=10,
+            storage_client_timeout=10,
+        ),
+    )
     return _supabase_client
 
 
