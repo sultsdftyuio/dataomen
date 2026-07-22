@@ -13,6 +13,7 @@ DEFAULT_ACTOR_MODULES = (
     "api.services.profile_extraction",
     "api.services.embeddings",
     "api.services.ingestion_service",
+    "api.workers.actors",
 )
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 import os
@@ -5,8 +6,8 @@ import re
 import json
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Iterator, TypeVar
 from urllib.parse import quote
 
 import httpx
@@ -25,6 +26,8 @@ from api.services.embeddings import (
     _string_list,
     _string_value,
 )
+from api.services.integrations.hn_connector import SourcePost
+from api.services.integrations.x_connector import TwitterSourcePost
 from api.services.matching import PostEmbedding, find_candidate_matches
 from api.services.verifier import (
     CandidatePost,
@@ -34,6 +37,11 @@ from api.services.verifier import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The HN and X connectors are globally scoped by design.  They deliberately
+# live alongside the legacy tenant-scoped social pipeline without sharing its
+# tenant persistence helpers.
+_public_source_supabase_client: Any | None = None
 
 DEFAULT_REDDIT_SUBREDDITS = (
     "SaaS",
@@ -1237,3 +1245,243 @@ def run_initial_public_ingestion(
         "candidates": len(candidates),
         "qualified": qualified_count,
     }
+
+
+# ---------------------------------------------------------------------------
+# Globally scoped source ingestion (Hacker News and X)
+# ---------------------------------------------------------------------------
+# These paths intentionally do not reuse ``_persist_source_posts`` above.  That
+# function belongs to the older tenant-scoped prospecting flow and requires a
+# tenant_id.  Public corpus records are attached to a tenant only during
+# matching.
+
+
+@dataclass(frozen=True)
+class HnIngestionResult:
+    query: str
+    since_timestamp: int
+    hits_found: int
+    inserted_count: int
+    inserted_source_post_ids: list[str]
+
+
+def _hn_batch_size() -> int:
+    return max(1, min(1_000, env_int("ARCLI_HN_INSERT_BATCH_SIZE", 100)))
+
+
+def _get_public_source_supabase_client() -> Any:
+    """Create the service-role client used for globally scoped source rows."""
+    global _public_source_supabase_client
+    if _public_source_supabase_client is not None:
+        return _public_source_supabase_client
+
+    from supabase import create_client
+    from supabase.client import ClientOptions
+
+    supabase_url = (
+        os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL") or ""
+    ).strip()
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY") or ""
+    ).strip()
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Supabase credentials are required for public source ingestion.")
+
+    _public_source_supabase_client = create_client(
+        supabase_url,
+        supabase_key,
+        options=ClientOptions(
+            auto_refresh_token=False,
+            persist_session=False,
+            postgrest_client_timeout=15,
+            storage_client_timeout=15,
+        ),
+    )
+    return _public_source_supabase_client
+
+
+_BatchItem = TypeVar("_BatchItem")
+
+
+def _iter_batches(
+    items: list[_BatchItem],
+    batch_size: int,
+) -> Iterator[list[_BatchItem]]:
+    """Yield bounded chunks without materializing a second full collection."""
+    for offset in range(0, len(items), batch_size):
+        yield items[offset : offset + batch_size]
+
+
+def _source_post_payload(post: SourcePost | TwitterSourcePost) -> dict[str, Any]:
+    """Use the SourcePost contract as the sole database payload contract."""
+    return post.model_dump(mode="json")
+
+
+def _response_source_post_ids(response: Any) -> list[str]:
+    rows = getattr(response, "data", None)
+    if not isinstance(rows, list):
+        return []
+    return [
+        str(row["source_post_id"])
+        for row in rows
+        if isinstance(row, dict) and row.get("source_post_id")
+    ]
+
+
+def _persist_new_public_source_posts(
+    posts: list[SourcePost] | list[TwitterSourcePost],
+    *,
+    batch_size: int,
+) -> list[str]:
+    """Insert only new public source rows and return the inserted source IDs."""
+    client = _get_public_source_supabase_client()
+    inserted_source_post_ids: list[str] = []
+    for batch in _iter_batches(posts, batch_size):
+        response = (
+            client.table("source_posts")
+            .upsert(
+                [_source_post_payload(post) for post in batch],
+                on_conflict="source,source_post_id",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
+        inserted_source_post_ids.extend(_response_source_post_ids(response))
+
+    # A returned row from ON CONFLICT DO NOTHING is necessarily a fresh insert.
+    return list(dict.fromkeys(inserted_source_post_ids))
+
+
+def ingest_hn_posts(query: str, since_hours_ago: int) -> HnIngestionResult:
+    """Fetch public HN content, then insert only new rows in bounded batches.
+
+    ``ignore_duplicates=True`` maps to ``ON CONFLICT DO NOTHING`` in PostgREST.
+    Together with the required ``(source, source_post_id)`` unique constraint it
+    makes repeated workers and retry delivery safe without a tenant-specific key.
+    """
+    if not query or not query.strip():
+        raise ValueError("query is required")
+    if since_hours_ago < 0:
+        raise ValueError("since_hours_ago must be non-negative")
+
+    from api.services.integrations.hn_connector import HackerNewsConnector
+
+    since_timestamp = int(
+        (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
+    )
+    connector = HackerNewsConnector()
+    posts = asyncio.run(
+        connector.fetch_recent_posts(query.strip(), since_timestamp=since_timestamp)
+    )
+    if not posts:
+        result = HnIngestionResult(
+            query=query.strip(),
+            since_timestamp=since_timestamp,
+            hits_found=0,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+        )
+        logger.info(
+            "hn_ingestion_completed query=%s hits_found=%s new_inserts=%s",
+            result.query,
+            result.hits_found,
+            result.inserted_count,
+        )
+        return result
+
+    inserted_source_post_ids = _persist_new_public_source_posts(
+        posts,
+        batch_size=_hn_batch_size(),
+    )
+    result = HnIngestionResult(
+        query=query.strip(),
+        since_timestamp=since_timestamp,
+        hits_found=len(posts),
+        inserted_count=len(inserted_source_post_ids),
+        inserted_source_post_ids=inserted_source_post_ids,
+    )
+    logger.info(
+        "hn_ingestion_completed query=%s hits_found=%s new_inserts=%s",
+        result.query,
+        result.hits_found,
+        result.inserted_count,
+    )
+    return result
+
+
+def trigger_embedding_jobs(source_post_ids: list[str]) -> int:
+    """Hand newly persisted public rows to the embedding queue.
+
+    This import is intentionally lazy to avoid a service/actor import cycle
+    while allowing the consumer to remain independently scalable.
+    """
+    if not source_post_ids:
+        return 0
+
+    from api.workers.actors import enqueue_source_post_embedding_jobs
+
+    return enqueue_source_post_embedding_jobs(source_post_ids)
+
+
+@dataclass(frozen=True)
+class XIngestionResult:
+    query: str
+    since_timestamp: int
+    hits_found: int
+    inserted_count: int
+    inserted_source_post_ids: list[str]
+
+
+def _x_batch_size() -> int:
+    return max(1, min(1_000, env_int("ARCLI_X_INSERT_BATCH_SIZE", 100)))
+
+
+def ingest_x_posts(query: str, since_hours_ago: int) -> XIngestionResult:
+    """Fetch global X posts and conflict-ignore them in bounded Supabase batches."""
+    if not query or not query.strip():
+        raise ValueError("query is required")
+    if since_hours_ago < 0:
+        raise ValueError("since_hours_ago must be non-negative")
+
+    from api.services.integrations.x_connector import XConnector
+
+    since_timestamp = int(
+        (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
+    )
+    posts = asyncio.run(
+        XConnector().fetch_recent_posts(query.strip(), since_timestamp=since_timestamp)
+    )
+    if not posts:
+        result = XIngestionResult(
+            query=query.strip(),
+            since_timestamp=since_timestamp,
+            hits_found=0,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+        )
+        logger.info(
+            "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
+            result.query,
+            result.hits_found,
+            result.inserted_count,
+        )
+        return result
+
+    inserted_source_post_ids = _persist_new_public_source_posts(
+        posts,
+        batch_size=_x_batch_size(),
+    )
+    result = XIngestionResult(
+        query=query.strip(),
+        since_timestamp=since_timestamp,
+        hits_found=len(posts),
+        inserted_count=len(inserted_source_post_ids),
+        inserted_source_post_ids=inserted_source_post_ids,
+    )
+    logger.info(
+        "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
+        result.query,
+        result.hits_found,
+        result.inserted_count,
+    )
+    return result
