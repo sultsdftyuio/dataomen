@@ -185,12 +185,24 @@ done
 ps -eo pid,ppid,rss,command | grep -E 'dramatiq|start_worker' | grep -v grep
 ```
 
-The deployment caps normal prefetch at one message and delayed prefetch at 16
-messages per queue (rather than Dramatiq's default of 1,000 per thread).  A
-worker with empty normal, delayed, and retry queues should plateau after startup.
-If it does not, capture the full `start_worker`/Dramatiq process tree and the
-worker logs before restarting it; a single child PID is not the whole container
-memory footprint.
+The deployment retains four execution threads and the original eight-message
+normal prefetch window, so routine throughput is not serialized. It caps only
+the delayed retry buffer at 64 messages per queue (rather than Dramatiq's
+default of 1,000 per thread). It runs a lightweight `start_worker` supervisor
+plus one embedded Dramatiq child, instead of the former wrapper + Dramatiq
+master + worker tree.
+
+After the 60-second warmup, confirm these log events:
+
+- `starting_embedded_dramatiq_worker ... dramatiq_version=2.2.0`
+- `embedded_dramatiq_worker_memory_baseline`
+
+The supervisor requests a safe pause/stop/requeue recycle after either 384 MiB
+RSS or two consecutive samples 64 MiB above the post-warmup baseline. It emits
+`worker_memory_limit_exceeded` followed by
+`embedded_dramatiq_worker_restart_completed`. If the version log is absent or
+is not `2.2.0`, the deployed image is stale and must be rebuilt before memory
+results are meaningful.
 
 Trace failure signatures:
 

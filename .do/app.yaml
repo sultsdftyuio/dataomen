@@ -69,25 +69,57 @@ workers:
       - key: DRAMATIQ_THREADS
         scope: RUN_TIME
         type: general
-        value: "1"
+        value: "4"
       - key: ARCLI_DRAMATIQ_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
-        value: "1"
+        value: "8"
       - key: ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
-        value: "16"
+        value: "64"
       - key: ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS
         scope: RUN_TIME
         type: general
         value: "5000"
+      - key: ARCLI_REQUIRED_DRAMATIQ_VERSION
+        scope: RUN_TIME
+        type: general
+        value: "2.2.0"
+      - key: ARCLI_REDIS_MAX_CONNECTIONS
+        scope: RUN_TIME
+        type: general
+        value: "32"
+      - key: ARCLI_WORKER_MAX_RSS_MB
+        scope: RUN_TIME
+        type: general
+        value: "384"
+      - key: ARCLI_WORKER_MAX_RSS_GROWTH_MB
+        scope: RUN_TIME
+        type: general
+        value: "64"
+      - key: ARCLI_WORKER_MEMORY_CHECK_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "15"
+      - key: ARCLI_WORKER_MEMORY_GRACE_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "60"
+      - key: ARCLI_WORKER_MEMORY_GROWTH_SAMPLES
+        scope: RUN_TIME
+        type: general
+        value: "2"
+      - key: ARCLI_WORKER_RECYCLE_TIMEOUT_SECONDS
+        scope: RUN_TIME
+        type: general
+        value: "270"
       - key: ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS
         scope: RUN_TIME
         type: general
-        value: "120"
+        value: "240"
     termination:
-      grace_period_seconds: 180
+      grace_period_seconds: 270
 
 ingress:
   rules:
