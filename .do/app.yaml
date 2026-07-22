@@ -69,7 +69,19 @@ workers:
       - key: DRAMATIQ_THREADS
         scope: RUN_TIME
         type: general
-        value: "4"
+        value: "1"
+      - key: ARCLI_DRAMATIQ_QUEUE_PREFETCH
+        scope: RUN_TIME
+        type: general
+        value: "1"
+      - key: ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH
+        scope: RUN_TIME
+        type: general
+        value: "16"
+      - key: ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS
+        scope: RUN_TIME
+        type: general
+        value: "5000"
       - key: ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS
         scope: RUN_TIME
         type: general

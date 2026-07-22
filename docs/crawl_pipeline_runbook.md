@@ -172,6 +172,26 @@ docker logs --since=45m <worker-container> \
 grep -E 'crawl_job_id=.*|website_url=https://www.arcli.tech' worker.log
 ```
 
+### Worker RAM growth
+
+The worker declares five normal and five delayed queues.  Check delayed-message
+backlog before treating rising RAM as an idle-process leak:
+
+```bash
+for queue in crawling embeddings ingestion system workspace-brain; do
+  redis-cli -u "$REDIS_URL" HLEN "dramatiq:${queue}.DQ.msgs"
+done
+
+ps -eo pid,ppid,rss,command | grep -E 'dramatiq|start_worker' | grep -v grep
+```
+
+The deployment caps normal prefetch at one message and delayed prefetch at 16
+messages per queue (rather than Dramatiq's default of 1,000 per thread).  A
+worker with empty normal, delayed, and retry queues should plateau after startup.
+If it does not, capture the full `start_worker`/Dramatiq process tree and the
+worker logs before restarting it; a single child PID is not the whole container
+memory footprint.
+
 Trace failure signatures:
 
 - `firecrawl_crawl_timeout`: Firecrawl did not complete within the crawl phase deadline.

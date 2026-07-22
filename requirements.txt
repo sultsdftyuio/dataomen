@@ -14,7 +14,7 @@ python-multipart==0.0.9
 anyio>=4.3.0                  
 
 # --- Background Jobs & Task Queues (The Orchestrator) ---
-dramatiq>=1.15.0              # Specified in Constitution Sec. 4
+dramatiq==2.2.0               # Includes the in-memory prefetch queue fix.
 redis>=5.0.0                  
 
 

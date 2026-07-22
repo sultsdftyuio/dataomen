@@ -39,6 +39,10 @@ def csv_env(name: str, default: str) -> list[str]:
 
 def int_env(name: str, default: int, minimum: int = 1) -> int:
     raw_value = os.getenv(name, str(default))
+    return int_value(name, raw_value, minimum)
+
+
+def int_value(name: str, raw_value: str, minimum: int = 1) -> int:
     try:
         value = int(raw_value)
     except ValueError as exc:
@@ -47,6 +51,47 @@ def int_env(name: str, default: int, minimum: int = 1) -> int:
     if value < minimum:
         raise RuntimeError(f"{name} must be at least {minimum}.")
     return value
+
+
+def dramatiq_runtime_environment() -> dict[str, str]:
+    """Return child-process settings that keep Dramatiq's in-memory buffers bounded.
+
+    Dramatiq's defaults prefetch 1,000 delayed messages per worker thread for
+    every declared delay queue.  A worker that is otherwise idle can therefore
+    retain a large retry backlog in RAM.  Keep normal queues at one message and
+    delayed queues at a small, bounded batch that still avoids retry head-of-
+    line blocking.  An explicitly configured native Dramatiq variable takes
+    precedence.
+    """
+    child_env = os.environ.copy()
+    limits = (
+        ("dramatiq_queue_prefetch", "ARCLI_DRAMATIQ_QUEUE_PREFETCH", 1),
+        (
+            "dramatiq_delay_queue_prefetch",
+            "ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH",
+            16,
+        ),
+        ("dramatiq_worker_timeout", "ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS", 5_000),
+    )
+
+    for dramatiq_name, arcli_name, default in limits:
+        value = os.getenv(dramatiq_name, "").strip()
+        if not value:
+            value = str(int_env(arcli_name, default))
+        else:
+            # A zero makes Dramatiq fall back to its unbounded default, so
+            # reject it rather than silently disabling the memory guardrail.
+            value = str(int_value(dramatiq_name, value))
+
+        # os.environ is case-insensitive on Windows whereas a copied dict is
+        # not.  Normalize the child mapping so explicit native settings work
+        # consistently in local checks and Linux deployments alike.
+        for env_name in tuple(child_env):
+            if env_name.casefold() == dramatiq_name.casefold():
+                del child_env[env_name]
+        child_env[dramatiq_name] = value
+
+    return child_env
 
 
 def register_signal_handlers(state: WorkerState) -> None:
@@ -72,9 +117,10 @@ def register_signal_handlers(state: WorkerState) -> None:
 def run_dramatiq_worker(state: WorkerState) -> int:
     modules = csv_env("ARCLI_DRAMATIQ_MODULES", "api.worker")
     processes = int_env("DRAMATIQ_PROCESSES", 1)
-    threads = int_env("DRAMATIQ_THREADS", 4)
+    threads = int_env("DRAMATIQ_THREADS", 1)
     shutdown_timeout = int_env("ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS", 120)
     dramatiq_shutdown_timeout_ms = max(1_000, (shutdown_timeout - 5) * 1_000)
+    runtime_env = dramatiq_runtime_environment()
 
     command = [
         sys.executable,
@@ -89,13 +135,17 @@ def run_dramatiq_worker(state: WorkerState) -> int:
         *modules,
     ]
     logger.info(
-        "starting_dramatiq_worker modules=%s processes=%s threads=%s",
+        "starting_dramatiq_worker modules=%s processes=%s threads=%s "
+        "queue_prefetch=%s delay_queue_prefetch=%s worker_timeout_ms=%s",
         ",".join(modules),
         processes,
         threads,
+        runtime_env["dramatiq_queue_prefetch"],
+        runtime_env["dramatiq_delay_queue_prefetch"],
+        runtime_env["dramatiq_worker_timeout"],
     )
 
-    state.child_process = subprocess.Popen(command)
+    state.child_process = subprocess.Popen(command, env=runtime_env)
     while True:
         return_code = state.child_process.poll()
         if return_code is not None:
