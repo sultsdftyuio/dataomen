@@ -11,12 +11,9 @@ from functools import lru_cache
 from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
-import dramatiq
 from dramatiq.middleware import TimeLimitExceeded
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
-
-from api.broker import configure_redis_broker
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +87,10 @@ def _env_float(name: str, default: float, minimum: float = 0.1) -> float:
 
 
 def _configure_dramatiq_broker() -> None:
+    import dramatiq
+
+    from api.broker import configure_redis_broker
+
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return
@@ -1932,6 +1933,8 @@ def enqueue_crawl_job(
         broker_ready_ms,
         db_ready_ms,
     )
+    from api.workers.actors import process_crawl_job
+
     message = process_crawl_job.send(tenant_id, normalized_url, crawl_job_id)
     publish_ready_ms = int((time.monotonic() - started_at) * 1000)
     with engine.begin() as conn:
@@ -1946,10 +1949,11 @@ def enqueue_crawl_job(
         )
 
     logger.info(
-        "crawl_job_enqueued tenant_id=%s website_url=%s crawl_job_id=%s message_id=%s broker_ready_ms=%s db_ready_ms=%s publish_ready_ms=%s elapsed_ms=%s",
+        "crawl_job_enqueued tenant_id=%s website_url=%s crawl_job_id=%s job_state=%s message_id=%s broker_ready_ms=%s db_ready_ms=%s publish_ready_ms=%s elapsed_ms=%s",
         tenant_id,
         normalized_url,
         crawl_job_id,
+        "pending",
         message.message_id,
         broker_ready_ms,
         db_ready_ms,
@@ -1959,20 +1963,6 @@ def enqueue_crawl_job(
     return message.message_id
 
 
-_configure_dramatiq_broker()
-
-
-@dramatiq.actor(
-    queue_name=os.getenv("ARCLI_CRAWL_QUEUE_NAME", "crawling"),
-    max_retries=_env_int("ARCLI_CRAWL_JOB_MAX_RETRIES", 2, minimum=0),
-    min_backoff=_env_int("ARCLI_CRAWL_JOB_MIN_BACKOFF_MS", 15_000),
-    max_backoff=_env_int("ARCLI_CRAWL_JOB_MAX_BACKOFF_MS", 60_000),
-    time_limit=_env_int(
-        "ARCLI_CRAWL_JOB_TIME_LIMIT_MS",
-        DEFAULT_CRAWL_JOB_TIME_LIMIT_MS,
-    ),
-    on_retry_exhausted="mark_crawl_job_dead_lettered",
-)
 def process_crawl_job(
     tenant_id: str,
     website_url: str,
@@ -2247,7 +2237,6 @@ def process_crawl_job(
         raise
 
 
-@dramatiq.actor(queue_name=os.getenv("ARCLI_CRAWL_QUEUE_NAME", "crawling"))
 def mark_crawl_job_dead_lettered(
     message_data: dict[str, Any],
     retry_context: dict[str, Any] | None = None,

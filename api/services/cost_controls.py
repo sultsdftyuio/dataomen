@@ -8,7 +8,7 @@ from typing import Protocol
 logger = logging.getLogger(__name__)
 
 LOCAL_QUOTA_MAX_KEYS = max(1, int(os.getenv("ARCLI_LOCAL_QUOTA_MAX_KEYS", "10000")))
-REDIS_MAX_CONNECTIONS = max(1, int(os.getenv("ARCLI_QUOTA_REDIS_MAX_CONNECTIONS", "8")))
+REDIS_MAX_CONNECTIONS = max(1, int(os.getenv("ARCLI_QUOTA_REDIS_MAX_CONNECTIONS", "4")))
 
 
 class RedisLike(Protocol):
@@ -108,7 +108,10 @@ class TenantQuotaGuard:
         *,
         reject_count: int,
     ) -> int:
-        client = self.redis_client or _redis_client_from_env()
+        client = self.redis_client
+        owns_client = client is None
+        if client is None:
+            client = _redis_client_from_env()
         if client is None:
             return self._increment_memory(
                 key,
@@ -116,10 +119,14 @@ class TenantQuotaGuard:
                 reject_count=reject_count,
             )
 
-        current_count = int(client.incr(key))
-        if current_count == 1:
-            client.expire(key, window_seconds)
-        return current_count
+        try:
+            current_count = int(client.incr(key))
+            if current_count == 1:
+                client.expire(key, window_seconds)
+            return current_count
+        finally:
+            if owns_client:
+                _close_redis_client(client)
 
     @classmethod
     def _increment_memory(
@@ -168,15 +175,13 @@ class TenantQuotaGuard:
         return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in candidate)[:96]
 
 
-_redis_client: RedisLike | None = None
-
-
 def _redis_client_from_env() -> RedisLike | None:
-    global _redis_client
+    """Create a bounded quota client for one counter operation.
 
-    if _redis_client is not None:
-        return _redis_client
-
+    A quota check is small and infrequent relative to an LLM request.  Closing
+    this short-lived client prevents idle workers from retaining an additional
+    Redis pool between jobs.
+    """
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
         return None
@@ -184,7 +189,7 @@ def _redis_client_from_env() -> RedisLike | None:
     try:
         import redis
 
-        _redis_client = redis.Redis.from_url(
+        return redis.Redis.from_url(
             redis_url,
             decode_responses=True,
             max_connections=REDIS_MAX_CONNECTIONS,
@@ -201,7 +206,16 @@ def _redis_client_from_env() -> RedisLike | None:
         )
         return None
 
-    return _redis_client
+def _close_redis_client(client: RedisLike) -> None:
+    close = getattr(client, "close", None)
+    try:
+        if callable(close):
+            close()
+    finally:
+        connection_pool = getattr(client, "connection_pool", None)
+        disconnect = getattr(connection_pool, "disconnect", None)
+        if callable(disconnect):
+            disconnect()
 
 
 def env_int(name: str, default: int) -> int:

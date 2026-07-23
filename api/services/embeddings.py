@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Sequence
 
-import dramatiq
 from dramatiq.middleware import TimeLimitExceeded
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import create_engine, text
@@ -21,7 +20,6 @@ from tenacity import (
 )
 
 from api.services.cost_controls import TenantQuotaGuard, env_int
-from api.broker import configure_redis_broker
 from api.services.openai_lifecycle import OpenAIClientOwner
 
 logger = logging.getLogger(__name__)
@@ -266,6 +264,10 @@ SERVICE_PROFILE_EMBEDDING_COLUMNS = {
 
 
 def _configure_dramatiq_broker() -> None:
+    import dramatiq
+
+    from api.broker import configure_redis_broker
+
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return
@@ -1150,6 +1152,8 @@ def enqueue_service_profile_embedding_job(
 ) -> str:
     try:
         _require_redis_broker()
+        from api.workers.actors import process_service_profile_embedding_job
+
         message = process_service_profile_embedding_job.send(tenant_id, service_profile_id)
     except Exception as exc:
         _record_service_profile_embedding_enqueue_failure(
@@ -1169,28 +1173,15 @@ def enqueue_service_profile_embedding_job(
         raise RuntimeError("Embedding queue is unavailable.") from exc
 
     logger.info(
-        "service_profile_embedding_job_enqueued tenant_id=%s service_profile_id=%s message_id=%s",
+        "service_profile_embedding_job_enqueued tenant_id=%s service_profile_id=%s job_state=%s message_id=%s",
         tenant_id,
         service_profile_id,
+        "pending",
         message.message_id,
     )
     return message.message_id
 
 
-_configure_dramatiq_broker()
-
-
-@dramatiq.actor(
-    queue_name=os.getenv("ARCLI_EMBEDDING_QUEUE_NAME", "embeddings"),
-    max_retries=max(0, env_int("ARCLI_EMBEDDING_JOB_MAX_RETRIES", 3)),
-    min_backoff=env_int("ARCLI_EMBEDDING_JOB_MIN_BACKOFF_MS", 10_000),
-    max_backoff=env_int("ARCLI_EMBEDDING_JOB_MAX_BACKOFF_MS", 60_000),
-    time_limit=env_int(
-        "ARCLI_EMBEDDING_JOB_TIME_LIMIT_MS",
-        DEFAULT_EMBEDDING_JOB_TIME_LIMIT_MS,
-    ),
-    on_retry_exhausted="mark_service_profile_embedding_dead_lettered",
-)
 def process_service_profile_embedding_job(
     tenant_id: str,
     service_profile_id: str | None = None,
@@ -1449,7 +1440,6 @@ def _enqueue_public_ingestion_after_embedding(
         )
 
 
-@dramatiq.actor(queue_name=os.getenv("ARCLI_EMBEDDING_QUEUE_NAME", "embeddings"))
 def mark_service_profile_embedding_dead_lettered(
     message_data: dict[str, Any],
     retry_context: dict[str, Any] | None = None,

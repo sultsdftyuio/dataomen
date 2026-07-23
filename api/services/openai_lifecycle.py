@@ -1,8 +1,27 @@
 """Deterministic ownership and cleanup for synchronous OpenAI clients."""
 
 from contextlib import AbstractContextManager
+from threading import local
 from typing import Any
-from weakref import finalize
+from weakref import WeakSet, finalize
+
+
+_thread_state = local()
+
+
+def _owned_clients_for_current_thread() -> WeakSet["OpenAIClientOwner"]:
+    owners = getattr(_thread_state, "openai_client_owners", None)
+    if owners is None:
+        owners = WeakSet()
+        _thread_state.openai_client_owners = owners
+    return owners
+
+
+def close_current_thread_openai_clients() -> None:
+    """Release all SDK transports created by the active Dramatiq thread."""
+    owners = _owned_clients_for_current_thread()
+    for owner in list(owners):
+        owner.close()
 
 
 def _close_client(client: Any) -> None:
@@ -23,6 +42,7 @@ class OpenAIClientOwner(AbstractContextManager):
             self.client = self._build_client()
             self._owns_client = True
             self._client_finalizer = finalize(self, _close_client, self.client)
+            _owned_clients_for_current_thread().add(self)
         return self.client
 
     def close(self) -> None:
@@ -35,6 +55,7 @@ class OpenAIClientOwner(AbstractContextManager):
         finally:
             self._owns_client = False
             self._client_finalizer = None
+            _owned_clients_for_current_thread().discard(self)
 
     def __exit__(self, *_: object) -> None:
         self.close()

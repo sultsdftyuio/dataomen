@@ -1,6 +1,9 @@
 import os
 import sys
+import subprocess
+import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -79,6 +82,55 @@ class _Worker:
 
 
 class DramatiqMemoryGuardrailTests(unittest.TestCase):
+    def test_default_worker_concurrency_is_single_process_four_threads(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                start_worker.int_env("DRAMATIQ_PROCESSES", start_worker.DRAMATIQ_PROCESSES),
+                1,
+            )
+            self.assertEqual(
+                start_worker.int_env("DRAMATIQ_THREADS", start_worker.DRAMATIQ_THREADS),
+                4,
+            )
+        self.assertEqual(
+            start_worker.dramatiq_concurrency_command(),
+            ("dramatiq", "api.worker:broker", "-p", "1", "-t", "4"),
+        )
+
+    def test_worker_registry_keeps_heavy_services_out_of_idle_imports(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        startup_check = """
+import os
+import sys
+os.environ['REDIS_URL'] = 'redis://127.0.0.1:6379/0'
+import api.worker
+blocked = {
+    name for name in sys.modules
+    if name in {
+        'api.services.crawling',
+        'api.services.embeddings',
+        'api.services.ingestion_service',
+        'api.services.profile_extraction',
+        'api.services.social_ingestion',
+        'httpx', 'openai', 'supabase', 'tiktoken', 'fitz',
+    }
+}
+raise SystemExit(','.join(sorted(blocked)))
+"""
+        started_at = time.perf_counter()
+        result = subprocess.run(
+            [sys.executable, "-c", startup_check],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        startup_seconds = time.perf_counter() - started_at
+
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+        self.assertLess(startup_seconds, 5.0)
+
     def test_runtime_environment_bounds_prefetch_by_default(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             runtime_env = start_worker.dramatiq_runtime_environment()

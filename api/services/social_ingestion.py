@@ -5,16 +5,17 @@ import os
 import re
 import json
 import hashlib
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, TypeVar
 from urllib.parse import quote
 
-import httpx
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from api.services.cost_controls import env_float, env_int
+from api.services.client_lifecycle import managed_network_client
 from api.services.embeddings import (
     EmbeddingService,
     _as_dict,
@@ -38,9 +39,8 @@ from api.services.verifier import (
 
 logger = logging.getLogger(__name__)
 
-# The HN and X connectors are globally scoped by design.  They deliberately
-# live alongside the legacy tenant-scoped social pipeline without sharing its
-# tenant persistence helpers.
+# Compatibility-only test override.  Production code never assigns a client
+# here: each ingestion task creates and closes its own client below.
 _public_source_supabase_client: Any | None = None
 
 DEFAULT_REDDIT_SUBREDDITS = (
@@ -369,6 +369,8 @@ def _fetch_reddit_posts(
     tenant_id: str,
     service_profile_id: str | None,
 ) -> list[SocialPost]:
+    import httpx
+
     if os.getenv("ARCLI_REDDIT_INGESTION_ENABLED", "true").strip().lower() in {
         "0",
         "false",
@@ -480,6 +482,8 @@ def _fetch_x_posts(
     tenant_id: str,
     service_profile_id: str | None,
 ) -> list[SocialPost]:
+    import httpx
+
     bearer_token = (
         os.getenv("X_BEARER_TOKEN")
         or os.getenv("TWITTER_BEARER_TOKEN")
@@ -1269,12 +1273,8 @@ def _hn_batch_size() -> int:
     return max(1, min(1_000, env_int("ARCLI_HN_INSERT_BATCH_SIZE", 100)))
 
 
-def _get_public_source_supabase_client() -> Any:
-    """Create the service-role client used for globally scoped source rows."""
-    global _public_source_supabase_client
-    if _public_source_supabase_client is not None:
-        return _public_source_supabase_client
-
+def _create_public_source_supabase_client() -> Any:
+    """Create the service-role client used for one globally scoped ingest."""
     from supabase import create_client
     from supabase.client import ClientOptions
 
@@ -1287,7 +1287,7 @@ def _get_public_source_supabase_client() -> Any:
     if not supabase_url or not supabase_key:
         raise RuntimeError("Supabase credentials are required for public source ingestion.")
 
-    _public_source_supabase_client = create_client(
+    return create_client(
         supabase_url,
         supabase_key,
         options=ClientOptions(
@@ -1297,7 +1297,19 @@ def _get_public_source_supabase_client() -> Any:
             storage_client_timeout=15,
         ),
     )
-    return _public_source_supabase_client
+
+
+@contextmanager
+def _public_source_supabase_client_context() -> Iterator[Any]:
+    """Scope Supabase transports to a single HN or X persistence operation."""
+    if _public_source_supabase_client is not None:
+        # Unit tests may inject a no-network fake.  Never close an object this
+        # module does not own.
+        yield _public_source_supabase_client
+        return
+
+    with managed_network_client(_create_public_source_supabase_client) as client:
+        yield client
 
 
 _BatchItem = TypeVar("_BatchItem")
@@ -1334,19 +1346,19 @@ def _persist_new_public_source_posts(
     batch_size: int,
 ) -> list[str]:
     """Insert only new public source rows and return the inserted source IDs."""
-    client = _get_public_source_supabase_client()
     inserted_source_post_ids: list[str] = []
-    for batch in _iter_batches(posts, batch_size):
-        response = (
-            client.table("source_posts")
-            .upsert(
-                [_source_post_payload(post) for post in batch],
-                on_conflict="source,source_post_id",
-                ignore_duplicates=True,
+    with _public_source_supabase_client_context() as client:
+        for batch in _iter_batches(posts, batch_size):
+            response = (
+                client.table("source_posts")
+                .upsert(
+                    [_source_post_payload(post) for post in batch],
+                    on_conflict="source,source_post_id",
+                    ignore_duplicates=True,
+                )
+                .execute()
             )
-            .execute()
-        )
-        inserted_source_post_ids.extend(_response_source_post_ids(response))
+            inserted_source_post_ids.extend(_response_source_post_ids(response))
 
     # A returned row from ON CONFLICT DO NOTHING is necessarily a fresh insert.
     return list(dict.fromkeys(inserted_source_post_ids))
@@ -1417,6 +1429,20 @@ def trigger_embedding_jobs(source_post_ids: list[str]) -> int:
     """
     if not source_post_ids:
         return 0
+
+    # Configure the broker before importing the actor registry.  Dramatiq
+    # binds an actor to the broker that exists at decoration time.
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        raise RuntimeError("REDIS_URL is required to enqueue embedding jobs.")
+
+    import dramatiq
+
+    from api.broker import configure_redis_broker
+
+    current_broker = dramatiq.get_broker()
+    if getattr(current_broker, "_arcli_redis_url", None) != redis_url:
+        configure_redis_broker(redis_url)
 
     from api.workers.actors import enqueue_source_post_embedding_jobs
 

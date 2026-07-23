@@ -2,7 +2,7 @@
 # ARCLI AI ENGINE - LEAN PRODUCTION DOCKERFILE
 # ==============================================================================
 # Use a slim, modern Debian base image for optimized Python execution
-FROM python:3.11-slim-bookworm
+FROM python:3.12-slim-bookworm
 
 # ------------------------------------------------------------------------------
 # Environment Variables & Resource Guardrails
@@ -13,7 +13,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # Limit thread usage to prevent CPU throttling on PaaS free/cheap tiers
     POLARS_MAX_THREADS=4 \
     DUCKDB_NUM_THREADS=4 \
-    OMP_NUM_THREADS=4
+    OMP_NUM_THREADS=4 \
+    DRAMATIQ_PROCESSES=1 \
+    DRAMATIQ_THREADS=4 \
+    ARCLI_REDIS_MAX_CONNECTIONS=8
 
 WORKDIR /app
 
@@ -47,6 +50,8 @@ COPY . .
 EXPOSE 8080
 
 # By default, start the FastAPI server.
-# Worker deployments should override this with:
-# `python scripts/start_worker.py`
+# Worker deployments should use the single-process, four-thread equivalent of:
+# `dramatiq api.worker:broker -p 1 -t 4`
+# The checked-in worker command is `python scripts/start_worker.py`; it keeps
+# those exact limits while adding graceful Redis shutdown and RSS recycling.
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

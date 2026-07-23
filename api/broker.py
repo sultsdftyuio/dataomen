@@ -36,7 +36,10 @@ def build_redis_broker(redis_url: str) -> RedisBroker:
     """Create a broker whose Redis connections have a hard per-process limit."""
     pool = ConnectionPool.from_url(
         redis_url,
-        max_connections=_positive_int_env("ARCLI_REDIS_MAX_CONNECTIONS", 32),
+        # Four actor threads need at most a small amount of headroom for the
+        # broker's consumer and delayed-message machinery.  Keeping this low
+        # avoids an idle worker reserving a large socket/client footprint.
+        max_connections=_positive_int_env("ARCLI_REDIS_MAX_CONNECTIONS", 8),
         socket_connect_timeout=_positive_float_env(
             "ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0
         ),

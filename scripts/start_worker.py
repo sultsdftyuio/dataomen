@@ -35,6 +35,18 @@ DRAMATIQ_RUNTIME_LIMITS = (
     ),
     ("dramatiq_worker_timeout", "ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS", 5_000),
 )
+DRAMATIQ_PROCESSES = 1
+DRAMATIQ_THREADS = 4
+
+
+def dramatiq_concurrency_command() -> tuple[str, ...]:
+    """Return the deployment-equivalent bounded Dramatiq invocation.
+
+    The production entrypoint uses the embedded worker below so it can close
+    Redis before process recycle.  Its effective concurrency is deliberately
+    identical to ``dramatiq api.worker:broker -p 1 -t 4``.
+    """
+    return ("dramatiq", "api.worker:broker", "-p", "1", "-t", "4")
 
 
 class WorkerState:
@@ -250,8 +262,8 @@ def run_embedded_dramatiq_worker(state: WorkerState) -> int:
     """Run one worker process, without Dramatiq's CLI master/fork layer."""
     runtime_env = apply_dramatiq_runtime_environment()
     modules = csv_env("ARCLI_DRAMATIQ_MODULES", "api.worker")
-    processes = int_env("DRAMATIQ_PROCESSES", 1)
-    threads = int_env("DRAMATIQ_THREADS", 1)
+    processes = int_env("DRAMATIQ_PROCESSES", DRAMATIQ_PROCESSES)
+    threads = int_env("DRAMATIQ_THREADS", DRAMATIQ_THREADS)
     shutdown_timeout = int_env("ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS", 240)
     worker_shutdown_timeout_ms = max(1_000, (shutdown_timeout - 10) * 1_000)
     if processes != 1:
@@ -324,8 +336,8 @@ def run_embedded_dramatiq_worker(state: WorkerState) -> int:
 def run_dramatiq_worker(state: WorkerState) -> int:
     """Supervise one lean embedded worker and recycle it before OOM."""
     modules = csv_env("ARCLI_DRAMATIQ_MODULES", "api.worker")
-    processes = int_env("DRAMATIQ_PROCESSES", 1)
-    threads = int_env("DRAMATIQ_THREADS", 1)
+    processes = int_env("DRAMATIQ_PROCESSES", DRAMATIQ_PROCESSES)
+    threads = int_env("DRAMATIQ_THREADS", DRAMATIQ_THREADS)
     shutdown_timeout = int_env("ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS", 240)
     runtime_env = dramatiq_runtime_environment()
     max_rss_mb = int_env("ARCLI_WORKER_MAX_RSS_MB", DEFAULT_MAX_RSS_MB, minimum=0)

@@ -4,10 +4,8 @@ import os
 import time
 from typing import Any
 
-import dramatiq
 from pydantic import BaseModel, ConfigDict, Field
 
-from api.broker import configure_redis_broker
 from api.services.cost_controls import TenantQuotaGuard, env_int
 from api.services.openai_lifecycle import OpenAIClientOwner
 
@@ -251,6 +249,10 @@ not stated directly. Output exactly the requested schema.
 
 
 def _configure_dramatiq_broker() -> None:
+    import dramatiq
+
+    from api.broker import configure_redis_broker
+
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return
@@ -305,6 +307,8 @@ def enqueue_workspace_brain_generation_job(
 
     normalized_url = WebsiteCrawler._normalize_url(website_url)
     generation_id = _workspace_brain_job_id(tenant_id, normalized_url, idempotency_key)
+    from api.workers.actors import process_workspace_brain_generation_job
+
     message = process_workspace_brain_generation_job.send(
         tenant_id,
         normalized_url,
@@ -312,37 +316,16 @@ def enqueue_workspace_brain_generation_job(
     )
 
     logger.info(
-        "brain_generation_enqueued tenant_id=%s website_url=%s generation_id=%s message_id=%s",
+        "brain_generation_enqueued tenant_id=%s website_url=%s generation_id=%s job_state=%s message_id=%s",
         tenant_id,
         normalized_url,
         generation_id,
+        "pending",
         message.message_id,
     )
     return message.message_id
 
 
-_configure_dramatiq_broker()
-
-
-@dramatiq.actor(
-    queue_name=os.getenv("ARCLI_WORKSPACE_BRAIN_QUEUE_NAME", "workspace-brain"),
-    max_retries=env_int(
-        "ARCLI_WORKSPACE_BRAIN_JOB_MAX_RETRIES",
-        DEFAULT_WORKSPACE_BRAIN_JOB_MAX_RETRIES,
-    ),
-    min_backoff=env_int(
-        "ARCLI_WORKSPACE_BRAIN_JOB_MIN_BACKOFF_MS",
-        DEFAULT_WORKSPACE_BRAIN_JOB_MIN_BACKOFF_MS,
-    ),
-    max_backoff=env_int(
-        "ARCLI_WORKSPACE_BRAIN_JOB_MAX_BACKOFF_MS",
-        DEFAULT_WORKSPACE_BRAIN_JOB_MAX_BACKOFF_MS,
-    ),
-    time_limit=env_int(
-        "ARCLI_WORKSPACE_BRAIN_JOB_TIME_LIMIT_MS",
-        DEFAULT_WORKSPACE_BRAIN_JOB_TIME_LIMIT_MS,
-    ),
-)
 def process_workspace_brain_generation_job(
     tenant_id: str,
     website_url: str,

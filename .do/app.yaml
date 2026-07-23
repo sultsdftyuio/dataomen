@@ -50,6 +50,7 @@ workers:
       deploy_on_push: true
     source_dir: /
     dockerfile_path: ./Dockerfile
+    # Equivalent to: dramatiq api.worker:broker -p 1 -t 4
     run_command: python scripts/start_worker.py
     instance_count: 1
     instance_size_slug: basic-xxs
@@ -89,7 +90,7 @@ workers:
       - key: ARCLI_REDIS_MAX_CONNECTIONS
         scope: RUN_TIME
         type: general
-        value: "32"
+        value: "8"
       - key: ARCLI_WORKER_MAX_RSS_MB
         scope: RUN_TIME
         type: general

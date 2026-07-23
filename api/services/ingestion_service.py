@@ -1,16 +1,19 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional
 
-import dramatiq
 from dramatiq.middleware import TimeLimitExceeded
-from supabase import create_client, Client
-from supabase.client import ClientOptions
 
-from api.broker import configure_redis_broker
+from api.services.client_lifecycle import managed_network_client
 from api.services.cost_controls import TenantQuotaGuard, env_int
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +27,12 @@ PUBLIC_INGESTION_QUEUE_NAME = os.getenv(
 )
 DEFAULT_PUBLIC_INGESTION_JOB_TIME_LIMIT_MS = 180_000
 
-_supabase_client: Optional[Client] = None
-
 
 def _configure_dramatiq_broker() -> None:
+    import dramatiq
+
+    from api.broker import configure_redis_broker
+
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return
@@ -56,33 +61,22 @@ def enqueue_initial_public_ingestion_job(
     service_profile_id: str | None,
 ) -> str:
     _require_redis_broker()
+    from api.workers.actors import process_initial_public_ingestion_job
+
     message = process_initial_public_ingestion_job.send(
         tenant_id,
         service_profile_id,
     )
     logger.info(
-        "initial_public_ingestion_job_enqueued tenant_id=%s service_profile_id=%s message_id=%s",
+        "initial_public_ingestion_job_enqueued tenant_id=%s service_profile_id=%s job_state=%s message_id=%s",
         tenant_id,
         service_profile_id,
+        "pending",
         message.message_id,
     )
     return message.message_id
 
 
-_configure_dramatiq_broker()
-
-
-@dramatiq.actor(
-    queue_name=PUBLIC_INGESTION_QUEUE_NAME,
-    max_retries=max(0, env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_RETRIES", 3)),
-    min_backoff=env_int("ARCLI_PUBLIC_INGESTION_JOB_MIN_BACKOFF_MS", 15_000),
-    max_backoff=env_int("ARCLI_PUBLIC_INGESTION_JOB_MAX_BACKOFF_MS", 90_000),
-    time_limit=env_int(
-        "ARCLI_PUBLIC_INGESTION_JOB_TIME_LIMIT_MS",
-        DEFAULT_PUBLIC_INGESTION_JOB_TIME_LIMIT_MS,
-    ),
-    on_retry_exhausted="mark_initial_public_ingestion_dead_lettered",
-)
 def process_initial_public_ingestion_job(
     tenant_id: str,
     service_profile_id: str | None = None,
@@ -113,7 +107,6 @@ def process_initial_public_ingestion_job(
     )
 
 
-@dramatiq.actor(queue_name=PUBLIC_INGESTION_QUEUE_NAME)
 def mark_initial_public_ingestion_dead_lettered(
     message_data: dict[str, Any],
     retry_context: dict[str, Any] | None = None,
@@ -140,11 +133,10 @@ def mark_initial_public_ingestion_dead_lettered(
     )
 
 
-def _get_supabase_client() -> Optional[Client]:
-    global _supabase_client
-
-    if _supabase_client is not None:
-        return _supabase_client
+def _create_supabase_client() -> Client | None:
+    """Build a short-lived Supabase client only while an event is processed."""
+    from supabase import create_client
+    from supabase.client import ClientOptions
 
     supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
@@ -157,7 +149,7 @@ def _get_supabase_client() -> Optional[Client]:
         )
         return None
 
-    _supabase_client = create_client(
+    return create_client(
         supabase_url,
         supabase_key,
         options=ClientOptions(
@@ -167,7 +159,15 @@ def _get_supabase_client() -> Optional[Client]:
             storage_client_timeout=10,
         ),
     )
-    return _supabase_client
+
+
+@contextmanager
+def _supabase_client_context() -> Iterator[Client]:
+    client = _create_supabase_client()
+    if client is None:
+        raise RuntimeError("Supabase client unavailable")
+    with managed_network_client(lambda: client) as managed_client:
+        yield managed_client
 
 
 def _is_duplicate_error(error: Any) -> bool:
@@ -198,16 +198,8 @@ class IngestionService:
     Idempotent event ingestion using Supabase.
     """
 
-    def __init__(self):
-        self._client: Optional[Client] = None
+    def __init__(self) -> None:
         self._quota_guard = TenantQuotaGuard()
-
-    def _client_or_raise(self) -> Client:
-        if self._client is None:
-            self._client = _get_supabase_client()
-        if not self._client:
-            raise RuntimeError("Supabase client unavailable")
-        return self._client
 
     async def process_raw_event(
         self,
@@ -244,7 +236,28 @@ class IngestionService:
         if not idempotency_key:
             raise ValueError("idempotency_key is required")
 
-        client = self._client_or_raise()
+        with _supabase_client_context() as client:
+            return self._process_raw_event_with_client(
+                client=client,
+                tenant_id=tenant_id,
+                event_name=event_name,
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+                timestamp=timestamp,
+                properties=properties,
+            )
+
+    def _process_raw_event_with_client(
+        self,
+        *,
+        client: Client,
+        tenant_id: str,
+        event_name: str,
+        user_id: Optional[str],
+        idempotency_key: str,
+        timestamp: Any,
+        properties: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         safe_properties = properties or {}
         quota = self._quota_guard.check_and_increment(
             tenant_id=tenant_id,

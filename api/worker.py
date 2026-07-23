@@ -9,10 +9,6 @@ from api.broker import build_redis_broker
 logger = logging.getLogger(__name__)
 
 DEFAULT_ACTOR_MODULES = (
-    "api.services.crawling",
-    "api.services.profile_extraction",
-    "api.services.embeddings",
-    "api.services.ingestion_service",
     "api.workers.actors",
 )
 
@@ -22,7 +18,7 @@ def _csv_env(name: str) -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
 
 
-def _configure_broker() -> None:
+def _configure_broker() -> object:
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
         logger.error(
@@ -39,6 +35,7 @@ def _configure_broker() -> None:
         "redis",
         True,
     )
+    return broker
 
 
 def _import_actor_modules() -> None:
@@ -52,7 +49,10 @@ def _import_actor_modules() -> None:
         )
 
 
-_configure_broker()
+# Exposed for the standard Dramatiq invocation
+# ``dramatiq api.worker:broker -p 1 -t 4``.  ``ConnectionPool`` is lazy, so
+# this creates no Redis socket until the broker performs queue work.
+broker = _configure_broker()
 _import_actor_modules()
 
 
