@@ -115,7 +115,7 @@ blocked = {
         'httpx', 'openai', 'supabase', 'tiktoken', 'fitz',
     }
 }
-raise SystemExit(','.join(sorted(blocked)))
+raise SystemExit(','.join(sorted(blocked)) or 0)
 """
         started_at = time.perf_counter()
         result = subprocess.run(

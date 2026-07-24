@@ -5,7 +5,7 @@ import threading
 
 import dramatiq
 from dramatiq.brokers.redis import RedisBroker
-from redis import ConnectionPool, Redis
+from redis import BlockingConnectionPool, Redis
 
 
 _broker_lock = threading.Lock()
@@ -33,13 +33,18 @@ def _positive_float_env(name: str, default: float) -> float:
 
 
 def build_redis_broker(redis_url: str) -> RedisBroker:
-    """Create a broker whose Redis connections have a hard per-process limit."""
-    pool = ConnectionPool.from_url(
+    """Create a broker with a bounded pool sized for every queue consumer."""
+    pool = BlockingConnectionPool.from_url(
         redis_url,
-        # Four actor threads need at most a small amount of headroom for the
-        # broker's consumer and delayed-message machinery.  Keeping this low
-        # avoids an idle worker reserving a large socket/client footprint.
-        max_connections=_positive_int_env("ARCLI_REDIS_MAX_CONNECTIONS", 8),
+        # The default worker declares five queues.  Dramatiq starts a consumer
+        # for each queue and its delay queue (10 total), then actor threads
+        # concurrently ack and publish messages.  Eight connections therefore
+        # exhausts the pool while the worker is idle and makes consumers retry
+        # forever with ``Too many connections``.
+        max_connections=_positive_int_env("ARCLI_REDIS_MAX_CONNECTIONS", 16),
+        # Retain a hard cap without turning a short burst of concurrent queue
+        # operations into a permanent consumer failure.
+        timeout=_positive_float_env("ARCLI_REDIS_POOL_TIMEOUT_SECONDS", 5.0),
         socket_connect_timeout=_positive_float_env(
             "ARCLI_REDIS_CONNECT_TIMEOUT_SECONDS", 2.0
         ),

@@ -371,7 +371,10 @@ def _fetch_reddit_posts(
 ) -> list[SocialPost]:
     import httpx
 
-    if os.getenv("ARCLI_REDDIT_INGESTION_ENABLED", "true").strip().lower() in {
+    # Reddit's unauthenticated JSON search is commonly blocked in production.
+    # Keep the source opt-in rather than spending an entire job on requests
+    # that can never yield posts.
+    if os.getenv("ARCLI_REDDIT_INGESTION_ENABLED", "false").strip().lower() in {
         "0",
         "false",
         "no",
@@ -413,6 +416,22 @@ def _fetch_reddit_posts(
                     response = client.get(url, params=params)
                     response.raise_for_status()
                     payload = response.json()
+                except httpx.HTTPStatusError as exc:
+                    status_code = exc.response.status_code
+                    logger.info(
+                        "reddit_search_skipped tenant_id=%s service_profile_id=%s term=%s subreddit=%s error_type=%s error=%s",
+                        tenant_id,
+                        service_profile_id,
+                        term,
+                        subreddit or "global",
+                        exc.__class__.__name__,
+                        exc,
+                    )
+                    # Authorization and policy blocks apply to every search
+                    # target, so continuing only produces duplicate failures.
+                    if status_code in {401, 403}:
+                        return posts
+                    continue
                 except Exception as exc:
                     logger.info(
                         "reddit_search_skipped tenant_id=%s service_profile_id=%s term=%s subreddit=%s error_type=%s error=%s",
@@ -490,6 +509,12 @@ def _fetch_x_posts(
         or os.getenv("ARCLI_X_BEARER_TOKEN")
         or ""
     ).strip()
+    if os.getenv("ARCLI_X_INGESTION_ENABLED", "true").strip().lower() in {
+        "0",
+        "false",
+        "no",
+    }:
+        return []
     if not bearer_token:
         logger.info(
             "x_search_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
@@ -525,6 +550,22 @@ def _fetch_x_posts(
                 )
                 response.raise_for_status()
                 payload = response.json()
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                logger.info(
+                    "x_search_skipped tenant_id=%s service_profile_id=%s term=%s error_type=%s error=%s",
+                    tenant_id,
+                    service_profile_id,
+                    term,
+                    exc.__class__.__name__,
+                    exc,
+                )
+                # A missing subscription or invalid credential applies to all
+                # terms in this run.  Avoid burning through the remaining
+                # requests and flooding logs with the same provider error.
+                if status_code in {401, 402, 403}:
+                    return posts
+                continue
             except Exception as exc:
                 logger.info(
                     "x_search_skipped tenant_id=%s service_profile_id=%s term=%s error_type=%s error=%s",

@@ -90,7 +90,13 @@ workers:
       - key: ARCLI_REDIS_MAX_CONNECTIONS
         scope: RUN_TIME
         type: general
-        value: "8"
+        value: "16"
+      # The configured X token currently receives 402 Payment Required.
+      # Re-enable after the account has recent-search access.
+      - key: ARCLI_X_INGESTION_ENABLED
+        scope: RUN_TIME
+        type: general
+        value: "true"
       - key: ARCLI_WORKER_MAX_RSS_MB
         scope: RUN_TIME
         type: general
