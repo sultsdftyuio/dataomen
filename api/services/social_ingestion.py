@@ -58,6 +58,9 @@ DEFAULT_POSTS_PER_QUERY = 15
 DEFAULT_MAX_POSTS = 80
 DEFAULT_VERIFIER_QUALIFIED_THRESHOLD = 0.7
 SOURCE_POST_EMBEDDING_CACHE_KEY = "matching_embedding_cache"
+DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_LIMIT = 3
+DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS = 168
+DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY = 25
 
 
 @dataclass(frozen=True)
@@ -92,6 +95,15 @@ class SocialPost:
             "published_at": self.published_at,
             "metadata": self.metadata or {},
         }
+
+
+@dataclass(frozen=True)
+class InitialPublicSourceIngestionPlan:
+    """The bounded source-search work spawned after a profile is embedded."""
+
+    query_terms: list[str]
+    hn_jobs: int
+    x_jobs: int
 
 
 def _csv_env(name: str, default: tuple[str, ...] = ()) -> list[str]:
@@ -156,6 +168,9 @@ def _service_profile_from_row(row: dict[str, Any]) -> ServiceProfile:
     if not pain_points:
         pain_points = [core_problem]
 
+    use_cases = _read_list(sources, ["use_cases", "usecases"])
+    buying_triggers = _read_list(sources, ["buying_triggers"])
+
     return ServiceProfile(
         company_name=company_name,
         one_liner=one_liner,
@@ -163,6 +178,9 @@ def _service_profile_from_row(row: dict[str, Any]) -> ServiceProfile:
         core_problem_solved=core_problem,
         key_value_propositions=value_props,
         ideal_customer_pain_points=pain_points,
+        use_cases=use_cases,
+        buying_triggers=buying_triggers,
+        search_terms=_read_list(sources, ["search_terms", "discovery_terms"]),
         negative_keywords=_read_list(sources, ["negative_keywords", "excluded_audiences"]),
     )
 
@@ -348,6 +366,160 @@ def _query_terms(profile: ServiceProfile) -> list[str]:
             terms.append(normalized)
 
     return terms[: env_int("ARCLI_SOCIAL_MAX_QUERIES", DEFAULT_MAX_QUERIES)]
+
+
+def _compact_public_search_term(value: str) -> str:
+    """Normalize a user-visible discovery phrase for HN and X search APIs."""
+    normalized = _normalize_space(value)
+    # Quotation marks force an exact X match and were the direct cause of the
+    # empty successful searches in production. The query is plain language;
+    # the connector adds only its safe language/retweet filters.
+    normalized = normalized.replace('"', "").replace("'", "")
+    normalized = re.sub(r"[^\w\s+#&/.-]", " ", normalized)
+    normalized = _normalize_space(normalized)
+    return normalized[:120]
+
+
+def public_source_query_terms(profile: ServiceProfile) -> list[str]:
+    """Return a small, high-intent query set for public-source discovery.
+
+    Explicit search terms win: they are written in the buyer's language and
+    therefore match public posts much more reliably than an entire profile
+    sentence. Older profiles get a sensible fallback from their triggers,
+    pains, use cases, and core problem.
+    """
+    candidates = (
+        profile.search_terms
+        or [
+            *profile.buying_triggers,
+            *profile.ideal_customer_pain_points,
+            *profile.use_cases,
+            profile.core_problem_solved,
+        ]
+    )
+    max_queries = max(
+        1,
+        min(
+            6,
+            env_int(
+                "ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT",
+                DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_LIMIT,
+            ),
+        ),
+    )
+    terms: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        term = _compact_public_search_term(candidate)
+        if len(term) < 4:
+            continue
+        key = term.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        terms.append(term)
+        if len(terms) >= max_queries:
+            break
+    return terms
+
+
+def _is_source_enabled(name: str, default: bool = True) -> bool:
+    value = os.getenv(name, str(default)).strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _initial_source_lookback_hours() -> int:
+    return max(
+        1,
+        min(
+            720,
+            env_int(
+                "ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS",
+                DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS,
+            ),
+        ),
+    )
+
+
+def _initial_source_posts_per_query() -> int:
+    return max(
+        1,
+        min(
+            100,
+            env_int(
+                "ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY",
+                DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+            ),
+        ),
+    )
+
+
+def enqueue_initial_public_source_ingestion(
+    tenant_id: str,
+    service_profile_id: str | None,
+) -> InitialPublicSourceIngestionPlan:
+    """Queue HN/X searches from a completed service profile.
+
+    The profile-activation path used to call a legacy Reddit/X fetcher
+    directly. This function hands work to the independently retryable global
+    HN and X ingestion actors instead, then their embedding actors match new
+    posts to every eligible profile.
+    """
+    engine = _database_engine()
+    with engine.begin() as conn:
+        columns = _service_profile_columns(conn)
+        profile_row = _load_service_profile(
+            conn,
+            tenant_id,
+            service_profile_id,
+            columns,
+        )
+
+    if not profile_row:
+        logger.warning(
+            "initial_public_source_ingestion_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            "service_profile_not_found",
+        )
+        return InitialPublicSourceIngestionPlan([], 0, 0)
+
+    profile = _service_profile_from_row(profile_row)
+    query_terms = public_source_query_terms(profile)
+    if not query_terms:
+        logger.warning(
+            "initial_public_source_ingestion_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            tenant_id,
+            service_profile_id,
+            "matching_brief_has_no_searchable_terms",
+        )
+        return InitialPublicSourceIngestionPlan([], 0, 0)
+
+    from api.workers.actors import ingest_hn_job, ingest_x_job
+
+    lookback_hours = _initial_source_lookback_hours()
+    posts_per_query = _initial_source_posts_per_query()
+    hn_jobs = 0
+    x_jobs = 0
+    for query in query_terms:
+        if _is_source_enabled("ARCLI_HN_INGESTION_ENABLED"):
+            ingest_hn_job.send(query, lookback_hours, posts_per_query)
+            hn_jobs += 1
+        if _is_source_enabled("ARCLI_X_INGESTION_ENABLED"):
+            ingest_x_job.send(query, lookback_hours, posts_per_query)
+            x_jobs += 1
+
+    logger.info(
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s x_jobs=%s lookback_hours=%s posts_per_query=%s",
+        tenant_id,
+        service_profile_id,
+        query_terms,
+        hn_jobs,
+        x_jobs,
+        lookback_hours,
+        posts_per_query,
+    )
+    return InitialPublicSourceIngestionPlan(query_terms, hn_jobs, x_jobs)
 
 
 def _http_user_agent() -> str:
@@ -1405,7 +1577,11 @@ def _persist_new_public_source_posts(
     return list(dict.fromkeys(inserted_source_post_ids))
 
 
-def ingest_hn_posts(query: str, since_hours_ago: int) -> HnIngestionResult:
+def ingest_hn_posts(
+    query: str,
+    since_hours_ago: int,
+    posts_per_query: int | None = None,
+) -> HnIngestionResult:
     """Fetch public HN content, then insert only new rows in bounded batches.
 
     ``ignore_duplicates=True`` maps to ``ON CONFLICT DO NOTHING`` in PostgREST.
@@ -1424,7 +1600,11 @@ def ingest_hn_posts(query: str, since_hours_ago: int) -> HnIngestionResult:
     )
     connector = HackerNewsConnector()
     posts = asyncio.run(
-        connector.fetch_recent_posts(query.strip(), since_timestamp=since_timestamp)
+        connector.fetch_recent_posts(
+            query.strip(),
+            since_timestamp=since_timestamp,
+            limit=posts_per_query or DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+        )
     )
     if not posts:
         result = HnIngestionResult(
@@ -1503,7 +1683,11 @@ def _x_batch_size() -> int:
     return max(1, min(1_000, env_int("ARCLI_X_INSERT_BATCH_SIZE", 100)))
 
 
-def ingest_x_posts(query: str, since_hours_ago: int) -> XIngestionResult:
+def ingest_x_posts(
+    query: str,
+    since_hours_ago: int,
+    posts_per_query: int | None = None,
+) -> XIngestionResult:
     """Fetch global X posts and conflict-ignore them in bounded Supabase batches."""
     if not query or not query.strip():
         raise ValueError("query is required")
@@ -1516,7 +1700,11 @@ def ingest_x_posts(query: str, since_hours_ago: int) -> XIngestionResult:
         (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
     )
     posts = asyncio.run(
-        XConnector().fetch_recent_posts(query.strip(), since_timestamp=since_timestamp)
+        XConnector().fetch_recent_posts(
+            query.strip(),
+            since_timestamp=since_timestamp,
+            limit=posts_per_query or DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+        )
     )
     if not posts:
         result = XIngestionResult(

@@ -64,6 +64,7 @@ REQUIRED OUTPUT JSON SCHEMA:
   "use_cases": ["up to 3 concrete, actionable use cases"],
   "pain_points": ["up to 3 operational frustrations"],
   "buying_triggers": ["up to 3 public discussion triggers"],
+  "search_terms": ["up to 3 short phrases a buyer would actually post while seeking help"],
   "negative_keywords": ["up to 3 irrelevant terms or intents"],
   "excluded_audiences": ["up to 3 non-target customer types"],
   "best_fit_customers": ["up to 3 ideal-buyer characteristics"],
@@ -94,6 +95,7 @@ class Pass1ServiceProfile(BaseModel):
     use_cases: list[str] = Field(min_length=1, max_length=3)
     pain_points: list[str] = Field(min_length=1, max_length=3)
     buying_triggers: list[str] = Field(min_length=1, max_length=3)
+    search_terms: list[str] = Field(default_factory=list, max_length=3)
     negative_keywords: list[str] = Field(min_length=1, max_length=3)
     excluded_audiences: list[str] = Field(min_length=1, max_length=3)
     best_fit_customers: list[str] = Field(min_length=1, max_length=3)
@@ -109,6 +111,7 @@ class Pass1ServiceProfile(BaseModel):
             *self.use_cases,
             *self.pain_points,
             *self.buying_triggers,
+            *self.search_terms,
             *self.negative_keywords,
             *self.excluded_audiences,
             *self.best_fit_customers,
@@ -141,6 +144,7 @@ class Pass1ServiceProfile(BaseModel):
             "ideal_customer_pain_points": self.pain_points,
             "use_cases": self.use_cases,
             "buying_triggers": self.buying_triggers,
+            "search_terms": self.search_terms,
             "negative_keywords": self.negative_keywords,
             "excluded_audiences": self.excluded_audiences,
             "best_fit_customers": self.best_fit_customers,

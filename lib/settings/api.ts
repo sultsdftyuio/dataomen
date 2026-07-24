@@ -108,6 +108,7 @@ function serviceProfilePayloads(
     use_cases: normalizeList(values.use_cases),
     pain_points: normalizeList(values.pain_points),
     buying_triggers: normalizeList(values.buying_triggers),
+    search_terms: normalizeList(values.search_terms),
     negative_keywords: normalizeList(values.negative_keywords),
     excluded_audiences: normalizeList(values.excluded_audiences),
   };

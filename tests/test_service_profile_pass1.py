@@ -20,6 +20,7 @@ def pass1_payload(**overrides: object) -> dict[str, object]:
         "use_cases": ["Prioritise cancellation-risk posts for founder follow-up."],
         "pain_points": ["Manual prospect research misses time-sensitive purchase signals."],
         "buying_triggers": ["A founder asks how to catch churn before a cancellation."],
+        "search_terms": ["manual prospect research", "finding buyer intent"],
         "negative_keywords": ["consumer coupon hunting"],
         "excluded_audiences": ["B2C ecommerce stores without recurring revenue"],
         "best_fit_customers": ["Founders selling recurring B2B software"],
@@ -47,6 +48,7 @@ def test_pass1_profile_adapts_to_the_existing_deep_profile_contract() -> None:
     assert document["extraction_status"] == "pass1_complete"
     assert document["use_cases"] == profile.use_cases
     assert document["buying_triggers"] == profile.buying_triggers
+    assert document["search_terms"] == profile.search_terms
     assert document["best_fit_customers"] == profile.best_fit_customers
     assert document["confidence_notes"] == profile.confidence_notes
     assert document["vector_seed"] == payload["vector_seed"]

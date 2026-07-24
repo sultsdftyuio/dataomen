@@ -47,6 +47,7 @@ SERVICE_PROFILE_COLUMNS = {
     "use_cases",
     "pain_points",
     "buying_triggers",
+    "search_terms",
     "negative_keywords",
     "excluded_audiences",
     "created_at",
@@ -821,6 +822,7 @@ def _profile_document(
         key_value_propositions = [unique_value_prop]
     use_cases = _jsonable_list(profile.get("use_cases"))
     buying_triggers = _jsonable_list(profile.get("buying_triggers"))
+    search_terms = _jsonable_list(profile.get("search_terms"))
     excluded_audiences = _jsonable_list(profile.get("excluded_audiences"))
     profile_stage = _string_value(profile.get("profile_stage"))
     is_pass1 = profile_stage == "pass1"
@@ -839,6 +841,7 @@ def _profile_document(
         "pain_points": pain_points,
         "use_cases": use_cases,
         "buying_triggers": buying_triggers,
+        "search_terms": search_terms,
         "negative_keywords": negative_keywords,
         "excluded_audiences": excluded_audiences,
         "website_url": website_url,
@@ -894,6 +897,7 @@ def _service_profile_payload(
         "use_cases": document["use_cases"],
         "pain_points": document["pain_points"],
         "buying_triggers": document["buying_triggers"],
+        "search_terms": document["search_terms"],
         "negative_keywords": document["negative_keywords"],
         "excluded_audiences": document["excluded_audiences"],
         "updated_at": now,

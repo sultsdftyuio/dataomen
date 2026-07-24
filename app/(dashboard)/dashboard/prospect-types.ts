@@ -5,6 +5,7 @@ export type ServiceProfileFields = {
   use_cases: string[];
   pain_points: string[];
   buying_triggers: string[];
+  search_terms: string[];
   negative_keywords: string[];
   excluded_audiences: string[];
 };

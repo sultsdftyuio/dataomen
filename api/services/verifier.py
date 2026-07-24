@@ -34,12 +34,21 @@ class ServiceProfile(BaseModel):
     core_problem_solved: str = Field(min_length=1)
     key_value_propositions: list[str] = Field(min_length=1)
     ideal_customer_pain_points: list[str] = Field(min_length=1)
+    use_cases: list[str] = Field(default_factory=list)
+    buying_triggers: list[str] = Field(default_factory=list)
+    # Short, buyer-authentic phrases used to discover public conversations.
+    # They are deliberately separate from the richer matching fields above so
+    # search precision is under the workspace owner's control.
+    search_terms: list[str] = Field(default_factory=list)
     negative_keywords: list[str] = Field(default_factory=list)
 
     @field_validator(
         "target_audience",
         "key_value_propositions",
         "ideal_customer_pain_points",
+        "use_cases",
+        "buying_triggers",
+        "search_terms",
         "negative_keywords",
     )
     @classmethod

@@ -65,8 +65,8 @@ export default function WorkspaceTab({
           <CardHeader>
             <CardTitle>Website URL and Matching Brief</CardTitle>
             <CardDescription>
-              Review your service profile. Adjust the audience, pain, value
-              proposition, and bad-fit signals used by the prospect engine.
+              Set the source URL, then tune the buyer language used to search
+              Hacker News and X, rank fit, and filter bad-fit conversations.
             </CardDescription>
           </CardHeader>
           <CardContent>

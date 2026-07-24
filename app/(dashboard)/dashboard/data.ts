@@ -19,6 +19,7 @@ const EMPTY_FIELDS: ServiceProfileFields = {
   use_cases: [],
   pain_points: [],
   buying_triggers: [],
+  search_terms: [],
   negative_keywords: [],
   excluded_audiences: [],
 };
@@ -302,6 +303,10 @@ export async function fetchServiceProfile(
         "ideal_customer_pain_points",
       ]),
       buying_triggers: readStringList(sources, ["buying_triggers"]),
+      search_terms: readStringList(sources, [
+        "search_terms",
+        "discovery_terms",
+      ]),
       negative_keywords: readStringList(sources, ["negative_keywords"]),
       excluded_audiences: readStringList(sources, [
         "excluded_audiences",

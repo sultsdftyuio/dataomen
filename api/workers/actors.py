@@ -82,7 +82,11 @@ def _close_actor_openai_clients() -> None:
     min_backoff=15_000,
     max_backoff=90_000,
 )
-def ingest_hn_job(query: str, since_hours_ago: int = 24) -> None:
+def ingest_hn_job(
+    query: str,
+    since_hours_ago: int = 24,
+    posts_per_query: int = 25,
+) -> None:
     """Ingest one HN search window and hand only fresh rows to embedding."""
     _job_started(
         job_name="hn_ingestion",
@@ -92,7 +96,11 @@ def ingest_hn_job(query: str, since_hours_ago: int = 24) -> None:
     try:
         from api.services.social_ingestion import ingest_hn_posts, trigger_embedding_jobs
 
-        result = ingest_hn_posts(query=query, since_hours_ago=since_hours_ago)
+        result = ingest_hn_posts(
+            query=query,
+            since_hours_ago=since_hours_ago,
+            posts_per_query=posts_per_query,
+        )
         embedding_jobs = trigger_embedding_jobs(result.inserted_source_post_ids)
     except Exception as exc:
         logger.exception(
@@ -124,7 +132,11 @@ def ingest_hn_job(query: str, since_hours_ago: int = 24) -> None:
     min_backoff=15_000,
     max_backoff=90_000,
 )
-def ingest_x_job(query: str, since_hours_ago: int = 24) -> None:
+def ingest_x_job(
+    query: str,
+    since_hours_ago: int = 24,
+    posts_per_query: int = 25,
+) -> None:
     """Ingest one X recent-search window and hand fresh rows to embedding."""
     _job_started(
         job_name="x_ingestion",
@@ -134,7 +146,11 @@ def ingest_x_job(query: str, since_hours_ago: int = 24) -> None:
     try:
         from api.services.social_ingestion import ingest_x_posts, trigger_embedding_jobs
 
-        result = ingest_x_posts(query=query, since_hours_ago=since_hours_ago)
+        result = ingest_x_posts(
+            query=query,
+            since_hours_ago=since_hours_ago,
+            posts_per_query=posts_per_query,
+        )
         embedding_jobs = trigger_embedding_jobs(result.inserted_source_post_ids)
     except Exception as exc:
         logger.exception(

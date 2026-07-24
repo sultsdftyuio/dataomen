@@ -81,10 +81,10 @@ def process_initial_public_ingestion_job(
     tenant_id: str,
     service_profile_id: str | None = None,
 ) -> None:
-    from api.services.social_ingestion import run_initial_public_ingestion
+    from api.services.social_ingestion import enqueue_initial_public_source_ingestion
 
     try:
-        result = run_initial_public_ingestion(tenant_id, service_profile_id)
+        result = enqueue_initial_public_source_ingestion(tenant_id, service_profile_id)
     except (Exception, TimeLimitExceeded) as exc:
         logger.exception(
             "initial_public_ingestion_job_failed tenant_id=%s service_profile_id=%s failure_reason=%s error_type=%s error=%s",
@@ -97,13 +97,12 @@ def process_initial_public_ingestion_job(
         raise
 
     logger.info(
-        "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s posts=%s embedded=%s candidates=%s qualified=%s",
+        "initial_public_ingestion_job_completed tenant_id=%s service_profile_id=%s query_count=%s hn_jobs=%s x_jobs=%s",
         tenant_id,
         service_profile_id,
-        result.get("posts", 0),
-        result.get("embedded", 0),
-        result.get("candidates", 0),
-        result.get("qualified", 0),
+        len(result.query_terms),
+        result.hn_jobs,
+        result.x_jobs,
     )
 
 

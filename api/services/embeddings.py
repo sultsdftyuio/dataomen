@@ -245,6 +245,7 @@ SERVICE_PROFILE_EMBEDDING_COLUMNS = {
     "pain_points",
     "ideal_customer_pain_points",
     "buying_triggers",
+    "search_terms",
     "negative_keywords",
     "excluded_audiences",
     "key_value_propositions",

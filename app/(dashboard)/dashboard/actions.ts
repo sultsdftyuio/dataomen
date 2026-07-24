@@ -51,6 +51,7 @@ const SERVICE_PROFILE_SCHEMA = z.object({
   use_cases: z.array(z.string().trim().min(1)).default([]),
   pain_points: z.array(z.string().trim().min(1)).default([]),
   buying_triggers: z.array(z.string().trim().min(1)).default([]),
+  search_terms: z.array(z.string().trim().min(1)).max(6).default([]),
   negative_keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_audiences: z.array(z.string().trim().min(1)).default([]),
 });
@@ -631,6 +632,7 @@ function updatePayloads(
     use_cases: normalizeList(values.use_cases),
     pain_points: normalizeList(values.pain_points),
     buying_triggers: normalizeList(values.buying_triggers),
+    search_terms: normalizeList(values.search_terms),
     negative_keywords: normalizeList(values.negative_keywords),
     excluded_audiences: normalizeList(values.excluded_audiences),
   };

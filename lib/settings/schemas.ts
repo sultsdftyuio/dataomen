@@ -142,6 +142,11 @@ const serviceProfileListField = z
   .array(z.preprocess(trimString, z.string().min(1)))
   .default([]);
 
+const discoveryPhraseListField = z
+  .array(z.preprocess(trimString, z.string().min(1)))
+  .max(6)
+  .default([]);
+
 export const ServiceProfileSettingsSchema = z
   .object({
     target_audience: serviceProfileListField,
@@ -150,6 +155,7 @@ export const ServiceProfileSettingsSchema = z
     use_cases: serviceProfileListField,
     pain_points: serviceProfileListField,
     buying_triggers: serviceProfileListField,
+    search_terms: discoveryPhraseListField,
     negative_keywords: serviceProfileListField,
     excluded_audiences: serviceProfileListField,
   })

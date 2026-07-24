@@ -91,8 +91,7 @@ workers:
         scope: RUN_TIME
         type: general
         value: "16"
-      # The configured X token currently receives 402 Payment Required.
-      # Re-enable after the account has recent-search access.
+      # X requires a token with recent-search access.
       - key: ARCLI_X_INGESTION_ENABLED
         scope: RUN_TIME
         type: general

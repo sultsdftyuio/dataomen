@@ -61,6 +61,7 @@ export const EMPTY_FIELDS: ServiceProfileFields = {
   use_cases: [],
   pain_points: [],
   buying_triggers: [],
+  search_terms: [],
   negative_keywords: [],
   excluded_audiences: [],
 };
@@ -576,6 +577,10 @@ export function ProfileReviewState({
     (nextValue: string[]) => updateField("buying_triggers", nextValue),
     [updateField],
   );
+  const updateSearchTerms = useCallback(
+    (nextValue: string[]) => updateField("search_terms", nextValue),
+    [updateField],
+  );
   const updateNegativeKeywords = useCallback(
     (nextValue: string[]) => updateField("negative_keywords", nextValue),
     [updateField],
@@ -741,7 +746,8 @@ export function ProfileReviewState({
                       style={{ color: C.muted }}
                     >
                       Keep every field specific, observable, and close to the
-                      words your buyers actually use.
+                      words your buyers actually use. Add public discovery
+                      phrases to control the Hacker News and X searches.
                     </CardDescription>
                   </div>
                 </div>
@@ -802,6 +808,14 @@ export function ProfileReviewState({
                     placeholder="Add a buying trigger"
                     tone={LIST_TONES.green}
                     onChange={updateBuyingTriggers}
+                  />
+                  <ListEditor
+                    label="Public discovery phrases"
+                    description="Short words a buyer would post while actively seeking help. These become the HN and X searches."
+                    value={profileFields.search_terms}
+                    placeholder="e.g. manual prospect research"
+                    tone={LIST_TONES.blue}
+                    onChange={updateSearchTerms}
                   />
                   <ListEditor
                     label="Negative keywords"

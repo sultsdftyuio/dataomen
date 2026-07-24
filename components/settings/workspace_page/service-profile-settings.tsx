@@ -8,7 +8,15 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
-import { CircleDotDashed, Loader2, Plus, Save, X } from "lucide-react";
+import {
+  CircleDotDashed,
+  Globe2,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Save,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +40,7 @@ type SignalFieldKey =
   | "use_cases"
   | "pain_points"
   | "buying_triggers"
+  | "search_terms"
   | "negative_keywords"
   | "excluded_audiences";
 
@@ -82,6 +91,13 @@ const SIGNAL_FIELDS: Array<{
     label: "Buying triggers",
     description: "Events that make the problem urgent enough to act on.",
     placeholder: "New growth target, tool evaluation",
+  },
+  {
+    key: "search_terms",
+    label: "Public discovery phrases",
+    description:
+      "Short buyer-language phrases used to search Hacker News and X. Avoid product names and full sentences.",
+    placeholder: "Manual prospect research, finding qualified leads",
   },
   {
     key: "negative_keywords",
@@ -145,6 +161,19 @@ function signalDraftItems(value: string) {
     .split(/[\n,;]+/)
     .map(normalizeSignal)
     .filter(Boolean);
+}
+
+function normalizeWebsiteUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Website URL is required.");
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const parsed = new URL(candidate);
+  if (!parsed.hostname || !["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Enter a valid HTTP(S) website URL.");
+  }
+  parsed.hash = "";
+  return parsed.toString();
 }
 
 async function readSettingsProfileResult(
@@ -338,6 +367,9 @@ export function ServiceProfileSettings({
 }: ServiceProfileSettingsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isWebsitePending, startWebsiteTransition] = useTransition();
+  const resolvedWebsiteUrl = serviceProfile.websiteUrl ?? websiteUrl;
+  const [websiteDraft, setWebsiteDraft] = useState(resolvedWebsiteUrl);
   const [profileFields, setProfileFields] = useState<ServiceProfileFields>(
     serviceProfile.fields ?? EMPTY_FIELDS,
   );
@@ -347,6 +379,10 @@ export function ServiceProfileSettings({
   useEffect(() => {
     setProfileFields(serviceProfile.fields ?? EMPTY_FIELDS);
   }, [serviceProfile.id, serviceProfile.updatedAt, serviceProfile.fields]);
+
+  useEffect(() => {
+    setWebsiteDraft(resolvedWebsiteUrl);
+  }, [resolvedWebsiteUrl]);
 
   useEffect(() => {
     onFieldsChange?.(profileFields);
@@ -393,6 +429,46 @@ export function ServiceProfileSettings({
     });
   };
 
+  const refreshWebsiteContext = () => {
+    startWebsiteTransition(async () => {
+      let normalizedWebsiteUrl: string;
+      try {
+        normalizedWebsiteUrl = normalizeWebsiteUrl(websiteDraft);
+      } catch (error) {
+        setProfileResult({
+          ok: false,
+          message:
+            error instanceof Error ? error.message : "Enter a valid website URL.",
+        });
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/settings/workspace", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ websiteUrl: normalizedWebsiteUrl }),
+        });
+        const result = await readSettingsProfileResult(response);
+        setProfileResult(
+          result.ok
+            ? {
+                ok: true,
+                message:
+                  "Website saved. A fresh crawl is queued to refresh your matching brief.",
+              }
+            : result,
+        );
+        if (result.ok) router.refresh();
+      } catch {
+        setProfileResult({
+          ok: false,
+          message: "Could not reach the workspace settings API.",
+        });
+      }
+    });
+  };
+
   if (!serviceProfile.hasProfile) {
     return (
       <section
@@ -426,28 +502,69 @@ export function ServiceProfileSettings({
   return (
     <div className="space-y-5">
       <div
-        className="flex flex-col gap-3 rounded-lg border px-3 py-2.5 text-xs sm:flex-row sm:items-center sm:justify-between"
+        className="rounded-lg border p-3"
         style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
       >
-        <div className="min-w-0">
-          <span className="font-semibold" style={{ color: C.navy }}>
-            Source:
-          </span>{" "}
-          <span className="break-all" style={{ color: C.muted }}>
-            {serviceProfile.websiteUrl ?? websiteUrl}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <label
+              htmlFor="matching-website-url"
+              className="text-xs font-semibold"
+              style={{ color: C.navy }}
+            >
+              Website source
+            </label>
+            <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+              We use this page to refresh the brief. Updating it starts a new crawl;
+              your current matching rules stay active until the refresh completes.
+            </p>
+            <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <Globe2
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2"
+                  style={{ color: C.muted }}
+                  aria-hidden="true"
+                />
+                <input
+                  id="matching-website-url"
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
+                  value={websiteDraft}
+                  disabled={isWebsitePending}
+                  className="h-9 w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  style={{ borderColor: C.rule, color: C.navy }}
+                  onChange={(event) => setWebsiteDraft(event.target.value)}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 shrink-0 rounded-md"
+                disabled={isWebsitePending}
+                onClick={refreshWebsiteContext}
+              >
+                {isWebsitePending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <RotateCcw className="size-4" aria-hidden="true" />
+                )}
+                {isWebsitePending ? "Queueing..." : "Update & re-crawl"}
+              </Button>
+            </div>
+          </div>
+          <span
+            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold"
+            style={{
+              borderColor: C.blueLight,
+              backgroundColor: C.bluePale,
+              color: C.blue,
+            }}
+          >
+            <CircleDotDashed className="size-3.5" aria-hidden="true" />
+            {statusLabel}
           </span>
         </div>
-        <span
-          className="inline-flex w-fit items-center gap-1.5 rounded-md border px-2 py-1 font-semibold"
-          style={{
-            borderColor: C.blueLight,
-            backgroundColor: C.bluePale,
-            color: C.blue,
-          }}
-        >
-          <CircleDotDashed className="size-3.5" aria-hidden="true" />
-          {statusLabel}
-        </span>
       </div>
 
       {!hasProfileContent ? (
