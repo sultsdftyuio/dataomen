@@ -77,6 +77,8 @@ class CrawlTriggerResponse(BaseModel):
     website_url: str
     job_id: str
     message_id: str
+    pass1_status: Literal["completed", "skipped", "failed"] = "skipped"
+    service_profile_id: str | None = None
 
 
 class IdempotencyKeyHeader(BaseModel):
@@ -509,7 +511,7 @@ def trigger_crawl(
     Accept a trusted frontend handoff and enqueue the slow crawl asynchronously.
     The crawl itself must run only inside the Dramatiq worker.
     """
-    from api.services.crawling import enqueue_crawl_job
+    from api.services.crawling import _database_engine, _upsert_service_profile, enqueue_crawl_job
 
     started_at = time.monotonic()
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
@@ -522,6 +524,52 @@ def trigger_crawl(
         payload.source,
         payload.requested_by,
     )
+
+    pass1_status: Literal["completed", "skipped", "failed"] = "skipped"
+    service_profile_id: str | None = None
+    pass1_enabled = os.getenv("ARCLI_PASS1_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+    if pass1_enabled:
+        try:
+            from api.services.service_profile_pass1 import extract_pass1_service_profile
+
+            _, hero_snippet, pass1_profile, elapsed_ms = extract_pass1_service_profile(
+                payload.website_url
+            )
+            with _database_engine().begin() as conn:
+                service_profile_id = _upsert_service_profile(
+                    conn,
+                    tenant_id=payload.tenant_id,
+                    website_url=payload.website_url,
+                    profile=pass1_profile.as_service_profile_payload(),
+                )
+            pass1_status = "completed"
+            logger.info(
+                "service_profile_pass1_completed tenant_id=%s job_id=%s website_url=%s service_profile_id=%s hero_chars=%s elapsed_ms=%s",
+                payload.tenant_id,
+                job_id,
+                payload.website_url,
+                service_profile_id,
+                len(hero_snippet),
+                elapsed_ms,
+            )
+        except Exception as exc:
+            # Pass 1 is intentionally best-effort: the full crawl remains the
+            # authoritative profile path and must still run after a fast-path
+            # timeout, source-page failure, or model validation rejection.
+            pass1_status = "failed"
+            logger.warning(
+                "service_profile_pass1_failed tenant_id=%s job_id=%s website_url=%s error_type=%s error=%s",
+                payload.tenant_id,
+                job_id,
+                payload.website_url,
+                exc.__class__.__name__,
+                exc,
+            )
 
     try:
         message_id = enqueue_crawl_job(
@@ -545,13 +593,15 @@ def trigger_crawl(
         ) from exc
 
     logger.info(
-        "crawl_job_enqueued tenant_id=%s job_id=%s website_url=%s message_id=%s source=%s requested_by=%s elapsed_ms=%s",
+        "crawl_job_enqueued tenant_id=%s job_id=%s website_url=%s message_id=%s source=%s requested_by=%s pass1_status=%s service_profile_id=%s elapsed_ms=%s",
         payload.tenant_id,
         job_id,
         payload.website_url,
         message_id,
         payload.source,
         payload.requested_by,
+        pass1_status,
+        service_profile_id,
         int((time.monotonic() - started_at) * 1000),
     )
 
@@ -560,6 +610,8 @@ def trigger_crawl(
         website_url=payload.website_url,
         job_id=job_id,
         message_id=message_id,
+        pass1_status=pass1_status,
+        service_profile_id=service_profile_id,
     )
 
 

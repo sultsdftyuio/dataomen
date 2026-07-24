@@ -763,6 +763,8 @@ def _failure_reason_for_exception(exc: BaseException) -> str:
 
 
 def _jsonable_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
     if not isinstance(value, list):
         return []
 
@@ -803,11 +805,25 @@ def _profile_document(
     crawl_markdown_sha256: str | None = None,
 ) -> dict[str, Any]:
     target_audience = _jsonable_list(profile.get("target_audience"))
-    pain_points = _jsonable_list(profile.get("ideal_customer_pain_points"))
+    pain_points = _jsonable_list(
+        profile.get("ideal_customer_pain_points") or profile.get("pain_points")
+    )
     negative_keywords = _jsonable_list(profile.get("negative_keywords"))
     key_value_propositions = _jsonable_list(profile.get("key_value_propositions"))
     core_problem = _string_value(profile.get("core_problem_solved"))
+    if not core_problem:
+        core_problem = _string_value(profile.get("core_problem"))
     one_liner = _string_value(profile.get("one_liner"))
+    unique_value_prop = _string_value(profile.get("unique_value_prop")) or one_liner
+    if not one_liner:
+        one_liner = unique_value_prop
+    if not key_value_propositions and unique_value_prop:
+        key_value_propositions = [unique_value_prop]
+    use_cases = _jsonable_list(profile.get("use_cases"))
+    buying_triggers = _jsonable_list(profile.get("buying_triggers"))
+    excluded_audiences = _jsonable_list(profile.get("excluded_audiences"))
+    profile_stage = _string_value(profile.get("profile_stage"))
+    is_pass1 = profile_stage == "pass1"
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -818,20 +834,30 @@ def _profile_document(
         "core_problem_solved": core_problem,
         "core_problem": core_problem,
         "key_value_propositions": key_value_propositions,
-        "unique_value_prop": one_liner,
+        "unique_value_prop": unique_value_prop,
         "ideal_customer_pain_points": pain_points,
         "pain_points": pain_points,
-        "use_cases": [],
-        "buying_triggers": [],
+        "use_cases": use_cases,
+        "buying_triggers": buying_triggers,
         "negative_keywords": negative_keywords,
-        "excluded_audiences": [],
+        "excluded_audiences": excluded_audiences,
         "website_url": website_url,
         "status": "pending_review",
         "review_status": "pending_review",
-        "extraction_status": "completed",
+        "extraction_status": "pass1_complete" if is_pass1 else "completed",
         "embedding_status": "pending",
         "extracted_at": now,
     }
+    if is_pass1:
+        document.update(
+            {
+                "profile_stage": "pass1",
+                "best_fit_customers": _jsonable_list(profile.get("best_fit_customers")),
+                "bad_fit_customers": _jsonable_list(profile.get("bad_fit_customers")),
+                "confidence_notes": _string_value(profile.get("confidence_notes")),
+                "vector_seed": _string_value(profile.get("vector_seed")),
+            }
+        )
     if crawl_markdown_sha256:
         document["crawl_markdown_sha256"] = crawl_markdown_sha256
 
@@ -854,10 +880,10 @@ def _service_profile_payload(
     return {
         "website_url": website_url,
         "url": website_url,
-        "status": "pending_review",
-        "review_status": "pending_review",
-        "extraction_status": "completed",
-        "embedding_status": "pending",
+        "status": document["status"],
+        "review_status": document["review_status"],
+        "extraction_status": document["extraction_status"],
+        "embedding_status": document["embedding_status"],
         "extracted_at": now,
         "profile_json": document,
         "profile": document,

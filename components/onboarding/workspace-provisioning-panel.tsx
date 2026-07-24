@@ -137,7 +137,10 @@ export function WorkspaceProvisioningPanel({
       if (result.ok) {
         setSubmittedWebsiteUrl(websiteUrl.trim());
         setSubmittedAt(now);
-        router.replace("/dashboard");
+        // Pass 1 may already have persisted a seed profile. Keep the user on
+        // this page so the refreshed server data can show it immediately,
+        // while the deep crawl continues in the worker.
+        router.refresh();
         return;
       } else {
         setSubmittedAt(null);

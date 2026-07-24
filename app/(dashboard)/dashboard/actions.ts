@@ -16,6 +16,11 @@ type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type EmbeddingTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 
+type CrawlerTriggerResponse = {
+  pass1_status?: "completed" | "skipped" | "failed";
+  service_profile_id?: string | null;
+};
+
 type UntypedSupabase = {
   from: (table: string) => {
     upsert: (
@@ -335,11 +340,19 @@ async function postCrawlerTrigger(
       );
     }
 
+    const payload = (await response.json().catch(() => null)) as
+      | CrawlerTriggerResponse
+      | null;
+
     console.info("[ProspectDashboard] crawler trigger posted", {
       tenant_id: context.tenantId,
       website_url: websiteUrl,
     });
-    return actionOk("Crawler queue accepted the website.");
+    return actionOk(
+      payload?.pass1_status === "completed"
+        ? "Your initial service profile is ready. Arcli is refining it in the background."
+        : "Website crawl queued. We are extracting your profile now.",
+    );
   } catch (error) {
     console.warn("[ProspectDashboard] crawler trigger unavailable", {
       tenant_id: context.tenantId,
