@@ -1511,3 +1511,435 @@ def ingest_x_posts(query: str, since_hours_ago: int) -> XIngestionResult:
         result.inserted_count,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Public-source embedding and tenant matching
+# ---------------------------------------------------------------------------
+
+
+def _load_public_source_post_rows(
+    conn: Connection,
+    source_post_id: str,
+) -> list[dict[str, Any]]:
+    """Load every global row for an external ID without crossing tenant rows."""
+    columns = _table_columns(conn, "source_posts")
+    required_columns = {"id", "source", "source_post_id"}
+    if not required_columns.issubset(columns):
+        logger.warning(
+            "public_source_post_embedding_skipped source_post_id=%s skip_reason=%s",
+            source_post_id,
+            "source_post_contract_missing",
+        )
+        return []
+
+    select_columns = [
+        column_name
+        for column_name in (
+            "id",
+            "source",
+            "source_post_id",
+            "title",
+            "body",
+            "text",
+            "author_handle",
+            "author",
+            "url",
+            "posted_at",
+            "published_at",
+            "metadata",
+            "embedding_status",
+        )
+        if column_name in columns
+    ]
+    where_parts = ["source_post_id = :source_post_id"]
+    if "tenant_id" in columns:
+        where_parts.append("tenant_id IS NULL")
+
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(select_columns)}
+              FROM public.source_posts
+             WHERE {" AND ".join(where_parts)}
+             ORDER BY id
+            """
+        ),
+        {"source_post_id": source_post_id},
+    ).mappings()
+    return [dict(row) for row in rows]
+
+
+def _public_source_post_as_social_post(row: dict[str, Any]) -> SocialPost | None:
+    source = _string_value(row.get("source"))
+    external_id = _string_value(row.get("source_post_id"))
+    title = _string_value(row.get("title")) or ""
+    body = _string_value(row.get("body")) or _string_value(row.get("text")) or ""
+    if not source or not external_id or not body.strip():
+        return None
+
+    metadata = _as_dict(row.get("metadata"))
+    return SocialPost(
+        source=source,
+        external_id=external_id,
+        title=title,
+        text=body,
+        author=(
+            _string_value(row.get("author_handle"))
+            or _string_value(row.get("author"))
+        ),
+        url=_string_value(row.get("url")),
+        published_at=(
+            _string_value(row.get("posted_at"))
+            or _string_value(row.get("published_at"))
+        ),
+        metadata=metadata,
+    )
+
+
+def _cached_public_source_post_embedding(
+    conn: Connection,
+    *,
+    database_post_id: str,
+    text_sha256: str,
+    embedding_model: str,
+) -> list[float] | None:
+    columns = _table_columns(conn, "source_posts")
+    if "metadata" not in columns:
+        return None
+
+    cache = conn.execute(
+        text(
+            """
+            SELECT metadata->:cache_key
+              FROM public.source_posts
+             WHERE id = CAST(:database_post_id AS uuid)
+               AND tenant_id IS NULL
+             LIMIT 1
+            """
+        ),
+        {
+            "database_post_id": database_post_id,
+            "cache_key": SOURCE_POST_EMBEDDING_CACHE_KEY,
+        },
+    ).scalar_one_or_none()
+    cache_payload = _as_dict(cache)
+    if (
+        cache_payload.get("model") != embedding_model
+        or cache_payload.get("text_sha256") != text_sha256
+    ):
+        return None
+    return _embedding_values(cache_payload.get("embedding"))
+
+
+def _persist_public_source_post_embedding_cache(
+    conn: Connection,
+    *,
+    database_post_id: str,
+    text_sha256: str,
+    embedding_model: str,
+    embedding: list[float],
+) -> None:
+    columns = _table_columns(conn, "source_posts")
+    metadata_column = columns.get("metadata")
+    if not metadata_column:
+        return
+
+    metadata_expression = """
+        (
+            COALESCE(metadata::jsonb, '{}'::jsonb)
+            || jsonb_build_object(
+                :cache_key,
+                jsonb_build_object(
+                    'model', :embedding_model,
+                    'text_sha256', :text_sha256,
+                    'embedding', CAST(:embedding AS jsonb),
+                    'dimensions', :dimensions,
+                    'cached_at', CAST(:cached_at AS timestamptz)
+                )
+            )
+        )
+    """
+    if metadata_column["data_type"] == "json" or metadata_column["udt_name"] == "json":
+        metadata_expression = f"({metadata_expression})::json"
+
+    assignments = [f"metadata = {metadata_expression}"]
+    if "embedding_status" in columns:
+        assignments.append("embedding_status = 'completed'")
+    if "updated_at" in columns:
+        assignments.append("updated_at = CAST(:cached_at AS timestamptz)")
+
+    conn.execute(
+        text(
+            f"""
+            UPDATE public.source_posts
+               SET {", ".join(assignments)}
+             WHERE id = CAST(:database_post_id AS uuid)
+               AND tenant_id IS NULL
+            """
+        ),
+        {
+            "database_post_id": database_post_id,
+            "cache_key": SOURCE_POST_EMBEDDING_CACHE_KEY,
+            "embedding_model": embedding_model,
+            "text_sha256": text_sha256,
+            "embedding": json.dumps(embedding, separators=(",", ":")),
+            "dimensions": len(embedding),
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def _mark_public_source_post_embedding_failed(
+    conn: Connection,
+    *,
+    database_post_id: str,
+) -> None:
+    columns = _table_columns(conn, "source_posts")
+    if "embedding_status" not in columns:
+        return
+
+    assignments = ["embedding_status = 'failed'"]
+    params: dict[str, Any] = {"database_post_id": database_post_id}
+    if "updated_at" in columns:
+        assignments.append("updated_at = CAST(:updated_at AS timestamptz)")
+        params["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    conn.execute(
+        text(
+            f"""
+            UPDATE public.source_posts
+               SET {", ".join(assignments)}
+             WHERE id = CAST(:database_post_id AS uuid)
+               AND tenant_id IS NULL
+            """
+        ),
+        params,
+    )
+
+
+def _public_matching_profile_rows(conn: Connection) -> list[dict[str, Any]]:
+    """Return profiles with a tenant binding; public data is never tenant-owned."""
+    columns = _service_profile_columns(conn)
+    if not {"id", "tenant_id"}.issubset(columns):
+        return []
+
+    select_columns = list(columns)
+    order_column = "updated_at" if "updated_at" in columns else "id"
+    profile_limit = max(1, env_int("ARCLI_PUBLIC_SOURCE_PROFILE_LIMIT", 250))
+    rows = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(select_columns)}
+              FROM public.service_profiles
+             WHERE tenant_id IS NOT NULL
+             ORDER BY {order_column} DESC NULLS LAST
+             LIMIT :profile_limit
+            """
+        ),
+        {"profile_limit": profile_limit},
+    ).mappings()
+    return [dict(row) for row in rows]
+
+
+def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
+    """Embed one global post and create tenant-scoped verified lead matches.
+
+    The source row remains global.  Only a positive profile match creates a
+    ``lead_matches`` row carrying that profile's tenant ID.
+    """
+    normalized_source_post_id = source_post_id.strip()
+    if not normalized_source_post_id:
+        raise ValueError("source_post_id is required")
+
+    engine = _database_engine()
+    with engine.begin() as conn:
+        source_rows = _load_public_source_post_rows(conn, normalized_source_post_id)
+        profile_rows = _public_matching_profile_rows(conn)
+        lead_match_columns = _table_columns(conn, "lead_matches")
+
+    if not source_rows:
+        logger.info(
+            "public_source_post_embedding_skipped source_post_id=%s skip_reason=%s",
+            normalized_source_post_id,
+            "global_source_post_not_found",
+        )
+        return {"posts": 0, "embedded": 0, "candidates": 0, "ready_for_review": 0}
+
+    embedding_service = EmbeddingService()
+    verifier: VerifierService | None = None
+    embedded_count = 0
+    candidate_count = 0
+    ready_for_review_count = 0
+    try:
+        verifier = VerifierService()
+        for source_row in source_rows:
+            database_post_id = str(source_row["id"])
+            post = _public_source_post_as_social_post(source_row)
+            if not post:
+                logger.info(
+                    "public_source_post_embedding_skipped source_post_id=%s database_post_id=%s skip_reason=%s",
+                    normalized_source_post_id,
+                    database_post_id,
+                    "empty_source_content",
+                )
+                continue
+
+            embedding_text = post.matching_text[:32_000]
+            text_sha256 = _sha256_text(embedding_text)
+            with engine.begin() as conn:
+                embedding_values = _cached_public_source_post_embedding(
+                    conn,
+                    database_post_id=database_post_id,
+                    text_sha256=text_sha256,
+                    embedding_model=embedding_service.model,
+                )
+
+            if embedding_values:
+                logger.info(
+                    "public_source_post_embedding_cache_hit source_post_id=%s database_post_id=%s source=%s model=%s dimensions=%s",
+                    post.external_id,
+                    database_post_id,
+                    post.source,
+                    embedding_service.model,
+                    len(embedding_values),
+                )
+            else:
+                try:
+                    embedding = embedding_service.embed_text(
+                        embedding_text,
+                        source_post_id=database_post_id,
+                        purpose="public_source_matching",
+                    )
+                except Exception:
+                    with engine.begin() as conn:
+                        _mark_public_source_post_embedding_failed(
+                            conn,
+                            database_post_id=database_post_id,
+                        )
+                    raise
+
+                embedding_values = embedding.embedding
+                with engine.begin() as conn:
+                    _persist_public_source_post_embedding_cache(
+                        conn,
+                        database_post_id=database_post_id,
+                        text_sha256=text_sha256,
+                        embedding_model=embedding.model,
+                        embedding=embedding_values,
+                    )
+            embedded_count += 1
+
+            for profile_row in profile_rows:
+                tenant_id = _string_value(profile_row.get("tenant_id"))
+                service_profile_id = _string_value(profile_row.get("id"))
+                profile_embedding = _profile_embedding_from_row(profile_row)
+                if not tenant_id or not profile_embedding:
+                    continue
+
+                try:
+                    service_profile = _service_profile_from_row(profile_row)
+                except Exception as exc:
+                    logger.info(
+                        "public_source_profile_match_skipped tenant_id=%s service_profile_id=%s source_post_id=%s skip_reason=%s error_type=%s",
+                        tenant_id,
+                        service_profile_id,
+                        database_post_id,
+                        "invalid_service_profile",
+                        exc.__class__.__name__,
+                    )
+                    continue
+
+                post_embedding = PostEmbedding(
+                    post_id=database_post_id,
+                    text=embedding_text,
+                    embedding=embedding_values,
+                    source=post.source,
+                    url=post.url,
+                    metadata=_primitive_metadata(
+                        {
+                            "source_post_id": database_post_id,
+                            "external_id": post.external_id,
+                            "external_key": post.dedupe_key,
+                            "source": post.source,
+                        }
+                    ),
+                )
+                candidates = find_candidate_matches(
+                    profile_embedding,
+                    [post_embedding],
+                    tenant_id=tenant_id,
+                    service_profile_id=service_profile_id,
+                    max_candidates=1,
+                )
+                if not candidates:
+                    continue
+
+                candidate = candidates[0]
+                candidate_count += 1
+                profile_embedding_sha256 = _embedding_sha256(profile_embedding)
+                with engine.begin() as conn:
+                    verification = _cached_lead_verification(
+                        conn,
+                        tenant_id=tenant_id,
+                        service_profile_id=service_profile_id,
+                        source_post_id=database_post_id,
+                        external_key=post.dedupe_key,
+                        profile_embedding_sha256=profile_embedding_sha256,
+                        verifier_model=verifier.model,
+                        columns=lead_match_columns,
+                    )
+
+                if not verification:
+                    verification = verifier.verify(
+                        CandidatePost(
+                            post_id=candidate.post_id,
+                            source=candidate.source,
+                            text=candidate.text,
+                            similarity_score=candidate.score,
+                            url=candidate.url,
+                            metadata=candidate.metadata,
+                        ),
+                        service_profile,
+                        tenant_id=tenant_id,
+                        service_profile_id=service_profile_id,
+                    )
+
+                if verification.match and verification.confidence >= env_float(
+                    "LEAD_VERIFIER_SCORE_THRESHOLD",
+                    DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
+                ):
+                    ready_for_review_count += 1
+
+                with engine.begin() as conn:
+                    _persist_lead_match(
+                        conn,
+                        tenant_id=tenant_id,
+                        service_profile_id=service_profile_id,
+                        source_post_id=database_post_id,
+                        post=post,
+                        similarity_score=candidate.score,
+                        verification=verification,
+                        profile_embedding_sha256=profile_embedding_sha256,
+                        verifier_model=verifier.model,
+                    )
+    finally:
+        embedding_service.close()
+        if verifier is not None:
+            verifier.close()
+
+    logger.info(
+        "public_source_post_matching_completed source_post_id=%s posts=%s embedded=%s profiles=%s candidates=%s ready_for_review=%s",
+        normalized_source_post_id,
+        len(source_rows),
+        embedded_count,
+        len(profile_rows),
+        candidate_count,
+        ready_for_review_count,
+    )
+    return {
+        "posts": len(source_rows),
+        "embedded": embedded_count,
+        "candidates": candidate_count,
+        "ready_for_review": ready_for_review_count,
+    }

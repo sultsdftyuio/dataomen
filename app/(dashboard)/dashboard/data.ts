@@ -479,7 +479,7 @@ async function runLeadQuery(
       .order("created_at", { ascending: false });
   }
 
-  return query.limit(30);
+  return query.limit(10);
 }
 
 export async function fetchQualifiedLeads(

@@ -167,15 +167,35 @@ def ingest_x_job(query: str, since_hours_ago: int = 24) -> None:
     max_backoff=60_000,
 )
 def enqueue_source_post_embedding_job(source_post_id: str) -> None:
-    """Durable handoff for the source-post embedding consumer."""
+    """Embed one global source post and create tenant-scoped lead matches."""
     _job_started(
         job_name="source_post_embedding_handoff",
         source_post_id=source_post_id,
     )
+    try:
+        from api.services.social_ingestion import process_public_source_post_embedding
+
+        result = process_public_source_post_embedding(source_post_id)
+    except Exception as exc:
+        logger.exception(
+            "source_post_embedding_failed job_state=%s source_post_id=%s error_type=%s error=%s",
+            "failed",
+            source_post_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
     _job_finished(
         job_name="source_post_embedding_handoff",
         state="completed",
         source_post_id=source_post_id,
+        posts=result["posts"],
+        embedded=result["embedded"],
+        candidates=result["candidates"],
+        ready_for_review=result["ready_for_review"],
     )
 
 
