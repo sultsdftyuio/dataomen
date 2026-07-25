@@ -153,6 +153,30 @@ def ingest_x_job(
         )
         embedding_jobs = trigger_embedding_jobs(result.inserted_source_post_ids)
     except Exception as exc:
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        if isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in {
+            408,
+            409,
+            425,
+            429,
+        }:
+            logger.warning(
+                "x_ingestion_skipped job_state=%s query=%s since_hours_ago=%s status_code=%s error_type=%s error=%s",
+                "skipped",
+                query,
+                since_hours_ago,
+                status_code,
+                exc.__class__.__name__,
+                exc,
+            )
+            _job_finished(
+                job_name="x_ingestion",
+                state="skipped",
+                query=query,
+                rejection_reason="provider_client_error",
+                status_code=status_code,
+            )
+            return
         logger.exception(
             "x_ingestion_failed job_state=%s query=%s since_hours_ago=%s error_type=%s error=%s",
             "failed",

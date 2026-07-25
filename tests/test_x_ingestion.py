@@ -36,6 +36,15 @@ class XConnectorTests(unittest.TestCase):
             XConnector._search_query("customer support"),
             "customer support lang:en -is:retweet",
         )
+
+    def test_recent_search_start_is_clamped_inside_xs_seven_day_window(self) -> None:
+        now = 1_800_000_000
+        seven_days_ago = now - (7 * 24 * 60 * 60)
+
+        self.assertEqual(
+            XConnector._recent_search_since_timestamp(seven_days_ago, now=now),
+            seven_days_ago + 120,
+        )
         self.assertEqual(
             XConnector._search_query("customer support lang:en -is:retweet"),
             "customer support lang:en -is:retweet",

@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 X_RECENT_SEARCH_URL = "https://api.x.com/2/tweets/search/recent"
+X_RECENT_SEARCH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+# A request at exactly seven days old can be rejected by the time X receives
+# it. Preserve two minutes of slack for queue and network latency.
+X_RECENT_SEARCH_SAFETY_BUFFER_SECONDS = 120
 _SPAM_PATTERN = re.compile(
     r"\b(?:airdrop|casino|crypto\s+giveaway|free\s+followers|viagra)\b",
     re.IGNORECASE,
@@ -106,6 +110,7 @@ class XConnector:
             raise RuntimeError("X_BEARER_TOKEN is required for X ingestion.")
 
         target_limit = min(limit, _env_positive_int("ARCLI_X_MAX_POSTS", 500))
+        effective_since_timestamp = self._recent_search_since_timestamp(since_timestamp)
         posts: list[SourcePost] = []
         seen_ids: set[str] = set()
         next_token: str | None = None
@@ -126,7 +131,7 @@ class XConnector:
                 payload = await self._fetch_page(
                     client,
                     query=normalized_query,
-                    since_timestamp=since_timestamp,
+                    since_timestamp=effective_since_timestamp,
                     next_token=next_token,
                     page_size=min(100, max(10, target_limit - len(posts))),
                 )
@@ -140,7 +145,7 @@ class XConnector:
                     break
 
                 for tweet in data:
-                    post = self._to_source_post(tweet, users, since_timestamp)
+                    post = self._to_source_post(tweet, users, effective_since_timestamp)
                     if not post or post.source_post_id in seen_ids:
                         continue
                     seen_ids.add(post.source_post_id)
@@ -202,6 +207,13 @@ class XConnector:
                     425,
                 }
                 retry_after_seconds = self._retry_after_seconds(exc.response)
+                if not retryable:
+                    logger.warning(
+                        "x_api_request_rejected query=%s status_code=%s response_body=%s",
+                        query,
+                        status_code,
+                        self._response_error_detail(exc.response),
+                    )
 
             if not retryable or attempt >= self.max_attempts:
                 raise last_error
@@ -221,6 +233,16 @@ class XConnector:
             await asyncio.sleep(backoff_seconds)
 
         raise RuntimeError("x_api_request_exhausted")
+
+    @staticmethod
+    def _recent_search_since_timestamp(since_timestamp: int, *, now: int | None = None) -> int:
+        current_timestamp = now if now is not None else int(time.time())
+        earliest_safe_timestamp = (
+            current_timestamp
+            - X_RECENT_SEARCH_MAX_AGE_SECONDS
+            + X_RECENT_SEARCH_SAFETY_BUFFER_SECONDS
+        )
+        return max(since_timestamp, earliest_safe_timestamp)
 
     @staticmethod
     def _search_query(query: str) -> str:
@@ -258,6 +280,14 @@ class XConnector:
             except ValueError:
                 return None
         return None
+
+    @staticmethod
+    def _response_error_detail(response: httpx.Response) -> str:
+        try:
+            body = response.text.strip()
+        except Exception:
+            return "unavailable"
+        return body[:500] if body else "empty"
 
     @staticmethod
     def _to_source_post(

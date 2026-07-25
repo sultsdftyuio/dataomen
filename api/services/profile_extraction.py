@@ -41,6 +41,13 @@ class ServiceProfileDraft(BaseModel):
     ideal_customer_pain_points: list[str] = Field(
         description="Likely pains felt by the customers who are most motivated to buy."
     )
+    search_terms: list[str] = Field(
+        description=(
+            "Two or three short buyer-language phrases, each two to six words, "
+            "that someone would naturally use in a Hacker News or X post while "
+            "looking for help. Do not use the product name or full sentences."
+        )
+    )
     negative_keywords: list[str] = Field(
         description="Terms, industries, or intents Arcli should avoid matching for this service."
     )
@@ -59,7 +66,10 @@ Be punchy, concrete, and commercially specific. Avoid generic phrasing like
 "helps businesses grow" unless the website gives no better signal. Infer
 negative_keywords by identifying audiences, industries, buying intents, or use
 cases that would create bad-fit prospect matches, even when those exclusions are
-not stated directly. Output exactly the requested schema.
+not stated directly. For search_terms, return two or three short phrases in the
+buyer's own language (two to six words each), suitable for public HN and X
+search. Never use a product name or a complete sentence. Output exactly the
+requested schema.
 """.strip()
 
     MAX_MARKDOWN_CHARS = 60_000
@@ -137,7 +147,7 @@ not stated directly. Output exactly the requested schema.
             completion = client.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {"role": "developer", "content": self.SYSTEM_PROMPT},
                     {
                         "role": "user",
                         "content": (
@@ -148,7 +158,6 @@ not stated directly. Output exactly the requested schema.
                     },
                 ],
                 response_format=ServiceProfileDraft,
-                temperature=0.2,
                 timeout=self.timeout_seconds,
             )
         except Exception as exc:

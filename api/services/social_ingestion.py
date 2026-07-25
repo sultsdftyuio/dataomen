@@ -375,9 +375,11 @@ def _compact_public_search_term(value: str) -> str:
     # empty successful searches in production. The query is plain language;
     # the connector adds only its safe language/retweet filters.
     normalized = normalized.replace('"', "").replace("'", "")
-    normalized = re.sub(r"[^\w\s+#&/.-]", " ", normalized)
+    normalized = re.sub(r"[^\w\s#.-]", " ", normalized)
     normalized = _normalize_space(normalized)
-    return normalized[:120]
+    # HN and X both work best with a compact phrase. This also keeps legacy
+    # profiles, created before search_terms existed, from emitting prose.
+    return " ".join(normalized.split()[:8])[:80]
 
 
 def public_source_query_terms(profile: ServiceProfile) -> list[str]:
@@ -388,15 +390,15 @@ def public_source_query_terms(profile: ServiceProfile) -> list[str]:
     sentence. Older profiles get a sensible fallback from their triggers,
     pains, use cases, and core problem.
     """
-    candidates = (
-        profile.search_terms
-        or [
-            *profile.buying_triggers,
-            *profile.ideal_customer_pain_points,
-            *profile.use_cases,
-            profile.core_problem_solved,
-        ]
-    )
+    candidates = profile.search_terms or [
+        *profile.key_value_propositions,
+        profile.one_liner,
+        profile.core_problem_solved,
+        *profile.target_audience,
+        *profile.ideal_customer_pain_points,
+        *profile.buying_triggers,
+        *profile.use_cases,
+    ]
     max_queries = max(
         1,
         min(

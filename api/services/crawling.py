@@ -28,6 +28,7 @@ DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
+PROFILE_EXTRACTION_CACHE_VERSION = "discovery-terms-v1"
 
 SERVICE_PROFILE_COLUMNS = {
     "tenant_id",
@@ -850,6 +851,7 @@ def _profile_document(
         "extraction_status": "pass1_complete" if is_pass1 else "completed",
         "embedding_status": "pending",
         "extracted_at": now,
+        "profile_extraction_cache_version": PROFILE_EXTRACTION_CACHE_VERSION,
     }
     if is_pass1:
         document.update(
@@ -1115,6 +1117,8 @@ def _cached_service_profile_for_markdown(
                 document.get("crawl_markdown_sha256") == crawl_markdown_sha256
                 and document.get("website_url") == website_url
                 and document.get("extraction_status") == "completed"
+                and document.get("profile_extraction_cache_version")
+                == PROFILE_EXTRACTION_CACHE_VERSION
                 and _profile_has_embeddable_content(document)
             ):
                 return document
@@ -1158,6 +1162,7 @@ def _workspace_brain_profile_from_document(
         or "The primary customer problem was not clearly stated on the website.",
         "key_value_propositions": key_value_propositions,
         "ideal_customer_pain_points": pain_points,
+        "search_terms": _jsonable_list(document.get("search_terms")),
         "negative_keywords": _jsonable_list(document.get("negative_keywords")),
     }
 

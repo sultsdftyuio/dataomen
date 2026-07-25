@@ -90,6 +90,30 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(hn_send.call_args_list, expected_calls)
         self.assertEqual(x_send.call_args_list, expected_calls)
 
+    def test_legacy_profile_prefers_compact_value_propositions_over_pain_prose(self) -> None:
+        profile = ServiceProfile(
+            company_name="Arcli",
+            one_liner="Find buyer intent in public conversations",
+            target_audience=["B2B SaaS founders"],
+            core_problem_solved="Teams spend too long finding qualified leads in public posts.",
+            key_value_propositions=["Verified buyer intent", "Qualified B2B leads"],
+            ideal_customer_pain_points=[
+                "Spending hours searching Reddit HN and X for leads while getting irrelevant results."
+            ],
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            terms = public_source_query_terms(profile)
+
+        self.assertEqual(
+            terms,
+            [
+                "Verified buyer intent",
+                "Qualified B2B leads",
+                "Find buyer intent in public conversations",
+            ],
+        )
+
     def test_disabled_source_is_not_queued(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
