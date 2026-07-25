@@ -109,3 +109,33 @@ def test_pass1_uses_the_model_default_temperature() -> None:
 
     assert profile.company_name == "Arcli"
     assert "temperature" not in request
+    assert request["reasoning_effort"] == "minimal"
+    assert request["max_completion_tokens"] == 800
+
+
+def test_pass1_reports_truncation_details_when_no_json_is_returned() -> None:
+    class FakeCompletions:
+        def create(self, **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="length",
+                        message=SimpleNamespace(content=None),
+                    )
+                ],
+                usage=SimpleNamespace(
+                    completion_tokens=400,
+                    completion_tokens_details=SimpleNamespace(reasoning_tokens=400),
+                ),
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"finish_reason=length, completion_tokens=400, reasoning_tokens=400",
+    ):
+        Pass1ProfileExtractor(client=client).extract(
+            website_url="https://arcli.example/",
+            homepage_hero_snippet="# Arcli",
+        )

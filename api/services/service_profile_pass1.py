@@ -25,7 +25,10 @@ DEFAULT_PASS1_MODEL = "gpt-5-nano"
 # response window after the homepage fetch.
 DEFAULT_PASS1_TOTAL_TIMEOUT_SECONDS = 4.5
 DEFAULT_PASS1_FETCH_TIMEOUT_SECONDS = 0.5
-DEFAULT_PASS1_MAX_COMPLETION_TOKENS = 400
+# This cap includes GPT-5 reasoning tokens as well as the JSON that reaches the
+# application. Keep enough room for the complete 13-field profile.
+DEFAULT_PASS1_MAX_COMPLETION_TOKENS = 800
+DEFAULT_PASS1_REASONING_EFFORT = "minimal"
 PASS1_INPUT_MAX_CHARS = 4_800
 PASS1_MAX_HTML_CHARS = 160_000
 PASS1_MAX_REDIRECTS = 2
@@ -319,26 +322,43 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
         self.timeout_seconds = timeout_seconds
 
     def extract(self, *, website_url: str, homepage_hero_snippet: str) -> Pass1ServiceProfile:
-        completion = self._get_client().chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": PASS1_SYSTEM_PROMPT},
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "developer", "content": PASS1_SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": build_pass1_user_prompt(website_url, homepage_hero_snippet),
                 },
             ],
-            response_format={"type": "json_object"},
-            max_completion_tokens=DEFAULT_PASS1_MAX_COMPLETION_TOKENS,
-            timeout=self.timeout_seconds,
+            "response_format": {"type": "json_object"},
+            "max_completion_tokens": DEFAULT_PASS1_MAX_COMPLETION_TOKENS,
+            "timeout": self.timeout_seconds,
+        }
+        # The Pass 1 default is the original GPT-5 nano family, which supports
+        # minimal reasoning. Do not send this model-specific setting to an
+        # operator-supplied non-GPT-5-nano override.
+        if self.model.startswith("gpt-5-nano"):
+            request["reasoning_effort"] = DEFAULT_PASS1_REASONING_EFFORT
+
+        completion = self._get_client().chat.completions.create(
+            **request,
         )
-        message = completion.choices[0].message
+        choice = completion.choices[0]
+        message = choice.message
         refusal = getattr(message, "refusal", None)
         if refusal:
             raise RuntimeError(f"OpenAI refused Pass 1 extraction: {refusal}")
         content = getattr(message, "content", None)
         if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("OpenAI returned no Pass 1 JSON content")
+            usage = getattr(completion, "usage", None)
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            raise RuntimeError(
+                "OpenAI returned no Pass 1 JSON content "
+                f"(finish_reason={getattr(choice, 'finish_reason', None) or 'unknown'}, "
+                f"completion_tokens={getattr(usage, 'completion_tokens', None) or 'unknown'}, "
+                f"reasoning_tokens={getattr(completion_details, 'reasoning_tokens', None) or 'unknown'})"
+            )
         try:
             payload = json.loads(content)
         except json.JSONDecodeError as exc:
