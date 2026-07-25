@@ -328,7 +328,6 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
                 },
             ],
             response_format={"type": "json_object"},
-            temperature=0.0,
             max_completion_tokens=DEFAULT_PASS1_MAX_COMPLETION_TOKENS,
             timeout=self.timeout_seconds,
         )

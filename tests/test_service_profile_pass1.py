@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
 from api.services.crawling import _profile_document
 from api.services.service_profile_pass1 import (
+    Pass1ProfileExtractor,
     Pass1ServiceProfile,
     _extract_hero_markdown,
     build_pass1_user_prompt,
@@ -81,3 +85,27 @@ def test_pass1_prompt_contains_the_url_and_delimited_hero_snippet() -> None:
 
     assert "Target URL: https://arcli.example/" in prompt
     assert "HOMEPAGE HERO MARKDOWN:\n---\n# Arcli\n---" in prompt
+
+
+def test_pass1_uses_the_model_default_temperature() -> None:
+    request: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> SimpleNamespace:
+            request.update(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=json.dumps(pass1_payload()))
+                    )
+                ]
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    profile = Pass1ProfileExtractor(client=client).extract(
+        website_url="https://arcli.example/",
+        homepage_hero_snippet="# Arcli",
+    )
+
+    assert profile.company_name == "Arcli"
+    assert "temperature" not in request
