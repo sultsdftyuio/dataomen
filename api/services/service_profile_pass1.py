@@ -20,9 +20,10 @@ from api.services.openai_lifecycle import OpenAIClientOwner
 logger = logging.getLogger(__name__)
 
 DEFAULT_PASS1_MODEL = "gpt-5-nano"
-# Reserve roughly half a second of the three-second onboarding SLA for the
-# profile upsert and Dramatiq publish that happen after extraction succeeds.
-DEFAULT_PASS1_TOTAL_TIMEOUT_SECONDS = 2.4
+# The caller has a five-second handoff timeout. Reserve a small margin for the
+# profile upsert and Dramatiq publish while allowing the model a realistic
+# response window after the homepage fetch.
+DEFAULT_PASS1_TOTAL_TIMEOUT_SECONDS = 4.5
 DEFAULT_PASS1_FETCH_TIMEOUT_SECONDS = 0.5
 DEFAULT_PASS1_MAX_COMPLETION_TOKENS = 400
 PASS1_INPUT_MAX_CHARS = 4_800
