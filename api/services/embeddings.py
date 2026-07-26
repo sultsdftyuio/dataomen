@@ -6,6 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Sequence
+from uuid import UUID
 
 from dramatiq.middleware import TimeLimitExceeded
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -423,6 +424,12 @@ def _string_value(value: Any) -> str | None:
         return trimmed or None
 
     if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return str(value)
+
+    # PostgreSQL UUID columns are returned as UUID instances by SQLAlchemy.
+    # Preserve those identifiers when matching a global source post to its
+    # tenant's service profile.
+    if isinstance(value, UUID):
         return str(value)
 
     return None

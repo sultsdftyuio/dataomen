@@ -43,9 +43,11 @@ class ServiceProfileDraft(BaseModel):
     )
     search_terms: list[str] = Field(
         description=(
-            "Two or three short buyer-language phrases, each two to six words, "
-            "that someone would naturally use in a Hacker News or X post while "
-            "looking for help. Do not use the product name or full sentences."
+            "Two or three independently searchable buyer-pain or help-request "
+            "phrases, each two to six words, that a person would naturally put "
+            "in a Hacker News or X post. Do not describe the product's goal, "
+            "the target audience, or a source platform; do not use the product "
+            "name or full sentences."
         )
     )
     negative_keywords: list[str] = Field(
@@ -66,10 +68,13 @@ Be punchy, concrete, and commercially specific. Avoid generic phrasing like
 "helps businesses grow" unless the website gives no better signal. Infer
 negative_keywords by identifying audiences, industries, buying intents, or use
 cases that would create bad-fit prospect matches, even when those exclusions are
-not stated directly. For search_terms, return two or three short phrases in the
-buyer's own language (two to six words each), suitable for public HN and X
-search. Never use a product name or a complete sentence. Output exactly the
-requested schema.
+not stated directly. For search_terms, imagine the person writing the public
+post, then return two or three independently searchable pain or help-request
+phrases in their own language (two to six words each). Prefer concrete
+problems, questions, or buying triggers. Do not return Arcli's acquisition
+goal or product positioning (for example, "prospects", "qualified users", or
+"alerts"), target-audience labels, or source-platform names. Never use a
+product name or a complete sentence. Output exactly the requested schema.
 """.strip()
 
     MAX_MARKDOWN_CHARS = 60_000

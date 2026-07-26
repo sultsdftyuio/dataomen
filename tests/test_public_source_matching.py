@@ -6,6 +6,7 @@ import unittest
 from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import patch
+from uuid import UUID
 
 from api.services.verifier import VerificationResult
 
@@ -25,7 +26,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
             "metadata": {},
         }
         profile_row = {
-            "id": "00000000-0000-0000-0000-000000000002",
+            "id": UUID("00000000-0000-0000-0000-000000000002"),
             "tenant_id": "tenant-a",
             "company_name": "Billing Co",
             "one_liner": "Recurring billing software",
@@ -101,6 +102,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertEqual(result["ready_for_review"], 1)
         self.assertEqual(len(persisted), 1)
         self.assertEqual(persisted[0]["tenant_id"], "tenant-a")
+        self.assertEqual(
+            persisted[0]["service_profile_id"],
+            "00000000-0000-0000-0000-000000000002",
+        )
         self.assertEqual(persisted[0]["source_post_id"], source_row["id"])
 
 

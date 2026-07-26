@@ -99,7 +99,7 @@ class SocialPost:
 
 @dataclass(frozen=True)
 class InitialPublicSourceIngestionPlan:
-    """The bounded source-search work spawned after a profile is embedded."""
+    """The bounded HN-first source-search work spawned after a profile is embedded."""
 
     query_terms: list[str]
     hn_jobs: int
@@ -503,21 +503,35 @@ def enqueue_initial_public_source_ingestion(
     posts_per_query = _initial_source_posts_per_query()
     hn_jobs = 0
     x_jobs = 0
+    hn_enabled = _is_source_enabled("ARCLI_HN_INGESTION_ENABLED")
+    x_enabled = _is_source_enabled("ARCLI_X_INGESTION_ENABLED")
     for query in query_terms:
-        if _is_source_enabled("ARCLI_HN_INGESTION_ENABLED"):
-            ingest_hn_job.send(query, lookback_hours, posts_per_query)
+        if hn_enabled:
+            # HN is the low-cost primary source. The HN actor starts X only
+            # when that exact search produced no HN results.
+            ingest_hn_job.send(
+                query,
+                lookback_hours,
+                posts_per_query,
+                fallback_to_x=x_enabled,
+            )
             hn_jobs += 1
-        if _is_source_enabled("ARCLI_X_INGESTION_ENABLED"):
+            if x_enabled:
+                x_jobs += 1
+        elif x_enabled:
+            # Preserve an X-only deployment when HN has been explicitly
+            # disabled, rather than silently suppressing discovery.
             ingest_x_job.send(query, lookback_hours, posts_per_query)
             x_jobs += 1
 
     logger.info(
-        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s x_jobs=%s lookback_hours=%s posts_per_query=%s",
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s x_fallback_jobs=%s x_strategy=%s lookback_hours=%s posts_per_query=%s",
         tenant_id,
         service_profile_id,
         query_terms,
         hn_jobs,
         x_jobs,
+        "after_hn_empty" if hn_enabled and x_enabled else "direct_or_disabled",
         lookback_hours,
         posts_per_query,
     )

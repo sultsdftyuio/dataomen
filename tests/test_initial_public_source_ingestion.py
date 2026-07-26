@@ -83,12 +83,12 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.hn_jobs, 3)
         self.assertEqual(plan.x_jobs, 3)
         expected_calls = [
-            call("manual prospect research", 168, 25),
-            call("finding qualified B2B leads", 168, 25),
-            call("social listening for buyer intent", 168, 25),
+            call("manual prospect research", 168, 25, fallback_to_x=True),
+            call("finding qualified B2B leads", 168, 25, fallback_to_x=True),
+            call("social listening for buyer intent", 168, 25, fallback_to_x=True),
         ]
         self.assertEqual(hn_send.call_args_list, expected_calls)
-        self.assertEqual(x_send.call_args_list, expected_calls)
+        x_send.assert_not_called()
 
     def test_legacy_profile_prefers_compact_value_propositions_over_pain_prose(self) -> None:
         profile = ServiceProfile(
@@ -146,7 +146,12 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 0)
-        hn_send.assert_called_once_with("manual prospect research", 168, 25)
+        hn_send.assert_called_once_with(
+            "manual prospect research",
+            168,
+            25,
+            fallback_to_x=False,
+        )
         x_send.assert_not_called()
 
 

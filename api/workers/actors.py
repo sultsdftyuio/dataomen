@@ -86,8 +86,10 @@ def ingest_hn_job(
     query: str,
     since_hours_ago: int = 24,
     posts_per_query: int = 25,
+    *,
+    fallback_to_x: bool = False,
 ) -> None:
-    """Ingest one HN search window and hand only fresh rows to embedding."""
+    """Ingest HN first and optionally queue X only when HN is empty."""
     _job_started(
         job_name="hn_ingestion",
         query=query,
@@ -102,6 +104,10 @@ def ingest_hn_job(
             posts_per_query=posts_per_query,
         )
         embedding_jobs = trigger_embedding_jobs(result.inserted_source_post_ids)
+        x_fallback_enqueued = False
+        if fallback_to_x and result.hits_found == 0:
+            ingest_x_job.send(query, since_hours_ago, posts_per_query)
+            x_fallback_enqueued = True
     except Exception as exc:
         logger.exception(
             "hn_ingestion_failed job_state=%s query=%s since_hours_ago=%s error_type=%s error=%s",
@@ -122,6 +128,7 @@ def ingest_hn_job(
         hits_found=result.hits_found,
         new_inserts=result.inserted_count,
         embedding_jobs=embedding_jobs,
+        x_fallback_enqueued=x_fallback_enqueued,
     )
 
 

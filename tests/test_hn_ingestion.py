@@ -139,6 +139,32 @@ class HackerNewsIngestionTests(unittest.TestCase):
             },
         )
 
+    def test_hn_actor_queues_x_fallback_only_for_an_empty_hn_search(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import HnIngestionResult
+        from api.workers import actors
+
+        empty_result = HnIngestionResult(
+            query="pricing",
+            since_timestamp=1,
+            hits_found=0,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+        )
+        with (
+            unittest.mock.patch.object(
+                ingestion_module,
+                "ingest_hn_posts",
+                return_value=empty_result,
+            ),
+            unittest.mock.patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
+            unittest.mock.patch.object(actors.ingest_x_job, "send") as x_send,
+            unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_hn_job.fn("pricing", 168, 25, fallback_to_x=True)
+
+        x_send.assert_called_once_with("pricing", 168, 25)
+
 
 if __name__ == "__main__":
     unittest.main()
