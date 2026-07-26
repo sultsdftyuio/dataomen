@@ -404,7 +404,8 @@ def extract_pass1_service_profile(website_url: str) -> tuple[str, str, Pass1Serv
             homepage_hero_snippet=hero_snippet,
         )
 
+    # The OpenAI request above is already bounded by the remaining budget.  Do
+    # not throw away a valid profile merely because local response parsing took
+    # a few milliseconds past the latency target.
     elapsed_ms = int((time.monotonic() - started_at) * 1000)
-    if elapsed_ms > int(total_timeout * 1000):
-        raise TimeoutError("Pass 1 extraction exceeded its latency budget")
     return normalized_url, hero_snippet, profile, elapsed_ms

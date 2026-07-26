@@ -6,12 +6,14 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+import api.services.service_profile_pass1 as pass1_module
 from api.services.crawling import _profile_document
 from api.services.service_profile_pass1 import (
     Pass1ProfileExtractor,
     Pass1ServiceProfile,
     _extract_hero_markdown,
     build_pass1_user_prompt,
+    extract_pass1_service_profile,
 )
 
 
@@ -139,3 +141,36 @@ def test_pass1_reports_truncation_details_when_no_json_is_returned() -> None:
             website_url="https://arcli.example/",
             homepage_hero_snippet="# Arcli",
         )
+
+
+def test_pass1_keeps_a_valid_profile_that_finishes_just_after_latency_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeExtractor:
+        def __init__(self, *, timeout_seconds: float) -> None:
+            assert timeout_seconds == pytest.approx(4.4)
+
+        def __enter__(self) -> "FakeExtractor":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def extract(self, **_kwargs: object) -> Pass1ServiceProfile:
+            return Pass1ServiceProfile.model_validate(pass1_payload())
+
+    monotonic_values = iter((100.0, 100.1, 104.6))
+    monkeypatch.setenv("ARCLI_PASS1_TOTAL_TIMEOUT_SECONDS", "4.5")
+    monkeypatch.setenv("ARCLI_PASS1_FETCH_TIMEOUT_SECONDS", "0.5")
+    monkeypatch.setattr(
+        pass1_module,
+        "fetch_homepage_hero_markdown",
+        lambda *_args, **_kwargs: ("https://arcli.example/", "# Arcli"),
+    )
+    monkeypatch.setattr(pass1_module, "Pass1ProfileExtractor", FakeExtractor)
+    monkeypatch.setattr(pass1_module.time, "monotonic", lambda: next(monotonic_values))
+
+    _url, _hero, profile, elapsed_ms = extract_pass1_service_profile("arcli.example")
+
+    assert profile.company_name == "Arcli"
+    assert elapsed_ms > 4_500

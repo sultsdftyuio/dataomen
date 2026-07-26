@@ -127,6 +127,64 @@ class XIngestionTests(unittest.TestCase):
             },
         )
 
+    def test_service_retries_without_optional_author_handle_on_legacy_schema(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        class MissingAuthorHandleError(Exception):
+            code = "PGRST204"
+            message = "Could not find the 'author_handle' column of 'source_posts'"
+
+        class FakeQuery:
+            def __init__(self) -> None:
+                self.attempts: list[list[dict[str, object]]] = []
+                self.payload: list[dict[str, object]] = []
+
+            def upsert(
+                self,
+                payload: list[dict[str, object]],
+                **_kwargs: str | bool,
+            ) -> "FakeQuery":
+                self.payload = payload
+                self.attempts.append(payload)
+                return self
+
+            def execute(self) -> SimpleNamespace:
+                if len(self.attempts) == 1:
+                    raise MissingAuthorHandleError()
+                return SimpleNamespace(data=self.payload)
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.query = FakeQuery()
+
+            def table(self, table_name: str) -> FakeQuery:
+                if table_name != "source_posts":
+                    raise AssertionError(f"unexpected table: {table_name}")
+                return self.query
+
+        client = FakeClient()
+        original_client = ingestion_module._public_source_supabase_client
+        ingestion_module._public_source_supabase_client = client
+        try:
+            inserted_ids = ingestion_module._persist_new_public_source_posts(
+                [
+                    TwitterSourcePost(
+                        source_post_id="tweet-1",
+                        author_handle="alice",
+                        body="Need a billing platform",
+                        url="https://x.com/alice/status/tweet-1",
+                        posted_at=datetime.now(timezone.utc),
+                    )
+                ],
+                batch_size=1,
+            )
+        finally:
+            ingestion_module._public_source_supabase_client = original_client
+
+        self.assertEqual(inserted_ids, ["tweet-1"])
+        self.assertEqual(client.query.attempts[0][0]["author_handle"], "alice")
+        self.assertNotIn("author_handle", client.query.attempts[1][0])
+
 
 if __name__ == "__main__":
     unittest.main()

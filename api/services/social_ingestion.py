@@ -1555,6 +1555,29 @@ def _response_source_post_ids(response: Any) -> list[str]:
     ]
 
 
+def _is_missing_postgrest_column(error: Exception, column_name: str) -> bool:
+    """Return whether PostgREST rejected an optional column absent from schema."""
+    if getattr(error, "code", None) != "PGRST204":
+        return False
+    message = str(getattr(error, "message", "") or error)
+    return column_name in message and "column" in message.lower()
+
+
+def _upsert_public_source_post_payloads(
+    client: Any,
+    payloads: list[dict[str, Any]],
+) -> Any:
+    return (
+        client.table("source_posts")
+        .upsert(
+            payloads,
+            on_conflict="source,source_post_id",
+            ignore_duplicates=True,
+        )
+        .execute()
+    )
+
+
 def _persist_new_public_source_posts(
     posts: list[SourcePost] | list[TwitterSourcePost],
     *,
@@ -1562,17 +1585,49 @@ def _persist_new_public_source_posts(
 ) -> list[str]:
     """Insert only new public source rows and return the inserted source IDs."""
     inserted_source_post_ids: list[str] = []
+    author_handle_supported = True
     with _public_source_supabase_client_context() as client:
         for batch in _iter_batches(posts, batch_size):
-            response = (
-                client.table("source_posts")
-                .upsert(
-                    [_source_post_payload(post) for post in batch],
-                    on_conflict="source,source_post_id",
-                    ignore_duplicates=True,
+            payloads = [_source_post_payload(post) for post in batch]
+            if author_handle_supported:
+                try:
+                    response = _upsert_public_source_post_payloads(client, payloads)
+                except Exception as error:
+                    if not _is_missing_postgrest_column(error, "author_handle"):
+                        raise
+                    # Some deployments predate the optional author_handle
+                    # column. Keep the source post rather than losing a whole
+                    # ingestion batch; the contract migration adds this field
+                    # for new deployments.
+                    author_handle_supported = False
+                    logger.warning(
+                        "public_source_posts_schema_fallback column=%s error_code=%s",
+                        "author_handle",
+                        getattr(error, "code", None),
+                    )
+                    response = _upsert_public_source_post_payloads(
+                        client,
+                        [
+                            {
+                                key: value
+                                for key, value in payload.items()
+                                if key != "author_handle"
+                            }
+                            for payload in payloads
+                        ],
+                    )
+            else:
+                response = _upsert_public_source_post_payloads(
+                    client,
+                    [
+                        {
+                            key: value
+                            for key, value in payload.items()
+                            if key != "author_handle"
+                        }
+                        for payload in payloads
+                    ],
                 )
-                .execute()
-            )
             inserted_source_post_ids.extend(_response_source_post_ids(response))
 
     # A returned row from ON CONFLICT DO NOTHING is necessarily a fresh insert.
