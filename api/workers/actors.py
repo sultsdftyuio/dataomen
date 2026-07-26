@@ -95,6 +95,74 @@ def _claim_initial_x_fallback(x_fallback_group_id: str | None) -> bool:
     return decision.allowed
 
 
+def _x_source_is_configured() -> bool:
+    """Avoid retrying a paid-source job when its credential is absent."""
+    enabled = os.getenv("ARCLI_X_INGESTION_ENABLED", "true").strip().lower()
+    if enabled in {"0", "false", "no", "off"}:
+        return False
+    return bool(
+        (
+            os.getenv("X_BEARER_TOKEN")
+            or os.getenv("TWITTER_BEARER_TOKEN")
+            or os.getenv("ARCLI_X_BEARER_TOKEN")
+            or ""
+        ).strip()
+    )
+
+
+def _claim_tenant_x_fallback_budget(tenant_id: str | None) -> bool:
+    """Bound paid X fallback spend across repeated profile activations.
+
+    The activation-group claim above handles duplicate delivery.  This second,
+    tenant-scoped guard prevents a customer from repeatedly reactivating a
+    profile to turn one-request fallbacks into unbounded X usage.
+    """
+    if not tenant_id:
+        # Legacy direct actor callers did not carry tenant context.  The
+        # activation path always does, so preserve compatibility without
+        # silently collapsing those callers into one shared "unknown" budget.
+        return True
+
+    from api.services.cost_controls import TenantQuotaGuard
+
+    decision = TenantQuotaGuard().check_and_increment(
+        tenant_id=tenant_id,
+        counter_name="initial_public_x_fallback",
+        limit=_int_env(
+            "ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT",
+            5,
+            minimum=1,
+        ),
+        window_seconds=_int_env(
+            "ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS",
+            86_400,
+            minimum=1,
+        ),
+    )
+    return decision.allowed
+
+
+def _normalized_discovery_queries(queries: Sequence[Any]) -> list[dict[str, str]]:
+    """Accept typed queue payloads while safely replaying legacy string jobs."""
+    normalized: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in queries:
+        if isinstance(item, dict):
+            query_type = str(item.get("query_type") or "legacy").strip() or "legacy"
+            phrase = str(item.get("phrase") or "").strip()
+        else:
+            query_type = "legacy"
+            phrase = str(item or "").strip()
+        if not phrase:
+            continue
+        key = (query_type, phrase.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append({"query_type": query_type, "phrase": phrase})
+    return normalized
+
+
 @dramatiq.actor(
     actor_name="ingest_hn_batch_job",
     queue_name=os.getenv("ARCLI_HN_INGESTION_QUEUE_NAME", "ingestion"),
@@ -103,21 +171,25 @@ def _claim_initial_x_fallback(x_fallback_group_id: str | None) -> bool:
     max_backoff=90_000,
 )
 def ingest_hn_batch_job(
-    queries: Sequence[str],
+    queries: Sequence[Any],
     since_hours_ago: int = 24,
     posts_per_query: int = 25,
     *,
     fallback_to_x: bool = False,
     x_fallback_group_id: str | None = None,
     x_fallback_query: str | None = None,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
 ) -> None:
-    """Complete the free HN phase before allowing the one X fallback."""
-    normalized_queries = list(dict.fromkeys(query.strip() for query in queries if query.strip()))
+    """Complete the free HN phase before allowing one paid X fallback."""
+    normalized_queries = _normalized_discovery_queries(queries)
     if not normalized_queries:
         raise ValueError("at least one HN query is required")
 
     _job_started(
         job_name="hn_ingestion_batch",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         query_count=len(normalized_queries),
         since_hours_ago=since_hours_ago,
     )
@@ -125,33 +197,51 @@ def ingest_hn_batch_job(
         from api.services.social_ingestion import ingest_hn_posts, trigger_embedding_jobs
 
         total_hits = 0
+        total_plausible_hits = 0
         total_new_inserts = 0
-        matching_source_posts = 0
-        embedding_jobs = 0
+        # The same global post can satisfy several buyer-language queries.
+        # Queue it once after the free HN phase rather than fanning it out to
+        # embedding/matching once per query.
+        matching_source_post_ids: dict[str, None] = {}
         for query in normalized_queries:
             result = ingest_hn_posts(
-                query=query,
+                query=query["phrase"],
                 since_hours_ago=since_hours_ago,
                 posts_per_query=posts_per_query,
+                query_type=query["query_type"],
             )
             total_hits += result.hits_found
+            total_plausible_hits += result.plausible_hits
             total_new_inserts += result.inserted_count
             source_post_ids = result.matchable_source_post_ids or result.inserted_source_post_ids
-            matching_source_posts += len(source_post_ids)
-            embedding_jobs += trigger_embedding_jobs(source_post_ids)
+            for source_post_id in source_post_ids:
+                matching_source_post_ids.setdefault(source_post_id, None)
+
+        matching_source_posts = len(matching_source_post_ids)
+        embedding_jobs = trigger_embedding_jobs(list(matching_source_post_ids))
 
         x_fallback_enqueued = False
         x_fallback_skip_reason: str | None = None
-        if fallback_to_x and total_hits == 0:
-            if _claim_initial_x_fallback(x_fallback_group_id):
+        minimum_plausible_hits = _int_env(
+            "ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION",
+            2,
+            minimum=1,
+        )
+        if fallback_to_x and total_plausible_hits < minimum_plausible_hits:
+            if not _x_source_is_configured():
+                x_fallback_skip_reason = "x_bearer_token_not_configured"
+            elif not _claim_initial_x_fallback(x_fallback_group_id):
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
+            elif not _claim_tenant_x_fallback_budget(tenant_id):
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
+            else:
                 ingest_x_job.send(
-                    x_fallback_query or normalized_queries[0],
+                    x_fallback_query or normalized_queries[0]["phrase"],
                     since_hours_ago,
                     posts_per_query,
+                    strict_single_page=True,
                 )
                 x_fallback_enqueued = True
-            else:
-                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
     except Exception as exc:
         logger.exception(
             "hn_ingestion_batch_failed job_state=%s query_count=%s since_hours_ago=%s error_type=%s error=%s",
@@ -168,8 +258,12 @@ def ingest_hn_batch_job(
     _job_finished(
         job_name="hn_ingestion_batch",
         state="completed",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         query_count=len(normalized_queries),
         hits_found=total_hits,
+        plausible_hn_hits=total_plausible_hits,
+        minimum_plausible_hn_hits_for_x_suppression=minimum_plausible_hits,
         new_inserts=total_new_inserts,
         matching_source_posts=matching_source_posts,
         embedding_jobs=embedding_jobs,
@@ -193,10 +287,15 @@ def ingest_hn_job(
     fallback_to_x: bool = False,
     x_fallback_group_id: str | None = None,
     x_fallback_query: str | None = None,
+    query_type: str | None = None,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
 ) -> None:
     """Ingest HN first and queue at most one X fallback per activation."""
     _job_started(
         job_name="hn_ingestion",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         query=query,
         since_hours_ago=since_hours_ago,
     )
@@ -207,6 +306,7 @@ def ingest_hn_job(
             query=query,
             since_hours_ago=since_hours_ago,
             posts_per_query=posts_per_query,
+            query_type=query_type,
         )
         matching_source_post_ids = (
             result.matchable_source_post_ids or result.inserted_source_post_ids
@@ -214,16 +314,26 @@ def ingest_hn_job(
         embedding_jobs = trigger_embedding_jobs(matching_source_post_ids)
         x_fallback_enqueued = False
         x_fallback_skip_reason: str | None = None
-        if fallback_to_x and result.hits_found == 0:
-            if _claim_initial_x_fallback(x_fallback_group_id):
+        minimum_plausible_hits = _int_env(
+            "ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION",
+            2,
+            minimum=1,
+        )
+        if fallback_to_x and result.plausible_hits < minimum_plausible_hits:
+            if not _x_source_is_configured():
+                x_fallback_skip_reason = "x_bearer_token_not_configured"
+            elif not _claim_initial_x_fallback(x_fallback_group_id):
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
+            elif not _claim_tenant_x_fallback_budget(tenant_id):
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
+            else:
                 ingest_x_job.send(
                     x_fallback_query or query,
                     since_hours_ago,
                     posts_per_query,
+                    strict_single_page=True,
                 )
                 x_fallback_enqueued = True
-            else:
-                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
     except Exception as exc:
         logger.exception(
             "hn_ingestion_failed job_state=%s query=%s since_hours_ago=%s error_type=%s error=%s",
@@ -240,8 +350,12 @@ def ingest_hn_job(
     _job_finished(
         job_name="hn_ingestion",
         state="completed",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         query=query,
         hits_found=result.hits_found,
+        plausible_hn_hits=result.plausible_hits,
+        minimum_plausible_hn_hits_for_x_suppression=minimum_plausible_hits,
         new_inserts=result.inserted_count,
         matching_source_posts=len(
             result.matchable_source_post_ids or result.inserted_source_post_ids
@@ -263,20 +377,43 @@ def ingest_x_job(
     query: str,
     since_hours_ago: int = 24,
     posts_per_query: int = 25,
+    *,
+    strict_single_page: bool = False,
 ) -> None:
-    """Ingest one X recent-search window and hand fresh rows to embedding."""
+    """Ingest one X recent-search window and hand fresh rows to embedding.
+
+    ``strict_single_page`` is used by the HN fallback so its one cost-controlled
+    job cannot paginate into multiple paid X search requests.
+    """
     _job_started(
         job_name="x_ingestion",
         query=query,
         since_hours_ago=since_hours_ago,
+        strict_single_page=strict_single_page,
     )
     try:
         from api.services.social_ingestion import ingest_x_posts, trigger_embedding_jobs
+
+        if not _x_source_is_configured():
+            logger.info(
+                "x_ingestion_skipped job_state=%s query=%s skip_reason=%s",
+                "skipped",
+                query,
+                "x_bearer_token_not_configured",
+            )
+            _job_finished(
+                job_name="x_ingestion",
+                state="skipped",
+                query=query,
+                rejection_reason="x_bearer_token_not_configured",
+            )
+            return
 
         result = ingest_x_posts(
             query=query,
             since_hours_ago=since_hours_ago,
             posts_per_query=posts_per_query,
+            max_pages=1 if strict_single_page else None,
         )
         matching_source_post_ids = (
             result.matchable_source_post_ids or result.inserted_source_post_ids
@@ -325,6 +462,7 @@ def ingest_x_job(
         query=query,
         hits_found=result.hits_found,
         new_inserts=result.inserted_count,
+        strict_single_page=strict_single_page,
         matching_source_posts=len(
             result.matchable_source_post_ids or result.inserted_source_post_ids
         ),
@@ -385,6 +523,60 @@ def enqueue_source_post_embedding_jobs(source_post_ids: Sequence[str]) -> int:
         messages_sent,
     )
     return messages_sent
+
+
+@dramatiq.actor(
+    actor_name="rematch_existing_public_source_posts_job",
+    queue_name=os.getenv("ARCLI_SOURCE_POST_EMBEDDING_QUEUE_NAME", "embeddings"),
+    max_retries=2,
+    min_backoff=15_000,
+    max_backoff=90_000,
+    time_limit=_int_env("ARCLI_PUBLIC_SOURCE_REMATCH_JOB_TIME_LIMIT_MS", 180_000, minimum=1),
+)
+def rematch_existing_public_source_posts_job(
+    tenant_id: str,
+    service_profile_id: str,
+) -> None:
+    """Match a newly activated profile against a bounded cached public corpus."""
+    _job_started(
+        job_name="existing_public_source_rematch",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+    )
+    try:
+        from api.services.social_ingestion import (
+            rematch_existing_public_source_posts_for_profile,
+        )
+
+        result = rematch_existing_public_source_posts_for_profile(
+            tenant_id,
+            service_profile_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "existing_public_source_rematch_failed job_state=%s tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            "failed",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="existing_public_source_rematch",
+        state="completed",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        posts=result["posts"],
+        embedded=result["embedded"],
+        cache_misses=result["cache_misses"],
+        candidates=result["candidates"],
+        ready_for_review=result["ready_for_review"],
+        discovery_candidates=result["discovery_candidates"],
+    )
 
 
 @dramatiq.actor(

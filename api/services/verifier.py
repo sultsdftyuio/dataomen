@@ -47,6 +47,7 @@ class ServiceProfile(BaseModel):
     ideal_customer_pain_points: list[str] = Field(min_length=1)
     use_cases: list[str] = Field(default_factory=list)
     buying_triggers: list[str] = Field(default_factory=list)
+    urgency_signals: list[str] = Field(default_factory=list)
     # Short, buyer-authentic phrases used to discover public conversations.
     # They are deliberately separate from the richer matching fields above so
     # search precision is under the workspace owner's control.
@@ -59,6 +60,7 @@ class ServiceProfile(BaseModel):
         "ideal_customer_pain_points",
         "use_cases",
         "buying_triggers",
+        "urgency_signals",
         "search_terms",
         "negative_keywords",
     )
@@ -123,8 +125,13 @@ def _log_retry(retry_state: RetryCallState) -> None:
 class VerifierService(OpenAIClientOwner):
     SYSTEM_PROMPT = (
         "Evaluate the candidate post against the Service Profile. A valid lead "
-        "must show explicit pain, buying intent, or frustration that the Service "
-        "Profile solves. Reject tutorials, spam, or job postings. You must return "
+        "must show explicit buyer pain, urgency, a recommendation request, a "
+        "manual-workflow frustration, a tool/category search, or a switching "
+        "trigger that the Service Profile solves. Similar words or a product "
+        "category alone are not evidence. Reject tutorials, announcements, spam, "
+        "job postings, and conversations where the writer is not plausibly a buyer. "
+        "Use `match: true` only when the post contains concrete evidence of a fit; "
+        "use `weak_match` only for real but incomplete buyer evidence. You must return "
         "ONLY a JSON object with: `match` (boolean), `decision_label` (string: "
         "strong_match, weak_match, spam, not_a_match), `confidence` (float), "
         "`pain_detected` (string), `why_this_matches` (string), "

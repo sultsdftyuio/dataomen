@@ -1,5 +1,9 @@
 // lib/settings/schemas.ts
 import { z } from "zod";
+import {
+  DISCOVERY_QUERY_TYPES,
+  discoveryQueryPlanValidationError,
+} from "@/lib/discovery-queries";
 
 // ---------------------------------------------------------------------------
 // Utility Preprocessors
@@ -147,6 +151,27 @@ const discoveryPhraseListField = z
   .max(6)
   .default([]);
 
+const discoveryQueryField = z
+  .object({
+    query_type: z.preprocess(trimString, z.enum(DISCOVERY_QUERY_TYPES)),
+    phrase: z.preprocess(trimString, z.string().min(1)),
+  })
+  .strict();
+
+const discoveryQueryPlanField = z
+  .array(discoveryQueryField)
+  .max(DISCOVERY_QUERY_TYPES.length)
+  .default([])
+  .superRefine((queries, context) => {
+    const issue = discoveryQueryPlanValidationError(queries);
+    if (issue) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: issue,
+      });
+    }
+  });
+
 export const ServiceProfileSettingsSchema = z
   .object({
     target_audience: serviceProfileListField,
@@ -155,6 +180,8 @@ export const ServiceProfileSettingsSchema = z
     use_cases: serviceProfileListField,
     pain_points: serviceProfileListField,
     buying_triggers: serviceProfileListField,
+    urgency_signals: serviceProfileListField,
+    discovery_queries: discoveryQueryPlanField,
     search_terms: discoveryPhraseListField,
     negative_keywords: serviceProfileListField,
     excluded_audiences: serviceProfileListField,

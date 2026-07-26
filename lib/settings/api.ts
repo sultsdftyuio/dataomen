@@ -76,6 +76,27 @@ function normalizeList(values: string[]) {
   }, []);
 }
 
+function normalizeDiscoveryQueries(
+  values: ServiceProfileSettingsInput["discovery_queries"],
+) {
+  const seen = new Set<string>();
+
+  return values.reduce<ServiceProfileSettingsInput["discovery_queries"]>(
+    (queries, value) => {
+      const queryType = value.query_type;
+      const phrase = value.phrase.trim().replace(/\s+/g, " ");
+      const key = `${queryType}:${phrase.toLowerCase()}`;
+
+      if (!queryType || !phrase || seen.has(key)) return queries;
+
+      seen.add(key);
+      queries.push({ query_type: queryType, phrase });
+      return queries;
+    },
+    [],
+  );
+}
+
 function parseServiceProfileUpdate(body: unknown): ServiceProfileUpdate | null {
   const record = asRecord(body);
   if (!record) return null;
@@ -101,6 +122,7 @@ function parseServiceProfileUpdate(body: unknown): ServiceProfileUpdate | null {
 function serviceProfilePayloads(
   values: ServiceProfileSettingsInput,
 ): DbRecord[] {
+  const discoveryQueries = normalizeDiscoveryQueries(values.discovery_queries);
   const normalized = {
     target_audience: normalizeList(values.target_audience),
     core_problem: values.core_problem.trim(),
@@ -108,7 +130,14 @@ function serviceProfilePayloads(
     use_cases: normalizeList(values.use_cases),
     pain_points: normalizeList(values.pain_points),
     buying_triggers: normalizeList(values.buying_triggers),
-    search_terms: normalizeList(values.search_terms),
+    urgency_signals: normalizeList(values.urgency_signals),
+    discovery_queries: discoveryQueries,
+    // Typed plans are canonical. Keep the flat list only as an ordered legacy
+    // compatibility projection, rather than allowing hidden extra queries.
+    search_terms:
+      discoveryQueries.length > 0
+        ? discoveryQueries.map((query) => query.phrase)
+        : normalizeList(values.search_terms),
     negative_keywords: normalizeList(values.negative_keywords),
     excluded_audiences: normalizeList(values.excluded_audiences),
   };

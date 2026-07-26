@@ -307,6 +307,13 @@ CREATE TABLE IF NOT EXISTS public.lead_matches (
 ALTER TABLE public.lead_matches
     ADD COLUMN IF NOT EXISTS service_profile_id UUID REFERENCES public.service_profiles(id) ON DELETE SET NULL;
 
+-- Existing workspaces can predate the source snapshots used by the global
+-- HN/X corpus and CRM qualification handoff. Keep the upgrade idempotent.
+ALTER TABLE public.lead_matches
+    ADD COLUMN IF NOT EXISTS source_post JSONB NOT NULL DEFAULT '{}'::JSONB,
+    ADD COLUMN IF NOT EXISTS source_post_data JSONB NOT NULL DEFAULT '{}'::JSONB,
+    ADD COLUMN IF NOT EXISTS source_post_json JSONB NOT NULL DEFAULT '{}'::JSONB;
+
 DO $$ BEGIN
     ALTER TABLE public.lead_matches
         ADD CONSTRAINT fk_lead_matches_source_post
@@ -337,7 +344,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_lead_matches_tenant_profile_source_post
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_profiles TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.source_posts TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.lead_matches TO authenticated;
+-- Public source matching is worker-owned. Authenticated users can read their
+-- own matches and make the one allowed human transition, but cannot fabricate
+-- a match or delete evidence from the quality pipeline.
+GRANT SELECT, UPDATE ON TABLE public.lead_matches TO authenticated;
+REVOKE INSERT, DELETE ON TABLE public.lead_matches FROM authenticated;
 
 ALTER TABLE public.service_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_profiles FORCE ROW LEVEL SECURITY;
@@ -401,9 +412,9 @@ DROP POLICY IF EXISTS "lead_matches_insert_tenant" ON public.lead_matches;
 DROP POLICY IF EXISTS "lead_matches_update_tenant" ON public.lead_matches;
 DROP POLICY IF EXISTS "lead_matches_delete_tenant" ON public.lead_matches;
 DROP POLICY IF EXISTS "lead_matches_tenant_isolation" ON public.lead_matches;
-CREATE POLICY "lead_matches_tenant_isolation" ON public.lead_matches
-    AS PERMISSIVE
-    FOR ALL
+DROP POLICY IF EXISTS "lead_matches_qualify_tenant" ON public.lead_matches;
+CREATE POLICY "lead_matches_select_tenant" ON public.lead_matches
+    FOR SELECT
     TO authenticated
     USING (
         EXISTS (
@@ -411,6 +422,22 @@ CREATE POLICY "lead_matches_tenant_isolation" ON public.lead_matches
             WHERE tu.tenant_id::text = lead_matches.tenant_id::text
               AND tu.user_id::text = auth.uid()::text
         )
+    );
+
+-- The verifier/worker owns all creation and refreshes. A signed-in tenant
+-- member may only promote evidence that already passed the verifier gate. In
+-- particular, a rejected row cannot be edited into a qualified lead from the
+-- browser.
+CREATE POLICY "lead_matches_qualify_tenant" ON public.lead_matches
+    FOR UPDATE
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.tenant_users tu
+            WHERE tu.tenant_id::text = lead_matches.tenant_id::text
+              AND tu.user_id::text = auth.uid()::text
+        )
+        AND lead_matches.match_status IN ('ready_for_review', 'discovery_candidate')
     )
     WITH CHECK (
         EXISTS (
@@ -418,6 +445,7 @@ CREATE POLICY "lead_matches_tenant_isolation" ON public.lead_matches
             WHERE tu.tenant_id::text = lead_matches.tenant_id::text
               AND tu.user_id::text = auth.uid()::text
         )
+        AND lead_matches.match_status = 'qualified'
     );
 
 NOTIFY pgrst, 'reload schema';

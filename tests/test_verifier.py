@@ -50,3 +50,28 @@ def test_verifier_uses_the_matching_threshold_when_no_override_is_configured() -
 
     assert result.verifier_executed is True
     verify.assert_called_once()
+
+
+def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() -> None:
+    profile = ServiceProfile(
+        company_name="Billing Co",
+        one_liner="Automated recurring billing for SaaS teams.",
+        target_audience=["SaaS finance teams"],
+        core_problem_solved="Failed payments and manual invoice follow-up.",
+        key_value_propositions=["Automated dunning workflows"],
+        ideal_customer_pain_points=["Chasing overdue invoices"],
+        urgency_signals=["Revenue is at risk after a payment failure"],
+    )
+    candidate = CandidatePost(
+        post_id="post-1",
+        source="hackernews",
+        text="Our payments keep failing and invoices are piling up.",
+        similarity_score=0.8,
+    )
+    verifier = VerifierService(client=object())
+
+    prompt = verifier._build_user_prompt(candidate, profile)
+
+    assert "Revenue is at risk after a payment failure" in prompt
+    assert "similarity score is only a cheap prefilter" in prompt.lower()
+    assert "tool/category search" in verifier.SYSTEM_PROMPT

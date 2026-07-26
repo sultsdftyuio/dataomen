@@ -17,20 +17,51 @@ from api.services.service_profile_pass1 import (
 )
 
 
+def discovery_queries() -> list[dict[str, str]]:
+    return [
+        {
+            "query_type": "buyer_pain",
+            "phrase": "invoice approvals take forever",
+        },
+        {
+            "query_type": "urgent_failure",
+            "phrase": "month end close delayed",
+        },
+        {
+            "query_type": "recommendation_request",
+            "phrase": "best invoice approval software",
+        },
+        {
+            "query_type": "manual_workflow_frustration",
+            "phrase": "chasing approvals in spreadsheets",
+        },
+        {
+            "query_type": "category_tool_search",
+            "phrase": "accounts payable automation tool",
+        },
+        {
+            "query_type": "switching_trigger",
+            "phrase": "outgrown our approval workflow",
+        },
+    ]
+
+
 def pass1_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
-        "company_name": "Arcli",
-        "target_audience": "B2B SaaS founders with $10k-$100k MRR using Stripe",
-        "core_problem": "They cannot identify pre-cancellation churn intent in public buyer discussions.",
-        "unique_value_prop": "Semantic matching and LLM intent verification on public social posts.",
-        "use_cases": ["Prioritise cancellation-risk posts for founder follow-up."],
-        "pain_points": ["Manual prospect research misses time-sensitive purchase signals."],
-        "buying_triggers": ["A founder asks how to catch churn before a cancellation."],
-        "search_terms": ["manual prospect research", "finding buyer intent"],
-        "negative_keywords": ["consumer coupon hunting"],
-        "excluded_audiences": ["B2C ecommerce stores without recurring revenue"],
-        "best_fit_customers": ["Founders selling recurring B2B software"],
-        "bad_fit_customers": ["One-time project agencies"],
+        "company_name": "Ledgerflow",
+        "target_audience": "Controllers at multi-entity businesses with approval controls",
+        "core_problem": "Invoice approvals stall in email and spreadsheets before month-end close.",
+        "unique_value_prop": "Routes invoice approvals with an auditable workflow.",
+        "use_cases": ["Route invoices to the right approver before payment due dates."],
+        "pain_points": ["Approvers delay invoices and block month-end close."],
+        "buying_triggers": ["A delayed close exposes approval bottlenecks."],
+        "urgency_signals": ["Late payments and delayed close create cash-flow risk."],
+        "discovery_queries": discovery_queries(),
+        "search_terms": ["legacy flat value that will be derived"],
+        "negative_keywords": ["personal budgeting"],
+        "excluded_audiences": ["Solo freelancers managing a few invoices"],
+        "best_fit_customers": ["Multi-entity finance teams with approval controls"],
+        "bad_fit_customers": ["Teams without a recurring invoice workflow"],
         "confidence_notes": "Pass 1 Instant extraction complete. Pending Deep Async sync.",
     }
     payload.update(overrides)
@@ -44,7 +75,7 @@ def test_pass1_profile_adapts_to_the_existing_deep_profile_contract() -> None:
 
     assert payload["profile_stage"] == "pass1"
     assert payload["target_audience"] == [
-        "B2B SaaS founders with $10k-$100k MRR using Stripe"
+        "Controllers at multi-entity businesses with approval controls"
     ]
     assert payload["core_problem_solved"] == profile.core_problem
     assert payload["key_value_propositions"] == [profile.unique_value_prop]
@@ -54,10 +85,40 @@ def test_pass1_profile_adapts_to_the_existing_deep_profile_contract() -> None:
     assert document["extraction_status"] == "pass1_complete"
     assert document["use_cases"] == profile.use_cases
     assert document["buying_triggers"] == profile.buying_triggers
+    assert document["urgency_signals"] == profile.urgency_signals
+    assert document["discovery_queries"] == discovery_queries()
     assert document["search_terms"] == profile.search_terms
     assert document["best_fit_customers"] == profile.best_fit_customers
     assert document["confidence_notes"] == profile.confidence_notes
     assert document["vector_seed"] == payload["vector_seed"]
+
+
+def test_pass1_derives_flat_legacy_search_terms_from_typed_queries() -> None:
+    profile = Pass1ServiceProfile.model_validate(pass1_payload())
+
+    assert profile.search_terms == [query["phrase"] for query in discovery_queries()]
+    assert [query["query_type"] for query in profile.discovery_queries] == [
+        "buyer_pain",
+        "urgent_failure",
+        "recommendation_request",
+        "manual_workflow_frustration",
+        "category_tool_search",
+        "switching_trigger",
+    ]
+    assert all(set(query) == {"query_type", "phrase"} for query in profile.discovery_queries)
+
+
+def test_pass1_rejects_operator_language_in_discovery_queries() -> None:
+    invalid_queries = discovery_queries()
+    invalid_queries[0] = {
+        "query_type": "buyer_pain",
+        "phrase": "buyer intent signals",
+    }
+
+    with pytest.raises(ValidationError, match="operator language"):
+        Pass1ServiceProfile.model_validate(
+            pass1_payload(discovery_queries=invalid_queries)
+        )
 
 
 def test_pass1_rejects_constitutionally_generic_output() -> None:
@@ -109,10 +170,10 @@ def test_pass1_uses_the_model_default_temperature() -> None:
         homepage_hero_snippet="# Arcli",
     )
 
-    assert profile.company_name == "Arcli"
+    assert profile.company_name == "Ledgerflow"
     assert "temperature" not in request
     assert request["reasoning_effort"] == "minimal"
-    assert request["max_completion_tokens"] == 800
+    assert request["max_completion_tokens"] == 1_000
 
 
 def test_pass1_reports_truncation_details_when_no_json_is_returned() -> None:
@@ -172,5 +233,5 @@ def test_pass1_keeps_a_valid_profile_that_finishes_just_after_latency_target(
 
     _url, _hero, profile, elapsed_ms = extract_pass1_service_profile("arcli.example")
 
-    assert profile.company_name == "Arcli"
+    assert profile.company_name == "Ledgerflow"
     assert elapsed_ms > 4_500

@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  DISCOVERY_QUERY_TYPES,
+  discoveryQueryPlanValidationError,
+  isDiscoveryQueryType,
+  type DiscoveryQuery,
+} from "@/lib/discovery-queries";
 import type { Database, Json } from "@/types/supabase";
 import type {
   CrawlJobView,
@@ -19,6 +25,8 @@ const EMPTY_FIELDS: ServiceProfileFields = {
   use_cases: [],
   pain_points: [],
   buying_triggers: [],
+  urgency_signals: [],
+  discovery_queries: [],
   search_terms: [],
   negative_keywords: [],
   excluded_audiences: [],
@@ -136,6 +144,41 @@ function readStringList(sources: Array<DbRecord | null>, keys: string[]): string
     for (const key of keys) {
       const items = normalizeStringList(source[key]);
       if (items.length > 0) return items;
+    }
+  }
+
+  return [];
+}
+
+function readDiscoveryQueries(
+  sources: Array<DbRecord | null>,
+): DiscoveryQuery[] {
+  for (const source of sources) {
+    if (!source || !Array.isArray(source.discovery_queries)) continue;
+
+    const queries: DiscoveryQuery[] = [];
+    let hasMalformedQuery = false;
+    for (const value of source.discovery_queries) {
+      const query = asRecord(value);
+      const queryType = stringValue(query?.query_type);
+      const phrase = stringValue(query?.phrase);
+      if (!queryType || !phrase || !isDiscoveryQueryType(queryType)) {
+        hasMalformedQuery = true;
+        break;
+      }
+
+      queries.push({
+        query_type: queryType,
+        phrase: phrase.replace(/\s+/g, " "),
+      });
+    }
+
+    if (!hasMalformedQuery && !discoveryQueryPlanValidationError(queries)) {
+      return queries.sort(
+        (left, right) =>
+          DISCOVERY_QUERY_TYPES.indexOf(left.query_type) -
+          DISCOVERY_QUERY_TYPES.indexOf(right.query_type),
+      );
     }
   }
 
@@ -263,6 +306,11 @@ export async function fetchServiceProfile(
 
   const profile = nestedProfile(row);
   const sources = [profile, row];
+  const discoveryQueries = readDiscoveryQueries(sources);
+  const searchTerms = readStringList(sources, [
+    "search_terms",
+    "discovery_terms",
+  ]);
 
   return {
     id:
@@ -303,10 +351,14 @@ export async function fetchServiceProfile(
         "ideal_customer_pain_points",
       ]),
       buying_triggers: readStringList(sources, ["buying_triggers"]),
-      search_terms: readStringList(sources, [
-        "search_terms",
-        "discovery_terms",
-      ]),
+      urgency_signals: readStringList(sources, ["urgency_signals"]),
+      discovery_queries: discoveryQueries,
+      // Typed plans are canonical. Flat phrases are only surfaced for legacy
+      // profiles that do not yet have a complete categorized plan.
+      search_terms:
+        discoveryQueries.length > 0
+          ? discoveryQueries.map((query) => query.phrase)
+          : searchTerms,
       negative_keywords: readStringList(sources, ["negative_keywords"]),
       excluded_audiences: readStringList(sources, [
         "excluded_audiences",
@@ -519,4 +571,61 @@ export async function fetchQualifiedLeads(
   return ((result.data ?? []) as unknown[])
     .map((row, index) => leadView(asRecord(row) ?? {}, index))
     .filter((lead) => lead.verifierScore >= threshold);
+}
+
+async function runDiscoveryCandidateQuery(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  select: string,
+  withOrder = true,
+) {
+  let query = supabase
+    .from("lead_matches")
+    .select(select)
+    .eq("tenant_id", tenantId)
+    .eq("match_status", "discovery_candidate");
+
+  if (withOrder) {
+    query = query
+      .order("verifier_score", { ascending: false })
+      .order("created_at", { ascending: false });
+  }
+
+  return query.limit(10);
+}
+
+/**
+ * These posts passed the LLM's relevance check but did not meet the automatic
+ * review score. They are deliberately separate from verified leads so a human
+ * can inspect useful evidence without treating it as a qualified opportunity.
+ */
+export async function fetchDiscoveryCandidates(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+): Promise<QualifiedLeadView[]> {
+  let result = await runDiscoveryCandidateQuery(
+    supabase,
+    tenantId,
+    "*, source_posts(*)",
+  );
+
+  if (result.error) {
+    result = await runDiscoveryCandidateQuery(supabase, tenantId, "*");
+  }
+
+  if (result.error) {
+    result = await runDiscoveryCandidateQuery(supabase, tenantId, "*", false);
+  }
+
+  if (result.error) {
+    console.error("[ProspectDashboard] discovery candidate lookup failed", {
+      tenant_id: tenantId,
+      error: result.error,
+    });
+    return [];
+  }
+
+  return ((result.data ?? []) as unknown[]).map((row, index) =>
+    leadView(asRecord(row) ?? {}, index),
+  );
 }

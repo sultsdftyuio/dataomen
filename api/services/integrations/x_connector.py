@@ -101,6 +101,8 @@ class XConnector:
         query: str,
         since_timestamp: int,
         limit: int = 100,
+        *,
+        max_pages: int | None = None,
     ) -> list[SourcePost]:
         """Return normalized recent X posts matching the supplied intent query."""
         normalized_query = self._search_query(query)
@@ -108,6 +110,8 @@ class XConnector:
             raise ValueError("since_timestamp must be a Unix timestamp")
         if limit < 1:
             return []
+        if max_pages is not None and max_pages < 1:
+            raise ValueError("max_pages must be positive when provided")
         if not self.bearer_token:
             raise RuntimeError("X_BEARER_TOKEN is required for X ingestion.")
 
@@ -129,6 +133,7 @@ class XConnector:
             timeout=httpx.Timeout(self.timeout_seconds),
             follow_redirects=True,
         ) as client:
+            pages_fetched = 0
             while len(posts) < target_limit:
                 payload = await self._fetch_page(
                     client,
@@ -137,6 +142,7 @@ class XConnector:
                     next_token=next_token,
                     page_size=min(100, max(10, target_limit - len(posts))),
                 )
+                pages_fetched += 1
                 users = {
                     str(user.get("id")): user
                     for user in self._included_users(payload)
@@ -155,6 +161,10 @@ class XConnector:
                     if len(posts) >= target_limit:
                         break
 
+                # A paid fallback is intentionally capped at one request.  A
+                # normal corpus refresh may still opt into bounded pagination.
+                if max_pages is not None and pages_fetched >= max_pages:
+                    break
                 meta = payload.get("meta")
                 candidate_token = meta.get("next_token") if isinstance(meta, dict) else None
                 next_token = candidate_token if isinstance(candidate_token, str) else None

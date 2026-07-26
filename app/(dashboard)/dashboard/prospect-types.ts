@@ -1,3 +1,5 @@
+import type { DiscoveryQuery } from "@/lib/discovery-queries";
+
 export type ServiceProfileFields = {
   target_audience: string[];
   core_problem: string;
@@ -5,6 +7,8 @@ export type ServiceProfileFields = {
   use_cases: string[];
   pain_points: string[];
   buying_triggers: string[];
+  urgency_signals: string[];
+  discovery_queries: DiscoveryQuery[];
   search_terms: string[];
   negative_keywords: string[];
   excluded_audiences: string[];
@@ -59,7 +63,11 @@ export type SourcePostView = {
  * `ready_for_review` is set after the LLM verifies a prospect. `qualified`
  * is reserved for the explicit, human-triggered CRM qualification action.
  */
-export type LeadMatchStatus = "ready_for_review" | "qualified" | "rejected";
+export type LeadMatchStatus =
+  | "ready_for_review"
+  | "discovery_candidate"
+  | "qualified"
+  | "rejected";
 
 export type QualifiedLeadView = {
   id: string;

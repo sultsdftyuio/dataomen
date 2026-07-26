@@ -1,70 +1,203 @@
-"""Coverage for activation-driven Hacker News and X discovery."""
+"""Coverage for activation-driven typed Hacker News and X discovery."""
 
 from __future__ import annotations
 
 import os
 import unittest
 from contextlib import nullcontext
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 from api.services.social_ingestion import (
+    DISCOVERY_QUERY_TYPES,
+    _profile_discovery_queries,
     _x_fallback_query,
     enqueue_initial_public_source_ingestion,
+    public_source_queries,
     public_source_query_terms,
 )
 from api.services.verifier import ServiceProfile
 
 
-class InitialPublicSourceIngestionTests(unittest.TestCase):
-    def test_explicit_discovery_phrases_are_clean_and_bounded(self) -> None:
-        profile = ServiceProfile(
-            company_name="Arcli",
-            one_liner="Buyer-intent prospecting",
-            target_audience=["B2B SaaS founders"],
-            core_problem_solved="Manual prospect research is slow.",
-            key_value_propositions=["Verified buyer-intent matches"],
-            ideal_customer_pain_points=["Manual prospect research"],
-            search_terms=[
-                '"manual prospect research"',
-                "finding qualified B2B leads",
-                "social listening for buyer intent",
-                "this fourth phrase must not be queued",
+CANONICAL_DISCOVERY_QUERIES = [
+    {"query_type": "buyer_pain", "phrase": "payments reconciliation backlog"},
+    {"query_type": "urgent_failure", "phrase": "failed renewal payments"},
+    {"query_type": "recommendation_request", "phrase": "recommendation for billing software"},
+    {
+        "query_type": "manual_workflow_frustration",
+        "phrase": "manually chasing overdue invoices",
+    },
+    {"query_type": "category_tool_search", "phrase": "subscription billing platform"},
+    {"query_type": "switching_trigger", "phrase": "switching from legacy billing"},
+]
+
+
+def _profile_row() -> dict[str, object]:
+    return {
+        "id": "profile-1",
+        "tenant_id": "tenant-1",
+        "profile_json": {
+            "company_name": "Billing Co",
+            "one_liner": "Recurring billing automation for SaaS teams",
+            "target_audience": ["SaaS finance teams"],
+            "core_problem_solved": "Recurring billing work is manual and error prone.",
+            "key_value_propositions": ["Automated recurring billing"],
+            "ideal_customer_pain_points": ["Manual payment reconciliation"],
+            "urgency_signals": ["Renewals are failing this week"],
+            "discovery_queries": CANONICAL_DISCOVERY_QUERIES,
+            # Deliberately retain a legacy appendage: canonical typed phrases
+            # must remain the activation plan's source of truth.
+            "search_terms": [
+                *[query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+                "legacy phrase that must not replace typed coverage",
             ],
+        },
+    }
+
+
+class InitialPublicSourceIngestionTests(unittest.TestCase):
+    def test_typed_discovery_queries_are_preserved_and_default_to_six(self) -> None:
+        row = _profile_row()
+        typed_queries = _profile_discovery_queries(row)
+        profile = ServiceProfile(
+            company_name="Billing Co",
+            one_liner="Recurring billing automation",
+            target_audience=["SaaS finance teams"],
+            core_problem_solved="Manual recurring billing",
+            key_value_propositions=["Automated recurring billing"],
+            ideal_customer_pain_points=["Manual reconciliation"],
+            search_terms=[query.phrase for query in typed_queries],
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            queries = public_source_queries(profile, discovery_queries=typed_queries)
+
+        self.assertEqual([query.query_type for query in queries], list(DISCOVERY_QUERY_TYPES))
+        self.assertEqual(
+            [query.phrase for query in queries],
+            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+
+    def test_legacy_flat_queries_stay_compatible_and_can_be_bounded(self) -> None:
+        profile = ServiceProfile(
+            company_name="Billing Co",
+            one_liner="Recurring billing automation",
+            target_audience=["SaaS finance teams"],
+            core_problem_solved="Manual recurring billing",
+            key_value_propositions=["Automated recurring billing"],
+            ideal_customer_pain_points=["Manual reconciliation"],
+            search_terms=[
+                '"manual payment reconciliation"',
+                "failed renewal payments",
+                "recommendation for billing software",
+                "manually chasing overdue invoices",
+            ],
+        )
+
+        with patch.dict(
+            os.environ,
+            {"ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT": "3"},
+            clear=True,
+        ):
+            terms = public_source_query_terms(profile)
+
+        self.assertEqual(
+            terms,
+            [
+                "manual payment reconciliation",
+                "failed renewal payments",
+                "recommendation for billing software",
+            ],
+        )
+
+    def test_activation_queues_typed_hn_plan_and_one_x_fallback(self) -> None:
+        import api.services.social_ingestion as ingestion
+        from api.workers import actors
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        with (
+            patch.dict(os.environ, {"X_BEARER_TOKEN": "test-token"}, clear=True),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
+            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_x_job, "send") as x_send,
+        ):
+            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
+
+        self.assertEqual(
+            plan.query_terms,
+            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        self.assertEqual(
+            [query.to_payload() for query in plan.queries],
+            CANONICAL_DISCOVERY_QUERIES,
+        )
+        self.assertEqual(plan.hn_jobs, 1)
+        self.assertEqual(plan.x_jobs, 1)
+        self.assertIsNone(plan.x_skip_reason)
+        hn_send.assert_called_once()
+        queued_call = hn_send.call_args
+        self.assertEqual(queued_call.args[0], CANONICAL_DISCOVERY_QUERIES)
+        self.assertEqual(queued_call.args[1:], (168, 25))
+        self.assertEqual(queued_call.kwargs["tenant_id"], "tenant-1")
+        self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
+        self.assertTrue(queued_call.kwargs["fallback_to_x"])
+        self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
+        self.assertEqual(
+            queued_call.kwargs["x_fallback_query"],
+            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
+        )
+        x_send.assert_not_called()
+
+    def test_x_fallback_query_combines_all_typed_discovery_terms_once(self) -> None:
+        self.assertEqual(
+            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES[:2]),
+            "(payments reconciliation backlog) OR (failed renewal payments)",
+        )
+
+    def test_x_fallback_query_never_truncates_a_clause(self) -> None:
+        long_terms = [
+            {"query_type": query_type, "phrase": f"phrase{index} " + "x" * 72}
+            for index, query_type in enumerate(DISCOVERY_QUERY_TYPES)
+        ]
+
+        expression = _x_fallback_query(long_terms)
+
+        self.assertLessEqual(len(expression), 400)
+        self.assertTrue(expression.endswith(")"))
+        self.assertEqual(expression.count("("), expression.count(")"))
+        self.assertIn(f"({long_terms[0]['phrase']})", expression)
+
+    def test_legacy_profile_prioritizes_buyer_pain_and_triggers(self) -> None:
+        profile = ServiceProfile(
+            company_name="Billing Co",
+            one_liner="Recurring billing automation",
+            target_audience=["SaaS finance teams"],
+            core_problem_solved="Manual recurring billing",
+            key_value_propositions=["Automated recurring billing"],
+            ideal_customer_pain_points=["Manual payment reconciliation"],
+            buying_triggers=["Renewal payments are failing"],
+            urgency_signals=["Month-end close is delayed"],
         )
 
         with patch.dict(os.environ, {}, clear=True):
             terms = public_source_query_terms(profile)
 
         self.assertEqual(
-            terms,
+            terms[:3],
             [
-                "manual prospect research",
-                "finding qualified B2B leads",
-                "social listening for buyer intent",
+                "Renewal payments are failing",
+                "Month-end close is delayed",
+                "Manual payment reconciliation",
             ],
         )
 
-    def test_activation_queues_hn_and_reserves_one_shared_x_fallback(self) -> None:
+    def test_missing_x_credential_leaves_hn_enabled_and_skips_paid_fallback(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
-
-        profile_row = {
-            "id": "profile-1",
-            "tenant_id": "tenant-1",
-            "profile_json": {
-                "company_name": "Arcli",
-                "one_liner": "Buyer-intent prospecting",
-                "target_audience": ["B2B SaaS founders"],
-                "core_problem_solved": "Manual prospect research is slow.",
-                "key_value_propositions": ["Verified buyer-intent matches"],
-                "ideal_customer_pain_points": ["Manual prospect research"],
-                "search_terms": [
-                    "manual prospect research",
-                    "finding qualified B2B leads",
-                    "social listening for buyer intent",
-                ],
-            },
-        }
 
         class FakeEngine:
             def begin(self):
@@ -74,84 +207,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.dict(os.environ, {}, clear=True),
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
-            patch.object(ingestion, "_load_service_profile", return_value=profile_row),
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
-            patch.object(actors.ingest_x_job, "send") as x_send,
-        ):
-            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
-
-        self.assertEqual(plan.query_terms, profile_row["profile_json"]["search_terms"])
-        self.assertEqual(plan.hn_jobs, 1)
-        self.assertEqual(plan.x_jobs, 1)
-        hn_send.assert_called_once()
-        queued_call = hn_send.call_args
-        self.assertEqual(
-            queued_call.args,
-            (profile_row["profile_json"]["search_terms"], 168, 25),
-        )
-        self.assertTrue(queued_call.kwargs["fallback_to_x"])
-        self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
-        self.assertEqual(
-            queued_call.kwargs["x_fallback_query"],
-            "(manual prospect research) OR (finding qualified B2B leads) OR (social listening for buyer intent)",
-        )
-        x_send.assert_not_called()
-
-    def test_x_fallback_query_combines_all_discovery_terms_once(self) -> None:
-        self.assertEqual(
-            _x_fallback_query(["billing errors", "failed payments"]),
-            "(billing errors) OR (failed payments)",
-        )
-
-    def test_legacy_profile_prefers_compact_value_propositions_over_pain_prose(self) -> None:
-        profile = ServiceProfile(
-            company_name="Arcli",
-            one_liner="Find buyer intent in public conversations",
-            target_audience=["B2B SaaS founders"],
-            core_problem_solved="Teams spend too long finding qualified leads in public posts.",
-            key_value_propositions=["Verified buyer intent", "Qualified B2B leads"],
-            ideal_customer_pain_points=[
-                "Spending hours searching Reddit HN and X for leads while getting irrelevant results."
-            ],
-        )
-
-        with patch.dict(os.environ, {}, clear=True):
-            terms = public_source_query_terms(profile)
-
-        self.assertEqual(
-            terms,
-            [
-                "Verified buyer intent",
-                "Qualified B2B leads",
-                "Find buyer intent in public conversations",
-            ],
-        )
-
-    def test_disabled_source_is_not_queued(self) -> None:
-        import api.services.social_ingestion as ingestion
-        from api.workers import actors
-
-        profile_row = {
-            "profile_json": {
-                "company_name": "Arcli",
-                "one_liner": "Buyer-intent prospecting",
-                "target_audience": ["B2B SaaS founders"],
-                "core_problem_solved": "Manual prospect research is slow.",
-                "key_value_propositions": ["Verified buyer-intent matches"],
-                "ideal_customer_pain_points": ["Manual prospect research"],
-                "search_terms": ["manual prospect research"],
-            },
-        }
-
-        class FakeEngine:
-            def begin(self):
-                return nullcontext(object())
-
-        with (
-            patch.dict(os.environ, {"ARCLI_X_INGESTION_ENABLED": "false"}, clear=True),
-            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
-            patch.object(ingestion, "_service_profile_columns", return_value={}),
-            patch.object(ingestion, "_load_service_profile", return_value=profile_row),
+            patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
             patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
@@ -159,12 +215,38 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 0)
-        hn_send.assert_called_once_with(
-            ["manual prospect research"],
-            168,
-            25,
-            fallback_to_x=False,
-        )
+        self.assertEqual(plan.x_skip_reason, "x_bearer_token_not_configured")
+        self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
+        x_send.assert_not_called()
+
+    def test_disabled_x_source_is_not_queued(self) -> None:
+        import api.services.social_ingestion as ingestion
+        from api.workers import actors
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        with (
+            patch.dict(
+                os.environ,
+                {"ARCLI_X_INGESTION_ENABLED": "false", "X_BEARER_TOKEN": "test"},
+                clear=True,
+            ),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
+            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_x_job, "send") as x_send,
+        ):
+            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
+
+        self.assertEqual(plan.hn_jobs, 1)
+        self.assertEqual(plan.x_jobs, 0)
+        self.assertEqual(plan.x_skip_reason, "x_ingestion_disabled")
+        hn_send.assert_called_once()
+        self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
+        self.assertEqual(hn_send.call_args.args[0], CANONICAL_DISCOVERY_QUERIES)
         x_send.assert_not_called()
 
 

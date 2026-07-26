@@ -4,6 +4,10 @@ import { createHash } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import {
+  DISCOVERY_QUERY_TYPES,
+  discoveryQueryPlanValidationError,
+} from "@/lib/discovery-queries";
 import type { Json } from "@/types/supabase";
 import { resolveTenantContext, type TenantContext } from "@/utils/supabase/tenant";
 import {
@@ -51,6 +55,27 @@ const SERVICE_PROFILE_SCHEMA = z.object({
   use_cases: z.array(z.string().trim().min(1)).default([]),
   pain_points: z.array(z.string().trim().min(1)).default([]),
   buying_triggers: z.array(z.string().trim().min(1)).default([]),
+  urgency_signals: z.array(z.string().trim().min(1)).default([]),
+  discovery_queries: z
+    .array(
+      z
+        .object({
+          query_type: z.enum(DISCOVERY_QUERY_TYPES),
+          phrase: z.string().trim().min(1),
+        })
+        .strict(),
+    )
+    .max(DISCOVERY_QUERY_TYPES.length)
+    .default([])
+    .superRefine((queries, context) => {
+      const issue = discoveryQueryPlanValidationError(queries);
+      if (issue) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: issue,
+        });
+      }
+    }),
   search_terms: z.array(z.string().trim().min(1)).max(6).default([]),
   negative_keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_audiences: z.array(z.string().trim().min(1)).default([]),
@@ -621,10 +646,32 @@ function normalizeList(values: string[]) {
   }, []);
 }
 
+function normalizeDiscoveryQueries(
+  values: Array<{ query_type: string; phrase: string }>,
+) {
+  const seen = new Set<string>();
+
+  return values.reduce<Array<{ query_type: string; phrase: string }>>(
+    (queries, value) => {
+      const queryType = value.query_type.trim();
+      const phrase = value.phrase.trim().replace(/\s+/g, " ");
+      const key = `${queryType}:${phrase.toLowerCase()}`;
+
+      if (!queryType || !phrase || seen.has(key)) return queries;
+
+      seen.add(key);
+      queries.push({ query_type: queryType, phrase });
+      return queries;
+    },
+    [],
+  );
+}
+
 function updatePayloads(
   values: z.infer<typeof SERVICE_PROFILE_SCHEMA>,
   status: "pending_review" | "approved",
 ) {
+  const discoveryQueries = normalizeDiscoveryQueries(values.discovery_queries);
   const normalized = {
     target_audience: normalizeList(values.target_audience),
     core_problem: values.core_problem,
@@ -632,7 +679,12 @@ function updatePayloads(
     use_cases: normalizeList(values.use_cases),
     pain_points: normalizeList(values.pain_points),
     buying_triggers: normalizeList(values.buying_triggers),
-    search_terms: normalizeList(values.search_terms),
+    urgency_signals: normalizeList(values.urgency_signals),
+    discovery_queries: discoveryQueries,
+    search_terms:
+      discoveryQueries.length > 0
+        ? discoveryQueries.map((query) => query.phrase)
+        : normalizeList(values.search_terms),
     negative_keywords: normalizeList(values.negative_keywords),
     excluded_audiences: normalizeList(values.excluded_audiences),
   };
@@ -696,7 +748,10 @@ export async function saveServiceProfile(
 
   const parsed = SERVICE_PROFILE_SCHEMA.safeParse(values);
   if (!parsed.success) {
-    return actionError("Check the service profile fields and try again.");
+    return actionError(
+      parsed.error.issues[0]?.message ??
+        "Check the service profile fields and try again.",
+    );
   }
 
   const status = intent === "approve" ? "approved" : "pending_review";

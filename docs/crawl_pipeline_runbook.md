@@ -214,10 +214,14 @@ by eight local Dramatiq processes.
 
 Set that command in the deployment platform's **Worker service Start Command**
 (not the web/API service). Initial discovery runs HN searches first and uses at
-most one X fallback request per profile activation. That request combines the
-activation's buyer-pain terms, while HN/X hits already present in the global
-corpus are re-matched to the new profile instead of being silently ignored.
-`REDIS_URL` makes the X cap atomic across all workers.
+most one cost-controlled, single-page X fallback per profile activation. That
+request combines the activation's typed buyer-language phrases only after HN
+has fewer than the configured plausible phrase-level signals; a raw unrelated
+HN API hit does not suppress X. X is skipped cleanly when no bearer token is configured. HN/X hits
+already present in the global corpus are re-matched to the new profile, and a
+separate bounded cached-corpus rematch is also queued for each activation.
+`REDIS_URL` makes the activation X cap and tenant spend cap atomic across all
+workers.
 
 Outbound requests are coordinated through Redis across both instances. The
 defaults below are intentionally conservative and can be raised only after
@@ -230,6 +234,41 @@ ARCLI_X_REQUESTS_PER_MINUTE=10
 ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE=20
 ARCLI_OPENAI_EMBEDDING_REQUESTS_PER_MINUTE=60
 ```
+
+Discovery and spend settings are intentionally bounded by default:
+
+```text
+# One typed phrase for each of the six matching-brief query types.
+ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT=6
+
+# Suppress the paid fallback only after this many plausible HN signals.
+ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION=2
+
+# Tenant X spend budget for activation fallbacks / explicit X-only mode.
+ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT=5
+ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS=86400
+
+# Historical global-corpus re-match for a newly activated profile. Only rows
+# with cached completed embeddings are used, so this does not re-embed them.
+ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT=100
+ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES=15
+
+# A conservative verifier-confirmed signal below the normal review threshold
+# is stored as discovery_candidate, never as qualified.
+LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.50
+LEAD_VERIFIER_SCORE_THRESHOLD=0.70
+```
+
+The strict one-page setting bounds a successful fallback to one X search page.
+Provider retries can still occur after a timeout or retryable X error, so no
+system can honestly guarantee that an upstream provider received exactly one
+network attempt in those failure cases.
+
+For an existing database, apply
+`scripts/lead_match_qualification_guard.sql` after `scripts/RLS_updates.sql`.
+It keeps tenant-scoped reads while allowing an authenticated user to promote
+only a `ready_for_review` or `discovery_candidate` row to `qualified`; workers
+must continue using their existing service/database role for pipeline writes.
 
 The limiter delays worker work instead of increasing provider concurrency.
 Pass 1 is the exception: it immediately falls back to the asynchronous deep

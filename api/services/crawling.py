@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse, urlunparse
 
 from dramatiq.middleware import TimeLimitExceeded
+from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
@@ -30,7 +31,7 @@ DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
-PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v3"
+PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v4"
 
 SERVICE_PROFILE_COLUMNS = {
     "tenant_id",
@@ -50,9 +51,13 @@ SERVICE_PROFILE_COLUMNS = {
     "use_cases",
     "pain_points",
     "buying_triggers",
+    "urgency_signals",
+    "discovery_queries",
     "search_terms",
     "negative_keywords",
     "excluded_audiences",
+    "best_fit_customers",
+    "bad_fit_customers",
     "created_at",
     "updated_at",
 }
@@ -786,6 +791,45 @@ def _jsonable_list(value: Any) -> list[str]:
     return items
 
 
+def _jsonable_discovery_queries(value: Any) -> list[dict[str, str]]:
+    """Keep only structurally valid typed discovery queries for persistence.
+
+    The extractor owns strict six-category validation. Persistence is deliberately
+    tolerant so pre-existing/manual profiles without the new contract remain
+    usable while malformed JSON never reaches the matching document.
+    """
+    if not isinstance(value, list):
+        return []
+
+    query_order = (
+        "buyer_pain",
+        "urgent_failure",
+        "recommendation_request",
+        "manual_workflow_frustration",
+        "category_tool_search",
+        "switching_trigger",
+    )
+    by_type: dict[str, dict[str, str]] = {}
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"query_type", "phrase"}:
+            continue
+        query_type = item.get("query_type")
+        phrase = item.get("phrase")
+        if not isinstance(query_type, str) or query_type not in query_order:
+            continue
+        if not isinstance(phrase, str):
+            continue
+        normalized_phrase = re.sub(r"\s+", " ", phrase.strip())
+        if not normalized_phrase or query_type in by_type:
+            continue
+        by_type[query_type] = {
+            "query_type": query_type,
+            "phrase": normalized_phrase,
+        }
+
+    return [by_type[query_type] for query_type in query_order if query_type in by_type]
+
+
 def _string_value(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
@@ -825,8 +869,18 @@ def _profile_document(
         key_value_propositions = [unique_value_prop]
     use_cases = _jsonable_list(profile.get("use_cases"))
     buying_triggers = _jsonable_list(profile.get("buying_triggers"))
-    search_terms = _jsonable_list(profile.get("search_terms"))
+    urgency_signals = _jsonable_list(profile.get("urgency_signals"))
+    discovery_queries = _jsonable_discovery_queries(profile.get("discovery_queries"))
+    discovery_phrases = [query["phrase"] for query in discovery_queries]
+    # Keep the canonical typed phrases first while retaining any manually added
+    # legacy terms. Older profiles without typed queries preserve their original
+    # flat list unchanged.
+    search_terms = _jsonable_list(
+        [*discovery_phrases, *(_jsonable_list(profile.get("search_terms")))]
+    )
     excluded_audiences = _jsonable_list(profile.get("excluded_audiences"))
+    best_fit_customers = _jsonable_list(profile.get("best_fit_customers"))
+    bad_fit_customers = _jsonable_list(profile.get("bad_fit_customers"))
     profile_stage = _string_value(profile.get("profile_stage"))
     is_pass1 = profile_stage == "pass1"
 
@@ -844,9 +898,13 @@ def _profile_document(
         "pain_points": pain_points,
         "use_cases": use_cases,
         "buying_triggers": buying_triggers,
+        "urgency_signals": urgency_signals,
+        "discovery_queries": discovery_queries,
         "search_terms": search_terms,
         "negative_keywords": negative_keywords,
         "excluded_audiences": excluded_audiences,
+        "best_fit_customers": best_fit_customers,
+        "bad_fit_customers": bad_fit_customers,
         "website_url": website_url,
         "status": "pending_review",
         "review_status": "pending_review",
@@ -859,8 +917,6 @@ def _profile_document(
         document.update(
             {
                 "profile_stage": "pass1",
-                "best_fit_customers": _jsonable_list(profile.get("best_fit_customers")),
-                "bad_fit_customers": _jsonable_list(profile.get("bad_fit_customers")),
                 "confidence_notes": _string_value(profile.get("confidence_notes")),
                 "vector_seed": _string_value(profile.get("vector_seed")),
             }
@@ -901,9 +957,13 @@ def _service_profile_payload(
         "use_cases": document["use_cases"],
         "pain_points": document["pain_points"],
         "buying_triggers": document["buying_triggers"],
+        "urgency_signals": document["urgency_signals"],
+        "discovery_queries": document["discovery_queries"],
         "search_terms": document["search_terms"],
         "negative_keywords": document["negative_keywords"],
         "excluded_audiences": document["excluded_audiences"],
+        "best_fit_customers": document["best_fit_customers"],
+        "bad_fit_customers": document["bad_fit_customers"],
         "updated_at": now,
     }
 
@@ -1154,6 +1214,7 @@ def _workspace_brain_profile_from_document(
 
     parsed_url = urlparse(website_url)
     fallback_company = parsed_url.netloc.replace("www.", "") or "Workspace"
+    discovery_queries = _jsonable_discovery_queries(document.get("discovery_queries"))
     profile = {
         "company_name": _string_value(document.get("company_name"))
         or fallback_company,
@@ -1164,11 +1225,34 @@ def _workspace_brain_profile_from_document(
         or "The primary customer problem was not clearly stated on the website.",
         "key_value_propositions": key_value_propositions,
         "ideal_customer_pain_points": pain_points,
+        "use_cases": _jsonable_list(document.get("use_cases")),
+        "buying_triggers": _jsonable_list(document.get("buying_triggers")),
+        "urgency_signals": _jsonable_list(document.get("urgency_signals")),
+        "excluded_audiences": _jsonable_list(document.get("excluded_audiences")),
+        "best_fit_customers": _jsonable_list(document.get("best_fit_customers")),
+        "bad_fit_customers": _jsonable_list(document.get("bad_fit_customers")),
+        "discovery_queries": discovery_queries,
         "search_terms": _jsonable_list(document.get("search_terms")),
         "negative_keywords": _jsonable_list(document.get("negative_keywords")),
     }
 
-    return ServiceProfileDraft.model_validate(profile).model_dump()
+    # Existing cached/manual profiles can legitimately predate the typed query
+    # contract. Keep them usable while the cache-version bump forces fresh
+    # crawls through the stricter extractor. New complete profiles still pass
+    # through the schema so their flat compatibility terms are derived from the
+    # canonical typed queries.
+    if len(discovery_queries) != 6:
+        return profile
+
+    try:
+        return ServiceProfileDraft.model_validate(profile).model_dump()
+    except ValidationError:
+        logger.info(
+            "workspace_brain_profile_legacy_contract_preserved website_url=%s skip_reason=%s",
+            website_url,
+            "invalid_typed_discovery_queries",
+        )
+        return profile
 
 
 def _cached_workspace_brain_profile_for_website(

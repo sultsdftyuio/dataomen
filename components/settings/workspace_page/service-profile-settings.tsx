@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  DiscoveryQueryEditor,
   EMPTY_FIELDS,
   type ProfilePersistIntent,
 } from "@/components/onboarding/workspace-provisioning-profile";
@@ -30,6 +31,10 @@ import type {
   ServiceProfileFields,
   ServiceProfileView,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import {
+  DISCOVERY_QUERY_TYPES,
+  type DiscoveryQuery,
+} from "@/lib/discovery-queries";
 import { C } from "@/lib/tokens";
 
 const MAX_SIGNAL_LENGTH = 100;
@@ -40,6 +45,7 @@ type SignalFieldKey =
   | "use_cases"
   | "pain_points"
   | "buying_triggers"
+  | "urgency_signals"
   | "search_terms"
   | "negative_keywords"
   | "excluded_audiences";
@@ -55,6 +61,10 @@ type ServiceProfileSettingsProps = {
 type SettingsProfileResponse = {
   error?: string;
   message?: string;
+  details?: {
+    formErrors?: string[];
+    fieldErrors?: Record<string, string[] | undefined>;
+  };
 };
 
 type UpdateField = <Key extends keyof ServiceProfileFields>(
@@ -78,7 +88,7 @@ const SIGNAL_FIELDS: Array<{
     key: "use_cases",
     label: "Primary use cases",
     description: "Outcomes buyers are actively trying to achieve.",
-    placeholder: "Find qualified prospects",
+    placeholder: "Avoid manual handoffs that delay work",
   },
   {
     key: "pain_points",
@@ -93,11 +103,17 @@ const SIGNAL_FIELDS: Array<{
     placeholder: "New growth target, tool evaluation",
   },
   {
+    key: "urgency_signals",
+    label: "Urgency signals",
+    description: "Words or events that show a buyer needs a solution soon.",
+    placeholder: "Customers are blocked, deadline this week",
+  },
+  {
     key: "search_terms",
-    label: "Public discovery phrases",
+    label: "Buyer-language phrases",
     description:
-      "Short buyer-language phrases used to search Hacker News and X. Avoid product names and full sentences.",
-    placeholder: "Manual prospect research, finding qualified leads",
+      "Short phrases a buyer would naturally write while looking for help. Legacy profiles use these until a categorized plan is available.",
+    placeholder: "e.g. need a better way to handle failed payments",
   },
   {
     key: "negative_keywords",
@@ -184,9 +200,15 @@ async function readSettingsProfileResult(
     .catch(() => ({}))) as SettingsProfileResponse;
 
   if (!response.ok) {
+    const validationMessage = [
+      ...(payload.details?.fieldErrors?.discovery_queries ?? []),
+      ...(payload.details?.formErrors ?? []),
+    ].find((message) => message.trim().length > 0);
+
     return {
       ok: false,
       message:
+        validationMessage ??
         payload.error ??
         "Could not update the service profile. Check the fields and try again.",
     };
@@ -402,6 +424,16 @@ export function ServiceProfileSettings({
     setProfileFields((current) => ({ ...current, [key]: value }));
   };
 
+  const updateDiscoveryQueries = (value: DiscoveryQuery[]) => {
+    updateField("discovery_queries", value);
+    if (value.length === DISCOVERY_QUERY_TYPES.length) {
+      updateField(
+        "search_terms",
+        normalizeSignals(value.map((query) => query.phrase)),
+      );
+    }
+  };
+
   const persistProfile = (_intent: ProfilePersistIntent) => {
     startTransition(async () => {
       try {
@@ -611,18 +643,30 @@ export function ServiceProfileSettings({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {SIGNAL_FIELDS.slice(2).map((field) => (
-          <SignalField
-            key={field.key}
-            label={field.label}
-            description={field.description}
-            value={profileFields[field.key]}
-            placeholder={field.placeholder}
-            disabled={isPending}
-            onChange={(value) => updateField(field.key, value)}
-          />
-        ))}
+        {SIGNAL_FIELDS.slice(2)
+          .filter(
+            (field) =>
+              field.key !== "search_terms" ||
+              profileFields.discovery_queries.length === 0,
+          )
+          .map((field) => (
+            <SignalField
+              key={field.key}
+              label={field.label}
+              description={field.description}
+              value={profileFields[field.key]}
+              placeholder={field.placeholder}
+              disabled={isPending}
+              onChange={(value) => updateField(field.key, value)}
+            />
+          ))}
       </div>
+
+      <DiscoveryQueryEditor
+        value={profileFields.discovery_queries}
+        disabled={isPending}
+        onChange={updateDiscoveryQueries}
+      />
 
       <div
         className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"

@@ -13,6 +13,13 @@ type LeadMatchForQualification = {
   source_post_id: string | null;
   pain_detected: string | null;
   suggested_reply: string | null;
+  source_post: unknown;
+  source_post_data: unknown;
+  source_post_json: unknown;
+};
+
+type ExistingLeadMatch = {
+  match_status: string | null;
 };
 
 type SourcePostForWebhook = {
@@ -67,6 +74,35 @@ function normalizeWebhookUrl(value: string | null | undefined): string | null {
   }
 }
 
+function sourcePostFromStoredPayload(
+  lead: LeadMatchForQualification,
+): SourcePostForWebhook | null {
+  // Public HN/X source rows are global (`tenant_id IS NULL`), while the lead
+  // match itself is tenant-scoped. The matching worker persists a source
+  // snapshot on that tenant-owned row specifically so UI/CRM paths do not
+  // need to read another tenant's data or bypass source-post RLS.
+  for (const value of [
+    lead.source_post,
+    lead.source_post_data,
+    lead.source_post_json,
+  ]) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+
+    const record = value as Record<string, unknown>;
+    const source =
+      typeof record.source === "string" && record.source.trim()
+        ? record.source.trim()
+        : null;
+    const url =
+      typeof record.url === "string" && record.url.trim()
+        ? record.url.trim()
+        : null;
+    if (source || url) return { source, url };
+  }
+
+  return null;
+}
+
 async function sendCrmWebhook(
   webhookUrl: string,
   payload: CrmWebhookPayload,
@@ -111,9 +147,11 @@ async function sendCrmWebhook(
 }
 
 /**
- * Marks one tenant-owned lead as qualified and optionally emits a single
- * best-effort CRM webhook. The conditional update is the idempotency boundary:
- * only the request that changes a non-qualified record can dispatch a webhook.
+ * Marks one tenant-owned, verifier-confirmed item as qualified and optionally
+ * emits a single best-effort CRM webhook. Rejected/irrelevant source posts are
+ * deliberately ineligible: a human may promote a review-ready lead or a
+ * separately surfaced discovery candidate, but cannot relabel a rejection as
+ * qualified. The conditional update is the idempotency boundary.
  */
 export async function markLeadAsQualified(
   leadMatchId: string,
@@ -137,7 +175,8 @@ export async function markLeadAsQualified(
   const { supabase, tenantId } = tenantResult.context;
 
   // This is deliberately one conditional statement, rather than a read then
-  // write. Concurrent requests therefore cannot both claim the webhook.
+  // write. Concurrent requests therefore cannot both claim the webhook, and
+  // rejected matches can never be promoted through this endpoint.
   const { data: updatedLead, error: updateError } = await supabase
     .from("lead_matches")
     .update({
@@ -146,8 +185,10 @@ export async function markLeadAsQualified(
     })
     .eq("tenant_id", tenantId)
     .eq("id", normalizedLeadMatchId)
-    .neq("match_status", "qualified")
-    .select("id, source_post_id, pain_detected, suggested_reply")
+    .in("match_status", ["ready_for_review", "discovery_candidate"])
+    .select(
+      "id, source_post_id, pain_detected, suggested_reply, source_post, source_post_data, source_post_json",
+    )
     .maybeSingle<LeadMatchForQualification>();
 
   if (updateError) {
@@ -159,16 +200,33 @@ export async function markLeadAsQualified(
     return actionFailure("error", "Unable to qualify this lead. Please try again.");
   }
 
-  // A zero-row conditional update means the record was already qualified,
-  // missing, or another concurrent request won the update. In all cases, do
-  // not emit a second webhook.
+  // A zero-row conditional update means the item may already be qualified, be
+  // missing, be rejected, or have lost a race. Inspect only the tenant-owned
+  // status to preserve idempotency without calling an irrelevant item a lead.
   if (!updatedLead) {
     revalidatePath("/dashboard");
+    const { data: existingLead, error: existingLeadError } = await supabase
+      .from("lead_matches")
+      .select("match_status")
+      .eq("tenant_id", tenantId)
+      .eq("id", normalizedLeadMatchId)
+      .maybeSingle<ExistingLeadMatch>();
+
+    if (!existingLeadError && existingLead?.match_status === "qualified") {
+      return {
+        ok: true,
+        alreadyQualified: true,
+        status: "already_qualified",
+        message: "This lead is already qualified.",
+        webhook: "skipped",
+      };
+    }
+
     return {
-      ok: true,
-      alreadyQualified: true,
-      status: "already_qualified",
-      message: "This lead is already qualified.",
+      ok: false,
+      status: "invalid",
+      message:
+        "Only a verifier-confirmed lead or discovery candidate can be qualified.",
       webhook: "skipped",
     };
   }
@@ -207,8 +265,11 @@ export async function markLeadAsQualified(
     };
   }
 
-  let sourcePost: SourcePostForWebhook | null = null;
-  if (updatedLead.source_post_id) {
+  let sourcePost = sourcePostFromStoredPayload(updatedLead);
+  // Legacy tenant-scoped records may predate the stored source snapshot. Fall
+  // back only to a tenant-owned source row; global rows are already covered by
+  // the snapshot above and must not weaken tenant isolation here.
+  if (!sourcePost && updatedLead.source_post_id) {
     const { data, error } = await supabase
       .from("source_posts")
       .select("source, url")

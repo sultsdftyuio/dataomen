@@ -37,6 +37,11 @@ import type {
   ProspectActionResult,
   ServiceProfileFields,
 } from "@/app/(dashboard)/dashboard/prospect-types";
+import {
+  DISCOVERY_QUERY_TYPES,
+  discoveryQueryTypeLabel,
+  type DiscoveryQuery,
+} from "@/lib/discovery-queries";
 import { C } from "@/lib/tokens";
 import { ResultText } from "./workspace-provisioning-states";
 
@@ -61,6 +66,8 @@ export const EMPTY_FIELDS: ServiceProfileFields = {
   use_cases: [],
   pain_points: [],
   buying_triggers: [],
+  urgency_signals: [],
+  discovery_queries: [],
   search_terms: [],
   negative_keywords: [],
   excluded_audiences: [],
@@ -444,6 +451,88 @@ const ListEditor = memo(function ListEditor({
   );
 });
 
+export function DiscoveryQueryEditor({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  value: DiscoveryQuery[];
+  disabled?: boolean;
+  onChange: (value: DiscoveryQuery[]) => void;
+}) {
+  const queryByType = new Map(
+    value.map((query) => [query.query_type, query] as const),
+  );
+  const querySlots = DISCOVERY_QUERY_TYPES.map(
+    (queryType): DiscoveryQuery =>
+      queryByType.get(queryType) ?? { query_type: queryType, phrase: "" },
+  );
+
+  return (
+    <section
+      className="rounded-lg border p-4"
+      style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+      aria-labelledby="categorized-discovery-prompts"
+    >
+      <h3
+        id="categorized-discovery-prompts"
+        className="text-sm font-semibold"
+        style={{ color: C.navy }}
+      >
+        Categorized buyer-language prompts
+      </h3>
+      <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+        Edit the phrase directly when needed. These six categories are the
+        source-query plan; each stays attached to a distinct buyer situation.
+        Once you start a plan, fill all six before saving. Use buyer problems,
+        requests, or switching events—not lead-finding or source-platform terms.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {querySlots.map((query, index) => {
+          const inputId = `discovery-query-${query.query_type}-${index}`;
+
+          return (
+            <div
+              key={`${query.query_type}:${index}`}
+              className="rounded-md border bg-white p-3"
+              style={{ borderColor: C.rule }}
+            >
+              <label
+                htmlFor={inputId}
+                className="text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: C.blue }}
+              >
+                {discoveryQueryTypeLabel(query.query_type)}
+              </label>
+              <input
+                id={inputId}
+                value={query.phrase}
+                maxLength={MAX_ITEM_LENGTH}
+                placeholder="Write the way a buyer would describe this situation"
+                disabled={disabled}
+                className="mt-1 h-9 w-full rounded-md border bg-white px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                style={{ borderColor: C.rule, color: C.navy }}
+                onChange={(event) => {
+                  const phrase = event.target.value;
+                  onChange(
+                    querySlots
+                      .map((current, currentIndex) =>
+                        currentIndex === index
+                          ? { ...current, phrase }
+                          : current,
+                      )
+                      .filter((current) => current.phrase.trim().length > 0),
+                  );
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 type ProfileTextAreaProps = {
   id: string;
   label: string;
@@ -577,8 +666,24 @@ export function ProfileReviewState({
     (nextValue: string[]) => updateField("buying_triggers", nextValue),
     [updateField],
   );
+  const updateUrgencySignals = useCallback(
+    (nextValue: string[]) => updateField("urgency_signals", nextValue),
+    [updateField],
+  );
   const updateSearchTerms = useCallback(
-    (nextValue: string[]) => updateField("search_terms", nextValue),
+    (nextValue: string[]) => updateField("search_terms", normalizeItems(nextValue)),
+    [updateField],
+  );
+  const updateDiscoveryQueries = useCallback(
+    (nextValue: DiscoveryQuery[]) => {
+      updateField("discovery_queries", nextValue);
+      if (nextValue.length === DISCOVERY_QUERY_TYPES.length) {
+        updateField(
+          "search_terms",
+          normalizeItems(nextValue.map((query) => query.phrase)),
+        );
+      }
+    },
     [updateField],
   );
   const updateNegativeKeywords = useCallback(
@@ -746,8 +851,8 @@ export function ProfileReviewState({
                       style={{ color: C.muted }}
                     >
                       Keep every field specific, observable, and close to the
-                      words your buyers actually use. Add public discovery
-                      phrases to control the Hacker News and X searches.
+                      words your buyers actually use. The categorized prompts
+                      below cover distinct situations buyers describe.
                     </CardDescription>
                   </div>
                 </div>
@@ -810,13 +915,23 @@ export function ProfileReviewState({
                     onChange={updateBuyingTriggers}
                   />
                   <ListEditor
-                    label="Public discovery phrases"
-                    description="Short words a buyer would post while actively seeking help. These become the HN and X searches."
-                    value={profileFields.search_terms}
-                    placeholder="e.g. manual prospect research"
-                    tone={LIST_TONES.blue}
-                    onChange={updateSearchTerms}
+                    label="Urgency signals"
+                    description="Words or events that show the buyer needs a solution soon."
+                    value={profileFields.urgency_signals}
+                    placeholder="Add an urgency signal"
+                    tone={LIST_TONES.amber}
+                    onChange={updateUrgencySignals}
                   />
+                  {profileFields.discovery_queries.length === 0 ? (
+                    <ListEditor
+                      label="Buyer-language phrases"
+                      description="Short phrases a buyer would naturally write while seeking help. Legacy profiles use these until a categorized plan is available."
+                      value={profileFields.search_terms}
+                      placeholder="e.g. need a better way to handle failed payments"
+                      tone={LIST_TONES.blue}
+                      onChange={updateSearchTerms}
+                    />
+                  ) : null}
                   <ListEditor
                     label="Negative keywords"
                     description="Terms that usually indicate weak or irrelevant intent."
@@ -834,6 +949,12 @@ export function ProfileReviewState({
                     onChange={updateExcludedAudiences}
                   />
                 </div>
+
+                <DiscoveryQueryEditor
+                  value={profileFields.discovery_queries}
+                  disabled={isProfilePending}
+                  onChange={updateDiscoveryQueries}
+                />
 
                 <div
                   className="flex flex-col gap-4 border-t pt-5 sm:flex-row sm:items-center sm:justify-between"

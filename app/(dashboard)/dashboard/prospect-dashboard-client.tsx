@@ -37,6 +37,7 @@ type ProspectDashboardClientProps = {
   serviceProfile: ServiceProfileView;
   crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
+  discoveryCandidates: QualifiedLeadView[];
   verifierThreshold: number;
   isWarmingUp: boolean;
 };
@@ -157,10 +158,10 @@ function pipelineStatus({
   }
 
   return {
-    label: "Scanning",
-    title: "Scanning public streams for verified matches.",
+    label: "Continuing to scan",
+    title: "No verifier-confirmed conversations yet.",
     detail:
-      "The pipeline is active. New verified leads will appear here automatically.",
+      "No public conversation has met the relevance and confidence bar yet. Sources keep scanning, and plausible conversations will appear separately for your judgment.",
   };
 }
 
@@ -212,6 +213,7 @@ function LeadOutreach({
     "idle",
   );
   const isQualified = lead.matchStatus === "qualified";
+  const hasSuggestedReply = Boolean(lead.suggestedReply.trim());
   const draftId = `suggested-reply-${lead.id}`;
 
   useEffect(() => {
@@ -252,6 +254,73 @@ function LeadOutreach({
         : copyState === "error"
           ? "Could not copy the draft."
           : null;
+
+  const sourceAction = lead.sourcePost.url ? (
+    <Button asChild size="sm" style={{ backgroundColor: C.blue, color: C.white }}>
+      <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
+        <ExternalLink className="size-4" />
+        Reply on Platform
+      </a>
+    </Button>
+  ) : (
+    <Button type="button" size="sm" disabled>
+      <ExternalLink className="size-4" />
+      Source unavailable
+    </Button>
+  );
+
+  const qualificationAction = (
+    <Button
+      type="button"
+      size="sm"
+      disabled={disabled || isQualified}
+      onClick={() => onQualify(lead.id)}
+      style={{ backgroundColor: C.green, color: C.white }}
+    >
+      {disabled ? (
+        <Radar className="size-4 animate-spin" />
+      ) : isQualified ? (
+        <Check className="size-4" />
+      ) : (
+        <ShieldCheck className="size-4" />
+      )}
+      {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark as Qualified"}
+    </Button>
+  );
+
+  if (!hasSuggestedReply) {
+    return (
+      <section
+        aria-label="Lead actions"
+        className="rounded-md border p-4"
+        style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          {sourceAction}
+          {qualificationAction}
+          {isQualified ? (
+            <Badge
+              variant="outline"
+              className="rounded-md"
+              style={{
+                borderColor: C.green,
+                backgroundColor: C.greenPale,
+                color: C.green,
+              }}
+            >
+              <Check className="size-3" />
+              Qualified
+            </Badge>
+          ) : null}
+        </div>
+        {qualificationMessage ? (
+          <p className="mt-2 text-xs font-medium" aria-live="polite" style={{ color: C.navySoft }}>
+            {qualificationMessage}
+          </p>
+        ) : null}
+      </section>
+    );
+  }
 
   return (
     <section
@@ -314,45 +383,8 @@ function LeadOutreach({
           {copyState === "copied" ? <Check className="size-4" /> : <Copy className="size-4" />}
           {copyState === "copied" ? "Copied" : "Copy Draft to Clipboard"}
         </Button>
-
-        {lead.sourcePost.url ? (
-          <Button
-            asChild
-            size="sm"
-            style={{ backgroundColor: C.blue, color: C.white }}
-          >
-            <a
-              href={lead.sourcePost.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink className="size-4" />
-              Reply on Platform
-            </a>
-          </Button>
-        ) : (
-          <Button type="button" size="sm" disabled>
-            <ExternalLink className="size-4" />
-            Source unavailable
-          </Button>
-        )}
-
-        <Button
-          type="button"
-          size="sm"
-          disabled={disabled || isQualified}
-          onClick={() => onQualify(lead.id)}
-          style={{ backgroundColor: C.green, color: C.white }}
-        >
-          {disabled ? (
-            <Radar className="size-4 animate-spin" />
-          ) : isQualified ? (
-            <Check className="size-4" />
-          ) : (
-            <ShieldCheck className="size-4" />
-          )}
-          {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark as Qualified"}
-        </Button>
+        {sourceAction}
+        {qualificationAction}
       </div>
 
       {copyMessage || qualificationMessage ? (
@@ -361,6 +393,176 @@ function LeadOutreach({
         </p>
       ) : null}
     </section>
+  );
+}
+
+function LeadCard({
+  lead,
+  kind,
+  feedbackPending,
+  qualificationPending,
+  feedbackMessage,
+  qualificationMessage,
+  onFeedback,
+  onQualify,
+}: {
+  lead: QualifiedLeadView;
+  kind: "verified" | "discovery_candidate";
+  feedbackPending: boolean;
+  qualificationPending: boolean;
+  feedbackMessage: string | null;
+  qualificationMessage: string | null;
+  onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
+  onQualify: (leadId: string) => void;
+}) {
+  const isDiscoveryCandidate = kind === "discovery_candidate";
+  const matchedAt = formatDate(lead.matchedAt);
+  const postedAt = formatDate(lead.sourcePost.publishedAt);
+  const labelStyle = isDiscoveryCandidate
+    ? {
+        borderColor: C.amber,
+        backgroundColor: C.amberPale,
+        color: C.amber,
+      }
+    : {
+        borderColor: C.green,
+        backgroundColor: C.greenPale,
+        color: C.green,
+      };
+
+  return (
+    <Card className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
+      <CardHeader className="gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="rounded-md" style={labelStyle}>
+                {isDiscoveryCandidate ? (
+                  <Radar className="size-3" />
+                ) : (
+                  <ShieldCheck className="size-3" />
+                )}
+                {isDiscoveryCandidate
+                  ? "Discovery candidate — needs judgment"
+                  : "Verified lead"}
+              </Badge>
+              <Badge
+                variant="outline"
+                className="rounded-md"
+                style={{
+                  borderColor: C.ruleDark,
+                  backgroundColor: C.white,
+                  color: C.navySoft,
+                }}
+              >
+                Verifier {formatScore(lead.verifierScore)}
+              </Badge>
+              {lead.similarityScore !== null ? (
+                <Badge
+                  variant="outline"
+                  className="rounded-md"
+                  style={{
+                    borderColor: C.ruleDark,
+                    backgroundColor: C.white,
+                    color: C.navySoft,
+                  }}
+                >
+                  Semantic {formatScore(lead.similarityScore)}
+                </Badge>
+              ) : null}
+              <span className="text-xs" style={{ color: C.muted }}>
+                {lead.sourcePost.source}
+                {lead.sourcePost.community ? ` / ${lead.sourcePost.community}` : ""}
+                {matchedAt ? ` / matched ${matchedAt}` : ""}
+              </span>
+            </div>
+            <CardTitle className="break-words text-base leading-snug" style={{ color: C.navy }}>
+              {lead.sourcePost.title}
+            </CardTitle>
+            {isDiscoveryCandidate ? (
+              <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+                The verifier found plausible evidence, but this did not meet the
+                automatic lead threshold. Review it before qualifying it.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div
+            className="rounded-md border p-3"
+            style={{ borderColor: C.amber, backgroundColor: C.amberPale }}
+          >
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
+              <MessageSquareText className="size-3.5" />
+              <span style={{ color: C.amber }}>
+                {isDiscoveryCandidate ? "Evidence found" : "Pain detected"}
+              </span>
+            </div>
+            <p className="text-sm leading-6" style={{ color: C.navy }}>
+              {lead.painDetected}
+            </p>
+          </div>
+          <div
+            className="rounded-md border p-3"
+            style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+          >
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
+              <Target className="size-3.5" />
+              <span style={{ color: C.blue }}>
+                {isDiscoveryCandidate ? "Why it may fit" : "Match reason"}
+              </span>
+            </div>
+            <p className="text-sm leading-6" style={{ color: C.navy }}>
+              {lead.matchReason}
+            </p>
+          </div>
+        </div>
+
+        <div
+          className="rounded-md border p-3"
+          style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
+        >
+          <div className="mb-2 flex flex-wrap gap-2 text-xs" style={{ color: C.muted }}>
+            {lead.sourcePost.author ? <span>Author {lead.sourcePost.author}</span> : null}
+            {postedAt ? <span>Posted {postedAt}</span> : null}
+          </div>
+          <p
+            className={cn(
+              "whitespace-pre-wrap break-words text-sm leading-6",
+              "max-h-56 overflow-auto",
+            )}
+            style={{ color: C.navySoft }}
+          >
+            {lead.sourcePost.text}
+          </p>
+        </div>
+
+        <LeadOutreach
+          lead={lead}
+          disabled={qualificationPending}
+          qualificationMessage={qualificationMessage}
+          onQualify={onQualify}
+        />
+
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"
+          style={{ borderColor: C.rule }}
+        >
+          <LeadFeedbackButtons
+            leadId={lead.id}
+            disabled={feedbackPending}
+            onFeedback={onFeedback}
+          />
+          {feedbackMessage ? (
+            <span className="text-xs font-medium" style={{ color: C.green }}>
+              {feedbackMessage}
+            </span>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -451,6 +653,7 @@ export default function ProspectDashboardClient({
   serviceProfile,
   crawlJob,
   leads,
+  discoveryCandidates,
   verifierThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
@@ -564,6 +767,10 @@ export default function ProspectDashboardClient({
               <p className="mt-1 text-sm" style={{ color: C.muted }}>
                 {leads.length} lead{leads.length === 1 ? "" : "s"} passed the verifier.
               </p>
+            ) : discoveryCandidates.length > 0 ? (
+              <p className="mt-1 text-sm" style={{ color: C.muted }}>
+                No conversations have met the automatic lead threshold yet.
+              </p>
             ) : null}
           </div>
           <Badge
@@ -580,160 +787,83 @@ export default function ProspectDashboardClient({
           </Badge>
         </div>
 
-        {leads.length === 0 ? (
+        {leads.length === 0 && discoveryCandidates.length === 0 ? (
           <WarmUpState
             crawlJob={crawlJob}
             serviceProfile={serviceProfile}
             isWarmingUp={isWarmingUp}
           />
-        ) : (
+        ) : leads.length > 0 ? (
           <div className="grid gap-4">
-            {leads.map((lead) => {
-              const matchedAt = formatDate(lead.matchedAt);
-              const postedAt = formatDate(lead.sourcePost.publishedAt);
-              const feedbackPending =
-                isFeedbackPending && pendingFeedbackLeadId === lead.id;
-              const qualificationPending =
-                isQualificationPending && pendingQualificationLeadId === lead.id;
-
-              return (
-                <Card
-                  key={lead.id}
-                  className="rounded-lg shadow-sm"
-                  style={{ borderColor: C.rule }}
-                >
-                  <CardHeader className="gap-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className="rounded-md"
-                            style={{
-                              borderColor: C.green,
-                              backgroundColor: C.greenPale,
-                              color: C.green,
-                            }}
-                          >
-                            {formatScore(lead.verifierScore)}
-                          </Badge>
-                          {lead.similarityScore !== null ? (
-                            <Badge
-                              variant="outline"
-                              className="rounded-md"
-                              style={{
-                                borderColor: C.ruleDark,
-                                backgroundColor: C.white,
-                                color: C.navySoft,
-                              }}
-                            >
-                              Semantic {formatScore(lead.similarityScore)}
-                            </Badge>
-                          ) : null}
-                          <span className="text-xs" style={{ color: C.muted }}>
-                            {lead.sourcePost.source}
-                            {lead.sourcePost.community
-                              ? ` / ${lead.sourcePost.community}`
-                              : ""}
-                            {matchedAt ? ` / matched ${matchedAt}` : ""}
-                          </span>
-                        </div>
-                        <CardTitle
-                          className="break-words text-base leading-snug"
-                          style={{ color: C.navy }}
-                        >
-                          {lead.sourcePost.title}
-                        </CardTitle>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div
-                        className="rounded-md border p-3"
-                        style={{
-                          borderColor: C.amber,
-                          backgroundColor: C.amberPale,
-                        }}
-                      >
-                        <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
-                          <MessageSquareText className="size-3.5" />
-                          <span style={{ color: C.amber }}>Pain Detected</span>
-                        </div>
-                        <p className="text-sm leading-6" style={{ color: C.navy }}>
-                          {lead.painDetected}
-                        </p>
-                      </div>
-                      <div
-                        className="rounded-md border p-3"
-                        style={{
-                          borderColor: C.blueLight,
-                          backgroundColor: C.blueTint,
-                        }}
-                      >
-                        <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
-                          <Target className="size-3.5" />
-                          <span style={{ color: C.blue }}>Match Reason</span>
-                        </div>
-                        <p className="text-sm leading-6" style={{ color: C.navy }}>
-                          {lead.matchReason}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div
-                      className="rounded-md border p-3"
-                      style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
-                    >
-                      <div
-                        className="mb-2 flex flex-wrap gap-2 text-xs"
-                        style={{ color: C.muted }}
-                      >
-                        {lead.sourcePost.author ? (
-                          <span>Author {lead.sourcePost.author}</span>
-                        ) : null}
-                        {postedAt ? <span>Posted {postedAt}</span> : null}
-                      </div>
-                      <p
-                        className={cn(
-                          "whitespace-pre-wrap break-words text-sm leading-6",
-                          "max-h-56 overflow-auto",
-                        )}
-                        style={{ color: C.navySoft }}
-                      >
-                        {lead.sourcePost.text}
-                      </p>
-                    </div>
-
-                    <LeadOutreach
-                      lead={lead}
-                      disabled={qualificationPending}
-                      qualificationMessage={qualificationMessages[lead.id] ?? null}
-                      onQualify={handleQualification}
-                    />
-
-                    <div
-                      className="flex flex-wrap items-center justify-between gap-3 border-t pt-4"
-                      style={{ borderColor: C.rule }}
-                    >
-                      <LeadFeedbackButtons
-                        leadId={lead.id}
-                        disabled={feedbackPending}
-                        onFeedback={handleFeedback}
-                      />
-                      {feedbackMessages[lead.id] ? (
-                        <span className="text-xs font-medium" style={{ color: C.green }}>
-                          {feedbackMessages[lead.id]}
-                        </span>
-                      ) : null}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+            {leads.map((lead) => (
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                kind="verified"
+                feedbackPending={
+                  isFeedbackPending && pendingFeedbackLeadId === lead.id
+                }
+                qualificationPending={
+                  isQualificationPending && pendingQualificationLeadId === lead.id
+                }
+                feedbackMessage={feedbackMessages[lead.id] ?? null}
+                qualificationMessage={qualificationMessages[lead.id] ?? null}
+                onFeedback={handleFeedback}
+                onQualify={handleQualification}
+              />
+            ))}
           </div>
-        )}
+        ) : null}
       </section>
+
+      {discoveryCandidates.length > 0 ? (
+        <section id="discovery-candidates" className="space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
+                Discovery candidates
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6" style={{ color: C.muted }}>
+                These conversations have verifier-confirmed, plausible evidence,
+                but did not meet the automatic lead threshold. They are not
+                qualified leads; use your judgment before qualifying one.
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className="rounded-md"
+              style={{
+                borderColor: C.amber,
+                backgroundColor: C.amberPale,
+                color: C.amber,
+              }}
+            >
+              <Radar className="size-3" />
+              Needs judgment
+            </Badge>
+          </div>
+
+          <div className="grid gap-4">
+            {discoveryCandidates.map((lead) => (
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                kind="discovery_candidate"
+                feedbackPending={
+                  isFeedbackPending && pendingFeedbackLeadId === lead.id
+                }
+                qualificationPending={
+                  isQualificationPending && pendingQualificationLeadId === lead.id
+                }
+                feedbackMessage={feedbackMessages[lead.id] ?? null}
+                qualificationMessage={qualificationMessages[lead.id] ?? null}
+                onFeedback={handleFeedback}
+                onQualify={handleQualification}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

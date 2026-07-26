@@ -110,6 +110,8 @@ export function WorkspaceProvisioningPanel({
         unique_value_prop: profileFields.unique_value_prop,
         pain_points: profileFields.pain_points,
         buying_triggers: profileFields.buying_triggers,
+        urgency_signals: profileFields.urgency_signals,
+        discovery_queries: profileFields.discovery_queries,
         search_terms: profileFields.search_terms,
         negative_keywords: profileFields.negative_keywords,
         excluded_audiences: profileFields.excluded_audiences,

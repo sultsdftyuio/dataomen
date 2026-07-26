@@ -250,6 +250,8 @@ SERVICE_PROFILE_EMBEDDING_COLUMNS = {
     "pain_points",
     "ideal_customer_pain_points",
     "buying_triggers",
+    "urgency_signals",
+    "discovery_queries",
     "search_terms",
     "negative_keywords",
     "excluded_audiences",
@@ -481,6 +483,35 @@ def _read_list(sources: list[dict[str, Any]], keys: list[str]) -> list[str]:
     return []
 
 
+def _discovery_query_phrases(sources: list[dict[str, Any]]) -> list[str]:
+    """Flatten canonical `{query_type, phrase}` records for embeddings.
+
+    The typed structure remains the source-search contract, while the semantic
+    profile embedding needs the buyer wording itself.  Legacy flat terms stay
+    available as a fallback for profiles created before the canonical field.
+    """
+    for source in sources:
+        raw_value = source.get("discovery_queries")
+        if isinstance(raw_value, str) and raw_value.strip():
+            try:
+                raw_value = json.loads(raw_value)
+            except json.JSONDecodeError:
+                raw_value = None
+        if not isinstance(raw_value, list):
+            continue
+
+        phrases = _string_list(
+            [
+                item.get("phrase")
+                for item in raw_value
+                if isinstance(item, dict)
+            ]
+        )
+        if phrases:
+            return phrases
+    return []
+
+
 def _profile_status(row: dict[str, Any]) -> str | None:
     document = _first_document(row)
     return _read_string([row, document], ["status", "review_status"])
@@ -651,6 +682,11 @@ def _service_profile_embedding_text(row: dict[str, Any]) -> str:
         ["ideal_customer_pain_points", "pain_points"],
     )
     buying_triggers = _read_list(sources, ["buying_triggers"])
+    urgency_signals = _read_list(sources, ["urgency_signals"])
+    discovery_phrases = _discovery_query_phrases(sources) or _read_list(
+        sources,
+        ["search_terms", "discovery_terms"],
+    )
     negative_keywords = _read_list(sources, ["negative_keywords", "excluded_audiences"])
 
     lines = [
@@ -661,6 +697,10 @@ def _service_profile_embedding_text(row: dict[str, Any]) -> str:
         f"Value propositions: {', '.join(value_props)}" if value_props else None,
         f"Ideal pains: {', '.join(pain_points)}" if pain_points else None,
         f"Buying triggers: {', '.join(buying_triggers)}" if buying_triggers else None,
+        f"Urgency signals: {', '.join(urgency_signals)}" if urgency_signals else None,
+        f"Buyer discovery phrases: {', '.join(discovery_phrases)}"
+        if discovery_phrases
+        else None,
         f"Bad-fit terms: {', '.join(negative_keywords)}"
         if negative_keywords
         else None,
@@ -1445,6 +1485,31 @@ def _enqueue_public_ingestion_after_embedding(
     except Exception as exc:
         logger.exception(
             "initial_public_ingestion_enqueue_after_embedding_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+            exc,
+        )
+
+    # Historical HN/X rows are globally cached.  A profile activation must
+    # also evaluate a bounded cached slice, otherwise only future searches (or
+    # duplicate hits returned by them) can ever reach this customer.
+    try:
+        from api.services.social_ingestion import enqueue_existing_public_source_rematch
+
+        rematch_message_id = enqueue_existing_public_source_rematch(
+            tenant_id,
+            service_profile_id,
+        )
+        logger.info(
+            "existing_public_source_rematch_enqueued_after_embedding tenant_id=%s service_profile_id=%s message_id=%s",
+            tenant_id,
+            service_profile_id,
+            rematch_message_id,
+        )
+    except Exception as exc:
+        logger.exception(
+            "existing_public_source_rematch_enqueue_after_embedding_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
             tenant_id,
             service_profile_id,
             exc.__class__.__name__,

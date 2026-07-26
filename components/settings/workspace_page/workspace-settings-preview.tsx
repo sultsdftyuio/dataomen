@@ -22,6 +22,8 @@ const PROFILE_FIELD_KEYS = [
   "use_cases",
   "pain_points",
   "buying_triggers",
+  "urgency_signals",
+  "discovery_queries",
   "search_terms",
   "negative_keywords",
   "excluded_audiences",

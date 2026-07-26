@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from api.services.integrations.x_connector import XConnector, TwitterSourcePost
 
@@ -49,6 +51,40 @@ class XConnectorTests(unittest.TestCase):
             XConnector._search_query("customer support lang:en -is:retweet"),
             "customer support lang:en -is:retweet",
         )
+
+    def test_strict_max_pages_stops_after_one_paid_search_request(self) -> None:
+        connector = XConnector(bearer_token="test-token", request_interval_seconds=0)
+        posted_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        first_page = {
+            "data": [
+                {
+                    "id": "77",
+                    "text": "Need a better billing platform",
+                    "created_at": posted_at,
+                    "author_id": "9",
+                    "lang": "en",
+                }
+            ],
+            "includes": {"users": [{"id": "9", "username": "alice"}]},
+            "meta": {"next_token": "second-page"},
+        }
+
+        with patch.object(
+            connector,
+            "_fetch_page",
+            AsyncMock(return_value=first_page),
+        ) as fetch_page:
+            posts = asyncio.run(
+                connector.fetch_recent_posts(
+                    "billing platform",
+                    since_timestamp=0,
+                    limit=25,
+                    max_pages=1,
+                )
+            )
+
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(fetch_page.await_count, 1)
 
 
 class XIngestionTests(unittest.TestCase):
@@ -185,6 +221,42 @@ class XIngestionTests(unittest.TestCase):
         self.assertEqual(inserted_ids, ["tweet-1"])
         self.assertEqual(client.query.attempts[0][0]["author_handle"], "alice")
         self.assertNotIn("author_handle", client.query.attempts[1][0])
+
+
+class XIngestionActorTests(unittest.TestCase):
+    def test_strict_fallback_job_passes_one_page_limit_to_ingestion(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import XIngestionResult
+        from api.workers import actors
+
+        result = XIngestionResult("billing", 1, 0, 0, [])
+        with (
+            patch.object(ingestion_module, "ingest_x_posts", return_value=result) as ingest,
+            patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
+            patch.object(actors, "_x_source_is_configured", return_value=True),
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_x_job.fn("billing", 168, 25, strict_single_page=True)
+
+        ingest.assert_called_once_with(
+            query="billing",
+            since_hours_ago=168,
+            posts_per_query=25,
+            max_pages=1,
+        )
+
+    def test_missing_x_credential_skips_without_calling_ingestion(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.workers import actors
+
+        with (
+            patch.object(ingestion_module, "ingest_x_posts") as ingest,
+            patch.object(actors, "_x_source_is_configured", return_value=False),
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_x_job.fn("billing", 168, 25, strict_single_page=True)
+
+        ingest.assert_not_called()
 
 
 if __name__ == "__main__":
