@@ -75,6 +75,109 @@ def _close_actor_openai_clients() -> None:
     close_current_thread_openai_clients()
 
 
+def _claim_initial_x_fallback(x_fallback_group_id: str | None) -> bool:
+    """Atomically reserve the single X fallback for an HN-first batch."""
+    if not x_fallback_group_id:
+        return False
+
+    from api.services.cost_controls import TenantQuotaGuard
+
+    decision = TenantQuotaGuard().check_and_increment(
+        tenant_id=None,
+        counter_name=f"initial_public_x_fallback_{x_fallback_group_id}",
+        limit=1,
+        window_seconds=_int_env(
+            "ARCLI_INITIAL_PUBLIC_X_FALLBACK_WINDOW_SECONDS",
+            900,
+            minimum=1,
+        ),
+    )
+    return decision.allowed
+
+
+@dramatiq.actor(
+    actor_name="ingest_hn_batch_job",
+    queue_name=os.getenv("ARCLI_HN_INGESTION_QUEUE_NAME", "ingestion"),
+    max_retries=3,
+    min_backoff=15_000,
+    max_backoff=90_000,
+)
+def ingest_hn_batch_job(
+    queries: Sequence[str],
+    since_hours_ago: int = 24,
+    posts_per_query: int = 25,
+    *,
+    fallback_to_x: bool = False,
+    x_fallback_group_id: str | None = None,
+    x_fallback_query: str | None = None,
+) -> None:
+    """Complete the free HN phase before allowing the one X fallback."""
+    normalized_queries = list(dict.fromkeys(query.strip() for query in queries if query.strip()))
+    if not normalized_queries:
+        raise ValueError("at least one HN query is required")
+
+    _job_started(
+        job_name="hn_ingestion_batch",
+        query_count=len(normalized_queries),
+        since_hours_ago=since_hours_ago,
+    )
+    try:
+        from api.services.social_ingestion import ingest_hn_posts, trigger_embedding_jobs
+
+        total_hits = 0
+        total_new_inserts = 0
+        matching_source_posts = 0
+        embedding_jobs = 0
+        for query in normalized_queries:
+            result = ingest_hn_posts(
+                query=query,
+                since_hours_ago=since_hours_ago,
+                posts_per_query=posts_per_query,
+            )
+            total_hits += result.hits_found
+            total_new_inserts += result.inserted_count
+            source_post_ids = result.matchable_source_post_ids or result.inserted_source_post_ids
+            matching_source_posts += len(source_post_ids)
+            embedding_jobs += trigger_embedding_jobs(source_post_ids)
+
+        x_fallback_enqueued = False
+        x_fallback_skip_reason: str | None = None
+        if fallback_to_x and total_hits == 0:
+            if _claim_initial_x_fallback(x_fallback_group_id):
+                ingest_x_job.send(
+                    x_fallback_query or normalized_queries[0],
+                    since_hours_ago,
+                    posts_per_query,
+                )
+                x_fallback_enqueued = True
+            else:
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
+    except Exception as exc:
+        logger.exception(
+            "hn_ingestion_batch_failed job_state=%s query_count=%s since_hours_ago=%s error_type=%s error=%s",
+            "failed",
+            len(normalized_queries),
+            since_hours_ago,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="hn_ingestion_batch",
+        state="completed",
+        query_count=len(normalized_queries),
+        hits_found=total_hits,
+        new_inserts=total_new_inserts,
+        matching_source_posts=matching_source_posts,
+        embedding_jobs=embedding_jobs,
+        x_fallback_enqueued=x_fallback_enqueued,
+        x_fallback_skip_reason=x_fallback_skip_reason,
+    )
+
+
 @dramatiq.actor(
     actor_name="ingest_hn_job",
     queue_name=os.getenv("ARCLI_HN_INGESTION_QUEUE_NAME", "ingestion"),
@@ -88,8 +191,10 @@ def ingest_hn_job(
     posts_per_query: int = 25,
     *,
     fallback_to_x: bool = False,
+    x_fallback_group_id: str | None = None,
+    x_fallback_query: str | None = None,
 ) -> None:
-    """Ingest HN first and optionally queue X only when HN is empty."""
+    """Ingest HN first and queue at most one X fallback per activation."""
     _job_started(
         job_name="hn_ingestion",
         query=query,
@@ -103,11 +208,22 @@ def ingest_hn_job(
             since_hours_ago=since_hours_ago,
             posts_per_query=posts_per_query,
         )
-        embedding_jobs = trigger_embedding_jobs(result.inserted_source_post_ids)
+        matching_source_post_ids = (
+            result.matchable_source_post_ids or result.inserted_source_post_ids
+        )
+        embedding_jobs = trigger_embedding_jobs(matching_source_post_ids)
         x_fallback_enqueued = False
+        x_fallback_skip_reason: str | None = None
         if fallback_to_x and result.hits_found == 0:
-            ingest_x_job.send(query, since_hours_ago, posts_per_query)
-            x_fallback_enqueued = True
+            if _claim_initial_x_fallback(x_fallback_group_id):
+                ingest_x_job.send(
+                    x_fallback_query or query,
+                    since_hours_ago,
+                    posts_per_query,
+                )
+                x_fallback_enqueued = True
+            else:
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
     except Exception as exc:
         logger.exception(
             "hn_ingestion_failed job_state=%s query=%s since_hours_ago=%s error_type=%s error=%s",
@@ -127,8 +243,12 @@ def ingest_hn_job(
         query=query,
         hits_found=result.hits_found,
         new_inserts=result.inserted_count,
+        matching_source_posts=len(
+            result.matchable_source_post_ids or result.inserted_source_post_ids
+        ),
         embedding_jobs=embedding_jobs,
         x_fallback_enqueued=x_fallback_enqueued,
+        x_fallback_skip_reason=x_fallback_skip_reason,
     )
 
 
@@ -158,7 +278,10 @@ def ingest_x_job(
             since_hours_ago=since_hours_ago,
             posts_per_query=posts_per_query,
         )
-        embedding_jobs = trigger_embedding_jobs(result.inserted_source_post_ids)
+        matching_source_post_ids = (
+            result.matchable_source_post_ids or result.inserted_source_post_ids
+        )
+        embedding_jobs = trigger_embedding_jobs(matching_source_post_ids)
     except Exception as exc:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         if isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in {
@@ -202,6 +325,9 @@ def ingest_x_job(
         query=query,
         hits_found=result.hits_found,
         new_inserts=result.inserted_count,
+        matching_source_posts=len(
+            result.matchable_source_post_ids or result.inserted_source_post_ids
+        ),
         embedding_jobs=embedding_jobs,
     )
 

@@ -47,7 +47,8 @@ class ServiceProfileDraft(BaseModel):
             "phrases, each two to six words, that a person would naturally put "
             "in a Hacker News or X post. Do not describe the product's goal, "
             "the target audience, or a source platform; do not use the product "
-            "name or full sentences."
+            "name or full sentences. Each phrase must describe the prospective "
+            "customer's problem, not the vendor's discovery process."
         )
     )
     negative_keywords: list[str] = Field(
@@ -74,7 +75,11 @@ phrases in their own language (two to six words each). Prefer concrete
 problems, questions, or buying triggers. Do not return Arcli's acquisition
 goal or product positioning (for example, "prospects", "qualified users", or
 "alerts"), target-audience labels, or source-platform names. Never use a
-product name or a complete sentence. Output exactly the requested schema.
+product name or a complete sentence. Terms such as "buyer intent", "keyword
+noise", "filter leads", "find buyers", and "trial intent" describe the
+vendor's discovery system, not a customer's problem, and are invalid unless
+the scraped site explicitly sells that exact capability. Output exactly the
+requested schema.
 """.strip()
 
     MAX_MARKDOWN_CHARS = 60_000

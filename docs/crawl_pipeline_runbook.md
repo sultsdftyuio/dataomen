@@ -212,6 +212,13 @@ Dramatiq process with four execution threads. This gives eight concurrent jobs
 without the memory, Redis-connection, and provider-call multiplication caused
 by eight local Dramatiq processes.
 
+Set that command in the deployment platform's **Worker service Start Command**
+(not the web/API service). Initial discovery runs HN searches first and uses at
+most one X fallback request per profile activation. That request combines the
+activation's buyer-pain terms, while HN/X hits already present in the global
+corpus are re-matched to the new profile instead of being silently ignored.
+`REDIS_URL` makes the X cap atomic across all workers.
+
 Outbound requests are coordinated through Redis across both instances. The
 defaults below are intentionally conservative and can be raised only after
 checking the limits for the project's Firecrawl, X, and OpenAI accounts:

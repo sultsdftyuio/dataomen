@@ -117,6 +117,7 @@ class XIngestionTests(unittest.TestCase):
                 os.environ["ARCLI_X_INSERT_BATCH_SIZE"] = original_batch_size
 
         self.assertEqual(result.inserted_source_post_ids, ["tweet-1"])
+        self.assertEqual(result.matchable_source_post_ids, ["tweet-1"])
         self.assertEqual(client.query.payload[0]["source"], "twitter")
         self.assertNotIn("tenant_id", client.query.payload[0])
         self.assertEqual(

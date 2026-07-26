@@ -5,8 +5,9 @@ import os
 import re
 import json
 import hashlib
+from uuid import uuid4
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, TypeVar
 from urllib.parse import quote
@@ -425,6 +426,24 @@ def public_source_query_terms(profile: ServiceProfile) -> list[str]:
     return terms
 
 
+def _x_fallback_query(query_terms: list[str]) -> str:
+    """Combine the HN intent set into one high-recall X search expression.
+
+    X charges for a search request, so the HN-first fallback must not spend a
+    request on an arbitrary single term merely because its HN worker finished
+    first. Parenthesized alternatives preserve each multi-word intent while
+    asking X once for the complete activation brief.
+    """
+    terms = [term for term in query_terms if term.strip()]
+    if not terms:
+        return ""
+    if len(terms) == 1:
+        return terms[0]
+
+    expression = " OR ".join(f"({term})" for term in terms)
+    return expression[:400]
+
+
 def _is_source_enabled(name: str, default: bool = True) -> bool:
     value = os.getenv(name, str(default)).strip().lower()
     return value not in {"0", "false", "no", "off"}
@@ -497,7 +516,7 @@ def enqueue_initial_public_source_ingestion(
         )
         return InitialPublicSourceIngestionPlan([], 0, 0)
 
-    from api.workers.actors import ingest_hn_job, ingest_x_job
+    from api.workers.actors import ingest_hn_batch_job, ingest_x_job
 
     lookback_hours = _initial_source_lookback_hours()
     posts_per_query = _initial_source_posts_per_query()
@@ -505,33 +524,38 @@ def enqueue_initial_public_source_ingestion(
     x_jobs = 0
     hn_enabled = _is_source_enabled("ARCLI_HN_INGESTION_ENABLED")
     x_enabled = _is_source_enabled("ARCLI_X_INGESTION_ENABLED")
-    for query in query_terms:
-        if hn_enabled:
-            # HN is the low-cost primary source. The HN actor starts X only
-            # when that exact search produced no HN results.
-            ingest_hn_job.send(
-                query,
-                lookback_hours,
-                posts_per_query,
-                fallback_to_x=x_enabled,
-            )
-            hn_jobs += 1
-            if x_enabled:
-                x_jobs += 1
-        elif x_enabled:
-            # Preserve an X-only deployment when HN has been explicitly
-            # disabled, rather than silently suppressing discovery.
+    # All HN jobs for one activation share this key.  The actor uses Redis to
+    # atomically grant a single X fallback to the first empty HN search, rather
+    # than spending one X request for every empty HN query.
+    x_fallback_group_id = uuid4().hex if hn_enabled and x_enabled else None
+    x_fallback_query = _x_fallback_query(query_terms) if x_fallback_group_id else None
+    if hn_enabled:
+        # One bounded batch establishes whether the complete free HN search
+        # set has coverage before spending a single X request.
+        hn_job_kwargs: dict[str, Any] = {"fallback_to_x": x_enabled}
+        if x_fallback_group_id:
+            hn_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
+        if x_fallback_query:
+            hn_job_kwargs["x_fallback_query"] = x_fallback_query
+        ingest_hn_batch_job.send(query_terms, lookback_hours, posts_per_query, **hn_job_kwargs)
+        hn_jobs = 1
+        x_jobs = 1 if x_enabled else 0
+    elif x_enabled:
+        # Preserve an X-only deployment when HN has been explicitly disabled,
+        # rather than silently suppressing discovery.
+        for query in query_terms:
             ingest_x_job.send(query, lookback_hours, posts_per_query)
             x_jobs += 1
 
     logger.info(
-        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s x_fallback_jobs=%s x_strategy=%s lookback_hours=%s posts_per_query=%s",
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
         tenant_id,
         service_profile_id,
         query_terms,
         hn_jobs,
         x_jobs,
         "after_hn_empty" if hn_enabled and x_enabled else "direct_or_disabled",
+        x_fallback_query,
         lookback_hours,
         posts_per_query,
     )
@@ -1496,6 +1520,10 @@ class HnIngestionResult:
     hits_found: int
     inserted_count: int
     inserted_source_post_ids: list[str]
+    # Public posts are globally deduplicated. Existing rows must still be
+    # matched to a newly activated service profile, so actor handoffs use this
+    # complete hit set rather than only fresh database inserts.
+    matchable_source_post_ids: list[str] = field(default_factory=list)
 
 
 def _hn_batch_size() -> int:
@@ -1648,6 +1676,13 @@ def _persist_new_public_source_posts(
     return list(dict.fromkeys(inserted_source_post_ids))
 
 
+def _matchable_source_post_ids(
+    posts: list[SourcePost] | list[TwitterSourcePost],
+) -> list[str]:
+    """Return every fetched global external ID, including duplicate rows."""
+    return list(dict.fromkeys(post.source_post_id for post in posts if post.source_post_id))
+
+
 def ingest_hn_posts(
     query: str,
     since_hours_ago: int,
@@ -1684,6 +1719,7 @@ def ingest_hn_posts(
             hits_found=0,
             inserted_count=0,
             inserted_source_post_ids=[],
+            matchable_source_post_ids=[],
         )
         logger.info(
             "hn_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -1703,6 +1739,7 @@ def ingest_hn_posts(
         hits_found=len(posts),
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
+        matchable_source_post_ids=_matchable_source_post_ids(posts),
     )
     logger.info(
         "hn_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -1714,7 +1751,11 @@ def ingest_hn_posts(
 
 
 def trigger_embedding_jobs(source_post_ids: list[str]) -> int:
-    """Hand newly persisted public rows to the embedding queue.
+    """Hand fetched public rows to the embedding queue.
+
+    The source corpus is global, while lead matching is tenant-scoped. A post
+    returned by a new profile's search may already exist globally; handing it
+    off again is necessary to evaluate it against that newly created profile.
 
     This import is intentionally lazy to avoid a service/actor import cycle
     while allowing the consumer to remain independently scalable.
@@ -1748,6 +1789,7 @@ class XIngestionResult:
     hits_found: int
     inserted_count: int
     inserted_source_post_ids: list[str]
+    matchable_source_post_ids: list[str] = field(default_factory=list)
 
 
 def _x_batch_size() -> int:
@@ -1784,6 +1826,7 @@ def ingest_x_posts(
             hits_found=0,
             inserted_count=0,
             inserted_source_post_ids=[],
+            matchable_source_post_ids=[],
         )
         logger.info(
             "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -1803,6 +1846,7 @@ def ingest_x_posts(
         hits_found=len(posts),
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
+        matchable_source_post_ids=_matchable_source_post_ids(posts),
     )
     logger.info(
         "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",

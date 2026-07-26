@@ -8,6 +8,7 @@ from contextlib import nullcontext
 from unittest.mock import call, patch
 
 from api.services.social_ingestion import (
+    _x_fallback_query,
     enqueue_initial_public_source_ingestion,
     public_source_query_terms,
 )
@@ -43,7 +44,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             ],
         )
 
-    def test_activation_queues_hn_and_x_for_each_discovery_phrase(self) -> None:
+    def test_activation_queues_hn_and_reserves_one_shared_x_fallback(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
 
@@ -74,21 +75,33 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=profile_row),
-            patch.object(actors.ingest_hn_job, "send") as hn_send,
+            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
 
         self.assertEqual(plan.query_terms, profile_row["profile_json"]["search_terms"])
-        self.assertEqual(plan.hn_jobs, 3)
-        self.assertEqual(plan.x_jobs, 3)
-        expected_calls = [
-            call("manual prospect research", 168, 25, fallback_to_x=True),
-            call("finding qualified B2B leads", 168, 25, fallback_to_x=True),
-            call("social listening for buyer intent", 168, 25, fallback_to_x=True),
-        ]
-        self.assertEqual(hn_send.call_args_list, expected_calls)
+        self.assertEqual(plan.hn_jobs, 1)
+        self.assertEqual(plan.x_jobs, 1)
+        hn_send.assert_called_once()
+        queued_call = hn_send.call_args
+        self.assertEqual(
+            queued_call.args,
+            (profile_row["profile_json"]["search_terms"], 168, 25),
+        )
+        self.assertTrue(queued_call.kwargs["fallback_to_x"])
+        self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
+        self.assertEqual(
+            queued_call.kwargs["x_fallback_query"],
+            "(manual prospect research) OR (finding qualified B2B leads) OR (social listening for buyer intent)",
+        )
         x_send.assert_not_called()
+
+    def test_x_fallback_query_combines_all_discovery_terms_once(self) -> None:
+        self.assertEqual(
+            _x_fallback_query(["billing errors", "failed payments"]),
+            "(billing errors) OR (failed payments)",
+        )
 
     def test_legacy_profile_prefers_compact_value_propositions_over_pain_prose(self) -> None:
         profile = ServiceProfile(
@@ -139,7 +152,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=profile_row),
-            patch.object(actors.ingest_hn_job, "send") as hn_send,
+            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
@@ -147,7 +160,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 0)
         hn_send.assert_called_once_with(
-            "manual prospect research",
+            ["manual prospect research"],
             168,
             25,
             fallback_to_x=False,

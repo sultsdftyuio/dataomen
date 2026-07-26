@@ -128,6 +128,7 @@ class HackerNewsIngestionTests(unittest.TestCase):
                 os.environ["ARCLI_HN_INSERT_BATCH_SIZE"] = original_batch_size
 
         self.assertEqual(result.inserted_source_post_ids, ["first", "second"])
+        self.assertEqual(result.matchable_source_post_ids, ["first", "second"])
         self.assertEqual(len(client.calls), 2)
         first_payload, first_options = client.calls[0]
         self.assertNotIn("tenant_id", first_payload[0])
@@ -159,11 +160,140 @@ class HackerNewsIngestionTests(unittest.TestCase):
             ),
             unittest.mock.patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
             unittest.mock.patch.object(actors.ingest_x_job, "send") as x_send,
+            unittest.mock.patch.object(actors, "_claim_initial_x_fallback", return_value=True),
             unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
         ):
-            actors.ingest_hn_job.fn("pricing", 168, 25, fallback_to_x=True)
+            actors.ingest_hn_job.fn(
+                "pricing",
+                168,
+                25,
+                fallback_to_x=True,
+                x_fallback_group_id="activation-1",
+            )
 
         x_send.assert_called_once_with("pricing", 168, 25)
+
+    def test_hn_actor_does_not_queue_x_when_batch_fallback_is_claimed(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import HnIngestionResult
+        from api.workers import actors
+
+        empty_result = HnIngestionResult(
+            query="pricing",
+            since_timestamp=1,
+            hits_found=0,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+        )
+        with (
+            unittest.mock.patch.object(
+                ingestion_module,
+                "ingest_hn_posts",
+                return_value=empty_result,
+            ),
+            unittest.mock.patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
+            unittest.mock.patch.object(actors.ingest_x_job, "send") as x_send,
+            unittest.mock.patch.object(actors, "_claim_initial_x_fallback", return_value=False),
+            unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_hn_job.fn(
+                "pricing",
+                168,
+                25,
+                fallback_to_x=True,
+                x_fallback_group_id="activation-1",
+            )
+
+        x_send.assert_not_called()
+
+    def test_hn_batch_only_uses_x_when_the_entire_hn_phase_is_empty(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import HnIngestionResult
+        from api.workers import actors
+
+        results = [
+            HnIngestionResult("first", 1, 0, 0, []),
+            HnIngestionResult("second", 1, 2, 0, [], ["existing-1"]),
+        ]
+        with (
+            unittest.mock.patch.object(
+                ingestion_module,
+                "ingest_hn_posts",
+                side_effect=results,
+            ),
+            unittest.mock.patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
+            unittest.mock.patch.object(actors.ingest_x_job, "send") as x_send,
+            unittest.mock.patch.object(actors, "_claim_initial_x_fallback", return_value=True),
+            unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_hn_batch_job.fn(
+                ["first", "second"],
+                168,
+                25,
+                fallback_to_x=True,
+                x_fallback_group_id="activation-1",
+                x_fallback_query="(first) OR (second)",
+            )
+
+        x_send.assert_not_called()
+
+    def test_hn_batch_queues_one_combined_x_fallback_when_all_hn_queries_empty(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import HnIngestionResult
+        from api.workers import actors
+
+        empty_result = HnIngestionResult("pricing", 1, 0, 0, [])
+        with (
+            unittest.mock.patch.object(
+                ingestion_module,
+                "ingest_hn_posts",
+                return_value=empty_result,
+            ),
+            unittest.mock.patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
+            unittest.mock.patch.object(actors.ingest_x_job, "send") as x_send,
+            unittest.mock.patch.object(actors, "_claim_initial_x_fallback", return_value=True),
+            unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_hn_batch_job.fn(
+                ["pricing", "billing"],
+                168,
+                25,
+                fallback_to_x=True,
+                x_fallback_group_id="activation-1",
+                x_fallback_query="(pricing) OR (billing)",
+            )
+
+        x_send.assert_called_once_with("(pricing) OR (billing)", 168, 25)
+
+    def test_hn_actor_rematches_existing_global_posts_for_new_profiles(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import HnIngestionResult
+        from api.workers import actors
+
+        existing_result = HnIngestionResult(
+            query="pricing",
+            since_timestamp=1,
+            hits_found=2,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+            matchable_source_post_ids=["existing-1", "existing-2"],
+        )
+        with (
+            unittest.mock.patch.object(
+                ingestion_module,
+                "ingest_hn_posts",
+                return_value=existing_result,
+            ),
+            unittest.mock.patch.object(
+                ingestion_module,
+                "trigger_embedding_jobs",
+                return_value=2,
+            ) as trigger,
+            unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_hn_job.fn("pricing", 168, 25)
+
+        trigger.assert_called_once_with(["existing-1", "existing-2"])
 
 
 if __name__ == "__main__":
