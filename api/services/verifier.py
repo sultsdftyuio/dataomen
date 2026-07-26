@@ -11,9 +11,17 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
+from api.services.cost_controls import (
+    TenantQuotaGuard,
+    env_float,
+    env_int,
+    provider_rate_limiter,
+)
 from api.services.openai_lifecycle import OpenAIClientOwner
-from api.services.matching import REJECTION_INSUFFICIENT_SIMILARITY
+from api.services.matching import (
+    DEFAULT_SIMILARITY_THRESHOLD,
+    REJECTION_INSUFFICIENT_SIMILARITY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +30,10 @@ MetadataValue = str | int | float | bool
 VERIFIER_QUOTA_COUNTER = "llm_verifier"
 VERIFIER_QUOTA_DEFAULT_LIMIT = 1_000
 VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
-DEFAULT_VERIFIER_SIMILARITY_THRESHOLD = 0.4
+# Keep the verifier gate aligned with the candidate prefilter by default. The
+# verifier itself is the precision gate; a higher hidden default would make
+# the recall-oriented matching threshold ineffective.
+DEFAULT_VERIFIER_SIMILARITY_THRESHOLD = DEFAULT_SIMILARITY_THRESHOLD
 
 
 class ServiceProfile(BaseModel):
@@ -268,6 +279,10 @@ class VerifierService(OpenAIClientOwner):
         service_profile_id: str,
     ) -> VerificationResult:
         client = self._get_client()
+        provider_rate_limiter.wait_for_slot(
+            provider="openai-chat",
+            limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 20),
+        )
         try:
             parse_completion = client.beta.chat.completions.parse
         except AttributeError as exc:

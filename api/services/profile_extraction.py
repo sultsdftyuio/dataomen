@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from api.services.cost_controls import TenantQuotaGuard, env_int
+from api.services.cost_controls import TenantQuotaGuard, env_int, provider_rate_limiter
 from api.services.openai_lifecycle import OpenAIClientOwner
 
 logger = logging.getLogger(__name__)
@@ -149,6 +149,10 @@ product name or a complete sentence. Output exactly the requested schema.
         )
 
         try:
+            provider_rate_limiter.wait_for_slot(
+                provider="openai-chat",
+                limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 20),
+            )
             completion = client.beta.chat.completions.parse(
                 model=self.model,
                 messages=[

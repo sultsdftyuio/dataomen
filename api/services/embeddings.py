@@ -20,7 +20,7 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-from api.services.cost_controls import TenantQuotaGuard, env_int
+from api.services.cost_controls import TenantQuotaGuard, env_int, provider_rate_limiter
 from api.services.openai_lifecycle import OpenAIClientOwner
 
 logger = logging.getLogger(__name__)
@@ -197,6 +197,10 @@ class EmbeddingService(OpenAIClientOwner):
     )
     def _create_embedding(self, text: str, model: str) -> list[float]:
         client = self._get_client()
+        provider_rate_limiter.wait_for_slot(
+            provider="openai-embeddings",
+            limit=env_int("ARCLI_OPENAI_EMBEDDING_REQUESTS_PER_MINUTE", 60),
+        )
         response = client.embeddings.create(
             model=model,
             input=text,

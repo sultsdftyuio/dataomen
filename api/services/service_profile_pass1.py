@@ -15,6 +15,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from api.services.cost_controls import env_int, provider_rate_limiter
 from api.services.openai_lifecycle import OpenAIClientOwner
 
 logger = logging.getLogger(__name__)
@@ -341,6 +342,15 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
         if self.model.startswith("gpt-5-nano"):
             request["reasoning_effort"] = DEFAULT_PASS1_REASONING_EFFORT
 
+        rate_limit = provider_rate_limiter.acquire(
+            provider="openai-chat",
+            limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 20),
+        )
+        if not rate_limit.allowed:
+            raise RuntimeError(
+                "Pass 1 skipped because the shared OpenAI chat rate limit is full; "
+                "the deep crawl will continue asynchronously."
+            )
         completion = self._get_client().chat.completions.create(
             **request,
         )

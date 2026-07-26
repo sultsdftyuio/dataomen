@@ -14,6 +14,8 @@ from typing import Any, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from api.services.cost_controls import env_int, provider_rate_limiter
+
 logger = logging.getLogger(__name__)
 
 
@@ -206,6 +208,10 @@ class HackerNewsConnector:
 
         for attempt in range(1, self.max_attempts + 1):
             try:
+                await provider_rate_limiter.wait_for_slot_async(
+                    provider="hn-algolia",
+                    limit=env_int("ARCLI_HN_REQUESTS_PER_MINUTE", 60),
+                )
                 response = await client.get(self.base_url, params=params)
                 response.raise_for_status()
                 payload = response.json()

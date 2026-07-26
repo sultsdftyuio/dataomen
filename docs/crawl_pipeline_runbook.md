@@ -204,6 +204,32 @@ RSS or two consecutive samples 64 MiB above the post-warmup baseline. It emits
 is not `2.2.0`, the deployed image is stale and must be rebuilt before memory
 results are meaningful.
 
+### Capacity and provider backpressure
+
+For approximately 100 active users, deploy **two worker service instances**.
+Each instance must use `python scripts/start_worker.py`, which runs one
+Dramatiq process with four execution threads. This gives eight concurrent jobs
+without the memory, Redis-connection, and provider-call multiplication caused
+by eight local Dramatiq processes.
+
+Outbound requests are coordinated through Redis across both instances. The
+defaults below are intentionally conservative and can be raised only after
+checking the limits for the project's Firecrawl, X, and OpenAI accounts:
+
+```text
+ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE=4
+ARCLI_HN_REQUESTS_PER_MINUTE=60
+ARCLI_X_REQUESTS_PER_MINUTE=10
+ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE=20
+ARCLI_OPENAI_EMBEDDING_REQUESTS_PER_MINUTE=60
+```
+
+The limiter delays worker work instead of increasing provider concurrency.
+Pass 1 is the exception: it immediately falls back to the asynchronous deep
+crawl when the shared OpenAI chat budget is full, so onboarding requests stay
+responsive. Keep `REDIS_URL` configured; without it, limiting is only local to
+each process.
+
 Trace failure signatures:
 
 - `firecrawl_crawl_timeout`: Firecrawl did not complete within the crawl phase deadline.

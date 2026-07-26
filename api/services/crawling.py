@@ -15,6 +15,8 @@ from dramatiq.middleware import TimeLimitExceeded
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
+from api.services.cost_controls import env_int, provider_rate_limiter
+
 logger = logging.getLogger(__name__)
 
 CRAWL_JOB_TERMINAL_STATUSES = {"completed", "failed", "dead_lettered"}
@@ -1417,6 +1419,10 @@ class WebsiteCrawler:
         )
 
         try:
+            await provider_rate_limiter.wait_for_slot_async(
+                provider="firecrawl-crawl",
+                limit=env_int("ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE", 4),
+            )
             crawl_result = await self._crawl_target_pages(client, normalized_url)
             documents.extend(self._documents_from_result(crawl_result, seen_sources))
         except asyncio.TimeoutError as exc:
