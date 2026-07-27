@@ -63,7 +63,13 @@ CONSTITUTIONAL MANDATES:
    help, reporting a failure, comparing tools, or considering a switch. Never
    use operator language such as "find buyers", "buyer intent", "keyword
    noise", "qualified leads", or source-platform names such as Reddit,
-   Hacker News, Twitter, or X.com.
+   Hacker News, Twitter, or X.com. Translate product jargon into the buyer's
+   plain-language desired result: for a demand-acquisition product, look for
+   people saying "need more customers", "more people signing up", or
+   "customer growth has stalled"—never leads, prospects, sales pipeline, lead
+   scoring, or lead generation. Apply the same outcome-first translation to
+   the actual website product; retain essential domain terms only when buyers
+   would naturally use them for the real problem.
 5. QUERY COVERAGE: Return exactly six discovery_queries objects, one for each
    of these query_type values: buyer_pain, urgent_failure,
    recommendation_request, manual_workflow_frustration, category_tool_search,

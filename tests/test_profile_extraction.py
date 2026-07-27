@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from api.services.crawling import (
+    PROFILE_EXTRACTION_CACHE_VERSION,
+    _cached_service_profile_for_markdown,
     _profile_document,
     _service_profile_payload,
     _workspace_brain_profile_from_document,
@@ -104,6 +106,8 @@ def test_deep_profile_extraction_generates_discovery_phrases_without_temperature
     assert "temperature" not in request
     assert request["max_completion_tokens"] == 1_400
     assert request["messages"][0]["role"] == "developer"
+    assert "need more customers" in str(request["messages"][0]["content"])
+    assert "more people signing up" in str(request["messages"][0]["content"])
     assert request["response_format"] is ServiceProfileResponse
 
 
@@ -124,6 +128,45 @@ def test_deep_profile_rejects_operator_language_in_discovery_query() -> None:
 
     with pytest.raises(ValidationError, match="operator language"):
         ServiceProfileDraft.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "I spend hours searching public posts for buyer problems",
+        "Our keyword alerts keep sending irrelevant leads",
+        "What tool can surface buyer pain posts",
+        "I keep manually thread checking for prospects",
+        "Quality-checked alerts from buyer-help discussions",
+        "Switch to fit-checked prospect alerts",
+        "We need more leads this month",
+        "Our sales pipeline is empty",
+    ],
+)
+def test_deep_profile_rejects_retrieval_mechanics_as_discovery_language(
+    phrase: str,
+) -> None:
+    payload = _profile_payload()
+    queries = _discovery_queries()
+    queries[0] = {"query_type": "buyer_pain", "phrase": phrase}
+    payload["discovery_queries"] = queries
+
+    with pytest.raises(ValidationError, match="operator language"):
+        ServiceProfileDraft.model_validate(payload)
+
+
+def test_deep_profile_accepts_plain_customer_outcome_language() -> None:
+    payload = _profile_payload()
+    queries = _discovery_queries()
+    queries[0] = {
+        "query_type": "buyer_pain",
+        "phrase": "not enough people signing up",
+    }
+    payload["discovery_queries"] = queries
+
+    profile = ServiceProfileDraft.model_validate(payload)
+
+    assert profile.discovery_queries[0].phrase == "not enough people signing up"
 
 
 def test_deep_profile_rejects_discovery_query_extra_keys() -> None:
@@ -230,6 +273,36 @@ def test_profile_document_preserves_rich_matching_brief_fields() -> None:
     assert document["search_terms"] == [query["phrase"] for query in _discovery_queries()]
     assert payload["profile_json"]["discovery_queries"] == _discovery_queries()
     assert payload["urgency_signals"] == deep_profile["urgency_signals"]
+    assert document["profile_extraction_cache_version"] == PROFILE_EXTRACTION_CACHE_VERSION
+
+
+def test_profile_cache_rejects_a_previous_discovery_contract_version() -> None:
+    deep_profile = ServiceProfileDraft.model_validate(_profile_payload()).model_dump()
+    markdown_hash = "a" * 64
+    stale_document = _profile_document(
+        deep_profile,
+        "https://ledgerflow.example/",
+        crawl_markdown_sha256=markdown_hash,
+    )
+    stale_document["profile_extraction_cache_version"] = "discovery-intent-v5"
+
+    class FakeResult:
+        def mappings(self) -> list[dict[str, object]]:
+            return [{"profile_json": stale_document}]
+
+    class FakeConnection:
+        def execute(self, *_args: object, **_kwargs: object) -> FakeResult:
+            return FakeResult()
+
+    cached = _cached_service_profile_for_markdown(
+        FakeConnection(),
+        tenant_id="tenant-1",
+        website_url="https://ledgerflow.example/",
+        crawl_markdown_sha256=markdown_hash,
+        columns={"profile_json": {}, "website_url": {}, "updated_at": {}},
+    )
+
+    assert cached is None
 
 
 def test_workspace_brain_keeps_legacy_cached_profile_usable_without_typed_queries() -> None:
