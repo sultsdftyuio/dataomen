@@ -14,6 +14,7 @@ from api.services.profile_extraction import (
     DISCOVERY_QUERY_TYPES,
     ProfileExtractor,
     ServiceProfileDraft,
+    ServiceProfileResponse,
 )
 
 
@@ -102,6 +103,7 @@ def test_deep_profile_extraction_generates_discovery_phrases_without_temperature
     assert "temperature" not in request
     assert request["max_completion_tokens"] == 1_400
     assert request["messages"][0]["role"] == "developer"
+    assert request["response_format"] is ServiceProfileResponse
 
 
 def test_deep_profile_requires_all_typed_buyer_language_queries() -> None:
@@ -140,7 +142,7 @@ def test_deep_profile_rejects_discovery_query_extra_keys() -> None:
 def test_deep_profile_emits_a_closed_strict_schema_for_discovery_queries() -> None:
     from openai.lib._pydantic import to_strict_json_schema
 
-    schema = to_strict_json_schema(ServiceProfileDraft)
+    schema = to_strict_json_schema(ServiceProfileResponse)
     root_properties = schema["properties"]
     query_schema = schema["$defs"]["DiscoveryQuery"]
 
@@ -151,6 +153,49 @@ def test_deep_profile_emits_a_closed_strict_schema_for_discovery_queries() -> No
     assert query_schema["properties"]["query_type"]["enum"] == list(
         DISCOVERY_QUERY_TYPES
     )
+
+
+def test_deep_profile_repairs_an_invalid_buyer_language_phrase_once() -> None:
+    invalid_payload = _profile_payload()
+    invalid_queries = _discovery_queries()
+    invalid_queries[0] = {
+        "query_type": "buyer_pain",
+        "phrase": "find qualified leads",
+    }
+    invalid_payload["discovery_queries"] = invalid_queries
+    repaired_payload = _profile_payload()
+    requests: list[dict[str, object]] = []
+
+    class FakeCompletions:
+        def parse(self, **kwargs: object) -> SimpleNamespace:
+            requests.append(kwargs)
+            parsed = invalid_payload if len(requests) == 1 else repaired_payload
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=parsed))]
+            )
+
+    quota_guard = SimpleNamespace(
+        check_and_increment=lambda **_kwargs: SimpleNamespace(
+            allowed=True,
+            tenant_id="tenant-1",
+            rejection_reason=None,
+            current_count=1,
+            limit=100,
+            window_seconds=86_400,
+        )
+    )
+    client = SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())))
+
+    profile = ProfileExtractor(client=client, quota_guard=quota_guard).extract_profile(
+        "# Ledgerflow\n\nAutomate invoice approvals before month-end close is delayed.",
+        tenant_id="tenant-1",
+    )
+
+    assert profile["discovery_queries"] == _discovery_queries()
+    assert len(requests) == 2
+    assert requests[1]["response_format"] is ServiceProfileResponse
+    assert "repairing" in str(requests[1]["messages"][0]["content"]).lower()
+    assert requests[1]["max_completion_tokens"] == 900
 
 
 def test_deep_profile_requires_distinct_phrases_across_query_types() -> None:
