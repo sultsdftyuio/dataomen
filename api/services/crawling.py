@@ -764,8 +764,19 @@ def _remaining_deadline_seconds(deadline: float, *, minimum: int = 5) -> int:
 def _failure_reason_for_exception(exc: BaseException) -> str:
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError, TimeLimitExceeded)):
         return "execution_timeout"
-    if exc.__class__.__name__ in {"RateLimitError", "APITimeoutError"}:
+    status_code = getattr(exc, "status_code", None)
+    if (
+        exc.__class__.__name__ in {"RateLimitError", "APITimeoutError"}
+        or status_code in {408, 409, 429}
+        or isinstance(status_code, int) and 500 <= status_code < 600
+    ):
         return "provider_backpressure"
+    if (
+        isinstance(status_code, int)
+        and 400 <= status_code < 500
+        and status_code not in {408, 409, 429}
+    ):
+        return "provider_request_rejected"
     if exc.__class__.__name__ in {"ValidationError", "JSONDecodeError"}:
         return "schema_validation_failed"
     return "unhandled_exception"

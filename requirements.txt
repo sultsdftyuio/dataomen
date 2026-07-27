@@ -24,7 +24,9 @@ postgrest>=0.10.0
 psycopg2-binary>=2.9.9        
 asyncpg>=0.29.0               
 sqlalchemy>=2.0.27            
-pydantic[email]>=2.6.0        
+# Pin the schema generator alongside the OpenAI SDK. Structured-output schemas
+# are part of the external API contract and must not drift between CI and deploy.
+pydantic[email]==2.13.2
 pydantic-settings>=2.2.0
 
 # --- Security & Utilities ---
@@ -51,6 +53,6 @@ cryptography>=41.0.0
 stripe>=8.6.0                 # Specified in Constitution Sec. 4 & 14
 
 # --- AI & Web Intelligence ---
-openai>=1.40.0                # Required for beta.chat.completions.parse
+openai==2.32.0                # Structured-output schema version covered by tests
 firecrawl-py>=2.0.0           # Official Firecrawl Python SDK
 python-dotenv==1.0.1

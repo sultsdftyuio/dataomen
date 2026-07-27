@@ -22,6 +22,20 @@ from sqlalchemy.engine import Engine
 logger = logging.getLogger(__name__)
 
 
+def _is_best_effort_pass1_exception(exc: BaseException) -> bool:
+    """Identify transient failures that should not be presented as Pass 1 defects."""
+
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    return exc.__class__.__name__ in {
+        "APITimeoutError",
+        "APIConnectionError",
+        "ConnectTimeout",
+        "ReadTimeout",
+        "TimeoutException",
+    }
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -561,15 +575,26 @@ def trigger_crawl(
             # Pass 1 is intentionally best-effort: the full crawl remains the
             # authoritative profile path and must still run after a fast-path
             # timeout, source-page failure, or model validation rejection.
-            pass1_status = "failed"
-            logger.warning(
-                "service_profile_pass1_failed tenant_id=%s job_id=%s website_url=%s error_type=%s error=%s",
-                payload.tenant_id,
-                job_id,
-                payload.website_url,
-                exc.__class__.__name__,
-                exc,
-            )
+            if _is_best_effort_pass1_exception(exc):
+                pass1_status = "skipped"
+                logger.info(
+                    "service_profile_pass1_skipped tenant_id=%s job_id=%s website_url=%s skip_reason=%s error_type=%s",
+                    payload.tenant_id,
+                    job_id,
+                    payload.website_url,
+                    "transient_timeout_or_connection_error",
+                    exc.__class__.__name__,
+                )
+            else:
+                pass1_status = "failed"
+                logger.warning(
+                    "service_profile_pass1_failed tenant_id=%s job_id=%s website_url=%s error_type=%s error=%s",
+                    payload.tenant_id,
+                    job_id,
+                    payload.website_url,
+                    exc.__class__.__name__,
+                    exc,
+                )
 
     try:
         message_id = enqueue_crawl_job(

@@ -17,6 +17,21 @@ import dramatiq
 logger = logging.getLogger(__name__)
 
 
+class NonRetryableCrawlError(Exception):
+    """A permanent provider request error that is already recorded on the crawl job."""
+
+
+def _is_non_retryable_crawl_error(exc: BaseException) -> bool:
+    """Do not repeat paid crawl work for provider-side deterministic 4xx errors."""
+
+    status_code = getattr(exc, "status_code", None)
+    return (
+        isinstance(status_code, int)
+        and 400 <= status_code < 500
+        and status_code not in {408, 409, 429}
+    )
+
+
 def _int_env(name: str, default: int, *, minimum: int = 0) -> int:
     try:
         return max(minimum, int(os.getenv(name, str(default))))
@@ -587,6 +602,7 @@ def rematch_existing_public_source_posts_job(
     max_backoff=_int_env("ARCLI_CRAWL_JOB_MAX_BACKOFF_MS", 60_000, minimum=1),
     time_limit=_int_env("ARCLI_CRAWL_JOB_TIME_LIMIT_MS", 210_000, minimum=1),
     on_retry_exhausted="mark_crawl_job_dead_lettered",
+    throws=(NonRetryableCrawlError,),
 )
 def process_crawl_job(
     tenant_id: str,
@@ -604,6 +620,19 @@ def process_crawl_job(
 
         execute(tenant_id, website_url, job_id)
     except Exception as exc:
+        if _is_non_retryable_crawl_error(exc):
+            logger.error(
+                "crawl_actor_not_retrying tenant_id=%s website_url=%s job_id=%s status_code=%s error_type=%s error=%s",
+                tenant_id,
+                website_url,
+                job_id,
+                getattr(exc, "status_code", None),
+                exc.__class__.__name__,
+                exc,
+            )
+            raise NonRetryableCrawlError(
+                "Crawl provider rejected a deterministic request."
+            ) from exc
         logger.exception(
             "crawl_actor_failed job_state=%s tenant_id=%s website_url=%s job_id=%s error_type=%s error=%s",
             "failed",
