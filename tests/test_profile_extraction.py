@@ -133,8 +133,24 @@ def test_deep_profile_rejects_discovery_query_extra_keys() -> None:
     }
     payload["discovery_queries"] = malformed_queries
 
-    with pytest.raises(ValidationError, match="exactly query_type and phrase"):
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ServiceProfileDraft.model_validate(payload)
+
+
+def test_deep_profile_emits_a_closed_strict_schema_for_discovery_queries() -> None:
+    from openai.lib._pydantic import to_strict_json_schema
+
+    schema = to_strict_json_schema(ServiceProfileDraft)
+    root_properties = schema["properties"]
+    query_schema = schema["$defs"]["DiscoveryQuery"]
+
+    assert "search_terms" not in root_properties
+    assert set(schema["required"]) == set(root_properties)
+    assert query_schema["additionalProperties"] is False
+    assert set(query_schema["required"]) == {"query_type", "phrase"}
+    assert query_schema["properties"]["query_type"]["enum"] == list(
+        DISCOVERY_QUERY_TYPES
+    )
 
 
 def test_deep_profile_requires_distinct_phrases_across_query_types() -> None:
