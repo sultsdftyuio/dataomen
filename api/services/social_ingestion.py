@@ -475,15 +475,17 @@ def _query_terms(profile: ServiceProfile) -> list[str]:
 def _compact_public_search_term(value: str) -> str:
     """Normalize a user-visible discovery phrase for HN and X search APIs."""
     normalized = _normalize_space(value)
-    # Quotation marks force an exact X match and were the direct cause of the
-    # empty successful searches in production. The query is plain language;
-    # the connector adds only its safe language/retweet filters.
+    # Quotes and punctuation are normalized here because phrases can come from
+    # legacy profiles as well as the structured matching brief.  The X fallback
+    # subsequently quotes each complete phrase as an exact-match clause.
     normalized = normalized.replace('"', "").replace("'", "")
     normalized = re.sub(r"[^\w\s#.-]", " ", normalized)
     normalized = _normalize_space(normalized)
-    # HN and X both work best with a compact phrase. This also keeps legacy
-    # profiles, created before search_terms existed, from emitting prose.
-    return " ".join(normalized.split()[:8])[:80]
+    # The matching-brief contract permits up to fourteen words.  Preserve that
+    # full buyer-language phrase: the old eight-word truncation could leave
+    # natural requests ending in "and", "or", or another incomplete thought.
+    # This bound also keeps legacy free-form profiles from emitting prose.
+    return " ".join(normalized.split()[:14])
 
 
 def public_source_queries(
@@ -570,8 +572,10 @@ def _x_fallback_query(
 
     X charges for a search request, so the HN-first fallback must not spend a
     request on an arbitrary single term merely because its HN worker finished
-    first. Parenthesized alternatives preserve each multi-word intent while
-    asking X once for the complete activation brief.
+    first. Each buyer phrase is an exact-match literal in one grouped
+    alternative, so words such as "and" and "or" cannot be mistaken for X
+    boolean operators while the connector's safe filters apply to the entire
+    activation brief.
     """
     terms: list[str] = []
     for item in query_terms:
@@ -585,26 +589,37 @@ def _x_fallback_query(
             terms.append(term.strip())
     if not terms:
         return ""
-    if len(terms) == 1:
-        return terms[0]
-
     # Do not slice a completed expression: that can leave an unmatched
-    # parenthesis or a partial buyer phrase, causing a paid X request to fail.
+    # parenthesis, quote, or partial buyer phrase, causing a paid X request to
+    # fail. X supports exact phrases in double quotes; escape any embedded
+    # backslash or quote before placing untrusted legacy profile text inside a
+    # literal phrase.
     # HN always receives every typed phrase; X is the single bounded fallback,
     # so include complete clauses in their stable priority order until its
     # conservative query budget is full.
     max_expression_length = 400
+    outer_group_length = 2 if len(terms) > 1 else 0
     clauses: list[str] = []
     current_length = 0
     for term in terms:
-        clause = f"({term})"
+        literal_phrase = (
+            _normalize_space(term).replace("\\", "\\\\").replace('"', '\\"')
+        )
+        clause = f'"{literal_phrase}"'
         separator_length = 4 if clauses else 0  # ` OR `
-        if current_length + separator_length + len(clause) > max_expression_length:
+        if (
+            current_length
+            + separator_length
+            + len(clause)
+            + outer_group_length
+            > max_expression_length
+        ):
             break
         clauses.append(clause)
         current_length += separator_length + len(clause)
 
-    return " OR ".join(clauses)
+    expression = " OR ".join(clauses)
+    return f"({expression})" if len(clauses) > 1 else expression
 
 
 def _is_source_enabled(name: str, default: bool = True) -> bool:

@@ -39,6 +39,16 @@ class XConnectorTests(unittest.TestCase):
             "customer support lang:en -is:retweet",
         )
 
+    def test_query_preserves_grouped_exact_phrases_before_safe_filters(self) -> None:
+        self.assertEqual(
+            XConnector._search_query(
+                '("sales and marketing handoffs fail" OR '
+                '"which tool works for revenue or operations")'
+            ),
+            '("sales and marketing handoffs fail" OR '
+            '"which tool works for revenue or operations") lang:en -is:retweet',
+        )
+
     def test_recent_search_start_is_clamped_inside_xs_seven_day_window(self) -> None:
         now = 1_800_000_000
         seven_days_ago = now - (7 * 24 * 60 * 60)

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from api.services.social_ingestion import (
     DISCOVERY_QUERY_TYPES,
+    DiscoveryQuery,
     _profile_discovery_queries,
     _x_fallback_query,
     enqueue_initial_public_source_ingestion,
@@ -155,8 +156,44 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
     def test_x_fallback_query_combines_all_typed_discovery_terms_once(self) -> None:
         self.assertEqual(
             _x_fallback_query(CANONICAL_DISCOVERY_QUERIES[:2]),
-            "(payments reconciliation backlog) OR (failed renewal payments)",
+            '("payments reconciliation backlog" OR "failed renewal payments")',
         )
+
+    def test_x_fallback_query_quotes_boolean_words_as_buyer_language(self) -> None:
+        expression = _x_fallback_query(
+            [
+                {"query_type": "buyer_pain", "phrase": "sales and marketing handoffs fail"},
+                {
+                    "query_type": "recommendation_request",
+                    "phrase": "which tool works for revenue or operations",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            expression,
+            '("sales and marketing handoffs fail" OR '
+            '"which tool works for revenue or operations")',
+        )
+
+    def test_public_source_query_preserves_a_complete_matching_brief_phrase(self) -> None:
+        phrase = "I waste hours checking conversations and still miss teams ready to buy"
+        profile = ServiceProfile(
+            company_name="Billing Co",
+            one_liner="Recurring billing automation",
+            target_audience=["SaaS finance teams"],
+            core_problem_solved="Manual recurring billing",
+            key_value_propositions=["Automated recurring billing"],
+            ideal_customer_pain_points=["Manual reconciliation"],
+            search_terms=[phrase],
+        )
+
+        queries = public_source_queries(
+            profile,
+            discovery_queries=[DiscoveryQuery("buyer_pain", phrase)],
+        )
+
+        self.assertEqual([query.phrase for query in queries], [phrase])
 
     def test_x_fallback_query_never_truncates_a_clause(self) -> None:
         long_terms = [
@@ -167,9 +204,9 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         expression = _x_fallback_query(long_terms)
 
         self.assertLessEqual(len(expression), 400)
-        self.assertTrue(expression.endswith(")"))
+        self.assertTrue(expression.endswith('")'))
         self.assertEqual(expression.count("("), expression.count(")"))
-        self.assertIn(f"({long_terms[0]['phrase']})", expression)
+        self.assertIn(f'"{long_terms[0]["phrase"]}"', expression)
 
     def test_legacy_profile_prioritizes_buyer_pain_and_triggers(self) -> None:
         profile = ServiceProfile(
