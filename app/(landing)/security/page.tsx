@@ -4,8 +4,13 @@ import React from 'react';
 import { Metadata } from 'next';
 import Link from 'next/link';
 
+import { createOgImageUrl } from '@/lib/og-image';
+
 const PAGE_URL = 'https://arcli.tech/security';
-const OG_IMAGE_URL = 'https://arcli.tech/api/og?title=Security%20and%20GDPR%20for%20AI%20Analytics&type=security';
+const OG_IMAGE_URL = new URL(
+  createOgImageUrl('Security and GDPR for AI Analytics', 'security'),
+  'https://arcli.tech',
+).toString();
 
 export const metadata: Metadata = {
   title: 'Security & GDPR | Arcli.tech',
