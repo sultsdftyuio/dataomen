@@ -31,9 +31,9 @@ DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
-# v6 forces outcome-language regeneration so a prompt/validator change cannot
+# v7 forces outcome-language regeneration so a prompt/validator change cannot
 # leave existing profiles searching for Arcli's own operator workflow or jargon.
-PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v6"
+PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v7"
 
 SERVICE_PROFILE_COLUMNS = {
     "tenant_id",
@@ -779,6 +779,8 @@ def _failure_reason_for_exception(exc: BaseException) -> str:
         and status_code not in {408, 409, 429}
     ):
         return "provider_request_rejected"
+    if exc.__class__.__name__ == "ProfileExtractionSemanticError":
+        return "profile_semantic_validation_failed"
     if exc.__class__.__name__ in {"ValidationError", "JSONDecodeError"}:
         return "schema_validation_failed"
     return "unhandled_exception"

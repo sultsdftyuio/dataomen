@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from api.services.crawling import _failure_reason_for_exception
+from api.services.profile_extraction import ProfileExtractionSemanticError
 from api.workers import actors
 
 
@@ -40,3 +41,10 @@ def test_transient_provider_errors_remain_retryable() -> None:
 
 def test_permanent_provider_request_failure_is_distinct_in_job_status() -> None:
     assert _failure_reason_for_exception(_ProviderBadRequest()) == "provider_request_rejected"
+
+
+def test_invalid_profile_repair_is_not_retried_as_a_new_crawl() -> None:
+    error = ProfileExtractionSemanticError("repair did not satisfy the contract")
+
+    assert actors._is_non_retryable_crawl_error(error)
+    assert _failure_reason_for_exception(error) == "profile_semantic_validation_failed"

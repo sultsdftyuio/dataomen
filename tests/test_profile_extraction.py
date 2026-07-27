@@ -16,6 +16,7 @@ from api.services.profile_extraction import (
     DISCOVERY_QUERY_TYPES,
     DiscoveryQueryRepair,
     ProfileExtractor,
+    ProfileExtractionSemanticError,
     ServiceProfileDraft,
     ServiceProfileResponse,
 )
@@ -244,6 +245,96 @@ def test_deep_profile_repairs_an_invalid_buyer_language_phrase_once() -> None:
     assert requests[1]["max_completion_tokens"] == 400
 
 
+def test_deep_profile_compacts_an_overlong_repair_without_a_third_ai_request() -> None:
+    invalid_payload = _profile_payload()
+    invalid_queries = _discovery_queries()
+    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "we need more leads"}
+    invalid_payload["discovery_queries"] = invalid_queries
+    repaired_queries = _discovery_queries()
+    repaired_queries[0] = {
+        "query_type": "buyer_pain",
+        "phrase": (
+            "I need more customers because signups have stopped and sales "
+            "are slowing this quarter again"
+        ),
+    }
+    requests: list[dict[str, object]] = []
+
+    class FakeCompletions:
+        def parse(self, **kwargs: object) -> SimpleNamespace:
+            requests.append(kwargs)
+            parsed = (
+                invalid_payload
+                if len(requests) == 1
+                else {"discovery_queries": repaired_queries}
+            )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=parsed))]
+            )
+
+    quota_guard = SimpleNamespace(
+        check_and_increment=lambda **_kwargs: SimpleNamespace(
+            allowed=True,
+            tenant_id="tenant-1",
+            rejection_reason=None,
+            current_count=1,
+            limit=100,
+            window_seconds=86_400,
+        )
+    )
+    client = SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())))
+
+    profile = ProfileExtractor(client=client, quota_guard=quota_guard).extract_profile(
+        "# Demand tool\n\nHelp businesses grow their customer base.",
+        tenant_id="tenant-1",
+    )
+
+    assert len(requests) == 2
+    assert profile["discovery_queries"][0]["phrase"] == (
+        "I need more customers because signups have stopped and sales are slowing this quarter"
+    )
+
+
+def test_deep_profile_stops_after_one_invalid_repair() -> None:
+    invalid_payload = _profile_payload()
+    invalid_queries = _discovery_queries()
+    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "we need more leads"}
+    invalid_payload["discovery_queries"] = invalid_queries
+    requests: list[dict[str, object]] = []
+
+    class FakeCompletions:
+        def parse(self, **kwargs: object) -> SimpleNamespace:
+            requests.append(kwargs)
+            parsed = (
+                invalid_payload
+                if len(requests) == 1
+                else {"discovery_queries": invalid_queries}
+            )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(parsed=parsed))]
+            )
+
+    quota_guard = SimpleNamespace(
+        check_and_increment=lambda **_kwargs: SimpleNamespace(
+            allowed=True,
+            tenant_id="tenant-1",
+            rejection_reason=None,
+            current_count=1,
+            limit=100,
+            window_seconds=86_400,
+        )
+    )
+    client = SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())))
+
+    with pytest.raises(ProfileExtractionSemanticError):
+        ProfileExtractor(client=client, quota_guard=quota_guard).extract_profile(
+            "# Demand tool\n\nHelp businesses grow their customer base.",
+            tenant_id="tenant-1",
+        )
+
+    assert len(requests) == 2
+
+
 def test_deep_profile_requires_distinct_phrases_across_query_types() -> None:
     payload = _profile_payload()
     duplicate_queries = _discovery_queries()
@@ -284,7 +375,7 @@ def test_profile_cache_rejects_a_previous_discovery_contract_version() -> None:
         "https://ledgerflow.example/",
         crawl_markdown_sha256=markdown_hash,
     )
-    stale_document["profile_extraction_cache_version"] = "discovery-intent-v5"
+    stale_document["profile_extraction_cache_version"] = "discovery-intent-v6"
 
     class FakeResult:
         def mappings(self) -> list[dict[str, object]]:

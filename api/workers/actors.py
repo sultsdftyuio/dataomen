@@ -22,7 +22,10 @@ class NonRetryableCrawlError(Exception):
 
 
 def _is_non_retryable_crawl_error(exc: BaseException) -> bool:
-    """Do not repeat paid crawl work for provider-side deterministic 4xx errors."""
+    """Do not repeat paid crawl work for permanent provider or semantic errors."""
+
+    if exc.__class__.__name__ == "ProfileExtractionSemanticError":
+        return True
 
     status_code = getattr(exc, "status_code", None)
     return (
@@ -630,9 +633,12 @@ def process_crawl_job(
                 exc.__class__.__name__,
                 exc,
             )
-            raise NonRetryableCrawlError(
-                "Crawl provider rejected a deterministic request."
-            ) from exc
+            message = (
+                "Profile extraction result permanently failed validation."
+                if exc.__class__.__name__ == "ProfileExtractionSemanticError"
+                else "Crawl provider rejected a deterministic request."
+            )
+            raise NonRetryableCrawlError(message) from exc
         logger.exception(
             "crawl_actor_failed job_state=%s tenant_id=%s website_url=%s job_id=%s error_type=%s error=%s",
             "failed",
