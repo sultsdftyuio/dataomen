@@ -12,6 +12,7 @@ from api.services.crawling import (
 )
 from api.services.profile_extraction import (
     DISCOVERY_QUERY_TYPES,
+    DiscoveryQueryRepair,
     ProfileExtractor,
     ServiceProfileDraft,
     ServiceProfileResponse,
@@ -163,7 +164,7 @@ def test_deep_profile_repairs_an_invalid_buyer_language_phrase_once() -> None:
         "phrase": "find qualified leads",
     }
     invalid_payload["discovery_queries"] = invalid_queries
-    repaired_payload = _profile_payload()
+    repaired_payload = {"discovery_queries": _discovery_queries()}
     requests: list[dict[str, object]] = []
 
     class FakeCompletions:
@@ -193,9 +194,11 @@ def test_deep_profile_repairs_an_invalid_buyer_language_phrase_once() -> None:
 
     assert profile["discovery_queries"] == _discovery_queries()
     assert len(requests) == 2
-    assert requests[1]["response_format"] is ServiceProfileResponse
-    assert "repairing" in str(requests[1]["messages"][0]["content"]).lower()
-    assert requests[1]["max_completion_tokens"] == 900
+    assert requests[1]["response_format"] is DiscoveryQueryRepair
+    assert "repairing the discovery_queries" in str(
+        requests[1]["messages"][0]["content"]
+    ).lower()
+    assert requests[1]["max_completion_tokens"] == 400
 
 
 def test_deep_profile_requires_distinct_phrases_across_query_types() -> None:
