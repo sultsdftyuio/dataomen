@@ -8,13 +8,12 @@ import hashlib
 from uuid import uuid4
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from types import ModuleType
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, TypeVar
+from typing import Any, Iterator, Sequence, TypeVar
 from urllib.parse import quote
-
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
-
 from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
 from api.services.client_lifecycle import managed_network_client
 from api.services.embeddings import (
@@ -29,6 +28,7 @@ from api.services.embeddings import (
     _string_value,
 )
 from api.services.integrations.hn_connector import SourcePost
+from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.x_connector import TwitterSourcePost
 from api.services.matching import PostEmbedding, find_candidate_matches
 from api.services.verifier import (
@@ -37,13 +37,10 @@ from api.services.verifier import (
     VerificationResult,
     VerifierService,
 )
-
 logger = logging.getLogger(__name__)
-
 # Compatibility-only test override.  Production code never assigns a client
 # here: each ingestion task creates and closes its own client below.
 _public_source_supabase_client: Any | None = None
-
 DEFAULT_REDDIT_SUBREDDITS = (
     "SaaS",
     "startups",
@@ -68,7 +65,13 @@ DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS = 168
 DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY = 25
 DEFAULT_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT = 100
 DEFAULT_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES = 15
-
+DEFAULT_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS = 900
+ADDITIONAL_PUBLIC_SOURCE_NAMES = (
+    "bluesky",
+    "stackexchange",
+    "github",
+    "lemmy",
+)
 # These values deliberately mirror the persisted matching-brief contract
 # without importing the extractor.  Ingestion also supports legacy flat
 # ``search_terms`` profiles, so the runtime can process existing tenants while
@@ -81,19 +84,52 @@ DISCOVERY_QUERY_TYPES = (
     "category_tool_search",
     "switching_trigger",
 )
-
-
+_DISCOVERY_QUERY_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "my",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
+)
 @dataclass(frozen=True)
 class DiscoveryQuery:
     """A buyer-language source-search phrase with its matching-brief intent."""
-
     query_type: str
     phrase: str
-
     def to_payload(self) -> dict[str, str]:
         return {"query_type": self.query_type, "phrase": self.phrase}
-
-
+@dataclass(frozen=True)
+class PublicSourcePostRef:
+    """A source-qualified reference to one globally stored public post.
+    External IDs are provider scoped: ``42`` can be a Hacker News comment, a
+    GitHub issue, and a post on another network.  Passing this small compound
+    value between ingestion and embedding preserves the database's composite
+    ``(source, source_post_id)`` identity without exposing a tenant boundary.
+    """
+    source: str
+    source_post_id: str
+    def __post_init__(self) -> None:
+        if not self.source.strip() or not self.source_post_id.strip():
+            raise ValueError("source and source_post_id are required")
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "source": self.source.strip(),
+            "source_post_id": self.source_post_id.strip(),
+        }
 @dataclass(frozen=True)
 class SocialPost:
     source: str
@@ -105,15 +141,12 @@ class SocialPost:
     url: str | None = None
     published_at: str | None = None
     metadata: dict[str, Any] | None = None
-
     @property
     def dedupe_key(self) -> str:
         return f"{self.source}:{self.external_id}"
-
     @property
     def matching_text(self) -> str:
         return "\n\n".join(part for part in (self.title, self.text) if part).strip()
-
     def to_source_post_json(self) -> dict[str, Any]:
         return {
             "source": self.source,
@@ -126,35 +159,25 @@ class SocialPost:
             "published_at": self.published_at,
             "metadata": self.metadata or {},
         }
-
-
 @dataclass(frozen=True)
 class InitialPublicSourceIngestionPlan:
     """The bounded HN-first source-search work spawned after a profile is embedded."""
-
     queries: list[DiscoveryQuery]
     hn_jobs: int
     x_jobs: int
     x_skip_reason: str | None = None
-
+    additional_source_jobs: int = 0
     @property
     def query_terms(self) -> list[str]:
         """Compatibility projection for callers that predate typed queries."""
         return [query.phrase for query in self.queries]
-
-
 def _csv_env(name: str, default: tuple[str, ...] = ()) -> list[str]:
     raw_value = os.getenv(name, "").strip()
     if not raw_value:
         return list(default)
-
     return [item.strip() for item in raw_value.split(",") if item.strip()]
-
-
 def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
-
-
 def _read_string(sources: list[dict[str, Any]], keys: list[str]) -> str | None:
     for source in sources:
         for key in keys:
@@ -162,8 +185,6 @@ def _read_string(sources: list[dict[str, Any]], keys: list[str]) -> str | None:
             if value:
                 return value
     return None
-
-
 def _read_list(sources: list[dict[str, Any]], keys: list[str]) -> list[str]:
     for source in sources:
         for key in keys:
@@ -171,8 +192,6 @@ def _read_list(sources: list[dict[str, Any]], keys: list[str]) -> list[str]:
             if value:
                 return value
     return []
-
-
 def _list_value(value: Any) -> list[Any]:
     """Read JSON/JSONB arrays without treating dictionaries as strings."""
     if isinstance(value, list):
@@ -184,11 +203,8 @@ def _list_value(value: Any) -> list[Any]:
             return []
         return list(parsed) if isinstance(parsed, list) else []
     return []
-
-
 def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
     """Return canonical typed discovery phrases from a persisted profile.
-
     Profiles created before typed discovery queries retain their legacy flat
     ``search_terms``.  Map those terms onto the stable intent order so queue
     consumers always receive the same `{query_type, phrase}` shape.
@@ -217,11 +233,9 @@ def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
             seen_types.add(query_type)
             seen_phrases.add(phrase_key)
             typed_queries.append(DiscoveryQuery(query_type, normalized_phrase))
-
         if typed_queries:
             order = {query_type: index for index, query_type in enumerate(DISCOVERY_QUERY_TYPES)}
             return sorted(typed_queries, key=lambda query: order[query.query_type])
-
     legacy_terms = _read_list(
         sources,
         ["search_terms", "discovery_terms"],
@@ -234,12 +248,9 @@ def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
         for index, term in enumerate(legacy_terms)
         if (normalized_phrase := _compact_public_search_term(term))
     ]
-
-
 def _service_profile_from_row(row: dict[str, Any]) -> ServiceProfile:
     document = _first_document(row)
     sources = [document, row]
-
     company_name = _read_string(sources, ["company_name", "name"]) or "Workspace"
     one_liner = (
         _read_string(
@@ -260,19 +271,16 @@ def _service_profile_from_row(row: dict[str, Any]) -> ServiceProfile:
     )
     if not value_props:
         value_props = [one_liner]
-
     pain_points = _read_list(
         sources,
         ["ideal_customer_pain_points", "pain_points"],
     )
     if not pain_points:
         pain_points = [core_problem]
-
     use_cases = _read_list(sources, ["use_cases", "usecases"])
     buying_triggers = _read_list(sources, ["buying_triggers"])
     urgency_signals = _read_list(sources, ["urgency_signals"])
     discovery_queries = _profile_discovery_queries(row)
-
     return ServiceProfile(
         company_name=company_name,
         one_liner=one_liner,
@@ -287,13 +295,10 @@ def _service_profile_from_row(row: dict[str, Any]) -> ServiceProfile:
         or _read_list(sources, ["search_terms", "discovery_terms"]),
         negative_keywords=_read_list(sources, ["negative_keywords", "excluded_audiences"]),
     )
-
-
 def _embedding_values(value: Any) -> list[float] | None:
     if isinstance(value, list):
         values = [float(item) for item in value if isinstance(item, (int, float))]
         return values if values else None
-
     if isinstance(value, str):
         stripped = value.strip()
         if not stripped:
@@ -308,16 +313,12 @@ def _embedding_values(value: Any) -> list[float] | None:
             except ValueError:
                 return None
             return values if values else None
-
     return None
-
-
 def _profile_embedding_from_row(row: dict[str, Any]) -> list[float] | None:
     for key in ("profile_embedding", "embedding"):
         embedding = _embedding_values(row.get(key))
         if embedding:
             return embedding
-
     documents = [
         _as_dict(row.get("embedding_json")),
         _first_document(row),
@@ -329,22 +330,15 @@ def _profile_embedding_from_row(row: dict[str, Any]) -> list[float] | None:
         embedding = _embedding_values(document.get("profile_embedding"))
         if embedding:
             return embedding
-
     return None
-
-
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
 def _embedding_sha256(embedding: list[float]) -> str:
     payload = json.dumps(
         [round(float(item), 8) for item in embedding],
         separators=(",", ":"),
     )
     return _sha256_text(payload)
-
-
 def _cached_source_post_embedding(
     conn: Connection,
     *,
@@ -355,11 +349,9 @@ def _cached_source_post_embedding(
 ) -> list[float] | None:
     if not source_post_id:
         return None
-
     columns = _table_columns(conn, "source_posts")
     if "metadata" not in columns:
         return None
-
     cache = conn.execute(
         text(
             f"""
@@ -382,10 +374,7 @@ def _cached_source_post_embedding(
         or cache_payload.get("text_sha256") != text_sha256
     ):
         return None
-
     return _embedding_values(cache_payload.get("embedding"))
-
-
 def _persist_source_post_embedding_cache(
     conn: Connection,
     *,
@@ -397,12 +386,10 @@ def _persist_source_post_embedding_cache(
 ) -> None:
     if not source_post_id:
         return
-
     columns = _table_columns(conn, "source_posts")
     metadata_column = columns.get("metadata")
     if not metadata_column:
         return
-
     metadata_expression = (
         """
         (
@@ -422,7 +409,6 @@ def _persist_source_post_embedding_cache(
     )
     if metadata_column["data_type"] == "json" or metadata_column["udt_name"] == "json":
         metadata_expression = f"({metadata_expression})::json"
-
     conn.execute(
         text(
             f"""
@@ -444,8 +430,6 @@ def _persist_source_post_embedding_cache(
             "cached_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-
-
 def _query_terms(profile: ServiceProfile) -> list[str]:
     candidates = [
         *profile.ideal_customer_pain_points,
@@ -459,21 +443,16 @@ def _query_terms(profile: ServiceProfile) -> list[str]:
         normalized = _normalize_space(candidate)
         if len(normalized) < 4:
             continue
-
         words = normalized.split()
         if len(words) > 8:
             normalized = " ".join(words[:8])
-
         key = normalized.lower()
         if key not in seen:
             seen.add(key)
             terms.append(normalized)
-
     return terms[: env_int("ARCLI_SOCIAL_MAX_QUERIES", DEFAULT_MAX_QUERIES)]
-
-
 def _compact_public_search_term(value: str) -> str:
-    """Normalize a user-visible discovery phrase for HN and X search APIs."""
+    """Normalize a user-visible discovery phrase for public-source APIs."""
     normalized = _normalize_space(value)
     # Quotes and punctuation are normalized here because phrases can come from
     # legacy profiles as well as the structured matching brief.  The X fallback
@@ -486,17 +465,14 @@ def _compact_public_search_term(value: str) -> str:
     # natural requests ending in "and", "or", or another incomplete thought.
     # This bound also keeps legacy free-form profiles from emitting prose.
     return " ".join(normalized.split()[:14])
-
-
 def public_source_queries(
     profile: ServiceProfile,
     *,
     discovery_queries: list[DiscoveryQuery] | None = None,
 ) -> list[DiscoveryQuery]:
     """Return a bounded, typed buyer-language query set for source discovery.
-
     Canonical matching briefs provide one phrase per intent category.  We keep
-    the type through the queue handoff so HN/X work can be observed and
+    the type through the queue handoff so source-search work can be observed and
     retried by intent, while preserving old profiles that only have flat
     ``search_terms``.  Legacy fallback candidates deliberately prioritize
     buyer pains and buying events over vendor positioning prose.
@@ -526,7 +502,6 @@ def public_source_queries(
             )
             for index, term in enumerate(fallback_candidates)
         ]
-
     max_queries = max(
         1,
         min(
@@ -558,18 +533,13 @@ def public_source_queries(
         if len(queries) >= max_queries:
             break
     return queries
-
-
 def public_source_query_terms(profile: ServiceProfile) -> list[str]:
     """Compatibility projection for consumers that need only flat phrases."""
     return [query.phrase for query in public_source_queries(profile)]
-
-
 def _x_fallback_query(
     query_terms: list[str] | list[DiscoveryQuery] | list[dict[str, str]],
 ) -> str:
     """Combine the HN intent set into one high-recall X search expression.
-
     X charges for a search request, so the HN-first fallback must not spend a
     request on an arbitrary single term merely because its HN worker finished
     first. Each buyer phrase is an exact-match literal in one grouped
@@ -617,19 +587,173 @@ def _x_fallback_query(
             break
         clauses.append(clause)
         current_length += separator_length + len(clause)
-
     expression = " OR ".join(clauses)
     return f"({expression})" if len(clauses) > 1 else expression
-
-
 def _is_source_enabled(name: str, default: bool = True) -> bool:
     value = os.getenv(name, str(default)).strip().lower()
     return value not in {"0", "false", "no", "off"}
-
-
+def enabled_additional_public_sources() -> tuple[str, ...]:
+    """Return the explicitly enabled free/low-cost sources in stable order."""
+    return tuple(
+        source
+        for source in ADDITIONAL_PUBLIC_SOURCE_NAMES
+        if _is_source_enabled(f"ARCLI_{source.upper()}_INGESTION_ENABLED")
+    )
+def _additional_source_query_cache_key(
+    *,
+    source: str,
+    query: str,
+    since_hours_ago: int,
+    scope: str = "",
+) -> str:
+    """Build a tenant-free cache key for a bounded public-source query."""
+    material = "\x1f".join(
+        (
+            source.strip().casefold(),
+            _normalize_space(query).casefold(),
+            str(max(0, since_hours_ago)),
+            scope.strip().casefold(),
+        )
+    )
+    return "arcli:public-source-query:" + hashlib.sha256(
+        material.encode("utf-8")
+    ).hexdigest()
+def claim_additional_public_source_query(
+    *,
+    source: str,
+    query: str,
+    since_hours_ago: int,
+    scope: str = "",
+) -> bool:
+    """Claim a short global query cache slot before free-source ingestion.
+    The cache intentionally contains only a hash of public buyer language and
+    no tenant identifier. Redis makes repeated customer activations share one
+    source request; without Redis, the global database dedupe remains safe and
+    this function deliberately permits the query rather than dropping leads.
+    """
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        return True
+    ttl_seconds = max(
+        1,
+        min(
+            86_400,
+            env_int(
+                "ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS",
+                DEFAULT_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS,
+            ),
+        ),
+    )
+    cache_key = _additional_source_query_cache_key(
+        source=source,
+        query=query,
+        since_hours_ago=since_hours_ago,
+        scope=scope,
+    )
+    client: Any | None = None
+    try:
+        import redis
+        client = redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            max_connections=max(
+                1,
+                env_int("ARCLI_PUBLIC_SOURCE_QUERY_CACHE_REDIS_MAX_CONNECTIONS", 2),
+            ),
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            health_check_interval=30,
+        )
+        claimed = bool(client.set(cache_key, "1", nx=True, ex=ttl_seconds))
+        if not claimed:
+            logger.info(
+                "additional_public_source_query_cache_hit source=%s query_sha256=%s lookback_hours=%s",
+                source,
+                cache_key.rsplit(":", 1)[-1],
+                since_hours_ago,
+            )
+        return claimed
+    except Exception as exc:
+        # Caching must never turn a transient Redis problem into a missed
+        # source search. Provider limiters still guard the outbound request.
+        logger.warning(
+            "additional_public_source_query_cache_unavailable source=%s error_type=%s",
+            source,
+            exc.__class__.__name__,
+        )
+        return True
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+        pool = getattr(client, "connection_pool", None)
+        disconnect = getattr(pool, "disconnect", None)
+        if callable(disconnect):
+            try:
+                disconnect()
+            except Exception:
+                pass
+def release_additional_public_source_query(
+    *,
+    source: str,
+    query: str,
+    since_hours_ago: int,
+    scope: str = "",
+) -> None:
+    """Release a failed query claim so a later activation can retry it.
+    This is called only by the worker that acquired the cache slot and then
+    received a provider error. Successful and empty searches retain the TTL,
+    while outages do not masquerade as a cached zero-result response.
+    """
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        return
+    cache_key = _additional_source_query_cache_key(
+        source=source,
+        query=query,
+        since_hours_ago=since_hours_ago,
+        scope=scope,
+    )
+    client: Any | None = None
+    try:
+        import redis
+        client = redis.Redis.from_url(
+            redis_url,
+            decode_responses=True,
+            max_connections=max(
+                1,
+                env_int("ARCLI_PUBLIC_SOURCE_QUERY_CACHE_REDIS_MAX_CONNECTIONS", 2),
+            ),
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            health_check_interval=30,
+        )
+        client.delete(cache_key)
+    except Exception as exc:
+        logger.warning(
+            "additional_public_source_query_cache_release_failed source=%s error_type=%s",
+            source,
+            exc.__class__.__name__,
+        )
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+        pool = getattr(client, "connection_pool", None)
+        disconnect = getattr(pool, "disconnect", None)
+        if callable(disconnect):
+            try:
+                disconnect()
+            except Exception:
+                pass
 def x_source_is_configured() -> bool:
     """Return whether the paid X path is explicitly usable for this worker.
-
     Checking this before queuing a fallback avoids a retry storm after a free
     HN search when an environment has intentionally not configured X access.
     The bearer token itself is never logged.
@@ -644,8 +768,6 @@ def x_source_is_configured() -> bool:
             or ""
         ).strip()
     )
-
-
 def _claim_initial_x_fallback_budget(tenant_id: str) -> bool:
     """Apply the tenant X spend cap for the explicit X-only deployment mode."""
     decision = TenantQuotaGuard().check_and_increment(
@@ -658,8 +780,6 @@ def _claim_initial_x_fallback_budget(tenant_id: str) -> bool:
         ),
     )
     return decision.allowed
-
-
 def _initial_source_lookback_hours() -> int:
     return max(
         1,
@@ -671,8 +791,6 @@ def _initial_source_lookback_hours() -> int:
             ),
         ),
     )
-
-
 def _initial_source_posts_per_query() -> int:
     return max(
         1,
@@ -684,18 +802,15 @@ def _initial_source_posts_per_query() -> int:
             ),
         ),
     )
-
-
 def enqueue_initial_public_source_ingestion(
     tenant_id: str,
     service_profile_id: str | None,
 ) -> InitialPublicSourceIngestionPlan:
-    """Queue HN/X searches from a completed service profile.
-
+    """Queue HN-first public-source searches from a completed service profile.
     The profile-activation path used to call a legacy Reddit/X fetcher
     directly. This function hands work to the independently retryable global
-    HN and X ingestion actors instead, then their embedding actors match new
-    posts to every eligible profile.
+    HN, four additional public-source, and optional X ingestion actors instead,
+    then their embedding actors match new posts to every eligible profile.
     """
     engine = _database_engine()
     with engine.begin() as conn:
@@ -706,7 +821,6 @@ def enqueue_initial_public_source_ingestion(
             service_profile_id,
             columns,
         )
-
     if not profile_row:
         logger.warning(
             "initial_public_source_ingestion_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
@@ -715,7 +829,6 @@ def enqueue_initial_public_source_ingestion(
             "service_profile_not_found",
         )
         return InitialPublicSourceIngestionPlan([], 0, 0, "service_profile_not_found")
-
     profile = _service_profile_from_row(profile_row)
     discovery_queries = public_source_queries(
         profile,
@@ -734,14 +847,18 @@ def enqueue_initial_public_source_ingestion(
             0,
             "matching_brief_has_no_searchable_terms",
         )
-
-    from api.workers.actors import ingest_hn_batch_job, ingest_x_job
-
+    from api.workers.actors import (
+        ingest_additional_public_sources_batch_job,
+        ingest_hn_batch_job,
+        ingest_x_job,
+    )
     lookback_hours = _initial_source_lookback_hours()
     posts_per_query = _initial_source_posts_per_query()
     hn_jobs = 0
     x_jobs = 0
+    additional_source_jobs = 0
     hn_enabled = _is_source_enabled("ARCLI_HN_INGESTION_ENABLED")
+    additional_sources = enabled_additional_public_sources()
     x_enabled = x_source_is_configured()
     x_skip_reason = (
         None
@@ -752,16 +869,23 @@ def enqueue_initial_public_source_ingestion(
             else "x_bearer_token_not_configured"
         )
     )
-    # All HN jobs for one activation share this key.  The actor uses Redis to
-    # atomically grant a single X fallback to the first empty HN search, rather
-    # than spending one X request for every empty HN query.
-    x_fallback_group_id = uuid4().hex if hn_enabled and x_enabled else None
+    # All free-source jobs for one activation share this key. The actors use
+    # Redis to atomically grant a single X fallback only after the complete
+    # free phase lacks plausible buyer-language coverage.
+    x_fallback_group_id = (
+        uuid4().hex if (hn_enabled or additional_sources) and x_enabled else None
+    )
     x_fallback_query = _x_fallback_query(discovery_queries) if x_fallback_group_id else None
     discovery_query_payloads = [query.to_payload() for query in discovery_queries]
     if hn_enabled:
-        # One bounded batch establishes whether the complete free HN search
-        # set has coverage before spending a single X request.
-        hn_job_kwargs: dict[str, Any] = {"fallback_to_x": x_enabled}
+        # HN is always first. Its batch optionally hands off to the four
+        # additional free sources before a single paid X fallback is allowed.
+        hn_job_kwargs: dict[str, Any] = {
+            "fallback_to_x": x_enabled,
+            "continue_to_additional_sources": bool(additional_sources),
+        }
+        if additional_sources:
+            hn_job_kwargs["additional_sources"] = list(additional_sources)
         if x_fallback_group_id:
             hn_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
         if x_fallback_query:
@@ -775,6 +899,27 @@ def enqueue_initial_public_source_ingestion(
             **hn_job_kwargs,
         )
         hn_jobs = 1
+        additional_source_jobs = 1 if additional_sources else 0
+        x_jobs = 1 if x_enabled else 0
+    elif additional_sources:
+        additional_job_kwargs: dict[str, Any] = {
+            "initial_plausible_hits": 0,
+            "fallback_to_x": x_enabled,
+            "enabled_sources": list(additional_sources),
+        }
+        if x_fallback_group_id:
+            additional_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
+        if x_fallback_query:
+            additional_job_kwargs["x_fallback_query"] = x_fallback_query
+        ingest_additional_public_sources_batch_job.send(
+            discovery_query_payloads,
+            lookback_hours,
+            posts_per_query,
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+            **additional_job_kwargs,
+        )
+        additional_source_jobs = 1
         x_jobs = 1 if x_enabled else 0
     elif x_enabled:
         # Preserve an explicitly X-only deployment, but retain the same spend
@@ -789,15 +934,18 @@ def enqueue_initial_public_source_ingestion(
             x_jobs = 1
         else:
             x_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
-
     logger.info(
-        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
         tenant_id,
         service_profile_id,
         discovery_query_payloads,
         hn_jobs,
+        additional_source_jobs,
+        additional_sources,
         x_jobs,
-        "after_hn_no_plausible_evidence" if hn_enabled and x_enabled else "direct_or_disabled",
+        "after_all_free_sources_insufficient_plausible_evidence"
+        if (hn_enabled or additional_sources) and x_enabled
+        else "direct_or_disabled",
         x_fallback_query,
         lookback_hours,
         posts_per_query,
@@ -807,22 +955,17 @@ def enqueue_initial_public_source_ingestion(
         hn_jobs,
         x_jobs,
         x_skip_reason,
+        additional_source_jobs,
     )
-
-
 def _http_user_agent() -> str:
     return os.getenv(
         "ARCLI_SOCIAL_USER_AGENT",
         "arcli-prospect-intelligence/0.1",
     )
-
-
 def _iso_from_epoch(value: Any) -> str | None:
     if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         return None
     return datetime.fromtimestamp(float(value), tz=timezone.utc).isoformat()
-
-
 def _fetch_reddit_posts(
     profile: ServiceProfile,
     *,
@@ -830,7 +973,6 @@ def _fetch_reddit_posts(
     service_profile_id: str | None,
 ) -> list[SocialPost]:
     import httpx
-
     # Reddit's unauthenticated JSON search is commonly blocked in production.
     # Keep the source opt-in rather than spending an entire job on requests
     # that can never yield posts.
@@ -840,7 +982,6 @@ def _fetch_reddit_posts(
         "no",
     }:
         return []
-
     subreddits = _csv_env("ARCLI_REDDIT_SUBREDDITS", DEFAULT_REDDIT_SUBREDDITS)
     include_global = os.getenv(
         "ARCLI_REDDIT_INCLUDE_GLOBAL_SEARCH",
@@ -852,12 +993,10 @@ def _fetch_reddit_posts(
         "User-Agent": _http_user_agent(),
     }
     posts: list[SocialPost] = []
-
     with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
         for term in _query_terms(profile):
             targets: list[str | None] = [None] if include_global else []
             targets.extend(subreddits)
-
             for subreddit in targets:
                 params = {
                     "q": term,
@@ -871,7 +1010,6 @@ def _fetch_reddit_posts(
                     url = f"https://www.reddit.com/r/{quote(subreddit)}/search.json"
                 else:
                     url = "https://www.reddit.com/search.json"
-
                 try:
                     response = client.get(url, params=params)
                     response.raise_for_status()
@@ -903,22 +1041,18 @@ def _fetch_reddit_posts(
                         exc,
                     )
                     continue
-
                 children = _as_dict(payload.get("data")).get("children", [])
                 if not isinstance(children, list):
                     continue
-
                 for child in children:
                     data = _as_dict(_as_dict(child).get("data"))
                     if not data:
                         continue
-
                     post_id = _string_value(data.get("id"))
                     title = _string_value(data.get("title")) or ""
                     body = _string_value(data.get("selftext")) or ""
                     if not post_id or not (title or body):
                         continue
-
                     permalink = _string_value(data.get("permalink"))
                     posts.append(
                         SocialPost(
@@ -940,10 +1074,7 @@ def _fetch_reddit_posts(
                             },
                         )
                     )
-
     return posts
-
-
 def _x_query(term: str, profile: ServiceProfile) -> str:
     negatives = [
         _normalize_space(item)
@@ -953,8 +1084,6 @@ def _x_query(term: str, profile: ServiceProfile) -> str:
     negative_clause = " ".join(f"-{item.replace(' ', '')}" for item in negatives)
     query = f'"{term}" lang:en -is:retweet {negative_clause}'.strip()
     return query[:512]
-
-
 def _fetch_x_posts(
     profile: ServiceProfile,
     *,
@@ -962,7 +1091,6 @@ def _fetch_x_posts(
     service_profile_id: str | None,
 ) -> list[SocialPost]:
     import httpx
-
     bearer_token = (
         os.getenv("X_BEARER_TOKEN")
         or os.getenv("TWITTER_BEARER_TOKEN")
@@ -983,7 +1111,6 @@ def _fetch_x_posts(
             "bearer_token_not_configured",
         )
         return []
-
     posts_per_query = max(
         10,
         min(100, env_int("ARCLI_SOCIAL_POSTS_PER_QUERY", DEFAULT_POSTS_PER_QUERY)),
@@ -993,7 +1120,6 @@ def _fetch_x_posts(
         "User-Agent": _http_user_agent(),
     }
     posts: list[SocialPost] = []
-
     with httpx.Client(headers=headers, timeout=20.0) as client:
         for term in _query_terms(profile):
             params = {
@@ -1036,7 +1162,6 @@ def _fetch_x_posts(
                     exc,
                 )
                 continue
-
             users = {
                 str(user.get("id")): user
                 for user in _as_dict(payload.get("includes")).get("users", [])
@@ -1045,17 +1170,14 @@ def _fetch_x_posts(
             data = payload.get("data", [])
             if not isinstance(data, list):
                 continue
-
             for tweet in data:
                 row = _as_dict(tweet)
                 if not row:
                     continue
-
                 tweet_id = _string_value(row.get("id"))
                 text_value = _string_value(row.get("text")) or ""
                 if not tweet_id or not text_value:
                     continue
-
                 author_id = _string_value(row.get("author_id"))
                 author = _as_dict(users.get(author_id or ""))
                 username = _string_value(author.get("username")) if author else None
@@ -1080,10 +1202,7 @@ def _fetch_x_posts(
                         },
                     )
                 )
-
     return posts
-
-
 def _dedupe_posts(posts: list[SocialPost]) -> list[SocialPost]:
     max_posts = env_int("ARCLI_SOCIAL_MAX_POSTS", DEFAULT_MAX_POSTS)
     seen: set[str] = set()
@@ -1098,8 +1217,6 @@ def _dedupe_posts(posts: list[SocialPost]) -> list[SocialPost]:
         if len(deduped) >= max_posts:
             break
     return deduped
-
-
 def _primitive_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | bool]:
     sanitized: dict[str, str | int | float | bool] = {}
     for key, value in metadata.items():
@@ -1112,10 +1229,7 @@ def _primitive_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float
             sanitized[key] = json.dumps(value, sort_keys=True)
         except TypeError:
             sanitized[key] = str(value)
-
     return sanitized
-
-
 def _table_columns(
     conn: Connection,
     table_name: str,
@@ -1131,7 +1245,6 @@ def _table_columns(
         ),
         {"table_name": table_name},
     ).mappings()
-
     return {
         str(row["column_name"]): {
             "data_type": str(row["data_type"]),
@@ -1139,8 +1252,6 @@ def _table_columns(
         }
         for row in rows
     }
-
-
 def _persist_source_posts(
     conn: Connection,
     tenant_id: str,
@@ -1150,7 +1261,6 @@ def _persist_source_posts(
     if not {"id", "tenant_id", "source", "external_id"}.issubset(columns):
         logger.info("source_post_persistence_skipped skip_reason=%s", "table_missing")
         return {}
-
     now = datetime.now(timezone.utc).isoformat()
     ids: dict[str, str] = {}
     for post in posts:
@@ -1169,7 +1279,6 @@ def _persist_source_posts(
         }
         if "created_at" in columns:
             payload["created_at"] = now
-
         expressions, params = _bind_payload(payload, columns)
         assignment_parts = [
             f"{column_name} = EXCLUDED.{column_name}"
@@ -1181,7 +1290,6 @@ def _persist_source_posts(
             if assignment_parts
             else "DO UPDATE SET external_id = public.source_posts.external_id"
         )
-
         result = conn.execute(
             text(
                 f"""
@@ -1198,10 +1306,7 @@ def _persist_source_posts(
         inserted_id = result.scalar_one_or_none()
         if inserted_id:
             ids[post.dedupe_key] = str(inserted_id)
-
     return ids
-
-
 def _existing_lead_match_id(
     conn: Connection,
     *,
@@ -1233,7 +1338,6 @@ def _existing_lead_match_id(
             ),
             params,
         ).scalar_one_or_none()
-
     if "metadata" in columns:
         profile_filter = ""
         params = {"tenant_id": tenant_id, "external_key": external_key}
@@ -1253,10 +1357,7 @@ def _existing_lead_match_id(
             ),
             params,
         ).scalar_one_or_none()
-
     return None
-
-
 def _cached_lead_verification(
     conn: Connection,
     *,
@@ -1270,7 +1371,6 @@ def _cached_lead_verification(
 ) -> VerificationResult | None:
     if not {"tenant_id", "metadata"}.issubset(columns):
         return None
-
     verification_columns = [
         column_name
         for column_name in ("verification", "verifier_result")
@@ -1278,7 +1378,6 @@ def _cached_lead_verification(
     ]
     if not verification_columns:
         return None
-
     select_parts = ["metadata"]
     select_parts.extend(verification_columns)
     where_parts = ["tenant_id = :tenant_id"]
@@ -1286,17 +1385,14 @@ def _cached_lead_verification(
         "tenant_id": tenant_id,
         "external_key": external_key,
     }
-
     if source_post_id and "source_post_id" in columns:
         where_parts.append("source_post_id = CAST(:source_post_id AS uuid)")
         params["source_post_id"] = source_post_id
     else:
         where_parts.append("metadata->>'external_key' = :external_key")
-
     if service_profile_id and "service_profile_id" in columns:
         where_parts.append("service_profile_id = CAST(:service_profile_id AS uuid)")
         params["service_profile_id"] = service_profile_id
-
     row = conn.execute(
         text(
             f"""
@@ -1311,14 +1407,12 @@ def _cached_lead_verification(
     ).mappings().first()
     if not row:
         return None
-
     metadata = _as_dict(row.get("metadata"))
     if (
         metadata.get("profile_embedding_sha256") != profile_embedding_sha256
         or metadata.get("verifier_model") != verifier_model
     ):
         return None
-
     for column_name in verification_columns:
         payload = _as_dict(row.get(column_name))
         if not payload:
@@ -1337,10 +1431,7 @@ def _cached_lead_verification(
                 exc,
             )
             return None
-
     return None
-
-
 def _lead_match_status(verification: Any) -> str:
     """Map a verifier decision to a review-safe lead lifecycle status."""
     verifier_score = float(getattr(verification, "confidence", 0.0) or 0.0)
@@ -1367,8 +1458,6 @@ def _lead_match_status(verification: Any) -> str:
     ):
         return "discovery_candidate"
     return "rejected"
-
-
 def _persist_lead_match(
     conn: Connection,
     *,
@@ -1385,7 +1474,6 @@ def _persist_lead_match(
     if not {"tenant_id", "match_status"}.issubset(columns):
         logger.info("lead_match_persistence_skipped skip_reason=%s", "table_missing")
         return
-
     now = datetime.now(timezone.utc).isoformat()
     verifier_score = float(getattr(verification, "confidence", 0.0) or 0.0)
     # An LLM-verifier pass makes a lead ready for human review. Only the
@@ -1404,7 +1492,6 @@ def _persist_lead_match(
         "profile_embedding_sha256": profile_embedding_sha256,
         "verifier_model": verifier_model,
     }
-
     payload: dict[str, Any] = {
         "tenant_id": tenant_id,
         "service_profile_id": service_profile_id,
@@ -1430,7 +1517,6 @@ def _persist_lead_match(
     }
     if "created_at" in columns:
         payload["created_at"] = now
-
     existing_id = _existing_lead_match_id(
         conn,
         tenant_id=tenant_id,
@@ -1440,7 +1526,6 @@ def _persist_lead_match(
         columns=columns,
     )
     expressions, params = _bind_payload(payload, columns)
-
     if (
         service_profile_id
         and source_post_id
@@ -1485,7 +1570,6 @@ def _persist_lead_match(
             params,
         )
         return
-
     if existing_id:
         assignment_parts = [
             (
@@ -1512,7 +1596,6 @@ def _persist_lead_match(
             params,
         )
         return
-
     conn.execute(
         text(
             f"""
@@ -1522,8 +1605,6 @@ def _persist_lead_match(
         ),
         params,
     )
-
-
 def run_initial_public_ingestion(
     tenant_id: str,
     service_profile_id: str | None = None,
@@ -1537,7 +1618,6 @@ def run_initial_public_ingestion(
             service_profile_id,
             profile_columns,
         )
-
     if not profile_row:
         logger.warning(
             "social_ingestion_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
@@ -1546,7 +1626,6 @@ def run_initial_public_ingestion(
             "service_profile_not_found",
         )
         return {"posts": 0, "embedded": 0, "candidates": 0, "qualified": 0}
-
     profile_embedding = _profile_embedding_from_row(profile_row)
     if not profile_embedding:
         logger.warning(
@@ -1556,7 +1635,6 @@ def run_initial_public_ingestion(
             "service_profile_embedding_missing",
         )
         return {"posts": 0, "embedded": 0, "candidates": 0, "qualified": 0}
-
     resolved_profile_id = (
         str(profile_row.get("id")) if profile_row.get("id") else service_profile_id
     )
@@ -1575,7 +1653,6 @@ def run_initial_public_ingestion(
             ),
         ]
     )
-
     if not posts:
         logger.info(
             "social_ingestion_completed tenant_id=%s service_profile_id=%s posts=%s embedded=%s candidates=%s qualified=%s",
@@ -1587,10 +1664,8 @@ def run_initial_public_ingestion(
             0,
         )
         return {"posts": 0, "embedded": 0, "candidates": 0, "qualified": 0}
-
     with engine.begin() as conn:
         source_post_ids = _persist_source_posts(conn, tenant_id, posts)
-
     embedding_service = EmbeddingService()
     embedding_model = embedding_service.model
     profile_embedding_sha256 = _embedding_sha256(profile_embedding)
@@ -1611,7 +1686,6 @@ def run_initial_public_ingestion(
                     text_sha256=text_sha256,
                     embedding_model=embedding_model,
                 )
-
         if cached_embedding:
             embedding_values = cached_embedding
             logger.info(
@@ -1644,7 +1718,6 @@ def run_initial_public_ingestion(
                     exc,
                 )
                 continue
-
             embedding_values = embedding.embedding
             with engine.begin() as conn:
                 _persist_source_post_embedding_cache(
@@ -1655,7 +1728,6 @@ def run_initial_public_ingestion(
                     embedding_model=embedding.model,
                     embedding=embedding_values,
                 )
-
         metadata = _primitive_metadata(
             {
                 **(post.metadata or {}),
@@ -1677,27 +1749,22 @@ def run_initial_public_ingestion(
             )
         )
         posts_by_match_id[match_post_id] = post
-
     embedding_service.close()
-
     candidates = find_candidate_matches(
         profile_embedding,
         post_embeddings,
         tenant_id=tenant_id,
         service_profile_id=resolved_profile_id,
     )
-
     verifier = VerifierService()
     verifier_model = verifier.model
     qualified_count = 0
     with engine.begin() as conn:
         lead_match_columns = _table_columns(conn, "lead_matches")
-
     for candidate in candidates:
         post = posts_by_match_id.get(candidate.post_id)
         if not post:
             continue
-
         source_post_id_value = candidate.metadata.get("source_post_id")
         source_post_id = str(source_post_id_value) if source_post_id_value else None
         with engine.begin() as conn:
@@ -1711,7 +1778,6 @@ def run_initial_public_ingestion(
                 verifier_model=verifier_model,
                 columns=lead_match_columns,
             )
-
         if verification:
             logger.info(
                 "lead_verification_cache_hit tenant_id=%s service_profile_id=%s source_post_id=%s source=%s external_id=%s verifier_model=%s",
@@ -1741,7 +1807,7 @@ def run_initial_public_ingestion(
             DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
         ):
             qualified_count += 1
-
+        # Persist the lead match for this candidate (creates or updates rows).
         with engine.begin() as conn:
             _persist_lead_match(
                 conn,
@@ -1773,53 +1839,17 @@ def run_initial_public_ingestion(
         "qualified": qualified_count,
     }
 
-
-# ---------------------------------------------------------------------------
-# Globally scoped source ingestion (Hacker News and X)
-# ---------------------------------------------------------------------------
-# These paths intentionally do not reuse ``_persist_source_posts`` above.  That
-# function belongs to the older tenant-scoped prospecting flow and requires a
-# tenant_id.  Public corpus records are attached to a tenant only during
-# matching.
-
-
-_DISCOVERY_QUERY_STOP_WORDS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "are",
-        "for",
-        "from",
-        "how",
-        "i",
-        "in",
-        "is",
-        "my",
-        "of",
-        "on",
-        "or",
-        "the",
-        "to",
-        "with",
-    }
-)
-
-
 def _discovery_query_tokens(value: str) -> set[str]:
     return {
         token
         for token in re.findall(r"[a-z0-9][a-z0-9_-]*", value.casefold())
         if len(token) > 1 and token not in _DISCOVERY_QUERY_STOP_WORDS
     }
-
-
 def _source_post_is_plausible_for_discovery_query(
-    post: SourcePost | TwitterSourcePost,
+    post: Any,
     query: str,
 ) -> bool:
     """Distinguish an actual buyer-language signal from an API search hit.
-
     Source APIs can return loose token matches.  This is intentionally a cheap
     *coverage* signal rather than a lead decision: only the downstream
     similarity filter and verifier can create a reviewable lead.  It prevents
@@ -1833,7 +1863,6 @@ def _source_post_is_plausible_for_discovery_query(
         return False
     if phrase in text_value:
         return True
-
     query_tokens = _discovery_query_tokens(phrase)
     if not query_tokens:
         return False
@@ -1845,8 +1874,6 @@ def _source_post_is_plausible_for_discovery_query(
     # evidence.
     required_overlap = 1 if len(query_tokens) == 1 else min(2, len(query_tokens))
     return overlap >= required_overlap
-
-
 @dataclass(frozen=True)
 class HnIngestionResult:
     query: str
@@ -1862,17 +1889,16 @@ class HnIngestionResult:
     # HN-first actor decide whether an X fallback is warranted without using a
     # raw provider hit count as evidence of relevance.
     plausible_hits: int = 0
-
-
+    # New queue handoffs retain the provider namespace.  Keep the legacy raw
+    # ID field above for deserializing already-scheduled jobs and older tests;
+    # it is never used as the primary identity for new work.
+    matchable_source_post_refs: list[PublicSourcePostRef] = field(default_factory=list)
 def _hn_batch_size() -> int:
     return max(1, min(1_000, env_int("ARCLI_HN_INSERT_BATCH_SIZE", 100)))
-
-
 def _create_public_source_supabase_client() -> Any:
     """Create the service-role client used for one globally scoped ingest."""
     from supabase import create_client
     from supabase.client import ClientOptions
-
     supabase_url = (
         os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL") or ""
     ).strip()
@@ -1881,7 +1907,6 @@ def _create_public_source_supabase_client() -> Any:
     ).strip()
     if not supabase_url or not supabase_key:
         raise RuntimeError("Supabase credentials are required for public source ingestion.")
-
     return create_client(
         supabase_url,
         supabase_key,
@@ -1892,8 +1917,6 @@ def _create_public_source_supabase_client() -> Any:
             storage_client_timeout=15,
         ),
     )
-
-
 @contextmanager
 def _public_source_supabase_client_context() -> Iterator[Any]:
     """Scope Supabase transports to a single HN or X persistence operation."""
@@ -1902,14 +1925,9 @@ def _public_source_supabase_client_context() -> Iterator[Any]:
         # module does not own.
         yield _public_source_supabase_client
         return
-
     with managed_network_client(_create_public_source_supabase_client) as client:
         yield client
-
-
 _BatchItem = TypeVar("_BatchItem")
-
-
 def _iter_batches(
     items: list[_BatchItem],
     batch_size: int,
@@ -1917,13 +1935,9 @@ def _iter_batches(
     """Yield bounded chunks without materializing a second full collection."""
     for offset in range(0, len(items), batch_size):
         yield items[offset : offset + batch_size]
-
-
-def _source_post_payload(post: SourcePost | TwitterSourcePost) -> dict[str, Any]:
+def _source_post_payload(post: Any) -> dict[str, Any]:
     """Use the SourcePost contract as the sole database payload contract."""
     return post.model_dump(mode="json")
-
-
 def _response_source_post_ids(response: Any) -> list[str]:
     rows = getattr(response, "data", None)
     if not isinstance(rows, list):
@@ -1933,16 +1947,12 @@ def _response_source_post_ids(response: Any) -> list[str]:
         for row in rows
         if isinstance(row, dict) and row.get("source_post_id")
     ]
-
-
 def _is_missing_postgrest_column(error: Exception, column_name: str) -> bool:
     """Return whether PostgREST rejected an optional column absent from schema."""
     if getattr(error, "code", None) != "PGRST204":
         return False
     message = str(getattr(error, "message", "") or error)
     return column_name in message and "column" in message.lower()
-
-
 def _upsert_public_source_post_payloads(
     client: Any,
     payloads: list[dict[str, Any]],
@@ -1956,10 +1966,8 @@ def _upsert_public_source_post_payloads(
         )
         .execute()
     )
-
-
 def _persist_new_public_source_posts(
-    posts: list[SourcePost] | list[TwitterSourcePost],
+    posts: Sequence[Any],
     *,
     batch_size: int,
 ) -> list[str]:
@@ -2009,18 +2017,43 @@ def _persist_new_public_source_posts(
                     ],
                 )
             inserted_source_post_ids.extend(_response_source_post_ids(response))
-
     # A returned row from ON CONFLICT DO NOTHING is necessarily a fresh insert.
     return list(dict.fromkeys(inserted_source_post_ids))
-
-
 def _matchable_source_post_ids(
-    posts: list[SourcePost] | list[TwitterSourcePost],
+    posts: Sequence[Any],
 ) -> list[str]:
     """Return every fetched global external ID, including duplicate rows."""
     return list(dict.fromkeys(post.source_post_id for post in posts if post.source_post_id))
-
-
+def _matchable_source_post_refs(posts: Sequence[Any]) -> list[PublicSourcePostRef]:
+    """Return every fetched source-qualified identity, including existing rows."""
+    refs: dict[tuple[str, str], PublicSourcePostRef] = {}
+    for post in posts:
+        source = str(getattr(post, "source", "") or "").strip()
+        source_post_id = str(getattr(post, "source_post_id", "") or "").strip()
+        if not source or not source_post_id:
+            continue
+        ref = PublicSourcePostRef(source, source_post_id)
+        refs.setdefault((ref.source, ref.source_post_id), ref)
+    return list(refs.values())
+def _result_source_post_refs(
+    result: Any,
+    *,
+    source: str,
+) -> list[PublicSourcePostRef]:
+    """Read source-qualified result refs while replaying legacy result shapes."""
+    refs = getattr(result, "matchable_source_post_refs", None)
+    if refs:
+        return _matchable_source_post_refs(refs)
+    raw_ids = (
+        getattr(result, "matchable_source_post_ids", None)
+        or getattr(result, "inserted_source_post_ids", None)
+        or []
+    )
+    return [
+        PublicSourcePostRef(source, str(source_post_id))
+        for source_post_id in dict.fromkeys(raw_ids)
+        if str(source_post_id).strip()
+    ]
 def ingest_hn_posts(
     query: str,
     since_hours_ago: int,
@@ -2029,7 +2062,6 @@ def ingest_hn_posts(
     query_type: str | None = None,
 ) -> HnIngestionResult:
     """Fetch public HN content, then insert only new rows in bounded batches.
-
     ``ignore_duplicates=True`` maps to ``ON CONFLICT DO NOTHING`` in PostgREST.
     Together with the required ``(source, source_post_id)`` unique constraint it
     makes repeated workers and retry delivery safe without a tenant-specific key.
@@ -2038,9 +2070,7 @@ def ingest_hn_posts(
         raise ValueError("query is required")
     if since_hours_ago < 0:
         raise ValueError("since_hours_ago must be non-negative")
-
     from api.services.integrations.hn_connector import HackerNewsConnector
-
     since_timestamp = int(
         (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
     )
@@ -2061,6 +2091,7 @@ def ingest_hn_posts(
             inserted_source_post_ids=[],
             matchable_source_post_ids=[],
             plausible_hits=0,
+            matchable_source_post_refs=[],
         )
         logger.info(
             "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",
@@ -2071,7 +2102,6 @@ def ingest_hn_posts(
             result.inserted_count,
         )
         return result
-
     inserted_source_post_ids = _persist_new_public_source_posts(
         posts,
         batch_size=_hn_batch_size(),
@@ -2088,6 +2118,7 @@ def ingest_hn_posts(
             for post in posts
             if _source_post_is_plausible_for_discovery_query(post, query)
         ),
+        matchable_source_post_refs=_matchable_source_post_refs(posts),
     )
     logger.info(
         "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",
@@ -2098,68 +2129,49 @@ def ingest_hn_posts(
         result.inserted_count,
     )
     return result
-
-
-def trigger_embedding_jobs(source_post_ids: list[str]) -> int:
+def trigger_embedding_jobs(source_post_refs: Sequence[PublicSourcePostRef]) -> int:
     """Hand fetched public rows to the embedding queue.
-
     The source corpus is global, while lead matching is tenant-scoped. A post
     returned by a new profile's search may already exist globally; handing it
     off again is necessary to evaluate it against that newly created profile.
-
     This import is intentionally lazy to avoid a service/actor import cycle
     while allowing the consumer to remain independently scalable.
     """
-    if not source_post_ids:
+    if not source_post_refs:
         return 0
-
     # Configure the broker before importing the actor registry.  Dramatiq
     # binds an actor to the broker that exists at decoration time.
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         raise RuntimeError("REDIS_URL is required to enqueue embedding jobs.")
-
     import dramatiq
-
     from api.broker import configure_redis_broker
-
     current_broker = dramatiq.get_broker()
     if getattr(current_broker, "_arcli_redis_url", None) != redis_url:
         configure_redis_broker(redis_url)
-
     from api.workers.actors import enqueue_source_post_embedding_jobs
-
-    return enqueue_source_post_embedding_jobs(source_post_ids)
-
-
+    return enqueue_source_post_embedding_jobs(source_post_refs)
 def enqueue_existing_public_source_rematch(
     tenant_id: str,
     service_profile_id: str | None,
 ) -> str | None:
     """Queue a bounded, profile-only rematch of the cached public corpus.
-
     This is separate from new-post embedding: it lets a newly activated
-    profile benefit from global HN/X rows collected before that customer
+    profile benefit from global public-source rows collected before that customer
     existed, without re-running every other tenant's profile against those
     rows.
     """
     if not service_profile_id:
         return None
-
     redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         raise RuntimeError("REDIS_URL is required to enqueue public source rematches.")
-
     import dramatiq
-
     from api.broker import configure_redis_broker
-
     current_broker = dramatiq.get_broker()
     if getattr(current_broker, "_arcli_redis_url", None) != redis_url:
         configure_redis_broker(redis_url)
-
     from api.workers.actors import rematch_existing_public_source_posts_job
-
     message = rematch_existing_public_source_posts_job.send(
         tenant_id,
         service_profile_id,
@@ -2172,8 +2184,6 @@ def enqueue_existing_public_source_rematch(
         message.message_id,
     )
     return message.message_id
-
-
 @dataclass(frozen=True)
 class XIngestionResult:
     query: str
@@ -2182,12 +2192,9 @@ class XIngestionResult:
     inserted_count: int
     inserted_source_post_ids: list[str]
     matchable_source_post_ids: list[str] = field(default_factory=list)
-
-
+    matchable_source_post_refs: list[PublicSourcePostRef] = field(default_factory=list)
 def _x_batch_size() -> int:
     return max(1, min(1_000, env_int("ARCLI_X_INSERT_BATCH_SIZE", 100)))
-
-
 def ingest_x_posts(
     query: str,
     since_hours_ago: int,
@@ -2200,9 +2207,7 @@ def ingest_x_posts(
         raise ValueError("query is required")
     if since_hours_ago < 0:
         raise ValueError("since_hours_ago must be non-negative")
-
     from api.services.integrations.x_connector import XConnector
-
     since_timestamp = int(
         (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
     )
@@ -2226,6 +2231,7 @@ def ingest_x_posts(
             inserted_count=0,
             inserted_source_post_ids=[],
             matchable_source_post_ids=[],
+            matchable_source_post_refs=[],
         )
         logger.info(
             "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -2234,7 +2240,6 @@ def ingest_x_posts(
             result.inserted_count,
         )
         return result
-
     inserted_source_post_ids = _persist_new_public_source_posts(
         posts,
         batch_size=_x_batch_size(),
@@ -2246,6 +2251,7 @@ def ingest_x_posts(
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
         matchable_source_post_ids=_matchable_source_post_ids(posts),
+        matchable_source_post_refs=_matchable_source_post_refs(posts),
     )
     logger.info(
         "x_ingestion_completed query=%s hits_found=%s new_inserts=%s",
@@ -2254,28 +2260,149 @@ def ingest_x_posts(
         result.inserted_count,
     )
     return result
-
-
+@dataclass(frozen=True)
+class AdditionalPublicSourceIngestionResult:
+    """A source-qualified result from one of the four non-HN/X adapters."""
+    source: str
+    query: str
+    since_timestamp: int
+    hits_found: int
+    inserted_count: int
+    inserted_source_post_ids: list[str]
+    matchable_source_post_refs: list[PublicSourcePostRef] = field(default_factory=list)
+    plausible_hits: int = 0
+def _additional_public_source_batch_size() -> int:
+    return max(
+        1,
+        min(1_000, env_int("ARCLI_ADDITIONAL_PUBLIC_SOURCE_INSERT_BATCH_SIZE", 100)),
+    )
+def _additional_public_source_max_pages() -> int:
+    """Keep every added free source to one page unless an operator opts in."""
+    return max(
+        1,
+        min(2, env_int("ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES", 1)),
+    )
+def additional_public_source_cache_scope(source: str) -> str:
+    """Include provider routing configuration in the global query-cache key."""
+    if source == "bluesky":
+        return os.getenv("ARCLI_BLUESKY_SEARCH_URL", "public.api.bsky.app")
+    if source == "stackexchange":
+        return os.getenv("ARCLI_STACKEXCHANGE_SITE", "stackoverflow")
+    if source == "lemmy":
+        return os.getenv("ARCLI_LEMMY_SEARCH_URL", "https://lemmy.world/api/v4/search")
+    return ""
+def _additional_public_source_connector(source: str) -> Any:
+    """Instantiate an adapter lazily so unrelated provider dependencies stay cold."""
+    if source == "bluesky":
+        from api.services.integrations.bluesky_connector import BlueskyConnector
+        return BlueskyConnector()
+    if source == "stackexchange":
+        from api.services.integrations.stackexchange_connector import StackExchangeConnector
+        return StackExchangeConnector()
+    if source == "github":
+        from api.services.integrations.github_connector import GitHubIssuesConnector
+        return GitHubIssuesConnector()
+    if source == "lemmy":
+        from api.services.integrations.lemmy_connector import LemmyConnector
+        return LemmyConnector()
+    raise ValueError(f"unsupported additional public source: {source}")
+def ingest_additional_public_source_posts(
+    source: str,
+    query: str,
+    since_hours_ago: int,
+    posts_per_query: int | None = None,
+    *,
+    query_type: str | None = None,
+) -> AdditionalPublicSourceIngestionResult:
+    """Fetch one free/low-cost source, persist it globally, and return refs.
+    This function intentionally does no tenant-scoped write. The caller hands
+    every fetched global ref to the shared embedding and verifier pipeline,
+    which is the only path that can create a tenant-visible candidate.
+    """
+    normalized_source = source.strip().casefold()
+    normalized_query = query.strip()
+    if normalized_source not in ADDITIONAL_PUBLIC_SOURCE_NAMES:
+        raise ValueError(f"unsupported additional public source: {source}")
+    if not normalized_query:
+        raise ValueError("query is required")
+    if since_hours_ago < 0:
+        raise ValueError("since_hours_ago must be non-negative")
+    since_timestamp = int(
+        (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
+    )
+    connector = _additional_public_source_connector(normalized_source)
+    posts: list[PublicSourcePost] = asyncio.run(
+        connector.fetch_recent_posts(
+            normalized_query,
+            since_timestamp=since_timestamp,
+            limit=posts_per_query or DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
+            max_pages=_additional_public_source_max_pages(),
+        )
+    )
+    if not posts:
+        result = AdditionalPublicSourceIngestionResult(
+            source=normalized_source,
+            query=normalized_query,
+            since_timestamp=since_timestamp,
+            hits_found=0,
+            inserted_count=0,
+            inserted_source_post_ids=[],
+            matchable_source_post_refs=[],
+            plausible_hits=0,
+        )
+    else:
+        inserted_source_post_ids = _persist_new_public_source_posts(
+            posts,
+            batch_size=_additional_public_source_batch_size(),
+        )
+        result = AdditionalPublicSourceIngestionResult(
+            source=normalized_source,
+            query=normalized_query,
+            since_timestamp=since_timestamp,
+            hits_found=len(posts),
+            inserted_count=len(inserted_source_post_ids),
+            inserted_source_post_ids=inserted_source_post_ids,
+            matchable_source_post_refs=_matchable_source_post_refs(posts),
+            plausible_hits=sum(
+                1
+                for post in posts
+                if _source_post_is_plausible_for_discovery_query(post, normalized_query)
+            ),
+        )
+    logger.info(
+        "additional_public_source_ingestion_completed source=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",
+        result.source,
+        query_type,
+        result.hits_found,
+        result.plausible_hits,
+        result.inserted_count,
+    )
+    return result
 # ---------------------------------------------------------------------------
 # Public-source embedding and tenant matching
 # ---------------------------------------------------------------------------
-
-
 def _load_public_source_post_rows(
     conn: Connection,
     source_post_id: str,
+    *,
+    source: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Load every global row for an external ID without crossing tenant rows."""
+    """Load one source-qualified global row without crossing tenant rows.
+    Source-less calls only exist to drain legacy queued work. They are allowed
+    when there is exactly one matching global row, but deliberately skip an
+    ambiguous external ID instead of letting a newly added source cross-match
+    another provider's content.
+    """
     columns = _table_columns(conn, "source_posts")
     required_columns = {"id", "source", "source_post_id"}
     if not required_columns.issubset(columns):
         logger.warning(
-            "public_source_post_embedding_skipped source_post_id=%s skip_reason=%s",
+            "public_source_post_embedding_skipped source=%s source_post_id=%s skip_reason=%s",
+            source,
             source_post_id,
             "source_post_contract_missing",
         )
         return []
-
     select_columns = [
         column_name
         for column_name in (
@@ -2295,31 +2422,44 @@ def _load_public_source_post_rows(
         )
         if column_name in columns
     ]
+    normalized_source = (source or "").strip() or None
     where_parts = ["source_post_id = :source_post_id"]
+    params: dict[str, Any] = {"source_post_id": source_post_id}
+    if normalized_source:
+        where_parts.append("source = :source")
+        params["source"] = normalized_source
     if "tenant_id" in columns:
         where_parts.append("tenant_id IS NULL")
-
+    # Query two rows for a legacy source-less handoff: one proves it is still
+    # unambiguous; two prove that processing it would cross provider domains.
+    limit_clause = "" if normalized_source else "LIMIT 2"
     rows = conn.execute(
         text(
             f"""
             SELECT {", ".join(select_columns)}
-              FROM public.source_posts
+             FROM public.source_posts
              WHERE {" AND ".join(where_parts)}
              ORDER BY id
+             {limit_clause}
             """
         ),
-        {"source_post_id": source_post_id},
+        params,
     ).mappings()
-    return [dict(row) for row in rows]
-
-
+    normalized_rows = [dict(row) for row in rows]
+    if not normalized_source and len(normalized_rows) > 1:
+        logger.warning(
+            "public_source_post_embedding_skipped source_post_id=%s skip_reason=%s",
+            source_post_id,
+            "source_post_ref_missing_ambiguous",
+        )
+        return []
+    return normalized_rows
 def _load_recent_embedded_public_source_post_rows(
     conn: Connection,
     *,
     limit: int,
 ) -> list[dict[str, Any]]:
     """Load a bounded global corpus slice that can be matched without re-embed.
-
     Activation rematching intentionally consumes only rows already marked
     embedded.  Re-embedding a corpus for every customer would defeat the
     global cache and make onboarding OpenAI usage scale with tenant count.
@@ -2332,7 +2472,6 @@ def _load_recent_embedded_public_source_post_rows(
             "source_post_contract_missing",
         )
         return []
-
     select_columns = [
         column_name
         for column_name in (
@@ -2368,8 +2507,6 @@ def _load_recent_embedded_public_source_post_rows(
         {"limit": limit},
     ).mappings()
     return [dict(row) for row in rows]
-
-
 def _public_source_post_as_social_post(row: dict[str, Any]) -> SocialPost | None:
     source = _string_value(row.get("source"))
     external_id = _string_value(row.get("source_post_id"))
@@ -2377,7 +2514,6 @@ def _public_source_post_as_social_post(row: dict[str, Any]) -> SocialPost | None
     body = _string_value(row.get("body")) or _string_value(row.get("text")) or ""
     if not source or not external_id or not body.strip():
         return None
-
     metadata = _as_dict(row.get("metadata"))
     return SocialPost(
         source=source,
@@ -2395,8 +2531,6 @@ def _public_source_post_as_social_post(row: dict[str, Any]) -> SocialPost | None
         ),
         metadata=metadata,
     )
-
-
 def _cached_public_source_post_embedding(
     conn: Connection,
     *,
@@ -2407,7 +2541,6 @@ def _cached_public_source_post_embedding(
     columns = _table_columns(conn, "source_posts")
     if "metadata" not in columns:
         return None
-
     cache = conn.execute(
         text(
             """
@@ -2430,8 +2563,6 @@ def _cached_public_source_post_embedding(
     ):
         return None
     return _embedding_values(cache_payload.get("embedding"))
-
-
 def _persist_public_source_post_embedding_cache(
     conn: Connection,
     *,
@@ -2444,7 +2575,6 @@ def _persist_public_source_post_embedding_cache(
     metadata_column = columns.get("metadata")
     if not metadata_column:
         return
-
     metadata_expression = """
         (
             COALESCE(metadata::jsonb, '{}'::jsonb)
@@ -2462,13 +2592,11 @@ def _persist_public_source_post_embedding_cache(
     """
     if metadata_column["data_type"] == "json" or metadata_column["udt_name"] == "json":
         metadata_expression = f"({metadata_expression})::json"
-
     assignments = [f"metadata = {metadata_expression}"]
     if "embedding_status" in columns:
         assignments.append("embedding_status = 'completed'")
     if "updated_at" in columns:
         assignments.append("updated_at = CAST(:cached_at AS timestamptz)")
-
     conn.execute(
         text(
             f"""
@@ -2488,8 +2616,6 @@ def _persist_public_source_post_embedding_cache(
             "cached_at": datetime.now(timezone.utc).isoformat(),
         },
     )
-
-
 def _mark_public_source_post_embedding_failed(
     conn: Connection,
     *,
@@ -2498,13 +2624,11 @@ def _mark_public_source_post_embedding_failed(
     columns = _table_columns(conn, "source_posts")
     if "embedding_status" not in columns:
         return
-
     assignments = ["embedding_status = 'failed'"]
     params: dict[str, Any] = {"database_post_id": database_post_id}
     if "updated_at" in columns:
         assignments.append("updated_at = CAST(:updated_at AS timestamptz)")
         params["updated_at"] = datetime.now(timezone.utc).isoformat()
-
     conn.execute(
         text(
             f"""
@@ -2516,14 +2640,11 @@ def _mark_public_source_post_embedding_failed(
         ),
         params,
     )
-
-
 def _public_matching_profile_rows(conn: Connection) -> list[dict[str, Any]]:
     """Return profiles with a tenant binding; public data is never tenant-owned."""
     columns = _service_profile_columns(conn)
     if not {"id", "tenant_id"}.issubset(columns):
         return []
-
     select_columns = list(columns)
     order_column = "updated_at" if "updated_at" in columns else "id"
     profile_limit = max(1, env_int("ARCLI_PUBLIC_SOURCE_PROFILE_LIMIT", 250))
@@ -2540,8 +2661,6 @@ def _public_matching_profile_rows(conn: Connection) -> list[dict[str, Any]]:
         {"profile_limit": profile_limit},
     ).mappings()
     return [dict(row) for row in rows]
-
-
 def _empty_public_rematch_result() -> dict[str, int]:
     return {
         "posts": 0,
@@ -2551,8 +2670,6 @@ def _empty_public_rematch_result() -> dict[str, int]:
         "ready_for_review": 0,
         "discovery_candidates": 0,
     }
-
-
 def _initial_public_global_rematch_max_candidates() -> int:
     """Keep activation-time verifier usage below the general match fan-out."""
     return max(
@@ -2565,14 +2682,11 @@ def _initial_public_global_rematch_max_candidates() -> int:
             ),
         ),
     )
-
-
 def rematch_existing_public_source_posts_for_profile(
     tenant_id: str,
     service_profile_id: str | None,
 ) -> dict[str, int]:
     """Match one activated profile to a bounded, already-embedded corpus.
-
     New public posts retain the existing global fan-out behavior.  This path is
     deliberately profile-centric: it restores historical corpus coverage for
     the newly activated customer without reading or writing another tenant's
@@ -2582,7 +2696,6 @@ def rematch_existing_public_source_posts_for_profile(
     normalized_profile_id = (service_profile_id or "").strip()
     if not normalized_tenant_id or not normalized_profile_id:
         raise ValueError("tenant_id and service_profile_id are required")
-
     source_limit = max(
         1,
         min(
@@ -2607,7 +2720,6 @@ def rematch_existing_public_source_posts_for_profile(
             limit=source_limit,
         )
         lead_match_columns = _table_columns(conn, "lead_matches")
-
     if not profile_row:
         logger.info(
             "existing_public_source_rematch_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
@@ -2616,7 +2728,6 @@ def rematch_existing_public_source_posts_for_profile(
             "service_profile_not_found",
         )
         return _empty_public_rematch_result()
-
     profile_embedding = _profile_embedding_from_row(profile_row)
     if not profile_embedding:
         logger.info(
@@ -2626,7 +2737,6 @@ def rematch_existing_public_source_posts_for_profile(
             "service_profile_embedding_missing",
         )
         return _empty_public_rematch_result()
-
     try:
         service_profile = _service_profile_from_row(profile_row)
     except Exception as exc:
@@ -2638,7 +2748,6 @@ def rematch_existing_public_source_posts_for_profile(
             exc.__class__.__name__,
         )
         return _empty_public_rematch_result()
-
     embedding_service = EmbeddingService()
     post_embeddings: list[PostEmbedding] = []
     posts_by_database_id: dict[str, SocialPost] = {}
@@ -2649,7 +2758,6 @@ def rematch_existing_public_source_posts_for_profile(
             post = _public_source_post_as_social_post(source_row)
             if not database_post_id or not post:
                 continue
-
             embedding_text = post.matching_text[:32_000]
             with engine.begin() as conn:
                 embedding_values = _cached_public_source_post_embedding(
@@ -2661,7 +2769,6 @@ def rematch_existing_public_source_posts_for_profile(
             if not embedding_values:
                 cache_misses += 1
                 continue
-
             post_embeddings.append(
                 PostEmbedding(
                     post_id=database_post_id,
@@ -2682,7 +2789,6 @@ def rematch_existing_public_source_posts_for_profile(
             posts_by_database_id[database_post_id] = post
     finally:
         embedding_service.close()
-
     candidates = find_candidate_matches(
         profile_embedding,
         post_embeddings,
@@ -2711,7 +2817,6 @@ def rematch_existing_public_source_posts_for_profile(
             result["discovery_candidates"],
         )
         return result
-
     verifier = VerifierService()
     profile_embedding_sha256 = _embedding_sha256(profile_embedding)
     ready_for_review_count = 0
@@ -2721,7 +2826,6 @@ def rematch_existing_public_source_posts_for_profile(
             post = posts_by_database_id.get(candidate.post_id)
             if not post:
                 continue
-
             with engine.begin() as conn:
                 verification = _cached_lead_verification(
                     conn,
@@ -2747,13 +2851,11 @@ def rematch_existing_public_source_posts_for_profile(
                     tenant_id=normalized_tenant_id,
                     service_profile_id=normalized_profile_id,
                 )
-
             match_status = _lead_match_status(verification)
             if match_status == "ready_for_review":
                 ready_for_review_count += 1
             elif match_status == "discovery_candidate":
                 discovery_candidate_count += 1
-
             with engine.begin() as conn:
                 _persist_lead_match(
                     conn,
@@ -2769,14 +2871,6 @@ def rematch_existing_public_source_posts_for_profile(
     finally:
         verifier.close()
 
-    result = {
-        "posts": len(source_rows),
-        "embedded": len(post_embeddings),
-        "cache_misses": cache_misses,
-        "candidates": len(candidates),
-        "ready_for_review": ready_for_review_count,
-        "discovery_candidates": discovery_candidate_count,
-    }
     logger.info(
         "existing_public_source_rematch_completed tenant_id=%s service_profile_id=%s posts=%s embedded=%s cache_misses=%s candidates=%s ready_for_review=%s discovery_candidates=%s",
         normalized_tenant_id,
@@ -2790,26 +2884,50 @@ def rematch_existing_public_source_posts_for_profile(
     )
     return result
 
+class _SocialIngestionCompatibilityModule(ModuleType):
+    """Mirror test seams from the legacy module into split implementation."""
 
-def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
+    def __setattr__(self, name: str, value: object) -> None:
+        super().__setattr__(name, value)
+        if name.startswith("__"):
+            return
+        for module in _IMPLEMENTATION_MODULES:
+            if name in getattr(module, "__dict__", {}):
+                setattr(module, name, value)
+
+
+# Implementation modules to mirror into; populated by tests or runtime
+_IMPLEMENTATION_MODULES: list[ModuleType] = []
+def process_public_source_post_embedding(
+    source_post_id: str,
+    *,
+    source: str | None = None,
+) -> dict[str, int]:
     """Embed one global post and create tenant-scoped verified lead matches.
-
     The source row remains global.  Only a positive profile match creates a
     ``lead_matches`` row carrying that profile's tenant ID.
+    Existing consumers occasionally patch private dependencies such as the
+    scoped Supabase client or database factory.  Patching the public façade
+    continues to affect every split module that imports that dependency, while
+    ordinary production calls pay no forwarding or reflection cost.
     """
     normalized_source_post_id = source_post_id.strip()
+    normalized_source = (source or "").strip() or None
     if not normalized_source_post_id:
         raise ValueError("source_post_id is required")
-
     engine = _database_engine()
     with engine.begin() as conn:
-        source_rows = _load_public_source_post_rows(conn, normalized_source_post_id)
+        source_rows = _load_public_source_post_rows(
+            conn,
+            normalized_source_post_id,
+            source=normalized_source,
+        )
         profile_rows = _public_matching_profile_rows(conn)
         lead_match_columns = _table_columns(conn, "lead_matches")
-
     if not source_rows:
         logger.info(
-            "public_source_post_embedding_skipped source_post_id=%s skip_reason=%s",
+            "public_source_post_embedding_skipped source=%s source_post_id=%s skip_reason=%s",
+            normalized_source,
             normalized_source_post_id,
             "global_source_post_not_found",
         )
@@ -2820,7 +2938,6 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
             "ready_for_review": 0,
             "discovery_candidates": 0,
         }
-
     embedding_service = EmbeddingService()
     verifier: VerifierService | None = None
     embedded_count = 0
@@ -2834,13 +2951,13 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
             post = _public_source_post_as_social_post(source_row)
             if not post:
                 logger.info(
-                    "public_source_post_embedding_skipped source_post_id=%s database_post_id=%s skip_reason=%s",
+                    "public_source_post_embedding_skipped source=%s source_post_id=%s database_post_id=%s skip_reason=%s",
+                    normalized_source,
                     normalized_source_post_id,
                     database_post_id,
                     "empty_source_content",
                 )
                 continue
-
             embedding_text = post.matching_text[:32_000]
             text_sha256 = _sha256_text(embedding_text)
             with engine.begin() as conn:
@@ -2850,7 +2967,6 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                     text_sha256=text_sha256,
                     embedding_model=embedding_service.model,
                 )
-
             if embedding_values:
                 logger.info(
                     "public_source_post_embedding_cache_hit source_post_id=%s database_post_id=%s source=%s model=%s dimensions=%s",
@@ -2874,7 +2990,6 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                             database_post_id=database_post_id,
                         )
                     raise
-
                 embedding_values = embedding.embedding
                 with engine.begin() as conn:
                     _persist_public_source_post_embedding_cache(
@@ -2885,14 +3000,12 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                         embedding=embedding_values,
                     )
             embedded_count += 1
-
             for profile_row in profile_rows:
                 tenant_id = _string_value(profile_row.get("tenant_id"))
                 service_profile_id = _string_value(profile_row.get("id"))
                 profile_embedding = _profile_embedding_from_row(profile_row)
                 if not tenant_id or not profile_embedding:
                     continue
-
                 try:
                     service_profile = _service_profile_from_row(profile_row)
                 except Exception as exc:
@@ -2905,7 +3018,6 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                         exc.__class__.__name__,
                     )
                     continue
-
                 post_embedding = PostEmbedding(
                     post_id=database_post_id,
                     text=embedding_text,
@@ -2930,7 +3042,6 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                 )
                 if not candidates:
                     continue
-
                 candidate = candidates[0]
                 candidate_count += 1
                 profile_embedding_sha256 = _embedding_sha256(profile_embedding)
@@ -2945,7 +3056,6 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                         verifier_model=verifier.model,
                         columns=lead_match_columns,
                     )
-
                 if not verification:
                     verification = verifier.verify(
                         CandidatePost(
@@ -2960,13 +3070,12 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
                         tenant_id=tenant_id,
                         service_profile_id=service_profile_id,
                     )
-
+                # Classify and persist the verified match
                 match_status = _lead_match_status(verification)
                 if match_status == "ready_for_review":
                     ready_for_review_count += 1
                 elif match_status == "discovery_candidate":
                     discovery_candidate_count += 1
-
                 with engine.begin() as conn:
                     _persist_lead_match(
                         conn,
@@ -2985,7 +3094,8 @@ def process_public_source_post_embedding(source_post_id: str) -> dict[str, int]:
             verifier.close()
 
     logger.info(
-        "public_source_post_matching_completed source_post_id=%s posts=%s embedded=%s profiles=%s candidates=%s ready_for_review=%s discovery_candidates=%s",
+        "public_source_post_matching_completed source=%s source_post_id=%s posts=%s embedded=%s profiles=%s candidates=%s ready_for_review=%s discovery_candidates=%s",
+        normalized_source,
         normalized_source_post_id,
         len(source_rows),
         embedded_count,

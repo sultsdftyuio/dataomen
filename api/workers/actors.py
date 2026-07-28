@@ -42,6 +42,21 @@ def _int_env(name: str, default: int, *, minimum: int = 0) -> int:
         return default
 
 
+def _minimum_plausible_free_hits_for_x_suppression() -> int:
+    """Read the free-source fallback threshold with the HN-era name as fallback."""
+    if "ARCLI_INITIAL_PUBLIC_FREE_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION" in os.environ:
+        return _int_env(
+            "ARCLI_INITIAL_PUBLIC_FREE_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION",
+            2,
+            minimum=1,
+        )
+    return _int_env(
+        "ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION",
+        2,
+        minimum=1,
+    )
+
+
 def _require_redis_broker() -> None:
     """Configure a bounded broker only for a producer-side queue operation."""
     redis_url = os.getenv("REDIS_URL", "").strip()
@@ -194,6 +209,8 @@ def ingest_hn_batch_job(
     posts_per_query: int = 25,
     *,
     fallback_to_x: bool = False,
+    continue_to_additional_sources: bool = False,
+    additional_sources: Sequence[str] | None = None,
     x_fallback_group_id: str | None = None,
     x_fallback_query: str | None = None,
     tenant_id: str | None = None,
@@ -212,7 +229,11 @@ def ingest_hn_batch_job(
         since_hours_ago=since_hours_ago,
     )
     try:
-        from api.services.social_ingestion import ingest_hn_posts, trigger_embedding_jobs
+        from api.services.social_ingestion import (
+            _result_source_post_refs,
+            ingest_hn_posts,
+            trigger_embedding_jobs,
+        )
 
         total_hits = 0
         total_plausible_hits = 0
@@ -220,7 +241,7 @@ def ingest_hn_batch_job(
         # The same global post can satisfy several buyer-language queries.
         # Queue it once after the free HN phase rather than fanning it out to
         # embedding/matching once per query.
-        matching_source_post_ids: dict[str, None] = {}
+        matching_source_post_refs: dict[tuple[str, str], Any] = {}
         for query in normalized_queries:
             result = ingest_hn_posts(
                 query=query["phrase"],
@@ -231,21 +252,37 @@ def ingest_hn_batch_job(
             total_hits += result.hits_found
             total_plausible_hits += result.plausible_hits
             total_new_inserts += result.inserted_count
-            source_post_ids = result.matchable_source_post_ids or result.inserted_source_post_ids
-            for source_post_id in source_post_ids:
-                matching_source_post_ids.setdefault(source_post_id, None)
+            for source_post_ref in _result_source_post_refs(
+                result,
+                source="hackernews",
+            ):
+                matching_source_post_refs.setdefault(
+                    (source_post_ref.source, source_post_ref.source_post_id),
+                    source_post_ref,
+                )
 
-        matching_source_posts = len(matching_source_post_ids)
-        embedding_jobs = trigger_embedding_jobs(list(matching_source_post_ids))
+        matching_source_posts = len(matching_source_post_refs)
+        embedding_jobs = trigger_embedding_jobs(list(matching_source_post_refs.values()))
 
         x_fallback_enqueued = False
+        additional_sources_enqueued = False
         x_fallback_skip_reason: str | None = None
-        minimum_plausible_hits = _int_env(
-            "ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION",
-            2,
-            minimum=1,
-        )
-        if fallback_to_x and total_plausible_hits < minimum_plausible_hits:
+        minimum_plausible_hits = _minimum_plausible_free_hits_for_x_suppression()
+        if continue_to_additional_sources:
+            ingest_additional_public_sources_batch_job.send(
+                normalized_queries,
+                since_hours_ago,
+                posts_per_query,
+                initial_plausible_hits=total_plausible_hits,
+                fallback_to_x=fallback_to_x,
+                enabled_sources=list(additional_sources or []),
+                x_fallback_group_id=x_fallback_group_id,
+                x_fallback_query=x_fallback_query,
+                tenant_id=tenant_id,
+                service_profile_id=service_profile_id,
+            )
+            additional_sources_enqueued = True
+        elif fallback_to_x and total_plausible_hits < minimum_plausible_hits:
             if not _x_source_is_configured():
                 x_fallback_skip_reason = "x_bearer_token_not_configured"
             elif not _claim_initial_x_fallback(x_fallback_group_id):
@@ -285,6 +322,179 @@ def ingest_hn_batch_job(
         new_inserts=total_new_inserts,
         matching_source_posts=matching_source_posts,
         embedding_jobs=embedding_jobs,
+        additional_sources_enqueued=additional_sources_enqueued,
+        x_fallback_enqueued=x_fallback_enqueued,
+        x_fallback_skip_reason=x_fallback_skip_reason,
+    )
+
+
+@dramatiq.actor(
+    actor_name="ingest_additional_public_sources_batch_job",
+    queue_name=os.getenv("ARCLI_ADDITIONAL_PUBLIC_SOURCE_INGESTION_QUEUE_NAME", "ingestion"),
+    max_retries=2,
+    min_backoff=15_000,
+    max_backoff=90_000,
+)
+def ingest_additional_public_sources_batch_job(
+    queries: Sequence[Any],
+    since_hours_ago: int = 24,
+    posts_per_query: int = 25,
+    *,
+    initial_plausible_hits: int = 0,
+    fallback_to_x: bool = False,
+    enabled_sources: Sequence[str] | None = None,
+    x_fallback_group_id: str | None = None,
+    x_fallback_query: str | None = None,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
+) -> None:
+    """Search four additional free sources after HN, then allow one X fallback.
+
+    A source outage is isolated to that source rather than retried as a whole
+    activation. The global post cache and tenant-scoped verifier continue to
+    protect lead quality; this actor only expands discovery coverage.
+    """
+    normalized_queries = _normalized_discovery_queries(queries)
+    if not normalized_queries:
+        raise ValueError("at least one public-source query is required")
+
+    _job_started(
+        job_name="additional_public_source_ingestion_batch",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        query_count=len(normalized_queries),
+        since_hours_ago=since_hours_ago,
+    )
+    try:
+        from api.services.social_ingestion import (
+            ADDITIONAL_PUBLIC_SOURCE_NAMES,
+            additional_public_source_cache_scope,
+            claim_additional_public_source_query,
+            enabled_additional_public_sources,
+            ingest_additional_public_source_posts,
+            release_additional_public_source_query,
+            trigger_embedding_jobs,
+        )
+
+        configured_sources = (
+            tuple(enabled_sources)
+            if enabled_sources is not None
+            else enabled_additional_public_sources()
+        )
+        source_names = tuple(
+            dict.fromkeys(
+                source.strip().casefold()
+                for source in configured_sources
+                if isinstance(source, str)
+                and source.strip().casefold() in ADDITIONAL_PUBLIC_SOURCE_NAMES
+            )
+        )
+        total_hits = 0
+        total_plausible_hits = max(0, initial_plausible_hits)
+        total_new_inserts = 0
+        source_failures = 0
+        source_result_counts: dict[str, int] = {}
+        matching_source_post_refs: dict[tuple[str, str], Any] = {}
+
+        for source in source_names:
+            source_hits = 0
+            source_failed = False
+            for query in normalized_queries:
+                if not claim_additional_public_source_query(
+                    source=source,
+                    query=query["phrase"],
+                    since_hours_ago=since_hours_ago,
+                    scope=additional_public_source_cache_scope(source),
+                ):
+                    continue
+                try:
+                    result = ingest_additional_public_source_posts(
+                        source=source,
+                        query=query["phrase"],
+                        since_hours_ago=since_hours_ago,
+                        posts_per_query=posts_per_query,
+                        query_type=query["query_type"],
+                    )
+                except Exception as exc:
+                    # Retrying a single provider client error for all six
+                    # phrases gives no new evidence and burns rate budget.
+                    # The next scheduled window can try it again while the
+                    # other three sources and X fallback still proceed.
+                    source_failed = True
+                    source_failures += 1
+                    release_additional_public_source_query(
+                        source=source,
+                        query=query["phrase"],
+                        since_hours_ago=since_hours_ago,
+                        scope=additional_public_source_cache_scope(source),
+                    )
+                    logger.warning(
+                        "additional_public_source_ingestion_skipped source=%s error_type=%s",
+                        source,
+                        exc.__class__.__name__,
+                    )
+                    break
+
+                source_hits += result.hits_found
+                total_hits += result.hits_found
+                total_plausible_hits += result.plausible_hits
+                total_new_inserts += result.inserted_count
+                for source_post_ref in result.matchable_source_post_refs:
+                    matching_source_post_refs.setdefault(
+                        (source_post_ref.source, source_post_ref.source_post_id),
+                        source_post_ref,
+                    )
+            source_result_counts[source] = source_hits
+            if source_failed:
+                source_result_counts.setdefault(source, 0)
+
+        matching_source_posts = len(matching_source_post_refs)
+        embedding_jobs = trigger_embedding_jobs(list(matching_source_post_refs.values()))
+        x_fallback_enqueued = False
+        x_fallback_skip_reason: str | None = None
+        minimum_plausible_hits = _minimum_plausible_free_hits_for_x_suppression()
+        if fallback_to_x and total_plausible_hits < minimum_plausible_hits:
+            if not _x_source_is_configured():
+                x_fallback_skip_reason = "x_bearer_token_not_configured"
+            elif not _claim_initial_x_fallback(x_fallback_group_id):
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
+            elif not _claim_tenant_x_fallback_budget(tenant_id):
+                x_fallback_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
+            else:
+                ingest_x_job.send(
+                    x_fallback_query or normalized_queries[0]["phrase"],
+                    since_hours_ago,
+                    posts_per_query,
+                    strict_single_page=True,
+                )
+                x_fallback_enqueued = True
+    except Exception as exc:
+        logger.exception(
+            "additional_public_source_ingestion_batch_failed job_state=%s query_count=%s since_hours_ago=%s error_type=%s",
+            "failed",
+            len(normalized_queries),
+            since_hours_ago,
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="additional_public_source_ingestion_batch",
+        state="completed",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        query_count=len(normalized_queries),
+        sources=source_names,
+        source_hits=source_result_counts,
+        source_failures=source_failures,
+        hits_found=total_hits,
+        plausible_free_hits=total_plausible_hits,
+        minimum_plausible_free_hits_for_x_suppression=minimum_plausible_hits,
+        new_inserts=total_new_inserts,
+        matching_source_posts=matching_source_posts,
+        embedding_jobs=embedding_jobs,
         x_fallback_enqueued=x_fallback_enqueued,
         x_fallback_skip_reason=x_fallback_skip_reason,
     )
@@ -318,7 +528,11 @@ def ingest_hn_job(
         since_hours_ago=since_hours_ago,
     )
     try:
-        from api.services.social_ingestion import ingest_hn_posts, trigger_embedding_jobs
+        from api.services.social_ingestion import (
+            _result_source_post_refs,
+            ingest_hn_posts,
+            trigger_embedding_jobs,
+        )
 
         result = ingest_hn_posts(
             query=query,
@@ -326,17 +540,14 @@ def ingest_hn_job(
             posts_per_query=posts_per_query,
             query_type=query_type,
         )
-        matching_source_post_ids = (
-            result.matchable_source_post_ids or result.inserted_source_post_ids
+        matching_source_post_refs = _result_source_post_refs(
+            result,
+            source="hackernews",
         )
-        embedding_jobs = trigger_embedding_jobs(matching_source_post_ids)
+        embedding_jobs = trigger_embedding_jobs(matching_source_post_refs)
         x_fallback_enqueued = False
         x_fallback_skip_reason: str | None = None
-        minimum_plausible_hits = _int_env(
-            "ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION",
-            2,
-            minimum=1,
-        )
+        minimum_plausible_hits = _minimum_plausible_free_hits_for_x_suppression()
         if fallback_to_x and result.plausible_hits < minimum_plausible_hits:
             if not _x_source_is_configured():
                 x_fallback_skip_reason = "x_bearer_token_not_configured"
@@ -376,7 +587,7 @@ def ingest_hn_job(
         minimum_plausible_hn_hits_for_x_suppression=minimum_plausible_hits,
         new_inserts=result.inserted_count,
         matching_source_posts=len(
-            result.matchable_source_post_ids or result.inserted_source_post_ids
+            matching_source_post_refs
         ),
         embedding_jobs=embedding_jobs,
         x_fallback_enqueued=x_fallback_enqueued,
@@ -410,7 +621,11 @@ def ingest_x_job(
         strict_single_page=strict_single_page,
     )
     try:
-        from api.services.social_ingestion import ingest_x_posts, trigger_embedding_jobs
+        from api.services.social_ingestion import (
+            _result_source_post_refs,
+            ingest_x_posts,
+            trigger_embedding_jobs,
+        )
 
         if not _x_source_is_configured():
             logger.info(
@@ -433,10 +648,11 @@ def ingest_x_job(
             posts_per_query=posts_per_query,
             max_pages=1 if strict_single_page else None,
         )
-        matching_source_post_ids = (
-            result.matchable_source_post_ids or result.inserted_source_post_ids
+        matching_source_post_refs = _result_source_post_refs(
+            result,
+            source="twitter",
         )
-        embedding_jobs = trigger_embedding_jobs(matching_source_post_ids)
+        embedding_jobs = trigger_embedding_jobs(matching_source_post_refs)
     except Exception as exc:
         status_code = getattr(getattr(exc, "response", None), "status_code", None)
         if isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in {
@@ -482,7 +698,7 @@ def ingest_x_job(
         new_inserts=result.inserted_count,
         strict_single_page=strict_single_page,
         matching_source_posts=len(
-            result.matchable_source_post_ids or result.inserted_source_post_ids
+            matching_source_post_refs
         ),
         embedding_jobs=embedding_jobs,
     )
@@ -495,20 +711,26 @@ def ingest_x_job(
     min_backoff=10_000,
     max_backoff=60_000,
 )
-def enqueue_source_post_embedding_job(source_post_id: str) -> None:
+def enqueue_source_post_embedding_job(
+    source_post_id: str,
+    *,
+    source: str | None = None,
+) -> None:
     """Embed one global source post and create tenant-scoped lead matches."""
     _job_started(
         job_name="source_post_embedding_handoff",
+        source=source,
         source_post_id=source_post_id,
     )
     try:
         from api.services.social_ingestion import process_public_source_post_embedding
 
-        result = process_public_source_post_embedding(source_post_id)
+        result = process_public_source_post_embedding(source_post_id, source=source)
     except Exception as exc:
         logger.exception(
-            "source_post_embedding_failed job_state=%s source_post_id=%s error_type=%s error=%s",
+            "source_post_embedding_failed job_state=%s source=%s source_post_id=%s error_type=%s error=%s",
             "failed",
+            source,
             source_post_id,
             exc.__class__.__name__,
             exc,
@@ -520,6 +742,7 @@ def enqueue_source_post_embedding_job(source_post_id: str) -> None:
     _job_finished(
         job_name="source_post_embedding_handoff",
         state="completed",
+        source=source,
         source_post_id=source_post_id,
         posts=result["posts"],
         embedded=result["embedded"],
@@ -528,12 +751,38 @@ def enqueue_source_post_embedding_job(source_post_id: str) -> None:
     )
 
 
-def enqueue_source_post_embedding_jobs(source_post_ids: Sequence[str]) -> int:
-    """Publish one idempotent embedding handoff per newly inserted source row."""
+def enqueue_source_post_embedding_jobs(source_post_refs: Sequence[Any]) -> int:
+    """Publish one source-qualified, idempotent embedding handoff per public row.
+
+    A plain string remains accepted solely to drain messages created by older
+    workers. New callers pass ``PublicSourcePostRef`` objects, which avoid
+    conflating equal external IDs from different providers.
+    """
     _require_redis_broker()
     messages_sent = 0
-    for source_post_id in dict.fromkeys(source_post_ids):
-        enqueue_source_post_embedding_job.send(source_post_id)
+    seen: set[tuple[str | None, str]] = set()
+    for source_post_ref in source_post_refs:
+        if isinstance(source_post_ref, str):
+            source = None
+            source_post_id = source_post_ref.strip()
+        elif isinstance(source_post_ref, dict):
+            source = str(source_post_ref.get("source") or "").strip() or None
+            source_post_id = str(source_post_ref.get("source_post_id") or "").strip()
+        else:
+            source = str(getattr(source_post_ref, "source", "") or "").strip() or None
+            source_post_id = str(
+                getattr(source_post_ref, "source_post_id", "") or ""
+            ).strip()
+        if not source_post_id:
+            continue
+        key = (source, source_post_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        if source:
+            enqueue_source_post_embedding_job.send(source_post_id, source=source)
+        else:
+            enqueue_source_post_embedding_job.send(source_post_id)
         messages_sent += 1
     logger.info(
         "source_post_embedding_handoffs_enqueued job_state=%s source_post_count=%s",

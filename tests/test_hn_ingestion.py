@@ -364,7 +364,14 @@ class HackerNewsIngestionTests(unittest.TestCase):
         ):
             actors.ingest_hn_batch_job.fn(["first", "second"], 168, 25)
 
-        trigger.assert_called_once_with(["existing-1", "existing-2"])
+        from api.services.social_ingestion import PublicSourcePostRef
+
+        trigger.assert_called_once_with(
+            [
+                PublicSourcePostRef("hackernews", "existing-1"),
+                PublicSourcePostRef("hackernews", "existing-2"),
+            ]
+        )
 
     def test_hn_batch_queues_one_combined_x_fallback_when_all_hn_queries_empty(self) -> None:
         import api.services.social_ingestion as ingestion_module
@@ -458,7 +465,14 @@ class HackerNewsIngestionTests(unittest.TestCase):
         ):
             actors.ingest_hn_job.fn("pricing", 168, 25)
 
-        trigger.assert_called_once_with(["existing-1", "existing-2"])
+        from api.services.social_ingestion import PublicSourcePostRef
+
+        trigger.assert_called_once_with(
+            [
+                PublicSourcePostRef("hackernews", "existing-1"),
+                PublicSourcePostRef("hackernews", "existing-2"),
+            ]
+        )
 
 
 if __name__ == "__main__":

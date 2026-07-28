@@ -13,6 +13,59 @@ from api.services.verifier import VerificationResult
 
 
 class PublicSourceMatchingTests(unittest.TestCase):
+    def test_source_qualified_embedding_load_never_blends_equal_external_ids(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        rows = [
+            {"id": "hn-row", "source": "hackernews", "source_post_id": "42"},
+            {"id": "x-row", "source": "twitter", "source_post_id": "42"},
+        ]
+
+        class FakeResult:
+            def __init__(self, result_rows):
+                self.result_rows = result_rows
+
+            def mappings(self):
+                return self.result_rows
+
+        class FakeConnection:
+            def __init__(self, result_rows) -> None:
+                self.result_rows = result_rows
+                self.sql = ""
+                self.params: dict[str, object] = {}
+
+            def execute(self, statement, params):
+                self.sql = str(statement)
+                self.params = params
+                return FakeResult(self.result_rows)
+
+        connection = FakeConnection(rows)
+        with patch.object(
+            ingestion,
+            "_table_columns",
+            return_value={"id", "source", "source_post_id", "tenant_id"},
+        ):
+            # A delayed pre-source queue message must skip an ambiguous ID.
+            self.assertEqual(ingestion._load_public_source_post_rows(connection, "42"), [])
+
+        self.assertIn("LIMIT 2", connection.sql)
+
+        twitter_connection = FakeConnection([rows[1]])
+        with patch.object(
+            ingestion,
+            "_table_columns",
+            return_value={"id", "source", "source_post_id", "tenant_id"},
+        ):
+            selected = ingestion._load_public_source_post_rows(
+                twitter_connection,
+                "42",
+                source="twitter",
+            )
+
+        self.assertEqual(selected, [rows[1]])
+        self.assertIn("source = :source", twitter_connection.sql)
+        self.assertEqual(twitter_connection.params["source"], "twitter")
+
     def test_global_post_creates_a_tenant_scoped_verified_match(self) -> None:
         import api.services.social_ingestion as ingestion
 

@@ -1,8 +1,9 @@
--- Global Hacker News source-post contract.
+-- Global public-source-post contract.
 --
 -- Run this after RLS_updates.sql.  It keeps the legacy tenant-scoped columns
 -- available for the existing social ingestion path while allowing the new
--- public corpus contract to store rows without a tenant ID.
+-- public corpus contract (HN, X, Bluesky, Stack Exchange, GitHub, and Lemmy)
+-- to store rows without a tenant ID.
 
 BEGIN;
 

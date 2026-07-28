@@ -213,15 +213,19 @@ without the memory, Redis-connection, and provider-call multiplication caused
 by eight local Dramatiq processes.
 
 Set that command in the deployment platform's **Worker service Start Command**
-(not the web/API service). Initial discovery runs HN searches first and uses at
-most one cost-controlled, single-page X fallback per profile activation. That
-request combines the activation's typed buyer-language phrases only after HN
-has fewer than the configured plausible phrase-level signals; a raw unrelated
-HN API hit does not suppress X. X is skipped cleanly when no bearer token is configured. HN/X hits
-already present in the global corpus are re-matched to the new profile, and a
-separate bounded cached-corpus rematch is also queued for each activation.
-`REDIS_URL` makes the activation X cap and tenant spend cap atomic across all
-workers.
+(not the web/API service). Initial discovery runs HN first, then searches
+Bluesky, Stack Exchange, public GitHub issues, and Lemmy. Those five free
+sources share a short global query cache and write only to the global corpus.
+Every fetched post is still passed through the existing embedding similarity
+filter and verifier before it can appear for a tenant. Only after the complete
+free phase has fewer than the configured plausible phrase-level signals may
+the system use one cost-controlled, single-page X fallback per activation. A
+raw unrelated HN result—or one plausible HN result—does not suppress X.
+X is skipped cleanly when no bearer token is configured. Global-source hits
+already present in the corpus are re-matched to the new profile, and a separate
+bounded cached-corpus rematch is also queued for each activation. `REDIS_URL`
+makes source-query caching, the activation X cap, and tenant spend cap atomic
+across all workers.
 
 Outbound requests are coordinated through Redis across both instances. The
 defaults below are intentionally conservative and can be raised only after
@@ -230,6 +234,11 @@ checking the limits for the project's Firecrawl, X, and OpenAI accounts:
 ```text
 ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE=4
 ARCLI_HN_REQUESTS_PER_MINUTE=60
+ARCLI_BLUESKY_REQUESTS_PER_MINUTE=30
+ARCLI_STACKEXCHANGE_REQUESTS_PER_MINUTE=15
+ARCLI_GITHUB_ANONYMOUS_REQUESTS_PER_MINUTE=5
+ARCLI_GITHUB_AUTH_REQUESTS_PER_MINUTE=20
+ARCLI_LEMMY_REQUESTS_PER_MINUTE=15
 ARCLI_X_REQUESTS_PER_MINUTE=10
 ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE=20
 ARCLI_OPENAI_EMBEDDING_REQUESTS_PER_MINUTE=60
@@ -241,8 +250,30 @@ Discovery and spend settings are intentionally bounded by default:
 # One typed phrase for each of the six matching-brief query types.
 ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT=6
 
-# Suppress the paid fallback only after this many plausible HN signals.
-ARCLI_INITIAL_PUBLIC_HN_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION=2
+# Suppress the paid fallback only after this many plausible signals across the
+# complete free phase (HN + the four added sources). The prior HN-named env
+# remains supported for compatibility if this new value is not set.
+ARCLI_INITIAL_PUBLIC_FREE_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION=2
+
+# Four added public sources are on by default. Set any to false to disable it.
+ARCLI_BLUESKY_INGESTION_ENABLED=true
+ARCLI_STACKEXCHANGE_INGESTION_ENABLED=true
+ARCLI_GITHUB_INGESTION_ENABLED=true
+ARCLI_LEMMY_INGESTION_ENABLED=true
+
+# One page per phrase/source by default; do not raise casually. Redis shares
+# this 15-minute query dedupe window across workers and tenants. To raise the
+# global cap, also raise the relevant provider cap (for example,
+# ARCLI_BLUESKY_MAX_PAGES) because provider caps remain the hard safety limit.
+ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES=1
+ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS=900
+
+# Optional credentials improve free API quotas; never expose them to clients.
+ARCLI_STACKEXCHANGE_API_KEY=...
+ARCLI_GITHUB_TOKEN=... # read-only public-data token; no private repo access
+
+# Lemmy is an allowlisted public v4 instance, not a global Fediverse search.
+ARCLI_LEMMY_SEARCH_URL=https://lemmy.world/api/v4/search
 
 # Tenant X spend budget for activation fallbacks / explicit X-only mode.
 ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_LIMIT=5
@@ -259,13 +290,23 @@ LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.50
 LEAD_VERIFIER_SCORE_THRESHOLD=0.70
 ```
 
-The strict one-page setting bounds a successful fallback to one X search page.
-Provider retries can still occur after a timeout or retryable X error, so no
-system can honestly guarantee that an upstream provider received exactly one
-network attempt in those failure cases.
+The strict one-page setting bounds a successful X fallback to one X search
+page. The added sources also default to one page per buyer phrase and have
+their own Redis-coordinated request caps. Provider retries can still occur
+after a timeout or retryable error, so no system can honestly guarantee that
+an upstream provider received exactly one network attempt in those failure
+cases.
+
+Stack Exchange content must retain its visible source attribution and original
+link in the review UI. GitHub results are public-context review signals only:
+do not enrich handles into contact data or automate outreach. Reddit remains
+disabled until its developer API integration is ready.
 
 For an existing database, apply
-`scripts/lead_match_qualification_guard.sql` after `scripts/RLS_updates.sql`.
+`scripts/hn_source_posts_global_contract.sql` after `scripts/RLS_updates.sql`,
+then apply `scripts/lead_match_qualification_guard.sql`. The public-source
+contract uses `(source, source_post_id)` as its global identity, which matters
+now that different providers can use the same external IDs.
 It keeps tenant-scoped reads while allowing an authenticated user to promote
 only a `ready_for_review` or `discovery_candidate` row to `qualified`; workers
 must continue using their existing service/database role for pipeline writes.
