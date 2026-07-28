@@ -1,4 +1,4 @@
-"""Lemmy v4 public search connector for federated discussion posts."""
+"""Lemmy public search connector for federated discussion posts."""
 
 from __future__ import annotations
 
@@ -25,6 +25,10 @@ from api.services.integrations.public_source import (
 )
 
 
+# Lemmy World currently serves the stable v3 search endpoint but responds 404
+# to v4 search requests.  Explicit v4 URLs remain supported below for instances
+# that have upgraded.
+LEMMY_SEARCH_URL = "https://lemmy.world/api/v3/search"
 LEMMY_V4_SEARCH_URL = "https://lemmy.world/api/v4/search"
 
 
@@ -36,7 +40,7 @@ SourcePost = LemmySourcePost
 
 
 class LemmyConnector:
-    """Fetch public, non-NSFW posts from a configured Lemmy v4 instance."""
+    """Fetch public, non-NSFW posts from a configured Lemmy instance."""
 
     def __init__(
         self,
@@ -51,11 +55,12 @@ class LemmyConnector:
         self.base_url = (
             base_url
             or os.getenv("ARCLI_LEMMY_SEARCH_URL")
-            or LEMMY_V4_SEARCH_URL
+            or LEMMY_SEARCH_URL
         ).strip().rstrip("/")
         self.source_root = self._source_root(self.base_url)
         if not self.source_root:
             raise ValueError("ARCLI_LEMMY_SEARCH_URL must be an absolute HTTP(S) URL")
+        self._uses_v4_search = "/api/v4/" in self.base_url.casefold()
         self.timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None
@@ -153,9 +158,18 @@ class LemmyConnector:
                     if len(posts) >= target_limit:
                         break
 
-                candidate_cursor = payload.get("next_page")
-                page_cursor = candidate_cursor if isinstance(candidate_cursor, str) else None
-                if not page_cursor:
+                if self._uses_v4_search:
+                    candidate_cursor = payload.get("next_page")
+                    page_cursor = (
+                        candidate_cursor
+                        if isinstance(candidate_cursor, str)
+                        else None
+                    )
+                    if not page_cursor:
+                        break
+                elif len(hits) < page_size:
+                    # v3 uses numeric pages. A short page is its only reliable
+                    # end-of-results signal.
                     break
                 if self.request_interval_seconds:
                     await asyncio.sleep(self.request_interval_seconds)
@@ -172,24 +186,39 @@ class LemmyConnector:
         page_size: int,
         page: int,
     ) -> dict[str, Any]:
-        # Lemmy v4 calls the search text ``search_term`` and uses an opaque
-        # ``page_cursor`` rather than numeric pagination.
-        time_range_seconds = max(1, int(time.time()) - since_timestamp)
-        params = {
-            "search_term": query,
-            "type_": "posts",
-            "listing_type": "all",
-            "show_nsfw": "false",
-            "time_range_seconds": str(time_range_seconds),
-            "limit": str(page_size),
-        }
-        if page_cursor:
-            params["page_cursor"] = page_cursor
+        if self._uses_v4_search:
+            # v4 calls the search text ``search_term`` and uses an opaque
+            # ``page_cursor`` rather than numeric pagination.
+            time_range_seconds = max(1, int(time.time()) - since_timestamp)
+            params = {
+                "search_term": query,
+                "type_": "posts",
+                "listing_type": "all",
+                "show_nsfw": "false",
+                "time_range_seconds": str(time_range_seconds),
+                "limit": str(page_size),
+            }
+            if page_cursor:
+                params["page_cursor"] = page_cursor
+            provider = "lemmy-v4-search"
+        else:
+            # v3 exposes the equivalent public endpoint with a numeric page
+            # and client-side timestamp filtering in ``_to_source_post``.
+            params = {
+                "q": query,
+                "type_": "Posts",
+                "listing_type": "All",
+                "sort": "New",
+                "show_nsfw": "false",
+                "limit": str(page_size),
+                "page": str(page + 1),
+            }
+            provider = "lemmy-v3-search"
         return await fetch_json_with_retry(
             client=client,
             url=self.base_url,
             params=params,
-            provider="lemmy-v4-search",
+            provider=provider,
             requests_per_minute=self.requests_per_minute,
             max_attempts=self.max_attempts,
             log_event="lemmy_search",

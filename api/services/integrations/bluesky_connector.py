@@ -24,7 +24,11 @@ from api.services.integrations.public_source import (
 )
 
 
-BLUESKY_SEARCH_POSTS_URL = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts"
+# ``public.api.bsky.app`` currently rejects otherwise valid unauthenticated
+# search requests with HTTP 403.  ``api.bsky.app`` serves the same AppView
+# lexicon and accepts public search traffic.  Keep the URL injectable for a
+# self-hosted AppView or a future provider migration.
+BLUESKY_SEARCH_POSTS_URL = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts"
 _AT_POST_URI_PATTERN = re.compile(
     r"^at://(?P<repo>[^/]+)/app\.bsky\.feed\.post/(?P<rkey>[^/?#]+)$"
 )
@@ -52,7 +56,9 @@ class BlueskyConnector:
         max_pages: int | None = None,
         requests_per_minute: int | None = None,
     ) -> None:
-        self.base_url = base_url
+        self.base_url = (
+            os.getenv("ARCLI_BLUESKY_SEARCH_URL") or base_url
+        ).strip()
         self.timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None

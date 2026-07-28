@@ -100,14 +100,17 @@ class GitHubIssuesConnector:
         )
 
     def _default_requests_per_minute(self) -> int:
-        explicit = os.getenv("ARCLI_GITHUB_REQUESTS_PER_MINUTE")
-        if explicit is not None:
-            return env_positive_int("ARCLI_GITHUB_REQUESTS_PER_MINUTE", 5)
+        explicit = (os.getenv("ARCLI_GITHUB_REQUESTS_PER_MINUTE") or "").strip()
+        if explicit:
+            return env_positive_int("ARCLI_GITHUB_REQUESTS_PER_MINUTE", 6)
         return env_positive_int(
             "ARCLI_GITHUB_AUTH_REQUESTS_PER_MINUTE"
             if self.token
             else "ARCLI_GITHUB_ANONYMOUS_REQUESTS_PER_MINUTE",
-            20 if self.token else 5,
+            # Activation performs up to six distinct discovery searches.  A
+            # five-request anonymous default guarantees an avoidable wait on
+            # the final query despite GitHub's public search allowance.
+            20 if self.token else 6,
         )
 
     async def fetch_recent_posts(

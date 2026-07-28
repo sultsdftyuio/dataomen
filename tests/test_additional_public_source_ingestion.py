@@ -154,6 +154,19 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
 
 
 class AdditionalPublicSourceActivationTests(unittest.TestCase):
+    def test_cache_scopes_follow_the_live_connector_defaults(self) -> None:
+        from api.services.social_ingestion import additional_public_source_cache_scope
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                additional_public_source_cache_scope("bluesky"),
+                "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts",
+            )
+            self.assertEqual(
+                additional_public_source_cache_scope("lemmy"),
+                "https://lemmy.world/api/v3/search",
+            )
+
     def _profile_row(self) -> dict[str, object]:
         return {
             "id": "profile-1",
@@ -360,7 +373,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             source="bluesky",
             query="manual customer onboarding",
             since_hours_ago=168,
-            scope="public.api.bsky.app",
+            scope="https://api.bsky.app/xrpc/app.bsky.feed.searchPosts",
         )
         x_send.assert_called_once()
 

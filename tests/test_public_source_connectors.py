@@ -8,9 +8,15 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
-from api.services.integrations.bluesky_connector import BlueskyConnector
+from api.services.integrations.bluesky_connector import (
+    BLUESKY_SEARCH_POSTS_URL,
+    BlueskyConnector,
+)
 from api.services.integrations.github_connector import GitHubIssuesConnector
-from api.services.integrations.lemmy_connector import LemmyConnector
+from api.services.integrations.lemmy_connector import (
+    LEMMY_V4_SEARCH_URL,
+    LemmyConnector,
+)
 from api.services.integrations.public_source import PublicSourcePost
 from api.services.integrations.stackexchange_connector import StackExchangeConnector
 
@@ -29,6 +35,19 @@ class PublicSourceContractTests(unittest.TestCase):
 
 
 class BlueskyConnectorTests(unittest.TestCase):
+    def test_default_uses_the_live_appview_and_allows_an_override(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(BlueskyConnector().base_url, BLUESKY_SEARCH_POSTS_URL)
+        with patch.dict(
+            os.environ,
+            {"ARCLI_BLUESKY_SEARCH_URL": "https://bsky.example/xrpc/search"},
+            clear=True,
+        ):
+            self.assertEqual(
+                BlueskyConnector().base_url,
+                "https://bsky.example/xrpc/search",
+            )
+
     def test_maps_public_post_to_permalink_and_language(self) -> None:
         post = BlueskyConnector._to_source_post(
             {
@@ -157,6 +176,12 @@ class StackExchangeConnectorTests(unittest.TestCase):
 
 
 class GitHubIssuesConnectorTests(unittest.TestCase):
+    def test_anonymous_default_covers_every_activation_discovery_query(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            connector = GitHubIssuesConnector(token="")
+
+        self.assertEqual(connector.requests_per_minute, 6)
+
     def test_query_scopes_to_recent_public_issues(self) -> None:
         query = GitHubIssuesConnector._search_query("manual customer onboarding", 1_700_000_000)
 
@@ -203,7 +228,7 @@ class GitHubIssuesConnectorTests(unittest.TestCase):
 
 
 class LemmyConnectorTests(unittest.TestCase):
-    def test_maps_v4_post_view_and_skips_nsfw_content(self) -> None:
+    def test_maps_public_post_view_and_skips_nsfw_content(self) -> None:
         view = {
             "post": {
                 "id": 42,
@@ -237,8 +262,65 @@ class LemmyConnectorTests(unittest.TestCase):
             )
         )
 
-    def test_v4_request_uses_search_term_and_opaque_cursor(self) -> None:
+    def test_v3_default_uses_numeric_pages(self) -> None:
         connector = LemmyConnector(max_pages=2, request_interval_seconds=0)
+        first_page = {
+            "posts": [
+                {
+                    "post": {
+                        "id": 1,
+                        "name": "Need a better signup workflow",
+                        "published": "2026-07-28T09:00:00Z",
+                    },
+                    "creator": {"name": "alice"},
+                    "community": {},
+                }
+            ]
+        }
+        second_page = {"posts": []}
+        with patch.object(
+            connector,
+            "_fetch_page",
+            AsyncMock(side_effect=[first_page, second_page]),
+        ) as fetch_page:
+            posts = asyncio.run(
+                connector.fetch_recent_posts("signup workflow", 0, limit=10)
+            )
+
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(fetch_page.await_count, 1)
+
+        import api.services.integrations.lemmy_connector as module
+
+        with patch.object(
+            module,
+            "fetch_json_with_retry",
+            AsyncMock(return_value={"posts": []}),
+        ) as request:
+            asyncio.run(
+                connector._fetch_page(
+                    object(),
+                    query="signup workflow",
+                    since_timestamp=1_700_000_000,
+                    page_cursor=None,
+                    page_size=25,
+                    page=1,
+                )
+            )
+
+        params = request.await_args.kwargs["params"]
+        self.assertEqual(params["q"], "signup workflow")
+        self.assertEqual(params["type_"], "Posts")
+        self.assertEqual(params["page"], "2")
+        self.assertNotIn("search_term", params)
+        self.assertEqual(request.await_args.kwargs["provider"], "lemmy-v3-search")
+
+    def test_configured_v4_request_uses_search_term_and_opaque_cursor(self) -> None:
+        connector = LemmyConnector(
+            base_url=LEMMY_V4_SEARCH_URL,
+            max_pages=2,
+            request_interval_seconds=0,
+        )
         first_page = {
             "posts": [
                 {

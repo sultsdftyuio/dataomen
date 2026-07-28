@@ -169,11 +169,15 @@ def _additional_public_source_max_pages() -> int:
 def additional_public_source_cache_scope(source: str) -> str:
     """Include provider routing configuration in the global query-cache key."""
     if source == "bluesky":
-        return os.getenv("ARCLI_BLUESKY_SEARCH_URL", "public.api.bsky.app")
+        from api.services.integrations.bluesky_connector import BLUESKY_SEARCH_POSTS_URL
+
+        return (os.getenv("ARCLI_BLUESKY_SEARCH_URL") or BLUESKY_SEARCH_POSTS_URL).strip()
     if source == "stackexchange":
         return os.getenv("ARCLI_STACKEXCHANGE_SITE", "stackoverflow")
     if source == "lemmy":
-        return os.getenv("ARCLI_LEMMY_SEARCH_URL", "https://lemmy.world/api/v4/search")
+        from api.services.integrations.lemmy_connector import LEMMY_SEARCH_URL
+
+        return (os.getenv("ARCLI_LEMMY_SEARCH_URL") or LEMMY_SEARCH_URL).strip()
     return ""
 
 
