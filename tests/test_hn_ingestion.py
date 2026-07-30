@@ -57,6 +57,82 @@ class HackerNewsConnectorTests(unittest.TestCase):
 
 
 class HackerNewsIngestionTests(unittest.TestCase):
+    def test_buyer_evidence_guard_rejects_editorial_overlap_but_keeps_a_real_request(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        editorial = SimpleNamespace(
+            title="Customer growth guide",
+            body="A content strategy for growing a customer base.",
+        )
+        buyer_request = SimpleNamespace(
+            title="Ask HN: Getting our first customers",
+            body="We need a better way to get customers after signups dropped.",
+        )
+        publisher_copy = SimpleNamespace(
+            title="Guide: need a better way to get customers",
+            body="A positioning and content strategy write-up.",
+        )
+
+        self.assertFalse(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                editorial,
+                "tools to grow our customer base",
+                query_type="category_tool_search",
+            )
+        )
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                buyer_request,
+                "need a better way to get customers",
+                query_type="recommendation_request",
+            )
+        )
+        self.assertFalse(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                publisher_copy,
+                "need a better way to get customers",
+                query_type="recommendation_request",
+            )
+        )
+
+    def test_legacy_demand_fallback_is_upgraded_only_for_search(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        phrases = [
+            "customer growth has stalled",
+            "new customer signups are dropping",
+            "how can I get more customers",
+            "spending too much time on outreach",
+            "tools to grow our customer base",
+            "our growth strategy stopped working",
+        ]
+        queries = ingestion_module._profile_discovery_queries(
+            {
+                "profile_json": {
+                    "discovery_queries": [
+                        {"query_type": query_type, "phrase": phrase}
+                        for query_type, phrase in zip(
+                            ingestion_module.DISCOVERY_QUERY_TYPES,
+                            phrases,
+                            strict=True,
+                        )
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(
+            [query.phrase for query in queries],
+            [
+                "not enough people signing up",
+                "new signups dropped this week",
+                "need a better way to get customers",
+                "we are doing outreach by hand",
+                "tools to grow our customer base",
+                "our current growth plan is failing",
+            ],
+        )
+
     def test_service_batches_global_payloads_and_returns_new_ids(self) -> None:
         import api.services.integrations.hn_connector as connector_module
         import api.services.social_ingestion as ingestion_module
@@ -128,10 +204,10 @@ class HackerNewsIngestionTests(unittest.TestCase):
             else:
                 os.environ["ARCLI_HN_INSERT_BATCH_SIZE"] = original_batch_size
 
-        self.assertEqual(result.inserted_source_post_ids, ["first", "second"])
-        self.assertEqual(result.matchable_source_post_ids, ["first", "second"])
+        self.assertEqual(result.inserted_source_post_ids, ["first"])
+        self.assertEqual(result.matchable_source_post_ids, ["first"])
         self.assertEqual(result.plausible_hits, 1)
-        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(client.calls), 1)
         first_payload, first_options = client.calls[0]
         self.assertNotIn("tenant_id", first_payload[0])
         self.assertEqual(

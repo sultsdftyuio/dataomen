@@ -387,12 +387,12 @@ def test_deep_profile_uses_demand_outcome_fallback_after_one_invalid_repair() ->
 
     assert len(requests) == 2
     assert [query["phrase"] for query in profile["discovery_queries"]] == [
-        "customer growth has stalled",
-        "new customer signups are dropping",
-        "how can I get more customers",
-        "spending too much time on outreach",
+        "not enough people signing up",
+        "new signups dropped this week",
+        "need a better way to get customers",
+        "we are doing outreach by hand",
         "tools to grow our customer base",
-        "our growth strategy stopped working",
+        "our current growth plan is failing",
     ]
 
 

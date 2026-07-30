@@ -65,8 +65,7 @@ CONSTITUTIONAL MANDATES:
    noise", "qualified leads", or source-platform names such as Reddit,
    Hacker News, Twitter, or X.com. Translate product jargon into the buyer's
    plain-language desired result: for a demand-acquisition product, look for
-   people saying "need more customers", "more people signing up", or
-   "customer growth has stalled"—never leads, prospects, sales pipeline, lead
+   people saying "need more customers", "more people signing up", "not enough people signing up", "new signups dropped this week", or "we are doing outreach by hand"—never leads, prospects, sales pipeline, lead
    scoring, or lead generation. Apply the same outcome-first translation to
    the actual website product; retain essential domain terms only when buyers
    would naturally use them for the real problem.

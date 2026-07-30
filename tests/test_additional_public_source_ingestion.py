@@ -45,6 +45,36 @@ def _result(
 
 
 class AdditionalPublicSourceServiceTests(unittest.TestCase):
+    def test_technical_sources_skip_plain_business_outcome_queries(self) -> None:
+        from api.services.social_ingestion import (
+            additional_public_source_supports_discovery_query,
+        )
+
+        self.assertFalse(
+            additional_public_source_supports_discovery_query(
+                "github",
+                "not enough people signing up",
+            )
+        )
+        self.assertFalse(
+            additional_public_source_supports_discovery_query(
+                "stackexchange",
+                "we are doing outreach by hand",
+            )
+        )
+        self.assertTrue(
+            additional_public_source_supports_discovery_query(
+                "github",
+                "our API deployment keeps failing",
+            )
+        )
+        self.assertTrue(
+            additional_public_source_supports_discovery_query(
+                "bluesky",
+                "not enough people signing up",
+            )
+        )
+
     def test_service_persists_source_qualified_global_post_and_returns_ref(self) -> None:
         import api.services.social_ingestion as ingestion
 
@@ -283,14 +313,14 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             patch.object(actors, "_close_actor_openai_clients"),
         ):
             actors.ingest_additional_public_sources_batch_job.fn(
-                [CANONICAL_QUERIES[0]],
+                [{"query_type": "manual_workflow_frustration", "phrase": "manually deploying our API"}],
                 168,
                 25,
                 initial_plausible_hits=0,
                 fallback_to_x=True,
                 enabled_sources=["bluesky", "stackexchange", "github", "lemmy"],
                 x_fallback_group_id="activation-1",
-                x_fallback_query='"manual customer onboarding"',
+                x_fallback_query='"manually deploying our API"',
                 tenant_id="tenant-1",
             )
 
@@ -304,6 +334,47 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
                 PublicSourcePostRef("github", "42"),
                 PublicSourcePostRef("lemmy", "42"),
             ]
+        )
+        x_send.assert_called_once_with(
+            '"manually deploying our API"',
+            168,
+            25,
+            strict_single_page=True,
+            tenant_id="tenant-1",
+        )
+
+    def test_business_outcome_query_skips_technical_sources_and_keeps_x_fallback(self) -> None:
+        from api.workers import actors
+        import api.services.social_ingestion as ingestion
+
+        with (
+            patch.object(ingestion, "claim_additional_public_source_query", return_value=True),
+            patch.object(
+                ingestion,
+                "ingest_additional_public_source_posts",
+                side_effect=[_result("bluesky"), _result("lemmy")],
+            ) as ingest,
+            patch.object(ingestion, "trigger_embedding_jobs", return_value=2),
+            patch.object(actors, "_x_source_is_configured", return_value=True),
+            patch.object(actors, "_claim_initial_x_fallback", return_value=True),
+            patch.object(actors, "_claim_tenant_x_fallback_budget", return_value=True),
+            patch.object(actors.ingest_x_job, "send") as x_send,
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_additional_public_sources_batch_job.fn(
+                [CANONICAL_QUERIES[0]],
+                168,
+                25,
+                fallback_to_x=True,
+                enabled_sources=["bluesky", "stackexchange", "github", "lemmy"],
+                x_fallback_group_id="activation-1",
+                x_fallback_query='"manual customer onboarding"',
+                tenant_id="tenant-1",
+            )
+
+        self.assertEqual(
+            [item.kwargs["source"] for item in ingest.call_args_list],
+            ["bluesky", "lemmy"],
         )
         x_send.assert_called_once_with(
             '"manual customer onboarding"',
@@ -397,7 +468,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             patch.object(actors, "_close_actor_openai_clients"),
         ):
             actors.ingest_additional_public_sources_batch_job.fn(
-                [CANONICAL_QUERIES[0]],
+                [{"query_type": "manual_workflow_frustration", "phrase": "manually deploying our API"}],
                 168,
                 25,
                 fallback_to_x=True,
@@ -409,7 +480,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
         self.assertEqual([item.kwargs["source"] for item in ingest.call_args_list], ["bluesky", "github"])
         release.assert_called_once_with(
             source="bluesky",
-            query="manual customer onboarding",
+            query="manually deploying our API",
             since_hours_ago=168,
             scope="https://api.bsky.app/xrpc/app.bsky.feed.searchPosts",
         )

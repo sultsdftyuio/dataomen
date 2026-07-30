@@ -130,6 +130,21 @@ DISCOVERY_QUERY_TYPES = (
 )
 
 
+# Versions released before the buyer-language hardening could persist this
+# exact emergency set after a deep-profile repair failed.  It is generic enough
+# to retrieve broad editorial and political discussion.  Translate it only at
+# search time so existing customer-edited profiles are never overwritten, yet
+# the next activation immediately uses the more attributable buyer phrasing.
+_LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS = {
+    "customer growth has stalled": "not enough people signing up",
+    "new customer signups are dropping": "new signups dropped this week",
+    "how can i get more customers": "need a better way to get customers",
+    "spending too much time on outreach": "we are doing outreach by hand",
+    "tools to grow our customer base": "tools to grow our customer base",
+    "our growth strategy stopped working": "our current growth plan is failing",
+}
+
+
 
 @dataclass(frozen=True)
 class DiscoveryQuery:
@@ -291,7 +306,12 @@ def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
             phrase = _string_value(raw_item.get("phrase"))
             if not query_type or not phrase or query_type not in DISCOVERY_QUERY_TYPES:
                 continue
-            normalized_phrase = _compact_public_search_term(phrase)
+            normalized_phrase = _compact_public_search_term(
+                _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS.get(
+                    phrase.casefold(),
+                    phrase,
+                )
+            )
             phrase_key = normalized_phrase.casefold()
             if (
                 not normalized_phrase
@@ -314,7 +334,12 @@ def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
     return [
         DiscoveryQuery(
             DISCOVERY_QUERY_TYPES[index % len(DISCOVERY_QUERY_TYPES)],
-            normalized_phrase,
+            _compact_public_search_term(
+                _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS.get(
+                    normalized_phrase.casefold(),
+                    normalized_phrase,
+                )
+            ),
         )
         for index, term in enumerate(legacy_terms)
         if (normalized_phrase := _compact_public_search_term(term))

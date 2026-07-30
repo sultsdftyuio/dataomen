@@ -79,6 +79,30 @@ def _empty_public_rematch_result() -> dict[str, int]:
     }
 
 
+def _source_post_matches_profile_discovery_context(
+    post: SocialPost,
+    discovery_queries: Sequence[Any],
+) -> bool:
+    """Keep stale global noise out of a tenant's paid matching path.
+
+    New ingestion persists only posts with query-grounded buyer evidence. This
+    second guard applies the same rule to rows collected by older deployments
+    before a newly activated profile can spend an embedding-similarity slot or
+    verifier request on them. Profiles without typed phrases retain the legacy
+    semantic-only behavior for compatibility.
+    """
+    if not discovery_queries:
+        return True
+    return any(
+        _source_post_is_plausible_for_discovery_query(
+            post,
+            query.phrase,
+            query_type=query.query_type,
+        )
+        for query in discovery_queries
+    )
+
+
 
 def _initial_public_global_rematch_max_candidates() -> int:
     """Keep activation-time verifier usage below the general match fan-out."""
@@ -167,6 +191,8 @@ def rematch_existing_public_source_posts_for_profile(
         )
         return _empty_public_rematch_result()
 
+    discovery_queries = _profile_discovery_queries(profile_row)
+
     embedding_service = EmbeddingService()
     post_embeddings: list[PostEmbedding] = []
     posts_by_database_id: dict[str, SocialPost] = {}
@@ -176,6 +202,11 @@ def rematch_existing_public_source_posts_for_profile(
             database_post_id = str(source_row.get("id") or "")
             post = _public_source_post_as_social_post(source_row)
             if not database_post_id or not post:
+                continue
+            if not _source_post_matches_profile_discovery_context(
+                post,
+                discovery_queries,
+            ):
                 continue
 
             embedding_text = post.matching_text[:32_000]
@@ -445,6 +476,11 @@ def process_public_source_post_embedding(
                         exc.__class__.__name__,
                     )
                     continue
+                if not _source_post_matches_profile_discovery_context(
+                    post,
+                    _profile_discovery_queries(profile_row),
+                ):
+                    continue
 
                 post_embedding = PostEmbedding(
                     post_id=database_post_id,
@@ -553,10 +589,12 @@ from .legacy_storage import (
     _lead_match_status,
     _persist_lead_match,
 )
+from .activation import _source_post_is_plausible_for_discovery_query
 from .models import (
     DEFAULT_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT,
     DEFAULT_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES,
     _embedding_sha256,
+    _profile_discovery_queries,
     _profile_embedding_from_row,
     _service_profile_from_row,
     _sha256_text,

@@ -148,6 +148,57 @@ class AdditionalPublicSourceIngestionResult:
     plausible_hits: int = 0
 
 
+_TECHNICAL_DISCOVERY_QUERY_TOKENS = frozenset(
+    {
+        "api",
+        "backend",
+        "bug",
+        "bugs",
+        "code",
+        "coding",
+        "database",
+        "deploy",
+        "deployment",
+        "developer",
+        "developers",
+        "devops",
+        "engineering",
+        "frontend",
+        "github",
+        "infrastructure",
+        "integration",
+        "kubernetes",
+        "observability",
+        "repository",
+        "sdk",
+        "security",
+        "server",
+        "software",
+        "stacktrace",
+    }
+)
+
+
+def additional_public_source_supports_discovery_query(source: str, query: str) -> bool:
+    """Avoid technical forums for a plainly non-technical buyer need.
+
+    Stack Overflow and GitHub issues are valuable for developer-tool customers,
+    but searching them for phrases such as "need more people signing up"
+    produces product discussions rather than prospective buyers. Bluesky and
+    Lemmy remain broad-discussion sources for every product category.
+    """
+    normalized_source = source.strip().casefold()
+    if normalized_source not in {"stackexchange", "github"}:
+        return True
+    if os.getenv(
+        "ARCLI_TECHNICAL_SOURCE_REQUIRE_TECHNICAL_QUERY",
+        "true",
+    ).strip().casefold() in {"0", "false", "no", "off"}:
+        return True
+    query_tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", query.casefold()))
+    return bool(query_tokens.intersection(_TECHNICAL_DISCOVERY_QUERY_TOKENS))
+
+
 
 def _additional_public_source_batch_size() -> int:
     return max(
@@ -212,11 +263,13 @@ def ingest_additional_public_source_posts(
     *,
     query_type: str | None = None,
 ) -> AdditionalPublicSourceIngestionResult:
-    """Fetch one free/low-cost source, persist it globally, and return refs.
+    """Fetch one free/low-cost source, retain credible buyer signals, and return refs.
 
     This function intentionally does no tenant-scoped write. The caller hands
-    every fetched global ref to the shared embedding and verifier pipeline,
-    which is the only path that can create a tenant-visible candidate.
+    every credible global ref to the shared embedding and verifier pipeline,
+    which is the only path that can create a tenant-visible candidate. Raw API
+    matches that have no buyer-language evidence are intentionally discarded so
+    they cannot pollute future tenant rematches.
     """
     normalized_source = source.strip().casefold()
     normalized_query = query.strip()
@@ -251,9 +304,22 @@ def ingest_additional_public_source_posts(
             plausible_hits=0,
         )
     else:
-        inserted_source_post_ids = _persist_new_public_source_posts(
-            posts,
-            batch_size=_additional_public_source_batch_size(),
+        plausible_posts = [
+            post
+            for post in posts
+            if _source_post_is_plausible_for_discovery_query(
+                post,
+                normalized_query,
+                query_type=query_type,
+            )
+        ]
+        inserted_source_post_ids = (
+            _persist_new_public_source_posts(
+                plausible_posts,
+                batch_size=_additional_public_source_batch_size(),
+            )
+            if plausible_posts
+            else []
         )
         result = AdditionalPublicSourceIngestionResult(
             source=normalized_source,
@@ -262,12 +328,8 @@ def ingest_additional_public_source_posts(
             hits_found=len(posts),
             inserted_count=len(inserted_source_post_ids),
             inserted_source_post_ids=inserted_source_post_ids,
-            matchable_source_post_refs=_matchable_source_post_refs(posts),
-            plausible_hits=sum(
-                1
-                for post in posts
-                if _source_post_is_plausible_for_discovery_query(post, normalized_query)
-            ),
+            matchable_source_post_refs=_matchable_source_post_refs(plausible_posts),
+            plausible_hits=len(plausible_posts),
         )
     logger.info(
         "additional_public_source_ingestion_completed source=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",

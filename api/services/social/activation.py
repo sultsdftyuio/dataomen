@@ -282,20 +282,51 @@ _DISCOVERY_QUERY_STOP_WORDS = frozenset(
         "an",
         "and",
         "are",
+        "can",
+        "could",
+        "do",
+        "does",
         "for",
         "from",
+        "get",
+        "has",
+        "have",
         "how",
         "i",
         "in",
         "is",
         "my",
+        "more",
         "of",
         "on",
         "or",
+        "our",
+        "please",
         "the",
         "to",
+        "too",
+        "we",
+        "what",
         "with",
+        "would",
+        "you",
+        "your",
     }
+)
+
+_BUYER_REQUEST_CONTEXT_PATTERN = re.compile(
+    r"\b(?:ask\s+hn|need(?:s)?|looking\s+for|recommend(?:ation|ations)?|"
+    r"advice|help|struggl(?:e|ing)|stuck|trying\s+to|switch(?:ing)?|replace|"
+    r"dropped|dropping|stalled|failing|failed|stopped\s+working|losing|"
+    r"manual(?:ly)?|by\s+hand|takes?\s+forever|too\s+much\s+time)\b",
+    re.IGNORECASE,
+)
+_BUYER_FIRST_PERSON_PATTERN = re.compile(r"\b(?:i|we|my|our|us)\b", re.IGNORECASE)
+_PUBLISHER_CONTEXT_PATTERN = re.compile(
+    r"\b(?:show\s+hn|launch(?:ed|ing)?|release(?:d|s|\s+notes)?|changelog|"
+    r"tutorial|guide|case\s+study|blog(?:\s+post)?|content\s+strategy|"
+    r"positioning|product\s+critique)\b",
+    re.IGNORECASE,
 )
 
 
@@ -312,13 +343,17 @@ def _discovery_query_tokens(value: str) -> set[str]:
 def _source_post_is_plausible_for_discovery_query(
     post: Any,
     query: str,
+    *,
+    query_type: str | None = None,
 ) -> bool:
-    """Distinguish an actual buyer-language signal from an API search hit.
+    """Identify a credible buyer-language signal instead of a loose API hit.
 
-    Source APIs can return loose token matches.  This is intentionally a cheap
-    *coverage* signal rather than a lead decision: only the downstream
-    similarity filter and verifier can create a reviewable lead.  It prevents
-    one unrelated HN result from consuming the only X fallback.
+    This remains a deliberately cheap guard, never a lead decision: the
+    downstream similarity filter and verifier are the quality gate.  It does,
+    however, require both concrete phrase coverage and evidence that someone
+    is describing a need rather than publishing a tutorial, launch, or product
+    critique.  That prevents broad search APIs from suppressing the one
+    permitted X fallback with unrelated results.
     """
     phrase = _normalize_space(query).casefold()
     text_value = _normalize_space(
@@ -326,20 +361,34 @@ def _source_post_is_plausible_for_discovery_query(
     ).casefold()
     if not phrase or not text_value:
         return False
-    if phrase in text_value:
-        return True
 
     query_tokens = _discovery_query_tokens(phrase)
     if not query_tokens:
         return False
     text_tokens = _discovery_query_tokens(text_value)
     overlap = len(query_tokens.intersection(text_tokens))
-    # A two-word buyer phrase needs both meaningful words.  Longer phrases
-    # may be paraphrased by a post, so two concrete overlaps are enough to
-    # count as plausible coverage without treating a generic one-word hit as
-    # evidence.
-    required_overlap = 1 if len(query_tokens) == 1 else min(2, len(query_tokens))
-    return overlap >= required_overlap
+    # Preserve natural paraphrases, but do not let two generic words in a
+    # five-word query count as coverage.  The former two-token rule was the
+    # reason an unrelated Lemmy/GitHub result could block X in the attached
+    # production run.
+    required_overlap = max(1, math.ceil(len(query_tokens) * 2 / 3))
+    if phrase not in text_value and overlap < required_overlap:
+        return False
+
+    has_request_context = bool(_BUYER_REQUEST_CONTEXT_PATTERN.search(text_value))
+    has_first_person_context = bool(_BUYER_FIRST_PERSON_PATTERN.search(text_value))
+    if _PUBLISHER_CONTEXT_PATTERN.search(text_value) and not has_first_person_context:
+        return False
+
+    # A recommendation or category search must look like someone evaluating a
+    # solution.  Other query types can express urgency as a concise symptom,
+    # but still need either an explicit request or a first-person situation.
+    if query_type in {"recommendation_request", "category_tool_search"}:
+        return has_request_context and (
+            has_first_person_context
+            or bool(re.search(r"\b(?:what|which|anyone|recommend)\b", text_value))
+        )
+    return has_request_context or has_first_person_context
 
 
 
@@ -422,9 +471,26 @@ def ingest_hn_posts(
         )
         return result
 
-    inserted_source_post_ids = _persist_new_public_source_posts(
-        posts,
-        batch_size=_hn_batch_size(),
+    plausible_posts = [
+        post
+        for post in posts
+        if _source_post_is_plausible_for_discovery_query(
+            post,
+            query,
+            query_type=query_type,
+        )
+    ]
+    # Keep the global corpus useful for future tenant-scoped rematches. Raw
+    # provider matches that fail this inexpensive buyer-evidence guard would
+    # otherwise be re-embedded and re-verified for every newly activated
+    # profile despite having no connection to the query that found them.
+    inserted_source_post_ids = (
+        _persist_new_public_source_posts(
+            plausible_posts,
+            batch_size=_hn_batch_size(),
+        )
+        if plausible_posts
+        else []
     )
     result = HnIngestionResult(
         query=query.strip(),
@@ -432,13 +498,9 @@ def ingest_hn_posts(
         hits_found=len(posts),
         inserted_count=len(inserted_source_post_ids),
         inserted_source_post_ids=inserted_source_post_ids,
-        matchable_source_post_ids=_matchable_source_post_ids(posts),
-        plausible_hits=sum(
-            1
-            for post in posts
-            if _source_post_is_plausible_for_discovery_query(post, query)
-        ),
-        matchable_source_post_refs=_matchable_source_post_refs(posts),
+        matchable_source_post_ids=_matchable_source_post_ids(plausible_posts),
+        plausible_hits=len(plausible_posts),
+        matchable_source_post_refs=_matchable_source_post_refs(plausible_posts),
     )
     logger.info(
         "hn_ingestion_completed query=%s query_type=%s hits_found=%s plausible_hits=%s new_inserts=%s",

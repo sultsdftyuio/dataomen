@@ -68,12 +68,12 @@ _DEMAND_ACQUISITION_PROFILE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _DEMAND_ACQUISITION_FALLBACK_PHRASES = (
-    "customer growth has stalled",
-    "new customer signups are dropping",
-    "how can I get more customers",
-    "spending too much time on outreach",
+    "not enough people signing up",
+    "new signups dropped this week",
+    "need a better way to get customers",
+    "we are doing outreach by hand",
     "tools to grow our customer base",
-    "our growth strategy stopped working",
+    "our current growth plan is failing",
 )
 
 # These phrases describe Arcli's operator workflow or a source platform, not a
@@ -377,8 +377,7 @@ DISCOVERY-QUERY CONTRACT:
 - Translate the website's product jargon into the plain, non-technical result
   its buyers want. Search for the *need before the product category*, not the
   feature, implementation, or sales-operations label. For a business that
-  helps customers acquire demand, use "need more customers", "more people signing up",
-  or "customer growth has stalled"; never use "leads",
+  helps customers acquire demand, use the buyer's own situation, such as "need more customers", "more people signing up", "not enough people signing up", "new signups dropped this week", or "we are doing outreach by hand"; never use "leads",
   "prospects", "sales pipeline", lead scoring, or lead
   generation. Keep genuinely essential domain terms only when buyers would
   naturally use them to describe their real problem (for example, invoices or
@@ -415,8 +414,9 @@ Only change fields when needed to make every discovery_queries phrase valid:
   threads, buyer-pain signals, lead/prospect filtering, or alert quality;
   express the buyer's underlying business problem instead.
 - translate product jargon into the buyer's plain-language desired result. For
-  demand-acquisition products, use outcomes such as "need more customers",
-  "more people signing up", or "customer growth has stalled" rather than
+  demand-acquisition products, use a buyer's own situation, such as "not enough
+  people signing up", "new signups dropped this week", or "we are doing
+  outreach by hand" rather than
   leads, prospects, sales pipeline, lead scoring, or lead generation. Apply
   the same outcome-first translation to the website's actual product category.
 - for demand-acquisition products, do not use buyer, lead, prospect, search,

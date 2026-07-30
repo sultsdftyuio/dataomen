@@ -618,6 +618,7 @@ def ingest_additional_public_sources_batch_job(
     try:
         from api.services.social_ingestion import (
             ADDITIONAL_PUBLIC_SOURCE_NAMES,
+            additional_public_source_supports_discovery_query,
             additional_public_source_cache_scope,
             claim_additional_public_source_query,
             enabled_additional_public_sources,
@@ -659,6 +660,27 @@ def ingest_additional_public_sources_batch_job(
             source_hits = 0
             source_failed = False
             for query in normalized_queries:
+                if not additional_public_source_supports_discovery_query(
+                    source,
+                    query["phrase"],
+                ):
+                    logger.info(
+                        "additional_public_source_query_skipped source=%s query_type=%s skip_reason=%s",
+                        source,
+                        query["query_type"],
+                        "nontechnical_query_for_technical_source",
+                    )
+                    _record_discovery_event(
+                        discovery_run_id=discovery_run_id,
+                        tenant_id=tenant_id,
+                        source=source,
+                        query_type=query["query_type"],
+                        query=query["phrase"],
+                        phase="search",
+                        outcome="skipped",
+                        details={"reason": "nontechnical_query_for_technical_source"},
+                    )
+                    continue
                 if not claim_additional_public_source_query(
                     source=source,
                     query=query["phrase"],
