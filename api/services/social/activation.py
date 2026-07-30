@@ -356,8 +356,18 @@ def _source_post_is_plausible_for_discovery_query(
     permitted X fallback with unrelated results.
     """
     phrase = _normalize_space(query).casefold()
+    title_value = str(getattr(post, "title", "") or "")
+    # Connector records expose ``body`` while the global-corpus matching path
+    # deliberately converts database rows to ``SocialPost``, whose equivalent
+    # field is named ``text``. Keep the relevance guard shape-compatible with
+    # both paths so a cached post cannot crash a worker before verification.
+    body_value = str(
+        getattr(post, "body", None)
+        or getattr(post, "text", "")
+        or ""
+    )
     text_value = _normalize_space(
-        " ".join(part for part in (post.title or "", post.body) if part)
+        " ".join(part for part in (title_value, body_value) if part)
     ).casefold()
     if not phrase or not text_value:
         return False

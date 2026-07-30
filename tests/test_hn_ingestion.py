@@ -59,6 +59,7 @@ class HackerNewsConnectorTests(unittest.TestCase):
 class HackerNewsIngestionTests(unittest.TestCase):
     def test_buyer_evidence_guard_rejects_editorial_overlap_but_keeps_a_real_request(self) -> None:
         import api.services.social_ingestion as ingestion_module
+        from api.services.social.models import SocialPost
 
         editorial = SimpleNamespace(
             title="Customer growth guide",
@@ -90,6 +91,19 @@ class HackerNewsIngestionTests(unittest.TestCase):
         self.assertFalse(
             ingestion_module._source_post_is_plausible_for_discovery_query(
                 publisher_copy,
+                "need a better way to get customers",
+                query_type="recommendation_request",
+            )
+        )
+        cached_social_post = SocialPost(
+            source="hackernews",
+            external_id="cached-1",
+            title="Ask HN: Getting our first customers",
+            text="We need a better way to get customers after signups dropped.",
+        )
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                cached_social_post,
                 "need a better way to get customers",
                 query_type="recommendation_request",
             )
