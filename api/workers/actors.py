@@ -69,7 +69,7 @@ def _minimum_plausible_query_types_for_x_suppression() -> int:
 
     return _int_env(
         "ARCLI_INITIAL_PUBLIC_FREE_MIN_QUERY_TYPES_FOR_X_SUPPRESSION",
-        2,
+        3,
         minimum=1,
     )
 

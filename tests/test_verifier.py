@@ -74,7 +74,10 @@ def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() 
 
     assert "Revenue is at risk after a payment failure" in prompt
     assert "similarity score is only a cheap prefilter" in prompt.lower()
+    assert "search_terms describe the buyer's desired outcome" in prompt
     assert "tool/category search" in verifier.SYSTEM_PROMPT
+    assert "Do not require the writer to use the vendor's product-category" in verifier.SYSTEM_PROMPT
+    assert "without words such as prospect, lead" in verifier.SYSTEM_PROMPT
     assert "exact short excerpt" in verifier.SYSTEM_PROMPT
 
 

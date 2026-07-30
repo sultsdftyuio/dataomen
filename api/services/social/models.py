@@ -143,6 +143,18 @@ _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS = {
     "tools to grow our customer base": "tools to grow our customer base",
     "our growth strategy stopped working": "our current growth plan is failing",
 }
+_LEGACY_B2B_DEMAND_ACQUISITION_QUERY_REPLACEMENTS = {
+    "customer growth has stalled": "not enough SaaS users signing up",
+    "new customer signups are dropping": "new SaaS signups dropped this week",
+    "how can i get more customers": "how are SaaS founders finding customers",
+    "spending too much time on outreach": "we are doing outreach by hand",
+    "tools to grow our customer base": "tools to find SaaS customers",
+    "our growth strategy stopped working": "our SaaS growth plan is failing",
+}
+_B2B_SOFTWARE_PROFILE_PATTERN = re.compile(
+    r"\b(?:b2b|saas|software|startup|start-up)\b",
+    re.IGNORECASE,
+)
 
 
 
@@ -285,6 +297,43 @@ def _list_value(value: Any) -> list[Any]:
     return []
 
 
+def _search_time_discovery_phrase(phrase: str, sources: list[dict[str, Any]]) -> str:
+    """Upgrade old emergency demand phrases without mutating customer data.
+
+    The persisted profile remains editable and untouched. When its own brief
+    clearly names a B2B-software audience, add that buyer-owned context to the
+    temporary source query so broad HN/X searches do not mistake publisher
+    content for a real customer conversation.
+    """
+
+    normalized_phrase = phrase.casefold()
+    profile_context = " ".join(
+        part
+        for source in sources
+        for key in (
+            "one_liner",
+            "target_audience",
+            "core_problem_solved",
+            "key_value_propositions",
+            "ideal_customer_pain_points",
+            "use_cases",
+            "buying_triggers",
+            "urgency_signals",
+        )
+        for part in (
+            [_string_value(source.get(key))]
+            if _string_value(source.get(key))
+            else _string_list(source.get(key))
+        )
+    )
+    replacements = (
+        _LEGACY_B2B_DEMAND_ACQUISITION_QUERY_REPLACEMENTS
+        if _B2B_SOFTWARE_PROFILE_PATTERN.search(profile_context)
+        else _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS
+    )
+    return replacements.get(normalized_phrase, phrase)
+
+
 
 def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
     """Return canonical typed discovery phrases from a persisted profile.
@@ -307,10 +356,7 @@ def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
             if not query_type or not phrase or query_type not in DISCOVERY_QUERY_TYPES:
                 continue
             normalized_phrase = _compact_public_search_term(
-                _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS.get(
-                    phrase.casefold(),
-                    phrase,
-                )
+                _search_time_discovery_phrase(phrase, sources)
             )
             phrase_key = normalized_phrase.casefold()
             if (
@@ -335,10 +381,7 @@ def _profile_discovery_queries(row: dict[str, Any]) -> list[DiscoveryQuery]:
         DiscoveryQuery(
             DISCOVERY_QUERY_TYPES[index % len(DISCOVERY_QUERY_TYPES)],
             _compact_public_search_term(
-                _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS.get(
-                    normalized_phrase.casefold(),
-                    normalized_phrase,
-                )
+                _search_time_discovery_phrase(normalized_phrase, sources)
             ),
         )
         for index, term in enumerate(legacy_terms)

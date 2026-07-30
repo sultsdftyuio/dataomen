@@ -225,6 +225,27 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
         ):
             self.assertEqual(actors._minimum_plausible_free_hits_for_x_suppression(), 1)
 
+    def test_default_requires_three_distinct_query_types_to_suppress_x(self) -> None:
+        from api.workers import actors
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(
+                actors._has_sufficient_free_evidence_for_x_suppression(
+                    plausible_hits=10,
+                    plausible_query_types={"buyer_pain", "recommendation_request"},
+                )
+            )
+            self.assertTrue(
+                actors._has_sufficient_free_evidence_for_x_suppression(
+                    plausible_hits=10,
+                    plausible_query_types={
+                        "buyer_pain",
+                        "recommendation_request",
+                        "urgent_failure",
+                    },
+                )
+            )
+
     def test_activation_queues_hn_first_then_the_four_free_sources(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
@@ -393,6 +414,10 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             _result("bluesky", plausible_hits=1),
         ]
         with (
+            patch.dict(
+                os.environ,
+                {"ARCLI_INITIAL_PUBLIC_FREE_MIN_QUERY_TYPES_FOR_X_SUPPRESSION": "2"},
+            ),
             patch.object(ingestion, "claim_additional_public_source_query", return_value=True),
             patch.object(ingestion, "ingest_additional_public_source_posts", side_effect=results),
             patch.object(ingestion, "trigger_embedding_jobs", return_value=2),

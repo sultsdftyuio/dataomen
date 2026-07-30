@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import UUID
 
-from api.services.verifier import VerificationResult
+from api.services.verifier import VERIFIER_POLICY_VERSION, VerificationResult
 
 
 class PublicSourceMatchingTests(unittest.TestCase):
@@ -161,6 +161,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
             "00000000-0000-0000-0000-000000000002",
         )
         self.assertEqual(persisted[0]["source_post_id"], source_row["id"])
+        self.assertEqual(
+            persisted[0]["verifier_policy_version"],
+            VERIFIER_POLICY_VERSION,
+        )
 
     def test_activation_rematches_only_the_new_profile_against_cached_global_posts(self) -> None:
         import api.services.social_ingestion as ingestion
@@ -258,6 +262,66 @@ class PublicSourceMatchingTests(unittest.TestCase):
             persisted[0]["service_profile_id"],
             "00000000-0000-0000-0000-000000000012",
         )
+        self.assertEqual(
+            persisted[0]["verifier_policy_version"],
+            VERIFIER_POLICY_VERSION,
+        )
+
+    def test_cached_verdict_requires_the_current_verifier_policy_version(self) -> None:
+        from api.services.social.legacy_storage import _cached_lead_verification
+
+        verdict = VerificationResult(
+            match=False,
+            decision_label="not_a_match",
+            confidence=0.1,
+            pain_detected="",
+            why_this_matches="No matching buyer evidence.",
+            rejection_reason="llm_not_a_match",
+        ).model_dump()
+
+        class FakeMappings:
+            def __init__(self, row: dict[str, object]) -> None:
+                self.row = row
+
+            def first(self) -> dict[str, object]:
+                return self.row
+
+        class FakeResult:
+            def __init__(self, row: dict[str, object]) -> None:
+                self.row = row
+
+            def mappings(self) -> FakeMappings:
+                return FakeMappings(self.row)
+
+        class FakeConnection:
+            def __init__(self, row: dict[str, object]) -> None:
+                self.row = row
+
+            def execute(self, *_args: object, **_kwargs: object) -> FakeResult:
+                return FakeResult(self.row)
+
+        def cached_result(policy_version: str | None) -> VerificationResult | None:
+            metadata = {
+                "profile_embedding_sha256": "profile-hash",
+                "verifier_model": "test-model",
+            }
+            if policy_version is not None:
+                metadata["verifier_policy_version"] = policy_version
+            return _cached_lead_verification(
+                FakeConnection({"metadata": metadata, "verification": verdict}),
+                tenant_id="tenant-a",
+                service_profile_id=None,
+                source_post_id=None,
+                external_key="hackernews:123",
+                profile_embedding_sha256="profile-hash",
+                verifier_model="test-model",
+                verifier_policy_version=VERIFIER_POLICY_VERSION,
+                columns={"tenant_id": {}, "metadata": {}, "verification": {}},
+            )
+
+        self.assertIsNone(cached_result(None))
+        self.assertIsNone(cached_result("buyer_outcome_v1"))
+        self.assertIsNotNone(cached_result(VERIFIER_POLICY_VERSION))
 
     def test_rematch_candidate_limit_is_bounded_before_verification(self) -> None:
         import api.services.social_ingestion as ingestion

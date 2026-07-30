@@ -276,6 +276,7 @@ def _cached_lead_verification(
     external_key: str,
     profile_embedding_sha256: str,
     verifier_model: str,
+    verifier_policy_version: str,
     columns: dict[str, dict[str, str]],
 ) -> VerificationResult | None:
     if not {"tenant_id", "metadata"}.issubset(columns):
@@ -326,6 +327,7 @@ def _cached_lead_verification(
     if (
         metadata.get("profile_embedding_sha256") != profile_embedding_sha256
         or metadata.get("verifier_model") != verifier_model
+        or metadata.get("verifier_policy_version") != verifier_policy_version
     ):
         return None
 
@@ -392,6 +394,7 @@ def _persist_lead_match(
     verification: Any,
     profile_embedding_sha256: str,
     verifier_model: str,
+    verifier_policy_version: str,
 ) -> None:
     columns = _table_columns(conn, "lead_matches")
     if not {"tenant_id", "match_status"}.issubset(columns):
@@ -415,6 +418,7 @@ def _persist_lead_match(
         "service_profile_id": service_profile_id,
         "profile_embedding_sha256": profile_embedding_sha256,
         "verifier_model": verifier_model,
+        "verifier_policy_version": verifier_policy_version,
     }
 
     payload: dict[str, Any] = {

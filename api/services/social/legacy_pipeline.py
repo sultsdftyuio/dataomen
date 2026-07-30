@@ -39,6 +39,7 @@ from api.services.matching import PostEmbedding, find_candidate_matches
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
+    VERIFIER_POLICY_VERSION,
     VerificationResult,
     VerifierService,
 )
@@ -231,6 +232,7 @@ def run_initial_public_ingestion(
                 external_key=post.dedupe_key,
                 profile_embedding_sha256=profile_embedding_sha256,
                 verifier_model=verifier_model,
+                verifier_policy_version=VERIFIER_POLICY_VERSION,
                 columns=lead_match_columns,
             )
 
@@ -275,6 +277,7 @@ def run_initial_public_ingestion(
                 verification=verification,
                 profile_embedding_sha256=profile_embedding_sha256,
                 verifier_model=verifier_model,
+                verifier_policy_version=VERIFIER_POLICY_VERSION,
             )
 
     verifier.close()

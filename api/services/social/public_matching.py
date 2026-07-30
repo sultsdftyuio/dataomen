@@ -39,6 +39,7 @@ from api.services.matching import PostEmbedding, find_candidate_matches
 from api.services.verifier import (
     CandidatePost,
     ServiceProfile,
+    VERIFIER_POLICY_VERSION,
     VerificationResult,
     VerifierService,
 )
@@ -290,6 +291,7 @@ def rematch_existing_public_source_posts_for_profile(
                     external_key=post.dedupe_key,
                     profile_embedding_sha256=profile_embedding_sha256,
                     verifier_model=verifier.model,
+                    verifier_policy_version=VERIFIER_POLICY_VERSION,
                     columns=lead_match_columns,
                 )
             if not verification:
@@ -324,6 +326,7 @@ def rematch_existing_public_source_posts_for_profile(
                     verification=verification,
                     profile_embedding_sha256=profile_embedding_sha256,
                     verifier_model=verifier.model,
+                    verifier_policy_version=VERIFIER_POLICY_VERSION,
                 )
     finally:
         verifier.close()
@@ -519,6 +522,7 @@ def process_public_source_post_embedding(
                         external_key=post.dedupe_key,
                         profile_embedding_sha256=profile_embedding_sha256,
                         verifier_model=verifier.model,
+                        verifier_policy_version=VERIFIER_POLICY_VERSION,
                         columns=lead_match_columns,
                     )
 
@@ -554,6 +558,7 @@ def process_public_source_post_embedding(
                         verification=verification,
                         profile_embedding_sha256=profile_embedding_sha256,
                         verifier_model=verifier.model,
+                        verifier_policy_version=VERIFIER_POLICY_VERSION,
                     )
     finally:
         embedding_service.close()

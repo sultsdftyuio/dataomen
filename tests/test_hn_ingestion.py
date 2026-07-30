@@ -147,6 +147,28 @@ class HackerNewsIngestionTests(unittest.TestCase):
             ],
         )
 
+    def test_legacy_demand_fallback_keeps_b2b_software_context_at_search_time(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        queries = ingestion_module._profile_discovery_queries(
+            {
+                "profile_json": {
+                    "target_audience": ["B2B SaaS founders"],
+                    "discovery_queries": [
+                        {
+                            "query_type": "recommendation_request",
+                            "phrase": "how can I get more customers",
+                        }
+                    ],
+                }
+            }
+        )
+
+        self.assertEqual(
+            [query.phrase for query in queries],
+            ["how are SaaS founders finding customers"],
+        )
+
     def test_service_batches_global_payloads_and_returns_new_ids(self) -> None:
         import api.services.integrations.hn_connector as connector_module
         import api.services.social_ingestion as ingestion_module

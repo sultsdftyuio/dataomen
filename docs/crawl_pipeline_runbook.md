@@ -255,6 +255,11 @@ ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT=6
 # remains supported for compatibility if this new value is not set.
 ARCLI_INITIAL_PUBLIC_FREE_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION=2
 
+# Free results must also cover this many distinct query types before they can
+# suppress the one-page X fallback. This prevents several broad hits for two
+# similar phrases from being treated as verified discovery coverage.
+ARCLI_INITIAL_PUBLIC_FREE_MIN_QUERY_TYPES_FOR_X_SUPPRESSION=3
+
 # Four added public sources are on by default. Set any to false to disable it.
 ARCLI_BLUESKY_INGESTION_ENABLED=true
 ARCLI_STACKEXCHANGE_INGESTION_ENABLED=true

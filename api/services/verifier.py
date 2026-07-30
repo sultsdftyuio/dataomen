@@ -40,6 +40,10 @@ MetadataValue = str | int | float | bool
 VERIFIER_QUOTA_COUNTER = "llm_verifier"
 VERIFIER_QUOTA_DEFAULT_LIMIT = 1_000
 VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
+# Persist this alongside a verdict. Bump it only when verifier instructions
+# materially change lead eligibility, so cached decisions cannot survive a
+# policy change while preserving normal tenant-scoped cache reuse.
+VERIFIER_POLICY_VERSION = "buyer_outcome_v2"
 # Keep the verifier gate aligned with the candidate prefilter by default. The
 # verifier itself is the precision gate; a higher hidden default would make
 # the recall-oriented matching threshold ineffective.
@@ -148,8 +152,22 @@ class VerifierService(OpenAIClientOwner):
         "must show explicit buyer pain, urgency, a recommendation request, a "
         "manual-workflow frustration, a tool/category search, or a switching "
         "trigger that the Service Profile solves. Similar words or a product "
-        "category alone are not evidence. Reject tutorials, announcements, spam, "
-        "job postings, and conversations where the writer is not plausibly a buyer. "
+        "category alone are not evidence. Treat the profile's target audience, "
+        "ideal_customer_pain_points, buying_triggers, urgency_signals, and "
+        "search_terms as first-class buyer-language evidence. Do not require the "
+        "writer to use the vendor's product-category, internal workflow, or "
+        "operator terminology when they clearly describe the real outcome the "
+        "service solves. For example, when a service helps a B2B software team "
+        "find customers, an in-context team explicitly needing more signups or "
+        "customers, asking how to reach customers, or struggling with manual "
+        "outreach can be a match even without words such as prospect, lead, "
+        "account matching, or buyer intent. It still needs an explicit, "
+        "first-person or organization-owned pain, request, urgency, tool search, "
+        "or switching signal and a plausible direct fit to this specific profile. "
+        "Reject generic marketing tutorials or strategy essays, announcements, "
+        "spam, job postings, consumer/personal questions outside the target "
+        "audience, and content that merely mentions growth or customer acquisition "
+        "without someone actually seeking or experiencing help. "
         "Use `match: true` only when the post contains concrete evidence of a fit; "
         "use `weak_match` only for real but incomplete buyer evidence. You must return "
         "ONLY a JSON object with: `match` (boolean), `decision_label` (string: "
@@ -443,6 +461,10 @@ class VerifierService(OpenAIClientOwner):
         return (
             "Use a conservative lead-quality standard. The similarity score is "
             "only a cheap prefilter and must not be treated as proof of fit.\n\n"
+            "Read the matching brief's buyer-language fields before judging the "
+            "candidate. In particular, search_terms describe the buyer's desired "
+            "outcome, not required vendor vocabulary. A candidate must still show "
+            "its own concrete evidence and fit the stated target audience.\n\n"
             "Service Profile JSON:\n"
             f"{service_profile.model_dump_json(indent=2)}\n\n"
             "Candidate Post JSON:\n"
