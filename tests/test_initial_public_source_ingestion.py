@@ -153,6 +153,82 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         )
         x_send.assert_not_called()
 
+    def test_activation_threads_a_tenant_owned_discovery_run_to_hn(self) -> None:
+        import api.services.social_ingestion as ingestion
+        from api.workers import actors
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        run_id = "55ae0bd7-7c0d-4d13-82cd-89246fa19a19"
+        with (
+            patch.dict(os.environ, {"X_BEARER_TOKEN": "test-token"}, clear=True),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
+            patch(
+                "api.services.social.discovery_telemetry.create_discovery_run",
+                return_value=run_id,
+            ) as create_run,
+            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+        ):
+            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
+
+        self.assertEqual(plan.discovery_run_id, run_id)
+        create_run.assert_called_once_with(
+            "tenant-1",
+            "profile-1",
+            CANONICAL_DISCOVERY_QUERIES,
+        )
+        self.assertEqual(hn_send.call_args.kwargs["discovery_run_id"], run_id)
+
+    def test_x_only_activation_keeps_matching_context_when_telemetry_is_unavailable(self) -> None:
+        """Observability rollout must not remove normal X job tenant context."""
+        import api.services.social_ingestion as ingestion
+        from api.workers import actors
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "X_BEARER_TOKEN": "test-token",
+                    "ARCLI_HN_INGESTION_ENABLED": "false",
+                    "ARCLI_BLUESKY_INGESTION_ENABLED": "false",
+                    "ARCLI_STACKEXCHANGE_INGESTION_ENABLED": "false",
+                    "ARCLI_GITHUB_INGESTION_ENABLED": "false",
+                    "ARCLI_LEMMY_INGESTION_ENABLED": "false",
+                },
+                clear=True,
+            ),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
+            patch.object(ingestion, "_claim_initial_x_fallback_budget", return_value=True),
+            patch(
+                "api.services.social.discovery_telemetry.create_discovery_run",
+                return_value=None,
+            ),
+            patch.object(actors.ingest_x_job, "send") as x_send,
+        ):
+            plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
+
+        self.assertEqual(plan.hn_jobs, 0)
+        self.assertEqual(plan.additional_source_jobs, 0)
+        self.assertEqual(plan.x_jobs, 1)
+        x_send.assert_called_once_with(
+            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
+            168,
+            25,
+            strict_single_page=True,
+            tenant_id="tenant-1",
+            service_profile_id="profile-1",
+        )
+
     def test_x_fallback_query_combines_all_typed_discovery_terms_once(self) -> None:
         self.assertEqual(
             _x_fallback_query(CANONICAL_DISCOVERY_QUERIES[:2]),

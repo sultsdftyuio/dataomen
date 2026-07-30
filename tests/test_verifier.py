@@ -75,3 +75,75 @@ def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() 
     assert "Revenue is at risk after a payment failure" in prompt
     assert "similarity score is only a cheap prefilter" in prompt.lower()
     assert "tool/category search" in verifier.SYSTEM_PROMPT
+    assert "exact short excerpt" in verifier.SYSTEM_PROMPT
+
+
+def test_verifier_keeps_only_verbatim_source_evidence() -> None:
+    source_text = "Our customers are blocked and we need a replacement before Friday."
+    result = VerificationResult(
+        match=True,
+        decision_label="strong_match",
+        confidence=0.91,
+        pain_detected="Customers are blocked by the current tool.",
+        why_this_matches="The writer explicitly needs a replacement.",
+        pain_theme="customer workflow blocked",
+        signal_type="urgent_failure",
+        urgency_level="high",
+        urgency_reason="need a replacement before Friday",
+        evidence_excerpt="Our customers are blocked",
+    )
+
+    sanitized = VerifierService._sanitize_source_evidence(result, source_text)
+
+    assert sanitized.urgency_level == "high"
+    assert sanitized.urgency_reason == "need a replacement before Friday"
+    assert sanitized.evidence_excerpt == "Our customers are blocked"
+
+
+def test_verifier_omits_invented_source_evidence_without_changing_match() -> None:
+    result = VerificationResult(
+        match=True,
+        decision_label="strong_match",
+        confidence=0.91,
+        pain_detected="Billing is slow.",
+        why_this_matches="The writer is evaluating a solution.",
+        pain_theme="billing operations",
+        signal_type="urgent_failure",
+        urgency_level="high",
+        urgency_reason="deadline is tomorrow",
+        evidence_excerpt="the team is losing revenue every hour",
+    )
+
+    sanitized = VerifierService._sanitize_source_evidence(
+        result,
+        "Our billing process is slow and we are evaluating alternatives.",
+    )
+
+    assert sanitized.match is True
+    assert sanitized.decision_label == "strong_match"
+    assert sanitized.urgency_level == "none"
+    assert sanitized.urgency_reason == ""
+    assert sanitized.evidence_excerpt == ""
+
+
+def test_verifier_clears_positive_evidence_for_a_rejected_post() -> None:
+    result = VerificationResult(
+        match=False,
+        decision_label="not_a_match",
+        confidence=0.1,
+        pain_detected="",
+        why_this_matches="This is a tutorial.",
+        pain_theme="invented theme",
+        signal_type="buyer_pain",
+        urgency_level="high",
+        urgency_reason="need it today",
+        evidence_excerpt="need it today",
+    )
+
+    sanitized = VerifierService._sanitize_source_evidence(result, "I need it today")
+
+    assert sanitized.pain_theme == ""
+    assert sanitized.signal_type is None
+    assert sanitized.urgency_level == "none"
+    assert sanitized.urgency_reason == ""
+    assert sanitized.evidence_excerpt == ""

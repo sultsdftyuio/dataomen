@@ -174,6 +174,44 @@ class PublicIngestionTriggerResponse(BaseModel):
     message_id: str
 
 
+class BuyerLanguageResearchTriggerRequest(BaseModel):
+    """Trusted request to start non-lead, source-grounded buyer research."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    service_profile_id: str = Field(min_length=1)
+    requested_by: str | None = Field(default=None)
+    source: str | None = Field(default=None, max_length=120)
+
+    @field_validator("tenant_id", "service_profile_id")
+    @classmethod
+    def validate_uuid_identifier(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tenant_id and service_profile_id must be valid UUIDs") from exc
+
+    @field_validator("requested_by")
+    @classmethod
+    def validate_requested_by(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("requested_by must be a valid UUID") from exc
+
+
+class BuyerLanguageResearchTriggerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["queued"] = Field(default="queued")
+    tenant_id: str
+    service_profile_id: str
+    message_id: str
+
+
 class WorkspaceBrainGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
 
@@ -750,6 +788,90 @@ def trigger_public_ingestion(
     )
 
     return PublicIngestionTriggerResponse(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+        message_id=message_id,
+    )
+
+
+@app.post(
+    "/buyer-language-research/trigger",
+    response_model=BuyerLanguageResearchTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+@app.post(
+    "/api/buyer-language-research/trigger",
+    response_model=BuyerLanguageResearchTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_buyer_language_research(
+    payload: BuyerLanguageResearchTriggerRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+) -> BuyerLanguageResearchTriggerResponse:
+    """Queue source-grounded buyer-language research outside the lead workflow.
+
+    This endpoint deliberately does not share the public-ingestion trigger:
+    it can only enqueue the separately feature-flagged research actor, whose
+    database contract prevents writes to ``lead_matches`` and CRM delivery.
+    """
+
+    from api.services.social.buyer_language_research import (
+        buyer_language_research_is_enabled,
+        enqueue_buyer_language_research_job,
+    )
+
+    _validate_internal_tenant_scope(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+    )
+
+    if not buyer_language_research_is_enabled():
+        logger.info(
+            "buyer_language_research_trigger_rejected tenant_id=%s service_profile_id=%s rejection_reason=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            "feature_disabled",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Buyer-language research is not enabled.",
+        )
+
+    try:
+        message_id = enqueue_buyer_language_research_job(
+            payload.tenant_id,
+            payload.service_profile_id,
+        )
+    except RuntimeError as exc:
+        logger.exception(
+            "buyer_language_research_enqueue_failed tenant_id=%s service_profile_id=%s error_type=%s",
+            payload.tenant_id,
+            payload.service_profile_id,
+            exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Buyer-language research queue is unavailable.",
+        ) from exc
+
+    if not message_id:
+        # The only expected falsey result after the explicit feature check is
+        # the tenant's bounded manual-research budget. Do not claim that a
+        # research result exists or reveal cross-tenant quota information.
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Buyer-language research is temporarily rate limited. Try again later.",
+        )
+
+    logger.info(
+        "buyer_language_research_trigger_accepted tenant_id=%s service_profile_id=%s message_id=%s source=%s",
+        payload.tenant_id,
+        payload.service_profile_id,
+        message_id,
+        payload.source,
+    )
+    return BuyerLanguageResearchTriggerResponse(
         tenant_id=payload.tenant_id,
         service_profile_id=payload.service_profile_id,
         message_id=message_id,

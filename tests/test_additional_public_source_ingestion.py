@@ -310,15 +310,16 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             168,
             25,
             strict_single_page=True,
+            tenant_id="tenant-1",
         )
 
-    def test_two_plausible_free_signals_suppress_x_but_keep_review_handoff(self) -> None:
+    def test_distinct_plausible_query_types_suppress_x_but_keep_review_handoff(self) -> None:
         from api.workers import actors
         import api.services.social_ingestion as ingestion
 
         results = [
             _result("bluesky", plausible_hits=1),
-            _result("stackexchange", plausible_hits=1),
+            _result("bluesky", plausible_hits=1),
         ]
         with (
             patch.object(ingestion, "claim_additional_public_source_query", return_value=True),
@@ -328,16 +329,53 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             patch.object(actors, "_close_actor_openai_clients"),
         ):
             actors.ingest_additional_public_sources_batch_job.fn(
-                [CANONICAL_QUERIES[0]],
+                [CANONICAL_QUERIES[0], CANONICAL_QUERIES[1]],
                 168,
                 25,
                 fallback_to_x=True,
-                enabled_sources=["bluesky", "stackexchange"],
+                enabled_sources=["bluesky"],
                 x_fallback_group_id="activation-1",
                 tenant_id="tenant-1",
             )
 
         x_send.assert_not_called()
+
+    def test_many_plausible_hits_for_one_query_type_do_not_suppress_x(self) -> None:
+        from api.workers import actors
+        import api.services.social_ingestion as ingestion
+
+        with (
+            patch.object(ingestion, "claim_additional_public_source_query", return_value=True),
+            patch.object(
+                ingestion,
+                "ingest_additional_public_source_posts",
+                return_value=_result("bluesky", plausible_hits=8),
+            ),
+            patch.object(ingestion, "trigger_embedding_jobs", return_value=1),
+            patch.object(actors, "_x_source_is_configured", return_value=True),
+            patch.object(actors, "_claim_initial_x_fallback", return_value=True),
+            patch.object(actors, "_claim_tenant_x_fallback_budget", return_value=True),
+            patch.object(actors.ingest_x_job, "send") as x_send,
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_additional_public_sources_batch_job.fn(
+                [CANONICAL_QUERIES[0]],
+                168,
+                25,
+                fallback_to_x=True,
+                enabled_sources=["bluesky"],
+                x_fallback_group_id="activation-1",
+                x_fallback_query='"manual customer onboarding"',
+                tenant_id="tenant-1",
+            )
+
+        x_send.assert_called_once_with(
+            '"manual customer onboarding"',
+            168,
+            25,
+            strict_single_page=True,
+            tenant_id="tenant-1",
+        )
 
     def test_one_failed_source_does_not_stop_the_remaining_sources_or_fallback(self) -> None:
         from api.workers import actors

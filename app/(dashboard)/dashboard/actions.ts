@@ -19,6 +19,7 @@ import {
 type DbRecord = Record<string, Json>;
 type CrawlerTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 type EmbeddingTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
+type BuyerLanguageResearchTriggerContext = Pick<TenantContext, "tenantId" | "userId">;
 
 type CrawlerTriggerResponse = {
   pass1_status?: "completed" | "skipped" | "failed";
@@ -82,6 +83,15 @@ const SERVICE_PROFILE_SCHEMA = z.object({
 });
 
 const FEEDBACK_VALUES = new Set(FEEDBACK_OPTIONS.map((option) => option.value));
+
+// Keep older browser tabs from failing after the feedback contract moved from
+// vague lead labels to calibrated matching-brief signals. All persistence is
+// canonical, tenant-scoped, and reviewed by a human before any profile edit.
+const LEGACY_FEEDBACK_ALIASES: Record<string, LeadFeedbackValue> = {
+  good_lead: "good_fit",
+  bad_lead: "not_relevant",
+  wrong_audience: "wrong_buyer",
+};
 
 function actionError(message: string): ProspectActionResult {
   return { ok: false, message };
@@ -266,6 +276,28 @@ function embeddingTriggerEndpoints() {
         ...workerApiUrls.map((baseUrl) =>
           baseUrl
             ? joinBackendPath(baseUrl, "/api/service-profile/embed/trigger")
+            : null,
+        ),
+      ].filter((endpoint): endpoint is string => Boolean(endpoint)),
+    ),
+  );
+}
+
+function buyerLanguageResearchTriggerEndpoints() {
+  const explicit = process.env.ARCLI_BUYER_LANGUAGE_RESEARCH_TRIGGER_URL?.trim();
+  const workerApiUrls = [
+    process.env.ARCLI_WORKER_API_URL?.trim(),
+    process.env.PYTHON_BACKEND_URL?.trim(),
+    process.env.INTERNAL_API_URL?.trim(),
+  ];
+
+  return Array.from(
+    new Set(
+      [
+        explicit,
+        ...workerApiUrls.map((baseUrl) =>
+          baseUrl
+            ? joinBackendPath(baseUrl, "/api/buyer-language-research/trigger")
             : null,
         ),
       ].filter((endpoint): endpoint is string => Boolean(endpoint)),
@@ -488,6 +520,109 @@ async function postEmbeddingTrigger(
   }
 }
 
+async function postBuyerLanguageResearchTrigger(
+  context: BuyerLanguageResearchTriggerContext,
+  serviceProfileId: string,
+): Promise<ProspectActionResult> {
+  const endpoints = buyerLanguageResearchTriggerEndpoints();
+  if (endpoints.length === 0) {
+    console.warn("[BuyerLanguageResearch] trigger not configured", {
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return actionError("Buyer-language research is not configured.");
+  }
+
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  if (!workerSecret) {
+    console.warn("[BuyerLanguageResearch] trigger secret missing", {
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return actionError("Buyer-language research credentials are missing.");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    let lastUnavailableError: unknown = null;
+    let sawNotFound = false;
+
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${workerSecret}`,
+          },
+          cache: "no-store",
+          signal: controller.signal,
+          body: JSON.stringify({
+            tenant_id: context.tenantId,
+            service_profile_id: serviceProfileId,
+            requested_by: context.userId,
+            source: "dashboard_buyer_language_research",
+          }),
+        });
+
+        if (response.ok) {
+          console.info("[BuyerLanguageResearch] trigger posted", {
+            tenant_id: context.tenantId,
+            service_profile_id: serviceProfileId,
+            endpoint,
+          });
+          return actionOk(
+            "Buyer-language research is queued. It will appear as source-grounded research, not as leads.",
+          );
+        }
+
+        const body = await response.text().catch(() => "");
+        console.warn("[BuyerLanguageResearch] trigger failed", {
+          tenant_id: context.tenantId,
+          service_profile_id: serviceProfileId,
+          endpoint,
+          status: response.status,
+          body: body.slice(0, 500),
+        });
+        if (response.status === 404) {
+          sawNotFound = true;
+          continue;
+        }
+        if (response.status === 429) {
+          return actionError("Research is rate limited for this workspace. Try again later.");
+        }
+        return actionError(
+          `Buyer-language research was not accepted (HTTP ${response.status}).`,
+        );
+      } catch (error) {
+        lastUnavailableError = error;
+        console.warn("[BuyerLanguageResearch] trigger unavailable", {
+          tenant_id: context.tenantId,
+          service_profile_id: serviceProfileId,
+          endpoint,
+          error,
+        });
+      }
+    }
+
+    if (sawNotFound && !lastUnavailableError) {
+      return actionError(
+        "Buyer-language research is not enabled on this deployment yet.",
+      );
+    }
+
+    return actionError(
+      lastUnavailableError instanceof Error
+        ? `Buyer-language research is unavailable: ${lastUnavailableError.message}`
+        : "Buyer-language research is unavailable.",
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function retryServiceProfileEmbedding(
   serviceProfileId: string | null,
 ): Promise<ProspectActionResult> {
@@ -511,6 +646,37 @@ export async function retryServiceProfileEmbedding(
     revalidatePath("/onboarding/workspace");
   }
 
+  return result;
+}
+
+/**
+ * Starts the explicitly separate research product. Its worker can only write
+ * tenant-scoped discovery evidence; it cannot create or qualify a lead.
+ */
+export async function requestBuyerLanguageResearch(
+): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+
+  // Do not accept tenant or profile scope from the browser. The active profile
+  // is resolved under the authenticated tenant context immediately before the
+  // internal worker handoff.
+  const serviceProfileId = await latestServiceProfileId(context);
+  if (!serviceProfileId) {
+    return actionError("Create and approve a matching brief before starting research.");
+  }
+
+  const result = await postBuyerLanguageResearchTrigger(
+    {
+      tenantId: context.tenantId,
+      userId: context.userId,
+    },
+    serviceProfileId,
+  );
+
+  if (result.ok) {
+    revalidatePath("/dashboard");
+  }
   return result;
 }
 
@@ -811,7 +977,9 @@ export async function submitLeadFeedback(
   const context = await requireTenant();
   if ("ok" in context) return context;
 
-  const normalizedFeedback = feedback.trim();
+  const requestedFeedback = feedback.trim();
+  const normalizedFeedback =
+    LEGACY_FEEDBACK_ALIASES[requestedFeedback] ?? requestedFeedback;
   if (!FEEDBACK_VALUES.has(normalizedFeedback as LeadFeedbackValue)) {
     return actionError("Unsupported feedback value.");
   }
@@ -832,54 +1000,35 @@ export async function submitLeadFeedback(
     return actionError("This lead is no longer available.");
   }
 
-  const now = new Date().toISOString();
-  const payloads: DbRecord[] = [
-    {
+  const result = await context.supabase
+    .from("lead_feedback")
+    .insert({
       tenant_id: context.tenantId,
       lead_match_id: leadMatchId,
       feedback_type: normalizedFeedback,
       user_id: context.userId,
-      created_at: now,
-    },
-    {
-      tenant_id: context.tenantId,
-      lead_match_id: leadMatchId,
-      feedback_type: normalizedFeedback,
-      created_by: context.userId,
-      created_at: now,
-    },
-    {
-      tenant_id: context.tenantId,
-      lead_match_id: leadMatchId,
-      feedback: normalizedFeedback,
-      user_id: context.userId,
-      created_at: now,
-    },
-  ];
+    })
+    .select("tenant_id")
+    .maybeSingle();
 
-  let lastError: unknown = null;
+  if (!result.error) {
+    revalidatePath("/dashboard");
+    return actionOk("Feedback saved. It will inform your next matching-brief review.");
+  }
 
-  for (const payload of payloads) {
-    const result = await context.supabase
-      .from("lead_feedback")
-      .insert(payload)
-      .eq("tenant_id", context.tenantId)
-      .select("tenant_id")
-      .maybeSingle();
-
-    if (!result.error) {
-      revalidatePath("/dashboard");
-      return actionOk("Feedback saved.");
-    }
-
-    lastError = result.error;
+  const errorCode =
+    result.error && typeof result.error === "object" && "code" in result.error
+      ? String((result.error as { code?: unknown }).code ?? "")
+      : "";
+  if (errorCode === "23505") {
+    return actionOk("That feedback is already saved.");
   }
 
   console.error("[ProspectDashboard] lead feedback insert failed", {
     tenant_id: context.tenantId,
     lead_match_id: leadMatchId,
     feedback: normalizedFeedback,
-    error: lastError,
+    error: result.error,
   });
 
   return actionError("Could not save feedback.");

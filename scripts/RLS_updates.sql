@@ -424,10 +424,10 @@ CREATE POLICY "lead_matches_select_tenant" ON public.lead_matches
         )
     );
 
--- The verifier/worker owns all creation and refreshes. A signed-in tenant
--- member may only promote evidence that already passed the verifier gate. In
--- particular, a rejected row cannot be edited into a qualified lead from the
--- browser.
+  -- The verifier/worker owns all creation and refreshes. A signed-in tenant
+  -- member may only promote evidence explicitly marked ready for action.
+  -- Discovery candidates remain review-only, and rejected rows cannot be
+  -- edited into a qualified lead from the browser.
 CREATE POLICY "lead_matches_qualify_tenant" ON public.lead_matches
     FOR UPDATE
     TO authenticated
@@ -437,7 +437,7 @@ CREATE POLICY "lead_matches_qualify_tenant" ON public.lead_matches
             WHERE tu.tenant_id::text = lead_matches.tenant_id::text
               AND tu.user_id::text = auth.uid()::text
         )
-        AND lead_matches.match_status IN ('ready_for_review', 'discovery_candidate')
+        AND lead_matches.match_status = 'ready_for_review'
     )
     WITH CHECK (
         EXISTS (

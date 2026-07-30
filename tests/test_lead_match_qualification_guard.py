@@ -16,7 +16,9 @@ def test_existing_workspace_guard_allows_only_verifier_confirmed_transitions() -
     assert "ADD COLUMN IF NOT EXISTS source_post_data JSONB" in sql
     assert "ADD COLUMN IF NOT EXISTS source_post_json JSONB" in sql
     assert 'FOR UPDATE\n    TO authenticated' in sql
-    assert "match_status IN ('ready_for_review', 'discovery_candidate')" in sql
+    qualification_policy = sql.split('CREATE POLICY "lead_matches_qualify_tenant"', 1)[1]
+    assert "lead_matches.match_status = 'ready_for_review'" in qualification_policy
+    assert "match_status IN ('ready_for_review', 'discovery_candidate')" not in qualification_policy
     assert "match_status = 'qualified'" in sql
     assert "FOR ALL" not in sql
 
@@ -28,4 +30,6 @@ def test_fresh_rls_contract_uses_the_same_qualification_guard() -> None:
     assert "REVOKE INSERT, DELETE ON TABLE public.lead_matches FROM authenticated" in sql
     assert "ADD COLUMN IF NOT EXISTS source_post JSONB" in sql
     assert 'CREATE POLICY "lead_matches_qualify_tenant"' in sql
-    assert "match_status IN ('ready_for_review', 'discovery_candidate')" in sql
+    qualification_policy = sql.split('CREATE POLICY "lead_matches_qualify_tenant"', 1)[1]
+    assert "lead_matches.match_status = 'ready_for_review'" in qualification_policy
+    assert "match_status IN ('ready_for_review', 'discovery_candidate')" not in qualification_policy

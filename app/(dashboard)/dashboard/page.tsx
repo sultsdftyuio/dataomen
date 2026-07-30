@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import {
+  fetchBuyerDemandReport,
+  fetchBuyerLanguageResearch,
   fetchDiscoveryCandidates,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
@@ -10,6 +12,7 @@ import {
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
+import { requestBuyerLanguageResearch } from "./actions";
 import ProspectDashboardClient from "./prospect-dashboard-client";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
@@ -54,6 +57,10 @@ export default async function DashboardPage() {
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
   ]);
+  const [buyerDemandReport, buyerLanguageResearch] = await Promise.all([
+    fetchBuyerDemandReport(supabase, tenantId, serviceProfile.id, threshold),
+    fetchBuyerLanguageResearch(supabase, tenantId, serviceProfile.id),
+  ]);
 
   return (
     <ProspectDashboardClient
@@ -61,6 +68,9 @@ export default async function DashboardPage() {
       crawlJob={crawlJob}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
+      buyerDemandReport={buyerDemandReport}
+      buyerLanguageResearch={buyerLanguageResearch}
+      requestBuyerLanguageResearch={requestBuyerLanguageResearch}
       verifierThreshold={threshold}
       isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
     />

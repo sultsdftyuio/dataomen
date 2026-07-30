@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   Check,
+  Clock3,
   Copy,
   ExternalLink,
   MessageSquareText,
@@ -22,11 +24,15 @@ import {
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { markLeadAsQualified } from "@/app/actions/leads";
+import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
 import {
   FEEDBACK_OPTIONS,
+  type BuyerLanguageResearchRequestAction,
+  type BuyerLanguageResearchView,
+  type BuyerDemandReportView,
   type CrawlJobView,
   type LeadFeedbackValue,
   type QualifiedLeadView,
@@ -38,8 +44,16 @@ type ProspectDashboardClientProps = {
   crawlJob: CrawlJobView | null;
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
+  buyerDemandReport: BuyerDemandReportView | null;
+  buyerLanguageResearch: BuyerLanguageResearchView;
+  requestBuyerLanguageResearch?: BuyerLanguageResearchRequestAction;
   verifierThreshold: number;
   isWarmingUp: boolean;
+};
+
+type FeedbackNotice = {
+  message: string;
+  ok: boolean;
 };
 
 const STALE_EMBEDDING_MS = 10 * 60 * 1000;
@@ -153,7 +167,7 @@ function pipelineStatus({
       label: "Warming up",
       title: "Starting public-source matching.",
       detail:
-        "Arcli is moving from profile preparation into lead discovery and verification.",
+        "Arcli is moving from profile preparation into public-conversation discovery and verification.",
     };
   }
 
@@ -177,21 +191,32 @@ function LeadFeedbackButtons({
   return (
     <div className="flex flex-wrap gap-2">
       {FEEDBACK_OPTIONS.map((option) => (
-        <Button
-          key={option.value}
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => onFeedback(leadId, option.value)}
-          style={{
-            borderColor: option.value === "good_lead" ? C.green : C.ruleDark,
-            color: option.value === "good_lead" ? C.green : C.navySoft,
-            backgroundColor: C.white,
-          }}
-        >
-          {option.label}
-        </Button>
+        (() => {
+          const isGoodFit = option.value === "good_fit";
+          const isUsefulLater = option.value === "useful_pain_not_now";
+
+          return (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => onFeedback(leadId, option.value)}
+              style={{
+                borderColor: isGoodFit
+                  ? C.green
+                  : isUsefulLater
+                    ? C.amber
+                    : C.ruleDark,
+                color: isGoodFit ? C.green : isUsefulLater ? C.amber : C.navySoft,
+                backgroundColor: C.white,
+              }}
+            >
+              {option.label}
+            </Button>
+          );
+        })()
       ))}
     </div>
   );
@@ -202,17 +227,23 @@ function LeadOutreach({
   disabled,
   qualificationMessage,
   onQualify,
+  reviewOnly,
 }: {
   lead: QualifiedLeadView;
   disabled: boolean;
   qualificationMessage: string | null;
   onQualify: (leadId: string) => void;
+  reviewOnly: boolean;
 }) {
   const [draft, setDraft] = useState(lead.suggestedReply);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "empty" | "error">(
     "idle",
   );
   const isQualified = lead.matchStatus === "qualified";
+  // A discovery candidate is useful evidence to inspect, not a lead that a
+  // browser user can promote. The server and RLS policy enforce the same
+  // boundary; keeping it explicit here prevents a misleading CRM action.
+  const isReviewOnly = reviewOnly || lead.matchStatus === "discovery_candidate";
   const hasSuggestedReply = Boolean(lead.suggestedReply.trim());
   const draftId = `suggested-reply-${lead.id}`;
 
@@ -269,7 +300,7 @@ function LeadOutreach({
     </Button>
   );
 
-  const qualificationAction = (
+  const qualificationAction = !isReviewOnly ? (
     <Button
       type="button"
       size="sm"
@@ -286,7 +317,14 @@ function LeadOutreach({
       )}
       {disabled ? "Qualifying..." : isQualified ? "Qualified" : "Mark as Qualified"}
     </Button>
-  );
+  ) : null;
+
+  const reviewOnlyNotice = isReviewOnly ? (
+    <p className="text-xs font-medium" style={{ color: C.amber }}>
+      Review only — this item did not meet the action threshold and cannot be
+      qualified or exported to your CRM.
+    </p>
+  ) : null;
 
   if (!hasSuggestedReply) {
     return (
@@ -313,6 +351,7 @@ function LeadOutreach({
             </Badge>
           ) : null}
         </div>
+        {reviewOnlyNotice ? <div className="mt-2">{reviewOnlyNotice}</div> : null}
         {qualificationMessage ? (
           <p className="mt-2 text-xs font-medium" aria-live="polite" style={{ color: C.navySoft }}>
             {qualificationMessage}
@@ -387,6 +426,8 @@ function LeadOutreach({
         {qualificationAction}
       </div>
 
+      {reviewOnlyNotice ? <div className="mt-2">{reviewOnlyNotice}</div> : null}
+
       {copyMessage || qualificationMessage ? (
         <p className="mt-2 text-xs font-medium" aria-live="polite" style={{ color: C.navySoft }}>
           {[copyMessage, qualificationMessage].filter(Boolean).join(" ")}
@@ -407,18 +448,18 @@ function LeadCard({
   onQualify,
 }: {
   lead: QualifiedLeadView;
-  kind: "verified" | "discovery_candidate";
+  kind: "ready" | "watch";
   feedbackPending: boolean;
   qualificationPending: boolean;
-  feedbackMessage: string | null;
+  feedbackMessage: FeedbackNotice | null;
   qualificationMessage: string | null;
   onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
   onQualify: (leadId: string) => void;
 }) {
-  const isDiscoveryCandidate = kind === "discovery_candidate";
+  const isWatch = kind === "watch";
   const matchedAt = formatDate(lead.matchedAt);
   const postedAt = formatDate(lead.sourcePost.publishedAt);
-  const labelStyle = isDiscoveryCandidate
+  const labelStyle = isWatch
     ? {
         borderColor: C.amber,
         backgroundColor: C.amberPale,
@@ -437,14 +478,12 @@ function LeadCard({
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="rounded-md" style={labelStyle}>
-                {isDiscoveryCandidate ? (
+                {isWatch ? (
                   <Radar className="size-3" />
                 ) : (
                   <ShieldCheck className="size-3" />
                 )}
-                {isDiscoveryCandidate
-                  ? "Discovery candidate — needs judgment"
-                  : "Verified lead"}
+                {isWatch ? "Watch" : "Ready to act"}
               </Badge>
               <Badge
                 variant="outline"
@@ -479,10 +518,11 @@ function LeadCard({
             <CardTitle className="break-words text-base leading-snug" style={{ color: C.navy }}>
               {lead.sourcePost.title}
             </CardTitle>
-            {isDiscoveryCandidate ? (
+            {isWatch ? (
               <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-                The verifier found plausible evidence, but this did not meet the
-                automatic lead threshold. Review it before qualifying it.
+                The verifier found plausible evidence, but it did not meet the
+                automatic action threshold. Keep it under review rather than
+                treating it as ready to act.
               </p>
             ) : null}
           </div>
@@ -497,7 +537,7 @@ function LeadCard({
             <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
               <MessageSquareText className="size-3.5" />
               <span style={{ color: C.amber }}>
-                {isDiscoveryCandidate ? "Evidence found" : "Pain detected"}
+                {isWatch ? "Evidence found" : "Buyer pain"}
               </span>
             </div>
             <p className="text-sm leading-6" style={{ color: C.navy }}>
@@ -511,7 +551,7 @@ function LeadCard({
             <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
               <Target className="size-3.5" />
               <span style={{ color: C.blue }}>
-                {isDiscoveryCandidate ? "Why it may fit" : "Match reason"}
+                {isWatch ? "Why it may fit" : "Fit evidence"}
               </span>
             </div>
             <p className="text-sm leading-6" style={{ color: C.navy }}>
@@ -520,14 +560,44 @@ function LeadCard({
           </div>
         </div>
 
+        {lead.urgencyReason ? (
+          <div
+            className="rounded-md border p-3"
+            style={{ borderColor: C.red, backgroundColor: C.redPale }}
+          >
+            <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
+              <Clock3 className="size-3.5" />
+              <span style={{ color: C.red }}>
+                {lead.urgencyLevel
+                  ? `Urgency: ${lead.urgencyLevel}`
+                  : "Explicit urgency"}
+              </span>
+            </div>
+            <p className="text-sm leading-6" style={{ color: C.navy }}>
+              “{lead.urgencyReason}”
+            </p>
+          </div>
+        ) : null}
+
         <div
           className="rounded-md border p-3"
           style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
         >
-          <div className="mb-2 flex flex-wrap gap-2 text-xs" style={{ color: C.muted }}>
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs" style={{ color: C.muted }}>
+            <span className="font-bold uppercase" style={{ color: C.navySoft }}>
+              Raw source evidence
+            </span>
             {lead.sourcePost.author ? <span>Author {lead.sourcePost.author}</span> : null}
             {postedAt ? <span>Posted {postedAt}</span> : null}
           </div>
+          {lead.evidenceExcerpt ? (
+            <blockquote
+              className="mb-3 border-l-2 pl-3 text-sm italic leading-6"
+              style={{ borderColor: C.blueLight, color: C.navy }}
+            >
+              “{lead.evidenceExcerpt}”
+            </blockquote>
+          ) : null}
           <p
             className={cn(
               "whitespace-pre-wrap break-words text-sm leading-6",
@@ -544,6 +614,7 @@ function LeadCard({
           disabled={qualificationPending}
           qualificationMessage={qualificationMessage}
           onQualify={onQualify}
+          reviewOnly={isWatch}
         />
 
         <div
@@ -556,13 +627,396 @@ function LeadCard({
             onFeedback={onFeedback}
           />
           {feedbackMessage ? (
-            <span className="text-xs font-medium" style={{ color: C.green }}>
-              {feedbackMessage}
+            <span
+              className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium"
+              role={feedbackMessage.ok ? "status" : "alert"}
+              style={{
+                borderColor: feedbackMessage.ok ? C.green : C.red,
+                backgroundColor: feedbackMessage.ok ? C.greenPale : C.redPale,
+                color: feedbackMessage.ok ? C.green : C.red,
+              }}
+            >
+              {feedbackMessage.ok ? (
+                <Check className="size-3" />
+              ) : (
+                <AlertCircle className="size-3" />
+              )}
+              {feedbackMessage.message}
             </span>
           ) : null}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function humanizeRunValue(value: string) {
+  return value.trim().replace(/[_-]+/g, " ");
+}
+
+function sourceDisplayName(source: string) {
+  const normalized = source.trim().toLowerCase();
+  const knownNames: Record<string, string> = {
+    hn: "Hacker News",
+    hackernews: "Hacker News",
+    hacker_news: "Hacker News",
+    x: "X",
+  };
+
+  return knownNames[normalized] ?? humanizeRunValue(source);
+}
+
+function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView }) {
+  const completedAt = formatDate(report.completedAt);
+  const summary = report.summary;
+  const isPartial = report.status === "partial";
+  const isSkipped = report.status === "skipped";
+  const isFailed = report.status === "failed";
+  const title = isPartial
+    ? "Partially completed discovery scan"
+    : isSkipped
+      ? "Discovery scan skipped"
+      : isFailed
+        ? "Discovery scan needs attention"
+        : "Completed discovery scan";
+  const detail = summary.verifierPending
+    ? "Source collection is complete; remaining evidence is still being verified."
+    : isPartial
+      ? "Some source coverage was unavailable. No conversations reached Ready to act in the available results."
+      : isSkipped
+        ? "This scan did not run. Review the matching brief and source configuration before trying again."
+        : isFailed
+          ? "The scan could not complete. Review the matching brief and source configuration before trying again."
+        : "No conversations reached Ready to act in this completed scan.";
+
+  return (
+    <Card className="rounded-lg shadow-sm" style={{ borderColor: C.blueLight }}>
+      <CardHeader className="gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base" style={{ color: C.navy }}>
+              {title}
+            </CardTitle>
+            <p className="mt-1 text-sm leading-6" style={{ color: C.navySoft }}>
+              {detail}
+            </p>
+          </div>
+          {completedAt ? (
+            <Badge
+              variant="outline"
+              className="rounded-md"
+              style={{
+                borderColor: C.blueLight,
+                backgroundColor: C.blueTint,
+                color: C.blue,
+              }}
+            >
+              {isPartial
+                ? "Partial"
+                : isSkipped
+                  ? "Skipped"
+                  : isFailed
+                    ? "Failed"
+                    : "Completed"} {completedAt}
+            </Badge>
+          ) : null}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {summary.sources.length > 0 ? (
+          <div>
+            <p className="text-xs font-bold uppercase" style={{ color: C.muted }}>
+              Sources checked
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {summary.sources.map((source) => (
+                <Badge
+                  key={source.source}
+                  variant="outline"
+                  className="rounded-md"
+                  style={{
+                    borderColor: source.failed ? C.red : C.ruleDark,
+                    backgroundColor: source.failed ? C.redPale : C.white,
+                    color: source.failed ? C.red : C.navySoft,
+                  }}
+                >
+                  {sourceDisplayName(source.source)}
+                  {source.itemCount !== null ? `: ${source.itemCount} items` : ""}
+                  {source.failed ? " unavailable" : ""}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {summary.totalHits !== null ||
+        summary.plausibleHits !== null ||
+        summary.sourceFailures !== null ? (
+          <div className="flex flex-wrap gap-2 text-sm" style={{ color: C.navySoft }}>
+            {summary.totalHits !== null ? (
+              <span>{summary.totalHits} items returned</span>
+            ) : null}
+            {summary.plausibleHits !== null ? (
+              <span>{summary.plausibleHits} plausible signals reviewed</span>
+            ) : null}
+            {summary.sourceFailures !== null && summary.sourceFailures > 0 ? (
+              <span>{summary.sourceFailures} source{summary.sourceFailures === 1 ? "" : "s"} unavailable</span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {summary.xFallback ? (
+          <p className="text-sm leading-6" style={{ color: C.navySoft }}>
+            X fallback
+            {summary.xFallback.outcome
+              ? `: ${humanizeRunValue(summary.xFallback.outcome)}`
+              : ""}
+            {summary.xFallback.reason
+              ? ` (${humanizeRunValue(summary.xFallback.reason)})`
+              : ""}
+          </p>
+        ) : null}
+
+        {summary.caveat ? (
+          <p className="text-xs leading-5" style={{ color: C.muted }}>
+            {summary.caveat}
+          </p>
+        ) : null}
+
+        <div className="border-t pt-3" style={{ borderColor: C.rule }}>
+          <Button
+            asChild
+            size="sm"
+            variant="outline"
+            style={{
+              borderColor: C.blueLight,
+              backgroundColor: C.white,
+              color: C.blue,
+            }}
+          >
+            <a href="/settings">Review matching brief</a>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BuyerDemandPatterns({
+  report,
+}: {
+  report: BuyerDemandReportView;
+}) {
+  if (report.marketPatterns.length === 0) return null;
+
+  return (
+    <section aria-labelledby="buyer-demand-patterns" className="space-y-3">
+      <div>
+        <h2 id="buyer-demand-patterns" className="text-lg font-semibold" style={{ color: C.navy }}>
+          Recurring buyer themes
+        </h2>
+        <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+          Shown only when the same verifier-confirmed theme appears in at least
+          two ready-to-act matches in this workspace.
+        </p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {report.marketPatterns.map((pattern) => (
+          <Card key={pattern.label} className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
+            <CardContent className="space-y-2 p-4">
+              <p className="text-sm font-medium leading-6" style={{ color: C.navy }}>
+                {pattern.label}
+              </p>
+              <p className="text-xs" style={{ color: C.muted }}>
+                {pattern.matchCount} ready-to-act match{pattern.matchCount === 1 ? "" : "es"}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * This is intentionally a read-only research surface. Unlike Ready to act or
+ * Watch, it has no qualification, reply, feedback, or CRM affordances. Every
+ * displayed phrase has already passed a literal source-text grounding check
+ * on the server.
+ */
+function BuyerLanguageResearch({
+  research,
+  requestBuyerLanguageResearch,
+}: {
+  research: BuyerLanguageResearchView;
+  requestBuyerLanguageResearch?: BuyerLanguageResearchRequestAction;
+}) {
+  const router = useRouter();
+  const [requestMessage, setRequestMessage] = useState<string | null>(null);
+  const [hasRequested, setHasRequested] = useState(false);
+  const [isRequestPending, startRequestTransition] = useTransition();
+
+  const requestResearch = () => {
+    if (!requestBuyerLanguageResearch || hasRequested) return;
+
+    setRequestMessage(null);
+    startRequestTransition(async () => {
+      try {
+        const result = await requestBuyerLanguageResearch();
+        setRequestMessage(result.message);
+        if (result.ok) {
+          // Avoid repeated paid scans from a double-click or a stale browser
+          // view. The server action remains the authoritative rate-limit and
+          // authorization boundary.
+          setHasRequested(true);
+          router.refresh();
+        }
+      } catch {
+        setRequestMessage("Could not start buyer-language research. Please try again.");
+      }
+    });
+  };
+
+  return (
+    <section id="buyer-language-research" className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
+            Buyer-language research
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: C.muted }}>
+            Exact phrases from accepted, source-grounded public evidence in this
+            workspace. This is research for refining your matching brief — not
+            an opportunity queue, and it cannot be qualified or sent to your CRM.
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className="rounded-md"
+          style={{
+            borderColor: C.blueLight,
+            backgroundColor: C.blueTint,
+            color: C.blue,
+          }}
+        >
+          <MessageSquareText className="size-3" />
+          Research only
+        </Badge>
+      </div>
+
+      {research.evidence.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {research.evidence.map((item) => {
+            const capturedAt = formatDate(item.capturedAt);
+
+            return (
+              <Card
+                key={item.id}
+                className="rounded-lg shadow-sm"
+                style={{ borderColor: C.rule }}
+              >
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold uppercase" style={{ color: C.navySoft }}>
+                      {sourceDisplayName(item.source)}
+                    </span>
+                    {capturedAt ? (
+                      <span className="text-xs" style={{ color: C.muted }}>
+                        Captured {capturedAt}
+                      </span>
+                    ) : null}
+                  </div>
+                  <blockquote
+                    className="border-l-2 pl-3 text-sm italic leading-6"
+                    style={{ borderColor: C.blueLight, color: C.navy }}
+                  >
+                    “{item.excerpt}”
+                  </blockquote>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs leading-5" style={{ color: C.muted }}>
+                      Exact excerpt preserved from the original source.
+                    </p>
+                    {item.sourceUrl ? (
+                      <Button
+                        asChild
+                        size="sm"
+                        variant="outline"
+                        style={{
+                          borderColor: C.blueLight,
+                          backgroundColor: C.white,
+                          color: C.blue,
+                        }}
+                      >
+                        <a
+                          href={item.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ExternalLink className="size-4" />
+                          View source
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
+          <CardContent className="space-y-3 p-4">
+            <p className="text-sm leading-6" style={{ color: C.navySoft }}>
+              {research.availability === "available"
+                ? "No accepted, source-grounded buyer-language evidence has been collected yet."
+                : "Buyer-language research will appear after the optional evidence store is enabled and accepted evidence is recorded."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {research.availability === "available" &&
+              requestBuyerLanguageResearch &&
+              !hasRequested ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isRequestPending}
+                  onClick={requestResearch}
+                  style={{
+                    borderColor: C.blueLight,
+                    backgroundColor: C.white,
+                    color: C.blue,
+                  }}
+                >
+                  {isRequestPending ? "Starting research…" : "Start buyer-language research"}
+                </Button>
+              ) : null}
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                style={{
+                  borderColor: C.ruleDark,
+                  backgroundColor: C.white,
+                  color: C.navySoft,
+                }}
+              >
+                <a href="/settings">Review matching brief</a>
+              </Button>
+            </div>
+            {requestMessage ? (
+              <p
+                className="text-xs leading-5"
+                role="status"
+                aria-live="polite"
+                style={{ color: C.navySoft }}
+              >
+                {requestMessage}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
+    </section>
   );
 }
 
@@ -642,8 +1096,8 @@ function WarmUpState({
         </div>
       ) : null}
       <p className="mx-auto mt-2 max-w-md text-xs leading-5" style={{ color: C.muted }}>
-        This dashboard refreshes while the first pass is running, so verified leads
-        appear as soon as they are written.
+        This dashboard refreshes while the first pass is running, so Ready to act
+        items appear as soon as they are written.
       </p>
     </div>
   );
@@ -654,11 +1108,16 @@ export default function ProspectDashboardClient({
   crawlJob,
   leads,
   discoveryCandidates,
+  buyerDemandReport,
+  buyerLanguageResearch,
+  requestBuyerLanguageResearch,
   verifierThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
-  const [feedbackMessages, setFeedbackMessages] = useState<Record<string, string>>({});
+  const [feedbackMessages, setFeedbackMessages] = useState<
+    Record<string, FeedbackNotice>
+  >({});
   const [pendingFeedbackLeadId, setPendingFeedbackLeadId] = useState<string | null>(null);
   const [isFeedbackPending, startFeedbackTransition] = useTransition();
   const [qualificationMessages, setQualificationMessages] = useState<
@@ -668,7 +1127,11 @@ export default function ProspectDashboardClient({
     string | null
   >(null);
   const [isQualificationPending, startQualificationTransition] = useTransition();
-  const shouldRefreshForLeads = isWarmingUp || leads.length === 0;
+  const shouldRefreshForLeads = shouldContinueActionQueuePolling({
+    isWarmingUp,
+    readyToActCount: leads.length,
+    hasTerminalReport: buyerDemandReport?.isTerminal ?? false,
+  });
   const refreshMs = useMemo(() => (isWarmingUp ? 5000 : 15000), [isWarmingUp]);
 
   useEffect(() => {
@@ -684,12 +1147,23 @@ export default function ProspectDashboardClient({
   const handleFeedback = (leadId: string, value: LeadFeedbackValue) => {
     setPendingFeedbackLeadId(leadId);
     startFeedbackTransition(async () => {
-      const result = await submitLeadFeedback(leadId, value);
-      setFeedbackMessages((current) => ({
-        ...current,
-        [leadId]: result.message,
-      }));
-      setPendingFeedbackLeadId(null);
+      try {
+        const result = await submitLeadFeedback(leadId, value);
+        setFeedbackMessages((current) => ({
+          ...current,
+          [leadId]: result,
+        }));
+      } catch {
+        setFeedbackMessages((current) => ({
+          ...current,
+          [leadId]: {
+            ok: false,
+            message: "Could not save feedback. Please try again.",
+          },
+        }));
+      } finally {
+        setPendingFeedbackLeadId(null);
+      }
     });
   };
 
@@ -709,7 +1183,7 @@ export default function ProspectDashboardClient({
       } catch {
         setQualificationMessages((current) => ({
           ...current,
-          [leadId]: "Could not qualify this lead. Please try again.",
+          [leadId]: "Could not qualify this item. Please try again.",
         }));
       } finally {
         setPendingQualificationLeadId(null);
@@ -723,10 +1197,10 @@ export default function ProspectDashboardClient({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold" style={{ color: C.navy }}>
-              Prospect Intelligence
+              Action queue
             </h1>
             <p className="mt-1 text-sm" style={{ color: C.muted }}>
-              Verified opportunities with the context needed for a thoughtful reply.
+              Evidence-backed conversations, ordered for a thoughtful next step.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -757,19 +1231,27 @@ export default function ProspectDashboardClient({
         </div>
       </div>
 
-      <section id="leads" className="space-y-4">
+      <section id="action-queue" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
-              Verified Leads
+              Ready to act
             </h2>
             {leads.length > 0 ? (
               <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                {leads.length} lead{leads.length === 1 ? "" : "s"} passed the verifier.
+                {leads.length} conversation{leads.length === 1 ? "" : "s"} passed the verifier and is ready for review.
+              </p>
+            ) : buyerDemandReport?.isTerminal ? (
+              <p className="mt-1 text-sm" style={{ color: C.muted }}>
+                {buyerDemandReport.isCompleted
+                  ? "This completed scan has no Ready to act conversations."
+                  : buyerDemandReport.status === "failed"
+                    ? "The most recent scan failed before a Ready to act conversation could be verified."
+                  : "The most recent scan ended with limited coverage and no Ready to act conversations."}
               </p>
             ) : discoveryCandidates.length > 0 ? (
               <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                No conversations have met the automatic lead threshold yet.
+                No conversations have met the automatic action threshold yet.
               </p>
             ) : null}
           </div>
@@ -783,11 +1265,13 @@ export default function ProspectDashboardClient({
             }}
           >
             <ShieldCheck className="size-3" />
-            Human review
+            Ready to act
           </Badge>
         </div>
 
-        {leads.length === 0 && discoveryCandidates.length === 0 ? (
+        {leads.length === 0 && buyerDemandReport?.isTerminal ? (
+          <CompletedDiscoveryReport report={buyerDemandReport} />
+        ) : leads.length === 0 && discoveryCandidates.length === 0 ? (
           <WarmUpState
             crawlJob={crawlJob}
             serviceProfile={serviceProfile}
@@ -799,7 +1283,7 @@ export default function ProspectDashboardClient({
               <LeadCard
                 key={lead.id}
                 lead={lead}
-                kind="verified"
+                kind="ready"
                 feedbackPending={
                   isFeedbackPending && pendingFeedbackLeadId === lead.id
                 }
@@ -817,16 +1301,17 @@ export default function ProspectDashboardClient({
       </section>
 
       {discoveryCandidates.length > 0 ? (
-        <section id="discovery-candidates" className="space-y-4">
+        <section id="watch" className="space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
-                Discovery candidates
+                Watch
               </h2>
               <p className="mt-1 max-w-2xl text-sm leading-6" style={{ color: C.muted }}>
-                These conversations have verifier-confirmed, plausible evidence,
-                but did not meet the automatic lead threshold. They are not
-                qualified leads; use your judgment before qualifying one.
+                These conversations have plausible, verifier-confirmed evidence,
+                but did not meet the automatic action threshold. They are
+                review-only watch items, not ready-to-act opportunities, and
+                cannot be qualified or exported to your CRM.
               </p>
             </div>
             <Badge
@@ -839,7 +1324,7 @@ export default function ProspectDashboardClient({
               }}
             >
               <Radar className="size-3" />
-              Needs judgment
+              Watch
             </Badge>
           </div>
 
@@ -848,7 +1333,7 @@ export default function ProspectDashboardClient({
               <LeadCard
                 key={lead.id}
                 lead={lead}
-                kind="discovery_candidate"
+                kind="watch"
                 feedbackPending={
                   isFeedbackPending && pendingFeedbackLeadId === lead.id
                 }
@@ -864,6 +1349,15 @@ export default function ProspectDashboardClient({
           </div>
         </section>
       ) : null}
+
+      {buyerDemandReport?.isTerminal ? (
+        <BuyerDemandPatterns report={buyerDemandReport} />
+      ) : null}
+
+      <BuyerLanguageResearch
+        research={buyerLanguageResearch}
+        requestBuyerLanguageResearch={requestBuyerLanguageResearch}
+      />
     </div>
   );
 }

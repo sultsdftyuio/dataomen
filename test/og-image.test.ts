@@ -23,3 +23,15 @@ test('normalizes and bounds image query parameters', () => {
     type: 'default',
   });
 });
+
+test('accepts a legacy escaped query separator without polluting the title', () => {
+  assert.deepEqual(
+    getOgImageParams(
+      'https://arcli.tech/og?title=Security%20and%20GDPR%20for%20AI%20Analyticsu0026type%3Dsecurity',
+    ),
+    {
+      title: 'Security and GDPR for AI Analytics',
+      type: 'security',
+    },
+  );
+});

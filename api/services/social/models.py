@@ -212,6 +212,9 @@ class InitialPublicSourceIngestionPlan:
     x_jobs: int
     x_skip_reason: str | None = None
     additional_source_jobs: int = 0
+    # A tenant-owned diagnostics row. It is optional while the additive
+    # discovery telemetry contract is being rolled out.
+    discovery_run_id: str | None = None
 
     @property
     def query_terms(self) -> list[str]:

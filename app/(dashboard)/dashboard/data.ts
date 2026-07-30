@@ -6,8 +6,22 @@ import {
   isDiscoveryQueryType,
   type DiscoveryQuery,
 } from "@/lib/discovery-queries";
+import {
+  deriveBuyerDemandPatterns,
+  isCompletedDiscoveryRunStatus,
+  isTerminalDiscoveryRunStatus,
+  parseDiscoveryRunSummary,
+  sourceGroundedExcerpt,
+  sourceGroundedUrgencyReason,
+  type VerifierConfirmedPatternMatch,
+} from "@/lib/buyer-demand-report";
+import {
+  buildBuyerLanguageResearchEvidence,
+  type BuyerLanguageResearchView,
+} from "@/lib/buyer-language-research";
 import type { Database, Json } from "@/types/supabase";
 import type {
+  BuyerDemandReportView,
   CrawlJobView,
   LeadMatchStatus,
   QualifiedLeadView,
@@ -75,6 +89,28 @@ function numberValue(value: unknown): number | null {
   }
 
   return null;
+}
+
+function booleanValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function isOptionalAdditiveSchemaUnavailable(error: unknown) {
+  const record = asRecord(error);
+  const code = readString([record], ["code"]);
+  return code === "42P01" || code === "42703" || code === "PGRST204";
+}
+
+function isMissingDiscoveryRunKindColumn(error: unknown) {
+  const record = asRecord(error);
+  const code = readString([record], ["code"]);
+  if (code === "42703") return true;
+
+  // PostgREST reports a missing selected column with PGRST204 in some
+  // versions. Limit the legacy fallback to `run_kind`; any other schema
+  // failure remains fail-closed instead of silently changing the query.
+  const message = readString([record], ["message", "details", "hint"]);
+  return code === "PGRST204" && Boolean(message?.toLowerCase().includes("run_kind"));
 }
 
 function safeHttpUrl(value: string | null): string | null {
@@ -481,6 +517,11 @@ function sourcePostView(row: DbRecord): SourcePostView {
 function leadView(row: DbRecord, index: number): QualifiedLeadView {
   const verification = firstRecord(row.verification) ?? firstRecord(row.verifier_result);
   const sources = [verification, row];
+  const sourcePost = sourcePostView(row);
+  const urgencyReason = sourceGroundedUrgencyReason(
+    sourcePost.text,
+    readString(sources, ["urgency_reason"]),
+  );
 
   return {
     id:
@@ -496,6 +537,19 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
     painDetected:
       readString(sources, ["pain_detected"]) ??
       "No pain summary was stored for this verified match.",
+    painTheme: readString(sources, ["pain_theme"]),
+    signalType: readString(sources, ["signal_type"]),
+    // An urgency level without a visible source-grounded reason is not shown
+    // to a reviewer. This prevents a model-generated label from becoming an
+    // unsupported claim about a public post.
+    urgencyLevel: urgencyReason
+      ? readString(sources, ["urgency_level"])
+      : null,
+    urgencyReason,
+    evidenceExcerpt: sourceGroundedExcerpt(
+      sourcePost.text,
+      readString(sources, ["evidence_excerpt"]),
+    ),
     matchReason:
       readString(sources, [
         "match_reason",
@@ -512,7 +566,7 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
     matchedAt:
       readString([row], ["matched_at", "verified_at", "created_at", "createdAt"]) ??
       null,
-    sourcePost: sourcePostView(row),
+    sourcePost,
   };
 }
 
@@ -628,4 +682,276 @@ export async function fetchDiscoveryCandidates(
   return ((result.data ?? []) as unknown[]).map((row, index) =>
     leadView(asRecord(row) ?? {}, index),
   );
+}
+
+type OptionalReadQuery = {
+  eq: (column: string, value: string) => OptionalReadQuery;
+  in: (column: string, values: string[]) => OptionalReadQuery;
+  gte: (column: string, value: number) => OptionalReadQuery;
+  order: (
+    column: string,
+    options: { ascending: boolean },
+  ) => OptionalReadQuery;
+  limit: (count: number) => OptionalReadQuery;
+  maybeSingle: <T>() => Promise<{ data: T | null; error: unknown }>;
+};
+
+type OptionalReadClient = {
+  from: (table: string) => {
+    select: (columns: string) => OptionalReadQuery;
+  };
+};
+
+type OptionalEvidenceReadQuery = {
+  eq: (column: string, value: string) => OptionalEvidenceReadQuery;
+  order: (
+    column: string,
+    options: { ascending: boolean },
+  ) => OptionalEvidenceReadQuery;
+  limit: (
+    count: number,
+  ) => Promise<{ data: Array<Record<string, Json>> | null; error: unknown }>;
+};
+
+type OptionalEvidenceReadClient = {
+  from: (table: string) => {
+    select: (columns: string) => OptionalEvidenceReadQuery;
+  };
+};
+
+function discoveryRunView(
+  row: DbRecord,
+  marketPatterns: BuyerDemandReportView["marketPatterns"],
+): BuyerDemandReportView | null {
+  const id = readString([row], ["id"]);
+  if (!id) return null;
+
+  const status = normalizeServiceProfileStatus(readString([row], ["status"]));
+
+  return {
+    id,
+    status,
+    completedAt: readString([row], ["completed_at", "completedAt"]),
+    updatedAt: readString([row], ["updated_at", "updatedAt"]),
+    // The UI stops its empty-state polling only for this explicit terminal
+    // report. Cancelled/unknown runs do not masquerade as a useful
+    // customer-facing result, while partial/skipped/failed runs retain their
+    // diagnostics and prevent unnecessary empty-state polling.
+    isCompleted: isCompletedDiscoveryRunStatus(status),
+    isTerminal: isTerminalDiscoveryRunStatus(status),
+    summary: parseDiscoveryRunSummary(row.summary),
+    marketPatterns,
+  };
+}
+
+function patternMatchFromRow(row: DbRecord): VerifierConfirmedPatternMatch | null {
+  const verification = firstRecord(row.verification) ?? firstRecord(row.verifier_result);
+  const id = readString([row], ["id"]);
+  const tenantId = readString([row], ["tenant_id", "tenantId"]);
+  const matchStatus = readString([row], ["match_status"]);
+  const verifierScore = numberValue(row.verifier_score);
+
+  if (!id || !tenantId || !matchStatus || verifierScore === null) return null;
+
+  return {
+    id,
+    tenantId,
+    matchStatus,
+    verifierScore,
+    painTheme: readString([verification, row], ["pain_theme"]),
+    painDetected: readString([verification, row], ["pain_detected"]),
+    verifierExecuted: booleanValue(verification?.verifier_executed),
+    verifierMatch: booleanValue(verification?.match),
+  };
+}
+
+/**
+ * Fetch a terminal, tenant-owned discovery report when the optional
+ * telemetry migration is present. This intentionally does not read run events
+ * or source posts: the report is aggregate-only and all individual evidence
+ * stays in the tenant-scoped action/watch queues above.
+ */
+export async function fetchBuyerDemandReport(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+  threshold: number,
+): Promise<BuyerDemandReportView | null> {
+  if (!serviceProfileId) return null;
+
+  const client = supabase as unknown as OptionalReadClient;
+  let runRow: DbRecord | null = null;
+
+  try {
+    let result = await client
+      .from("discovery_runs")
+      .select("id,tenant_id,service_profile_id,run_kind,status,summary,completed_at,updated_at")
+      .eq("tenant_id", tenantId)
+      .eq("service_profile_id", serviceProfileId)
+      // Research runs have their own evidence/reporting surface. They must
+      // never replace the opportunity scan that explains an empty action
+      // queue, even though both runs use the same matching brief.
+      .eq("run_kind", "opportunity_leads")
+      .in("status", ["completed", "partial", "skipped", "failed"])
+      .order("completed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<Record<string, Json>>();
+
+    // `run_kind` is an additive research migration. Before it is applied,
+    // every existing discovery run is necessarily an opportunity run, so a
+    // scoped legacy read preserves the existing empty-state report without
+    // risking a research run replacing it.
+    if (result.error && isMissingDiscoveryRunKindColumn(result.error)) {
+      result = await client
+        .from("discovery_runs")
+        .select("id,tenant_id,service_profile_id,status,summary,completed_at,updated_at")
+        .eq("tenant_id", tenantId)
+        .eq("service_profile_id", serviceProfileId)
+        .in("status", ["completed", "partial", "skipped", "failed"])
+        .order("completed_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<Record<string, Json>>();
+    }
+
+    if (result.error) {
+      // `discovery_runs` is intentionally an additive migration. Do not make
+      // dashboard availability depend on it being deployed everywhere yet.
+      if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
+        console.warn("[ProspectDashboard] discovery report unavailable", {
+          tenant_id: tenantId,
+          service_profile_id: serviceProfileId,
+          error: result.error,
+        });
+      }
+      return null;
+    }
+
+    runRow = asRecord(result.data);
+  } catch (error) {
+    console.info("[ProspectDashboard] discovery report lookup skipped", {
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
+    return null;
+  }
+
+  if (!runRow) return null;
+
+  // Defense in depth beyond RLS and the query predicate: never surface a row
+  // whose persisted ownership does not exactly match this server context.
+  if (
+    readString([runRow], ["tenant_id", "tenantId"]) !== tenantId ||
+    readString([runRow], ["service_profile_id", "serviceProfileId"]) !==
+      serviceProfileId
+  ) {
+    console.warn("[ProspectDashboard] discovery report ownership mismatch", {
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+    });
+    return null;
+  }
+
+  let marketPatterns: BuyerDemandReportView["marketPatterns"] = [];
+  try {
+    const patternResult = await supabase
+      .from("lead_matches")
+      .select(
+        "id,tenant_id,service_profile_id,match_status,verifier_score,pain_detected,verification,verifier_result",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("service_profile_id", serviceProfileId)
+      .in("match_status", ["ready_for_review", "qualified"])
+      .gte("verifier_score", threshold)
+      .limit(100);
+
+    if (patternResult.error) {
+      console.info("[ProspectDashboard] buyer-demand pattern lookup unavailable", {
+        tenant_id: tenantId,
+        service_profile_id: serviceProfileId,
+      });
+    } else {
+      marketPatterns = deriveBuyerDemandPatterns(
+        ((patternResult.data ?? []) as unknown[])
+          .map((row) => patternMatchFromRow(asRecord(row) ?? {}))
+          .filter(
+            (match): match is VerifierConfirmedPatternMatch => match !== null,
+          ),
+        tenantId,
+        threshold,
+      );
+    }
+  } catch (error) {
+    console.info("[ProspectDashboard] buyer-demand pattern lookup skipped", {
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
+  }
+
+  return discoveryRunView(runRow, marketPatterns);
+}
+
+/**
+ * Read the optional, tenant-scoped evidence store for buyer-language
+ * research. The source worker owns writing this table; this dashboard code is
+ * intentionally read-only and fails closed when the additive migration has
+ * not been deployed. We select only the canonical evidence contract so a
+ * future schema change cannot accidentally surface an unreviewed JSON field.
+ */
+export async function fetchBuyerLanguageResearch(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+): Promise<BuyerLanguageResearchView> {
+  const unavailable: BuyerLanguageResearchView = {
+    availability: "unavailable",
+    evidence: [],
+  };
+
+  if (!serviceProfileId) return unavailable;
+
+  const client = supabase as unknown as OptionalEvidenceReadClient;
+
+  try {
+    const result = await client
+      .from("discovery_evidence")
+      .select(
+        "id,tenant_id,service_profile_id,evidence_status,source,source_url,source_text,evidence_excerpt,created_at",
+      )
+      .eq("tenant_id", tenantId)
+      .eq("service_profile_id", serviceProfileId)
+      .eq("evidence_status", "accepted")
+      .order("created_at", { ascending: false })
+      .limit(12);
+
+    if (result.error) {
+      if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
+        console.warn("[ProspectDashboard] buyer-language research unavailable", {
+          tenant_id: tenantId,
+          service_profile_id: serviceProfileId,
+          error: result.error,
+        });
+      }
+      return unavailable;
+    }
+
+    return {
+      availability: "available",
+      // Query predicates and RLS constrain ownership, and this helper checks
+      // it again before rendering any evidence.
+      evidence: buildBuyerLanguageResearchEvidence(
+        (result.data ?? []) as unknown[],
+        tenantId,
+        serviceProfileId,
+      ),
+    };
+  } catch (error) {
+    console.info("[ProspectDashboard] buyer-language research lookup skipped", {
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
+    return unavailable;
+  }
 }

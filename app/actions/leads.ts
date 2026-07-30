@@ -2,11 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 
+import { deliverCrmWebhook } from "@/lib/crm-webhook-delivery";
+import {
+  localWebhookTestingEnabled,
+  type ValidatedWebhookDestination,
+  validateWebhookDestination,
+} from "@/lib/crm-webhook-destination";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const WEBHOOK_TIMEOUT_MS = 5_000;
 
 type LeadMatchForQualification = {
   id: string;
@@ -61,19 +66,6 @@ function actionFailure(
   };
 }
 
-function normalizeWebhookUrl(value: string | null | undefined): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-
-  try {
-    const parsed = new URL(trimmed);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
 function sourcePostFromStoredPayload(
   lead: LeadMatchForQualification,
 ): SourcePostForWebhook | null {
@@ -104,54 +96,36 @@ function sourcePostFromStoredPayload(
 }
 
 async function sendCrmWebhook(
-  webhookUrl: string,
+  destination: ValidatedWebhookDestination,
   payload: CrmWebhookPayload,
   context: { tenantId: string; leadMatchId: string },
 ): Promise<Extract<WebhookStatus, "sent" | "failed">> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      signal: controller.signal,
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      console.warn("[Leads] CRM webhook rejected qualified lead", {
-        tenant_id: context.tenantId,
-        lead_match_id: context.leadMatchId,
-        status: response.status,
-      });
-      return "failed";
-    }
-
-    return "sent";
-  } catch (error) {
-    // Webhook delivery is intentionally best-effort. Qualification is already
-    // committed before this request begins and must never be rolled back here.
+  // The conditional qualification update is the first idempotency boundary.
+  // Keeping this key stable gives a receiving CRM the same safety boundary
+  // when a network failure leaves delivery uncertain.
+  const delivered = await deliverCrmWebhook(
+    destination,
+    payload,
+    `arcli-lead-${context.leadMatchId}`,
+  );
+  if (!delivered) {
+    // Do not include the request body, endpoint, or caught network error in a
+    // log: all three can contain customer-controlled sensitive data.
     console.warn("[Leads] CRM webhook delivery failed", {
       tenant_id: context.tenantId,
       lead_match_id: context.leadMatchId,
-      error,
     });
-    return "failed";
-  } finally {
-    clearTimeout(timeout);
   }
+  return delivered ? "sent" : "failed";
 }
 
 /**
  * Marks one tenant-owned, verifier-confirmed item as qualified and optionally
  * emits a single best-effort CRM webhook. Rejected/irrelevant source posts are
- * deliberately ineligible: a human may promote a review-ready lead or a
- * separately surfaced discovery candidate, but cannot relabel a rejection as
- * qualified. The conditional update is the idempotency boundary.
+ * deliberately ineligible: a human may promote only a review-ready lead.
+ * Discovery candidates remain review-only evidence and must never be relabelled
+ * as qualified or sent to a CRM. The conditional update is the idempotency
+ * boundary.
  */
 export async function markLeadAsQualified(
   leadMatchId: string,
@@ -176,7 +150,7 @@ export async function markLeadAsQualified(
 
   // This is deliberately one conditional statement, rather than a read then
   // write. Concurrent requests therefore cannot both claim the webhook, and
-  // rejected matches can never be promoted through this endpoint.
+  // discovery/rejected matches can never be promoted through this endpoint.
   const { data: updatedLead, error: updateError } = await supabase
     .from("lead_matches")
     .update({
@@ -185,7 +159,7 @@ export async function markLeadAsQualified(
     })
     .eq("tenant_id", tenantId)
     .eq("id", normalizedLeadMatchId)
-    .in("match_status", ["ready_for_review", "discovery_candidate"])
+    .in("match_status", ["ready_for_review"])
     .select(
       "id, source_post_id, pain_detected, suggested_reply, source_post, source_post_data, source_post_json",
     )
@@ -226,7 +200,7 @@ export async function markLeadAsQualified(
       ok: false,
       status: "invalid",
       message:
-        "Only a verifier-confirmed lead or discovery candidate can be qualified.",
+        "Only a verifier-confirmed, ready-to-act lead can be qualified.",
       webhook: "skipped",
     };
   }
@@ -254,14 +228,38 @@ export async function markLeadAsQualified(
     };
   }
 
-  const webhookUrl = normalizeWebhookUrl(settings?.crm_webhook_url);
-  if (!webhookUrl) {
+  const configuredWebhookUrl = settings?.crm_webhook_url?.trim();
+  if (!configuredWebhookUrl) {
     return {
       ok: true,
       alreadyQualified: false,
       status: "qualified",
       message: "Lead qualified.",
       webhook: "not_configured",
+    };
+  }
+
+  const webhookDestination = await validateWebhookDestination(
+    configuredWebhookUrl,
+    {
+      production: process.env.NODE_ENV === "production",
+      allowLocalhost: localWebhookTestingEnabled(),
+    },
+  );
+  if (!webhookDestination) {
+    // Avoid logging a rejected endpoint; configured webhook URLs may contain
+    // customer credentials in their query string even though userinfo itself
+    // is rejected by the destination policy.
+    console.warn("[Leads] CRM webhook destination rejected", {
+      tenant_id: tenantId,
+      lead_match_id: normalizedLeadMatchId,
+    });
+    return {
+      ok: true,
+      alreadyQualified: false,
+      status: "qualified",
+      message: "Lead qualified. CRM export could not be delivered.",
+      webhook: "failed",
     };
   }
 
@@ -292,7 +290,7 @@ export async function markLeadAsQualified(
   }
 
   const webhook = await sendCrmWebhook(
-    webhookUrl,
+    webhookDestination,
     {
       source: sourcePost?.source ?? null,
       url: sourcePost?.url ?? null,

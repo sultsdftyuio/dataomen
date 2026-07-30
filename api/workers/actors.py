@@ -57,6 +57,53 @@ def _minimum_plausible_free_hits_for_x_suppression() -> int:
     )
 
 
+def _minimum_plausible_query_types_for_x_suppression() -> int:
+    """Require varied buyer evidence before skipping the paid X fallback.
+
+    A loose source search can return many posts for one broad phrase (for
+    example, "how do I get more customers?"). Raw hit volume alone therefore
+    must not imply that the full matching brief has meaningful coverage.
+    Deployments that intentionally want the older, cheaper behavior can set
+    this to one.
+    """
+
+    return _int_env(
+        "ARCLI_INITIAL_PUBLIC_FREE_MIN_QUERY_TYPES_FOR_X_SUPPRESSION",
+        2,
+        minimum=1,
+    )
+
+
+def _has_sufficient_free_evidence_for_x_suppression(
+    *,
+    plausible_hits: int,
+    plausible_query_types: set[str],
+) -> bool:
+    """Decide whether free-source coverage is strong enough to skip X.
+
+    Legacy actor messages carry untyped strings. Preserve their historic
+    hit-based behavior for replay compatibility; newly activated profiles
+    always carry the six typed buyer-language queries and therefore require
+    coverage across distinct intent types as well as enough plausible posts.
+    """
+
+    if plausible_hits < _minimum_plausible_free_hits_for_x_suppression():
+        return False
+
+    normalized_types = {
+        query_type.strip()
+        for query_type in plausible_query_types
+        if isinstance(query_type, str) and query_type.strip()
+    }
+    typed_query_types = {
+        query_type for query_type in normalized_types if query_type != "legacy"
+    }
+    if not typed_query_types:
+        return True
+
+    return len(typed_query_types) >= _minimum_plausible_query_types_for_x_suppression()
+
+
 def _require_redis_broker() -> None:
     """Configure a bounded broker only for a producer-side queue operation."""
     redis_url = os.getenv("REDIS_URL", "").strip()
@@ -196,6 +243,83 @@ def _normalized_discovery_queries(queries: Sequence[Any]) -> list[dict[str, str]
     return normalized
 
 
+def _record_discovery_event(
+    *,
+    discovery_run_id: str | None,
+    tenant_id: str | None,
+    source: str,
+    query_type: str | None,
+    query: str | None,
+    phase: str,
+    outcome: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Record tenant-owned run telemetry without affecting source ingestion.
+
+    Telemetry is customer-facing diagnostic value, but it must never become a
+    new failure mode for HN/X matching. The helper is also safe while rolling
+    out the additive SQL contract: a worker can run before the new tables are
+    applied and still complete discovery.
+    """
+
+    if not discovery_run_id or not tenant_id:
+        return
+    try:
+        from api.services.social.discovery_telemetry import record_discovery_event
+
+        record_discovery_event(
+            discovery_run_id,
+            tenant_id,
+            source=source,
+            # Aggregate phase events are not buyer-language searches. Give
+            # them a deterministic, non-content key so the telemetry contract
+            # can persist their outcome without storing a fabricated phrase.
+            query_type=query_type or "run",
+            query=query or f"{source}:{phase}",
+            phase=phase,
+            outcome=outcome,
+            details=details or {},
+        )
+    except Exception as exc:
+        logger.info(
+            "discovery_telemetry_event_skipped tenant_id=%s source=%s phase=%s outcome=%s error_type=%s",
+            tenant_id,
+            source,
+            phase,
+            outcome,
+            exc.__class__.__name__,
+        )
+
+
+def _complete_discovery_run(
+    *,
+    discovery_run_id: str | None,
+    tenant_id: str | None,
+    status: str,
+    summary: dict[str, Any],
+) -> None:
+    """Best-effort terminal run update; see `_record_discovery_event`."""
+
+    if not discovery_run_id or not tenant_id:
+        return
+    try:
+        from api.services.social.discovery_telemetry import complete_discovery_run
+
+        complete_discovery_run(
+            discovery_run_id,
+            tenant_id,
+            status=status,
+            summary=summary,
+        )
+    except Exception as exc:
+        logger.info(
+            "discovery_telemetry_completion_skipped tenant_id=%s status=%s error_type=%s",
+            tenant_id,
+            status,
+            exc.__class__.__name__,
+        )
+
+
 @dramatiq.actor(
     actor_name="ingest_hn_batch_job",
     queue_name=os.getenv("ARCLI_HN_INGESTION_QUEUE_NAME", "ingestion"),
@@ -213,8 +337,10 @@ def ingest_hn_batch_job(
     additional_sources: Sequence[str] | None = None,
     x_fallback_group_id: str | None = None,
     x_fallback_query: str | None = None,
+    x_fallback_disabled_reason: str | None = None,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
 ) -> None:
     """Complete the free HN phase before allowing one paid X fallback."""
     normalized_queries = _normalized_discovery_queries(queries)
@@ -228,6 +354,16 @@ def ingest_hn_batch_job(
         query_count=len(normalized_queries),
         since_hours_ago=since_hours_ago,
     )
+    _record_discovery_event(
+        discovery_run_id=discovery_run_id,
+        tenant_id=tenant_id,
+        source="hackernews",
+        query_type=None,
+        query=None,
+        phase="batch",
+        outcome="started",
+        details={"query_count": len(normalized_queries), "lookback_hours": since_hours_ago},
+    )
     try:
         from api.services.social_ingestion import (
             _result_source_post_refs,
@@ -237,6 +373,7 @@ def ingest_hn_batch_job(
 
         total_hits = 0
         total_plausible_hits = 0
+        plausible_query_types: set[str] = set()
         total_new_inserts = 0
         # The same global post can satisfy several buyer-language queries.
         # Queue it once after the free HN phase rather than fanning it out to
@@ -251,7 +388,23 @@ def ingest_hn_batch_job(
             )
             total_hits += result.hits_found
             total_plausible_hits += result.plausible_hits
+            if result.plausible_hits > 0:
+                plausible_query_types.add(query["query_type"])
             total_new_inserts += result.inserted_count
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="hackernews",
+                query_type=query["query_type"],
+                query=query["phrase"],
+                phase="search",
+                outcome="completed",
+                details={
+                    "hits_found": result.hits_found,
+                    "plausible_hits": result.plausible_hits,
+                    "new_inserts": result.inserted_count,
+                },
+            )
             for source_post_ref in _result_source_post_refs(
                 result,
                 source="hackernews",
@@ -266,38 +419,115 @@ def ingest_hn_batch_job(
 
         x_fallback_enqueued = False
         additional_sources_enqueued = False
-        x_fallback_skip_reason: str | None = None
+        x_fallback_skip_reason: str | None = x_fallback_disabled_reason
         minimum_plausible_hits = _minimum_plausible_free_hits_for_x_suppression()
         if continue_to_additional_sources:
             ingest_additional_public_sources_batch_job.send(
                 normalized_queries,
                 since_hours_ago,
                 posts_per_query,
+                initial_hits=total_hits,
+                initial_new_inserts=total_new_inserts,
+                initial_source_result_counts={"hackernews": total_hits},
                 initial_plausible_hits=total_plausible_hits,
+                initial_plausible_query_types=sorted(plausible_query_types),
                 fallback_to_x=fallback_to_x,
                 enabled_sources=list(additional_sources or []),
                 x_fallback_group_id=x_fallback_group_id,
                 x_fallback_query=x_fallback_query,
+                x_fallback_disabled_reason=x_fallback_disabled_reason,
                 tenant_id=tenant_id,
                 service_profile_id=service_profile_id,
+                discovery_run_id=discovery_run_id,
             )
             additional_sources_enqueued = True
-        elif fallback_to_x and total_plausible_hits < minimum_plausible_hits:
-            if not _x_source_is_configured():
+        elif fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
+            plausible_hits=total_plausible_hits,
+            plausible_query_types=plausible_query_types,
+        ):
+            if x_fallback_disabled_reason:
+                x_fallback_skip_reason = x_fallback_disabled_reason
+            elif not _x_source_is_configured():
                 x_fallback_skip_reason = "x_bearer_token_not_configured"
             elif not _claim_initial_x_fallback(x_fallback_group_id):
                 x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
             elif not _claim_tenant_x_fallback_budget(tenant_id):
                 x_fallback_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
             else:
+                x_kwargs: dict[str, Any] = {"strict_single_page": True}
+                if tenant_id is not None:
+                    x_kwargs["tenant_id"] = tenant_id
+                if service_profile_id is not None:
+                    x_kwargs["service_profile_id"] = service_profile_id
+                if discovery_run_id:
+                    x_kwargs["discovery_run_id"] = discovery_run_id
                 ingest_x_job.send(
                     x_fallback_query or normalized_queries[0]["phrase"],
                     since_hours_ago,
                     posts_per_query,
-                    strict_single_page=True,
+                    **x_kwargs,
                 )
                 x_fallback_enqueued = True
+                _record_discovery_event(
+                    discovery_run_id=discovery_run_id,
+                    tenant_id=tenant_id,
+                    source="x",
+                    query_type="fallback",
+                    query=x_fallback_query or normalized_queries[0]["phrase"],
+                    phase="fallback",
+                    outcome="queued",
+                    details={"reason": "insufficient_diverse_free_evidence"},
+                )
+        if not additional_sources_enqueued and not x_fallback_enqueued:
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="x",
+                query_type=None,
+                query=None,
+                phase="fallback",
+                outcome="not_needed" if not x_fallback_skip_reason else "skipped",
+                details={"reason": x_fallback_skip_reason or "sufficient_diverse_free_evidence"},
+            )
+            _complete_discovery_run(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                status="completed",
+                summary={
+                    "sources": {"hackernews": total_hits},
+                    "hits_found": total_hits,
+                    "plausible_hits": total_plausible_hits,
+                    "plausible_query_types": sorted(plausible_query_types),
+                    "new_inserts": total_new_inserts,
+                    "matching_source_posts": matching_source_posts,
+                    "embedding_jobs": embedding_jobs,
+                    "x_fallback": {
+                        "outcome": "not_needed" if not x_fallback_skip_reason else "skipped",
+                        "reason": x_fallback_skip_reason or "sufficient_diverse_free_evidence",
+                    },
+                    "verification_pending": True,
+                },
+            )
     except Exception as exc:
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source="hackernews",
+            query_type=None,
+            query=None,
+            phase="batch",
+            outcome="failed",
+            details={"error_type": exc.__class__.__name__},
+        )
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="failed",
+            summary={
+                "last_failure": {"source": "hackernews", "error_type": exc.__class__.__name__},
+                "verification_pending": True,
+            },
+        )
         logger.exception(
             "hn_ingestion_batch_failed job_state=%s query_count=%s since_hours_ago=%s error_type=%s error=%s",
             "failed",
@@ -319,6 +549,10 @@ def ingest_hn_batch_job(
         hits_found=total_hits,
         plausible_hn_hits=total_plausible_hits,
         minimum_plausible_hn_hits_for_x_suppression=minimum_plausible_hits,
+        plausible_hn_query_types=sorted(plausible_query_types),
+        minimum_plausible_query_types_for_x_suppression=(
+            _minimum_plausible_query_types_for_x_suppression()
+        ),
         new_inserts=total_new_inserts,
         matching_source_posts=matching_source_posts,
         embedding_jobs=embedding_jobs,
@@ -340,13 +574,19 @@ def ingest_additional_public_sources_batch_job(
     since_hours_ago: int = 24,
     posts_per_query: int = 25,
     *,
+    initial_hits: int = 0,
+    initial_new_inserts: int = 0,
+    initial_source_result_counts: dict[str, int] | None = None,
     initial_plausible_hits: int = 0,
+    initial_plausible_query_types: Sequence[str] | None = None,
     fallback_to_x: bool = False,
     enabled_sources: Sequence[str] | None = None,
     x_fallback_group_id: str | None = None,
     x_fallback_query: str | None = None,
+    x_fallback_disabled_reason: str | None = None,
     tenant_id: str | None = None,
     service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
 ) -> None:
     """Search four additional free sources after HN, then allow one X fallback.
 
@@ -364,6 +604,16 @@ def ingest_additional_public_sources_batch_job(
         service_profile_id=service_profile_id,
         query_count=len(normalized_queries),
         since_hours_ago=since_hours_ago,
+    )
+    _record_discovery_event(
+        discovery_run_id=discovery_run_id,
+        tenant_id=tenant_id,
+        source="additional_public_sources",
+        query_type=None,
+        query=None,
+        phase="batch",
+        outcome="started",
+        details={"query_count": len(normalized_queries), "lookback_hours": since_hours_ago},
     )
     try:
         from api.services.social_ingestion import (
@@ -389,11 +639,20 @@ def ingest_additional_public_sources_batch_job(
                 and source.strip().casefold() in ADDITIONAL_PUBLIC_SOURCE_NAMES
             )
         )
-        total_hits = 0
+        total_hits = max(0, initial_hits)
         total_plausible_hits = max(0, initial_plausible_hits)
-        total_new_inserts = 0
+        plausible_query_types = {
+            query_type.strip()
+            for query_type in (initial_plausible_query_types or [])
+            if isinstance(query_type, str) and query_type.strip()
+        }
+        total_new_inserts = max(0, initial_new_inserts)
         source_failures = 0
-        source_result_counts: dict[str, int] = {}
+        source_result_counts: dict[str, int] = {
+            str(source).strip().casefold(): max(0, int(hits))
+            for source, hits in (initial_source_result_counts or {}).items()
+            if str(source).strip()
+        }
         matching_source_post_refs: dict[tuple[str, str], Any] = {}
 
         for source in source_names:
@@ -406,6 +665,15 @@ def ingest_additional_public_sources_batch_job(
                     since_hours_ago=since_hours_ago,
                     scope=additional_public_source_cache_scope(source),
                 ):
+                    _record_discovery_event(
+                        discovery_run_id=discovery_run_id,
+                        tenant_id=tenant_id,
+                        source=source,
+                        query_type=query["query_type"],
+                        query=query["phrase"],
+                        phase="search",
+                        outcome="cached",
+                    )
                     continue
                 try:
                     result = ingest_additional_public_source_posts(
@@ -433,12 +701,38 @@ def ingest_additional_public_sources_batch_job(
                         source,
                         exc.__class__.__name__,
                     )
+                    _record_discovery_event(
+                        discovery_run_id=discovery_run_id,
+                        tenant_id=tenant_id,
+                        source=source,
+                        query_type=query["query_type"],
+                        query=query["phrase"],
+                        phase="search",
+                        outcome="failed",
+                        details={"error_type": exc.__class__.__name__},
+                    )
                     break
 
                 source_hits += result.hits_found
                 total_hits += result.hits_found
                 total_plausible_hits += result.plausible_hits
+                if result.plausible_hits > 0:
+                    plausible_query_types.add(query["query_type"])
                 total_new_inserts += result.inserted_count
+                _record_discovery_event(
+                    discovery_run_id=discovery_run_id,
+                    tenant_id=tenant_id,
+                    source=source,
+                    query_type=query["query_type"],
+                    query=query["phrase"],
+                    phase="search",
+                    outcome="completed",
+                    details={
+                        "hits_found": result.hits_found,
+                        "plausible_hits": result.plausible_hits,
+                        "new_inserts": result.inserted_count,
+                    },
+                )
                 for source_post_ref in result.matchable_source_post_refs:
                     matching_source_post_refs.setdefault(
                         (source_post_ref.source, source_post_ref.source_post_id),
@@ -451,24 +745,100 @@ def ingest_additional_public_sources_batch_job(
         matching_source_posts = len(matching_source_post_refs)
         embedding_jobs = trigger_embedding_jobs(list(matching_source_post_refs.values()))
         x_fallback_enqueued = False
-        x_fallback_skip_reason: str | None = None
+        x_fallback_skip_reason: str | None = x_fallback_disabled_reason
         minimum_plausible_hits = _minimum_plausible_free_hits_for_x_suppression()
-        if fallback_to_x and total_plausible_hits < minimum_plausible_hits:
-            if not _x_source_is_configured():
+        if fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
+            plausible_hits=total_plausible_hits,
+            plausible_query_types=plausible_query_types,
+        ):
+            if x_fallback_disabled_reason:
+                x_fallback_skip_reason = x_fallback_disabled_reason
+            elif not _x_source_is_configured():
                 x_fallback_skip_reason = "x_bearer_token_not_configured"
             elif not _claim_initial_x_fallback(x_fallback_group_id):
                 x_fallback_skip_reason = "initial_ingestion_x_fallback_already_claimed"
             elif not _claim_tenant_x_fallback_budget(tenant_id):
                 x_fallback_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
             else:
+                x_kwargs: dict[str, Any] = {"strict_single_page": True}
+                if tenant_id is not None:
+                    x_kwargs["tenant_id"] = tenant_id
+                if service_profile_id is not None:
+                    x_kwargs["service_profile_id"] = service_profile_id
+                if discovery_run_id:
+                    x_kwargs["discovery_run_id"] = discovery_run_id
                 ingest_x_job.send(
                     x_fallback_query or normalized_queries[0]["phrase"],
                     since_hours_ago,
                     posts_per_query,
-                    strict_single_page=True,
+                    **x_kwargs,
                 )
                 x_fallback_enqueued = True
+                _record_discovery_event(
+                    discovery_run_id=discovery_run_id,
+                    tenant_id=tenant_id,
+                    source="x",
+                    query_type="fallback",
+                    query=x_fallback_query or normalized_queries[0]["phrase"],
+                    phase="fallback",
+                    outcome="queued",
+                    details={"reason": "insufficient_diverse_free_evidence"},
+                )
+        if not x_fallback_enqueued:
+            x_outcome = "not_needed" if not x_fallback_skip_reason else "skipped"
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="x",
+                query_type=None,
+                query=None,
+                phase="fallback",
+                outcome=x_outcome,
+                details={"reason": x_fallback_skip_reason or "sufficient_diverse_free_evidence"},
+            )
+            _complete_discovery_run(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                status="partial" if source_failures else "completed",
+                summary={
+                    "sources": source_result_counts,
+                    "source_failures": source_failures,
+                    "hits_found": total_hits,
+                    "plausible_hits": total_plausible_hits,
+                    "plausible_query_types": sorted(plausible_query_types),
+                    "new_inserts": total_new_inserts,
+                    "matching_source_posts": matching_source_posts,
+                    "embedding_jobs": embedding_jobs,
+                    "x_fallback": {
+                        "outcome": x_outcome,
+                        "reason": x_fallback_skip_reason or "sufficient_diverse_free_evidence",
+                    },
+                    "verification_pending": True,
+                },
+            )
     except Exception as exc:
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source="additional_public_sources",
+            query_type=None,
+            query=None,
+            phase="batch",
+            outcome="failed",
+            details={"error_type": exc.__class__.__name__},
+        )
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="failed",
+            summary={
+                "last_failure": {
+                    "source": "additional_public_sources",
+                    "error_type": exc.__class__.__name__,
+                },
+                "verification_pending": True,
+            },
+        )
         logger.exception(
             "additional_public_source_ingestion_batch_failed job_state=%s query_count=%s since_hours_ago=%s error_type=%s",
             "failed",
@@ -492,6 +862,10 @@ def ingest_additional_public_sources_batch_job(
         hits_found=total_hits,
         plausible_free_hits=total_plausible_hits,
         minimum_plausible_free_hits_for_x_suppression=minimum_plausible_hits,
+        plausible_free_query_types=sorted(plausible_query_types),
+        minimum_plausible_query_types_for_x_suppression=(
+            _minimum_plausible_query_types_for_x_suppression()
+        ),
         new_inserts=total_new_inserts,
         matching_source_posts=matching_source_posts,
         embedding_jobs=embedding_jobs,
@@ -548,7 +922,10 @@ def ingest_hn_job(
         x_fallback_enqueued = False
         x_fallback_skip_reason: str | None = None
         minimum_plausible_hits = _minimum_plausible_free_hits_for_x_suppression()
-        if fallback_to_x and result.plausible_hits < minimum_plausible_hits:
+        if fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
+            plausible_hits=result.plausible_hits,
+            plausible_query_types={query_type or "legacy"} if result.plausible_hits else set(),
+        ):
             if not _x_source_is_configured():
                 x_fallback_skip_reason = "x_bearer_token_not_configured"
             elif not _claim_initial_x_fallback(x_fallback_group_id):
@@ -556,11 +933,16 @@ def ingest_hn_job(
             elif not _claim_tenant_x_fallback_budget(tenant_id):
                 x_fallback_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
             else:
+                x_kwargs: dict[str, Any] = {"strict_single_page": True}
+                if tenant_id is not None:
+                    x_kwargs["tenant_id"] = tenant_id
+                if service_profile_id is not None:
+                    x_kwargs["service_profile_id"] = service_profile_id
                 ingest_x_job.send(
                     x_fallback_query or query,
                     since_hours_ago,
                     posts_per_query,
-                    strict_single_page=True,
+                    **x_kwargs,
                 )
                 x_fallback_enqueued = True
     except Exception as exc:
@@ -585,6 +967,10 @@ def ingest_hn_job(
         hits_found=result.hits_found,
         plausible_hn_hits=result.plausible_hits,
         minimum_plausible_hn_hits_for_x_suppression=minimum_plausible_hits,
+        plausible_hn_query_types=[query_type] if result.plausible_hits and query_type else [],
+        minimum_plausible_query_types_for_x_suppression=(
+            _minimum_plausible_query_types_for_x_suppression()
+        ),
         new_inserts=result.inserted_count,
         matching_source_posts=len(
             matching_source_post_refs
@@ -608,6 +994,9 @@ def ingest_x_job(
     posts_per_query: int = 25,
     *,
     strict_single_page: bool = False,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
 ) -> None:
     """Ingest one X recent-search window and hand fresh rows to embedding.
 
@@ -616,9 +1005,21 @@ def ingest_x_job(
     """
     _job_started(
         job_name="x_ingestion",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         query=query,
         since_hours_ago=since_hours_ago,
         strict_single_page=strict_single_page,
+    )
+    _record_discovery_event(
+        discovery_run_id=discovery_run_id,
+        tenant_id=tenant_id,
+        source="x",
+        query_type="fallback",
+        query=query,
+        phase="search",
+        outcome="started",
+        details={"strict_single_page": strict_single_page, "lookback_hours": since_hours_ago},
     )
     try:
         from api.services.social_ingestion import (
@@ -637,8 +1038,28 @@ def ingest_x_job(
             _job_finished(
                 job_name="x_ingestion",
                 state="skipped",
+                tenant_id=tenant_id,
                 query=query,
                 rejection_reason="x_bearer_token_not_configured",
+            )
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="x",
+                query_type="fallback",
+                query=query,
+                phase="search",
+                outcome="skipped",
+                details={"reason": "x_bearer_token_not_configured"},
+            )
+            _complete_discovery_run(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                status="partial",
+                summary={
+                    "x_fallback": {"outcome": "skipped", "reason": "x_bearer_token_not_configured"},
+                    "verification_pending": True,
+                },
             )
             return
 
@@ -673,11 +1094,50 @@ def ingest_x_job(
             _job_finished(
                 job_name="x_ingestion",
                 state="skipped",
+                tenant_id=tenant_id,
                 query=query,
                 rejection_reason="provider_client_error",
                 status_code=status_code,
             )
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source="x",
+                query_type="fallback",
+                query=query,
+                phase="search",
+                outcome="skipped",
+                details={"reason": "provider_client_error", "status_code": status_code},
+            )
+            _complete_discovery_run(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                status="partial",
+                summary={
+                    "x_fallback": {"outcome": "skipped", "reason": "provider_client_error"},
+                    "verification_pending": True,
+                },
+            )
             return
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source="x",
+            query_type="fallback",
+            query=query,
+            phase="search",
+            outcome="failed",
+            details={"error_type": exc.__class__.__name__},
+        )
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="failed",
+            summary={
+                "last_failure": {"source": "x", "error_type": exc.__class__.__name__},
+                "verification_pending": True,
+            },
+        )
         logger.exception(
             "x_ingestion_failed job_state=%s query=%s since_hours_ago=%s error_type=%s error=%s",
             "failed",
@@ -693,6 +1153,8 @@ def ingest_x_job(
     _job_finished(
         job_name="x_ingestion",
         state="completed",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         query=query,
         hits_found=result.hits_found,
         new_inserts=result.inserted_count,
@@ -701,6 +1163,34 @@ def ingest_x_job(
             matching_source_post_refs
         ),
         embedding_jobs=embedding_jobs,
+    )
+    _record_discovery_event(
+        discovery_run_id=discovery_run_id,
+        tenant_id=tenant_id,
+        source="x",
+        query_type="fallback",
+        query=query,
+        phase="search",
+        outcome="completed",
+        details={
+            "hits_found": result.hits_found,
+            "new_inserts": result.inserted_count,
+            "matching_source_posts": len(matching_source_post_refs),
+        },
+    )
+    _complete_discovery_run(
+        discovery_run_id=discovery_run_id,
+        tenant_id=tenant_id,
+        status="completed",
+        summary={
+            "sources": {"x": result.hits_found},
+            "hits_found": result.hits_found,
+            "new_inserts": result.inserted_count,
+            "matching_source_posts": len(matching_source_post_refs),
+            "embedding_jobs": embedding_jobs,
+            "x_fallback": {"outcome": "completed", "reason": "insufficient_diverse_free_evidence"},
+            "verification_pending": True,
+        },
     )
 
 
@@ -1065,3 +1555,85 @@ def mark_initial_public_ingestion_dead_lettered(
     from api.services.ingestion_service import mark_initial_public_ingestion_dead_lettered as execute
 
     execute(message_data, retry_context)
+
+
+@dramatiq.actor(
+    actor_name="process_buyer_language_research_job",
+    queue_name=os.getenv("ARCLI_BUYER_LANGUAGE_RESEARCH_QUEUE_NAME", "ingestion"),
+    max_retries=_int_env("ARCLI_BUYER_LANGUAGE_RESEARCH_JOB_MAX_RETRIES", 2),
+    min_backoff=_int_env(
+        "ARCLI_BUYER_LANGUAGE_RESEARCH_JOB_MIN_BACKOFF_MS", 15_000, minimum=1
+    ),
+    max_backoff=_int_env(
+        "ARCLI_BUYER_LANGUAGE_RESEARCH_JOB_MAX_BACKOFF_MS", 90_000, minimum=1
+    ),
+    time_limit=_int_env(
+        "ARCLI_BUYER_LANGUAGE_RESEARCH_JOB_TIME_LIMIT_MS", 180_000, minimum=1
+    ),
+    on_retry_exhausted="mark_buyer_language_research_dead_lettered",
+)
+def process_buyer_language_research_job(
+    tenant_id: str,
+    service_profile_id: str,
+) -> None:
+    """Run isolated research; it must never invoke the lead/CRM pipeline."""
+
+    _job_started(
+        job_name="buyer_language_research",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+    )
+    try:
+        from api.services.social.buyer_language_research import run_buyer_language_research
+
+        result = run_buyer_language_research(tenant_id, service_profile_id)
+    except Exception as exc:
+        logger.exception(
+            "buyer_language_research_actor_failed job_state=%s tenant_id=%s service_profile_id=%s error_type=%s",
+            "failed",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        # This path does not call OpenAI today, but closing the per-thread
+        # client registry preserves the worker lifecycle invariant if a future
+        # evidence verifier is added.
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="buyer_language_research",
+        state=result.status,
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        run_id=result.run_id,
+        evidence_persisted=result.evidence_persisted,
+        source_failures=result.source_failures,
+        skip_reason=result.skip_reason,
+    )
+
+
+@dramatiq.actor(
+    actor_name="mark_buyer_language_research_dead_lettered",
+    queue_name=os.getenv("ARCLI_BUYER_LANGUAGE_RESEARCH_QUEUE_NAME", "ingestion"),
+)
+def mark_buyer_language_research_dead_lettered(
+    message_data: dict[str, Any],
+    retry_context: dict[str, Any] | None = None,
+) -> None:
+    """Record exhausted research retries without logging source/customer text."""
+
+    args = message_data.get("args") if isinstance(message_data, dict) else None
+    tenant_id = str(args[0]) if isinstance(args, (list, tuple)) and args else None
+    service_profile_id = (
+        str(args[1]) if isinstance(args, (list, tuple)) and len(args) > 1 else None
+    )
+    logger.error(
+        "buyer_language_research_dead_lettered tenant_id=%s service_profile_id=%s retries=%s max_retries=%s message_id=%s",
+        tenant_id,
+        service_profile_id,
+        (retry_context or {}).get("retries"),
+        (retry_context or {}).get("max_retries"),
+        message_data.get("message_id") if isinstance(message_data, dict) else None,
+    )

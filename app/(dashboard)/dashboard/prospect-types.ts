@@ -1,4 +1,9 @@
 import type { DiscoveryQuery } from "@/lib/discovery-queries";
+import type { BuyerLanguageResearchView } from "@/lib/buyer-language-research";
+import type {
+  BuyerDemandPattern,
+  DiscoveryRunSummaryView,
+} from "@/lib/buyer-demand-report";
 
 export type ServiceProfileFields = {
   target_audience: string[];
@@ -40,10 +45,10 @@ export type CrawlJobView = {
 };
 
 export const FEEDBACK_OPTIONS = [
-  { value: "good_lead", label: "Good Lead" },
-  { value: "bad_lead", label: "Bad Lead" },
+  { value: "good_fit", label: "Good fit" },
+  { value: "useful_pain_not_now", label: "Useful pain, not now" },
+  { value: "wrong_buyer", label: "Wrong buyer" },
   { value: "not_relevant", label: "Not Relevant" },
-  { value: "wrong_audience", label: "Wrong Audience" },
   { value: "spam", label: "Spam" },
 ] as const;
 
@@ -75,13 +80,40 @@ export type QualifiedLeadView = {
   verifierScore: number;
   similarityScore: number | null;
   painDetected: string;
+  painTheme: string | null;
+  signalType: string | null;
+  urgencyLevel: string | null;
+  /** Present only when it is a literal normalized substring of source text. */
+  urgencyReason: string | null;
+  /** The raw text is retained separately in `sourcePost.text`. */
+  evidenceExcerpt: string | null;
   matchReason: string;
   suggestedReply: string;
   matchedAt: string | null;
   sourcePost: SourcePostView;
 };
 
+export type BuyerDemandReportView = {
+  id: string;
+  status: string | null;
+  completedAt: string | null;
+  updatedAt: string | null;
+  isCompleted: boolean;
+  isTerminal: boolean;
+  summary: DiscoveryRunSummaryView;
+  marketPatterns: BuyerDemandPattern[];
+};
+
 export type ProspectActionResult = {
   ok: boolean;
   message: string;
 };
+
+/**
+ * A server action may be passed to the client once the optional research
+ * worker is deployed. It deliberately receives no tenant or profile ID: the
+ * action must resolve and authorize that scope on the server.
+ */
+export type BuyerLanguageResearchRequestAction = () => Promise<ProspectActionResult>;
+
+export type { BuyerLanguageResearchView };

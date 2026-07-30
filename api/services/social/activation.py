@@ -115,6 +115,25 @@ def enqueue_initial_public_source_ingestion(
             else "x_bearer_token_not_configured"
         )
     )
+    # Keep source coverage, failures, and X-spend decisions in a tenant-owned
+    # report. The helper is fail-open while the additive SQL contract is being
+    # rolled out, so it can never block a customer's discovery work.
+    discovery_run_id: str | None = None
+    try:
+        from api.services.social.discovery_telemetry import create_discovery_run
+
+        discovery_run_id = create_discovery_run(
+            tenant_id,
+            service_profile_id,
+            [query.to_payload() for query in discovery_queries],
+        )
+    except Exception as exc:
+        logger.info(
+            "discovery_run_creation_skipped tenant_id=%s service_profile_id=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            exc.__class__.__name__,
+        )
     # All free-source jobs for one activation share this key. The actors use
     # Redis to atomically grant a single X fallback only after the complete
     # free phase lacks plausible buyer-language coverage.
@@ -136,6 +155,10 @@ def enqueue_initial_public_source_ingestion(
             hn_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
         if x_fallback_query:
             hn_job_kwargs["x_fallback_query"] = x_fallback_query
+        if x_skip_reason:
+            hn_job_kwargs["x_fallback_disabled_reason"] = x_skip_reason
+        if discovery_run_id:
+            hn_job_kwargs["discovery_run_id"] = discovery_run_id
         ingest_hn_batch_job.send(
             discovery_query_payloads,
             lookback_hours,
@@ -157,6 +180,10 @@ def enqueue_initial_public_source_ingestion(
             additional_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
         if x_fallback_query:
             additional_job_kwargs["x_fallback_query"] = x_fallback_query
+        if x_skip_reason:
+            additional_job_kwargs["x_fallback_disabled_reason"] = x_skip_reason
+        if discovery_run_id:
+            additional_job_kwargs["discovery_run_id"] = discovery_run_id
         ingest_additional_public_sources_batch_job.send(
             discovery_query_payloads,
             lookback_hours,
@@ -171,26 +198,63 @@ def enqueue_initial_public_source_ingestion(
         # Preserve an explicitly X-only deployment, but retain the same spend
         # discipline as the normal fallback: one combined, one-page search.
         if _claim_initial_x_fallback_budget(tenant_id):
+            # Keep tenant/profile context even when the optional telemetry
+            # migration has not been deployed. The X actor uses that context
+            # for ordinary job accounting; telemetry is only an additive
+            # concern and must never alter normal matching behavior.
+            x_job_kwargs: dict[str, Any] = {
+                "strict_single_page": True,
+                "tenant_id": tenant_id,
+                "service_profile_id": service_profile_id,
+            }
+            if discovery_run_id:
+                x_job_kwargs["discovery_run_id"] = discovery_run_id
             ingest_x_job.send(
                 _x_fallback_query(discovery_queries),
                 lookback_hours,
                 posts_per_query,
-                strict_single_page=True,
+                **x_job_kwargs,
             )
             x_jobs = 1
         else:
             x_skip_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
 
+    if discovery_run_id and hn_jobs == 0 and additional_source_jobs == 0 and x_jobs == 0:
+        try:
+            from api.services.social.discovery_telemetry import complete_discovery_run
+
+            complete_discovery_run(
+                discovery_run_id,
+                tenant_id,
+                status="skipped",
+                summary={
+                    "sources": {},
+                    "x_fallback": {
+                        "outcome": "skipped",
+                        "reason": x_skip_reason or "no_discovery_source_enabled",
+                    },
+                    "verification_pending": False,
+                },
+            )
+        except Exception as exc:
+            logger.info(
+                "discovery_run_completion_skipped tenant_id=%s service_profile_id=%s error_type=%s",
+                tenant_id,
+                service_profile_id,
+                exc.__class__.__name__,
+            )
+
     logger.info(
-        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s discovery_run_id=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
         tenant_id,
         service_profile_id,
+        discovery_run_id,
         discovery_query_payloads,
         hn_jobs,
         additional_source_jobs,
         additional_sources,
         x_jobs,
-        "after_all_free_sources_insufficient_plausible_evidence"
+        "after_all_free_sources_insufficient_diverse_evidence"
         if (hn_enabled or additional_sources) and x_enabled
         else "direct_or_disabled",
         x_fallback_query,
@@ -203,6 +267,7 @@ def enqueue_initial_public_source_ingestion(
         x_jobs,
         x_skip_reason,
         additional_source_jobs,
+        discovery_run_id,
     )
 
 

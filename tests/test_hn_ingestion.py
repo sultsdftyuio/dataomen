@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+import unittest.mock
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -211,7 +212,13 @@ class HackerNewsIngestionTests(unittest.TestCase):
                 tenant_id="tenant-1",
             )
 
-        x_send.assert_called_once_with("billing", 168, 25, strict_single_page=True)
+        x_send.assert_called_once_with(
+            "billing",
+            168,
+            25,
+            strict_single_page=True,
+            tenant_id="tenant-1",
+        )
 
     def test_one_plausible_hn_hit_still_allows_the_single_x_fallback(self) -> None:
         import api.services.social_ingestion as ingestion_module
@@ -248,7 +255,13 @@ class HackerNewsIngestionTests(unittest.TestCase):
                 tenant_id="tenant-1",
             )
 
-        x_send.assert_called_once_with("billing", 168, 25, strict_single_page=True)
+        x_send.assert_called_once_with(
+            "billing",
+            168,
+            25,
+            strict_single_page=True,
+            tenant_id="tenant-1",
+        )
 
     def test_hn_actor_does_not_queue_x_when_batch_fallback_is_claimed(self) -> None:
         import api.services.social_ingestion as ingestion_module
@@ -323,6 +336,54 @@ class HackerNewsIngestionTests(unittest.TestCase):
             )
 
         x_send.assert_not_called()
+
+    def test_typed_hn_batch_keeps_x_fallback_for_many_hits_from_one_query_type(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+        from api.services.social_ingestion import HnIngestionResult
+        from api.workers import actors
+
+        one_broad_typed_result = HnIngestionResult(
+            "how do I get more customers",
+            1,
+            8,
+            0,
+            [],
+            plausible_hits=8,
+        )
+        typed_query = {
+            "query_type": "buyer_pain",
+            "phrase": "how do I get more customers",
+        }
+        with (
+            unittest.mock.patch.object(
+                ingestion_module,
+                "ingest_hn_posts",
+                return_value=one_broad_typed_result,
+            ),
+            unittest.mock.patch.object(ingestion_module, "trigger_embedding_jobs", return_value=0),
+            unittest.mock.patch.object(actors.ingest_x_job, "send") as x_send,
+            unittest.mock.patch.object(actors, "_x_source_is_configured", return_value=True),
+            unittest.mock.patch.object(actors, "_claim_initial_x_fallback", return_value=True),
+            unittest.mock.patch.object(actors, "_claim_tenant_x_fallback_budget", return_value=True),
+            unittest.mock.patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_hn_batch_job.fn(
+                [typed_query],
+                168,
+                25,
+                fallback_to_x=True,
+                x_fallback_group_id="activation-1",
+                x_fallback_query='"how do I get more customers"',
+                tenant_id="tenant-1",
+            )
+
+        x_send.assert_called_once_with(
+            '"how do I get more customers"',
+            168,
+            25,
+            strict_single_page=True,
+            tenant_id="tenant-1",
+        )
 
     def test_hn_batch_queues_each_duplicate_global_post_once(self) -> None:
         import api.services.social_ingestion as ingestion_module

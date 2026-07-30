@@ -14,6 +14,25 @@ function normalizeType(value: string | null | undefined): OgImageType {
   return value === 'security' ? 'security' : 'default';
 }
 
+function splitLegacyEscapedType(title: string | null): {
+  title: string | null;
+  type: OgImageType | null;
+} {
+  if (!title) return { title, type: null };
+
+  // Older metadata serializers occasionally turned the query separator into
+  // the literal text `u0026`, leaving a stale URL such as
+  // `/og?title=Security...u0026type=security`. Treat only the exact trailing
+  // `type` fragment as legacy query syntax; ordinary title text is untouched.
+  const match = title.match(/(?:\\?u0026|&)type=(security|default)$/i);
+  if (!match) return { title, type: null };
+
+  return {
+    title: title.slice(0, match.index).trim(),
+    type: normalizeType(match[1].toLowerCase()),
+  };
+}
+
 /**
  * Produces a relative, correctly encoded URL for the Next.js Open Graph route.
  * Keeping this construction in one place prevents JSON-escaped ampersands
@@ -35,8 +54,10 @@ export function getOgImageParams(requestUrl: string): {
   type: OgImageType;
 } {
   const url = new URL(requestUrl);
+  const legacy = splitLegacyEscapedType(url.searchParams.get('title'));
   return {
-    title: normalizeTitle(url.searchParams.get('title')),
-    type: normalizeType(url.searchParams.get('type')),
+    title: normalizeTitle(legacy.title),
+    // A real query parameter always wins over a malformed legacy suffix.
+    type: normalizeType(url.searchParams.get('type') ?? legacy.type),
   };
 }

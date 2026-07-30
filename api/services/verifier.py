@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,6 +27,15 @@ from api.services.matching import (
 logger = logging.getLogger(__name__)
 
 DecisionLabel = Literal["strong_match", "weak_match", "spam", "not_a_match"]
+UrgencyLevel = Literal["none", "low", "medium", "high"]
+SignalType = Literal[
+    "buyer_pain",
+    "urgent_failure",
+    "recommendation_request",
+    "manual_workflow_frustration",
+    "category_tool_search",
+    "switching_trigger",
+]
 MetadataValue = str | int | float | bool
 VERIFIER_QUOTA_COUNTER = "llm_verifier"
 VERIFIER_QUOTA_DEFAULT_LIMIT = 1_000
@@ -94,6 +104,16 @@ class VerificationResult(BaseModel):
     # before assisted outreach was introduced.
     suggested_reply: str = Field(default="", max_length=2000)
     rejection_reason: str | None = Field(default=None)
+    # These enrich the review experience without creating another LLM call.
+    # Defaults keep historical cached verifier payloads valid and avoid
+    # retroactively inventing evidence for old matches.
+    pain_theme: str = Field(default="", max_length=240)
+    signal_type: SignalType | None = Field(default=None)
+    urgency_level: UrgencyLevel = Field(default="none")
+    # Must be a verbatim excerpt from the public source. It is discarded by
+    # VerifierService when it cannot be tied to the candidate text.
+    urgency_reason: str = Field(default="", max_length=500)
+    evidence_excerpt: str = Field(default="", max_length=700)
     verifier_executed: bool = Field(default=True)
 
 
@@ -135,10 +155,17 @@ class VerifierService(OpenAIClientOwner):
         "ONLY a JSON object with: `match` (boolean), `decision_label` (string: "
         "strong_match, weak_match, spam, not_a_match), `confidence` (float), "
         "`pain_detected` (string), `why_this_matches` (string), "
-        "`suggested_reply` (string), and "
-        "`rejection_reason` (string or null). For rejected posts, make "
+        "`suggested_reply` (string), `pain_theme` (string), `signal_type` "
+        "(buyer_pain, urgent_failure, recommendation_request, "
+        "manual_workflow_frustration, category_tool_search, switching_trigger, "
+        "or null), `urgency_level` (none, low, medium, high), "
+        "`urgency_reason` (string), `evidence_excerpt` (string), and "
+        "`rejection_reason` (string or null). `urgency_reason` and "
+        "`evidence_excerpt` must each be an exact short excerpt from the candidate "
+        "post, or an empty string when no explicit evidence exists. For rejected posts, make "
         "`rejection_reason` explicit and concise and return an empty "
-        "`suggested_reply`. For a match, write a concise, helpful public reply "
+        "`suggested_reply`, empty `pain_theme`, null `signal_type`, `none` urgency, "
+        "and empty evidence fields. For a match, write a concise, helpful public reply "
         "that responds directly to the person's pain without pressure, claims, "
         "or a mass-outreach tone."
     )
@@ -256,6 +283,8 @@ class VerifierService(OpenAIClientOwner):
                 update={"rejection_reason": f"llm_{result.decision_label}"}
             )
 
+        result = self._sanitize_source_evidence(result, candidate_post.text)
+
         logger.info(
             "candidate_verified tenant_id=%s service_profile_id=%s source_post_id=%s decision_label=%s match=%s confidence=%.3f similarity_score=%.3f rejection_reason=%s verifier_executed=%s",
             resolved_tenant_id,
@@ -269,6 +298,66 @@ class VerifierService(OpenAIClientOwner):
             result.verifier_executed,
         )
         return result
+
+    @staticmethod
+    def _normalize_evidence(value: str) -> str:
+        """Normalize a candidate quote without changing its words."""
+
+        return re.sub(r"\s+", " ", value).strip()
+
+    @classmethod
+    def _is_verbatim_source_excerpt(cls, excerpt: str, source_text: str) -> bool:
+        normalized_excerpt = cls._normalize_evidence(excerpt).casefold()
+        normalized_source = cls._normalize_evidence(source_text).casefold()
+        # Tiny fragments are easy to match accidentally and are not useful
+        # reviewer evidence. This also excludes blank/punctuation-only output.
+        return len(normalized_excerpt) >= 8 and normalized_excerpt in normalized_source
+
+    @classmethod
+    def _sanitize_source_evidence(
+        cls,
+        result: VerificationResult,
+        source_text: str,
+    ) -> VerificationResult:
+        """Keep source-grounded detail only; the verifier remains the gate.
+
+        A matching decision is not changed here. The guard only prevents a
+        dashboard from presenting model-generated wording as evidence or
+        urgency when a reviewer cannot find it in the original public post.
+        """
+
+        if not result.match:
+            return result.model_copy(
+                update={
+                    "pain_theme": "",
+                    "signal_type": None,
+                    "urgency_level": "none",
+                    "urgency_reason": "",
+                    "evidence_excerpt": "",
+                }
+            )
+
+        evidence_excerpt = cls._normalize_evidence(result.evidence_excerpt)
+        urgency_reason = cls._normalize_evidence(result.urgency_reason)
+        evidence_is_valid = cls._is_verbatim_source_excerpt(evidence_excerpt, source_text)
+        urgency_is_valid = cls._is_verbatim_source_excerpt(urgency_reason, source_text)
+
+        update: dict[str, Any] = {
+            "evidence_excerpt": evidence_excerpt if evidence_is_valid else "",
+            "urgency_reason": urgency_reason if urgency_is_valid else "",
+            "urgency_level": result.urgency_level if urgency_is_valid else "none",
+        }
+        if evidence_excerpt and not evidence_is_valid:
+            logger.info(
+                "verifier_evidence_excerpt_omitted reason=%s",
+                "not_verbatim_source_excerpt",
+            )
+        if (urgency_reason or result.urgency_level != "none") and not urgency_is_valid:
+            logger.info(
+                "verifier_urgency_omitted reason=%s",
+                "not_verbatim_source_excerpt",
+            )
+        return result.model_copy(update=update)
 
     @retry(
         retry=retry_if_exception(_is_retryable_openai_error),

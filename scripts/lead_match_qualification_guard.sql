@@ -3,7 +3,8 @@
 -- Apply this after scripts/RLS_updates.sql in existing workspaces. New
 -- workspaces receive the same policy from RLS_updates.sql itself. Public HN/X
 -- corpus writes continue through the worker's service/database role; this
--- policy only limits authenticated browser clients.
+-- policy only limits authenticated browser clients. Discovery candidates are
+-- review-only and are not eligible for the qualified transition.
 
 BEGIN;
 
@@ -45,7 +46,7 @@ CREATE POLICY "lead_matches_qualify_tenant" ON public.lead_matches
             WHERE tu.tenant_id::text = lead_matches.tenant_id::text
               AND tu.user_id::text = auth.uid()::text
         )
-        AND lead_matches.match_status IN ('ready_for_review', 'discovery_candidate')
+        AND lead_matches.match_status = 'ready_for_review'
     )
     WITH CHECK (
         EXISTS (

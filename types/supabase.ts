@@ -255,6 +255,189 @@ export type Database = {
         };
         Relationships: [];
       };
+      discovery_runs: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          service_profile_id: string;
+          run_kind: string;
+          query_plan: Json;
+          status: string;
+          summary: Json;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          service_profile_id: string;
+          run_kind?: string;
+          query_plan?: Json;
+          status?: string;
+          summary?: Json;
+          started_at?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          service_profile_id?: string;
+          run_kind?: string;
+          query_plan?: Json;
+          status?: string;
+          summary?: Json;
+          started_at?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      discovery_evidence: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          discovery_run_id: string;
+          service_profile_id: string;
+          source: string;
+          source_post_id: string | null;
+          source_url: string | null;
+          query_type: string;
+          query_phrase: string;
+          title: string | null;
+          source_text: string;
+          evidence_excerpt: string | null;
+          evidence_status: string;
+          observed_at: string | null;
+          evidence_key: string;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          discovery_run_id: string;
+          service_profile_id: string;
+          source: string;
+          source_post_id?: string | null;
+          source_url?: string | null;
+          query_type: string;
+          query_phrase: string;
+          title?: string | null;
+          source_text: string;
+          evidence_excerpt?: string | null;
+          evidence_status?: string;
+          observed_at?: string | null;
+          evidence_key: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          discovery_run_id?: string;
+          service_profile_id?: string;
+          source?: string;
+          source_post_id?: string | null;
+          source_url?: string | null;
+          query_type?: string;
+          query_phrase?: string;
+          title?: string | null;
+          source_text?: string;
+          evidence_excerpt?: string | null;
+          evidence_status?: string;
+          observed_at?: string | null;
+          evidence_key?: string;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      discovery_run_events: {
+        Row: {
+          id: number;
+          tenant_id: string;
+          run_id: string;
+          source: string;
+          query_type: string;
+          query_hash: string;
+          event_key: string;
+          phase: string;
+          outcome: string;
+          details: Json;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: number;
+          tenant_id: string;
+          run_id: string;
+          source: string;
+          query_type: string;
+          query_hash: string;
+          event_key: string;
+          phase: string;
+          outcome: string;
+          details?: Json;
+          occurred_at?: string;
+        };
+        Update: {
+          id?: number;
+          tenant_id?: string;
+          run_id?: string;
+          source?: string;
+          query_type?: string;
+          query_hash?: string;
+          event_key?: string;
+          phase?: string;
+          outcome?: string;
+          details?: Json;
+          occurred_at?: string;
+        };
+        Relationships: [];
+      };
+      lead_feedback: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          lead_match_id: string;
+          user_id: string;
+          feedback_type: string;
+          reason_code: string | null;
+          details: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          lead_match_id: string;
+          user_id: string;
+          feedback_type: string;
+          reason_code?: string | null;
+          details?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tenant_id?: string;
+          lead_match_id?: string;
+          user_id?: string;
+          feedback_type?: string;
+          reason_code?: string | null;
+          details?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       tenant_users: {
         Row: {
           tenant_id: string;
