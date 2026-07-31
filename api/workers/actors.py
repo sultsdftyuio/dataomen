@@ -1238,6 +1238,27 @@ def enqueue_source_post_embedding_job(
         from api.services.social_ingestion import process_public_source_post_embedding
 
         result = process_public_source_post_embedding(source_post_id, source=source)
+        # Watchlists are an additive tenant-scoped view over the same global
+        # post cache. A rollout/schema issue here must never retry or duplicate
+        # the established profile-wide matching result above.
+        try:
+            from api.services.watchlist_matching import (
+                process_active_watchlists_for_public_source_post,
+            )
+
+            watchlist_result = process_active_watchlists_for_public_source_post(
+                source_post_id,
+                source=source,
+            )
+        except Exception as watchlist_exc:
+            watchlist_result = None
+            logger.exception(
+                "watchlist_source_matching_failed source=%s source_post_id=%s error_type=%s error=%s",
+                source,
+                source_post_id,
+                watchlist_exc.__class__.__name__,
+                watchlist_exc,
+            )
     except Exception as exc:
         logger.exception(
             "source_post_embedding_failed job_state=%s source=%s source_post_id=%s error_type=%s error=%s",
@@ -1260,6 +1281,8 @@ def enqueue_source_post_embedding_job(
         embedded=result["embedded"],
         candidates=result["candidates"],
         ready_for_review=result["ready_for_review"],
+        watchlist_candidates=(watchlist_result or {}).get("candidates", 0),
+        watchlist_ready_for_review=(watchlist_result or {}).get("ready_for_review", 0),
     )
 
 
@@ -1352,6 +1375,51 @@ def rematch_existing_public_source_posts_job(
         posts=result["posts"],
         embedded=result["embedded"],
         cache_misses=result["cache_misses"],
+        candidates=result["candidates"],
+        ready_for_review=result["ready_for_review"],
+        discovery_candidates=result["discovery_candidates"],
+    )
+
+
+@dramatiq.actor(
+    actor_name="process_watchlist_discovery_job",
+    queue_name=os.getenv("ARCLI_WATCHLIST_QUEUE_NAME", "ingestion"),
+    max_retries=2,
+    min_backoff=15_000,
+    max_backoff=90_000,
+    time_limit=_int_env("ARCLI_WATCHLIST_JOB_TIME_LIMIT_MS", 180_000, minimum=1),
+)
+def process_watchlist_discovery_job_actor(tenant_id: str, watchlist_id: str) -> None:
+    """Run one customer-defined Watchlist without widening tenant scope."""
+    _job_started(
+        job_name="watchlist_discovery",
+        tenant_id=tenant_id,
+        watchlist_id=watchlist_id,
+    )
+    try:
+        from api.services.watchlist_matching import process_watchlist_discovery_job
+
+        result = process_watchlist_discovery_job(tenant_id, watchlist_id)
+    except Exception as exc:
+        logger.exception(
+            "watchlist_discovery_failed job_state=%s tenant_id=%s watchlist_id=%s error_type=%s error=%s",
+            "failed",
+            tenant_id,
+            watchlist_id,
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="watchlist_discovery",
+        state="completed",
+        tenant_id=tenant_id,
+        watchlist_id=watchlist_id,
+        posts=result["posts"],
+        embedded=result["embedded"],
         candidates=result["candidates"],
         ready_for_review=result["ready_for_review"],
         discovery_candidates=result["discovery_candidates"],

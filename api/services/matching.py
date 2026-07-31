@@ -12,9 +12,10 @@ MetadataValue = str | int | float | bool
 RejectionStage = Literal["cheap_filter", "embedding_similarity"]
 
 # This stage is a recall-oriented prefilter; the verifier is the precision
-# gate before a lead reaches review. A 0.32 floor lets plausible public posts
-# reach that verifier without treating weak semantic overlap as a lead.
-DEFAULT_SIMILARITY_THRESHOLD = 0.32
+# gate before a lead reaches review. A 0.24 floor deliberately admits broader
+# semantic candidates (including buyer-language paraphrases) to that verifier;
+# it is never itself a lead decision.
+DEFAULT_SIMILARITY_THRESHOLD = 0.24
 DEFAULT_MAX_CANDIDATES = 50
 REJECTION_EMPTY_TEXT = "empty_or_too_short_text"
 REJECTION_SPAM_SIGNAL = "cheap_filter_spam_signal"

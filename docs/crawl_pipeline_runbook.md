@@ -291,7 +291,7 @@ ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES=15
 
 # A conservative verifier-confirmed signal below the normal review threshold
 # is stored as discovery_candidate, never as qualified.
-LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.50
+LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.45
 LEAD_VERIFIER_SCORE_THRESHOLD=0.70
 ```
 
@@ -313,8 +313,9 @@ then apply `scripts/lead_match_qualification_guard.sql`. The public-source
 contract uses `(source, source_post_id)` as its global identity, which matters
 now that different providers can use the same external IDs.
 It keeps tenant-scoped reads while allowing an authenticated user to promote
-only a `ready_for_review` or `discovery_candidate` row to `qualified`; workers
-must continue using their existing service/database role for pipeline writes.
+only a `ready_for_review` row to `qualified`; discovery candidates remain
+review-only, and workers must continue using their existing service/database
+role for pipeline writes.
 
 The limiter delays worker work instead of increasing provider concurrency.
 Pass 1 is the exception: it immediately falls back to the asynchronous deep

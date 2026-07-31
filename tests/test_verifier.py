@@ -30,7 +30,10 @@ def test_verifier_uses_the_matching_threshold_when_no_override_is_configured() -
         post_id="post-1",
         source="twitter",
         text="How do I find better SaaS leads?",
-        similarity_score=0.35,
+        # This is below the former 0.32 recall floor but above the current
+        # broad-candidate threshold. It must reach the verifier, which remains
+        # the only precision gate.
+        similarity_score=0.25,
     )
     verifier = VerifierService(client=object(), quota_guard=AllowedQuotaGuard())
     expected = VerificationResult(

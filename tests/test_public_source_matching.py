@@ -404,7 +404,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
         )
         self.assertEqual(ingestion._lead_match_status(weak_verified), "discovery_candidate")
 
-        low_confidence = weak_verified.model_copy(update={"confidence": 0.49})
+        low_confidence = weak_verified.model_copy(update={"confidence": 0.44})
         self.assertEqual(ingestion._lead_match_status(low_confidence), "rejected")
 
         skipped = weak_verified.model_copy(update={"verifier_executed": False})

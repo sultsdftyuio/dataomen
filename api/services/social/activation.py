@@ -46,6 +46,9 @@ from api.services.verifier import (
 def enqueue_initial_public_source_ingestion(
     tenant_id: str,
     service_profile_id: str | None,
+    *,
+    discovery_queries_override: Sequence[DiscoveryQuery] | None = None,
+    allowed_sources: frozenset[str] | set[str] | None = None,
 ) -> InitialPublicSourceIngestionPlan:
     """Queue HN-first public-source searches from a completed service profile.
 
@@ -76,7 +79,9 @@ def enqueue_initial_public_source_ingestion(
     profile = _service_profile_from_row(profile_row)
     discovery_queries = public_source_queries(
         profile,
-        discovery_queries=_profile_discovery_queries(profile_row),
+        discovery_queries=list(discovery_queries_override)
+        if discovery_queries_override is not None
+        else _profile_discovery_queries(profile_row),
     )
     if not discovery_queries:
         logger.warning(
@@ -103,16 +108,37 @@ def enqueue_initial_public_source_ingestion(
     hn_jobs = 0
     x_jobs = 0
     additional_source_jobs = 0
-    hn_enabled = _is_source_enabled("ARCLI_HN_INGESTION_ENABLED")
-    additional_sources = enabled_additional_public_sources()
-    x_enabled = x_source_is_configured()
+    normalized_allowed_sources = {
+        str(source).strip().casefold()
+        for source in (allowed_sources or ())
+        if str(source).strip()
+    }
+    # ``None`` means the normal product-wide activation. An explicit set is
+    # a customer Watchlist preference; source controls can reduce coverage but
+    # can never enable a connector that deployment policy disabled.
+    source_is_allowed = lambda source: (
+        not normalized_allowed_sources or source.casefold() in normalized_allowed_sources
+    )
+    hn_enabled = _is_source_enabled("ARCLI_HN_INGESTION_ENABLED") and source_is_allowed(
+        "hackernews"
+    )
+    additional_sources = tuple(
+        source
+        for source in enabled_additional_public_sources()
+        if source_is_allowed(source)
+    )
+    x_enabled = x_source_is_configured() and source_is_allowed("x")
     x_skip_reason = (
         None
         if x_enabled
         else (
-            "x_ingestion_disabled"
-            if not _is_source_enabled("ARCLI_X_INGESTION_ENABLED")
-            else "x_bearer_token_not_configured"
+            "x_not_selected_for_watchlist"
+            if normalized_allowed_sources and not source_is_allowed("x")
+            else (
+                "x_ingestion_disabled"
+                if not _is_source_enabled("ARCLI_X_INGESTION_ENABLED")
+                else "x_bearer_token_not_configured"
+            )
         )
     )
     # Keep source coverage, failures, and X-spend decisions in a tenant-owned
@@ -377,11 +403,11 @@ def _source_post_is_plausible_for_discovery_query(
         return False
     text_tokens = _discovery_query_tokens(text_value)
     overlap = len(query_tokens.intersection(text_tokens))
-    # Preserve natural paraphrases, but do not let two generic words in a
-    # five-word query count as coverage.  The former two-token rule was the
-    # reason an unrelated Lemmy/GitHub result could block X in the attached
-    # production run.
-    required_overlap = max(1, math.ceil(len(query_tokens) * 2 / 3))
+    # Search providers regularly return buyer-authored paraphrases rather than
+    # a copy of the query.  This is a recall guard, not the qualification
+    # decision, so require meaningful (but not near-verbatim) coverage and
+    # leave the LLM verifier as the final precision gate.
+    required_overlap = max(1, math.ceil(len(query_tokens) * 0.4))
     if phrase not in text_value and overlap < required_overlap:
         return False
 

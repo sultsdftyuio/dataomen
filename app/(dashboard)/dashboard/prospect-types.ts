@@ -93,6 +93,29 @@ export type QualifiedLeadView = {
   sourcePost: SourcePostView;
 };
 
+/** A customer-owned buyer group layered on the website-derived profile. */
+export type WatchlistView = {
+  id: string;
+  name: string;
+  targetBuyer: string;
+  problemToSolve: string;
+  includeTerms: string[];
+  excludeTerms: string[];
+  sourcePreferences: string[];
+  suggestedPlaces: string[];
+  isActive: boolean;
+  embeddingStatus: string | null;
+  scanStatus: string | null;
+  lastScanAt: string | null;
+  lastScanError: string | null;
+};
+
+export type WatchlistResultsView = {
+  watchlistId: string;
+  readyToAct: QualifiedLeadView[];
+  discoveryCandidates: QualifiedLeadView[];
+};
+
 export type BuyerDemandReportView = {
   id: string;
   status: string | null;
@@ -115,5 +138,19 @@ export type ProspectActionResult = {
  * action must resolve and authorize that scope on the server.
  */
 export type BuyerLanguageResearchRequestAction = () => Promise<ProspectActionResult>;
+
+export type WatchlistCreateInput = {
+  name: string;
+  targetBuyer: string;
+  problemToSolve: string;
+  includeTerms: string[];
+  excludeTerms: string[];
+  sourcePreferences: string[];
+  suggestedPlaces: string[];
+};
+
+export type WatchlistAction = (
+  input: WatchlistCreateInput,
+) => Promise<ProspectActionResult>;
 
 export type { BuyerLanguageResearchView };

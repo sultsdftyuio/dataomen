@@ -28,6 +28,8 @@ import type {
   ServiceProfileFields,
   ServiceProfileView,
   SourcePostView,
+  WatchlistResultsView,
+  WatchlistView,
 } from "./prospect-types";
 
 type DbRecord = Record<string, unknown>;
@@ -682,6 +684,130 @@ export async function fetchDiscoveryCandidates(
   return ((result.data ?? []) as unknown[]).map((row, index) =>
     leadView(asRecord(row) ?? {}, index),
   );
+}
+
+function watchlistView(row: DbRecord): WatchlistView | null {
+  const id = readString([row], ["id"]);
+  const name = readString([row], ["name"]);
+  const targetBuyer = readString([row], ["target_buyer"]);
+  const problemToSolve = readString([row], ["problem_to_solve"]);
+  if (!id || !name || !targetBuyer || !problemToSolve) return null;
+
+  return {
+    id,
+    name,
+    targetBuyer,
+    problemToSolve,
+    includeTerms: readStringList([row], ["include_terms"]),
+    excludeTerms: readStringList([row], ["exclude_terms"]),
+    sourcePreferences: readStringList([row], ["source_preferences"]),
+    suggestedPlaces: readStringList([row], ["suggested_places"]),
+    isActive: booleanValue(row.is_active) ?? false,
+    embeddingStatus: readString([row], ["embedding_status"]),
+    scanStatus: readString([row], ["scan_status"]),
+    lastScanAt: readString([row], ["last_scan_at"]),
+    lastScanError: readString([row], ["last_scan_error"]),
+  };
+}
+
+/**
+ * The Watchlists migration is additive. A missing table never blocks the
+ * action queue from loading during a staged production rollout.
+ */
+export async function fetchWatchlists(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+): Promise<WatchlistView[]> {
+  const result = await supabase
+    .from("watchlists")
+    .select(
+      "id,name,target_buyer,problem_to_solve,include_terms,exclude_terms,source_preferences,suggested_places,is_active,embedding_status,scan_status,last_scan_at,last_scan_error,updated_at",
+    )
+    .eq("tenant_id", tenantId)
+    .order("updated_at", { ascending: false })
+    .limit(24);
+  if (result.error) {
+    if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
+      console.error("[ProspectDashboard] Watchlist lookup failed", {
+        tenant_id: tenantId,
+        error: result.error,
+      });
+    }
+    return [];
+  }
+  return ((result.data ?? []) as unknown[])
+    .map((row) => watchlistView(asRecord(row) ?? {}))
+    .filter((row): row is WatchlistView => Boolean(row));
+}
+
+export async function fetchWatchlistResults(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  watchlists: WatchlistView[],
+  threshold: number,
+): Promise<WatchlistResultsView[]> {
+  if (watchlists.length === 0) return [];
+  const watchlistIds = watchlists.map((watchlist) => watchlist.id);
+  const joinedResult = await supabase
+    .from("watchlist_matches")
+    .select("*, source_posts(*)")
+    .eq("tenant_id", tenantId)
+    .in("watchlist_id", watchlistIds)
+    .in("match_status", ["ready_for_review", "discovery_candidate"])
+    .order("verifier_score", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(72);
+  const result = joinedResult.error
+    ? await supabase
+      .from("watchlist_matches")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .in("watchlist_id", watchlistIds)
+      .in("match_status", ["ready_for_review", "discovery_candidate"])
+      .order("verifier_score", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(72)
+    : joinedResult;
+  if (result.error) {
+    if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
+      console.error("[ProspectDashboard] Watchlist match lookup failed", {
+        tenant_id: tenantId,
+        error: result.error,
+      });
+    }
+    return watchlists.map((watchlist) => ({
+      watchlistId: watchlist.id,
+      readyToAct: [],
+      discoveryCandidates: [],
+    }));
+  }
+
+  const grouped = new Map<string, WatchlistResultsView>(
+    watchlists.map((watchlist) => [
+      watchlist.id,
+      { watchlistId: watchlist.id, readyToAct: [], discoveryCandidates: [] },
+    ]),
+  );
+  for (const [index, rawRow] of ((result.data ?? []) as unknown[]).entries()) {
+    const row = asRecord(rawRow) ?? {};
+    const watchlistId = readString([row], ["watchlist_id"]);
+    const group = watchlistId ? grouped.get(watchlistId) : null;
+    if (!group) continue;
+    const lead = leadView(row, index);
+    if (
+      lead.matchStatus === "ready_for_review" &&
+      lead.verifierScore >= threshold &&
+      group.readyToAct.length < 6
+    ) {
+      group.readyToAct.push(lead);
+    } else if (
+      lead.matchStatus === "discovery_candidate" &&
+      group.discoveryCandidates.length < 6
+    ) {
+      group.discoveryCandidates.push(lead);
+    }
+  }
+  return Array.from(grouped.values());
 }
 
 type OptionalReadQuery = {

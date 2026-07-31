@@ -174,6 +174,35 @@ class PublicIngestionTriggerResponse(BaseModel):
     message_id: str
 
 
+class WatchlistDiscoveryTriggerRequest(BaseModel):
+    """Trusted frontend handoff for one tenant-owned Watchlist scan."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    watchlist_id: str = Field(min_length=1)
+    service_profile_id: str = Field(min_length=1)
+    requested_by: str | None = Field(default=None)
+    source: str | None = Field(default=None)
+
+    @field_validator("tenant_id", "watchlist_id", "service_profile_id")
+    @classmethod
+    def validate_uuid(cls, value: str) -> str:
+        try:
+            return str(UUID(value))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("must be a valid UUID") from exc
+
+
+class WatchlistDiscoveryTriggerResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    status: Literal["queued"] = Field(default="queued")
+    tenant_id: str
+    watchlist_id: str
+    message_id: str
+
+
 class BuyerLanguageResearchTriggerRequest(BaseModel):
     """Trusted request to start non-lead, source-grounded buyer research."""
 
@@ -396,6 +425,7 @@ def _validate_internal_tenant_scope(
     *,
     tenant_id: str,
     service_profile_id: str | None = None,
+    watchlist_id: str | None = None,
 ) -> None:
     try:
         engine = _database_engine()
@@ -466,6 +496,37 @@ def _validate_internal_tenant_scope(
                     raise HTTPException(
                         status_code=status.HTTP_404_NOT_FOUND,
                         detail="Service profile not found for tenant.",
+                    )
+
+            if watchlist_id:
+                watchlist_exists = conn.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                              FROM public.watchlists
+                             WHERE tenant_id = :tenant_id
+                               AND id = CAST(:watchlist_id AS uuid)
+                               AND is_active = TRUE
+                        )
+                        """
+                    ),
+                    {
+                        "tenant_id": tenant_id,
+                        "watchlist_id": watchlist_id,
+                    },
+                ).scalar_one()
+                if not watchlist_exists:
+                    logger.warning(
+                        "internal_worker_trigger_rejected tenant_id=%s service_profile_id=%s watchlist_id=%s rejection_reason=%s",
+                        tenant_id,
+                        service_profile_id,
+                        watchlist_id,
+                        "watchlist_not_in_tenant_or_inactive",
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Active Watchlist not found for tenant.",
                     )
     except HTTPException:
         raise
@@ -790,6 +851,70 @@ def trigger_public_ingestion(
     return PublicIngestionTriggerResponse(
         tenant_id=payload.tenant_id,
         service_profile_id=payload.service_profile_id,
+        message_id=message_id,
+    )
+
+
+@app.post(
+    "/api/watchlists/trigger",
+    response_model=WatchlistDiscoveryTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_watchlist_discovery(
+    payload: WatchlistDiscoveryTriggerRequest,
+    _: Annotated[None, Depends(verify_internal_request)],
+) -> WatchlistDiscoveryTriggerResponse:
+    """Queue a customer-selected group scan after enforcing tenant ownership."""
+    from api.services.watchlist_matching import (
+        WatchlistAlreadyQueuedError,
+        WatchlistRateLimitError,
+        enqueue_watchlist_discovery_job,
+    )
+
+    _validate_internal_tenant_scope(
+        tenant_id=payload.tenant_id,
+        service_profile_id=payload.service_profile_id,
+        watchlist_id=payload.watchlist_id,
+    )
+    try:
+        message_id = enqueue_watchlist_discovery_job(
+            payload.tenant_id,
+            payload.watchlist_id,
+        )
+    except WatchlistAlreadyQueuedError:
+        return WatchlistDiscoveryTriggerResponse(
+            tenant_id=payload.tenant_id,
+            watchlist_id=payload.watchlist_id,
+            message_id="already-queued",
+        )
+    except WatchlistRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Watchlist scan limit reached. Try again later.",
+        ) from exc
+    except RuntimeError as exc:
+        logger.exception(
+            "watchlist_discovery_enqueue_failed tenant_id=%s watchlist_id=%s error_type=%s",
+            payload.tenant_id,
+            payload.watchlist_id,
+            exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Watchlist discovery queue is unavailable.",
+        ) from exc
+
+    logger.info(
+        "watchlist_discovery_trigger_accepted tenant_id=%s service_profile_id=%s watchlist_id=%s message_id=%s source=%s",
+        payload.tenant_id,
+        payload.service_profile_id,
+        payload.watchlist_id,
+        message_id,
+        payload.source,
+    )
+    return WatchlistDiscoveryTriggerResponse(
+        tenant_id=payload.tenant_id,
+        watchlist_id=payload.watchlist_id,
         message_id=message_id,
     )
 

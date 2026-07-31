@@ -362,6 +362,39 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(hn_send.call_args.args[0], CANONICAL_DISCOVERY_QUERIES)
         x_send.assert_not_called()
 
+    def test_watchlist_source_preference_keeps_hn_and_does_not_spend_on_x(self) -> None:
+        import api.services.social_ingestion as ingestion
+        from api.workers import actors
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        with (
+            patch.dict(os.environ, {"X_BEARER_TOKEN": "test-token"}, clear=True),
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(ingestion, "_service_profile_columns", return_value={}),
+            patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
+            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_x_job, "send") as x_send,
+        ):
+            plan = enqueue_initial_public_source_ingestion(
+                "tenant-1",
+                "profile-1",
+                discovery_queries_override=[
+                    DiscoveryQuery("buyer_pain", "founders cannot keep trial signups coming in")
+                ],
+                allowed_sources={"hackernews"},
+            )
+
+        self.assertEqual(plan.query_terms, ["founders cannot keep trial signups coming in"])
+        self.assertEqual(plan.hn_jobs, 1)
+        self.assertEqual(plan.additional_source_jobs, 0)
+        self.assertEqual(plan.x_jobs, 0)
+        self.assertEqual(plan.x_skip_reason, "x_not_selected_for_watchlist")
+        self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
+        x_send.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

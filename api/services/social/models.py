@@ -79,7 +79,10 @@ DEFAULT_VERIFIER_QUALIFIED_THRESHOLD = 0.7
 
 
 
-DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD = 0.5
+# These are verifier-confirmed, human-review signals rather than qualified
+# opportunities. A modestly lower floor preserves plausible evidence that
+# would otherwise vanish while the ready-to-act threshold remains unchanged.
+DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD = 0.45
 
 
 

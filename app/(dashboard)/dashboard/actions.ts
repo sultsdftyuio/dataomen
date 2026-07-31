@@ -14,6 +14,7 @@ import {
   FEEDBACK_OPTIONS,
   type LeadFeedbackValue,
   type ProspectActionResult,
+  type WatchlistCreateInput,
 } from "./prospect-types";
 
 type DbRecord = Record<string, Json>;
@@ -80,6 +81,28 @@ const SERVICE_PROFILE_SCHEMA = z.object({
   search_terms: z.array(z.string().trim().min(1)).max(6).default([]),
   negative_keywords: z.array(z.string().trim().min(1)).default([]),
   excluded_audiences: z.array(z.string().trim().min(1)).default([]),
+});
+
+const WATCHLIST_SOURCES = [
+  "hackernews",
+  "bluesky",
+  "lemmy",
+  "stackexchange",
+  "github",
+  "x",
+] as const;
+
+const WATCHLIST_SCHEMA = z.object({
+  name: z.string().trim().min(1).max(120),
+  targetBuyer: z.string().trim().min(3).max(500),
+  problemToSolve: z.string().trim().min(3).max(700),
+  includeTerms: z.array(z.string().trim().min(2).max(180)).max(6).default([]),
+  excludeTerms: z.array(z.string().trim().min(2).max(180)).max(12).default([]),
+  sourcePreferences: z
+    .array(z.enum(WATCHLIST_SOURCES))
+    .min(1)
+    .max(WATCHLIST_SOURCES.length),
+  suggestedPlaces: z.array(z.string().trim().min(2).max(250)).max(12).default([]),
 });
 
 const FEEDBACK_VALUES = new Set(FEEDBACK_OPTIONS.map((option) => option.value));
@@ -239,6 +262,25 @@ async function latestServiceProfileId(context: TenantContext) {
   return result.data?.id ?? null;
 }
 
+async function latestApprovedServiceProfileId(context: TenantContext) {
+  const result = await context.supabase
+    .from("service_profiles")
+    .select("id")
+    .eq("tenant_id", context.tenantId)
+    .eq("status", "approved")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string | null }>();
+  if (result.error) {
+    console.warn("[Watchlists] approved profile lookup failed", {
+      tenant_id: context.tenantId,
+      error: result.error,
+    });
+    return null;
+  }
+  return result.data?.id ?? null;
+}
+
 function crawlerTriggerEndpoint() {
   const explicit = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
   if (explicit) return explicit;
@@ -299,6 +341,26 @@ function buyerLanguageResearchTriggerEndpoints() {
           baseUrl
             ? joinBackendPath(baseUrl, "/api/buyer-language-research/trigger")
             : null,
+        ),
+      ].filter((endpoint): endpoint is string => Boolean(endpoint)),
+    ),
+  );
+}
+
+function watchlistTriggerEndpoints() {
+  const explicit = process.env.ARCLI_WATCHLIST_TRIGGER_URL?.trim();
+  const workerApiUrls = [
+    process.env.ARCLI_WORKER_API_URL?.trim(),
+    process.env.PYTHON_BACKEND_URL?.trim(),
+    process.env.INTERNAL_API_URL?.trim(),
+  ];
+
+  return Array.from(
+    new Set(
+      [
+        explicit,
+        ...workerApiUrls.map((baseUrl) =>
+          baseUrl ? joinBackendPath(baseUrl, "/api/watchlists/trigger") : null,
         ),
       ].filter((endpoint): endpoint is string => Boolean(endpoint)),
     ),
@@ -621,6 +683,173 @@ async function postBuyerLanguageResearchTrigger(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function postWatchlistDiscoveryTrigger(
+  context: Pick<TenantContext, "tenantId" | "userId">,
+  watchlistId: string,
+  serviceProfileId: string,
+): Promise<ProspectActionResult> {
+  const endpoints = watchlistTriggerEndpoints();
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  if (endpoints.length === 0 || !workerSecret) {
+    return actionError(
+      "Watchlist saved, but the discovery worker is not configured on this deployment.",
+    );
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    let lastUnavailableError: unknown = null;
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${workerSecret}`,
+            "Idempotency-Key": `watchlist-${watchlistId}`,
+          },
+          cache: "no-store",
+          signal: controller.signal,
+          body: JSON.stringify({
+            tenant_id: context.tenantId,
+            watchlist_id: watchlistId,
+            service_profile_id: serviceProfileId,
+            requested_by: context.userId,
+            source: "dashboard_watchlist",
+          }),
+        });
+        if (response.ok) {
+          return actionOk(
+            "Watchlist saved. Cached conversations are being checked first, then selected public sources.",
+          );
+        }
+        if (response.status === 404) continue;
+        if (response.status === 429) {
+          return actionError("This workspace has reached its Watchlist scan limit. Try again later.");
+        }
+        return actionError(
+          `Watchlist was saved, but the scan was not accepted (HTTP ${response.status}).`,
+        );
+      } catch (error) {
+        lastUnavailableError = error;
+      }
+    }
+
+    return actionError(
+      lastUnavailableError instanceof Error
+        ? `Watchlist was saved, but discovery is unavailable: ${lastUnavailableError.message}`
+        : "Watchlist was saved, but discovery is unavailable.",
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function createWatchlist(
+  input: WatchlistCreateInput,
+): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+
+  const parsed = WATCHLIST_SCHEMA.safeParse(input);
+  if (!parsed.success) {
+    return actionError(
+      parsed.error.issues[0]?.message ?? "Check the Watchlist details and try again.",
+    );
+  }
+  const serviceProfileId = await latestApprovedServiceProfileId(context);
+  if (!serviceProfileId) {
+    return actionError("Create and approve a website matching brief before adding a Watchlist.");
+  }
+
+  const values = parsed.data;
+  const result = await context.supabase
+    .from("watchlists")
+    .insert({
+      tenant_id: context.tenantId,
+      service_profile_id: serviceProfileId,
+      name: values.name.trim(),
+      target_buyer: values.targetBuyer.trim(),
+      problem_to_solve: values.problemToSolve.trim(),
+      include_terms: normalizeList(values.includeTerms),
+      exclude_terms: normalizeList(values.excludeTerms),
+      source_preferences: values.sourcePreferences,
+      suggested_places: normalizeList(values.suggestedPlaces),
+      is_active: true,
+      created_by: context.userId,
+    })
+    .select("id, service_profile_id")
+    .maybeSingle();
+
+  if (result.error || !result.data) {
+    console.error("[Watchlists] creation failed", {
+      tenant_id: context.tenantId,
+      error: result.error,
+    });
+    return actionError(
+      "Could not save the Watchlist. Apply the Watchlists database contract and try again.",
+    );
+  }
+
+  const triggerResult = await postWatchlistDiscoveryTrigger(
+    context,
+    result.data.id,
+    result.data.service_profile_id,
+  );
+  revalidatePath("/dashboard");
+  return triggerResult;
+}
+
+export async function runWatchlistDiscovery(
+  watchlistId: string,
+): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+
+  const normalizedId = watchlistId.trim();
+  if (!normalizedId) return actionError("This Watchlist is no longer available.");
+  const watchlist = await context.supabase
+    .from("watchlists")
+    .select("id, service_profile_id, is_active")
+    .eq("tenant_id", context.tenantId)
+    .eq("id", normalizedId)
+    .maybeSingle();
+  if (watchlist.error || !watchlist.data || !watchlist.data.is_active) {
+    return actionError("This Watchlist is not active in your workspace.");
+  }
+  const result = await postWatchlistDiscoveryTrigger(
+    context,
+    watchlist.data.id,
+    watchlist.data.service_profile_id,
+  );
+  if (result.ok) revalidatePath("/dashboard");
+  return result;
+}
+
+export async function setWatchlistActive(
+  watchlistId: string,
+  isActive: boolean,
+): Promise<ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+  const normalizedId = watchlistId.trim();
+  if (!normalizedId) return actionError("This Watchlist is no longer available.");
+
+  const result = await context.supabase
+    .from("watchlists")
+    .update({ is_active: isActive })
+    .eq("tenant_id", context.tenantId)
+    .eq("id", normalizedId)
+    .select("id")
+    .maybeSingle();
+  if (result.error || !result.data) {
+    return actionError("Could not update this Watchlist.");
+  }
+  revalidatePath("/dashboard");
+  return actionOk(isActive ? "Watchlist resumed." : "Watchlist paused.");
 }
 
 export async function retryServiceProfileEmbedding(

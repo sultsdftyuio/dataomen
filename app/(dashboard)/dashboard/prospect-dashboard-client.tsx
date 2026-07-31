@@ -28,6 +28,7 @@ import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
+import WatchlistsPanel from "./watchlists-panel";
 import {
   FEEDBACK_OPTIONS,
   type BuyerLanguageResearchRequestAction,
@@ -35,8 +36,12 @@ import {
   type BuyerDemandReportView,
   type CrawlJobView,
   type LeadFeedbackValue,
+  type ProspectActionResult,
   type QualifiedLeadView,
   type ServiceProfileView,
+  type WatchlistAction,
+  type WatchlistResultsView,
+  type WatchlistView,
 } from "./prospect-types";
 
 type ProspectDashboardClientProps = {
@@ -47,6 +52,14 @@ type ProspectDashboardClientProps = {
   buyerDemandReport: BuyerDemandReportView | null;
   buyerLanguageResearch: BuyerLanguageResearchView;
   requestBuyerLanguageResearch?: BuyerLanguageResearchRequestAction;
+  watchlists: WatchlistView[];
+  watchlistResults: WatchlistResultsView[];
+  createWatchlist: WatchlistAction;
+  runWatchlistDiscovery: (watchlistId: string) => Promise<ProspectActionResult>;
+  setWatchlistActive: (
+    watchlistId: string,
+    isActive: boolean,
+  ) => Promise<ProspectActionResult>;
   verifierThreshold: number;
   isWarmingUp: boolean;
 };
@@ -1111,6 +1124,11 @@ export default function ProspectDashboardClient({
   buyerDemandReport,
   buyerLanguageResearch,
   requestBuyerLanguageResearch,
+  watchlists,
+  watchlistResults,
+  createWatchlist,
+  runWatchlistDiscovery,
+  setWatchlistActive,
   verifierThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
@@ -1230,6 +1248,14 @@ export default function ProspectDashboardClient({
           </div>
         </div>
       </div>
+
+      <WatchlistsPanel
+        watchlists={watchlists}
+        results={watchlistResults}
+        createWatchlist={createWatchlist}
+        runWatchlistDiscovery={runWatchlistDiscovery}
+        setWatchlistActive={setWatchlistActive}
+      />
 
       <section id="action-queue" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

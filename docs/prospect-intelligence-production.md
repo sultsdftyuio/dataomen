@@ -9,6 +9,7 @@ Apply the database contracts in this order, using the normal production migratio
 3. `scripts/lead_match_qualification_guard.sql`
 4. `scripts/prospect_intelligence_contract.sql`
 5. `scripts/buyer_language_research_contract.sql`
+6. `scripts/watchlists_contract.sql`
 
 The final migration is additive and keeps buyer-language research separate from
 `lead_matches`. Do not enable its worker until it has completed successfully.
@@ -34,7 +35,46 @@ X is a bounded fallback only. Set `ARCLI_X_INGESTION_ENABLED=true` and one of
 `X_BEARER_TOKEN`, `TWITTER_BEARER_TOKEN`, or `ARCLI_X_BEARER_TOKEN` only after
 reviewing cost. The activation path permits at most one single-page fallback
 and observes the tenant quota. It is suppressed only after sufficiently varied
-plausible free-source coverage (default: two query types).
+plausible free-source coverage (default: three query types).
+
+## Customer Watchlists
+
+Watchlists let a workspace owner define a specific buyer group, its real-world
+problem, and the public sources to scan. They do not create a second tenant or
+copy the global source corpus: the worker first re-matches a bounded set of
+already embedded global public posts, then performs an HN-first source scan
+using natural buyer-language queries. Results live in the tenant-scoped
+`watchlist_matches` table and remain verifier-gated.
+
+The default Watchlist sources are Hacker News, Bluesky, Lemmy, Stack Exchange,
+and GitHub. X is off unless the user explicitly selects it and the deployment
+has its existing X credentials and enablement flag. Community names or URLs
+entered by users are retained as prioritization notes; this release does not
+claim to access private groups or unsupported communities.
+
+Configure the trusted Next.js-to-worker handoff in addition to the standard
+worker settings:
+
+```text
+# Optional explicit URL. Otherwise ARCLI_WORKER_API_URL,
+# PYTHON_BACKEND_URL, or INTERNAL_API_URL is used.
+ARCLI_WATCHLIST_TRIGGER_URL=https://api.example.com/api/watchlists/trigger
+
+# Bounded production defaults.
+ARCLI_WATCHLIST_GLOBAL_MATCH_LIMIT=100
+ARCLI_WATCHLIST_INITIAL_REMATCH_LIMIT=100
+ARCLI_WATCHLIST_DISCOVERY_TENANT_LIMIT=12
+ARCLI_WATCHLIST_DISCOVERY_TENANT_WINDOW_SECONDS=3600
+ARCLI_WATCHLIST_DISCOVERY_COOLOFF_SECONDS=300
+ARCLI_WATCHLIST_JOB_TIME_LIMIT_MS=180000
+```
+
+`ARCLI_MATCHING_SIMILARITY_THRESHOLD` now defaults to `0.24` to admit more
+buyer-language paraphrases to the verifier. It is a recall prefilter, not a
+qualification score; `LEAD_VERIFIER_SCORE_THRESHOLD` still controls Ready to
+act and `LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD` still controls review-only
+signals. Keep the verifier enabled and do not set a higher
+`ARCLI_VERIFIER_MIN_SIMILARITY_THRESHOLD` unless intentionally reducing recall.
 
 ## Optional buyer-language research
 
@@ -67,6 +107,11 @@ Useful controls include `ARCLI_BUYER_LANGUAGE_RESEARCH_QUERY_LIMIT`,
   global `source_posts` corpus.
 - A displayed research excerpt must be an exact substring of captured source
   text and have `evidence_status = 'accepted'`.
+- Watchlist source controls only reduce the enabled public-source set. They
+  cannot enable an operator-disabled connector, bypass the X fallback budget,
+  or access private groups.
+- Watchlist matches are read-only in the browser. A verifier-confirmed
+  review-only item cannot be promoted to the CRM from this surface.
 - Discovery telemetry is fail-open. It records operational hashes/aggregates,
   not raw source posts or event query text.
 - CRM webhook destinations must be public HTTPS in production.
