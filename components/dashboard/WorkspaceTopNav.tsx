@@ -1,6 +1,7 @@
 import React from "react";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
+import { C } from "@/lib/tokens";
 import { WorkspacePlanBadge } from "@/components/dashboard/WorkspacePlanBadge";
 
 export async function WorkspaceTopNav() {
@@ -26,8 +27,14 @@ export async function WorkspaceTopNav() {
     "Workspace";
 
   return (
-    <div className="flex items-center gap-2.5 border-l border-slate-200 pl-4 ml-2">
-      <span className="truncate max-w-[140px] sm:max-w-[200px] text-xs font-semibold text-slate-800">
+    <div
+      className="ml-2 flex items-center gap-2.5 border-l pl-4"
+      style={{ borderColor: C.rule }}
+    >
+      <span
+        className="max-w-[140px] truncate text-xs font-semibold sm:max-w-[200px]"
+        style={{ color: C.navy }}
+      >
         {workspaceName}
       </span>
       <WorkspacePlanBadge entitlements={entitlements} />

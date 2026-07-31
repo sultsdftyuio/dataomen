@@ -3,24 +3,20 @@ import { redirect } from "next/navigation";
 
 import {
   fetchBuyerDemandReport,
-  fetchBuyerLanguageResearch,
   fetchDiscoveryCandidates,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
-  fetchWatchlistResults,
-  fetchWatchlists,
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
-import { createWatchlist, requestBuyerLanguageResearch, runWatchlistDiscovery, setWatchlistActive } from "./actions";
 import ProspectDashboardClient from "./prospect-dashboard-client";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const metadata: Metadata = {
-  title: "Prospect Intelligence | Arcli",
-  description: "Review qualified prospect matches.",
+  title: "Overview | Arcli",
+  description: "Review evidence-backed prospect conversations and next steps.",
 };
 
 export const dynamic = "force-dynamic";
@@ -53,18 +49,18 @@ export default async function DashboardPage() {
     redirect("/onboarding/workspace");
   }
 
-  const [leads, discoveryCandidates, serviceProfile, crawlJob, watchlists] = await Promise.all([
+  const [leads, discoveryCandidates, serviceProfile, crawlJob] = await Promise.all([
     fetchQualifiedLeads(supabase, tenantId, threshold),
     fetchDiscoveryCandidates(supabase, tenantId),
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
-    fetchWatchlists(supabase, tenantId),
   ]);
-  const [buyerDemandReport, buyerLanguageResearch, watchlistResults] = await Promise.all([
-    fetchBuyerDemandReport(supabase, tenantId, serviceProfile.id, threshold),
-    fetchBuyerLanguageResearch(supabase, tenantId, serviceProfile.id),
-    fetchWatchlistResults(supabase, tenantId, watchlists, threshold),
-  ]);
+  const buyerDemandReport = await fetchBuyerDemandReport(
+    supabase,
+    tenantId,
+    serviceProfile.id,
+    threshold,
+  );
 
   return (
     <ProspectDashboardClient
@@ -73,13 +69,6 @@ export default async function DashboardPage() {
       leads={leads}
       discoveryCandidates={discoveryCandidates}
       buyerDemandReport={buyerDemandReport}
-      buyerLanguageResearch={buyerLanguageResearch}
-      requestBuyerLanguageResearch={requestBuyerLanguageResearch}
-      watchlists={watchlists}
-      watchlistResults={watchlistResults}
-      createWatchlist={createWatchlist}
-      runWatchlistDiscovery={runWatchlistDiscovery}
-      setWatchlistActive={setWatchlistActive}
       verifierThreshold={threshold}
       isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
     />

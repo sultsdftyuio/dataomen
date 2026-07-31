@@ -19,12 +19,12 @@ import type {
 } from "./prospect-types";
 
 const SOURCE_OPTIONS = [
-  { value: "hackernews", label: "Hacker News" },
-  { value: "bluesky", label: "Bluesky" },
-  { value: "lemmy", label: "Lemmy" },
-  { value: "stackexchange", label: "Stack Exchange" },
-  { value: "github", label: "GitHub" },
-  { value: "x", label: "X (fallback)" },
+  { value: "hackernews", label: "Hacker News", detail: "Founder and builder discussions" },
+  { value: "bluesky", label: "Bluesky", detail: "Public conversations and requests" },
+  { value: "lemmy", label: "Lemmy", detail: "Independent public communities" },
+  { value: "stackexchange", label: "Stack Exchange", detail: "Specific how-to problems" },
+  { value: "github", label: "GitHub", detail: "Open-source issues and discussions" },
+  { value: "x", label: "X (fallback)", detail: "Used only as a cost-controlled fallback" },
 ] as const;
 
 const DEFAULT_SOURCES = SOURCE_OPTIONS.filter((source) => source.value !== "x").map(
@@ -161,6 +161,7 @@ function WatchlistForm({
   const [suggestedPlaces, setSuggestedPlaces] = useState("");
   const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const toggleSource = (source: string) => {
     setSources((current) =>
@@ -172,7 +173,11 @@ function WatchlistForm({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (sources.length === 0) return;
+    if (sources.length === 0) {
+      setFormError("Choose at least one public source before starting a scan.");
+      return;
+    }
+    setFormError(null);
     const input: WatchlistCreateInput = {
       name,
       targetBuyer,
@@ -193,26 +198,42 @@ function WatchlistForm({
         setExcludeTerms("");
         setSuggestedPlaces("");
         setSources(DEFAULT_SOURCES);
+      } else {
+        setFormError(result.message);
       }
+    } catch {
+      setFormError("Could not save this buyer group. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4 rounded-md border p-4" style={{ borderColor: C.blueLight }}>
+    <form
+      onSubmit={submit}
+      className="space-y-5 rounded-lg border p-4 shadow-sm sm:p-5"
+      style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+    >
+      <div>
+        <p className="text-sm font-semibold" style={{ color: C.navy }}>
+          Describe the people and situation to watch
+        </p>
+        <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+          Write the problem in the words a real person might use when asking for help.
+        </p>
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
           Group name
-          <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} placeholder="Early-stage SaaS founders" />
+          <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} className="bg-white" placeholder="Early-stage SaaS founders" />
         </label>
         <label className="space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
           Who do you want to find?
-          <Input value={targetBuyer} onChange={(event) => setTargetBuyer(event.target.value)} required maxLength={500} placeholder="SaaS founders with small sales teams" />
+          <Input value={targetBuyer} onChange={(event) => setTargetBuyer(event.target.value)} required maxLength={500} className="bg-white" placeholder="SaaS founders with small sales teams" />
         </label>
       </div>
       <label className="block space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
-        What problem are they trying to solve?
+        What outcome or problem are they talking about?
         <Textarea value={problemToSolve} onChange={(event) => setProblemToSolve(event.target.value)} required maxLength={700} className="min-h-20 bg-white" placeholder="They need a dependable way to get more trial users without doing every outreach task by hand." />
       </label>
       <div className="grid gap-3 md:grid-cols-2">
@@ -229,11 +250,21 @@ function WatchlistForm({
         <legend className="text-sm font-medium" style={{ color: C.navy }}>
           Where should we look?
         </legend>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {SOURCE_OPTIONS.map((source) => (
-            <label key={source.value} className="flex items-center gap-2 text-sm" style={{ color: C.navySoft }}>
+            <label
+              key={source.value}
+              className="flex cursor-pointer items-start gap-2 rounded-md border bg-white p-3 text-sm transition-colors"
+              style={{
+                borderColor: sources.includes(source.value) ? C.blueLight : C.rule,
+                color: C.navySoft,
+              }}
+            >
               <Checkbox checked={sources.includes(source.value)} onCheckedChange={() => toggleSource(source.value)} />
-              {source.label}
+              <span>
+                <span className="block font-medium" style={{ color: C.navy }}>{source.label}</span>
+                <span className="mt-0.5 block text-xs leading-5" style={{ color: C.muted }}>{source.detail}</span>
+              </span>
             </label>
           ))}
         </div>
@@ -246,9 +277,14 @@ function WatchlistForm({
         We use your selected public sources now. Suggested places are saved for
         prioritization; private groups are never accessed without a supported integration.
       </p>
+      {formError ? (
+        <p role="alert" className="text-sm font-medium" style={{ color: C.red }}>
+          {formError}
+        </p>
+      ) : null}
       <Button type="submit" disabled={pending || isSubmitting || sources.length === 0} style={{ backgroundColor: C.blue, color: C.white }}>
         <Search className="size-4" />
-        {pending || isSubmitting ? "Saving…" : "Create and scan Watchlist"}
+        {pending || isSubmitting ? "Saving…" : "Save buyer group & start scan"}
       </Button>
     </form>
   );
@@ -283,18 +319,28 @@ export default function WatchlistsPanel({
   const run = (watchlistId: string) => {
     setPendingId(watchlistId);
     startTransition(async () => {
-      const result = await runWatchlistDiscovery(watchlistId);
-      setNotice(result.message);
-      setPendingId(null);
+      try {
+        const result = await runWatchlistDiscovery(watchlistId);
+        setNotice(result.message);
+      } catch {
+        setNotice("Could not start this scan. Please try again.");
+      } finally {
+        setPendingId(null);
+      }
     });
   };
 
   const setActive = (watchlistId: string, isActive: boolean) => {
     setPendingId(watchlistId);
     startTransition(async () => {
-      const result = await setWatchlistActive(watchlistId, isActive);
-      setNotice(result.message);
-      setPendingId(null);
+      try {
+        const result = await setWatchlistActive(watchlistId, isActive);
+        setNotice(result.message);
+      } catch {
+        setNotice("Could not update this buyer group. Please try again.");
+      } finally {
+        setPendingId(null);
+      }
     });
   };
 
@@ -302,13 +348,13 @@ export default function WatchlistsPanel({
     <section id="watchlists" className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-semibold" style={{ color: C.navy }}>
+          <h2 className="flex items-center gap-2 text-xl font-semibold" style={{ color: C.navy }}>
             <Users className="size-5" />
             Buyer Watchlists
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: C.muted }}>
             Define the buyer group and real-world problem you want to watch. Each
-            Watchlist has its own source choices and results, while your website
+            group has its own source choices and results, while your website
             profile remains the evidence for what you offer.
           </p>
         </div>

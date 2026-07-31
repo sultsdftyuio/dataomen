@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -28,7 +29,6 @@ import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { retryServiceProfileEmbedding, submitLeadFeedback } from "./actions";
-import WatchlistsPanel from "./watchlists-panel";
 import {
   FEEDBACK_OPTIONS,
   type BuyerLanguageResearchRequestAction,
@@ -36,12 +36,8 @@ import {
   type BuyerDemandReportView,
   type CrawlJobView,
   type LeadFeedbackValue,
-  type ProspectActionResult,
   type QualifiedLeadView,
   type ServiceProfileView,
-  type WatchlistAction,
-  type WatchlistResultsView,
-  type WatchlistView,
 } from "./prospect-types";
 
 type ProspectDashboardClientProps = {
@@ -50,16 +46,6 @@ type ProspectDashboardClientProps = {
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
-  buyerLanguageResearch: BuyerLanguageResearchView;
-  requestBuyerLanguageResearch?: BuyerLanguageResearchRequestAction;
-  watchlists: WatchlistView[];
-  watchlistResults: WatchlistResultsView[];
-  createWatchlist: WatchlistAction;
-  runWatchlistDiscovery: (watchlistId: string) => Promise<ProspectActionResult>;
-  setWatchlistActive: (
-    watchlistId: string,
-    isActive: boolean,
-  ) => Promise<ProspectActionResult>;
   verifierThreshold: number;
   isWarmingUp: boolean;
 };
@@ -815,7 +801,7 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
   );
 }
 
-function BuyerDemandPatterns({
+export function BuyerDemandPatterns({
   report,
 }: {
   report: BuyerDemandReportView;
@@ -857,7 +843,7 @@ function BuyerDemandPatterns({
  * displayed phrase has already passed a literal source-text grounding check
  * on the server.
  */
-function BuyerLanguageResearch({
+export function BuyerLanguageResearch({
   research,
   requestBuyerLanguageResearch,
 }: {
@@ -1122,13 +1108,6 @@ export default function ProspectDashboardClient({
   leads,
   discoveryCandidates,
   buyerDemandReport,
-  buyerLanguageResearch,
-  requestBuyerLanguageResearch,
-  watchlists,
-  watchlistResults,
-  createWatchlist,
-  runWatchlistDiscovery,
-  setWatchlistActive,
   verifierThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
@@ -1211,24 +1190,31 @@ export default function ProspectDashboardClient({
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6" style={{ color: C.text }}>
-      <div className="flex flex-col gap-2 border-b pb-5" style={{ borderColor: C.rule }}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <section
+        className="overflow-hidden rounded-xl border shadow-sm"
+        style={{ borderColor: C.navyMid, backgroundColor: C.navy }}
+      >
+        <div className="grid gap-6 px-5 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
-            <h1 className="text-2xl font-semibold" style={{ color: C.navy }}>
-              Action queue
+            <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: C.blueLight }}>
+              Prospect workspace
+            </p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+              Make the next buyer conversation count.
             </h1>
-            <p className="mt-1 text-sm" style={{ color: C.muted }}>
-              Evidence-backed conversations, ordered for a thoughtful next step.
+            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.faint }}>
+              Review only the public conversations with evidence of a real problem,
+              then use buyer groups and research to make the next scan more useful.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 lg:justify-end">
             <Badge
               variant="outline"
               className="rounded-md px-3 py-1"
               style={{
-                borderColor: C.green,
-                backgroundColor: C.greenPale,
-                color: C.green,
+                borderColor: C.blueLight,
+                backgroundColor: C.navyMid,
+                color: C.white,
               }}
             >
               <ShieldCheck className="size-3" />
@@ -1238,24 +1224,44 @@ export default function ProspectDashboardClient({
               variant="outline"
               className="rounded-md px-3 py-1"
               style={{
-                borderColor: C.ruleDark,
-                backgroundColor: C.white,
-                color: C.navySoft,
+                borderColor: C.navySoft,
+                backgroundColor: C.navyMid,
+                color: C.faint,
               }}
             >
               Verifier threshold {formatScore(verifierThreshold)}
             </Badge>
           </div>
         </div>
-      </div>
-
-      <WatchlistsPanel
-        watchlists={watchlists}
-        results={watchlistResults}
-        createWatchlist={createWatchlist}
-        runWatchlistDiscovery={runWatchlistDiscovery}
-        setWatchlistActive={setWatchlistActive}
-      />
+        <div
+          className="grid border-t sm:grid-cols-3"
+          style={{ borderColor: C.navyMid }}
+        >
+          <Link
+            href="#action-queue"
+            className="group border-b px-5 py-4 transition-colors hover:bg-white/5 sm:border-b-0 sm:border-r"
+            style={{ borderColor: C.navyMid }}
+          >
+            <span className="text-2xl font-semibold text-white">{leads.length}</span>
+            <span className="ml-2 text-sm" style={{ color: C.faint }}>ready to act</span>
+          </Link>
+          <Link
+            href={discoveryCandidates.length > 0 ? "#watch" : "/dashboard/watchlists"}
+            className="group border-b px-5 py-4 transition-colors hover:bg-white/5 sm:border-b-0 sm:border-r"
+            style={{ borderColor: C.navyMid }}
+          >
+            <span className="text-2xl font-semibold text-white">{discoveryCandidates.length}</span>
+            <span className="ml-2 text-sm" style={{ color: C.faint }}>review signals</span>
+          </Link>
+          <Link
+            href="/dashboard/watchlists"
+            className="group px-5 py-4 transition-colors hover:bg-white/5"
+          >
+            <span className="text-sm font-semibold" style={{ color: C.blueLight }}>Refine your scan</span>
+            <span className="ml-2 text-sm" style={{ color: C.faint }}>Buyer groups</span>
+          </Link>
+        </div>
+      </section>
 
       <section id="action-queue" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1376,14 +1382,6 @@ export default function ProspectDashboardClient({
         </section>
       ) : null}
 
-      {buyerDemandReport?.isTerminal ? (
-        <BuyerDemandPatterns report={buyerDemandReport} />
-      ) : null}
-
-      <BuyerLanguageResearch
-        research={buyerLanguageResearch}
-        requestBuyerLanguageResearch={requestBuyerLanguageResearch}
-      />
     </div>
   );
 }
