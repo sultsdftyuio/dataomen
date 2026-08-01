@@ -46,9 +46,7 @@ export default async function MatchingBriefPage() {
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        eyebrow="Your guide"
         title="Your buyers"
-        description="Start with your website, then add the buyer, their real-world problem, and the events that make a solution feel urgent."
         icon={Target}
         visual={
           <div>

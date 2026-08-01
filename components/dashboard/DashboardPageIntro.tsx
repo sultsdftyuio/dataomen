@@ -4,9 +4,9 @@ import type { LucideIcon } from "lucide-react";
 import { C } from "@/lib/tokens";
 
 type DashboardPageIntroProps = {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
-  description: string;
+  description?: string;
   icon: LucideIcon;
   visual?: ReactNode;
 };
@@ -28,23 +28,27 @@ export function DashboardPageIntro({
       aria-labelledby="dashboard-page-title"
     >
       <div>
-        <p
-          className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em]"
-          style={{ color: C.blue }}
-        >
-          <Icon className="size-3.5" aria-hidden="true" />
-          {eyebrow}
-        </p>
+        {eyebrow ? (
+          <p
+            className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em]"
+            style={{ color: C.blue }}
+          >
+            <Icon className="size-3.5" aria-hidden="true" />
+            {eyebrow}
+          </p>
+        ) : null}
         <h1
           id="dashboard-page-title"
-          className="pfd mt-2 text-2xl font-semibold sm:text-[28px]"
+          className={`pfd text-2xl font-semibold sm:text-[28px] ${eyebrow ? "mt-2" : ""}`}
           style={{ color: C.navy, lineHeight: 1.08, letterSpacing: "-0.015em" }}
         >
           {title}
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
-          {description}
-        </p>
+        {description ? (
+          <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+            {description}
+          </p>
+        ) : null}
       </div>
 
       {visual ? <div>{visual}</div> : null}

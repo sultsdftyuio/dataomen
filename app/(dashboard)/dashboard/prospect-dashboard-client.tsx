@@ -1419,9 +1419,6 @@ export default function ProspectDashboardClient({
           <h1 className="pfd text-xl font-semibold tracking-tight" style={{ color: C.navy }}>
             Prospect desk
           </h1>
-          <span className="hidden text-sm sm:inline" style={{ color: C.muted }}>
-            Review real conversations, then decide what deserves your time.
-          </span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Badge

@@ -40,9 +40,6 @@ export default function SettingsClient({
         <h1 className="text-lg font-semibold tracking-tight">
           Workspace
         </h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Manage your company profile, core Arcli configuration, and billing.
-        </p>
       </div>
 
       <hr className="border-border" />

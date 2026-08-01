@@ -60,9 +60,7 @@ export default async function ResearchPage() {
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        eyebrow="Buyer phrases"
         title="Buyer words"
-        description="Use accepted public evidence to sharpen your wording. These are insights for your matching brief, not a second lead queue."
         icon={MessageSquareText}
         visual={
           <div>
