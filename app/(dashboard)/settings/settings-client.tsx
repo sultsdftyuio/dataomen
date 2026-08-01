@@ -35,12 +35,12 @@ export default function SettingsClient({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-12">
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1 pb-3">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Workspace Settings
+        <h1 className="text-lg font-semibold tracking-tight">
+          Workspace
         </h1>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1 text-xs text-muted-foreground">
           Manage your company profile, core Arcli configuration, and billing.
         </p>
       </div>

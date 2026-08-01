@@ -211,50 +211,50 @@ function WatchlistForm({
   return (
     <form
       onSubmit={submit}
-      className="space-y-5 rounded-lg border p-4 shadow-sm sm:p-5"
+      className="space-y-3 rounded-md border p-3 shadow-sm"
       style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
     >
       <div>
-        <p className="text-sm font-semibold" style={{ color: C.navy }}>
-          Describe the people and situation to watch
+        <p className="text-xs font-semibold" style={{ color: C.navy }}>
+          Who to find
         </p>
-        <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+        <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
           Write the problem in the words a real person might use when asking for help.
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
+      <div className="grid gap-2 md:grid-cols-2">
+        <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
           Group name
-          <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} className="bg-white" placeholder="Early-stage SaaS founders" />
+          <Input value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} className="h-8 bg-white px-2.5 text-xs" placeholder="Early-stage SaaS founders" />
         </label>
-        <label className="space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
+        <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
           Who do you want to find?
-          <Input value={targetBuyer} onChange={(event) => setTargetBuyer(event.target.value)} required maxLength={500} className="bg-white" placeholder="SaaS founders with small sales teams" />
+          <Input value={targetBuyer} onChange={(event) => setTargetBuyer(event.target.value)} required maxLength={500} className="h-8 bg-white px-2.5 text-xs" placeholder="SaaS founders with small sales teams" />
         </label>
       </div>
-      <label className="block space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
+      <label className="block space-y-1 text-xs font-medium" style={{ color: C.navy }}>
         What outcome or problem are they talking about?
-        <Textarea value={problemToSolve} onChange={(event) => setProblemToSolve(event.target.value)} required maxLength={700} className="min-h-20 bg-white" placeholder="They need a dependable way to get more trial users without doing every outreach task by hand." />
+        <Textarea value={problemToSolve} onChange={(event) => setProblemToSolve(event.target.value)} required maxLength={700} className="min-h-16 bg-white p-2 text-xs" placeholder="They need a dependable way to get more trial users without doing every outreach task by hand." />
       </label>
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
+      <div className="grid gap-2 md:grid-cols-2">
+        <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
           Words people might use (optional)
-          <Textarea value={includeTerms} onChange={(event) => setIncludeTerms(event.target.value)} className="min-h-20 bg-white" placeholder="new trial signups dropped&#10;how are founders finding users" />
+          <Textarea value={includeTerms} onChange={(event) => setIncludeTerms(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="new trial signups dropped&#10;how are founders finding users" />
         </label>
-        <label className="space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
+        <label className="space-y-1 text-xs font-medium" style={{ color: C.navy }}>
           Exclude conversations about (optional)
-          <Textarea value={excludeTerms} onChange={(event) => setExcludeTerms(event.target.value)} className="min-h-20 bg-white" placeholder="job hunting&#10;consumer coupon codes" />
+          <Textarea value={excludeTerms} onChange={(event) => setExcludeTerms(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="job hunting&#10;consumer coupon codes" />
         </label>
       </div>
       <fieldset>
-        <legend className="text-sm font-medium" style={{ color: C.navy }}>
-          Where should we look?
+        <legend className="text-xs font-medium" style={{ color: C.navy }}>
+          Pick sources
         </legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {SOURCE_OPTIONS.map((source) => (
             <label
               key={source.value}
-              className="flex cursor-pointer items-start gap-2 rounded-md border bg-white p-3 text-sm transition-colors"
+              className="flex cursor-pointer items-start gap-2 rounded-md border bg-white p-2 text-xs transition-colors"
               style={{
                 borderColor: sources.includes(source.value) ? C.blueLight : C.rule,
                 color: C.navySoft,
@@ -263,27 +263,27 @@ function WatchlistForm({
               <Checkbox checked={sources.includes(source.value)} onCheckedChange={() => toggleSource(source.value)} />
               <span>
                 <span className="block font-medium" style={{ color: C.navy }}>{source.label}</span>
-                <span className="mt-0.5 block text-xs leading-5" style={{ color: C.muted }}>{source.detail}</span>
+                <span className="mt-0.5 block text-[10px] leading-4" style={{ color: C.muted }}>{source.detail}</span>
               </span>
             </label>
           ))}
         </div>
       </fieldset>
-      <label className="block space-y-1.5 text-sm font-medium" style={{ color: C.navy }}>
+      <label className="block space-y-1 text-xs font-medium" style={{ color: C.navy }}>
         Public communities or places to prioritize (optional)
-        <Textarea value={suggestedPlaces} onChange={(event) => setSuggestedPlaces(event.target.value)} className="min-h-20 bg-white" placeholder="Indie Hackers growth discussions&#10;a public founder community URL" />
+        <Textarea value={suggestedPlaces} onChange={(event) => setSuggestedPlaces(event.target.value)} className="min-h-16 bg-white p-2 text-xs" placeholder="Indie Hackers growth discussions&#10;a public founder community URL" />
       </label>
       <p className="text-xs leading-5" style={{ color: C.muted }}>
         We use your selected public sources now. Suggested places are saved for
         prioritization; private groups are never accessed without a supported integration.
       </p>
       {formError ? (
-        <p role="alert" className="text-sm font-medium" style={{ color: C.red }}>
+        <p role="alert" className="text-xs font-medium" style={{ color: C.red }}>
           {formError}
         </p>
       ) : null}
-      <Button type="submit" disabled={pending || isSubmitting || sources.length === 0} style={{ backgroundColor: C.blue, color: C.white }}>
-        <Search className="size-4" />
+      <Button type="submit" disabled={pending || isSubmitting || sources.length === 0} className="h-8 px-2.5 text-xs" style={{ backgroundColor: C.blue, color: C.white }}>
+        <Search className="size-3.5" />
         {pending || isSubmitting ? "Saving…" : "Save buyer group & start scan"}
       </Button>
     </form>
@@ -345,51 +345,51 @@ export default function WatchlistsPanel({
   };
 
   return (
-    <section id="watchlists" className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section id="watchlists" className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-semibold" style={{ color: C.navy }}>
-            <Users className="size-5" />
+          <h2 className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: C.navy }}>
+            <Users className="size-3.5" />
             Your buyer groups
           </h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: C.muted }}>
+          <p className="mt-1 max-w-3xl text-xs leading-5" style={{ color: C.muted }}>
             Define the buyer group and real-world problem you want to watch. Each
             group has its own source choices and results, while your website
             profile remains the evidence for what you offer.
           </p>
         </div>
-        <Button type="button" size="sm" variant="outline" onClick={() => setShowForm((current) => !current)} style={{ borderColor: C.blueLight, color: C.blue }}>
-          <Plus className="size-4" />
+        <Button type="button" size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => setShowForm((current) => !current)} style={{ borderColor: C.blueLight, color: C.blue }}>
+          <Plus className="size-3.5" />
           {showForm ? "Close" : "New buyer group"}
         </Button>
       </div>
       {showForm ? <WatchlistForm onCreate={create} pending={isPending} /> : null}
-      {notice ? <p role="status" className="text-sm" style={{ color: C.navySoft }}>{notice}</p> : null}
+      {notice ? <p role="status" className="text-xs" style={{ color: C.navySoft }}>{notice}</p> : null}
       {watchlists.length === 0 && !showForm ? (
-        <Card className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
-          <CardContent className="p-4 text-sm leading-6" style={{ color: C.navySoft }}>
+        <Card className="rounded-md shadow-sm" style={{ borderColor: C.rule }}>
+          <CardContent className="p-3 text-xs leading-5" style={{ color: C.navySoft }}>
             Add a buyer group to focus on one audience instead of relying only on a broad product-wide scan.
           </CardContent>
         </Card>
       ) : null}
-      <div className="grid gap-4">
+      <div className="grid gap-3">
         {watchlists.map((watchlist) => {
           const lastScan = formatDate(watchlist.lastScanAt);
           const busy = isPending && pendingId === watchlist.id;
           return (
-            <Card key={watchlist.id} className="rounded-lg shadow-sm" style={{ borderColor: watchlist.isActive ? C.rule : C.ruleDark }}>
-              <CardHeader className="gap-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+            <Card key={watchlist.id} className="rounded-md shadow-sm" style={{ borderColor: watchlist.isActive ? C.rule : C.ruleDark }}>
+              <CardHeader className="gap-2 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <CardTitle className="text-base" style={{ color: C.navy }}>{watchlist.name}</CardTitle>
-                    <p className="mt-1 text-sm leading-6" style={{ color: C.navySoft }}>
+                    <CardTitle className="text-xs font-semibold" style={{ color: C.navy }}>{watchlist.name}</CardTitle>
+                    <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
                       <span className="font-medium">Looking for:</span> {watchlist.targetBuyer}
                       <br />
                       <span className="font-medium">Who need:</span> {watchlist.problemToSolve}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline" className="rounded-md" style={{ borderColor: watchlist.isActive ? C.green : C.ruleDark, color: watchlist.isActive ? C.green : C.muted }}>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Badge variant="outline" className="h-5 rounded px-1.5 text-[10px]" style={{ borderColor: watchlist.isActive ? C.green : C.ruleDark, color: watchlist.isActive ? C.green : C.muted }}>
                       <Radar className="size-3" />
                       {watchlist.isActive ? scanLabel(watchlist.scanStatus) : "Paused"}
                     </Badge>
@@ -397,30 +397,30 @@ export default function WatchlistsPanel({
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
+              <CardContent className="space-y-3 p-3 pt-0">
+                <div className="flex flex-wrap gap-1.5">
                   {watchlist.sourcePreferences.map((source) => (
-                    <Badge key={source} variant="outline" className="rounded-md" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
+                    <Badge key={source} variant="outline" className="h-5 rounded px-1.5 text-[10px]" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
                       {sourceLabel(source)}
                     </Badge>
                   ))}
                 </div>
-                {watchlist.lastScanError ? <p className="text-sm" style={{ color: C.red }}>{watchlist.lastScanError}</p> : null}
+                {watchlist.lastScanError ? <p className="text-xs" style={{ color: C.red }}>{watchlist.lastScanError}</p> : null}
                 <WatchlistResultCards result={resultByWatchlist.get(watchlist.id)} />
-                <div className="flex flex-wrap gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
+                <div className="flex flex-wrap gap-2 border-t pt-2" style={{ borderColor: C.rule }}>
                   {watchlist.isActive ? (
                     <>
-                      <Button type="button" size="sm" disabled={busy} onClick={() => run(watchlist.id)} style={{ backgroundColor: C.blue, color: C.white }}>
-                        <Search className="size-4" />
+                      <Button type="button" size="sm" className="h-8 px-2.5 text-xs" disabled={busy} onClick={() => run(watchlist.id)} style={{ backgroundColor: C.blue, color: C.white }}>
+                        <Search className="size-3.5" />
                         {busy ? "Starting…" : "Scan now"}
                       </Button>
-                      <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setActive(watchlist.id, false)} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
-                        <Pause className="size-4" /> Pause
+                      <Button type="button" size="sm" variant="outline" className="h-8 px-2.5 text-xs" disabled={busy} onClick={() => setActive(watchlist.id, false)} style={{ borderColor: C.ruleDark, color: C.navySoft }}>
+                        <Pause className="size-3.5" /> Pause
                       </Button>
                     </>
                   ) : (
-                    <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setActive(watchlist.id, true)} style={{ borderColor: C.blueLight, color: C.blue }}>
-                      <Play className="size-4" /> Resume
+                    <Button type="button" size="sm" variant="outline" className="h-8 px-2.5 text-xs" disabled={busy} onClick={() => setActive(watchlist.id, true)} style={{ borderColor: C.blueLight, color: C.blue }}>
+                      <Play className="size-3.5" /> Resume
                     </Button>
                   )}
                 </div>

@@ -56,28 +56,28 @@ export default async function WatchlistsPage() {
   ).size;
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        eyebrow="Focused discovery"
-        title="Find the people most likely to need your help."
+        eyebrow="Focused search"
+        title="Buyer groups"
         description="Give each audience its own problem statement, natural wording, and public sources. Your product brief stays intact while every buyer group becomes more specific."
         icon={UsersRound}
         visual={
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
-              Discovery coverage
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+              Your coverage
             </p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
-                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{activeWatchlistCount}</p>
-                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Active buyer groups</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
+                <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{activeWatchlistCount}</p>
+                <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Active groups</p>
               </div>
-              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
-                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{sourceCount}</p>
-                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Selected sources</p>
+              <div className="rounded-md border p-2.5" style={{ borderColor: C.rule }}>
+                <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>{sourceCount}</p>
+                <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Sources picked</p>
               </div>
             </div>
-            <p className="mt-4 border-t pt-4 text-sm leading-6" style={{ borderColor: C.rule, color: C.muted }}>
+            <p className="mt-2 border-t pt-2 text-[10px] leading-4" style={{ borderColor: C.rule, color: C.muted }}>
               New groups start with public sources. X remains an optional,
               cost-controlled fallback.
             </p>
@@ -85,34 +85,34 @@ export default async function WatchlistsPage() {
         }
       />
 
-      <section aria-label="How buyer groups work" className="grid gap-3 md:grid-cols-3">
+      <section aria-label="Buyer group tips" className="grid gap-3 md:grid-cols-3">
         {[
           {
             icon: CircleCheck,
-            title: "Describe a real situation",
+            title: "Real situations",
             detail: "Use the outcome people want and the frustration they would actually describe.",
           },
           {
             icon: Globe2,
-            title: "Choose public sources",
+            title: "Pick sources",
             detail: "Select the sources worth checking now; suggested communities are saved for prioritization.",
           },
           {
             icon: Radar,
-            title: "Review the evidence",
+            title: "Check evidence",
             detail: "Only verifier-confirmed matches become ready to review. Plausible signals stay review-only.",
           },
         ].map(({ icon: Icon, title, detail }) => (
           <div
             key={title}
-            className="rounded-lg border bg-white p-4 shadow-sm"
+            className="rounded-md border bg-white p-3 shadow-sm"
             style={{ borderColor: C.rule }}
           >
-            <Icon className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-            <h2 className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>
+            <Icon className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+            <h2 className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
               {title}
             </h2>
-            <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+            <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
               {detail}
             </p>
           </div>

@@ -17,7 +17,6 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import {
   Card,
   CardContent,
@@ -203,6 +202,7 @@ function LeadFeedbackButtons({
               variant="outline"
               disabled={disabled}
               onClick={() => onFeedback(leadId, option.value)}
+              className="h-7 px-2 text-[11px]"
               style={{
                 borderColor: isGoodFit
                   ? C.green
@@ -656,6 +656,191 @@ function LeadCard({
   );
 }
 
+function DenseQueueRow({
+  lead,
+  selected,
+  onSelect,
+}: {
+  lead: QualifiedLeadView;
+  selected: boolean;
+  onSelect: (leadId: string) => void;
+}) {
+  const isWatch = lead.matchStatus === "discovery_candidate";
+  const source = sourceDisplayName(lead.sourcePost.source);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(lead.id)}
+      aria-pressed={selected}
+      className="w-full border-b px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
+      style={{
+        borderColor: C.rule,
+        backgroundColor: selected ? C.blueTint : C.white,
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[11px] font-semibold" style={{ color: C.navySoft }}>
+          {source}
+          {lead.sourcePost.community ? ` · ${lead.sourcePost.community}` : ""}
+        </span>
+        <span
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+          style={{
+            backgroundColor: isWatch ? C.amberPale : C.greenPale,
+            color: isWatch ? C.amber : C.green,
+          }}
+        >
+          {isWatch ? "Review" : "Ready"}
+        </span>
+      </div>
+      <p className="mt-1 truncate text-xs font-semibold" style={{ color: C.navy }}>
+        {lead.sourcePost.title}
+      </p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-[11px]" style={{ color: C.muted }}>
+          {lead.painDetected || lead.matchReason}
+        </p>
+        <span className="shrink-0 text-[10px] font-semibold" style={{ color: C.blue }}>
+          {formatScore(lead.verifierScore)}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function DenseLeadDetails({
+  lead,
+  feedbackPending,
+  qualificationPending,
+  feedbackMessage,
+  qualificationMessage,
+  onFeedback,
+  onQualify,
+}: {
+  lead: QualifiedLeadView;
+  feedbackPending: boolean;
+  qualificationPending: boolean;
+  feedbackMessage: FeedbackNotice | null;
+  qualificationMessage: string | null;
+  onFeedback: (leadId: string, value: LeadFeedbackValue) => void;
+  onQualify: (leadId: string) => void;
+}) {
+  const isWatch = lead.matchStatus === "discovery_candidate";
+  const postedAt = formatDate(lead.sourcePost.publishedAt);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="border-b px-3 py-2.5" style={{ borderColor: C.rule }}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold" style={{ color: C.navySoft }}>
+            {sourceDisplayName(lead.sourcePost.source)}
+            {lead.sourcePost.community ? ` · ${lead.sourcePost.community}` : ""}
+          </span>
+          <Badge
+            variant="outline"
+            className="h-5 rounded px-1.5 text-[10px]"
+            style={{
+              borderColor: isWatch ? C.amber : C.green,
+              backgroundColor: isWatch ? C.amberPale : C.greenPale,
+              color: isWatch ? C.amber : C.green,
+            }}
+          >
+            {isWatch ? "Review" : "Ready"}
+          </Badge>
+        </div>
+        <h3 className="mt-1 text-sm font-semibold leading-5" style={{ color: C.navy }}>
+          {lead.sourcePost.title}
+        </h3>
+        <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
+          Verifier {formatScore(lead.verifierScore)}
+          {lead.similarityScore !== null ? ` · Similarity ${formatScore(lead.similarityScore)}` : ""}
+          {postedAt ? ` · Posted ${postedAt}` : ""}
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="rounded-md border border-l-[3px] bg-white p-2.5" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
+              Their need
+            </p>
+            <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
+              {lead.painDetected}
+            </p>
+          </div>
+          <div className="rounded-md border border-l-[3px] bg-white p-2.5" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
+              Why it fits
+            </p>
+            <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
+              {lead.matchReason}
+            </p>
+          </div>
+        </div>
+
+        {lead.urgencyReason ? (
+          <div className="rounded-md border border-l-[3px] bg-white p-2.5" style={{ borderColor: C.rule, borderLeftColor: C.red }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.red }}>
+              Why now
+            </p>
+            <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
+              “{lead.urgencyReason}”
+            </p>
+          </div>
+        ) : null}
+
+        <div className="rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
+              Original words
+            </p>
+            {lead.sourcePost.author ? (
+              <span className="text-[10px]" style={{ color: C.muted }}>{lead.sourcePost.author}</span>
+            ) : null}
+          </div>
+          {lead.evidenceExcerpt ? (
+            <blockquote className="mt-2 border-l-2 pl-2 text-xs italic leading-5" style={{ borderColor: C.blueLight, color: C.navy }}>
+              “{lead.evidenceExcerpt}”
+            </blockquote>
+          ) : null}
+          <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-5" style={{ color: C.navySoft }}>
+            {lead.sourcePost.text}
+          </p>
+        </div>
+
+        <LeadOutreach
+          lead={lead}
+          disabled={qualificationPending}
+          qualificationMessage={qualificationMessage}
+          onQualify={onQualify}
+          reviewOnly={isWatch}
+        />
+
+        <div className="border-t pt-3" style={{ borderColor: C.rule }}>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+            Your view
+          </p>
+          <LeadFeedbackButtons
+            leadId={lead.id}
+            disabled={feedbackPending}
+            onFeedback={onFeedback}
+          />
+          {feedbackMessage ? (
+            <p
+              className="mt-2 text-[11px] font-medium"
+              role={feedbackMessage.ok ? "status" : "alert"}
+              style={{ color: feedbackMessage.ok ? C.green : C.red }}
+            >
+              {feedbackMessage.message}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function humanizeRunValue(value: string) {
   return value.trim().replace(/[_-]+/g, " ");
 }
@@ -816,21 +1001,21 @@ export function BuyerDemandPatterns({
   if (report.marketPatterns.length === 0) return null;
 
   return (
-    <section aria-labelledby="buyer-demand-patterns" className="space-y-3">
+    <section aria-labelledby="buyer-demand-patterns" className="space-y-2">
       <div>
-        <h2 id="buyer-demand-patterns" className="text-lg font-semibold" style={{ color: C.navy }}>
-          Recurring buyer themes
+        <h2 id="buyer-demand-patterns" className="text-xs font-semibold" style={{ color: C.navy }}>
+          Buyer themes
         </h2>
-        <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+        <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
           Shown only when the same verifier-confirmed theme appears in at least
           two ready-to-act matches in this workspace.
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-2 md:grid-cols-3">
         {report.marketPatterns.map((pattern) => (
-          <Card key={pattern.label} className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
-            <CardContent className="space-y-2 p-4">
-              <p className="text-sm font-medium leading-6" style={{ color: C.navy }}>
+          <Card key={pattern.label} className="rounded-md shadow-sm" style={{ borderColor: C.rule }}>
+            <CardContent className="space-y-1.5 p-3">
+              <p className="text-xs font-medium leading-5" style={{ color: C.navy }}>
                 {pattern.label}
               </p>
               <p className="text-xs" style={{ color: C.muted }}>
@@ -884,13 +1069,13 @@ export function BuyerLanguageResearch({
   };
 
   return (
-    <section id="buyer-language-research" className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section id="buyer-language-research" className="space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
-            Buyer-language research
+          <h2 className="text-xs font-semibold" style={{ color: C.navy }}>
+            Buyer words
           </h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: C.muted }}>
+          <p className="mt-1 max-w-3xl text-xs leading-5" style={{ color: C.muted }}>
             Exact phrases from accepted, source-grounded public evidence in this
             workspace. This is research for refining your matching brief — not
             an opportunity queue, and it cannot be qualified or sent to your CRM.
@@ -898,7 +1083,7 @@ export function BuyerLanguageResearch({
         </div>
         <Badge
           variant="outline"
-          className="rounded-md"
+          className="h-6 rounded px-1.5 text-[10px]"
           style={{
             borderColor: C.blueLight,
             backgroundColor: C.blueTint,
@@ -911,17 +1096,17 @@ export function BuyerLanguageResearch({
       </div>
 
       {research.evidence.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid max-h-[360px] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
           {research.evidence.map((item) => {
             const capturedAt = formatDate(item.capturedAt);
 
             return (
               <Card
                 key={item.id}
-                className="rounded-lg shadow-sm"
+                className="rounded-md shadow-sm"
                 style={{ borderColor: C.rule }}
               >
-                <CardContent className="space-y-3 p-4">
+                <CardContent className="space-y-2 p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-bold uppercase" style={{ color: C.navySoft }}>
                       {sourceDisplayName(item.source)}
@@ -933,7 +1118,7 @@ export function BuyerLanguageResearch({
                     ) : null}
                   </div>
                   <blockquote
-                    className="border-l-2 pl-3 text-sm italic leading-6"
+                    className="border-l-2 pl-2 text-xs italic leading-5"
                     style={{ borderColor: C.blueLight, color: C.navy }}
                   >
                     “{item.excerpt}”
@@ -947,6 +1132,7 @@ export function BuyerLanguageResearch({
                         asChild
                         size="sm"
                         variant="outline"
+                        className="h-7 px-2 text-[11px]"
                         style={{
                           borderColor: C.blueLight,
                           backgroundColor: C.white,
@@ -958,7 +1144,7 @@ export function BuyerLanguageResearch({
                           target="_blank"
                           rel="noopener noreferrer"
                         >
-                          <ExternalLink className="size-4" />
+                          <ExternalLink className="size-3.5" />
                           View source
                         </a>
                       </Button>
@@ -970,9 +1156,9 @@ export function BuyerLanguageResearch({
           })}
         </div>
       ) : (
-        <Card className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
-          <CardContent className="space-y-3 p-4">
-            <p className="text-sm leading-6" style={{ color: C.navySoft }}>
+        <Card className="rounded-md shadow-sm" style={{ borderColor: C.rule }}>
+          <CardContent className="space-y-2 p-3">
+            <p className="text-xs leading-5" style={{ color: C.navySoft }}>
               {research.availability === "available"
                 ? "No accepted, source-grounded buyer-language evidence has been collected yet."
                 : "Buyer-language research will appear after the optional evidence store is enabled and accepted evidence is recorded."}
@@ -987,26 +1173,28 @@ export function BuyerLanguageResearch({
                   variant="outline"
                   disabled={isRequestPending}
                   onClick={requestResearch}
+                  className="h-7 px-2 text-[11px]"
                   style={{
                     borderColor: C.blueLight,
                     backgroundColor: C.white,
                     color: C.blue,
                   }}
                 >
-                  {isRequestPending ? "Starting research…" : "Start buyer-language research"}
+                  {isRequestPending ? "Starting…" : "Find more words"}
                 </Button>
               ) : null}
               <Button
                 asChild
                 size="sm"
                 variant="outline"
+                className="h-7 px-2 text-[11px]"
                 style={{
                   borderColor: C.ruleDark,
                   backgroundColor: C.white,
                   color: C.navySoft,
                 }}
               >
-                <a href="/settings">Review matching brief</a>
+                <a href="/settings">Edit brief</a>
               </Button>
             </div>
             {requestMessage ? (
@@ -1195,227 +1383,177 @@ export default function ProspectDashboardClient({
     });
   };
 
+  const queueItems = useMemo(
+    () => [...leads, ...discoveryCandidates],
+    [discoveryCandidates, leads],
+  );
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(
+    queueItems[0]?.id ?? null,
+  );
+
+  useEffect(() => {
+    if (queueItems.length === 0) {
+      setSelectedLeadId(null);
+      return;
+    }
+
+    if (!queueItems.some((lead) => lead.id === selectedLeadId)) {
+      setSelectedLeadId(queueItems[0].id);
+    }
+  }, [queueItems, selectedLeadId]);
+
+  const selectedLead =
+    queueItems.find((lead) => lead.id === selectedLeadId) ?? null;
+  const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
+
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8" style={{ color: C.text }}>
-      <DashboardPageIntro
-        eyebrow="Prospect review"
-        title="Know who to look at, and why now."
-        description="Review public conversations with evidence of a real problem. Keep your attention on the people most likely to benefit from what you offer."
-        icon={Radar}
-        visual={
-          <div>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
-                  Your review queue
-                </p>
-                <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
-                  Evidence before action
-                </p>
-              </div>
-              <Badge
-                variant="outline"
-                className="rounded-md"
-                style={{
-                  borderColor: C.blueLight,
-                  backgroundColor: C.blueTint,
-                  color: C.blue,
-                }}
-              >
-                Profile {serviceProfile.status ?? "approved"}
-              </Badge>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
-                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{leads.length}</p>
-                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Ready to act</p>
-              </div>
-              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
-                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{discoveryCandidates.length}</p>
-                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Review signals</p>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-between border-t pt-4" style={{ borderColor: C.rule }}>
-              <span className="text-xs" style={{ color: C.muted }}>
-                Verifier threshold {formatScore(verifierThreshold)}
-              </span>
-              <Link href="/dashboard/brief" className="text-sm font-semibold" style={{ color: C.blue }}>
-                Refine brief
-              </Link>
-            </div>
-          </div>
-        }
-      />
-
-      <section aria-label="Prospect workspace shortcuts" className="grid gap-3 md:grid-cols-3">
-        {[
-          {
-            href: "#action-queue",
-            label: "Ready to act",
-            detail: `${leads.length} verified conversation${leads.length === 1 ? "" : "s"} to review.`,
-            color: C.green,
-            background: C.greenPale,
-            icon: ShieldCheck,
-          },
-          {
-            href: discoveryCandidates.length > 0 ? "#watch" : "/dashboard/watchlists",
-            label: "Review signals",
-            detail: discoveryCandidates.length > 0
-              ? `${discoveryCandidates.length} plausible conversation${discoveryCandidates.length === 1 ? "" : "s"} need your judgment.`
-              : "Create a buyer group to focus the next scan.",
-            color: C.amber,
-            background: C.amberPale,
-            icon: Radar,
-          },
-          {
-            href: "/dashboard/watchlists",
-            label: "Buyer groups",
-            detail: "Focus discovery on one audience and real-world problem.",
-            color: C.blue,
-            background: C.bluePale,
-            icon: Target,
-          },
-        ].map(({ href, label, detail, color, background, icon: Icon }) => (
-          <Link
-            key={label}
-            href={href}
-            className="rounded-lg border bg-white p-4 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-            style={{
-              borderColor: "rgba(10, 22, 40, 0.08)",
-              boxShadow: "0 1px 3px rgba(10, 22, 40, 0.08)",
-            }}
-          >
-            <span
-              className="flex size-8 items-center justify-center rounded-md"
-              style={{ backgroundColor: background, color }}
-            >
-              <Icon className="size-4" aria-hidden="true" />
-            </span>
-            <p className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>{label}</p>
-            <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>{detail}</p>
-          </Link>
-        ))}
-      </section>
-
-      <section id="action-queue" className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
-              Ready to act
-            </h2>
-            {leads.length > 0 ? (
-              <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                {leads.length} conversation{leads.length === 1 ? "" : "s"} passed the verifier and is ready for review.
-              </p>
-            ) : buyerDemandReport?.isTerminal ? (
-              <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                {buyerDemandReport.isCompleted
-                  ? "This completed scan has no Ready to act conversations."
-                  : buyerDemandReport.status === "failed"
-                    ? "The most recent scan failed before a Ready to act conversation could be verified."
-                  : "The most recent scan ended with limited coverage and no Ready to act conversations."}
-              </p>
-            ) : discoveryCandidates.length > 0 ? (
-              <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                No conversations have met the automatic action threshold yet.
-              </p>
-            ) : null}
-          </div>
+    <div className="flex h-full min-h-0 w-full flex-col gap-3" style={{ color: C.text }}>
+      <header className="flex h-8 shrink-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="text-base font-semibold tracking-tight" style={{ color: C.navy }}>
+            Prospect desk
+          </h1>
+          <span className="hidden text-xs sm:inline" style={{ color: C.muted }}>
+            Review real conversations, then decide what deserves your time.
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
           <Badge
             variant="outline"
-            className="rounded-md"
-            style={{
-              borderColor: C.green,
-              backgroundColor: C.greenPale,
-              color: C.green,
-            }}
+            className="h-6 rounded px-2 text-[10px]"
+            style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
           >
-            <ShieldCheck className="size-3" />
-            Ready to act
+            Profile {serviceProfile.status ?? "ready"}
           </Badge>
+          <Link
+            href="/dashboard/brief"
+            className="inline-flex h-7 items-center rounded-md border px-2 text-xs font-semibold transition-colors hover:bg-[#F0F7FF]"
+            style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
+          >
+            Edit brief
+          </Link>
         </div>
+      </header>
 
-        {leads.length === 0 && buyerDemandReport?.isTerminal ? (
-          <CompletedDiscoveryReport report={buyerDemandReport} />
-        ) : leads.length === 0 && discoveryCandidates.length === 0 ? (
-          <WarmUpState
-            crawlJob={crawlJob}
-            serviceProfile={serviceProfile}
-            isWarmingUp={isWarmingUp}
-          />
-        ) : leads.length > 0 ? (
-          <div className="grid gap-4">
-            {leads.map((lead) => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                kind="ready"
-                feedbackPending={
-                  isFeedbackPending && pendingFeedbackLeadId === lead.id
-                }
-                qualificationPending={
-                  isQualificationPending && pendingQualificationLeadId === lead.id
-                }
-                feedbackMessage={feedbackMessages[lead.id] ?? null}
-                qualificationMessage={qualificationMessages[lead.id] ?? null}
-                onFeedback={handleFeedback}
-                onQualify={handleQualification}
-              />
-            ))}
-          </div>
-        ) : null}
-      </section>
-
-      {discoveryCandidates.length > 0 ? (
-        <section id="watch" className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold" style={{ color: C.navy }}>
-                Watch
+      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.35fr)_minmax(240px,0.7fr)]">
+        <section
+          aria-labelledby="matches-heading"
+          className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white"
+          style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
+        >
+          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: C.rule }}>
+            <div className="flex items-center gap-2">
+              <h2 id="matches-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
+                Matches
               </h2>
-              <p className="mt-1 max-w-2xl text-sm leading-6" style={{ color: C.muted }}>
-                These conversations have plausible, verifier-confirmed evidence,
-                but did not meet the automatic action threshold. They are
-                review-only watch items, not ready-to-act opportunities, and
-                cannot be qualified or exported to your CRM.
-              </p>
+              <span className="text-[10px]" style={{ color: C.muted }}>{queueItems.length} total</span>
             </div>
-            <Badge
-              variant="outline"
-              className="rounded-md"
-              style={{
-                borderColor: C.amber,
-                backgroundColor: C.amberPale,
-                color: C.amber,
-              }}
-            >
-              <Radar className="size-3" />
-              Watch
-            </Badge>
+            <span className="text-[10px] font-semibold" style={{ color: C.green }}>{leads.length} ready</span>
           </div>
-
-          <div className="grid gap-4">
-            {discoveryCandidates.map((lead) => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                kind="watch"
-                feedbackPending={
-                  isFeedbackPending && pendingFeedbackLeadId === lead.id
-                }
-                qualificationPending={
-                  isQualificationPending && pendingQualificationLeadId === lead.id
-                }
-                feedbackMessage={feedbackMessages[lead.id] ?? null}
-                qualificationMessage={qualificationMessages[lead.id] ?? null}
-                onFeedback={handleFeedback}
-                onQualify={handleQualification}
-              />
-            ))}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {queueItems.length > 0 ? (
+              queueItems.map((lead) => (
+                <DenseQueueRow
+                  key={lead.id}
+                  lead={lead}
+                  selected={lead.id === selectedLeadId}
+                  onSelect={setSelectedLeadId}
+                />
+              ))
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center px-5 text-center">
+                <Radar className="size-4" style={{ color: C.blue }} aria-hidden="true" />
+                <p className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>{status.title}</p>
+                <p className="mt-1 max-w-xs text-[11px] leading-5" style={{ color: C.muted }}>{status.detail}</p>
+              </div>
+            )}
           </div>
         </section>
-      ) : null}
 
+        <section
+          aria-labelledby="details-heading"
+          className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white"
+          style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
+        >
+          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: C.rule }}>
+            <h2 id="details-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
+              Details
+            </h2>
+            {selectedLead ? (
+              <span className="text-[10px]" style={{ color: C.muted }}>
+                {selectedLead.matchStatus === "discovery_candidate" ? "Review first" : "Ready to act"}
+              </span>
+            ) : null}
+          </div>
+          {selectedLead ? (
+            <DenseLeadDetails
+              lead={selectedLead}
+              feedbackPending={isFeedbackPending && pendingFeedbackLeadId === selectedLead.id}
+              qualificationPending={isQualificationPending && pendingQualificationLeadId === selectedLead.id}
+              feedbackMessage={feedbackMessages[selectedLead.id] ?? null}
+              qualificationMessage={qualificationMessages[selectedLead.id] ?? null}
+              onFeedback={handleFeedback}
+              onQualify={handleQualification}
+            />
+          ) : (
+            <div className="flex flex-1 items-center justify-center px-5 text-center text-xs" style={{ color: C.muted }}>
+              Select a conversation to see the original words and your next step.
+            </div>
+          )}
+        </section>
+
+        <aside className="flex min-h-0 flex-col gap-3">
+          <section className="shrink-0 rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
+            <div className="h-9 border-b px-3 leading-9" style={{ borderColor: C.rule }}>
+              <h2 className="text-xs font-semibold" style={{ color: C.navy }}>At a glance</h2>
+            </div>
+            <div className="grid grid-cols-2 divide-x divide-y" style={{ borderColor: C.rule }}>
+              {[
+                ["Ready", leads.length, C.green],
+                ["Review", discoveryCandidates.length, C.amber],
+                ["Threshold", formatScore(verifierThreshold), C.blue],
+                ["Status", isWarmingUp ? "Searching" : "Current", C.navySoft],
+              ].map(([label, value, color]) => (
+                <div key={String(label)} className="p-2.5">
+                  <p className="text-[10px] font-medium" style={{ color: C.muted }}>{label}</p>
+                  <p className="mt-0.5 text-sm font-bold tracking-tight" style={{ color: color as string }}>{value}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
+            <div className="flex h-9 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: C.rule }}>
+              <h2 className="text-xs font-semibold" style={{ color: C.navy }}>Next steps</h2>
+              <Target className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+            </div>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
+              <Link href="/dashboard/watchlists" className="block rounded-md border p-2.5 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+                <p className="text-xs font-semibold" style={{ color: C.navy }}>Buyer groups</p>
+                <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>Focus the next scan on one audience and one real problem.</p>
+              </Link>
+              <Link href="/dashboard/brief" className="block rounded-md border p-2.5 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+                <p className="text-xs font-semibold" style={{ color: C.navy }}>Your brief</p>
+                <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>Use the phrases buyers use when they need help.</p>
+              </Link>
+              <Link href="/dashboard/research" className="block rounded-md border p-2.5 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+                <p className="text-xs font-semibold" style={{ color: C.navy }}>Buyer words</p>
+                <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>Learn from accepted evidence without treating it as a lead.</p>
+              </Link>
+              {buyerDemandReport?.marketPatterns.length ? (
+                <div className="rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>What repeats</p>
+                  {buyerDemandReport.marketPatterns.slice(0, 3).map((pattern) => (
+                    <p key={pattern.label} className="mt-1 text-[11px] leading-5" style={{ color: C.navySoft }}>
+                      {pattern.label} · {pattern.matchCount}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

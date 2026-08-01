@@ -504,19 +504,19 @@ export function ServiceProfileSettings({
   if (!serviceProfile.hasProfile) {
     return (
       <section
-        className="rounded-lg border bg-white p-5 shadow-sm"
+        className="rounded-md border bg-white p-3 shadow-sm"
         style={{ borderColor: C.rule }}
       >
         <div className="flex items-start gap-3">
           <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-md"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md"
             style={{ backgroundColor: C.bluePale, color: C.blue }}
           >
             <CircleDotDashed className="size-4 animate-pulse" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold" style={{ color: C.navy }}>
-              Service profile extraction is in progress
+            <h2 className="text-xs font-semibold" style={{ color: C.navy }}>
+              Getting ready
             </h2>
             <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
               The editable matching brief will appear here after the crawl

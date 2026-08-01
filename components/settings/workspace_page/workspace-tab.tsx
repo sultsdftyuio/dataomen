@@ -59,17 +59,17 @@ export default function WorkspaceTab({
   );
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 pb-12 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-4 pb-3 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0">
         <Card>
-          <CardHeader>
-            <CardTitle>Website URL and Matching Brief</CardTitle>
-            <CardDescription>
+          <CardHeader className="p-3">
+            <CardTitle className="text-xs font-semibold">Your brief</CardTitle>
+            <CardDescription className="text-xs leading-5">
               Set the source URL, then tune the buyer language used to search
               Hacker News and X, rank fit, and filter bad-fit conversations.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-3 pt-0">
             {profile ? (
               <ServiceProfileSettings
                 serviceProfile={profile}
@@ -86,26 +86,26 @@ export default function WorkspaceTab({
         </Card>
       </div>
 
-      <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+      <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-3 lg:self-start">
         <WorkspaceBillingCard planData={planData} />
         {billingTestControlsEnabled ? (
           <BillingTestSwitcher currentStatus={planData?.planStatus} />
         ) : null}
 
         <Card className="bg-muted/50">
-          <CardHeader>
+          <CardHeader className="p-3">
             <CardTitle className="flex items-center justify-between gap-3">
-              Structured Profile
+              Your profile
               <span className="shrink-0 rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
                 READ ONLY
               </span>
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-xs leading-5">
               Read-only preview of the payload prepared for the matching
               engine. Shows only tenant-safe profile fields.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-3 pt-0">
             <WorkspaceSettingsPreview
               tenantId={tenantId}
               serviceProfile={profile}

@@ -58,25 +58,25 @@ export default async function ResearchPage() {
   ]);
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        eyebrow="Evidence-backed learning"
-        title="Learn how buyers describe the problem."
+        eyebrow="Buyer phrases"
+        title="Buyer words"
         description="Use accepted public evidence to sharpen your wording. These are insights for your matching brief, not a second lead queue."
         icon={MessageSquareText}
         visual={
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
-              Research evidence
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+              Saved words
             </p>
-            <div className="mt-4 rounded-md border p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <p className="text-2xl font-semibold" style={{ color: C.navy }}>
+            <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>
                 {buyerLanguageResearch.evidence.length}
               </p>
-              <p className="mt-1 text-sm font-medium" style={{ color: C.navySoft }}>
+              <p className="mt-1 text-xs font-medium" style={{ color: C.navySoft }}>
                 accepted phrase{buyerLanguageResearch.evidence.length === 1 ? "" : "s"} captured
               </p>
-              <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
+              <p className="mt-1 text-[10px] leading-4" style={{ color: C.muted }}>
                 Only literal, source-grounded excerpts appear in this research view.
               </p>
             </div>
@@ -87,14 +87,14 @@ export default async function ResearchPage() {
       {buyerDemandReport?.isTerminal ? (
         <BuyerDemandPatterns report={buyerDemandReport} />
       ) : (
-        <Card className="rounded-lg bg-white shadow-sm" style={{ borderColor: C.rule }}>
-          <CardContent className="flex gap-3 p-4">
-            <BarChart3 className="mt-0.5 size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
+        <Card className="rounded-md bg-white shadow-sm" style={{ borderColor: C.rule }}>
+          <CardContent className="flex gap-2 p-3">
+            <BarChart3 className="mt-0.5 size-3.5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
             <div>
-              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>
-                Themes will appear after accepted matches accumulate
+              <h2 className="text-xs font-semibold" style={{ color: C.navy }}>
+                Themes later
               </h2>
-              <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+              <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
                 A recurring theme needs at least two verifier-confirmed, ready-to-act
                 matches in this workspace before it is shown here.
               </p>
@@ -103,11 +103,11 @@ export default async function ResearchPage() {
         </Card>
       )}
 
-      <div className="rounded-xl border bg-white p-5 shadow-sm sm:p-6" style={{ borderColor: C.rule }}>
-        <div className="mb-5 flex items-center gap-2">
-          <MessageSquareText className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-          <span className="text-sm font-semibold" style={{ color: C.navy }}>
-            Language from accepted evidence
+      <div className="rounded-md border bg-white p-3 shadow-sm" style={{ borderColor: C.rule }}>
+        <div className="mb-3 flex items-center gap-2">
+          <MessageSquareText className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+          <span className="text-xs font-semibold" style={{ color: C.navy }}>
+            Buyer words
           </span>
         </div>
         <BuyerLanguageResearch

@@ -44,68 +44,68 @@ export default async function MatchingBriefPage() {
   const isActive = serviceProfile.embeddingStatus === "completed";
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        eyebrow="Your discovery instructions"
-        title="Make your ideal customer unmistakably clear."
+        eyebrow="Your guide"
+        title="Your buyers"
         description="Start with your website, then add the buyer, their real-world problem, and the events that make a solution feel urgent."
         icon={Target}
         visual={
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
-              Matching status
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
+              Match state
             </p>
-            <div className="mt-4 rounded-md border p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <p className="text-sm font-semibold" style={{ color: C.navy }}>
-                {isActive ? "Your matching brief is active" : "Your matching brief is preparing"}
+            <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                {isActive ? "Ready now" : "Getting ready"}
               </p>
-              <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+              <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>
                 {isActive
                   ? "Arcli is using these instructions to check public conversations."
                   : "Your current rules stay in place until the refreshed brief is ready."}
               </p>
             </div>
-            <p className="mt-4 text-xs leading-5" style={{ color: C.muted }}>
+            <p className="mt-2 text-[10px] leading-4" style={{ color: C.muted }}>
               Clear buyer language improves discovery without lowering the quality gate.
             </p>
           </div>
         }
       />
 
-      <section aria-label="What makes a useful matching brief" className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-lg border bg-white p-4 shadow-sm" style={{ borderColor: C.rule }}>
-          <Globe2 className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-          <h2 className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>
-            Website context plus your expertise
+      <section aria-label="Brief tips" className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-md border bg-white p-3 shadow-sm" style={{ borderColor: C.rule }}>
+          <Globe2 className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+          <h2 className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
+            Website details
           </h2>
-          <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
             The crawl gives Arcli a starting point. Add details when the site does
             not fully explain who should buy or why they would act now.
           </p>
         </div>
-        <div className="rounded-lg border bg-white p-4 shadow-sm" style={{ borderColor: C.rule }}>
-          <ClipboardPenLine className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-          <h2 className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>
-            Use buyer language, not internal labels
+        <div className="rounded-md border bg-white p-3 shadow-sm" style={{ borderColor: C.rule }}>
+          <ClipboardPenLine className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+          <h2 className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
+            Buyer wording
           </h2>
-          <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
             Phrase the problem as someone would ask for help: the work they are
             stuck doing, the outcome they need, or the change that prompted a search.
           </p>
         </div>
       </section>
 
-      <Card className="rounded-xl bg-white shadow-sm" style={{ borderColor: C.rule }}>
-        <CardHeader className="border-b" style={{ borderColor: C.rule }}>
-          <CardTitle className="text-lg" style={{ color: C.navy }}>
-            Edit your matching brief
+      <Card className="rounded-md bg-white shadow-sm" style={{ borderColor: C.rule }}>
+        <CardHeader className="border-b p-3" style={{ borderColor: C.rule }}>
+          <CardTitle className="text-xs font-semibold" style={{ color: C.navy }}>
+            Edit brief
           </CardTitle>
-          <p className="text-sm leading-6" style={{ color: C.muted }}>
+          <p className="text-xs leading-5" style={{ color: C.muted }}>
             Saving changes refreshes matching embeddings in the background. Your
             current rules remain active until the refreshed brief is ready.
           </p>
         </CardHeader>
-        <CardContent className="pt-6">
+        <CardContent className="p-3 pt-4">
           <ServiceProfileSettings
             serviceProfile={serviceProfile}
             websiteUrl={websiteUrl}
