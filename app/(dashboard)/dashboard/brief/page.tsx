@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClipboardPenLine, Globe2, Target } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ServiceProfileSettings } from "@/components/settings/workspace_page/service-profile-settings";
 import { C } from "@/lib/tokens";
@@ -45,37 +45,32 @@ export default async function MatchingBriefPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <section
-        className="overflow-hidden rounded-xl border shadow-sm"
-        style={{ borderColor: C.navyMid, backgroundColor: C.navy }}
-      >
-        <div className="grid gap-5 px-5 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <DashboardPageIntro
+        eyebrow="Your discovery instructions"
+        title="Make your ideal customer unmistakably clear."
+        description="Start with your website, then add the buyer, their real-world problem, and the events that make a solution feel urgent."
+        icon={Target}
+        visual={
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: C.blueLight }}>
-              Your discovery instructions
+            <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
+              Matching status
             </p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-              Matching brief
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.faint }}>
-              Start with your website, then make the customer, their problem, and
-              the moments that create urgency unmistakably clear.
+            <div className="mt-4 rounded-md border p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <p className="text-sm font-semibold" style={{ color: C.navy }}>
+                {isActive ? "Your matching brief is active" : "Your matching brief is preparing"}
+              </p>
+              <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>
+                {isActive
+                  ? "Arcli is using these instructions to check public conversations."
+                  : "Your current rules stay in place until the refreshed brief is ready."}
+              </p>
+            </div>
+            <p className="mt-4 text-xs leading-5" style={{ color: C.muted }}>
+              Clear buyer language improves discovery without lowering the quality gate.
             </p>
           </div>
-          <Badge
-            variant="outline"
-            className="w-fit rounded-md px-3 py-1"
-            style={{
-              borderColor: isActive ? C.blueLight : C.amber,
-              backgroundColor: C.navyMid,
-              color: C.white,
-            }}
-          >
-            <Target className="size-3" />
-            {isActive ? "Matching active" : "Preparing matching"}
-          </Badge>
-        </div>
-      </section>
+        }
+      />
 
       <section aria-label="What makes a useful matching brief" className="grid gap-3 md:grid-cols-2">
         <div className="rounded-lg border bg-white p-4 shadow-sm" style={{ borderColor: C.rule }}>

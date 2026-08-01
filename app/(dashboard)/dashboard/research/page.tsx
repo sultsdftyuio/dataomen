@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { BarChart3, MessageSquareText } from "lucide-react";
 
+import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { Card, CardContent } from "@/components/ui/card";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
@@ -58,23 +59,30 @@ export default async function ResearchPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      <section
-        className="overflow-hidden rounded-xl border shadow-sm"
-        style={{ borderColor: C.navyMid, backgroundColor: C.navy }}
-      >
-        <div className="px-5 py-6 sm:px-7">
-          <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: C.blueLight }}>
-            Evidence-backed learning
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Buyer research
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.faint }}>
-            Use accepted public evidence to sharpen your wording. These are
-            insights for your matching brief, not a second lead queue.
-          </p>
-        </div>
-      </section>
+      <DashboardPageIntro
+        eyebrow="Evidence-backed learning"
+        title="Learn how buyers describe the problem."
+        description="Use accepted public evidence to sharpen your wording. These are insights for your matching brief, not a second lead queue."
+        icon={MessageSquareText}
+        visual={
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
+              Research evidence
+            </p>
+            <div className="mt-4 rounded-md border p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <p className="text-2xl font-semibold" style={{ color: C.navy }}>
+                {buyerLanguageResearch.evidence.length}
+              </p>
+              <p className="mt-1 text-sm font-medium" style={{ color: C.navySoft }}>
+                accepted phrase{buyerLanguageResearch.evidence.length === 1 ? "" : "s"} captured
+              </p>
+              <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
+                Only literal, source-grounded excerpts appear in this research view.
+              </p>
+            </div>
+          </div>
+        }
+      />
 
       {buyerDemandReport?.isTerminal ? (
         <BuyerDemandPatterns report={buyerDemandReport} />

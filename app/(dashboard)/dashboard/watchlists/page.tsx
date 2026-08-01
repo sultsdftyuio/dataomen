@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { CircleCheck, Globe2, Radar } from "lucide-react";
+import { CircleCheck, Globe2, Radar, UsersRound } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
+import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import {
@@ -50,41 +50,40 @@ export default async function WatchlistsPage() {
     watchlists,
     threshold,
   );
+  const activeWatchlistCount = watchlists.filter((watchlist) => watchlist.isActive).length;
+  const sourceCount = new Set(
+    watchlists.flatMap((watchlist) => watchlist.sourcePreferences),
+  ).size;
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      <section
-        className="overflow-hidden rounded-xl border shadow-sm"
-        style={{ borderColor: C.navyMid, backgroundColor: C.navy }}
-      >
-        <div className="grid gap-5 px-5 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <DashboardPageIntro
+        eyebrow="Focused discovery"
+        title="Find the people most likely to need your help."
+        description="Give each audience its own problem statement, natural wording, and public sources. Your product brief stays intact while every buyer group becomes more specific."
+        icon={UsersRound}
+        visual={
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: C.blueLight }}>
-              Focused discovery
+            <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
+              Discovery coverage
             </p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-              Buyer groups
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.faint }}>
-              Give each audience its own problem statement, natural language, and
-              source choices. This makes the next scan more specific without
-              changing the evidence for what your product offers.
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
+                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{activeWatchlistCount}</p>
+                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Active buyer groups</p>
+              </div>
+              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
+                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{sourceCount}</p>
+                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Selected sources</p>
+              </div>
+            </div>
+            <p className="mt-4 border-t pt-4 text-sm leading-6" style={{ borderColor: C.rule, color: C.muted }}>
+              New groups start with public sources. X remains an optional,
+              cost-controlled fallback.
             </p>
           </div>
-          <Badge
-            variant="outline"
-            className="w-fit rounded-md px-3 py-1"
-            style={{
-              borderColor: C.blueLight,
-              backgroundColor: C.navyMid,
-              color: C.white,
-            }}
-          >
-            <Radar className="size-3" />
-            {watchlists.length} active group{watchlists.length === 1 ? "" : "s"}
-          </Badge>
-        </div>
-      </section>
+        }
+      />
 
       <section aria-label="How buyer groups work" className="grid gap-3 md:grid-cols-3">
         {[

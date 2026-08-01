@@ -350,7 +350,7 @@ export default function WatchlistsPanel({
         <div>
           <h2 className="flex items-center gap-2 text-xl font-semibold" style={{ color: C.navy }}>
             <Users className="size-5" />
-            Buyer Watchlists
+            Your buyer groups
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6" style={{ color: C.muted }}>
             Define the buyer group and real-world problem you want to watch. Each
@@ -360,7 +360,7 @@ export default function WatchlistsPanel({
         </div>
         <Button type="button" size="sm" variant="outline" onClick={() => setShowForm((current) => !current)} style={{ borderColor: C.blueLight, color: C.blue }}>
           <Plus className="size-4" />
-          {showForm ? "Close" : "New Watchlist"}
+          {showForm ? "Close" : "New buyer group"}
         </Button>
       </div>
       {showForm ? <WatchlistForm onCreate={create} pending={isPending} /> : null}
@@ -368,7 +368,7 @@ export default function WatchlistsPanel({
       {watchlists.length === 0 && !showForm ? (
         <Card className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
           <CardContent className="p-4 text-sm leading-6" style={{ color: C.navySoft }}>
-            Add a Watchlist to focus on one buyer group rather than relying only on a broad product-wide scan.
+            Add a buyer group to focus on one audience instead of relying only on a broad product-wide scan.
           </CardContent>
         </Card>
       ) : null}

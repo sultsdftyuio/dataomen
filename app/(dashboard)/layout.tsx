@@ -54,9 +54,9 @@ export default async function DashboardLayout({
         className="sticky top-0 z-50 border-b bg-white shadow-sm"
         style={{ borderColor: C.rule }}
       >
-        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center">
+        <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 items-center">
               <Link
                 href="/dashboard"
                 className="flex items-center transition-opacity hover:opacity-90"
@@ -66,9 +66,12 @@ export default async function DashboardLayout({
 
               <WorkspaceTopNav />
             </div>
+            <div className="hidden min-w-0 items-center border-l pl-3 md:flex" style={{ borderColor: C.rule }}>
+              <DashboardNavigation />
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3">
             <Link
               href="/settings"
               className="rounded-md p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
@@ -81,8 +84,6 @@ export default async function DashboardLayout({
           </div>
         </div>
       </header>
-
-      <DashboardNavigation />
 
       <main className="mx-auto flex w-full flex-1 flex-col p-4 animate-in fade-in duration-500 sm:p-6 lg:p-8">
         {children}

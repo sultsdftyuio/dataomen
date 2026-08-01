@@ -17,6 +17,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import {
   Card,
   CardContent,
@@ -471,8 +472,14 @@ function LeadCard({
       };
 
   return (
-    <Card className="rounded-lg shadow-sm" style={{ borderColor: C.rule }}>
-      <CardHeader className="gap-3">
+    <Card
+      className="overflow-hidden rounded-lg bg-white"
+      style={{
+        borderColor: "rgba(10, 22, 40, 0.08)",
+        boxShadow: "0 1px 3px rgba(10, 22, 40, 0.08)",
+      }}
+    >
+      <CardHeader className="gap-3 border-b pb-5" style={{ borderColor: C.rule }}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -530,8 +537,8 @@ function LeadCard({
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
           <div
-            className="rounded-md border p-3"
-            style={{ borderColor: C.amber, backgroundColor: C.amberPale }}
+            className="rounded-md border border-l-[3px] bg-white p-4"
+            style={{ borderColor: C.rule, borderLeftColor: C.amber }}
           >
             <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
               <MessageSquareText className="size-3.5" />
@@ -544,8 +551,8 @@ function LeadCard({
             </p>
           </div>
           <div
-            className="rounded-md border p-3"
-            style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
+            className="rounded-md border border-l-[3px] bg-white p-4"
+            style={{ borderColor: C.rule, borderLeftColor: C.blue }}
           >
             <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
               <Target className="size-3.5" />
@@ -561,8 +568,8 @@ function LeadCard({
 
         {lead.urgencyReason ? (
           <div
-            className="rounded-md border p-3"
-            style={{ borderColor: C.red, backgroundColor: C.redPale }}
+            className="rounded-md border border-l-[3px] bg-white p-4"
+            style={{ borderColor: C.rule, borderLeftColor: C.red }}
           >
             <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase">
               <Clock3 className="size-3.5" />
@@ -1189,78 +1196,105 @@ export default function ProspectDashboardClient({
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6" style={{ color: C.text }}>
-      <section
-        className="overflow-hidden rounded-xl border shadow-sm"
-        style={{ borderColor: C.navyMid, backgroundColor: C.navy }}
-      >
-        <div className="grid gap-6 px-5 py-6 sm:px-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-8" style={{ color: C.text }}>
+      <DashboardPageIntro
+        eyebrow="Prospect review"
+        title="Know who to look at, and why now."
+        description="Review public conversations with evidence of a real problem. Keep your attention on the people most likely to benefit from what you offer."
+        icon={Radar}
+        visual={
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: C.blueLight }}>
-              Prospect workspace
-            </p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-              Make the next buyer conversation count.
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.faint }}>
-              Review only the public conversations with evidence of a real problem,
-              then use buyer groups and research to make the next scan more useful.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.1em]" style={{ color: C.faint }}>
+                  Your review queue
+                </p>
+                <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
+                  Evidence before action
+                </p>
+              </div>
+              <Badge
+                variant="outline"
+                className="rounded-md"
+                style={{
+                  borderColor: C.blueLight,
+                  backgroundColor: C.blueTint,
+                  color: C.blue,
+                }}
+              >
+                Profile {serviceProfile.status ?? "approved"}
+              </Badge>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
+                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{leads.length}</p>
+                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Ready to act</p>
+              </div>
+              <div className="rounded-md border p-3" style={{ borderColor: C.rule }}>
+                <p className="text-2xl font-semibold" style={{ color: C.navy }}>{discoveryCandidates.length}</p>
+                <p className="mt-1 text-xs font-medium" style={{ color: C.muted }}>Review signals</p>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t pt-4" style={{ borderColor: C.rule }}>
+              <span className="text-xs" style={{ color: C.muted }}>
+                Verifier threshold {formatScore(verifierThreshold)}
+              </span>
+              <Link href="/dashboard/brief" className="text-sm font-semibold" style={{ color: C.blue }}>
+                Refine brief
+              </Link>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2 lg:justify-end">
-            <Badge
-              variant="outline"
-              className="rounded-md px-3 py-1"
-              style={{
-                borderColor: C.blueLight,
-                backgroundColor: C.navyMid,
-                color: C.white,
-              }}
+        }
+      />
+
+      <section aria-label="Prospect workspace shortcuts" className="grid gap-3 md:grid-cols-3">
+        {[
+          {
+            href: "#action-queue",
+            label: "Ready to act",
+            detail: `${leads.length} verified conversation${leads.length === 1 ? "" : "s"} to review.`,
+            color: C.green,
+            background: C.greenPale,
+            icon: ShieldCheck,
+          },
+          {
+            href: discoveryCandidates.length > 0 ? "#watch" : "/dashboard/watchlists",
+            label: "Review signals",
+            detail: discoveryCandidates.length > 0
+              ? `${discoveryCandidates.length} plausible conversation${discoveryCandidates.length === 1 ? "" : "s"} need your judgment.`
+              : "Create a buyer group to focus the next scan.",
+            color: C.amber,
+            background: C.amberPale,
+            icon: Radar,
+          },
+          {
+            href: "/dashboard/watchlists",
+            label: "Buyer groups",
+            detail: "Focus discovery on one audience and real-world problem.",
+            color: C.blue,
+            background: C.bluePale,
+            icon: Target,
+          },
+        ].map(({ href, label, detail, color, background, icon: Icon }) => (
+          <Link
+            key={label}
+            href={href}
+            className="rounded-lg border bg-white p-4 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+            style={{
+              borderColor: "rgba(10, 22, 40, 0.08)",
+              boxShadow: "0 1px 3px rgba(10, 22, 40, 0.08)",
+            }}
+          >
+            <span
+              className="flex size-8 items-center justify-center rounded-md"
+              style={{ backgroundColor: background, color }}
             >
-              <ShieldCheck className="size-3" />
-              Profile {serviceProfile.status ?? "approved"}
-            </Badge>
-            <Badge
-              variant="outline"
-              className="rounded-md px-3 py-1"
-              style={{
-                borderColor: C.navySoft,
-                backgroundColor: C.navyMid,
-                color: C.faint,
-              }}
-            >
-              Verifier threshold {formatScore(verifierThreshold)}
-            </Badge>
-          </div>
-        </div>
-        <div
-          className="grid border-t sm:grid-cols-3"
-          style={{ borderColor: C.navyMid }}
-        >
-          <Link
-            href="#action-queue"
-            className="group border-b px-5 py-4 transition-colors hover:bg-white/5 sm:border-b-0 sm:border-r"
-            style={{ borderColor: C.navyMid }}
-          >
-            <span className="text-2xl font-semibold text-white">{leads.length}</span>
-            <span className="ml-2 text-sm" style={{ color: C.faint }}>ready to act</span>
+              <Icon className="size-4" aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-sm font-semibold" style={{ color: C.navy }}>{label}</p>
+            <p className="mt-1 text-sm leading-6" style={{ color: C.muted }}>{detail}</p>
           </Link>
-          <Link
-            href={discoveryCandidates.length > 0 ? "#watch" : "/dashboard/watchlists"}
-            className="group border-b px-5 py-4 transition-colors hover:bg-white/5 sm:border-b-0 sm:border-r"
-            style={{ borderColor: C.navyMid }}
-          >
-            <span className="text-2xl font-semibold text-white">{discoveryCandidates.length}</span>
-            <span className="ml-2 text-sm" style={{ color: C.faint }}>review signals</span>
-          </Link>
-          <Link
-            href="/dashboard/watchlists"
-            className="group px-5 py-4 transition-colors hover:bg-white/5"
-          >
-            <span className="text-sm font-semibold" style={{ color: C.blueLight }}>Refine your scan</span>
-            <span className="ml-2 text-sm" style={{ color: C.faint }}>Buyer groups</span>
-          </Link>
-        </div>
+        ))}
       </section>
 
       <section id="action-queue" className="space-y-4">
