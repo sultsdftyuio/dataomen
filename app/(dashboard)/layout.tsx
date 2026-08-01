@@ -85,9 +85,16 @@ export default async function DashboardLayout({
         </div>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col overflow-hidden p-4 animate-in fade-in duration-300">
+      <main className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col overflow-y-auto p-3 animate-in fade-in duration-300 sm:p-4 xl:overflow-hidden">
         {children}
       </main>
+
+      <div
+        className="shrink-0 border-t bg-white md:hidden"
+        style={{ borderColor: C.rule }}
+      >
+        <DashboardNavigation compact />
+      </div>
     </div>
   );
 }

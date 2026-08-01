@@ -17,6 +17,7 @@ import {
   isDashboardNavigationItemActive,
 } from "@/lib/dashboard-navigation";
 import { C } from "@/lib/tokens";
+import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, LucideIcon> = {
   "/dashboard": ClipboardList,
@@ -26,13 +27,21 @@ const ICONS: Record<string, LucideIcon> = {
   "/settings": Settings2,
 };
 
-export function DashboardNavigation() {
+type DashboardNavigationProps = {
+  compact?: boolean;
+};
+
+export function DashboardNavigation({ compact = false }: DashboardNavigationProps) {
   const pathname = usePathname();
 
   return (
     <nav
       aria-label="Product navigation"
-      className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+      className={
+        compact
+          ? "grid w-full grid-cols-5 items-center"
+          : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+      }
     >
       {dashboardNavigationItems.map((item) => {
         const Icon = ICONS[item.href];
@@ -44,7 +53,12 @@ export function DashboardNavigation() {
             href={item.href}
             aria-current={isActive ? "page" : undefined}
             title={item.description}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-[var(--nav-background)] px-3 text-xs font-semibold text-[var(--nav-foreground)] transition-colors hover:bg-[var(--nav-hover-background)] hover:text-[var(--nav-hover-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2"
+            className={cn(
+              "flex items-center rounded-md bg-[var(--nav-background)] text-xs font-semibold text-[var(--nav-foreground)] transition-colors hover:bg-[var(--nav-hover-background)] hover:text-[var(--nav-hover-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2",
+              compact
+                ? "h-12 flex-col justify-center gap-0.5 px-1 text-[10px]"
+                : "h-9 shrink-0 gap-1.5 px-3",
+            )}
             style={
               {
                 "--nav-background": isActive ? C.bluePale : "transparent",
@@ -55,7 +69,9 @@ export function DashboardNavigation() {
             }
           >
             <Icon className="size-4" aria-hidden="true" />
-            <span className="hidden lg:inline">{item.label}</span>
+            <span className={compact ? "max-w-full truncate" : "hidden lg:inline"}>
+              {item.label}
+            </span>
           </Link>
         );
       })}

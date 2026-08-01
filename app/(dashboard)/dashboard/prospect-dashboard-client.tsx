@@ -1,16 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
+  ArrowDownUp,
   Check,
   Clock3,
   Copy,
   ExternalLink,
+  ListFilter,
   MessageSquareText,
+  Pause,
+  Play,
   Radar,
+  RefreshCw,
+  RotateCcw,
+  Search,
   ShieldCheck,
   Target,
 } from "lucide-react";
@@ -24,6 +31,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { markLeadAsQualified } from "@/app/actions/leads";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
@@ -55,6 +67,9 @@ type FeedbackNotice = {
   ok: boolean;
 };
 
+type QueueFilter = "all" | "ready" | "review";
+type QueueSort = "priority" | "newest" | "confidence";
+
 const STALE_EMBEDDING_MS = 10 * 60 * 1000;
 
 function formatScore(score: number) {
@@ -74,6 +89,15 @@ function formatDate(value: string | null) {
   }).format(date);
 }
 
+function formatTime(value: Date | null) {
+  if (!value) return "just now";
+
+  return new Intl.DateTimeFormat("en", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
+}
+
 function normalizedStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
 }
@@ -83,6 +107,50 @@ function timestampAgeMs(value: string | null | undefined) {
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? Date.now() - parsed : null;
+}
+
+function leadTimestamp(lead: QualifiedLeadView) {
+  const timestamp = Date.parse(lead.sourcePost.publishedAt ?? lead.matchedAt ?? "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isReviewLead(lead: QualifiedLeadView) {
+  return lead.matchStatus === "discovery_candidate";
+}
+
+function matchesQueueSearch(lead: QualifiedLeadView, query: string) {
+  if (!query.trim()) return true;
+
+  const haystack = [
+    lead.sourcePost.title,
+    lead.sourcePost.text,
+    lead.sourcePost.source,
+    lead.sourcePost.community,
+    lead.sourcePost.author,
+    lead.painDetected,
+    lead.matchReason,
+    lead.urgencyReason,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase();
+
+  return haystack.includes(query.trim().toLocaleLowerCase());
+}
+
+function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
+  return [...items].sort((a, b) => {
+    if (sort === "newest") return leadTimestamp(b) - leadTimestamp(a);
+    if (sort === "confidence") return b.verifierScore - a.verifierScore;
+
+    const priority = (lead: QualifiedLeadView) =>
+      (isReviewLead(lead) ? 0 : 4) +
+      (lead.urgencyReason ? 2 : 0) +
+      (lead.matchStatus === "qualified" ? 1 : 0);
+    const priorityDifference = priority(b) - priority(a);
+
+    return priorityDifference || b.verifierScore - a.verifierScore || leadTimestamp(b) - leadTimestamp(a);
+  });
 }
 
 function pipelineStatus({
@@ -148,7 +216,7 @@ function pipelineStatus({
         label: "Needs attention",
         title: "The embedding job has not reported progress.",
         detail:
-          "Check the arcli-worker logs, Redis embeddings queue, OPENAI_API_KEY, REDIS_URL, DATABASE_URL, and INTERNAL_WORKER_SECRET.",
+          "Retry the preparation step after confirming your matching brief. If it continues, contact your workspace administrator with the time this status first appeared.",
         canRetry: true,
       };
     }
@@ -238,10 +306,14 @@ function LeadOutreach({
   compact?: boolean;
 }) {
   const [draft, setDraft] = useState(lead.suggestedReply);
+  const [isDraftReady, setIsDraftReady] = useState(false);
+  const [restoredLocalDraft, setRestoredLocalDraft] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "empty" | "error">(
     "idle",
   );
   const isQualified = lead.matchStatus === "qualified";
+  const draftStorageKey = `arcli:reply-draft:${lead.id}`;
+  const sourceName = sourceDisplayName(lead.sourcePost.source);
   // A discovery candidate is useful evidence to inspect, not a lead that a
   // browser user can promote. The server and RLS policy enforce the same
   // boundary; keeping it explicit here prevents a misleading CRM action.
@@ -250,8 +322,35 @@ function LeadOutreach({
   const draftId = `suggested-reply-${lead.id}`;
 
   useEffect(() => {
-    setDraft(lead.suggestedReply);
-  }, [lead.id, lead.suggestedReply]);
+    setIsDraftReady(false);
+    setRestoredLocalDraft(false);
+
+    try {
+      const savedDraft = window.localStorage.getItem(draftStorageKey);
+      const shouldRestore = Boolean(savedDraft && savedDraft !== lead.suggestedReply);
+      setDraft(savedDraft ?? lead.suggestedReply);
+      setRestoredLocalDraft(shouldRestore);
+    } catch {
+      setDraft(lead.suggestedReply);
+    } finally {
+      setIsDraftReady(true);
+    }
+  }, [draftStorageKey, lead.suggestedReply]);
+
+  useEffect(() => {
+    if (!isDraftReady) return;
+
+    try {
+      if (draft.trim() && draft !== lead.suggestedReply) {
+        window.localStorage.setItem(draftStorageKey, draft);
+      } else {
+        window.localStorage.removeItem(draftStorageKey);
+      }
+    } catch {
+      // Draft persistence is a quality-of-life enhancement, so a restrictive
+      // browser privacy setting should never block outreach work.
+    }
+  }, [draft, draftStorageKey, isDraftReady, lead.suggestedReply]);
 
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -288,11 +387,17 @@ function LeadOutreach({
           ? "Could not copy the draft."
           : null;
 
+  const resetDraft = () => {
+    setDraft(lead.suggestedReply);
+    setRestoredLocalDraft(false);
+  };
+
   const sourceAction = lead.sourcePost.url ? (
     <Button asChild size="sm" style={{ backgroundColor: C.blue, color: C.white }}>
       <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
         <ExternalLink className="size-4" />
-        Reply on Platform
+        <span className="hidden sm:inline">Open on {sourceName}</span>
+        <span className="sm:hidden">Open source</span>
       </a>
     </Button>
   ) : (
@@ -381,7 +486,7 @@ function LeadOutreach({
             Suggested reply
           </label>
           <p className="mt-1 text-xs" style={{ color: C.muted }}>
-            Edit this draft to match your voice. Your changes stay in this browser.
+            Edit this draft to match your voice. Changes are saved privately in this browser.
           </p>
         </div>
         {isQualified ? (
@@ -411,6 +516,28 @@ function LeadOutreach({
         )}
         style={{ borderColor: C.blueLight, color: C.navy }}
       />
+
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px]" style={{ color: C.muted }} aria-live="polite">
+          {restoredLocalDraft
+            ? "Restored your saved local draft."
+            : isDraftReady && draft !== lead.suggestedReply
+              ? "Saved in this browser."
+              : "Using the generated draft."}
+        </p>
+        {draft !== lead.suggestedReply ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={resetDraft}
+            style={{ color: C.navySoft }}
+          >
+            <RotateCcw className="size-3" />
+            Reset
+          </Button>
+        ) : null}
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
@@ -621,6 +748,7 @@ function LeadCard({
         </div>
 
         <LeadOutreach
+          key={`outreach-${lead.id}`}
           lead={lead}
           disabled={qualificationPending}
           qualificationMessage={qualificationMessage}
@@ -757,11 +885,37 @@ function DenseLeadDetails({
         <h3 className="mt-1 text-sm font-semibold leading-5" style={{ color: C.navy }}>
           {lead.sourcePost.title}
         </h3>
-        <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
-          Verifier {formatScore(lead.verifierScore)}
-          {lead.similarityScore !== null ? ` · Similarity ${formatScore(lead.similarityScore)}` : ""}
-          {postedAt ? ` · Posted ${postedAt}` : ""}
-        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]" style={{ color: C.muted }}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="cursor-help border-b border-dotted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+              >
+                Verifier {formatScore(lead.verifierScore)}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6} className="max-w-56 leading-5">
+              Evidence relevance after review. Higher scores indicate a closer, better-supported match to your brief.
+            </TooltipContent>
+          </Tooltip>
+          {lead.similarityScore !== null ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="cursor-help border-b border-dotted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                >
+                  Similarity {formatScore(lead.similarityScore)}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={6} className="max-w-56 leading-5">
+                Semantic closeness to your matching brief. It supports prioritization but does not qualify a match on its own.
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {postedAt ? <span>Posted {postedAt}</span> : null}
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
@@ -815,6 +969,7 @@ function DenseLeadDetails({
         </div>
 
         <LeadOutreach
+          key={`outreach-${lead.id}`}
           lead={lead}
           disabled={qualificationPending}
           qualificationMessage={qualificationMessage}
@@ -1325,6 +1480,12 @@ export default function ProspectDashboardClient({
     string | null
   >(null);
   const [isQualificationPending, startQualificationTransition] = useTransition();
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
+  const [queueSort, setQueueSort] = useState<QueueSort>("priority");
+  const [queueQuery, setQueueQuery] = useState("");
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [isRefreshPending, startRefreshTransition] = useTransition();
   const shouldRefreshForLeads = shouldContinueActionQueuePolling({
     isWarmingUp,
     readyToActCount: leads.length,
@@ -1332,15 +1493,26 @@ export default function ProspectDashboardClient({
   });
   const refreshMs = useMemo(() => (isWarmingUp ? 5000 : 15000), [isWarmingUp]);
 
+  const refreshDashboard = useCallback(() => {
+    startRefreshTransition(() => {
+      setLastUpdatedAt(new Date());
+      router.refresh();
+    });
+  }, [router, startRefreshTransition]);
+
   useEffect(() => {
-    if (!shouldRefreshForLeads) return;
+    setLastUpdatedAt(new Date());
+  }, [buyerDemandReport?.updatedAt, discoveryCandidates, leads]);
+
+  useEffect(() => {
+    if (!shouldRefreshForLeads || !autoRefreshEnabled) return;
 
     const intervalId = window.setInterval(() => {
-      router.refresh();
+      refreshDashboard();
     }, refreshMs);
 
     return () => window.clearInterval(intervalId);
-  }, [refreshMs, router, shouldRefreshForLeads]);
+  }, [autoRefreshEnabled, refreshDashboard, refreshMs, shouldRefreshForLeads]);
 
   const handleFeedback = (leadId: string, value: LeadFeedbackValue) => {
     setPendingFeedbackLeadId(leadId);
@@ -1393,34 +1565,73 @@ export default function ProspectDashboardClient({
     () => [...leads, ...discoveryCandidates],
     [discoveryCandidates, leads],
   );
+  const filteredQueueItems = useMemo(() => {
+    const filtered = queueItems.filter((lead) => {
+      if (queueFilter === "ready" && isReviewLead(lead)) return false;
+      if (queueFilter === "review" && !isReviewLead(lead)) return false;
+      return matchesQueueSearch(lead, queueQuery);
+    });
+
+    return sortQueueItems(filtered, queueSort);
+  }, [queueFilter, queueItems, queueQuery, queueSort]);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(
     queueItems[0]?.id ?? null,
   );
 
   useEffect(() => {
-    if (queueItems.length === 0) {
+    if (filteredQueueItems.length === 0) {
       setSelectedLeadId(null);
       return;
     }
 
-    if (!queueItems.some((lead) => lead.id === selectedLeadId)) {
-      setSelectedLeadId(queueItems[0].id);
+    if (!filteredQueueItems.some((lead) => lead.id === selectedLeadId)) {
+      setSelectedLeadId(filteredQueueItems[0].id);
     }
-  }, [queueItems, selectedLeadId]);
+  }, [filteredQueueItems, selectedLeadId]);
+
+  useEffect(() => {
+    const selectAdjacentLead = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, button, [contenteditable="true"], [role="textbox"]',
+        ) ||
+        !["ArrowDown", "ArrowUp"].includes(event.key) ||
+        filteredQueueItems.length === 0
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      const currentIndex = filteredQueueItems.findIndex((lead) => lead.id === selectedLeadId);
+      const movement = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = Math.min(
+        Math.max(currentIndex + movement, 0),
+        filteredQueueItems.length - 1,
+      );
+      setSelectedLeadId(filteredQueueItems[nextIndex]?.id ?? null);
+    };
+
+    window.addEventListener("keydown", selectAdjacentLead);
+    return () => window.removeEventListener("keydown", selectAdjacentLead);
+  }, [filteredQueueItems, selectedLeadId]);
 
   const selectedLead =
-    queueItems.find((lead) => lead.id === selectedLeadId) ?? null;
+    filteredQueueItems.find((lead) => lead.id === selectedLeadId) ?? null;
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-4" style={{ color: C.text }}>
-      <header className="flex h-10 shrink-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+    <div className="flex w-full flex-col gap-4 xl:h-full xl:min-h-0" style={{ color: C.text }}>
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 xl:min-h-10">
+        <div className="min-w-0">
           <h1 className="pfd text-xl font-semibold tracking-tight" style={{ color: C.navy }}>
             Prospect desk
           </h1>
+          <p className="mt-0.5 text-xs" style={{ color: C.muted }}>
+            Review buyer conversations, then take the next best action.
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
           <Badge
             variant="outline"
             className="h-7 rounded px-2 text-[11px]"
@@ -1438,10 +1649,10 @@ export default function ProspectDashboardClient({
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(300px,0.85fr)_minmax(440px,1.35fr)_minmax(260px,0.7fr)]">
+      <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(300px,0.85fr)_minmax(440px,1.35fr)_minmax(260px,0.7fr)]">
         <section
           aria-labelledby="matches-heading"
-          className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white"
+          className="flex min-h-0 max-h-[420px] flex-col overflow-hidden rounded-lg border bg-white xl:max-h-none"
           style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
         >
           <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
@@ -1449,13 +1660,75 @@ export default function ProspectDashboardClient({
               <h2 id="matches-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
                 Matches
               </h2>
-              <span className="text-[10px]" style={{ color: C.muted }}>{queueItems.length} total</span>
+              <span className="text-[10px]" style={{ color: C.muted }}>
+                {filteredQueueItems.length} of {queueItems.length}
+              </span>
             </div>
-            <span className="text-xs font-semibold" style={{ color: C.green }}>{leads.length} ready</span>
+            <span className="text-xs font-semibold" style={{ color: C.green }}>
+              {leads.length} ready
+            </span>
+          </div>
+          <div className="space-y-2 border-b p-3" style={{ borderColor: C.rule }}>
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2"
+                style={{ color: C.muted }}
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={queueQuery}
+                onChange={(event) => setQueueQuery(event.target.value)}
+                placeholder="Search matches"
+                aria-label="Search matches"
+                className="h-8 w-full rounded-md border bg-white pl-8 pr-2 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                style={{ borderColor: C.ruleDark, color: C.navy }}
+              />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1" role="group" aria-label="Match status filter">
+                {(["all", "ready", "review"] as const).map((filter) => {
+                  const label = filter === "all" ? "All" : filter === "ready" ? "Ready" : "Review";
+                  const active = queueFilter === filter;
+
+                  return (
+                    <Button
+                      key={filter}
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      aria-pressed={active}
+                      onClick={() => setQueueFilter(filter)}
+                      style={{
+                        borderColor: active ? C.blueLight : C.ruleDark,
+                        backgroundColor: active ? C.blueTint : C.white,
+                        color: active ? C.blue : C.navySoft,
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })}
+              </div>
+              <label className="flex items-center gap-1 text-[10px]" style={{ color: C.muted }}>
+                <ArrowDownUp className="size-3" aria-hidden="true" />
+                <span className="sr-only">Sort matches</span>
+                <select
+                  value={queueSort}
+                  onChange={(event) => setQueueSort(event.target.value as QueueSort)}
+                  className="h-7 max-w-24 rounded border bg-white px-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                  style={{ borderColor: C.ruleDark, color: C.navySoft }}
+                >
+                  <option value="priority">Priority</option>
+                  <option value="newest">Newest</option>
+                  <option value="confidence">Confidence</option>
+                </select>
+              </label>
+            </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {queueItems.length > 0 ? (
-              queueItems.map((lead) => (
+            {filteredQueueItems.length > 0 ? (
+              filteredQueueItems.map((lead) => (
                 <DenseQueueRow
                   key={lead.id}
                   lead={lead}
@@ -1463,6 +1736,26 @@ export default function ProspectDashboardClient({
                   onSelect={setSelectedLeadId}
                 />
               ))
+            ) : queueItems.length > 0 ? (
+              <div className="flex h-full flex-col items-center justify-center px-5 text-center">
+                <ListFilter className="size-4" style={{ color: C.blue }} aria-hidden="true" />
+                <p className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
+                  No matches fit these filters
+                </p>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => {
+                    setQueueFilter("all");
+                    setQueueQuery("");
+                  }}
+                  style={{ color: C.blue }}
+                >
+                  Clear filters
+                </Button>
+              </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center px-5 text-center">
                 <Radar className="size-4" style={{ color: C.blue }} aria-hidden="true" />
@@ -1507,21 +1800,61 @@ export default function ProspectDashboardClient({
 
         <aside className="flex min-h-0 flex-col gap-3">
           <section className="shrink-0 rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
-            <div className="h-10 border-b px-4 leading-10" style={{ borderColor: C.rule }}>
+            <div className="flex min-h-10 items-center justify-between gap-2 border-b px-4" style={{ borderColor: C.rule }}>
               <h2 className="text-sm font-semibold" style={{ color: C.navy }}>At a glance</h2>
+              <div className="flex items-center gap-1">
+                {shouldRefreshForLeads ? (
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={autoRefreshEnabled ? "Pause live refresh" : "Resume live refresh"}
+                    title={autoRefreshEnabled ? "Pause live refresh" : "Resume live refresh"}
+                    onClick={() => setAutoRefreshEnabled((enabled) => !enabled)}
+                    style={{ color: C.navySoft }}
+                  >
+                    {autoRefreshEnabled ? <Pause className="size-3" /> : <Play className="size-3" />}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label="Refresh dashboard"
+                  title="Refresh dashboard"
+                  disabled={isRefreshPending}
+                  onClick={refreshDashboard}
+                  style={{ color: C.blue }}
+                >
+                  <RefreshCw className={cn("size-3", isRefreshPending && "animate-spin")} />
+                </Button>
+              </div>
             </div>
             <div className="grid grid-cols-2 divide-x divide-y" style={{ borderColor: C.rule }}>
               {[
                 ["Ready", leads.length, C.green],
                 ["Review", discoveryCandidates.length, C.amber],
                 ["Threshold", formatScore(verifierThreshold), C.blue],
-                ["Status", isWarmingUp ? "Searching" : "Current", C.navySoft],
+                ["Status", status.label, C.navySoft],
               ].map(([label, value, color]) => (
                 <div key={String(label)} className="p-3">
                   <p className="text-[11px] font-medium" style={{ color: C.muted }}>{label}</p>
-                  <p className="mt-0.5 text-base font-bold tracking-tight" style={{ color: color as string }}>{value}</p>
+                  <p className="mt-0.5 truncate text-base font-bold tracking-tight" style={{ color: color as string }}>{value}</p>
                 </div>
               ))}
+            </div>
+            <div className="border-t px-4 py-2" style={{ borderColor: C.rule }}>
+              <p className="text-[10px] leading-4" role="status" aria-live="polite" style={{ color: C.muted }}>
+                {shouldRefreshForLeads
+                  ? autoRefreshEnabled
+                    ? `Live refresh on · checking every ${refreshMs / 1000}s`
+                    : "Live refresh paused"
+                  : "Scan results are up to date"}
+                {` · Updated ${formatTime(lastUpdatedAt)}`}
+              </p>
+              <p className="mt-0.5 text-[10px] leading-4" style={{ color: C.navySoft }}>
+                {status.title}
+              </p>
             </div>
           </section>
 
@@ -1531,12 +1864,52 @@ export default function ProspectDashboardClient({
               <Target className="size-4" style={{ color: C.blue }} aria-hidden="true" />
             </div>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+              {leads.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQueueFilter("ready");
+                    setQueueQuery("");
+                  }}
+                  className="block w-full rounded-md border p-3 text-left transition-colors hover:bg-[#F0F7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                  style={{ borderColor: C.green, backgroundColor: C.greenPale }}
+                >
+                  <p className="text-sm font-semibold" style={{ color: C.green }}>
+                    Review {leads.length} ready {leads.length === 1 ? "match" : "matches"}
+                  </p>
+                  <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
+                    Start with the strongest conversations and move them toward outreach.
+                  </p>
+                </button>
+              ) : discoveryCandidates.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQueueFilter("review");
+                    setQueueQuery("");
+                  }}
+                  className="block w-full rounded-md border p-3 text-left transition-colors hover:bg-[#F0F7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                  style={{ borderColor: C.amber, backgroundColor: C.amberPale }}
+                >
+                  <p className="text-sm font-semibold" style={{ color: C.amber }}>
+                    Review {discoveryCandidates.length} plausible {discoveryCandidates.length === 1 ? "match" : "matches"}
+                  </p>
+                  <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
+                    Confirm whether the evidence is useful before refining the brief.
+                  </p>
+                </button>
+              ) : (
+                <Link href="/dashboard/brief" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+                  <p className="text-sm font-semibold" style={{ color: C.blue }}>Improve the next scan</p>
+                  <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>Refine the buyer problem and phrases that should trigger a match.</p>
+                </Link>
+              )}
               <Link href="/dashboard/watchlists" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
                 <p className="text-sm font-semibold" style={{ color: C.navy }}>Buyer groups</p>
                 <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Focus the next scan on one audience and one real problem.</p>
               </Link>
               <Link href="/dashboard/brief" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-                <p className="text-sm font-semibold" style={{ color: C.navy }}>Your brief</p>
+                <p className="text-sm font-semibold" style={{ color: C.navy }}>Refine your brief</p>
                 <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Use the phrases buyers use when they need help.</p>
               </Link>
               <Link href="/dashboard/research" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>

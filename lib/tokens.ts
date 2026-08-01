@@ -14,10 +14,12 @@ export const C = {
   muted:     "#546F8A",
   faint:     "#8BADC4",
   text:      "#0A1628",
-  green:     "#10B981",
+  // Darker foreground colors keep success, warning, and error text legible
+  // at the small sizes used throughout the workspace UI.
+  green:     "#047857",
   greenPale: "#D1FAE5",
-  amber:     "#F59E0B",
+  amber:     "#B45309",
   amberPale: "#FEF3C7",
-  red:       "#EF4444",
+  red:       "#B91C1C",
   redPale:   "#FEE2E2",
 } as const;
