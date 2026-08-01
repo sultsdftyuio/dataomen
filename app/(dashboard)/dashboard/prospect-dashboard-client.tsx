@@ -228,12 +228,14 @@ function LeadOutreach({
   qualificationMessage,
   onQualify,
   reviewOnly,
+  compact = false,
 }: {
   lead: QualifiedLeadView;
   disabled: boolean;
   qualificationMessage: string | null;
   onQualify: (leadId: string) => void;
   reviewOnly: boolean;
+  compact?: boolean;
 }) {
   const [draft, setDraft] = useState(lead.suggestedReply);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "empty" | "error">(
@@ -330,7 +332,7 @@ function LeadOutreach({
     return (
       <section
         aria-label="Lead actions"
-        className="rounded-md border p-4"
+        className={cn("rounded-md border", compact ? "p-3" : "p-4")}
         style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
       >
         <div className="flex flex-wrap items-center gap-2">
@@ -364,7 +366,7 @@ function LeadOutreach({
   return (
     <section
       aria-labelledby={`${draftId}-label`}
-      className="rounded-md border p-4"
+      className={cn("rounded-md border", compact ? "p-3" : "p-4")}
       style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}
     >
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
@@ -403,7 +405,10 @@ function LeadOutreach({
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         placeholder="A suggested public reply will appear here after verification."
-        className="min-h-28 resize-y bg-white text-sm leading-6"
+        className={cn(
+          compact ? "min-h-20" : "min-h-28",
+          "resize-y bg-white text-sm leading-6",
+        )}
         style={{ borderColor: C.blueLight, color: C.navy }}
       />
 
@@ -673,14 +678,14 @@ function DenseQueueRow({
       type="button"
       onClick={() => onSelect(lead.id)}
       aria-pressed={selected}
-      className="w-full border-b px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
+      className="w-full border-b px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
       style={{
         borderColor: C.rule,
         backgroundColor: selected ? C.blueTint : C.white,
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[11px] font-semibold" style={{ color: C.navySoft }}>
+        <span className="truncate text-xs font-semibold" style={{ color: C.navySoft }}>
           {source}
           {lead.sourcePost.community ? ` · ${lead.sourcePost.community}` : ""}
         </span>
@@ -694,11 +699,11 @@ function DenseQueueRow({
           {isWatch ? "Review" : "Ready"}
         </span>
       </div>
-      <p className="mt-1 truncate text-xs font-semibold" style={{ color: C.navy }}>
+      <p className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>
         {lead.sourcePost.title}
       </p>
       <div className="mt-1 flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-[11px]" style={{ color: C.muted }}>
+        <p className="min-w-0 truncate text-xs" style={{ color: C.muted }}>
           {lead.painDetected || lead.matchReason}
         </p>
         <span className="shrink-0 text-[10px] font-semibold" style={{ color: C.blue }}>
@@ -731,9 +736,9 @@ function DenseLeadDetails({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b px-3 py-2.5" style={{ borderColor: C.rule }}>
+      <div className="border-b px-4 py-3" style={{ borderColor: C.rule }}>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold" style={{ color: C.navySoft }}>
+          <span className="text-xs font-semibold" style={{ color: C.navySoft }}>
             {sourceDisplayName(lead.sourcePost.source)}
             {lead.sourcePost.community ? ` · ${lead.sourcePost.community}` : ""}
           </span>
@@ -759,21 +764,21 @@ function DenseLeadDetails({
         </p>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <div className="grid gap-2 sm:grid-cols-2">
-          <div className="rounded-md border border-l-[3px] bg-white p-2.5" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
+          <div className="rounded-md border border-l-[3px] bg-white p-3" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
               Their need
             </p>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
+            <p className="mt-1 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
               {lead.painDetected}
             </p>
           </div>
-          <div className="rounded-md border border-l-[3px] bg-white p-2.5" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
+          <div className="rounded-md border border-l-[3px] bg-white p-3" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
               Why it fits
             </p>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
+            <p className="mt-1 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
               {lead.matchReason}
             </p>
           </div>
@@ -815,6 +820,7 @@ function DenseLeadDetails({
           qualificationMessage={qualificationMessage}
           onQualify={onQualify}
           reviewOnly={isWatch}
+          compact
         />
 
         <div className="border-t pt-3" style={{ borderColor: C.rule }}>
@@ -1407,27 +1413,27 @@ export default function ProspectDashboardClient({
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-3" style={{ color: C.text }}>
-      <header className="flex h-8 shrink-0 items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 w-full flex-col gap-4" style={{ color: C.text }}>
+      <header className="flex h-10 shrink-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
-          <h1 className="text-base font-semibold tracking-tight" style={{ color: C.navy }}>
+          <h1 className="pfd text-xl font-semibold tracking-tight" style={{ color: C.navy }}>
             Prospect desk
           </h1>
-          <span className="hidden text-xs sm:inline" style={{ color: C.muted }}>
+          <span className="hidden text-sm sm:inline" style={{ color: C.muted }}>
             Review real conversations, then decide what deserves your time.
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Badge
             variant="outline"
-            className="h-6 rounded px-2 text-[10px]"
+            className="h-7 rounded px-2 text-[11px]"
             style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
           >
             Profile {serviceProfile.status ?? "ready"}
           </Badge>
           <Link
             href="/dashboard/brief"
-            className="inline-flex h-7 items-center rounded-md border px-2 text-xs font-semibold transition-colors hover:bg-[#F0F7FF]"
+            className="inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold transition-colors hover:bg-[#F0F7FF]"
             style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
           >
             Edit brief
@@ -1435,20 +1441,20 @@ export default function ProspectDashboardClient({
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(280px,0.85fr)_minmax(420px,1.35fr)_minmax(240px,0.7fr)]">
+      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(300px,0.85fr)_minmax(440px,1.35fr)_minmax(260px,0.7fr)]">
         <section
           aria-labelledby="matches-heading"
           className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white"
           style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
         >
-          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: C.rule }}>
+          <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
             <div className="flex items-center gap-2">
-              <h2 id="matches-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
+              <h2 id="matches-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
                 Matches
               </h2>
               <span className="text-[10px]" style={{ color: C.muted }}>{queueItems.length} total</span>
             </div>
-            <span className="text-[10px] font-semibold" style={{ color: C.green }}>{leads.length} ready</span>
+            <span className="text-xs font-semibold" style={{ color: C.green }}>{leads.length} ready</span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {queueItems.length > 0 ? (
@@ -1475,8 +1481,8 @@ export default function ProspectDashboardClient({
           className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white"
           style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
         >
-          <div className="flex h-9 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: C.rule }}>
-            <h2 id="details-heading" className="text-xs font-semibold" style={{ color: C.navy }}>
+          <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
+            <h2 id="details-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
               Details
             </h2>
             {selectedLead ? (
@@ -1504,8 +1510,8 @@ export default function ProspectDashboardClient({
 
         <aside className="flex min-h-0 flex-col gap-3">
           <section className="shrink-0 rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
-            <div className="h-9 border-b px-3 leading-9" style={{ borderColor: C.rule }}>
-              <h2 className="text-xs font-semibold" style={{ color: C.navy }}>At a glance</h2>
+            <div className="h-10 border-b px-4 leading-10" style={{ borderColor: C.rule }}>
+              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>At a glance</h2>
             </div>
             <div className="grid grid-cols-2 divide-x divide-y" style={{ borderColor: C.rule }}>
               {[
@@ -1514,31 +1520,31 @@ export default function ProspectDashboardClient({
                 ["Threshold", formatScore(verifierThreshold), C.blue],
                 ["Status", isWarmingUp ? "Searching" : "Current", C.navySoft],
               ].map(([label, value, color]) => (
-                <div key={String(label)} className="p-2.5">
-                  <p className="text-[10px] font-medium" style={{ color: C.muted }}>{label}</p>
-                  <p className="mt-0.5 text-sm font-bold tracking-tight" style={{ color: color as string }}>{value}</p>
+                <div key={String(label)} className="p-3">
+                  <p className="text-[11px] font-medium" style={{ color: C.muted }}>{label}</p>
+                  <p className="mt-0.5 text-base font-bold tracking-tight" style={{ color: color as string }}>{value}</p>
                 </div>
               ))}
             </div>
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
-            <div className="flex h-9 shrink-0 items-center justify-between border-b px-3" style={{ borderColor: C.rule }}>
-              <h2 className="text-xs font-semibold" style={{ color: C.navy }}>Next steps</h2>
-              <Target className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+            <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
+              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>Next steps</h2>
+              <Target className="size-4" style={{ color: C.blue }} aria-hidden="true" />
             </div>
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
-              <Link href="/dashboard/watchlists" className="block rounded-md border p-2.5 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-                <p className="text-xs font-semibold" style={{ color: C.navy }}>Buyer groups</p>
-                <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>Focus the next scan on one audience and one real problem.</p>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+              <Link href="/dashboard/watchlists" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+                <p className="text-sm font-semibold" style={{ color: C.navy }}>Buyer groups</p>
+                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Focus the next scan on one audience and one real problem.</p>
               </Link>
-              <Link href="/dashboard/brief" className="block rounded-md border p-2.5 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-                <p className="text-xs font-semibold" style={{ color: C.navy }}>Your brief</p>
-                <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>Use the phrases buyers use when they need help.</p>
+              <Link href="/dashboard/brief" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+                <p className="text-sm font-semibold" style={{ color: C.navy }}>Your brief</p>
+                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Use the phrases buyers use when they need help.</p>
               </Link>
-              <Link href="/dashboard/research" className="block rounded-md border p-2.5 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-                <p className="text-xs font-semibold" style={{ color: C.navy }}>Buyer words</p>
-                <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>Learn from accepted evidence without treating it as a lead.</p>
+              <Link href="/dashboard/research" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
+                <p className="text-sm font-semibold" style={{ color: C.navy }}>Buyer words</p>
+                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Learn from accepted evidence without treating it as a lead.</p>
               </Link>
               {buyerDemandReport?.marketPatterns.length ? (
                 <div className="rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
