@@ -73,7 +73,7 @@ class GitHubIssuesConnector:
             else env_positive_float("ARCLI_GITHUB_REQUEST_INTERVAL_SECONDS", 0.5)
         )
         self.max_attempts = max(
-            1,
+            2,
             max_attempts
             if max_attempts is not None
             else env_positive_int("ARCLI_GITHUB_HTTP_MAX_ATTEMPTS", 3),

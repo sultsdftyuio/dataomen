@@ -150,9 +150,9 @@ def test_pass1_prompt_contains_the_url_and_delimited_hero_snippet() -> None:
     assert "HOMEPAGE HERO MARKDOWN:\n---\n# Arcli\n---" in prompt
 
 
-def test_pass1_prompt_requires_plain_buyer_outcomes_not_lead_jargon() -> None:
+def test_pass1_prompt_distinguishes_buyer_outcomes_from_operator_jargon() -> None:
     assert "need more customers" in pass1_module.PASS1_SYSTEM_PROMPT
-    assert "more people signing up" in pass1_module.PASS1_SYSTEM_PROMPT
+    assert "prospecting" in pass1_module.PASS1_SYSTEM_PROMPT
     assert "sales pipeline" in pass1_module.PASS1_SYSTEM_PROMPT
 
 

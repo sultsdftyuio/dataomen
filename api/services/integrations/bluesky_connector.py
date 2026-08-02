@@ -78,7 +78,7 @@ class BlueskyConnector:
             1,
             max_pages
             if max_pages is not None
-            else env_positive_int("ARCLI_BLUESKY_MAX_PAGES", 1),
+            else env_positive_int("ARCLI_BLUESKY_MAX_PAGES", 2),
         )
         self.requests_per_minute = max(
             1,

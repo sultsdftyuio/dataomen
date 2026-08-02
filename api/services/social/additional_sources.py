@@ -209,10 +209,10 @@ def _additional_public_source_batch_size() -> int:
 
 
 def _additional_public_source_max_pages() -> int:
-    """Keep every added free source to one page unless an operator opts in."""
+    """Use a small, bounded amount of free-source pagination by default."""
     return max(
         1,
-        min(2, env_int("ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES", 1)),
+        min(2, env_int("ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES", 2)),
     )
 
 

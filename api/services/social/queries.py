@@ -163,6 +163,101 @@ def public_source_queries(
 
 
 
+_DEMAND_ACQUISITION_PROFILE_PATTERN = re.compile(
+    r"\b(?:buyers?|leads?|prospects?|prospecting|outbound|sales\s+pipeline|"
+    r"customer\s+acquisition|customer\s+discovery|demand\s+generation|"
+    r"outreach|signups?|signing\s+up|customer\s+growth|growth\s+plan)\b",
+    re.IGNORECASE,
+)
+
+# These are deliberately short, source-neutral alternatives to the canonical
+# matching brief.  The profile's phrase remains first; these aliases only
+# widen retrieval for products whose buyers genuinely discuss customer and
+# pipeline acquisition.  The verifier remains the qualification gate.
+_DEMAND_ACQUISITION_QUERY_VARIANTS: dict[str, tuple[str, ...]] = {
+    "buyer_pain": ("need more leads", "need more customers"),
+    "urgent_failure": ("signups dropping", "pipeline drying up"),
+    "recommendation_request": ("find customers", "get more leads"),
+    "manual_workflow_frustration": ("manual outreach", "manual prospecting"),
+    "category_tool_search": ("prospecting tools", "lead generation tools"),
+    "switching_trigger": ("outbound not working", "better prospecting tool"),
+}
+
+
+def _profile_has_demand_acquisition_intent(profile: ServiceProfile) -> bool:
+    context = " ".join(
+        [
+            profile.one_liner,
+            profile.core_problem_solved,
+            *profile.target_audience,
+            *profile.key_value_propositions,
+            *profile.ideal_customer_pain_points,
+            *profile.use_cases,
+            *profile.buying_triggers,
+            *profile.urgency_signals,
+            *profile.search_terms,
+        ]
+    )
+    return bool(_DEMAND_ACQUISITION_PROFILE_PATTERN.search(context))
+
+
+def _initial_source_query_variants_per_type() -> int:
+    return max(
+        1,
+        min(
+            3,
+            env_int(
+                "ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE",
+                DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_VARIANTS_PER_TYPE,
+            ),
+        ),
+    )
+
+
+def public_source_search_queries(
+    profile: ServiceProfile,
+    *,
+    discovery_queries: list[DiscoveryQuery] | None = None,
+) -> list[DiscoveryQuery]:
+    """Build the bounded, high-recall source query plan for activation.
+
+    Canonical profile phrases remain the source of truth and always lead each
+    intent.  Demand-acquisition profiles also receive concise buyer-language
+    alternatives, since a public author is much more likely to write "need
+    more leads" than the exact sentence generated for a profile.  Other
+    product categories retain the canonical plan until they have a similarly
+    grounded expansion vocabulary.
+    """
+
+    canonical_queries = public_source_queries(
+        profile,
+        discovery_queries=discovery_queries,
+    )
+    variants_per_type = _initial_source_query_variants_per_type()
+    if variants_per_type == 1 or not _profile_has_demand_acquisition_intent(profile):
+        return canonical_queries
+
+    queries: list[DiscoveryQuery] = []
+    seen_phrases: set[str] = set()
+    for canonical in canonical_queries:
+        alternatives = (canonical.phrase, *(
+            _DEMAND_ACQUISITION_QUERY_VARIANTS.get(canonical.query_type, ())
+        ))
+        added_for_type = 0
+        for alternative in alternatives:
+            phrase = _compact_public_search_term(alternative)
+            phrase_key = phrase.casefold()
+            if len(phrase) < 4 or phrase_key in seen_phrases:
+                continue
+            queries.append(DiscoveryQuery(canonical.query_type, phrase))
+            seen_phrases.add(phrase_key)
+            added_for_type += 1
+            if added_for_type >= variants_per_type:
+                break
+    return queries
+
+
+
 def public_source_query_terms(profile: ServiceProfile) -> list[str]:
     """Compatibility projection for consumers that need only flat phrases."""
     return [query.phrase for query in public_source_queries(profile)]
@@ -479,6 +574,7 @@ from .models import (
     DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS,
     DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY,
     DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_LIMIT,
+    DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_VARIANTS_PER_TYPE,
     DEFAULT_MAX_QUERIES,
     DISCOVERY_QUERY_TYPES,
     DiscoveryQuery,

@@ -108,7 +108,7 @@ def test_deep_profile_extraction_generates_discovery_phrases_without_temperature
     assert request["max_completion_tokens"] == 1_400
     assert request["messages"][0]["role"] == "developer"
     assert "need more customers" in str(request["messages"][0]["content"])
-    assert "more people signing up" in str(request["messages"][0]["content"])
+    assert "sales pipeline" in str(request["messages"][0]["content"])
     assert request["response_format"] is ServiceProfileResponse
 
 
@@ -140,8 +140,6 @@ def test_deep_profile_rejects_operator_language_in_discovery_query() -> None:
         "I keep manually thread checking for prospects",
         "Quality-checked alerts from buyer-help discussions",
         "Switch to fit-checked prospect alerts",
-        "We need more leads this month",
-        "Our sales pipeline is empty",
         "manual searching for real customer need",
         "hours wasted on irrelevant customer opportunities",
         "best way to find urgent SaaS buyers",
@@ -174,6 +172,21 @@ def test_deep_profile_accepts_plain_customer_outcome_language() -> None:
     profile = ServiceProfileDraft.model_validate(payload)
 
     assert profile.discovery_queries[0].phrase == "not enough people signing up"
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["We need more leads this month", "Our sales pipeline is empty"],
+)
+def test_deep_profile_accepts_plain_demand_acquisition_language(phrase: str) -> None:
+    payload = _profile_payload()
+    queries = _discovery_queries()
+    queries[0] = {"query_type": "buyer_pain", "phrase": phrase}
+    payload["discovery_queries"] = queries
+
+    profile = ServiceProfileDraft.model_validate(payload)
+
+    assert profile.discovery_queries[0].phrase == phrase
 
 
 def test_deep_profile_rejects_discovery_query_extra_keys() -> None:
@@ -254,7 +267,7 @@ def test_deep_profile_repairs_an_invalid_buyer_language_phrase_once() -> None:
 def test_deep_profile_compacts_an_overlong_repair_without_a_third_ai_request() -> None:
     invalid_payload = _profile_payload()
     invalid_queries = _discovery_queries()
-    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "we need more leads"}
+    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "lead matching tool"}
     invalid_payload["discovery_queries"] = invalid_queries
     repaired_queries = _discovery_queries()
     repaired_queries[0] = {
@@ -304,7 +317,7 @@ def test_deep_profile_compacts_an_overlong_repair_without_a_third_ai_request() -
 def test_deep_profile_stops_after_one_invalid_repair() -> None:
     invalid_payload = _profile_payload()
     invalid_queries = _discovery_queries()
-    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "we need more leads"}
+    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "lead matching tool"}
     invalid_payload["discovery_queries"] = invalid_queries
     requests: list[dict[str, object]] = []
 
@@ -352,7 +365,7 @@ def test_deep_profile_uses_demand_outcome_fallback_after_one_invalid_repair() ->
         }
     )
     invalid_queries = _discovery_queries()
-    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "we need more leads"}
+    invalid_queries[0] = {"query_type": "buyer_pain", "phrase": "lead matching tool"}
     invalid_payload["discovery_queries"] = invalid_queries
     requests: list[dict[str, object]] = []
 
@@ -387,12 +400,12 @@ def test_deep_profile_uses_demand_outcome_fallback_after_one_invalid_repair() ->
 
     assert len(requests) == 2
     assert [query["phrase"] for query in profile["discovery_queries"]] == [
-        "not enough SaaS users signing up",
-        "new SaaS signups dropped this week",
-        "how are SaaS founders finding customers",
-        "we are doing outreach by hand",
-        "tools to find SaaS customers",
-        "our SaaS growth plan is failing",
+        "need more leads",
+        "signups dropping",
+        "how to find customers",
+        "manual prospecting takes too long",
+        "looking for lead generation tools",
+        "outbound is not working",
     ]
 
 

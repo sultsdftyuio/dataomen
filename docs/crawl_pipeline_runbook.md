@@ -250,6 +250,15 @@ Discovery and spend settings are intentionally bounded by default:
 # One typed phrase for each of the six matching-brief query types.
 ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT=6
 
+# Demand-acquisition profiles search their canonical phrase plus one concise
+# buyer-language alternative per intent. Set to 1 to use canonical phrases
+# only; the hard maximum is 3 formulations per intent.
+ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE=2
+
+# Scan the last 30 days and retain up to 50 results for each source query.
+ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS=720
+ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY=50
+
 # Suppress the paid fallback only after this many plausible signals across the
 # complete free phase (HN + the four added sources). The prior HN-named env
 # remains supported for compatibility if this new value is not set.
@@ -266,11 +275,11 @@ ARCLI_STACKEXCHANGE_INGESTION_ENABLED=true
 ARCLI_GITHUB_INGESTION_ENABLED=true
 ARCLI_LEMMY_INGESTION_ENABLED=true
 
-# One page per phrase/source by default; do not raise casually. Redis shares
+# Two pages per phrase/source by default. Redis shares
 # this 15-minute query dedupe window across workers and tenants. To raise the
 # global cap, also raise the relevant provider cap (for example,
 # ARCLI_BLUESKY_MAX_PAGES) because provider caps remain the hard safety limit.
-ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES=1
+ARCLI_ADDITIONAL_PUBLIC_SOURCE_MAX_PAGES=2
 ARCLI_ADDITIONAL_PUBLIC_SOURCE_QUERY_CACHE_TTL_SECONDS=900
 
 # Optional credentials improve free API quotas; never expose them to clients.
@@ -296,7 +305,7 @@ LEAD_VERIFIER_SCORE_THRESHOLD=0.70
 ```
 
 The strict one-page setting bounds a successful X fallback to one X search
-page. The added sources also default to one page per buyer phrase and have
+page. The added sources default to two pages per buyer phrase and have
 their own Redis-coordinated request caps. Provider retries can still occur
 after a timeout or retryable error, so no system can honestly guarantee that
 an upstream provider received exactly one network attempt in those failure

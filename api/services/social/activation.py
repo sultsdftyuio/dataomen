@@ -77,7 +77,7 @@ def enqueue_initial_public_source_ingestion(
         return InitialPublicSourceIngestionPlan([], 0, 0, "service_profile_not_found")
 
     profile = _service_profile_from_row(profile_row)
-    discovery_queries = public_source_queries(
+    discovery_queries = public_source_search_queries(
         profile,
         discovery_queries=list(discovery_queries_override)
         if discovery_queries_override is not None
@@ -570,5 +570,6 @@ from .queries import (
     _x_fallback_query,
     enabled_additional_public_sources,
     public_source_queries,
+    public_source_search_queries,
     x_source_is_configured,
 )

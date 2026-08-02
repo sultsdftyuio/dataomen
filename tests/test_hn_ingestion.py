@@ -138,16 +138,16 @@ class HackerNewsIngestionTests(unittest.TestCase):
         self.assertEqual(
             [query.phrase for query in queries],
             [
-                "not enough people signing up",
-                "new signups dropped this week",
-                "need a better way to get customers",
-                "we are doing outreach by hand",
-                "tools to grow our customer base",
-                "our current growth plan is failing",
+                "need more leads",
+                "signups dropping",
+                "how to find customers",
+                "manual prospecting",
+                "prospecting tools",
+                "outbound not working",
             ],
         )
 
-    def test_legacy_demand_fallback_keeps_b2b_software_context_at_search_time(self) -> None:
+    def test_legacy_demand_fallback_uses_natural_buyer_language_at_search_time(self) -> None:
         import api.services.social_ingestion as ingestion_module
 
         queries = ingestion_module._profile_discovery_queries(
@@ -166,7 +166,7 @@ class HackerNewsIngestionTests(unittest.TestCase):
 
         self.assertEqual(
             [query.phrase for query in queries],
-            ["how are SaaS founders finding customers"],
+            ["how to find customers"],
         )
 
     def test_service_batches_global_payloads_and_returns_new_ids(self) -> None:

@@ -31,9 +31,9 @@ DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
-# v8 forces outcome-language regeneration so a prompt/validator change cannot
-# leave existing profiles searching for Arcli's own operator workflow or jargon.
-PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v8"
+# v9 permits genuine demand-acquisition language (for example, leads and sales
+# pipeline) while continuing to reject Arcli's own retrieval mechanics.
+PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v9"
 
 SERVICE_PROFILE_COLUMNS = {
     "tenant_id",

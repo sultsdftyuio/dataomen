@@ -15,6 +15,7 @@ from api.services.social_ingestion import (
     enqueue_initial_public_source_ingestion,
     public_source_queries,
     public_source_query_terms,
+    public_source_search_queries,
 )
 from api.services.verifier import ServiceProfile
 
@@ -110,6 +111,75 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             ],
         )
 
+    def test_demand_acquisition_search_plan_adds_buyer_language_variants(self) -> None:
+        profile = ServiceProfile(
+            company_name="Pipeline Co",
+            one_liner="Help SaaS teams create a healthier sales pipeline",
+            target_audience=["B2B SaaS founders"],
+            core_problem_solved="Manual prospecting does not create enough leads",
+            key_value_propositions=["Find customer conversations"],
+            ideal_customer_pain_points=["Not enough qualified demos"],
+            search_terms=[query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        canonical = [
+            DiscoveryQuery(query["query_type"], query["phrase"])
+            for query in CANONICAL_DISCOVERY_QUERIES
+        ]
+
+        with patch.dict(os.environ, {}, clear=True):
+            queries = public_source_search_queries(
+                profile,
+                discovery_queries=canonical,
+            )
+
+        self.assertEqual(len(queries), 12)
+        self.assertEqual(
+            [query.query_type for query in queries],
+            [query_type for query_type in DISCOVERY_QUERY_TYPES for _ in range(2)],
+        )
+        self.assertEqual(
+            [query.phrase for query in queries[::2]],
+            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        self.assertEqual(
+            [query.phrase for query in queries[1::2]],
+            [
+                "need more leads",
+                "signups dropping",
+                "find customers",
+                "manual outreach",
+                "prospecting tools",
+                "outbound not working",
+            ],
+        )
+
+    def test_demand_acquisition_variants_can_be_disabled(self) -> None:
+        profile = ServiceProfile(
+            company_name="Pipeline Co",
+            one_liner="Outbound prospecting for SaaS founders",
+            target_audience=["B2B SaaS founders"],
+            core_problem_solved="Not enough sales leads",
+            key_value_propositions=["Find customer conversations"],
+            ideal_customer_pain_points=["Manual prospecting"],
+            search_terms=[query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        canonical = [
+            DiscoveryQuery(query["query_type"], query["phrase"])
+            for query in CANONICAL_DISCOVERY_QUERIES
+        ]
+
+        with patch.dict(
+            os.environ,
+            {"ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE": "1"},
+            clear=True,
+        ):
+            queries = public_source_search_queries(
+                profile,
+                discovery_queries=canonical,
+            )
+
+        self.assertEqual(queries, canonical)
+
     def test_activation_queues_typed_hn_plan_and_one_x_fallback(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
@@ -142,7 +212,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         hn_send.assert_called_once()
         queued_call = hn_send.call_args
         self.assertEqual(queued_call.args[0], CANONICAL_DISCOVERY_QUERIES)
-        self.assertEqual(queued_call.args[1:], (168, 25))
+        self.assertEqual(queued_call.args[1:], (720, 50))
         self.assertEqual(queued_call.kwargs["tenant_id"], "tenant-1")
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
         self.assertTrue(queued_call.kwargs["fallback_to_x"])
@@ -222,8 +292,8 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.x_jobs, 1)
         x_send.assert_called_once_with(
             _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
-            168,
-            25,
+            720,
+            50,
             strict_single_page=True,
             tenant_id="tenant-1",
             service_profile_id="profile-1",

@@ -94,11 +94,18 @@ DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_LIMIT = 6
 
 
 
-DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS = 168
+DEFAULT_INITIAL_PUBLIC_SOURCE_LOOKBACK_HOURS = 720
 
 
 
-DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY = 25
+DEFAULT_INITIAL_PUBLIC_SOURCE_POSTS_PER_QUERY = 50
+
+
+# A profile still owns exactly one canonical phrase for each discovery intent.
+# Activation can search a small number of alternate phrasings for that intent,
+# keeping source queries broad enough to capture how people actually write
+# about a problem without turning a bounded scan into an unbounded crawl.
+DEFAULT_INITIAL_PUBLIC_SOURCE_QUERY_VARIANTS_PER_TYPE = 2
 
 
 
@@ -139,20 +146,25 @@ DISCOVERY_QUERY_TYPES = (
 # search time so existing customer-edited profiles are never overwritten, yet
 # the next activation immediately uses the more attributable buyer phrasing.
 _LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS = {
-    "customer growth has stalled": "not enough people signing up",
-    "new customer signups are dropping": "new signups dropped this week",
-    "how can i get more customers": "need a better way to get customers",
-    "spending too much time on outreach": "we are doing outreach by hand",
-    "tools to grow our customer base": "tools to grow our customer base",
-    "our growth strategy stopped working": "our current growth plan is failing",
+    "customer growth has stalled": "need more leads",
+    "not enough people signing up": "need more leads",
+    "new customer signups are dropping": "signups dropping",
+    "new signups dropped this week": "signups dropping",
+    "how can i get more customers": "how to find customers",
+    "need a better way to get customers": "how to find customers",
+    "spending too much time on outreach": "manual prospecting",
+    "we are doing outreach by hand": "manual prospecting",
+    "tools to grow our customer base": "prospecting tools",
+    "our growth strategy stopped working": "outbound not working",
+    "our current growth plan is failing": "outbound not working",
 }
 _LEGACY_B2B_DEMAND_ACQUISITION_QUERY_REPLACEMENTS = {
-    "customer growth has stalled": "not enough SaaS users signing up",
-    "new customer signups are dropping": "new SaaS signups dropped this week",
-    "how can i get more customers": "how are SaaS founders finding customers",
-    "spending too much time on outreach": "we are doing outreach by hand",
-    "tools to grow our customer base": "tools to find SaaS customers",
-    "our growth strategy stopped working": "our SaaS growth plan is failing",
+    **_LEGACY_DEMAND_ACQUISITION_QUERY_REPLACEMENTS,
+    "not enough saas users signing up": "need more leads",
+    "new saas signups dropped this week": "signups dropping",
+    "how are saas founders finding customers": "how to find customers",
+    "tools to find saas customers": "prospecting tools",
+    "our saas growth plan is failing": "outbound not working",
 }
 _B2B_SOFTWARE_PROFILE_PATTERN = re.compile(
     r"\b(?:b2b|saas|software|startup|start-up)\b",
