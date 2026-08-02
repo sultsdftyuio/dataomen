@@ -69,7 +69,6 @@ export default async function DashboardPage() {
       leads={leads}
       discoveryCandidates={discoveryCandidates}
       buyerDemandReport={buyerDemandReport}
-      verifierThreshold={threshold}
       isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
     />
   );

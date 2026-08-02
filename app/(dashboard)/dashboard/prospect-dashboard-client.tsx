@@ -12,8 +12,6 @@ import {
   ExternalLink,
   ListFilter,
   MessageSquareText,
-  Pause,
-  Play,
   Radar,
   RefreshCw,
   RotateCcw,
@@ -31,11 +29,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { markLeadAsQualified } from "@/app/actions/leads";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
@@ -58,7 +51,6 @@ type ProspectDashboardClientProps = {
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
-  verifierThreshold: number;
   isWarmingUp: boolean;
 };
 
@@ -806,9 +798,10 @@ function DenseQueueRow({
       type="button"
       onClick={() => onSelect(lead.id)}
       aria-pressed={selected}
-      className="w-full border-b px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
+      className="w-full border-b border-l-[3px] px-4 py-3.5 text-left transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
       style={{
         borderColor: C.rule,
+        borderLeftColor: selected ? C.blue : "transparent",
         backgroundColor: selected ? C.blueTint : C.white,
       }}
     >
@@ -824,19 +817,21 @@ function DenseQueueRow({
             color: isWatch ? C.amber : C.green,
           }}
         >
-          {isWatch ? "Review" : "Ready"}
+          {isWatch ? "Worth a look" : "Ready"}
         </span>
       </div>
-      <p className="mt-1 truncate text-sm font-semibold" style={{ color: C.navy }}>
+      <p className="mt-1.5 truncate text-sm font-semibold leading-5" style={{ color: C.navy }}>
         {lead.sourcePost.title}
       </p>
       <div className="mt-1 flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-xs" style={{ color: C.muted }}>
           {lead.painDetected || lead.matchReason}
         </p>
-        <span className="shrink-0 text-[10px] font-semibold" style={{ color: C.blue }}>
-          {formatScore(lead.verifierScore)}
-        </span>
+        {lead.urgencyReason ? (
+          <span className="shrink-0 text-[10px] font-semibold" style={{ color: C.red }}>
+            Time-sensitive
+          </span>
+        ) : null}
       </div>
     </button>
   );
@@ -864,9 +859,9 @@ function DenseLeadDetails({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b px-4 py-3" style={{ borderColor: C.rule }}>
+      <div className="border-b px-4 py-3.5" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold" style={{ color: C.navySoft }}>
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.navySoft }}>
             {sourceDisplayName(lead.sourcePost.source)}
             {lead.sourcePost.community ? ` · ${lead.sourcePost.community}` : ""}
           </span>
@@ -879,58 +874,34 @@ function DenseLeadDetails({
               color: isWatch ? C.amber : C.green,
             }}
           >
-            {isWatch ? "Review" : "Ready"}
+            {isWatch ? "Worth a look" : "Ready to reply"}
           </Badge>
         </div>
-        <h3 className="mt-1 text-sm font-semibold leading-5" style={{ color: C.navy }}>
+        <h3 className="mt-1.5 text-base font-semibold leading-6" style={{ color: C.navy }}>
           {lead.sourcePost.title}
         </h3>
-        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]" style={{ color: C.muted }}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="cursor-help border-b border-dotted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-              >
-                Verifier {formatScore(lead.verifierScore)}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={6} className="max-w-56 leading-5">
-              Evidence relevance after review. Higher scores indicate a closer, better-supported match to your brief.
-            </TooltipContent>
-          </Tooltip>
-          {lead.similarityScore !== null ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="cursor-help border-b border-dotted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                >
-                  Similarity {formatScore(lead.similarityScore)}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" sideOffset={6} className="max-w-56 leading-5">
-                Semantic closeness to your matching brief. It supports prioritization but does not qualify a match on its own.
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
-          {postedAt ? <span>Posted {postedAt}</span> : null}
-        </div>
+        {(postedAt || lead.sourcePost.author) ? (
+          <p className="mt-1.5 text-[11px]" style={{ color: C.muted }}>
+            {[lead.sourcePost.author, postedAt ? `Posted ${postedAt}` : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div className="rounded-md border border-l-[3px] bg-white p-3" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-l-[3px] bg-white p-3.5" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
-              Their need
+              What they need
             </p>
             <p className="mt-1 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
               {lead.painDetected}
             </p>
           </div>
-          <div className="rounded-md border border-l-[3px] bg-white p-3" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
+          <div className="rounded-lg border border-l-[3px] bg-white p-3.5" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
-              Why it fits
+              Your opening
             </p>
             <p className="mt-1 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
               {lead.matchReason}
@@ -939,9 +910,9 @@ function DenseLeadDetails({
         </div>
 
         {lead.urgencyReason ? (
-          <div className="rounded-md border border-l-[3px] bg-white p-2.5" style={{ borderColor: C.rule, borderLeftColor: C.red }}>
+          <div className="rounded-lg border border-l-[3px] bg-white p-3" style={{ borderColor: C.rule, borderLeftColor: C.red }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.red }}>
-              Why now
+              Why this matters now
             </p>
             <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
               “{lead.urgencyReason}”
@@ -949,21 +920,21 @@ function DenseLeadDetails({
           </div>
         ) : null}
 
-        <div className="rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+        <div className="rounded-lg border p-3.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
-              Original words
+              In their own words
             </p>
             {lead.sourcePost.author ? (
               <span className="text-[10px]" style={{ color: C.muted }}>{lead.sourcePost.author}</span>
             ) : null}
           </div>
           {lead.evidenceExcerpt ? (
-            <blockquote className="mt-2 border-l-2 pl-2 text-xs italic leading-5" style={{ borderColor: C.blueLight, color: C.navy }}>
+            <blockquote className="mt-2 border-l-2 pl-3 text-sm italic leading-6" style={{ borderColor: C.blueLight, color: C.navy }}>
               “{lead.evidenceExcerpt}”
             </blockquote>
           ) : null}
-          <p className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-5" style={{ color: C.navySoft }}>
+          <p className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap text-xs leading-5" style={{ color: C.navySoft }}>
             {lead.sourcePost.text}
           </p>
         </div>
@@ -1464,7 +1435,6 @@ export default function ProspectDashboardClient({
   leads,
   discoveryCandidates,
   buyerDemandReport,
-  verifierThreshold,
   isWarmingUp,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
@@ -1483,7 +1453,6 @@ export default function ProspectDashboardClient({
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [queueSort, setQueueSort] = useState<QueueSort>("priority");
   const [queueQuery, setQueueQuery] = useState("");
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshPending, startRefreshTransition] = useTransition();
   const shouldRefreshForLeads = shouldContinueActionQueuePolling({
@@ -1505,14 +1474,14 @@ export default function ProspectDashboardClient({
   }, [buyerDemandReport?.updatedAt, discoveryCandidates, leads]);
 
   useEffect(() => {
-    if (!shouldRefreshForLeads || !autoRefreshEnabled) return;
+    if (!shouldRefreshForLeads) return;
 
     const intervalId = window.setInterval(() => {
       refreshDashboard();
     }, refreshMs);
 
     return () => window.clearInterval(intervalId);
-  }, [autoRefreshEnabled, refreshDashboard, refreshMs, shouldRefreshForLeads]);
+  }, [refreshDashboard, refreshMs, shouldRefreshForLeads]);
 
   const handleFeedback = (leadId: string, value: LeadFeedbackValue) => {
     setPendingFeedbackLeadId(leadId);
@@ -1621,30 +1590,24 @@ export default function ProspectDashboardClient({
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
 
   return (
-    <div className="flex w-full flex-col gap-4 xl:h-full xl:min-h-0" style={{ color: C.text }}>
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 xl:min-h-10">
-        <div className="min-w-0">
-          <h1 className="pfd text-xl font-semibold tracking-tight" style={{ color: C.navy }}>
+    <div className="flex w-full flex-col gap-3 xl:h-full xl:min-h-0" style={{ color: C.text }}>
+      <header className="flex h-8 shrink-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="pfd text-base font-semibold tracking-tight" style={{ color: C.navy }}>
             Prospect desk
           </h1>
-          <p className="mt-0.5 text-xs" style={{ color: C.muted }}>
-            Review buyer conversations, then take the next best action.
-          </p>
+          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: C.blue }} aria-hidden="true" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+            Opportunities
+          </span>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-          <Badge
-            variant="outline"
-            className="h-7 rounded px-2 text-[11px]"
-            style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
-          >
-            Profile {serviceProfile.status ?? "ready"}
-          </Badge>
+        <div className="flex shrink-0 items-center justify-end">
           <Link
             href="/dashboard/brief"
-            className="inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold transition-colors hover:bg-[#F0F7FF]"
+            className="inline-flex h-7 items-center rounded-full border px-3 text-[11px] font-semibold transition-colors hover:bg-[#F0F7FF]"
             style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
           >
-            Edit brief
+            Tune your brief
           </Link>
         </div>
       </header>
@@ -1652,23 +1615,23 @@ export default function ProspectDashboardClient({
       <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(300px,0.85fr)_minmax(440px,1.35fr)_minmax(260px,0.7fr)]">
         <section
           aria-labelledby="matches-heading"
-          className="flex min-h-0 max-h-[420px] flex-col overflow-hidden rounded-lg border bg-white xl:max-h-none"
-          style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
+          className="flex min-h-0 max-h-[420px] flex-col overflow-hidden rounded-xl border bg-white xl:max-h-none"
+          style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
         >
-          <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
-            <div className="flex items-center gap-2">
-              <h2 id="matches-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+                Your opportunity feed
+              </p>
+              <h2 id="matches-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
                 Matches
               </h2>
-              <span className="text-[10px]" style={{ color: C.muted }}>
-                {filteredQueueItems.length} of {queueItems.length}
-              </span>
             </div>
-            <span className="text-xs font-semibold" style={{ color: C.green }}>
-              {leads.length} ready
+            <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
+              {leads.length} ready to reply
             </span>
           </div>
-          <div className="space-y-2 border-b p-3" style={{ borderColor: C.rule }}>
+          <div className="space-y-2 border-b p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <div className="relative">
               <Search
                 className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2"
@@ -1681,14 +1644,14 @@ export default function ProspectDashboardClient({
                 onChange={(event) => setQueueQuery(event.target.value)}
                 placeholder="Search matches"
                 aria-label="Search matches"
-                className="h-8 w-full rounded-md border bg-white pl-8 pr-2 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                className="h-8 w-full rounded-full border bg-white pl-8 pr-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
                 style={{ borderColor: C.ruleDark, color: C.navy }}
               />
             </div>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1" role="group" aria-label="Match status filter">
                 {(["all", "ready", "review"] as const).map((filter) => {
-                  const label = filter === "all" ? "All" : filter === "ready" ? "Ready" : "Review";
+                  const label = filter === "all" ? "All" : filter === "ready" ? "Ready" : "Worth a look";
                   const active = queueFilter === filter;
 
                   return (
@@ -1719,9 +1682,9 @@ export default function ProspectDashboardClient({
                   className="h-7 max-w-24 rounded border bg-white px-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
                   style={{ borderColor: C.ruleDark, color: C.navySoft }}
                 >
-                  <option value="priority">Priority</option>
+                  <option value="priority">Best fit</option>
                   <option value="newest">Newest</option>
-                  <option value="confidence">Confidence</option>
+                  <option value="confidence">Strongest</option>
                 </select>
               </label>
             </div>
@@ -1768,16 +1731,21 @@ export default function ProspectDashboardClient({
 
         <section
           aria-labelledby="details-heading"
-          className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white"
-          style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}
+          className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white"
+          style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
-          <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
-            <h2 id="details-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-              Details
-            </h2>
+          <div className="flex h-12 shrink-0 items-center justify-between gap-3 px-4" style={{ backgroundColor: C.navy }}>
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blueLight }}>
+                The conversation
+              </p>
+              <h2 id="details-heading" className="mt-0.5 text-sm font-semibold text-white">
+                What they need & how to respond
+              </h2>
+            </div>
             {selectedLead ? (
-              <span className="text-[10px]" style={{ color: C.muted }}>
-                {selectedLead.matchStatus === "discovery_candidate" ? "Review first" : "Ready to act"}
+              <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: "rgba(255,255,255,0.2)", color: C.white, backgroundColor: "rgba(255,255,255,0.08)" }}>
+                {selectedLead.matchStatus === "discovery_candidate" ? "Worth a look" : "Ready to reply"}
               </span>
             ) : null}
           </div>
@@ -1798,24 +1766,18 @@ export default function ProspectDashboardClient({
           )}
         </section>
 
-        <aside className="flex min-h-0 flex-col gap-3">
-          <section className="shrink-0 rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
-            <div className="flex min-h-10 items-center justify-between gap-2 border-b px-4" style={{ borderColor: C.rule }}>
-              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>At a glance</h2>
-              <div className="flex items-center gap-1">
-                {shouldRefreshForLeads ? (
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost"
-                    aria-label={autoRefreshEnabled ? "Pause live refresh" : "Resume live refresh"}
-                    title={autoRefreshEnabled ? "Pause live refresh" : "Resume live refresh"}
-                    onClick={() => setAutoRefreshEnabled((enabled) => !enabled)}
-                    style={{ color: C.navySoft }}
-                  >
-                    {autoRefreshEnabled ? <Pause className="size-3" /> : <Play className="size-3" />}
-                  </Button>
-                ) : null}
+        <aside className="flex min-h-0 flex-col gap-3 xl:gap-4">
+          <section className="shrink-0 overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.07)" }}>
+            <div className="relative overflow-hidden px-4 py-4" style={{ backgroundColor: C.navy }}>
+              <div className="absolute -right-8 -top-10 size-32 rounded-full" style={{ backgroundColor: "rgba(59, 154, 232, 0.18)" }} aria-hidden="true" />
+              <div className="absolute right-10 top-7 size-12 rounded-full border" style={{ borderColor: "rgba(255,255,255,0.12)" }} aria-hidden="true" />
+              <div className="relative flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blueLight }}>
+                    Your pulse
+                  </p>
+                  <h2 className="mt-1 text-sm font-semibold text-white">The conversations to focus on</h2>
+                </div>
                 <Button
                   type="button"
                   size="icon-xs"
@@ -1824,43 +1786,45 @@ export default function ProspectDashboardClient({
                   title="Refresh dashboard"
                   disabled={isRefreshPending}
                   onClick={refreshDashboard}
-                  style={{ color: C.blue }}
+                  className="border border-white/15 hover:bg-white/10 hover:text-white"
+                  style={{ color: C.white }}
                 >
                   <RefreshCw className={cn("size-3", isRefreshPending && "animate-spin")} />
                 </Button>
               </div>
-            </div>
-            <div className="grid grid-cols-2 divide-x divide-y" style={{ borderColor: C.rule }}>
-              {[
-                ["Ready", leads.length, C.green],
-                ["Review", discoveryCandidates.length, C.amber],
-                ["Threshold", formatScore(verifierThreshold), C.blue],
-                ["Status", status.label, C.navySoft],
-              ].map(([label, value, color]) => (
-                <div key={String(label)} className="p-3">
-                  <p className="text-[11px] font-medium" style={{ color: C.muted }}>{label}</p>
-                  <p className="mt-0.5 truncate text-base font-bold tracking-tight" style={{ color: color as string }}>{value}</p>
+              <div className="relative mt-5 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "rgba(255,255,255,0.68)" }}>
+                    Ready to reply
+                  </p>
+                  <p className="mt-1 text-4xl font-semibold tracking-tight text-white">{leads.length}</p>
                 </div>
-              ))}
+                <p className="max-w-32 text-right text-xs leading-5" style={{ color: "rgba(255,255,255,0.72)" }}>
+                  Buyer conversations that deserve your voice.
+                </p>
+              </div>
             </div>
-            <div className="border-t px-4 py-2" style={{ borderColor: C.rule }}>
-              <p className="text-[10px] leading-4" role="status" aria-live="polite" style={{ color: C.muted }}>
-                {shouldRefreshForLeads
-                  ? autoRefreshEnabled
-                    ? `Live refresh on · checking every ${refreshMs / 1000}s`
-                    : "Live refresh paused"
-                  : "Scan results are up to date"}
-                {` · Updated ${formatTime(lastUpdatedAt)}`}
-              </p>
-              <p className="mt-0.5 text-[10px] leading-4" style={{ color: C.navySoft }}>
-                {status.title}
-              </p>
+            <div className="grid grid-cols-2" style={{ backgroundColor: C.white }}>
+              <div className="p-3.5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.amber }}>Worth a closer look</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight" style={{ color: C.navy }}>{discoveryCandidates.length}</p>
+              </div>
+              <div className="border-l p-3.5" style={{ borderColor: C.rule }}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue }}>In your feed</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight" style={{ color: C.navy }}>{queueItems.length}</p>
+              </div>
             </div>
+            <p className="border-t px-4 py-2 text-[10px]" role="status" aria-live="polite" style={{ borderColor: C.rule, color: C.muted }}>
+              Updated {formatTime(lastUpdatedAt)}
+            </p>
           </section>
 
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-white" style={{ borderColor: C.rule, boxShadow: "0 1px 2px rgba(10, 22, 40, 0.05)" }}>
-            <div className="flex h-10 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule }}>
-              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>Next steps</h2>
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}>
+            <div className="flex min-h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>Keep the momentum</p>
+                <h2 className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>Helpful next moves</h2>
+              </div>
               <Target className="size-4" style={{ color: C.blue }} aria-hidden="true" />
             </div>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
