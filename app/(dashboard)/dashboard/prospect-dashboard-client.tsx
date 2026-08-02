@@ -29,6 +29,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { markLeadAsQualified } from "@/app/actions/leads";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
@@ -289,6 +297,7 @@ function LeadOutreach({
   onQualify,
   reviewOnly,
   compact = false,
+  showQualification = true,
 }: {
   lead: QualifiedLeadView;
   disabled: boolean;
@@ -296,6 +305,7 @@ function LeadOutreach({
   onQualify: (leadId: string) => void;
   reviewOnly: boolean;
   compact?: boolean;
+  showQualification?: boolean;
 }) {
   const [draft, setDraft] = useState(lead.suggestedReply);
   const [isDraftReady, setIsDraftReady] = useState(false);
@@ -399,7 +409,7 @@ function LeadOutreach({
     </Button>
   );
 
-  const qualificationAction = !isReviewOnly ? (
+  const qualificationAction = showQualification && !isReviewOnly ? (
     <Button
       type="button"
       size="sm"
@@ -856,6 +866,16 @@ function DenseLeadDetails({
 }) {
   const isWatch = lead.matchStatus === "discovery_candidate";
   const postedAt = formatDate(lead.sourcePost.publishedAt);
+  const [openDetail, setOpenDetail] = useState<"evidence" | "reply" | "outcome" | null>(null);
+  const isQualified = lead.matchStatus === "qualified";
+
+  useEffect(() => {
+    setOpenDetail(null);
+  }, [lead.id]);
+
+  const toggleDetail = (detail: "evidence" | "reply" | "outcome") => {
+    setOpenDetail((current) => (current === detail ? null : detail));
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -920,6 +940,57 @@ function DenseLeadDetails({
           </div>
         ) : null}
 
+        <section aria-label="Conversation actions" className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+            What would you like to do?
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Conversation actions">
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              aria-pressed={openDetail === "evidence"}
+              onClick={() => toggleDetail("evidence")}
+              style={{
+                borderColor: openDetail === "evidence" ? C.blueLight : C.ruleDark,
+                backgroundColor: openDetail === "evidence" ? C.blueTint : C.white,
+                color: openDetail === "evidence" ? C.blue : C.navySoft,
+              }}
+            >
+              Read evidence
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              aria-pressed={openDetail === "reply"}
+              onClick={() => toggleDetail("reply")}
+              style={{
+                borderColor: openDetail === "reply" ? C.blueLight : C.ruleDark,
+                backgroundColor: openDetail === "reply" ? C.blueTint : C.white,
+                color: openDetail === "reply" ? C.blue : C.navySoft,
+              }}
+            >
+              Draft reply
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              aria-pressed={openDetail === "outcome"}
+              onClick={() => toggleDetail("outcome")}
+              style={{
+                borderColor: openDetail === "outcome" ? C.blueLight : C.ruleDark,
+                backgroundColor: openDetail === "outcome" ? C.blueTint : C.white,
+                color: openDetail === "outcome" ? C.blue : C.navySoft,
+              }}
+            >
+              Record outcome
+            </Button>
+          </div>
+        </section>
+
+        {openDetail === "evidence" ? (
         <div className="rounded-lg border p-3.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
@@ -937,20 +1008,65 @@ function DenseLeadDetails({
           <p className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap text-xs leading-5" style={{ color: C.navySoft }}>
             {lead.sourcePost.text}
           </p>
+          {lead.sourcePost.url ? (
+            <Button asChild size="xs" variant="outline" className="mt-3" style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}>
+              <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="size-3" />
+                Open original
+              </a>
+            </Button>
+          ) : null}
         </div>
+        ) : null}
 
-        <LeadOutreach
-          key={`outreach-${lead.id}`}
-          lead={lead}
-          disabled={qualificationPending}
-          qualificationMessage={qualificationMessage}
-          onQualify={onQualify}
-          reviewOnly={isWatch}
-          compact
-        />
+        {openDetail === "reply" ? (
+          <LeadOutreach
+            key={`outreach-${lead.id}`}
+            lead={lead}
+            disabled={qualificationPending}
+            qualificationMessage={qualificationMessage}
+            onQualify={onQualify}
+            reviewOnly={isWatch}
+            compact
+            showQualification={false}
+          />
+        ) : null}
 
-        <div className="border-t pt-3" style={{ borderColor: C.rule }}>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+        {openDetail === "outcome" ? (
+          <div className="border-t pt-3" style={{ borderColor: C.rule }}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+            Record outcome
+          </p>
+          {!isWatch ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={qualificationPending || isQualified}
+                onClick={() => onQualify(lead.id)}
+                style={{ backgroundColor: C.green, color: C.white }}
+              >
+                {qualificationPending ? (
+                  <Radar className="size-4 animate-spin" />
+                ) : isQualified ? (
+                  <Check className="size-4" />
+                ) : (
+                  <ShieldCheck className="size-4" />
+                )}
+                {qualificationPending ? "Qualifying..." : isQualified ? "Qualified" : "Mark as qualified"}
+              </Button>
+              {qualificationMessage ? (
+                <p className="text-[11px] font-medium" aria-live="polite" style={{ color: C.navySoft }}>
+                  {qualificationMessage}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs leading-5" style={{ color: C.amber }}>
+              This item is evidence to review, not a lead to qualify.
+            </p>
+          )}
+          <p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
             Your view
           </p>
           <LeadFeedbackButtons
@@ -968,6 +1084,7 @@ function DenseLeadDetails({
             </p>
           ) : null}
         </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1453,6 +1570,7 @@ export default function ProspectDashboardClient({
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
   const [queueSort, setQueueSort] = useState<QueueSort>("priority");
   const [queueQuery, setQueueQuery] = useState("");
+  const [isQueueControlsOpen, setIsQueueControlsOpen] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshPending, startRefreshTransition] = useTransition();
   const shouldRefreshForLeads = shouldContinueActionQueuePolling({
@@ -1588,31 +1706,109 @@ export default function ProspectDashboardClient({
   const selectedLead =
     filteredQueueItems.find((lead) => lead.id === selectedLeadId) ?? null;
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
+  const activeQueueControlCount =
+    Number(queueFilter !== "all") + Number(queueSort !== "priority");
 
   return (
     <div className="flex w-full flex-col gap-3 xl:h-full xl:min-h-0" style={{ color: C.text }}>
-      <header className="flex h-8 shrink-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <header className="flex min-h-8 shrink-0 items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="pfd text-base font-semibold tracking-tight" style={{ color: C.navy }}>
             Prospect desk
           </h1>
-          <span className="h-1 w-1 rounded-full" style={{ backgroundColor: C.blue }} aria-hidden="true" />
-          <span className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
-            Opportunities
-          </span>
         </div>
-        <div className="flex shrink-0 items-center justify-end">
-          <Link
-            href="/dashboard/brief"
-            className="inline-flex h-7 items-center rounded-full border px-3 text-[11px] font-semibold transition-colors hover:bg-[#F0F7FF]"
-            style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 px-3 text-[11px]"
+              style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
+            >
+              <Radar className="size-3.5" />
+              Scan &amp; guidance
+            </Button>
+          </SheetTrigger>
+          <SheetContent
+            className="gap-0 overflow-y-auto p-0 sm:max-w-md"
+            style={{ backgroundColor: C.white, borderColor: C.rule }}
           >
-            Tune your brief
-          </Link>
-        </div>
+            <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
+              <SheetTitle style={{ color: C.navy }}>Scan &amp; guidance</SheetTitle>
+              <SheetDescription style={{ color: C.muted }}>
+                Context and next steps are kept here so the prospect desk stays focused.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-5 p-4">
+              <section className="rounded-lg border p-4" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+                  {status.label}
+                </p>
+                <h2 className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>{status.title}</h2>
+                <p className="mt-2 text-xs leading-5" style={{ color: C.navySoft }}>{status.detail}</p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-[11px]" style={{ color: C.muted }}>Updated {formatTime(lastUpdatedAt)}</p>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    disabled={isRefreshPending}
+                    onClick={refreshDashboard}
+                    style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+                  >
+                    <RefreshCw className={cn("size-3", isRefreshPending && "animate-spin")} />
+                    Refresh
+                  </Button>
+                </div>
+              </section>
+
+              <section aria-labelledby="desk-pulse-heading">
+                <p id="desk-pulse-heading" className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+                  Your pulse
+                </p>
+                <div className="mt-2 grid grid-cols-3 divide-x rounded-lg border bg-white" style={{ borderColor: C.rule }}>
+                  {[
+                    { label: "Ready", value: leads.length, color: C.green },
+                    { label: "Review", value: discoveryCandidates.length, color: C.amber },
+                    { label: "Feed", value: queueItems.length, color: C.blue },
+                  ].map((metric) => (
+                    <div key={metric.label} className="p-3 text-center" style={{ borderColor: C.rule }}>
+                      <p className="text-lg font-semibold" style={{ color: C.navy }}>{metric.value}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: metric.color }}>{metric.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section aria-labelledby="next-moves-heading">
+                <div className="flex items-center gap-2">
+                  <Target className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
+                  <p id="next-moves-heading" className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+                    Helpful next moves
+                  </p>
+                </div>
+                <div className="mt-2 space-y-2">
+                  <Link href="/dashboard/brief" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, color: C.navy }}>
+                    <p className="text-sm font-semibold">Refine your brief</p>
+                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Improve what the next scan should look for.</p>
+                  </Link>
+                  <Link href="/dashboard/watchlists" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, color: C.navy }}>
+                    <p className="text-sm font-semibold">Buyer groups</p>
+                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Focus future scans on a specific audience.</p>
+                  </Link>
+                  <Link href="/dashboard/research" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, color: C.navy }}>
+                    <p className="text-sm font-semibold">Buyer words</p>
+                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Study recurring language without leaving the desk cluttered.</p>
+                  </Link>
+                </div>
+              </section>
+            </div>
+          </SheetContent>
+        </Sheet>
       </header>
 
-      <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(300px,0.85fr)_minmax(440px,1.35fr)_minmax(260px,0.7fr)]">
+      <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(300px,0.72fr)_minmax(560px,1.65fr)]">
         <section
           aria-labelledby="matches-heading"
           className="flex min-h-0 max-h-[420px] flex-col overflow-hidden rounded-xl border bg-white xl:max-h-none"
@@ -1620,74 +1816,87 @@ export default function ProspectDashboardClient({
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                Your opportunity feed
-              </p>
-              <h2 id="matches-heading" className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>
-                Matches
+              <h2 id="matches-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+                Conversations
               </h2>
             </div>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
               {leads.length} ready to reply
             </span>
           </div>
-          <div className="space-y-2 border-b p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2"
-                style={{ color: C.muted }}
-                aria-hidden="true"
-              />
-              <input
-                type="search"
-                value={queueQuery}
-                onChange={(event) => setQueueQuery(event.target.value)}
-                placeholder="Search matches"
-                aria-label="Search matches"
-                className="h-8 w-full rounded-full border bg-white pl-8 pr-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                style={{ borderColor: C.ruleDark, color: C.navy }}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1" role="group" aria-label="Match status filter">
-                {(["all", "ready", "review"] as const).map((filter) => {
-                  const label = filter === "all" ? "All" : filter === "ready" ? "Ready" : "Worth a look";
-                  const active = queueFilter === filter;
-
-                  return (
-                    <Button
-                      key={filter}
-                      type="button"
-                      size="xs"
-                      variant="outline"
-                      aria-pressed={active}
-                      onClick={() => setQueueFilter(filter)}
-                      style={{
-                        borderColor: active ? C.blueLight : C.ruleDark,
-                        backgroundColor: active ? C.blueTint : C.white,
-                        color: active ? C.blue : C.navySoft,
-                      }}
-                    >
-                      {label}
-                    </Button>
-                  );
-                })}
+          <div className="border-b p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2"
+                  style={{ color: C.muted }}
+                  aria-hidden="true"
+                />
+                <input
+                  type="search"
+                  value={queueQuery}
+                  onChange={(event) => setQueueQuery(event.target.value)}
+                  placeholder="Search matches"
+                  aria-label="Search matches"
+                  className="h-8 w-full rounded-full border bg-white pl-8 pr-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                  style={{ borderColor: C.ruleDark, color: C.navy }}
+                />
               </div>
-              <label className="flex items-center gap-1 text-[10px]" style={{ color: C.muted }}>
-                <ArrowDownUp className="size-3" aria-hidden="true" />
-                <span className="sr-only">Sort matches</span>
-                <select
-                  value={queueSort}
-                  onChange={(event) => setQueueSort(event.target.value as QueueSort)}
-                  className="h-7 max-w-24 rounded border bg-white px-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                  style={{ borderColor: C.ruleDark, color: C.navySoft }}
-                >
-                  <option value="priority">Best fit</option>
-                  <option value="newest">Newest</option>
-                  <option value="confidence">Strongest</option>
-                </select>
-              </label>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-expanded={isQueueControlsOpen}
+                onClick={() => setIsQueueControlsOpen((open) => !open)}
+                className="h-8 shrink-0 px-2 text-[11px]"
+                style={{ borderColor: C.ruleDark, backgroundColor: C.white, color: C.navySoft }}
+              >
+                <ListFilter className="size-3.5" />
+                {activeQueueControlCount ? `Filters (${activeQueueControlCount})` : "Filter & sort"}
+              </Button>
             </div>
+            {isQueueControlsOpen ? (
+              <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
+                <div className="flex items-center gap-1" role="group" aria-label="Match status filter">
+                  {(["all", "ready", "review"] as const).map((filter) => {
+                    const label = filter === "all" ? "All" : filter === "ready" ? "Ready" : "Worth a look";
+                    const active = queueFilter === filter;
+
+                    return (
+                      <Button
+                        key={filter}
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        aria-pressed={active}
+                        onClick={() => setQueueFilter(filter)}
+                        style={{
+                          borderColor: active ? C.blueLight : C.ruleDark,
+                          backgroundColor: active ? C.blueTint : C.white,
+                          color: active ? C.blue : C.navySoft,
+                        }}
+                      >
+                        {label}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <label className="flex items-center gap-1 text-[10px]" style={{ color: C.muted }}>
+                  <ArrowDownUp className="size-3" aria-hidden="true" />
+                  <span className="sr-only">Sort matches</span>
+                  <select
+                    value={queueSort}
+                    onChange={(event) => setQueueSort(event.target.value as QueueSort)}
+                    className="h-7 max-w-24 rounded border bg-white px-1 text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                    style={{ borderColor: C.ruleDark, color: C.navySoft }}
+                  >
+                    <option value="priority">Best fit</option>
+                    <option value="newest">Newest</option>
+                    <option value="confidence">Strongest</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {filteredQueueItems.length > 0 ? (
@@ -1734,17 +1943,14 @@ export default function ProspectDashboardClient({
           className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white"
           style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
-          <div className="flex h-12 shrink-0 items-center justify-between gap-3 px-4" style={{ backgroundColor: C.navy }}>
+          <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blueLight }}>
-                The conversation
-              </p>
-              <h2 id="details-heading" className="mt-0.5 text-sm font-semibold text-white">
-                What they need & how to respond
+              <h2 id="details-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+                Conversation
               </h2>
             </div>
             {selectedLead ? (
-              <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: "rgba(255,255,255,0.2)", color: C.white, backgroundColor: "rgba(255,255,255,0.08)" }}>
+              <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
                 {selectedLead.matchStatus === "discovery_candidate" ? "Worth a look" : "Ready to reply"}
               </span>
             ) : null}
@@ -1766,17 +1972,17 @@ export default function ProspectDashboardClient({
           )}
         </section>
 
-        <aside className="flex min-h-0 flex-col gap-3 xl:gap-4">
+        <aside className="hidden" aria-hidden="true">
           <section className="shrink-0 overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.07)" }}>
-            <div className="relative overflow-hidden px-4 py-4" style={{ backgroundColor: C.navy }}>
-              <div className="absolute -right-8 -top-10 size-32 rounded-full" style={{ backgroundColor: "rgba(59, 154, 232, 0.18)" }} aria-hidden="true" />
-              <div className="absolute right-10 top-7 size-12 rounded-full border" style={{ borderColor: "rgba(255,255,255,0.12)" }} aria-hidden="true" />
+            <div className="relative overflow-hidden border-b px-4 py-4" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
+              <div className="absolute -right-8 -top-10 size-32 rounded-full" style={{ backgroundColor: "rgba(59, 154, 232, 0.12)" }} aria-hidden="true" />
+              <div className="absolute right-10 top-7 size-12 rounded-full border" style={{ borderColor: "rgba(27, 110, 191, 0.16)" }} aria-hidden="true" />
               <div className="relative flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blueLight }}>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
                     Your pulse
                   </p>
-                  <h2 className="mt-1 text-sm font-semibold text-white">The conversations to focus on</h2>
+                  <h2 className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>The conversations to focus on</h2>
                 </div>
                 <Button
                   type="button"
@@ -1786,20 +1992,20 @@ export default function ProspectDashboardClient({
                   title="Refresh dashboard"
                   disabled={isRefreshPending}
                   onClick={refreshDashboard}
-                  className="border border-white/15 hover:bg-white/10 hover:text-white"
-                  style={{ color: C.white }}
+                  className="border hover:bg-white"
+                  style={{ borderColor: C.blueLight, color: C.blue }}
                 >
                   <RefreshCw className={cn("size-3", isRefreshPending && "animate-spin")} />
                 </Button>
               </div>
               <div className="relative mt-5 flex items-end justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: "rgba(255,255,255,0.68)" }}>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
                     Ready to reply
                   </p>
-                  <p className="mt-1 text-4xl font-semibold tracking-tight text-white">{leads.length}</p>
+                  <p className="mt-1 text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>{leads.length}</p>
                 </div>
-                <p className="max-w-32 text-right text-xs leading-5" style={{ color: "rgba(255,255,255,0.72)" }}>
+                <p className="max-w-32 text-right text-xs leading-5" style={{ color: C.navySoft }}>
                   Buyer conversations that deserve your voice.
                 </p>
               </div>
