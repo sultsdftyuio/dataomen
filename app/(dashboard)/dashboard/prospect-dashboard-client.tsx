@@ -830,7 +830,7 @@ function DenseQueueRow({
           {isWatch ? "Worth a look" : "Ready"}
         </span>
       </div>
-      <p className="mt-1.5 truncate text-sm font-semibold leading-5" style={{ color: C.navy }}>
+      <p className="pfd mt-1.5 truncate text-[15px] leading-5" style={{ color: C.navy }}>
         {lead.sourcePost.title}
       </p>
       <div className="mt-1 flex items-center justify-between gap-2">
@@ -897,7 +897,7 @@ function DenseLeadDetails({
             {isWatch ? "Worth a look" : "Ready to reply"}
           </Badge>
         </div>
-        <h3 className="mt-1.5 text-base font-semibold leading-6" style={{ color: C.navy }}>
+        <h3 className="pfd mt-1.5 text-lg leading-6" style={{ color: C.navy }}>
           {lead.sourcePost.title}
         </h3>
         {(postedAt || lead.sourcePost.author) ? (
@@ -909,7 +909,10 @@ function DenseLeadDetails({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+      <div
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
+        style={{ backgroundColor: C.offWhite }}
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-l-[3px] bg-white p-3.5" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
@@ -941,8 +944,11 @@ function DenseLeadDetails({
         ) : null}
 
         <section aria-label="Conversation actions" className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-          <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
-            What would you like to do?
+          <p className="pfd text-base leading-none" style={{ color: C.navy }}>
+            Choose a path
+          </p>
+          <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
+            Open only the detail you need right now.
           </p>
           <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Conversation actions">
             <Button
@@ -1711,9 +1717,9 @@ export default function ProspectDashboardClient({
 
   return (
     <div className="flex w-full flex-col gap-3 xl:h-full xl:min-h-0" style={{ color: C.text }}>
-      <header className="flex min-h-8 shrink-0 items-center justify-between gap-3">
+      <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="pfd text-base font-semibold tracking-tight" style={{ color: C.navy }}>
+          <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
             Prospect desk
           </h1>
         </div>
@@ -1735,7 +1741,7 @@ export default function ProspectDashboardClient({
             style={{ backgroundColor: C.white, borderColor: C.rule }}
           >
             <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-              <SheetTitle style={{ color: C.navy }}>Scan &amp; guidance</SheetTitle>
+              <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>Scan &amp; guidance</SheetTitle>
               <SheetDescription style={{ color: C.muted }}>
                 Context and next steps are kept here so the prospect desk stays focused.
               </SheetDescription>
@@ -1815,11 +1821,9 @@ export default function ProspectDashboardClient({
           style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-            <div>
-              <h2 id="matches-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-                Conversations
-              </h2>
-            </div>
+            <h2 id="matches-heading" className="pfd text-lg leading-none" style={{ color: C.navy }}>
+              Your radar
+            </h2>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
               {leads.length} ready to reply
             </span>
@@ -1940,15 +1944,13 @@ export default function ProspectDashboardClient({
 
         <section
           aria-labelledby="details-heading"
-          className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-white"
-          style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
+          className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[#F6FAFE]"
+          style={{ borderColor: C.rule, backgroundColor: C.offWhite, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
           <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-            <div>
-              <h2 id="details-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-                Conversation
-              </h2>
-            </div>
+            <h2 id="details-heading" className="pfd text-lg leading-none" style={{ color: C.navy }}>
+              Lead brief
+            </h2>
             {selectedLead ? (
               <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
                 {selectedLead.matchStatus === "discovery_candidate" ? "Worth a look" : "Ready to reply"}
@@ -1966,8 +1968,20 @@ export default function ProspectDashboardClient({
               onQualify={handleQualification}
             />
           ) : (
-            <div className="flex flex-1 items-center justify-center px-5 text-center text-xs" style={{ color: C.muted }}>
-              Select a conversation to see the original words and your next step.
+            <div className="relative flex flex-1 items-center justify-center overflow-hidden px-6 text-center" style={{ backgroundColor: C.blueTint }}>
+              <div className="absolute -left-16 -top-12 size-48 rounded-full" style={{ backgroundColor: "rgba(59, 154, 232, 0.12)" }} aria-hidden="true" />
+              <div className="absolute -bottom-20 -right-10 size-56 rounded-full border" style={{ borderColor: "rgba(27, 110, 191, 0.14)" }} aria-hidden="true" />
+              <div className="relative max-w-sm">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+                  Prospect desk
+                </p>
+                <h3 className="pfd mt-3 text-2xl leading-tight" style={{ color: C.navy }}>
+                  Pick a prospect to begin
+                </h3>
+                <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
+                  Start with a signal on your radar. Evidence, reply drafts, and outcomes stay tucked away until you choose them.
+                </p>
+              </div>
             </div>
           )}
         </section>
