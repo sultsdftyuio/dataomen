@@ -2,6 +2,7 @@
 
 import {
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useState,
@@ -10,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   CircleDotDashed,
+  ChevronDown,
   Globe2,
   Loader2,
   Plus,
@@ -56,6 +58,7 @@ type ServiceProfileSettingsProps = {
   serviceProfile: ServiceProfileView;
   websiteUrl: string;
   onFieldsChange?: (fields: ServiceProfileFields) => void;
+  layout?: "standard" | "progressive";
 };
 
 type SettingsProfileResponse = {
@@ -382,10 +385,56 @@ function TextProfileField({
   );
 }
 
+function BriefEditorSection({
+  title,
+  description,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  description: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+        <div>
+          <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>
+            {title}
+          </h2>
+          <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+            {description}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-expanded={open}
+          onClick={onToggle}
+          style={{ borderColor: C.ruleDark, color: C.navySoft }}
+        >
+          {open ? "Hide" : "Open"}
+          <ChevronDown className={open ? "size-3 rotate-180" : "size-3"} />
+        </Button>
+      </div>
+      {open ? (
+        <div className="border-t p-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function ServiceProfileSettings({
   serviceProfile,
   websiteUrl,
   onFieldsChange,
+  layout = "standard",
 }: ServiceProfileSettingsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -397,6 +446,10 @@ export function ServiceProfileSettings({
   );
   const [profileResult, setProfileResult] =
     useState<ProspectActionResult | null>(null);
+  const [openBriefSection, setOpenBriefSection] = useState<
+    "match" | "signals" | "guardrails" | null
+  >("match");
+  const [showWebsiteSource, setShowWebsiteSource] = useState(false);
 
   useEffect(() => {
     setProfileFields(serviceProfile.fields ?? EMPTY_FIELDS);
@@ -419,6 +472,14 @@ export function ServiceProfileSettings({
       ),
     [profileFields],
   );
+  const changedFieldCount = useMemo(() => {
+    const initialFields = serviceProfile.fields ?? EMPTY_FIELDS;
+
+    return (Object.keys(profileFields) as Array<keyof ServiceProfileFields>).filter(
+      (key) =>
+        JSON.stringify(profileFields[key]) !== JSON.stringify(initialFields[key]),
+    ).length;
+  }, [profileFields, serviceProfile.fields]);
 
   const updateField: UpdateField = (key, value) => {
     setProfileFields((current) => ({ ...current, [key]: value }));
@@ -530,6 +591,182 @@ export function ServiceProfileSettings({
 
   const statusLabel =
     serviceProfile.embeddingStatus === "completed" ? "Active" : "Regenerating";
+
+  if (layout === "progressive") {
+    return (
+      <div className="space-y-4">
+        {!hasProfileContent ? (
+          <div
+            className="rounded-lg border px-4 py-3 text-sm leading-6"
+            style={{
+              borderColor: C.blueLight,
+              backgroundColor: C.bluePale,
+              color: C.navySoft,
+            }}
+          >
+            No matching signals have been extracted yet. Start with the match below, or wait for regeneration to finish.
+          </div>
+        ) : null}
+
+        <BriefEditorSection
+          title="The match"
+          description="Who should Arcli recognise, what are they trying to solve, and why are you the right fit?"
+          open={openBriefSection === "match"}
+          onToggle={() => setOpenBriefSection((current) => current === "match" ? null : "match")}
+        >
+          <div className="space-y-4">
+            <SignalField
+              label="Target audience"
+              description="Roles, teams, and company types most likely to buy."
+              value={profileFields.target_audience}
+              placeholder="RevOps leaders, B2B SaaS founders"
+              disabled={isPending}
+              onChange={(value) => updateField("target_audience", value)}
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              {TEXT_FIELDS.map((field) => (
+                <TextProfileField
+                  key={field.key}
+                  label={field.label}
+                  description={field.description}
+                  value={profileFields[field.key]}
+                  placeholder={field.placeholder}
+                  disabled={isPending}
+                  onChange={(value) => updateField(field.key, value)}
+                />
+              ))}
+            </div>
+          </div>
+        </BriefEditorSection>
+
+        <BriefEditorSection
+          title="Signals to look for"
+          description="Add the outcomes, frustrations, urgency, and buyer language that make a public conversation relevant."
+          open={openBriefSection === "signals"}
+          onToggle={() => setOpenBriefSection((current) => current === "signals" ? null : "signals")}
+        >
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              {SIGNAL_FIELDS.filter((field) =>
+                ["use_cases", "pain_points", "buying_triggers", "urgency_signals", "search_terms"].includes(field.key),
+              )
+                .filter(
+                  (field) =>
+                    field.key !== "search_terms" ||
+                    profileFields.discovery_queries.length === 0,
+                )
+                .map((field) => (
+                  <SignalField
+                    key={field.key}
+                    label={field.label}
+                    description={field.description}
+                    value={profileFields[field.key]}
+                    placeholder={field.placeholder}
+                    disabled={isPending}
+                    onChange={(value) => updateField(field.key, value)}
+                  />
+                ))}
+            </div>
+            <DiscoveryQueryEditor
+              value={profileFields.discovery_queries}
+              disabled={isPending}
+              onChange={updateDiscoveryQueries}
+            />
+          </div>
+        </BriefEditorSection>
+
+        <BriefEditorSection
+          title="Guardrails"
+          description="Keep weak matches out, and update the website source only when your source context has changed."
+          open={openBriefSection === "guardrails"}
+          onToggle={() => setOpenBriefSection((current) => current === "guardrails" ? null : "guardrails")}
+        >
+          <div className="space-y-4">
+            <section className="rounded-lg border bg-white p-3" style={{ borderColor: C.rule }}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="pfd text-lg leading-none" style={{ color: C.navy }}>
+                    Source context
+                  </h3>
+                  <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                    {statusLabel}. Change the website only when it should be crawled again.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  aria-expanded={showWebsiteSource}
+                  onClick={() => setShowWebsiteSource((current) => !current)}
+                  style={{ borderColor: C.ruleDark, color: C.navySoft }}
+                >
+                  {showWebsiteSource ? "Hide website" : "Update website"}
+                </Button>
+              </div>
+              {showWebsiteSource ? (
+                <div className="mt-3 border-t pt-3" style={{ borderColor: C.rule }}>
+                  <label htmlFor="matching-website-url-progressive" className="text-xs font-semibold" style={{ color: C.navy }}>
+                    Website source
+                  </label>
+                  <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
+                    <div className="relative min-w-0 flex-1">
+                      <Globe2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" style={{ color: C.muted }} aria-hidden="true" />
+                      <input
+                        id="matching-website-url-progressive"
+                        type="url"
+                        inputMode="url"
+                        autoComplete="url"
+                        value={websiteDraft}
+                        disabled={isWebsitePending}
+                        className="h-9 w-full rounded-md border bg-white py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                        style={{ borderColor: C.rule, color: C.navy }}
+                        onChange={(event) => setWebsiteDraft(event.target.value)}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" className="h-9 shrink-0" disabled={isWebsitePending} onClick={refreshWebsiteContext}>
+                      {isWebsitePending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
+                      {isWebsitePending ? "Queueing..." : "Update & re-crawl"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {SIGNAL_FIELDS.filter((field) =>
+                ["negative_keywords", "excluded_audiences"].includes(field.key),
+              ).map((field) => (
+                <SignalField
+                  key={field.key}
+                  label={field.label}
+                  description={field.description}
+                  value={profileFields[field.key]}
+                  placeholder={field.placeholder}
+                  disabled={isPending}
+                  onChange={(value) => updateField(field.key, value)}
+                />
+              ))}
+            </div>
+          </div>
+        </BriefEditorSection>
+
+        <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: C.rule }}>
+          <div className="min-w-0" aria-live="polite">
+            <ResultText result={profileResult} />
+            <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+              {changedFieldCount > 0
+                ? `${changedFieldCount} ${changedFieldCount === 1 ? "change" : "changes"} ready to refresh.`
+                : "Make changes when you want the next scan to recognise a different signal."}
+            </p>
+          </div>
+          <Button type="button" disabled={isPending} className="h-9 shrink-0" onClick={() => persistProfile("save")}>
+            {isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
+            {isPending ? "Saving..." : "Save & refresh"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
