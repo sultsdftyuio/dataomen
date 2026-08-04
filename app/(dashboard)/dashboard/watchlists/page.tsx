@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { CircleCheck, Globe2, Radar, UsersRound } from "lucide-react";
+import { UsersRound } from "lucide-react";
 
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { C } from "@/lib/tokens";
@@ -59,8 +59,8 @@ export default async function WatchlistsPage() {
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Focused search"
-        title="Buyer groups"
-        description="Give each audience its own problem statement, natural wording, and public sources. Your product brief stays intact while every buyer group becomes more specific."
+        title="Buyer groups desk"
+        description="Watch the audiences that matter most, one real problem at a time."
         icon={UsersRound}
         visual={
           <div>
@@ -84,40 +84,6 @@ export default async function WatchlistsPage() {
           </div>
         }
       />
-
-      <section aria-label="Buyer group tips" className="grid gap-3 md:grid-cols-3">
-        {[
-          {
-            icon: CircleCheck,
-            title: "Real situations",
-            detail: "Use the outcome people want and the frustration they would actually describe.",
-          },
-          {
-            icon: Globe2,
-            title: "Pick sources",
-            detail: "Select the sources worth checking now; suggested communities are saved for prioritization.",
-          },
-          {
-            icon: Radar,
-            title: "Check evidence",
-            detail: "Only verifier-confirmed matches become ready to review. Plausible signals stay review-only.",
-          },
-        ].map(({ icon: Icon, title, detail }) => (
-          <div
-            key={title}
-            className="rounded-md border bg-white p-3 shadow-sm"
-            style={{ borderColor: C.rule }}
-          >
-            <Icon className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
-            <h2 className="mt-2 text-xs font-semibold" style={{ color: C.navy }}>
-              {title}
-            </h2>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-              {detail}
-            </p>
-          </div>
-        ))}
-      </section>
 
       <WatchlistsPanel
         watchlists={watchlists}
