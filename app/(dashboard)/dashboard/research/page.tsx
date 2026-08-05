@@ -20,7 +20,7 @@ import {
 } from "../prospect-dashboard-client";
 
 export const metadata: Metadata = {
-  title: "Buyer Research | Arcli",
+  title: "Buyer Language Library | Arcli",
   description: "Review buyer language and recurring themes from accepted evidence.",
 };
 
@@ -56,27 +56,39 @@ export default async function ResearchPage() {
     fetchBuyerDemandReport(supabase, tenantId, serviceProfile.id, threshold),
     fetchBuyerLanguageResearch(supabase, tenantId, serviceProfile.id),
   ]);
+  const sourceCount = new Set(
+    buyerLanguageResearch.evidence.map((item) => item.source),
+  ).size;
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        title="Buyer words"
+        eyebrow="Research, not prospects"
+        title="Buyer language library"
+        description="Keep the exact words buyers use close at hand, then use them to make your matching brief sharper."
         icon={MessageSquareText}
         visual={
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
-              Saved words
+              Library at a glance
             </p>
-            <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>
-                {buyerLanguageResearch.evidence.length}
-              </p>
-              <p className="mt-1 text-xs font-medium" style={{ color: C.navySoft }}>
-                accepted phrase{buyerLanguageResearch.evidence.length === 1 ? "" : "s"} captured
-              </p>
-              <p className="mt-1 text-[10px] leading-4" style={{ color: C.muted }}>
-                Only literal, source-grounded excerpts appear in this research view.
-              </p>
+            <div className="mt-2 grid grid-cols-2 gap-x-5 rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <div>
+                <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>
+                  {buyerLanguageResearch.evidence.length}
+                </p>
+                <p className="mt-1 text-[10px] font-medium" style={{ color: C.navySoft }}>
+                  saved phrase{buyerLanguageResearch.evidence.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div>
+                <p className="text-lg font-bold tracking-tight" style={{ color: C.navy }}>
+                  {sourceCount}
+                </p>
+                <p className="mt-1 text-[10px] font-medium" style={{ color: C.navySoft }}>
+                  source{sourceCount === 1 ? "" : "s"}
+                </p>
+              </div>
             </div>
           </div>
         }
@@ -85,12 +97,12 @@ export default async function ResearchPage() {
       {buyerDemandReport?.isTerminal ? (
         <BuyerDemandPatterns report={buyerDemandReport} />
       ) : (
-        <Card className="rounded-md bg-white shadow-sm" style={{ borderColor: C.rule }}>
+        <Card className="rounded-md bg-white shadow-none" style={{ borderColor: C.rule }}>
           <CardContent className="flex gap-2 p-3">
             <BarChart3 className="mt-0.5 size-3.5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
             <div>
-              <h2 className="text-xs font-semibold" style={{ color: C.navy }}>
-                Themes later
+              <h2 className="font-serif text-xl leading-none" style={{ color: C.navy }}>
+                What repeats, later
               </h2>
               <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
                 A recurring theme needs at least two verifier-confirmed, ready-to-act
@@ -101,18 +113,11 @@ export default async function ResearchPage() {
         </Card>
       )}
 
-      <div className="rounded-md border bg-white p-3 shadow-sm" style={{ borderColor: C.rule }}>
-        <div className="mb-3 flex items-center gap-2">
-          <MessageSquareText className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
-          <span className="text-xs font-semibold" style={{ color: C.navy }}>
-            Buyer words
-          </span>
-        </div>
-        <BuyerLanguageResearch
-          research={buyerLanguageResearch}
-          requestBuyerLanguageResearch={requestBuyerLanguageResearch}
-        />
-      </div>
+      <BuyerLanguageResearch
+        research={buyerLanguageResearch}
+        requestBuyerLanguageResearch={requestBuyerLanguageResearch}
+        layout="library"
+      />
     </div>
   );
 }

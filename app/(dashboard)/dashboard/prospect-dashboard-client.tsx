@@ -1258,19 +1258,27 @@ export function BuyerDemandPatterns({
   return (
     <section aria-labelledby="buyer-demand-patterns" className="space-y-2">
       <div>
-        <h2 id="buyer-demand-patterns" className="text-xs font-semibold" style={{ color: C.navy }}>
-          Buyer themes
+        <h2
+          id="buyer-demand-patterns"
+          className="font-serif text-xl leading-none"
+          style={{ color: C.navy }}
+        >
+          What repeats
         </h2>
         <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-          Shown only when the same verifier-confirmed theme appears in at least
-          two ready-to-act matches in this workspace.
+          Themes appear only when the same verifier-confirmed need shows up in
+          at least two ready-to-act matches.
         </p>
       </div>
       <div className="grid gap-2 md:grid-cols-3">
         {report.marketPatterns.map((pattern) => (
-          <Card key={pattern.label} className="rounded-md shadow-sm" style={{ borderColor: C.rule }}>
+          <Card
+            key={pattern.label}
+            className="rounded-md shadow-none"
+            style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
+          >
             <CardContent className="space-y-1.5 p-3">
-              <p className="text-xs font-medium leading-5" style={{ color: C.navy }}>
+              <p className="font-serif text-base leading-5" style={{ color: C.navy }}>
                 {pattern.label}
               </p>
               <p className="text-xs" style={{ color: C.muted }}>
@@ -1293,14 +1301,30 @@ export function BuyerDemandPatterns({
 export function BuyerLanguageResearch({
   research,
   requestBuyerLanguageResearch,
+  layout = "widget",
 }: {
   research: BuyerLanguageResearchView;
   requestBuyerLanguageResearch?: BuyerLanguageResearchRequestAction;
+  layout?: "widget" | "library";
 }) {
   const router = useRouter();
   const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [hasRequested, setHasRequested] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
   const [isRequestPending, startRequestTransition] = useTransition();
+  const sources = useMemo(
+    () => [...new Set(research.evidence.map((item) => item.source))].sort(),
+    [research.evidence],
+  );
+  const visibleEvidence = useMemo(
+    () =>
+      sourceFilter === "all"
+        ? research.evidence
+        : research.evidence.filter((item) => item.source === sourceFilter),
+    [research.evidence, sourceFilter],
+  );
 
   const requestResearch = () => {
     if (!requestBuyerLanguageResearch || hasRequested) return;
@@ -1322,6 +1346,275 @@ export function BuyerLanguageResearch({
       }
     });
   };
+
+  if (layout === "library") {
+    const canRequestMore =
+      research.availability === "available" &&
+      Boolean(requestBuyerLanguageResearch) &&
+      !hasRequested;
+
+    return (
+      <section id="buyer-language-research" className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: C.faint }}>
+              Evidence
+            </p>
+            <h2 className="mt-1 font-serif text-2xl leading-none" style={{ color: C.navy }}>
+              Language worth keeping
+            </h2>
+            <p className="mt-2 max-w-2xl text-xs leading-5" style={{ color: C.muted }}>
+              Exact phrases from accepted public evidence. Use them to sharpen
+              your matching brief, not to qualify prospects.
+            </p>
+          </div>
+          <Badge
+            variant="outline"
+            className="h-6 rounded px-1.5 text-[10px]"
+            style={{
+              borderColor: C.blueLight,
+              backgroundColor: C.blueTint,
+              color: C.blue,
+            }}
+          >
+            <MessageSquareText className="size-3" />
+            Research only
+          </Badge>
+        </div>
+
+        <div
+          className="rounded-md border p-4"
+          style={{
+            borderColor: C.rule,
+            backgroundColor:
+              research.evidence.length > 0 ? C.white : C.offWhite,
+          }}
+        >
+          {research.evidence.length > 0 ? (
+            <>
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className="font-serif text-xl leading-none" style={{ color: C.navy }}>
+                    {research.evidence.length} phrase
+                    {research.evidence.length === 1 ? "" : "s"} in the library
+                  </p>
+                  <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
+                    Drawn from {sources.length} source{sources.length === 1 ? "" : "s"}. Exact,
+                    source-grounded phrases only.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowEvidence((current) => !current)}
+                    className="h-8 px-2.5 text-xs"
+                    style={{
+                      borderColor: C.ruleDark,
+                      backgroundColor: C.white,
+                      color: C.navySoft,
+                    }}
+                  >
+                    {showEvidence ? "Close evidence" : "Browse evidence"}
+                  </Button>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-2.5 text-xs"
+                    style={{
+                      borderColor: C.blueLight,
+                      backgroundColor: C.white,
+                      color: C.blue,
+                    }}
+                  >
+                    <Link href="/dashboard/brief">Open matching brief</Link>
+                  </Button>
+                </div>
+              </div>
+
+              {showEvidence ? (
+                <div className="mt-5 border-t pt-4" style={{ borderColor: C.rule }}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                      Browse the original wording
+                    </p>
+                    {sources.length > 1 ? (
+                      <label className="flex items-center gap-2 text-xs" style={{ color: C.navySoft }}>
+                        Source
+                        <select
+                          value={sourceFilter}
+                          onChange={(event) => {
+                            setSourceFilter(event.target.value);
+                            setSelectedEvidenceId(null);
+                          }}
+                          className="h-8 rounded border bg-white px-2 text-xs outline-none"
+                          style={{ borderColor: C.ruleDark, color: C.navy }}
+                        >
+                          <option value="all">All sources</option>
+                          {sources.map((source) => (
+                            <option key={source} value={source}>
+                              {sourceDisplayName(source)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {visibleEvidence.map((item) => {
+                      const capturedAt = formatDate(item.capturedAt);
+                      const isSelected = selectedEvidenceId === item.id;
+
+                      return (
+                        <div key={item.id} className="rounded-md border" style={{ borderColor: C.rule }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedEvidenceId((current) =>
+                                current === item.id ? null : item.id,
+                              )
+                            }
+                            className="flex w-full items-start justify-between gap-4 p-3 text-left"
+                            style={{ backgroundColor: isSelected ? C.offWhite : C.white }}
+                            aria-expanded={isSelected}
+                          >
+                            <span className="min-w-0">
+                              <span className="block text-[10px] font-semibold uppercase tracking-wide" style={{ color: C.navySoft }}>
+                                {sourceDisplayName(item.source)}
+                                {capturedAt ? ` · Captured ${capturedAt}` : ""}
+                              </span>
+                              <span
+                                className="mt-1 block line-clamp-2 text-xs leading-5"
+                                style={{ color: C.navy }}
+                              >
+                                {item.excerpt}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-[11px]" style={{ color: C.blue }}>
+                              {isSelected ? "Less" : "Read"}
+                            </span>
+                          </button>
+
+                          {isSelected ? (
+                            <div className="border-t px-3 py-3" style={{ borderColor: C.rule }}>
+                              <blockquote
+                                className="border-l-2 pl-3 text-sm italic leading-6"
+                                style={{ borderColor: C.blueLight, color: C.navy }}
+                              >
+                                â€œ{item.excerpt}â€
+                              </blockquote>
+                              {item.sourceUrl ? (
+                                <Button
+                                  asChild
+                                  size="sm"
+                                  variant="outline"
+                                  className="mt-3 h-7 px-2 text-[11px]"
+                                  style={{
+                                    borderColor: C.blueLight,
+                                    backgroundColor: C.white,
+                                    color: C.blue,
+                                  }}
+                                >
+                                  <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="size-3.5" />
+                                    View original source
+                                  </a>
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="max-w-xl">
+              <p className="font-serif text-2xl leading-none" style={{ color: C.navy }}>
+                Your language library is still growing.
+              </p>
+              <p className="mt-2 text-xs leading-5" style={{ color: C.muted }}>
+                {research.availability === "available"
+                  ? "No accepted buyer-language evidence has been collected yet. Start a scan when you are ready."
+                  : "Accepted buyer-language evidence will appear here once the optional research store is enabled."}
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                {canRequestMore ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={isRequestPending}
+                    onClick={requestResearch}
+                    className="h-8 px-2.5 text-xs"
+                    style={{ backgroundColor: C.blue, color: C.white }}
+                  >
+                    {isRequestPending ? "Startingâ€¦" : "Find more words"}
+                  </Button>
+                ) : null}
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-2.5 text-xs"
+                  style={{
+                    borderColor: C.blueLight,
+                    backgroundColor: C.white,
+                    color: C.blue,
+                  }}
+                >
+                  <Link href="/dashboard/brief">Review matching brief</Link>
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {research.evidence.length > 0 && canRequestMore ? (
+            <details className="mt-4 border-t pt-3" style={{ borderColor: C.rule }}>
+              <summary className="cursor-pointer text-xs font-medium" style={{ color: C.navySoft }}>
+                Find more buyer language
+              </summary>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <p className="max-w-lg text-xs leading-5" style={{ color: C.muted }}>
+                  Start an optional scan for more source-grounded wording. New evidence appears here after review.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={isRequestPending}
+                  onClick={requestResearch}
+                  className="h-7 px-2 text-[11px]"
+                  style={{
+                    borderColor: C.blueLight,
+                    backgroundColor: C.white,
+                    color: C.blue,
+                  }}
+                >
+                  {isRequestPending ? "Startingâ€¦" : "Start scan"}
+                </Button>
+              </div>
+            </details>
+          ) : null}
+
+          {requestMessage ? (
+            <p
+              className="mt-3 text-xs leading-5"
+              role="status"
+              aria-live="polite"
+              style={{ color: C.navySoft }}
+            >
+              {requestMessage}
+            </p>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="buyer-language-research" className="space-y-3">
