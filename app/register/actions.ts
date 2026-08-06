@@ -69,7 +69,7 @@ export async function registerAction(
   formData: FormData
 ): Promise<ActionState> {
   const flowId = `register-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`
-  let redirectPath = '/dashboard'
+  let redirectPath = '/onboarding/workspace'
   let shouldRedirect = false
 
   try {
@@ -77,7 +77,9 @@ export async function registerAction(
     const password = normalizeFormString(formData, 'password')
     const requestedNext = normalizeFormString(formData, 'next')
 
-    redirectPath = resolvePostAuthRedirectPath(requestedNext)
+    redirectPath = requestedNext
+      ? resolvePostAuthRedirectPath(requestedNext)
+      : '/onboarding/workspace'
 
     if (isDev) {
       console.log(`[REGISTER][${flowId}] Starting signup for ${maskEmail(email)}`)

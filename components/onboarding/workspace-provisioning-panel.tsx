@@ -140,10 +140,10 @@ export function WorkspaceProvisioningPanel({
       if (result.ok) {
         setSubmittedWebsiteUrl(websiteUrl.trim());
         setSubmittedAt(now);
-        // Pass 1 may already have persisted a seed profile. Keep the user on
-        // this page so the refreshed server data can show it immediately,
-        // while the deep crawl continues in the worker.
-        router.refresh();
+        // The dashboard owns the first-scan experience. Its live status
+        // refreshes while the crawler prepares the matching brief and first
+        // prospect candidates.
+        router.replace("/dashboard");
         return;
       } else {
         setSubmittedAt(null);

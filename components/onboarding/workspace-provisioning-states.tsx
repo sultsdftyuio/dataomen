@@ -130,11 +130,15 @@ export function WebsiteConnectState({
             <Globe2 className="size-5" />
           </div>
           <div>
-            <CardTitle className="text-xl" style={{ color: C.navy }}>
-              Connect your website
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+              First, your website
+            </p>
+            <CardTitle className="mt-1 font-serif text-3xl leading-none" style={{ color: C.navy }}>
+              Start your Prospect Desk
             </CardTitle>
             <CardDescription className="mt-2" style={{ color: C.muted }}>
-              Arcli will crawl it and extract the service profile used by the prospect engine.
+              Paste the site that best explains what you sell. We will build
+              your matching brief, then open your desk as the first leads are found.
             </CardDescription>
           </div>
         </CardHeader>
@@ -166,7 +170,7 @@ export function WebsiteConnectState({
               ) : (
                 <Send className="size-4" />
               )}
-              {isWebsitePending ? "Starting crawl..." : "Start website crawl"}
+              {isWebsitePending ? "Opening your desk..." : "Build my Prospect Desk"}
             </Button>
             <ResultText result={websiteResult} />
           </form>

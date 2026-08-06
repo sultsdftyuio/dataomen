@@ -1788,9 +1788,20 @@ function WarmUpState({
 
   return (
     <div
-      className="rounded-lg border p-8 text-center"
+      className="relative overflow-hidden rounded-xl border p-8 text-center"
       style={{ borderColor: C.rule, backgroundColor: C.white }}
     >
+      <div
+        className="pointer-events-none absolute -left-12 -top-16 size-44 rounded-full"
+        style={{ backgroundColor: C.blueTint }}
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute -bottom-24 -right-10 size-60 rounded-full border"
+        style={{ borderColor: C.blueLight }}
+        aria-hidden="true"
+      />
+      <div className="relative">
       <div
         className="mx-auto flex size-11 items-center justify-center rounded-md"
         style={{ backgroundColor: C.bluePale, color: C.blue }}
@@ -1808,11 +1819,19 @@ function WarmUpState({
       >
         {status.label}
       </Badge>
-      <h3 className="mt-3 text-base font-semibold" style={{ color: C.navy }}>
-        {status.title}
+      <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+        Your Prospect Desk
+      </p>
+      <h3 className="pfd mt-2 text-2xl leading-none" style={{ color: C.navy }}>
+        Building your first view
       </h3>
+      {serviceProfile.websiteUrl ? (
+        <p className="mx-auto mt-3 max-w-md truncate text-xs font-medium" style={{ color: C.navySoft }}>
+          Website connected: {serviceProfile.websiteUrl}
+        </p>
+      ) : null}
       <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
-        {status.detail}
+        {status.detail} We will add conversations to your radar as soon as they meet the evidence bar.
       </p>
       {canRetry ? (
         <div className="mt-4 flex flex-col items-center gap-2">
@@ -1838,9 +1857,10 @@ function WarmUpState({
         </div>
       ) : null}
       <p className="mx-auto mt-2 max-w-md text-xs leading-5" style={{ color: C.muted }}>
-        This dashboard refreshes while the first pass is running, so Ready to act
-        items appear as soon as they are written.
+        This dashboard refreshes while the first pass is running. You can leave
+        it open; there is nothing else to set up right now.
       </p>
+      </div>
     </div>
   );
 }
@@ -2007,6 +2027,8 @@ export default function ProspectDashboardClient({
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
   const activeQueueControlCount =
     Number(queueFilter !== "all") + Number(queueSort !== "priority");
+  const isFirstDeskPass =
+    queueItems.length === 0 && (!serviceProfile.hasProfile || isWarmingUp);
 
   return (
     <div className="flex w-full flex-col gap-3 xl:h-full xl:min-h-0" style={{ color: C.text }}>
@@ -2107,6 +2129,13 @@ export default function ProspectDashboardClient({
         </Sheet>
       </header>
 
+      {isFirstDeskPass ? (
+        <WarmUpState
+          crawlJob={crawlJob}
+          serviceProfile={serviceProfile}
+          isWarmingUp={isWarmingUp}
+        />
+      ) : (
       <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(300px,0.72fr)_minmax(560px,1.65fr)]">
         <section
           aria-labelledby="matches-heading"
@@ -2407,6 +2436,7 @@ export default function ProspectDashboardClient({
           </section>
         </aside>
       </div>
+      )}
     </div>
   );
 }

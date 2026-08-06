@@ -60,7 +60,10 @@ function RegisterForm() {
   const supabase = createClient();
   const searchParams = useSearchParams();
 
-  const safeNextPath = resolvePostAuthRedirectPath(searchParams.get("next"));
+  const safeNextPath = resolvePostAuthRedirectPath(
+    searchParams.get("next"),
+    "/onboarding/workspace",
+  );
 
   const handleEmailSubmit = async (formData: FormData) => {
     setIsPending(true);
