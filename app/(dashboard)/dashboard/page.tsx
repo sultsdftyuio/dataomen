@@ -49,11 +49,13 @@ export default async function DashboardPage() {
     redirect("/onboarding/workspace");
   }
 
-  const [leads, discoveryCandidates, serviceProfile, crawlJob] = await Promise.all([
-    fetchQualifiedLeads(supabase, tenantId, threshold),
-    fetchDiscoveryCandidates(supabase, tenantId),
+  const [serviceProfile, crawlJob] = await Promise.all([
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+  ]);
+  const [leads, discoveryCandidates] = await Promise.all([
+    fetchQualifiedLeads(supabase, tenantId, serviceProfile.id, threshold),
+    fetchDiscoveryCandidates(supabase, tenantId, serviceProfile.id),
   ]);
   const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,

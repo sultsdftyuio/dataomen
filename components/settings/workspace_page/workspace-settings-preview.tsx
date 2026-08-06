@@ -25,8 +25,6 @@ const PROFILE_FIELD_KEYS = [
   "urgency_signals",
   "discovery_queries",
   "search_terms",
-  "negative_keywords",
-  "excluded_audiences",
 ] as const satisfies ReadonlyArray<keyof ServiceProfileFields>;
 
 function tenantSafeProfileFields(

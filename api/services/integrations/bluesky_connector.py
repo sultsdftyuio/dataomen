@@ -56,9 +56,17 @@ class BlueskyConnector:
         max_pages: int | None = None,
         requests_per_minute: int | None = None,
     ) -> None:
-        self.base_url = (
-            os.getenv("ARCLI_BLUESKY_SEARCH_URL") or base_url
-        ).strip()
+        configured_url = (os.getenv("ARCLI_BLUESKY_SEARCH_URL") or base_url).strip()
+        # Older deployments used public.api.bsky.app. That host now rejects
+        # public post search even for otherwise valid requests, which turns an
+        # entire discovery source into a silent zero-result scan. Preserve
+        # genuinely custom/self-hosted URLs, but transparently repair this
+        # known obsolete AppView host.
+        self.base_url = configured_url.replace(
+            "https://public.api.bsky.app/",
+            "https://api.bsky.app/",
+            1,
+        )
         self.timeout_seconds = (
             timeout_seconds
             if timeout_seconds is not None

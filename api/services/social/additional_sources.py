@@ -33,7 +33,7 @@ from api.services.embeddings import (
     _string_value,
 )
 from api.services.integrations.hn_connector import SourcePost
-from api.services.integrations.public_source import PublicSourcePost
+from api.services.integrations.public_source import PublicSourcePost, normalise_text
 from api.services.integrations.x_connector import TwitterSourcePost
 from api.services.matching import PostEmbedding, find_candidate_matches
 from api.services.verifier import (
@@ -178,6 +178,45 @@ _TECHNICAL_DISCOVERY_QUERY_TOKENS = frozenset(
     }
 )
 
+_COMMERCE_DISCOVERY_QUERY_TOKENS = frozenset(
+    {
+        "amazon",
+        "commerce",
+        "ecommerce",
+        "etsy",
+        "listing",
+        "listings",
+        "sales",
+        "seller",
+        "sellers",
+        "seo",
+        "shop",
+        "store",
+        "stores",
+        "tags",
+    }
+)
+
+
+def _query_tokens(query: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9][a-z0-9_-]*", query.casefold()))
+
+
+def _stackexchange_site_for_query(query: str) -> str:
+    """Route a query to the Stack Exchange community most likely to contain it.
+
+    An explicit deployment setting always wins. In its absence, marketplace and
+    seller language belongs on E-commerce rather than Stack Overflow; technical
+    language keeps the existing Stack Overflow route.
+    """
+    configured = normalise_text(os.getenv("ARCLI_STACKEXCHANGE_SITE", "")).lower()
+    if configured:
+        return configured
+    tokens = _query_tokens(query)
+    if tokens.intersection(_COMMERCE_DISCOVERY_QUERY_TOKENS):
+        return "ecommerce"
+    return "stackoverflow"
+
 
 def additional_public_source_supports_discovery_query(source: str, query: str) -> bool:
     """Avoid technical forums for a plainly non-technical buyer need.
@@ -195,7 +234,11 @@ def additional_public_source_supports_discovery_query(source: str, query: str) -
         "true",
     ).strip().casefold() in {"0", "false", "no", "off"}:
         return True
-    query_tokens = set(re.findall(r"[a-z0-9][a-z0-9_-]*", query.casefold()))
+    query_tokens = _query_tokens(query)
+    if normalized_source == "stackexchange" and query_tokens.intersection(
+        _COMMERCE_DISCOVERY_QUERY_TOKENS
+    ):
+        return True
     return bool(query_tokens.intersection(_TECHNICAL_DISCOVERY_QUERY_TOKENS))
 
 
@@ -224,7 +267,7 @@ def additional_public_source_cache_scope(source: str) -> str:
 
         return (os.getenv("ARCLI_BLUESKY_SEARCH_URL") or BLUESKY_SEARCH_POSTS_URL).strip()
     if source == "stackexchange":
-        return os.getenv("ARCLI_STACKEXCHANGE_SITE", "stackoverflow")
+        return os.getenv("ARCLI_STACKEXCHANGE_SITE", "").strip() or "auto"
     if source == "lemmy":
         from api.services.integrations.lemmy_connector import LEMMY_SEARCH_URL
 
@@ -233,7 +276,7 @@ def additional_public_source_cache_scope(source: str) -> str:
 
 
 
-def _additional_public_source_connector(source: str) -> Any:
+def _additional_public_source_connector(source: str, *, query: str | None = None) -> Any:
     """Instantiate an adapter lazily so unrelated provider dependencies stay cold."""
     if source == "bluesky":
         from api.services.integrations.bluesky_connector import BlueskyConnector
@@ -242,7 +285,7 @@ def _additional_public_source_connector(source: str) -> Any:
     if source == "stackexchange":
         from api.services.integrations.stackexchange_connector import StackExchangeConnector
 
-        return StackExchangeConnector()
+        return StackExchangeConnector(site=_stackexchange_site_for_query(query or ""))
     if source == "github":
         from api.services.integrations.github_connector import GitHubIssuesConnector
 
@@ -283,7 +326,10 @@ def ingest_additional_public_source_posts(
     since_timestamp = int(
         (datetime.now(timezone.utc) - timedelta(hours=since_hours_ago)).timestamp()
     )
-    connector = _additional_public_source_connector(normalized_source)
+    connector = _additional_public_source_connector(
+        normalized_source,
+        query=normalized_query,
+    )
     posts: list[PublicSourcePost] = asyncio.run(
         connector.fetch_recent_posts(
             normalized_query,

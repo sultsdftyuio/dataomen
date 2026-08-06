@@ -74,6 +74,12 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
                 "not enough people signing up",
             )
         )
+        self.assertTrue(
+            additional_public_source_supports_discovery_query(
+                "stackexchange",
+                "my Etsy listings get views but no sales",
+            )
+        )
 
     def test_service_persists_source_qualified_global_post_and_returns_ref(self) -> None:
         import api.services.social_ingestion as ingestion

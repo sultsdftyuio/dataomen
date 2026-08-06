@@ -35,6 +35,16 @@ class PublicSourceContractTests(unittest.TestCase):
 
 
 class BlueskyConnectorTests(unittest.TestCase):
+    def test_repairs_the_obsolete_public_appview_search_host(self) -> None:
+        connector = BlueskyConnector(
+            base_url="https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts"
+        )
+
+        self.assertEqual(
+            connector.base_url,
+            "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts",
+        )
+
     def test_default_uses_the_live_appview_and_allows_an_override(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(BlueskyConnector().base_url, BLUESKY_SEARCH_POSTS_URL)

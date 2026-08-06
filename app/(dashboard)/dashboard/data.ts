@@ -314,10 +314,13 @@ export async function fetchServiceProfile(
   tenantId: string,
   websiteUrl: string | null,
 ): Promise<ServiceProfileView> {
+  if (!websiteUrl) return emptyProfile(null);
+
   let result = await supabase
     .from("service_profiles")
     .select("*")
     .eq("tenant_id", tenantId)
+    .eq("website_url", websiteUrl)
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle<Record<string, Json>>();
@@ -327,6 +330,7 @@ export async function fetchServiceProfile(
       .from("service_profiles")
       .select("*")
       .eq("tenant_id", tenantId)
+      .eq("url", websiteUrl)
       .limit(1)
       .maybeSingle<Record<string, Json>>();
   }
@@ -575,6 +579,7 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
 async function runLeadQuery(
   supabase: SupabaseClient<Database>,
   tenantId: string,
+  serviceProfileId: string,
   threshold: number,
   select: string,
   withOrder = true,
@@ -583,6 +588,7 @@ async function runLeadQuery(
     .from("lead_matches")
     .select(select)
     .eq("tenant_id", tenantId)
+    .eq("service_profile_id", serviceProfileId)
     .in("match_status", ["ready_for_review", "qualified"])
     .gte("verifier_score", threshold);
 
@@ -598,21 +604,32 @@ async function runLeadQuery(
 export async function fetchQualifiedLeads(
   supabase: SupabaseClient<Database>,
   tenantId: string,
+  serviceProfileId: string | null,
   threshold: number,
 ): Promise<QualifiedLeadView[]> {
+  if (!serviceProfileId) return [];
+
   let result = await runLeadQuery(
     supabase,
     tenantId,
+    serviceProfileId,
     threshold,
     "*, source_posts(*)",
   );
 
   if (result.error) {
-    result = await runLeadQuery(supabase, tenantId, threshold, "*");
+    result = await runLeadQuery(supabase, tenantId, serviceProfileId, threshold, "*");
   }
 
   if (result.error) {
-    result = await runLeadQuery(supabase, tenantId, threshold, "*", false);
+    result = await runLeadQuery(
+      supabase,
+      tenantId,
+      serviceProfileId,
+      threshold,
+      "*",
+      false,
+    );
   }
 
   if (result.error) {
@@ -632,6 +649,7 @@ export async function fetchQualifiedLeads(
 async function runDiscoveryCandidateQuery(
   supabase: SupabaseClient<Database>,
   tenantId: string,
+  serviceProfileId: string,
   select: string,
   withOrder = true,
 ) {
@@ -639,6 +657,7 @@ async function runDiscoveryCandidateQuery(
     .from("lead_matches")
     .select(select)
     .eq("tenant_id", tenantId)
+    .eq("service_profile_id", serviceProfileId)
     .eq("match_status", "discovery_candidate");
 
   if (withOrder) {
@@ -658,19 +677,34 @@ async function runDiscoveryCandidateQuery(
 export async function fetchDiscoveryCandidates(
   supabase: SupabaseClient<Database>,
   tenantId: string,
+  serviceProfileId: string | null,
 ): Promise<QualifiedLeadView[]> {
+  if (!serviceProfileId) return [];
+
   let result = await runDiscoveryCandidateQuery(
     supabase,
     tenantId,
+    serviceProfileId,
     "*, source_posts(*)",
   );
 
   if (result.error) {
-    result = await runDiscoveryCandidateQuery(supabase, tenantId, "*");
+    result = await runDiscoveryCandidateQuery(
+      supabase,
+      tenantId,
+      serviceProfileId,
+      "*",
+    );
   }
 
   if (result.error) {
-    result = await runDiscoveryCandidateQuery(supabase, tenantId, "*", false);
+    result = await runDiscoveryCandidateQuery(
+      supabase,
+      tenantId,
+      serviceProfileId,
+      "*",
+      false,
+    );
   }
 
   if (result.error) {

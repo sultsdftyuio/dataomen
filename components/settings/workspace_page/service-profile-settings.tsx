@@ -733,21 +733,6 @@ export function ServiceProfileSettings({
               ) : null}
             </section>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {SIGNAL_FIELDS.filter((field) =>
-                ["negative_keywords", "excluded_audiences"].includes(field.key),
-              ).map((field) => (
-                <SignalField
-                  key={field.key}
-                  label={field.label}
-                  description={field.description}
-                  value={profileFields[field.key]}
-                  placeholder={field.placeholder}
-                  disabled={isPending}
-                  onChange={(value) => updateField(field.key, value)}
-                />
-              ))}
-            </div>
           </div>
         </BriefEditorSection>
 

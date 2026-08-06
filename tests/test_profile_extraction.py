@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from api.services.crawling import (
     PROFILE_EXTRACTION_CACHE_VERSION,
     _cached_service_profile_for_markdown,
+    _load_existing_service_profile,
     _profile_document,
     _service_profile_payload,
     _workspace_brain_profile_from_document,
@@ -439,6 +440,36 @@ def test_profile_document_preserves_rich_matching_brief_fields() -> None:
     assert payload["profile_json"]["discovery_queries"] == _discovery_queries()
     assert payload["urgency_signals"] == deep_profile["urgency_signals"]
     assert document["profile_extraction_cache_version"] == PROFILE_EXTRACTION_CACHE_VERSION
+
+
+def test_existing_service_profile_lookup_is_scoped_to_website_url() -> None:
+    class FakeResult:
+        def mappings(self) -> "FakeResult":
+            return self
+
+        def first(self) -> dict[str, str]:
+            return {"id": "profile-for-new-site", "tenant_id": "tenant-1"}
+
+    class FakeConnection:
+        statement: str = ""
+        params: dict[str, str] = {}
+
+        def execute(self, statement: object, params: dict[str, str]) -> FakeResult:
+            self.statement = str(statement)
+            self.params = params
+            return FakeResult()
+
+    connection = FakeConnection()
+    profile = _load_existing_service_profile(
+        connection,
+        "tenant-1",
+        "https://new-site.example/",
+        {"id": {}, "website_url": {}, "updated_at": {}},
+    )
+
+    assert profile == {"id": "profile-for-new-site", "tenant_id": "tenant-1"}
+    assert "website_url = :website_url" in connection.statement
+    assert connection.params["website_url"] == "https://new-site.example/"
 
 
 def test_profile_cache_rejects_a_previous_discovery_contract_version() -> None:

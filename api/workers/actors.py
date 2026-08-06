@@ -712,6 +712,8 @@ def ingest_additional_public_sources_batch_job(
                     # other three sources and X fallback still proceed.
                     source_failed = True
                     source_failures += 1
+                    response = getattr(exc, "response", None)
+                    status_code = getattr(response, "status_code", None)
                     release_additional_public_source_query(
                         source=source,
                         query=query["phrase"],
@@ -719,9 +721,10 @@ def ingest_additional_public_sources_batch_job(
                         scope=additional_public_source_cache_scope(source),
                     )
                     logger.warning(
-                        "additional_public_source_ingestion_skipped source=%s error_type=%s",
+                        "additional_public_source_ingestion_skipped source=%s error_type=%s status_code=%s",
                         source,
                         exc.__class__.__name__,
+                        status_code,
                     )
                     _record_discovery_event(
                         discovery_run_id=discovery_run_id,
@@ -731,7 +734,10 @@ def ingest_additional_public_sources_batch_job(
                         query=query["phrase"],
                         phase="search",
                         outcome="failed",
-                        details={"error_type": exc.__class__.__name__},
+                        details={
+                            "error_type": exc.__class__.__name__,
+                            "status_code": status_code,
+                        },
                     )
                     break
 

@@ -1079,6 +1079,7 @@ def _normalized_equals(left: str | None, right: str) -> bool:
 def _load_existing_service_profile(
     conn: Connection,
     tenant_id: str,
+    website_url: str,
     columns: dict[str, dict[str, str]],
 ) -> dict[str, Any] | None:
     select_columns = ["tenant_id"]
@@ -1097,18 +1098,24 @@ def _load_existing_service_profile(
         else ""
     )
 
+    where_parts = ["tenant_id = :tenant_id"]
+    if "website_url" in columns:
+        where_parts.append("website_url = :website_url")
+    elif "url" in columns:
+        where_parts.append("url = :website_url")
+
     row = conn.execute(
         text(
             f"""
             SELECT {", ".join(select_columns)}
               FROM public.service_profiles
-             WHERE tenant_id = :tenant_id
+             WHERE {" AND ".join(where_parts)}
              {order_sql}
              LIMIT 1
              FOR UPDATE
             """
         ),
-        {"tenant_id": tenant_id},
+        {"tenant_id": tenant_id, "website_url": website_url},
     ).mappings().first()
 
     return dict(row) if row else None
@@ -1361,7 +1368,7 @@ def _upsert_service_profile(
         website_url,
         crawl_markdown_sha256=crawl_markdown_sha256,
     )
-    existing = _load_existing_service_profile(conn, tenant_id, columns)
+    existing = _load_existing_service_profile(conn, tenant_id, website_url, columns)
     expressions, params = _bind_payload(payload, columns)
 
     if existing:

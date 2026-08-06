@@ -246,6 +246,37 @@ function pipelineStatus({
   };
 }
 
+const FIRST_SCAN_STEPS = [
+  "Website connected",
+  "Reading key pages",
+  "Building your matching brief",
+  "Preparing the search",
+  "Scanning conversations",
+  "Reviewing possible leads",
+] as const;
+
+function firstScanStepIndex({
+  crawlJob,
+  serviceProfile,
+  isWarmingUp,
+}: {
+  crawlJob: CrawlJobView | null;
+  serviceProfile: ServiceProfileView;
+  isWarmingUp: boolean;
+}) {
+  const crawlPhase = normalizedStatus(crawlJob?.phase);
+  if (!serviceProfile.hasProfile) {
+    if (["crawl_persisted", "extracting_profile", "persisting_profile"].includes(crawlPhase ?? "")) {
+      return 2;
+    }
+    return crawlPhase === "queued" || crawlPhase === "starting" ? 0 : 1;
+  }
+
+  const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
+  if (embeddingStatus && embeddingStatus !== "completed") return 3;
+  return isWarmingUp ? 4 : 5;
+}
+
 function LeadFeedbackButtons({
   leadId,
   disabled,
@@ -1199,7 +1230,7 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
             ))}
             {zeroResultSourceCount > 0 ? (
               <span className="text-[10px]" style={{ color: C.muted }}>
-                +{zeroResultSourceCount} with no results
+                +{zeroResultSourceCount} with no relevant results
               </span>
             ) : null}
           </div>
@@ -1781,6 +1812,7 @@ function WarmUpState({
   isWarmingUp: boolean;
 }) {
   const status = pipelineStatus({ crawlJob, serviceProfile, isWarmingUp });
+  const activeStepIndex = firstScanStepIndex({ crawlJob, serviceProfile, isWarmingUp });
   const router = useRouter();
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const [isRetryPending, startRetryTransition] = useTransition();
@@ -1842,6 +1874,44 @@ function WarmUpState({
       <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: C.muted }}>
         {status.detail} We will add conversations to your radar as soon as they meet the evidence bar.
       </p>
+      <ol className="mx-auto mt-6 grid max-w-lg gap-2 text-left">
+        {FIRST_SCAN_STEPS.map((step, index) => {
+          const isComplete = index < activeStepIndex;
+          const isActive = index === activeStepIndex;
+          return (
+            <li
+              key={step}
+              className="flex items-center gap-3 rounded-md border px-3 py-2"
+              style={{
+                borderColor: isActive ? C.blueLight : C.rule,
+                backgroundColor: isActive ? C.blueTint : C.white,
+              }}
+            >
+              <span
+                className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold"
+                style={{
+                  borderColor: isComplete || isActive ? C.blue : C.ruleDark,
+                  backgroundColor: isComplete ? C.blue : C.white,
+                  color: isComplete ? C.white : isActive ? C.blue : C.muted,
+                }}
+              >
+                {isComplete ? <Check className="size-3" aria-hidden="true" /> : index + 1}
+              </span>
+              <span
+                className="text-xs font-medium"
+                style={{ color: isComplete || isActive ? C.navy : C.muted }}
+              >
+                {step}
+              </span>
+              {isActive ? (
+                <span className="ml-auto text-[10px] font-semibold" style={{ color: C.blue }}>
+                  In progress
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
       {canRetry ? (
         <div className="mt-4 flex flex-col items-center gap-2">
           <Button

@@ -43,7 +43,7 @@ VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 # Persist this alongside a verdict. Bump it only when verifier instructions
 # materially change lead eligibility, so cached decisions cannot survive a
 # policy change while preserving normal tenant-scoped cache reuse.
-VERIFIER_POLICY_VERSION = "buyer_outcome_v2"
+VERIFIER_POLICY_VERSION = "buyer_outcome_v3_possible_leads"
 # Keep the verifier gate aligned with the candidate prefilter by default. The
 # verifier itself is the precision gate; a higher hidden default would make
 # the recall-oriented matching threshold ineffective.
@@ -149,7 +149,7 @@ def _log_retry(retry_state: RetryCallState) -> None:
 class VerifierService(OpenAIClientOwner):
     SYSTEM_PROMPT = (
         "Evaluate the candidate post against the Service Profile. A valid lead "
-        "must show explicit buyer pain, urgency, a recommendation request, a "
+        "must show buyer pain, urgency, a recommendation request, a "
         "manual-workflow frustration, a tool/category search, or a switching "
         "trigger that the Service Profile solves. Similar words or a product "
         "category alone are not evidence. Treat the profile's target audience, "
@@ -167,9 +167,14 @@ class VerifierService(OpenAIClientOwner):
         "Reject generic marketing tutorials or strategy essays, announcements, "
         "spam, job postings, consumer/personal questions outside the target "
         "audience, and content that merely mentions growth or customer acquisition "
-        "without someone actually seeking or experiencing help. "
-        "Use `match: true` only when the post contains concrete evidence of a fit; "
-        "use `weak_match` only for real but incomplete buyer evidence. You must return "
+        "without a target buyer experiencing or actively investigating the problem. "
+        "A target buyer describing an outcome-specific problem, comparing solutions, "
+        "or asking their community how to improve that outcome is useful incomplete "
+        "evidence: return `match: true` and `weak_match` even when they do not state "
+        "an immediate purchase intent. Use `strong_match` for a direct request, clear "
+        "urgency, evaluation, or switching signal. Negative keywords and excluded "
+        "audiences are context for obvious bad-fit content, not a reason to reject a "
+        "post merely because it contains one of those words. You must return "
         "ONLY a JSON object with: `match` (boolean), `decision_label` (string: "
         "strong_match, weak_match, spam, not_a_match), `confidence` (float), "
         "`pain_detected` (string), `why_this_matches` (string), "
@@ -459,12 +464,15 @@ class VerifierService(OpenAIClientOwner):
         service_profile: ServiceProfile,
     ) -> str:
         return (
-            "Use a conservative lead-quality standard. The similarity score is "
+            "Use a practical lead-quality standard. The similarity score is "
             "only a cheap prefilter and must not be treated as proof of fit.\n\n"
             "Read the matching brief's buyer-language fields before judging the "
             "candidate. In particular, search_terms describe the buyer's desired "
-            "outcome, not required vendor vocabulary. A candidate must still show "
-            "its own concrete evidence and fit the stated target audience.\n\n"
+            "outcome, not required vendor vocabulary. A candidate should fit the "
+            "stated target audience and show its own buyer problem, investigation, "
+            "or request. Do not require an explicit intent to buy for a `weak_match`; "
+            "reserve rejection for no plausible fit, obvious bad-fit content, spam, "
+            "or generic educational content.\n\n"
             "Service Profile JSON:\n"
             f"{service_profile.model_dump_json(indent=2)}\n\n"
             "Candidate Post JSON:\n"
