@@ -1115,6 +1115,10 @@ function sourceDisplayName(source: string) {
 function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView }) {
   const completedAt = formatDate(report.completedAt);
   const summary = report.summary;
+  const sourcesWithSignalOrFailure = summary.sources.filter(
+    (source) => source.failed || (source.itemCount ?? 0) > 0,
+  );
+  const zeroResultSourceCount = summary.sources.length - sourcesWithSignalOrFailure.length;
   const isPartial = report.status === "partial";
   const isSkipped = report.status === "skipped";
   const isFailed = report.status === "failed";
@@ -1137,74 +1141,74 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
 
   return (
     <Card className="rounded-lg shadow-sm" style={{ borderColor: C.blueLight }}>
-      <CardHeader className="gap-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="text-base" style={{ color: C.navy }}>
-              {title}
-            </CardTitle>
-            <p className="mt-1 text-sm leading-6" style={{ color: C.navySoft }}>
-              {detail}
-            </p>
-          </div>
-          {completedAt ? (
-            <Badge
-              variant="outline"
-              className="rounded-md"
-              style={{
-                borderColor: C.blueLight,
-                backgroundColor: C.blueTint,
-                color: C.blue,
-              }}
-            >
-              {isPartial
-                ? "Partial"
-                : isSkipped
-                  ? "Skipped"
-                  : isFailed
-                    ? "Failed"
-                    : "Completed"} {completedAt}
-            </Badge>
-          ) : null}
+      <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold" style={{ color: C.navy }}>
+            {title}
+          </p>
+          <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+            {detail}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        {completedAt ? (
+          <Badge
+            variant="outline"
+            className="rounded-md text-[10px]"
+            style={{
+              borderColor: C.blueLight,
+              backgroundColor: C.blueTint,
+              color: C.blue,
+            }}
+          >
+            {isPartial
+              ? "Partial"
+              : isSkipped
+                ? "Skipped"
+                : isFailed
+                  ? "Failed"
+                  : "Completed"} {completedAt}
+          </Badge>
+        ) : null}
+
         {summary.totalHits === 0 ? (
-          <p className="rounded-md border px-3 py-2 text-sm leading-6" style={{ borderColor: C.rule, backgroundColor: C.offWhite, color: C.navySoft }}>
+          <p className="w-full text-xs leading-5" style={{ color: C.navySoft }}>
             This scan returned no public items for the current brief and time window. No speculative leads were created; refine the buyer-language phrases or try the next scan window.
           </p>
         ) : null}
 
-        {summary.sources.length > 0 ? (
-          <div>
-            <p className="text-xs font-bold uppercase" style={{ color: C.muted }}>
-              Sources checked
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {summary.sources.map((source) => (
-                <Badge
-                  key={source.source}
-                  variant="outline"
-                  className="rounded-md"
-                  style={{
-                    borderColor: source.failed ? C.red : C.ruleDark,
-                    backgroundColor: source.failed ? C.redPale : C.white,
-                    color: source.failed ? C.red : C.navySoft,
-                  }}
-                >
-                  {sourceDisplayName(source.source)}
-                  {source.itemCount !== null ? `: ${source.itemCount} items` : ""}
-                  {source.failed ? " unavailable" : ""}
-                </Badge>
-              ))}
-            </div>
+        {sourcesWithSignalOrFailure.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase" style={{ color: C.muted }}>
+              Sources
+            </span>
+            {sourcesWithSignalOrFailure.map((source) => (
+              <Badge
+                key={source.source}
+                variant="outline"
+                className="rounded-md px-1.5 py-0 text-[10px]"
+                style={{
+                  borderColor: source.failed ? C.red : C.ruleDark,
+                  backgroundColor: source.failed ? C.redPale : C.white,
+                  color: source.failed ? C.red : C.navySoft,
+                }}
+              >
+                {sourceDisplayName(source.source)}
+                {source.itemCount !== null ? ` ${source.itemCount}` : ""}
+                {source.failed ? " unavailable" : ""}
+              </Badge>
+            ))}
+            {zeroResultSourceCount > 0 ? (
+              <span className="text-[10px]" style={{ color: C.muted }}>
+                +{zeroResultSourceCount} with no results
+              </span>
+            ) : null}
           </div>
         ) : null}
 
         {summary.totalHits !== null ||
         summary.plausibleHits !== null ||
         summary.sourceFailures !== null ? (
-          <div className="flex flex-wrap gap-2 text-sm" style={{ color: C.navySoft }}>
+          <div className="flex flex-wrap gap-x-2 text-xs" style={{ color: C.navySoft }}>
             {summary.totalHits !== null ? (
               <span>{summary.totalHits} items returned</span>
             ) : null}
@@ -1218,7 +1222,7 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
         ) : null}
 
         {summary.xFallback ? (
-          <p className="text-sm leading-6" style={{ color: C.navySoft }}>
+          <p className="text-xs" style={{ color: C.muted }}>
             X fallback
             {summary.xFallback.outcome
               ? `: ${humanizeRunValue(summary.xFallback.outcome)}`
@@ -1230,25 +1234,24 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
         ) : null}
 
         {summary.caveat ? (
-          <p className="text-xs leading-5" style={{ color: C.muted }}>
+          <p className="w-full text-[10px] leading-4" style={{ color: C.muted }}>
             {summary.caveat}
           </p>
         ) : null}
 
-        <div className="border-t pt-3" style={{ borderColor: C.rule }}>
-          <Button
-            asChild
-            size="sm"
-            variant="outline"
-            style={{
-              borderColor: C.blueLight,
-              backgroundColor: C.white,
-              color: C.blue,
-            }}
-          >
-            <a href="/settings">Review matching brief</a>
-          </Button>
-        </div>
+        <Button
+          asChild
+          size="xs"
+          variant="outline"
+          className="h-6 px-2 text-[10px]"
+          style={{
+            borderColor: C.blueLight,
+            backgroundColor: C.white,
+            color: C.blue,
+          }}
+        >
+          <a href="/settings">Review brief</a>
+        </Button>
       </CardContent>
     </Card>
   );
