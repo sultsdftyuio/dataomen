@@ -39,6 +39,51 @@ class ProviderRateLimitDecision:
     retry_after_seconds: float = 0.0
 
 
+@dataclass(frozen=True)
+class ProviderPacingReservation:
+    """A request slot reserved from the provider-wide pacing queue.
+
+    ``allowed`` is ``False`` only for a non-blocking reservation attempt. A
+    blocking reservation always owns a future slot and reports how long its
+    caller must wait before making the request.
+    """
+
+    allowed: bool
+    provider: str
+    limit: int
+    window_seconds: int
+    wait_seconds: float
+    queued_requests: int
+
+
+# Redis is the coordination point in production.  A fixed-window ``INCR``
+# counter prevents more than N requests in one calendar bucket, but it still
+# permits a burst at the next bucket boundary.  This script reserves one
+# evenly-spaced request slot, using Redis server time so different workers do
+# not depend on synchronized clocks.
+_RESERVE_PACED_SLOT_LUA = """
+local redis_time = redis.call('TIME')
+local now_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+local next_ms = tonumber(redis.call('GET', KEYS[1]) or '0')
+local interval_ms = tonumber(ARGV[1])
+local window_ms = tonumber(ARGV[2])
+local allow_wait = tonumber(ARGV[3])
+
+if allow_wait == 0 and next_ms > now_ms then
+    return {0, next_ms - now_ms, math.ceil((next_ms - now_ms) / interval_ms)}
+end
+
+local scheduled_ms = math.max(now_ms, next_ms)
+local wait_ms = scheduled_ms - now_ms
+local next_slot_ms = scheduled_ms + interval_ms
+-- The key must outlive any reservation already handed to a worker.  Without
+-- this, a long queue could expire early and allow a second burst.
+local ttl_ms = math.max(window_ms * 2, wait_ms + window_ms)
+redis.call('PSETEX', KEYS[1], ttl_ms, tostring(next_slot_ms))
+return {1, wait_ms, math.ceil(wait_ms / interval_ms)}
+"""
+
+
 class ProviderRateLimiter:
     """Bound outbound provider request rates across all worker instances.
 
@@ -50,6 +95,7 @@ class ProviderRateLimiter:
 
     _memory_lock = threading.Lock()
     _memory_counts: dict[str, tuple[int, float]] = {}
+    _memory_next_allowed_at: dict[str, float] = {}
 
     def __init__(self, redis_client: RedisLike | None = None) -> None:
         self.redis_client = redis_client
@@ -112,15 +158,22 @@ class ProviderRateLimiter:
         limit: int,
         window_seconds: int = 60,
     ) -> None:
-        while True:
-            decision = self.acquire(
-                provider=provider,
-                limit=limit,
-                window_seconds=window_seconds,
-            )
-            if decision.allowed:
-                return
-            time.sleep(decision.retry_after_seconds)
+        reservation = self.reserve_paced_slot(
+            provider=provider,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        if reservation.wait_seconds <= 0:
+            return
+        logger.info(
+            "provider_request_deferred provider=%s limit=%s window_seconds=%s wait_seconds=%.2f queued_requests=%s",
+            reservation.provider,
+            reservation.limit,
+            reservation.window_seconds,
+            reservation.wait_seconds,
+            reservation.queued_requests,
+        )
+        time.sleep(reservation.wait_seconds)
 
     async def wait_for_slot_async(
         self,
@@ -131,15 +184,205 @@ class ProviderRateLimiter:
     ) -> None:
         import asyncio
 
-        while True:
-            decision = self.acquire(
+        reservation = self.reserve_paced_slot(
+            provider=provider,
+            limit=limit,
+            window_seconds=window_seconds,
+        )
+        if reservation.wait_seconds <= 0:
+            return
+        logger.info(
+            "provider_request_deferred provider=%s limit=%s window_seconds=%s wait_seconds=%.2f queued_requests=%s",
+            reservation.provider,
+            reservation.limit,
+            reservation.window_seconds,
+            reservation.wait_seconds,
+            reservation.queued_requests,
+        )
+        await asyncio.sleep(reservation.wait_seconds)
+
+    def reserve_paced_slot(
+        self,
+        *,
+        provider: str,
+        limit: int,
+        window_seconds: int = 60,
+    ) -> ProviderPacingReservation:
+        """Reserve the next evenly-spaced request slot.
+
+        A reservation is made once, before waiting.  This avoids the old
+        fixed-window loop where every blocked worker incremented the counter
+        again and then all resumed at once at the minute boundary.
+        """
+
+        return self._reserve_paced_slot(
+            provider=provider,
+            limit=limit,
+            window_seconds=window_seconds,
+            allow_wait=True,
+        )
+
+    def try_reserve_paced_slot(
+        self,
+        *,
+        provider: str,
+        limit: int,
+        window_seconds: int = 60,
+    ) -> ProviderPacingReservation:
+        """Reserve an immediate slot only, without adding work to the queue."""
+
+        return self._reserve_paced_slot(
+            provider=provider,
+            limit=limit,
+            window_seconds=window_seconds,
+            allow_wait=False,
+        )
+
+    def _reserve_paced_slot(
+        self,
+        *,
+        provider: str,
+        limit: int,
+        window_seconds: int,
+        allow_wait: bool,
+    ) -> ProviderPacingReservation:
+        safe_provider = TenantQuotaGuard._safe_counter_name(provider)
+        safe_limit = max(1, int(limit))
+        safe_window_seconds = max(1, int(window_seconds))
+        # One additional millisecond keeps an inclusive rolling window safely
+        # below the configured ceiling (for example, 20 requests never land at
+        # both 0s and exactly 60s).
+        interval_seconds = (safe_window_seconds + 0.001) / safe_limit
+        interval_ms = max(1, int(interval_seconds * 1000 + 0.999))
+        key = f"arcli:pace:{safe_provider}"
+
+        # A process-local paced queue is the normal development/test path.
+        # Do not emit an error for intentionally running without Redis.
+        if self.redis_client is None and not os.getenv("REDIS_URL"):
+            return self._reserve_paced_slot_memory(
+                key=key,
+                provider=safe_provider,
+                limit=safe_limit,
+                window_seconds=safe_window_seconds,
+                interval_seconds=interval_seconds,
+                allow_wait=allow_wait,
+            )
+
+        try:
+            reservation = self._reserve_paced_slot_redis(
+                key=key,
+                provider=safe_provider,
+                limit=safe_limit,
+                window_seconds=safe_window_seconds,
+                interval_ms=interval_ms,
+                allow_wait=allow_wait,
+            )
+        except Exception as exc:
+            logger.warning(
+                "provider_pacing_reservation_failed provider=%s backend=%s error_type=%s error=%s",
+                safe_provider,
+                "redis" if self.redis_client or os.getenv("REDIS_URL") else "memory",
+                exc.__class__.__name__,
+                exc,
+            )
+            reservation = self._reserve_paced_slot_memory(
+                key=key,
+                provider=safe_provider,
+                limit=safe_limit,
+                window_seconds=safe_window_seconds,
+                interval_seconds=interval_seconds,
+                allow_wait=allow_wait,
+            )
+        return reservation
+
+    def _reserve_paced_slot_redis(
+        self,
+        *,
+        key: str,
+        provider: str,
+        limit: int,
+        window_seconds: int,
+        interval_ms: int,
+        allow_wait: bool,
+    ) -> ProviderPacingReservation:
+        client = self.redis_client
+        owns_client = client is None
+        if client is None:
+            client = _redis_client_from_env()
+        if client is None:
+            raise RuntimeError("Redis is not configured for provider pacing.")
+
+        try:
+            evaluate = getattr(client, "eval", None)
+            if not callable(evaluate):
+                raise RuntimeError("Redis client does not support atomic script evaluation.")
+            result = evaluate(
+                _RESERVE_PACED_SLOT_LUA,
+                1,
+                key,
+                interval_ms,
+                window_seconds * 1000,
+                1 if allow_wait else 0,
+            )
+            if not isinstance(result, (list, tuple)) or len(result) < 3:
+                raise RuntimeError("Redis returned an invalid provider pacing reservation.")
+            allowed, wait_ms, queued_requests = (int(result[0]), int(result[1]), int(result[2]))
+            return ProviderPacingReservation(
+                allowed=bool(allowed),
                 provider=provider,
                 limit=limit,
                 window_seconds=window_seconds,
+                wait_seconds=max(0.0, wait_ms / 1000),
+                queued_requests=max(0, queued_requests),
             )
-            if decision.allowed:
-                return
-            await asyncio.sleep(decision.retry_after_seconds)
+        finally:
+            if owns_client:
+                _close_redis_client(client)
+
+    @classmethod
+    def _reserve_paced_slot_memory(
+        cls,
+        *,
+        key: str,
+        provider: str,
+        limit: int,
+        window_seconds: int,
+        interval_seconds: float,
+        allow_wait: bool,
+    ) -> ProviderPacingReservation:
+        now = time.monotonic()
+        with cls._memory_lock:
+            expired_keys = [
+                old_key
+                for old_key, old_next_allowed_at in cls._memory_next_allowed_at.items()
+                if old_next_allowed_at <= now
+            ]
+            for old_key in expired_keys:
+                del cls._memory_next_allowed_at[old_key]
+
+            next_allowed_at = cls._memory_next_allowed_at.get(key, now)
+            wait_seconds = max(0.0, next_allowed_at - now)
+            if not allow_wait and wait_seconds > 0:
+                return ProviderPacingReservation(
+                    allowed=False,
+                    provider=provider,
+                    limit=limit,
+                    window_seconds=window_seconds,
+                    wait_seconds=wait_seconds,
+                    queued_requests=max(1, int(wait_seconds / interval_seconds + 0.999)),
+                )
+
+            scheduled_at = max(now, next_allowed_at)
+            wait_seconds = max(0.0, scheduled_at - now)
+            cls._memory_next_allowed_at[key] = scheduled_at + interval_seconds
+            return ProviderPacingReservation(
+                allowed=True,
+                provider=provider,
+                limit=limit,
+                window_seconds=window_seconds,
+                wait_seconds=wait_seconds,
+                queued_requests=max(0, int(wait_seconds / interval_seconds + 0.999)),
+            )
 
     def _increment(self, key: str, window_seconds: int) -> int:
         client = self.redis_client

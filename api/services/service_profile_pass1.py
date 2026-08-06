@@ -384,13 +384,13 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
         if self.model.startswith("gpt-5-nano"):
             request["reasoning_effort"] = DEFAULT_PASS1_REASONING_EFFORT
 
-        rate_limit = provider_rate_limiter.acquire(
+        rate_limit = provider_rate_limiter.try_reserve_paced_slot(
             provider="openai-chat",
             limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 20),
         )
         if not rate_limit.allowed:
             raise RuntimeError(
-                "Pass 1 skipped because the shared OpenAI chat rate limit is full; "
+                "Pass 1 skipped because the shared OpenAI chat pacing queue is busy; "
                 "the deep crawl will continue asynchronously."
             )
         completion = self._get_client().chat.completions.create(

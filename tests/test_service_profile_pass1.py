@@ -156,7 +156,9 @@ def test_pass1_prompt_distinguishes_buyer_outcomes_from_operator_jargon() -> Non
     assert "sales pipeline" in pass1_module.PASS1_SYSTEM_PROMPT
 
 
-def test_pass1_uses_the_model_default_temperature() -> None:
+def test_pass1_uses_the_model_default_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     request: dict[str, object] = {}
 
     class FakeCompletions:
@@ -171,6 +173,11 @@ def test_pass1_uses_the_model_default_temperature() -> None:
             )
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setattr(
+        pass1_module.provider_rate_limiter,
+        "try_reserve_paced_slot",
+        lambda **_kwargs: SimpleNamespace(allowed=True),
+    )
     profile = Pass1ProfileExtractor(client=client).extract(
         website_url="https://arcli.example/",
         homepage_hero_snippet="# Arcli",
@@ -182,7 +189,9 @@ def test_pass1_uses_the_model_default_temperature() -> None:
     assert request["max_completion_tokens"] == 1_000
 
 
-def test_pass1_reports_truncation_details_when_no_json_is_returned() -> None:
+def test_pass1_reports_truncation_details_when_no_json_is_returned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCompletions:
         def create(self, **_kwargs: object) -> SimpleNamespace:
             return SimpleNamespace(
@@ -199,6 +208,11 @@ def test_pass1_reports_truncation_details_when_no_json_is_returned() -> None:
             )
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setattr(
+        pass1_module.provider_rate_limiter,
+        "try_reserve_paced_slot",
+        lambda **_kwargs: SimpleNamespace(allowed=True),
+    )
 
     with pytest.raises(
         RuntimeError,
