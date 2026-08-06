@@ -365,6 +365,15 @@ def _discovery_query_tokens(value: str) -> set[str]:
     }
 
 
+def _discovery_query_overlap_fraction() -> float:
+    """Return the configurable lexical-recall guard for public source hits."""
+
+    return max(
+        0.1,
+        min(0.8, env_float("ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION", 0.25)),
+    )
+
+
 
 def _source_post_is_plausible_for_discovery_query(
     post: Any,
@@ -405,9 +414,12 @@ def _source_post_is_plausible_for_discovery_query(
     overlap = len(query_tokens.intersection(text_tokens))
     # Search providers regularly return buyer-authored paraphrases rather than
     # a copy of the query.  This is a recall guard, not the qualification
-    # decision, so require meaningful (but not near-verbatim) coverage and
-    # leave the LLM verifier as the final precision gate.
-    required_overlap = max(1, math.ceil(len(query_tokens) * 0.4))
+    # decision, so use a modest, configurable overlap and leave the embedding
+    # similarity plus LLM verifier as the precision gates.
+    required_overlap = max(
+        1,
+        math.ceil(len(query_tokens) * _discovery_query_overlap_fraction()),
+    )
     if phrase not in text_value and overlap < required_overlap:
         return False
 
@@ -417,10 +429,12 @@ def _source_post_is_plausible_for_discovery_query(
         return False
 
     # A recommendation or category search must look like someone evaluating a
-    # solution.  Other query types can express urgency as a concise symptom,
-    # but still need either an explicit request or a first-person situation.
+    # solution.  A direct first-person request is credible even if it omits a
+    # formal question word (for example, "we are evaluating ...").  Other
+    # query types can express urgency as a concise symptom, but still need
+    # either an explicit request or a first-person situation.
     if query_type in {"recommendation_request", "category_tool_search"}:
-        return has_request_context and (
+        return (has_request_context or has_first_person_context) and (
             has_first_person_context
             or bool(re.search(r"\b(?:what|which|anyone|recommend)\b", text_value))
         )

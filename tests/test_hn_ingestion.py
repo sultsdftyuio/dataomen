@@ -109,6 +109,22 @@ class HackerNewsIngestionTests(unittest.TestCase):
             )
         )
 
+    def test_buyer_paraphrase_uses_recall_guard_before_verification(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        buyer_request = SimpleNamespace(
+            title="Ask HN: evaluating software for our accounting team",
+            body="We are evaluating options because the monthly close takes too long.",
+        )
+
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                buyer_request,
+                "recommendation for financial close software",
+                query_type="recommendation_request",
+            )
+        )
+
     def test_legacy_demand_fallback_is_upgraded_only_for_search(self) -> None:
         import api.services.social_ingestion as ingestion_module
 

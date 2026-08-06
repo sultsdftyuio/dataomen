@@ -239,10 +239,10 @@ function pipelineStatus({
   }
 
   return {
-    label: "Continuing to scan",
-    title: "No verifier-confirmed conversations yet.",
+    label: "Latest scan complete",
+    title: "No verifier-confirmed conversations in the latest scan.",
     detail:
-      "No public conversation has met the relevance and confidence bar yet. Sources keep scanning, and plausible conversations will appear separately for your judgment.",
+      "Review the scan outcome below. Plausible conversations are kept separately for your judgment and never presented as CRM-ready leads.",
   };
 }
 
@@ -1169,6 +1169,12 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {summary.totalHits === 0 ? (
+          <p className="rounded-md border px-3 py-2 text-sm leading-6" style={{ borderColor: C.rule, backgroundColor: C.offWhite, color: C.navySoft }}>
+            This scan returned no public items for the current brief and time window. No speculative leads were created; refine the buyer-language phrases or try the next scan window.
+          </p>
+        ) : null}
+
         {summary.sources.length > 0 ? (
           <div>
             <p className="text-xs font-bold uppercase" style={{ color: C.muted }}>
@@ -1896,6 +1902,10 @@ export default function ProspectDashboardClient({
     isWarmingUp,
     readyToActCount: leads.length,
     hasTerminalReport: buyerDemandReport?.isTerminal ?? false,
+    verificationPending: buyerDemandReport?.summary.verifierPending ?? false,
+    terminalReportAgeMs: buyerDemandReport?.updatedAt
+      ? Math.max(0, Date.now() - new Date(buyerDemandReport.updatedAt).getTime())
+      : null,
   });
   const refreshMs = useMemo(() => (isWarmingUp ? 5000 : 15000), [isWarmingUp]);
 
@@ -2128,6 +2138,28 @@ export default function ProspectDashboardClient({
           </SheetContent>
         </Sheet>
       </header>
+
+      {buyerDemandReport?.isTerminal && queueItems.length === 0 ? (
+        <CompletedDiscoveryReport report={buyerDemandReport} />
+      ) : null}
+
+      {!buyerDemandReport && queueItems.length === 0 && !isFirstDeskPass ? (
+        <Card className="rounded-lg shadow-sm" style={{ borderColor: C.blueLight }}>
+          <CardHeader className="gap-1">
+            <CardTitle className="text-base" style={{ color: C.navy }}>
+              Discovery outcome is not available yet
+            </CardTitle>
+            <p className="text-sm leading-6" style={{ color: C.navySoft }}>
+              No lead evidence has been recorded for this brief. The scan may still be preparing, or its worker and telemetry configuration need attention.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <Button asChild size="sm" variant="outline" style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}>
+              <a href="/settings">Review matching brief</a>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isFirstDeskPass ? (
         <WarmUpState

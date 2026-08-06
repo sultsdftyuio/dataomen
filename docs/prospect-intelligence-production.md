@@ -24,6 +24,20 @@ The final migration is additive and keeps buyer-language research separate from
 - `OPENAI_API_KEY`: website profile extraction, embeddings, and the lead
   verifier. Buyer-language research does not call OpenAI.
 
+The Next.js deployment needs the same `INTERNAL_WORKER_SECRET` and a reachable
+worker API URL. Configure the explicit URLs when the worker is on a different
+service; otherwise `INTERNAL_API_URL` is used as the shared fallback:
+
+```text
+ARCLI_CRAWLER_TRIGGER_URL=https://api.example.com/api/crawl/trigger
+ARCLI_PROFILE_EMBEDDING_TRIGGER_URL=https://api.example.com/api/service-profile/embed/trigger
+INTERNAL_WORKER_SECRET=<the same value configured on the Python API>
+```
+
+Saving a website or matching brief now reports an explicit warning when that
+handoff is not accepted. Treat that warning as a deployment issue: settings
+were saved, but no discovery work was queued.
+
 Public sources are enabled independently with
 `ARCLI_HN_INGESTION_ENABLED`, `ARCLI_BLUESKY_INGESTION_ENABLED`,
 `ARCLI_STACKEXCHANGE_INGESTION_ENABLED`, `ARCLI_GITHUB_INGESTION_ENABLED`, and

@@ -32,6 +32,51 @@ CANONICAL_DISCOVERY_QUERIES = [
     {"query_type": "switching_trigger", "phrase": "switching from legacy billing"},
 ]
 
+GENERIC_EXPANDED_DISCOVERY_QUERIES = [
+    {"query_type": "buyer_pain", "phrase": "payments reconciliation backlog"},
+    {
+        "query_type": "buyer_pain",
+        "phrase": "struggling with payments reconciliation backlog",
+    },
+    {"query_type": "urgent_failure", "phrase": "failed renewal payments"},
+    {
+        "query_type": "urgent_failure",
+        "phrase": "failed renewal payments not working",
+    },
+    {
+        "query_type": "recommendation_request",
+        "phrase": "recommendation for billing software",
+    },
+    {
+        "query_type": "recommendation_request",
+        "phrase": "looking for billing software",
+    },
+    {
+        "query_type": "manual_workflow_frustration",
+        "phrase": "manually chasing overdue invoices",
+    },
+    {
+        "query_type": "manual_workflow_frustration",
+        "phrase": "manual chasing overdue invoices",
+    },
+    {
+        "query_type": "category_tool_search",
+        "phrase": "subscription billing platform",
+    },
+    {
+        "query_type": "category_tool_search",
+        "phrase": "software for subscription billing platform",
+    },
+    {
+        "query_type": "switching_trigger",
+        "phrase": "switching from legacy billing",
+    },
+    {
+        "query_type": "switching_trigger",
+        "phrase": "alternative to legacy billing",
+    },
+]
+
 
 def _profile_row() -> dict[str, object]:
     return {
@@ -180,6 +225,43 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(queries, canonical)
 
+    def test_every_profile_gets_a_phrase_derived_recall_variant(self) -> None:
+        profile = ServiceProfile(
+            company_name="Close Co",
+            one_liner="Help finance teams close the books without spreadsheet work",
+            target_audience=["Controllers"],
+            core_problem_solved="Month-end close relies on manual spreadsheets",
+            key_value_propositions=["Automate reconciliations"],
+            ideal_customer_pain_points=["Slow month-end close"],
+            search_terms=[query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        canonical = [
+            DiscoveryQuery(query["query_type"], query["phrase"])
+            for query in CANONICAL_DISCOVERY_QUERIES
+        ]
+
+        with patch.dict(os.environ, {}, clear=True):
+            queries = public_source_search_queries(
+                profile,
+                discovery_queries=canonical,
+            )
+
+        self.assertEqual(len(queries), 12)
+        self.assertEqual(
+            [query.query_type for query in queries],
+            [query_type for query_type in DISCOVERY_QUERY_TYPES for _ in range(2)],
+        )
+        self.assertEqual(
+            [query.phrase for query in queries[::2]],
+            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        self.assertTrue(
+            all(
+                query.phrase != canonical[index // 2].phrase
+                for index, query in enumerate(queries[1::2])
+            )
+        )
+
     def test_activation_queues_typed_hn_plan_and_one_x_fallback(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
@@ -200,18 +282,18 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(
             plan.query_terms,
-            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+            [query["phrase"] for query in GENERIC_EXPANDED_DISCOVERY_QUERIES],
         )
         self.assertEqual(
             [query.to_payload() for query in plan.queries],
-            CANONICAL_DISCOVERY_QUERIES,
+            GENERIC_EXPANDED_DISCOVERY_QUERIES,
         )
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 1)
         self.assertIsNone(plan.x_skip_reason)
         hn_send.assert_called_once()
         queued_call = hn_send.call_args
-        self.assertEqual(queued_call.args[0], CANONICAL_DISCOVERY_QUERIES)
+        self.assertEqual(queued_call.args[0], GENERIC_EXPANDED_DISCOVERY_QUERIES)
         self.assertEqual(queued_call.args[1:], (720, 50))
         self.assertEqual(queued_call.kwargs["tenant_id"], "tenant-1")
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
@@ -219,7 +301,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
         self.assertEqual(
             queued_call.kwargs["x_fallback_query"],
-            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
+            _x_fallback_query(GENERIC_EXPANDED_DISCOVERY_QUERIES),
         )
         x_send.assert_not_called()
 
@@ -249,7 +331,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         create_run.assert_called_once_with(
             "tenant-1",
             "profile-1",
-            CANONICAL_DISCOVERY_QUERIES,
+            GENERIC_EXPANDED_DISCOVERY_QUERIES,
         )
         self.assertEqual(hn_send.call_args.kwargs["discovery_run_id"], run_id)
 
@@ -291,7 +373,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.additional_source_jobs, 0)
         self.assertEqual(plan.x_jobs, 1)
         x_send.assert_called_once_with(
-            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
+            _x_fallback_query(GENERIC_EXPANDED_DISCOVERY_QUERIES),
             720,
             50,
             strict_single_page=True,
@@ -429,7 +511,10 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.x_skip_reason, "x_ingestion_disabled")
         hn_send.assert_called_once()
         self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
-        self.assertEqual(hn_send.call_args.args[0], CANONICAL_DISCOVERY_QUERIES)
+        self.assertEqual(
+            hn_send.call_args.args[0],
+            GENERIC_EXPANDED_DISCOVERY_QUERIES,
+        )
         x_send.assert_not_called()
 
     def test_watchlist_source_preference_keeps_hn_and_does_not_spend_on_x(self) -> None:
@@ -457,7 +542,13 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
                 allowed_sources={"hackernews"},
             )
 
-        self.assertEqual(plan.query_terms, ["founders cannot keep trial signups coming in"])
+        self.assertEqual(
+            plan.query_terms,
+            [
+                "founders cannot keep trial signups coming in",
+                "struggling with founders keep trial signups",
+            ],
+        )
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.additional_source_jobs, 0)
         self.assertEqual(plan.x_jobs, 0)

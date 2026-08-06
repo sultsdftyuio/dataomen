@@ -184,6 +184,83 @@ _DEMAND_ACQUISITION_QUERY_VARIANTS: dict[str, tuple[str, ...]] = {
 }
 
 
+_GENERIC_QUERY_FOCUS_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "best",
+        "can",
+        "cannot",
+        "find",
+        "for",
+        "from",
+        "get",
+        "help",
+        "how",
+        "i",
+        "in",
+        "is",
+        "manual",
+        "manually",
+        "more",
+        "my",
+        "need",
+        "of",
+        "our",
+        "recommendation",
+        "switching",
+        "the",
+        "to",
+        "we",
+        "what",
+        "with",
+    }
+)
+
+
+def _generic_query_focus(phrase: str) -> str:
+    """Extract a short, product-neutral noun phrase for recall variants.
+
+    The canonical matching brief stays the source of truth.  This helper only
+    removes request-language that public authors frequently paraphrase, such
+    as ``recommendation for`` or ``need a better way to``.  It deliberately
+    does not introduce category terms from a model or an unrelated taxonomy.
+    """
+
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]*", phrase)
+    focus = [
+        word
+        for word in words
+        if word.casefold() not in _GENERIC_QUERY_FOCUS_STOP_WORDS
+    ]
+    return " ".join(focus[:4]) or _compact_public_search_term(phrase)
+
+
+def _generic_query_variants(canonical: DiscoveryQuery) -> tuple[str, ...]:
+    """Return compact buyer-language alternatives for any product category.
+
+    These variants widen source retrieval without presenting an inferred
+    category as customer truth.  They are fed through the same plausibility,
+    embedding, and verifier gates as the canonical phrase.
+    """
+
+    focus = _generic_query_focus(canonical.phrase)
+    if len(focus) < 3:
+        return ()
+
+    templates: dict[str, tuple[str, ...]] = {
+        "buyer_pain": (f"struggling with {focus}",),
+        "urgent_failure": (f"{focus} not working",),
+        "recommendation_request": (f"looking for {focus}",),
+        "manual_workflow_frustration": (f"manual {focus}",),
+        "category_tool_search": (f"software for {focus}",),
+        "switching_trigger": (f"alternative to {focus}",),
+    }
+    return templates.get(canonical.query_type, ())
+
+
 def _profile_has_demand_acquisition_intent(profile: ServiceProfile) -> bool:
     context = " ".join(
         [
@@ -224,9 +301,9 @@ def public_source_search_queries(
     Canonical profile phrases remain the source of truth and always lead each
     intent.  Demand-acquisition profiles also receive concise buyer-language
     alternatives, since a public author is much more likely to write "need
-    more leads" than the exact sentence generated for a profile.  Other
-    product categories retain the canonical plan until they have a similarly
-    grounded expansion vocabulary.
+    more leads" than the exact sentence generated for a profile.  Every other
+    product receives a compact, phrase-derived alternative too, so an unusual
+    website is not limited to an exact generated sentence.
     """
 
     canonical_queries = public_source_queries(
@@ -234,15 +311,19 @@ def public_source_search_queries(
         discovery_queries=discovery_queries,
     )
     variants_per_type = _initial_source_query_variants_per_type()
-    if variants_per_type == 1 or not _profile_has_demand_acquisition_intent(profile):
+    if variants_per_type == 1:
         return canonical_queries
 
+    is_demand_acquisition_profile = _profile_has_demand_acquisition_intent(profile)
     queries: list[DiscoveryQuery] = []
     seen_phrases: set[str] = set()
     for canonical in canonical_queries:
-        alternatives = (canonical.phrase, *(
+        specific_alternatives = (
             _DEMAND_ACQUISITION_QUERY_VARIANTS.get(canonical.query_type, ())
-        ))
+            if is_demand_acquisition_profile
+            else _generic_query_variants(canonical)
+        )
+        alternatives = (canonical.phrase, *specific_alternatives)
         added_for_type = 0
         for alternative in alternatives:
             phrase = _compact_public_search_term(alternative)

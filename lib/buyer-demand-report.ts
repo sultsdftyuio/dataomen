@@ -224,18 +224,29 @@ export function isTerminalDiscoveryRunStatus(status: string | null | undefined) 
 
 /**
  * Avoid background refresh loops after the server has written a terminal
- * report. Until then, a warming profile or an empty action queue can refresh
- * normally as asynchronous verification progresses.
+ * report.  A terminal source-collection report can still have verifier work
+ * in flight, so keep refreshing for a bounded window rather than freezing the
+ * desk before those real (but weaker) signals can arrive.
  */
 export function shouldContinueActionQueuePolling({
   isWarmingUp,
   readyToActCount,
   hasTerminalReport,
+  verificationPending = false,
+  terminalReportAgeMs = null,
 }: {
   isWarmingUp: boolean;
   readyToActCount: number;
   hasTerminalReport: boolean;
+  verificationPending?: boolean;
+  terminalReportAgeMs?: number | null;
 }) {
+  const verificationWindowMs = 5 * 60 * 1000;
+  const withinVerificationWindow =
+    verificationPending &&
+    (terminalReportAgeMs === null || terminalReportAgeMs < verificationWindowMs);
+
+  if (withinVerificationWindow) return true;
   return !hasTerminalReport && (isWarmingUp || readyToActCount === 0);
 }
 

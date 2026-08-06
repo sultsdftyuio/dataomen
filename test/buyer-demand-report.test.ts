@@ -128,20 +128,24 @@ test("treats completed, degraded, skipped, and failed reports as terminal", () =
   assert.equal(isTerminalDiscoveryRunStatus("running"), false);
 });
 
-test("stops empty-state polling after a terminal discovery report", () => {
+test("keeps refreshing briefly while terminal scan verification is pending", () => {
   assert.equal(
     shouldContinueActionQueuePolling({
       isWarmingUp: false,
       readyToActCount: 0,
       hasTerminalReport: true,
+      verificationPending: true,
+      terminalReportAgeMs: 30_000,
     }),
-    false,
+    true,
   );
   assert.equal(
     shouldContinueActionQueuePolling({
       isWarmingUp: true,
       readyToActCount: 0,
       hasTerminalReport: true,
+      verificationPending: true,
+      terminalReportAgeMs: 5 * 60 * 1000,
     }),
     false,
   );

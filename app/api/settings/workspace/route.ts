@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { after } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { handleWorkspaceUpdate } from "@/lib/settings/api";
@@ -16,6 +16,11 @@ type WorkspaceUpdateResponse = {
     serviceProfileUpdated?: unknown;
     serviceProfileId?: unknown;
   };
+};
+
+type TriggerResult = {
+  accepted: boolean;
+  reason: string | null;
 };
 
 function crawlTriggerEndpoint() {
@@ -73,7 +78,10 @@ async function readTriggerResponse(response: Response) {
   }
 }
 
-async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
+async function postCrawlTrigger(
+  tenantId: string,
+  websiteUrl: string,
+): Promise<TriggerResult> {
   const endpoint = crawlTriggerEndpoint();
   if (!endpoint) {
     console.warn("[WORKSPACE_CRAWL_TRIGGER_SKIPPED]", {
@@ -81,7 +89,10 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
       tenant_id: tenantId,
       website_url: websiteUrl,
     });
-    return;
+    return {
+      accepted: false,
+      reason: "the crawl worker endpoint is not configured",
+    };
   }
 
   const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
@@ -91,7 +102,10 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
       tenant_id: tenantId,
       website_url: websiteUrl,
     });
-    return;
+    return {
+      accepted: false,
+      reason: "the crawl worker secret is not configured",
+    };
   }
 
   const controller = new AbortController();
@@ -123,7 +137,10 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
         status: response.status,
         body: body.slice(0, 500),
       });
-      return;
+      return {
+        accepted: false,
+        reason: `the crawl worker returned HTTP ${response.status}`,
+      };
     }
 
     console.info("[WORKSPACE_CRAWL_TRIGGERED]", {
@@ -131,6 +148,7 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
       tenant_id: tenantId,
       website_url: websiteUrl,
     });
+    return { accepted: true, reason: null };
   } catch (error) {
     console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
       event: "workspace_crawl_trigger_unavailable",
@@ -138,6 +156,7 @@ async function postCrawlTrigger(tenantId: string, websiteUrl: string) {
       website_url: websiteUrl,
       error,
     });
+    return { accepted: false, reason: "the crawl worker could not be reached" };
   } finally {
     clearTimeout(timeout);
   }
@@ -163,7 +182,7 @@ function embeddingTriggerEndpoint() {
 async function postEmbeddingTrigger(
   tenantId: string,
   serviceProfileId: string | null,
-) {
+): Promise<TriggerResult> {
   const endpoint = embeddingTriggerEndpoint();
   if (!endpoint) {
     console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_SKIPPED]", {
@@ -171,7 +190,10 @@ async function postEmbeddingTrigger(
       tenant_id: tenantId,
       service_profile_id: serviceProfileId,
     });
-    return;
+    return {
+      accepted: false,
+      reason: "the lead-discovery worker endpoint is not configured",
+    };
   }
 
   const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
@@ -181,7 +203,10 @@ async function postEmbeddingTrigger(
       tenant_id: tenantId,
       service_profile_id: serviceProfileId,
     });
-    return;
+    return {
+      accepted: false,
+      reason: "the lead-discovery worker secret is not configured",
+    };
   }
 
   const controller = new AbortController();
@@ -212,7 +237,10 @@ async function postEmbeddingTrigger(
         status: response.status,
         body: body.slice(0, 500),
       });
-      return;
+      return {
+        accepted: false,
+        reason: `the lead-discovery worker returned HTTP ${response.status}`,
+      };
     }
 
     console.info("[WORKSPACE_PROFILE_EMBEDDING_TRIGGERED]", {
@@ -220,6 +248,7 @@ async function postEmbeddingTrigger(
       tenant_id: tenantId,
       service_profile_id: serviceProfileId,
     });
+    return { accepted: true, reason: null };
   } catch (error) {
     console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
       event: "workspace_profile_embedding_trigger_unavailable",
@@ -227,9 +256,33 @@ async function postEmbeddingTrigger(
       service_profile_id: serviceProfileId,
       error,
     });
+    return {
+      accepted: false,
+      reason: "the lead-discovery worker could not be reached",
+    };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function savedButScanNotStartedResponse(reasons: string[]) {
+  const detail = reasons.filter(Boolean).join("; ");
+  console.warn("[WORKSPACE_SCAN_START_REQUIRES_ATTENTION]", {
+    event: "workspace_scan_start_requires_attention",
+    reasons,
+  });
+
+  // The settings write has already succeeded.  Use 202 rather than reporting
+  // a false persistence failure, but make the missing scan explicit to the
+  // client instead of hiding a dropped background trigger behind success.
+  return NextResponse.json(
+    {
+      success: true,
+      scanStarted: false,
+      message: `Configuration was saved, but lead discovery did not start: ${detail}. Check the worker configuration, then save the matching brief again.`,
+    },
+    { status: 202, headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 async function handleWorkspaceUpdateWithCrawler(request: Request) {
@@ -240,19 +293,25 @@ async function handleWorkspaceUpdateWithCrawler(request: Request) {
     readTriggerResponse(response),
   ]);
 
-  if (triggerRequest && triggerResponse) {
-    after(async () => {
-      await postCrawlTrigger(triggerResponse.tenantId, triggerRequest.websiteUrl);
-    });
-  }
+  if (!triggerResponse) return response;
 
-  if (triggerResponse?.serviceProfileUpdated) {
-    after(async () => {
-      await postEmbeddingTrigger(
-        triggerResponse.tenantId,
-        triggerResponse.serviceProfileId,
-      );
-    });
+  const triggerResults = await Promise.all([
+    triggerRequest
+      ? postCrawlTrigger(triggerResponse.tenantId, triggerRequest.websiteUrl)
+      : null,
+    triggerResponse.serviceProfileUpdated
+      ? postEmbeddingTrigger(
+          triggerResponse.tenantId,
+          triggerResponse.serviceProfileId,
+        )
+      : null,
+  ]);
+  const failures = triggerResults.flatMap((result) =>
+    result && !result.accepted && result.reason ? [result.reason] : [],
+  );
+
+  if (failures.length > 0) {
+    return savedButScanNotStartedResponse(failures);
   }
 
   return response;

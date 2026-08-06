@@ -64,6 +64,7 @@ type ServiceProfileSettingsProps = {
 type SettingsProfileResponse = {
   error?: string;
   message?: string;
+  scanStarted?: boolean;
   details?: {
     formErrors?: string[];
     fieldErrors?: Record<string, string[] | undefined>;
@@ -218,7 +219,7 @@ async function readSettingsProfileResult(
   }
 
   return {
-    ok: true,
+    ok: payload.scanStarted !== false,
     message:
       payload.message ?? "Service profile saved. Matching embeddings are regenerating.",
   };
@@ -510,7 +511,7 @@ export function ServiceProfileSettings({
         const result = await readSettingsProfileResult(response);
         setProfileResult(result);
 
-        if (result.ok) {
+        if (result.ok || response.status === 202) {
           router.refresh();
         }
       } catch {
@@ -552,7 +553,7 @@ export function ServiceProfileSettings({
               }
             : result,
         );
-        if (result.ok) router.refresh();
+        if (result.ok || response.status === 202) router.refresh();
       } catch {
         setProfileResult({
           ok: false,

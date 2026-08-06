@@ -4,7 +4,9 @@ Incident target: `https://www.arcli.tech/`
 
 The onboarding path is:
 
-1. Next.js submits the workspace website update and schedules a post-response trigger.
+1. Next.js submits the workspace website update and waits for the trusted worker
+   to accept the crawl trigger. If the save succeeds but the trigger cannot be
+   accepted, the settings UI explicitly reports that discovery did not start.
 2. FastAPI `POST /api/crawl/trigger` enqueues `api.services.crawling.process_crawl_job`.
 3. Dramatiq consumes queue `crawling` from Redis.
 4. `WebsiteCrawler` calls Firecrawl for homepage, pricing, features, and use-case surfaces.
@@ -250,14 +252,23 @@ Discovery and spend settings are intentionally bounded by default:
 # One typed phrase for each of the six matching-brief query types.
 ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_LIMIT=6
 
-# Demand-acquisition profiles search their canonical phrase plus one concise
-# buyer-language alternative per intent. Set to 1 to use canonical phrases
-# only; the hard maximum is 3 formulations per intent.
+# Every profile searches its canonical phrase plus one compact, phrase-derived
+# buyer-language alternative per intent. Demand-acquisition profiles use a
+# specialized alternative; other profiles use no inferred category taxonomy.
+# Set to 1 to use canonical phrases only; the hard maximum is 3 formulations
+# per intent.
 ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE=2
 
 # Scan the last 30 days and retain up to 50 results for each source query.
+# At the default six intents x two formulations, this is at most 600 provider
+# results per enabled free source before de-duplication, caching, plausibility,
+# embedding, and verifier gates reduce the set.
 ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS=720
 ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY=50
+
+# The lexical prefilter is recall-oriented. A source hit still needs buyer
+# context, embedding similarity, and verifier evidence before it can appear.
+ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION=0.25
 
 # Suppress the paid fallback only after this many plausible signals across the
 # complete free phase (HN + the four added sources). The prior HN-named env
