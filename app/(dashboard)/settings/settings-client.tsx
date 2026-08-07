@@ -38,8 +38,11 @@ export default function SettingsClient({
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1 pb-3">
       <div>
         <h1 className="text-lg font-semibold tracking-tight">
-          Workspace
+          Discovery workspace
         </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Your website defines the brief behind every discovery scan.
+        </p>
       </div>
 
       <hr className="border-border" />

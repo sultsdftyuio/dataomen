@@ -62,14 +62,16 @@ export default function WorkspaceTab({
     <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-4 pb-3 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0">
         <Card>
-          <CardHeader className="p-3">
-            <CardTitle className="text-xs font-semibold">Your brief</CardTitle>
+          <CardHeader className="p-4 pb-3">
+            <CardTitle className="text-base font-semibold" style={{ color: "#0A1628" }}>
+              Discovery setup
+            </CardTitle>
             <CardDescription className="text-xs leading-5">
-              Set the source URL, then tune the buyer language used to search
-              Hacker News and X, rank fit, and filter bad-fit conversations.
+              Your website is the source of truth. Review it first, then tune
+              the buyer language used to find and rank relevant conversations.
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-3 pt-0">
+          <CardContent className="p-4 pt-0">
             {profile ? (
               <ServiceProfileSettings
                 serviceProfile={profile}

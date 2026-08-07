@@ -225,7 +225,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(queries, canonical)
 
-    def test_every_profile_gets_a_phrase_derived_recall_variant(self) -> None:
+    def test_generic_profiles_keep_their_canonical_queries_by_default(self) -> None:
         profile = ServiceProfile(
             company_name="Close Co",
             one_liner="Help finance teams close the books without spreadsheet work",
@@ -246,20 +246,41 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
                 discovery_queries=canonical,
             )
 
+        self.assertEqual(queries, canonical)
+
+    def test_generic_recall_variants_require_an_explicit_opt_in(self) -> None:
+        profile = ServiceProfile(
+            company_name="Close Co",
+            one_liner="Help finance teams close the books without spreadsheet work",
+            target_audience=["Controllers"],
+            core_problem_solved="Month-end close relies on manual spreadsheets",
+            key_value_propositions=["Automate reconciliations"],
+            ideal_customer_pain_points=["Slow month-end close"],
+            search_terms=[query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
+        )
+        canonical = [
+            DiscoveryQuery(query["query_type"], query["phrase"])
+            for query in CANONICAL_DISCOVERY_QUERIES
+        ]
+
+        with patch.dict(
+            os.environ,
+            {"ARCLI_INITIAL_PUBLIC_GENERIC_QUERY_VARIANTS_ENABLED": "true"},
+            clear=True,
+        ):
+            queries = public_source_search_queries(
+                profile,
+                discovery_queries=canonical,
+            )
+
         self.assertEqual(len(queries), 12)
         self.assertEqual(
             [query.query_type for query in queries],
             [query_type for query_type in DISCOVERY_QUERY_TYPES for _ in range(2)],
         )
         self.assertEqual(
-            [query.phrase for query in queries[::2]],
-            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
-        )
-        self.assertTrue(
-            all(
-                query.phrase != canonical[index // 2].phrase
-                for index, query in enumerate(queries[1::2])
-            )
+            [query.to_payload() for query in queries],
+            GENERIC_EXPANDED_DISCOVERY_QUERIES,
         )
 
     def test_activation_queues_typed_hn_plan_and_one_x_fallback(self) -> None:
@@ -282,18 +303,18 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(
             plan.query_terms,
-            [query["phrase"] for query in GENERIC_EXPANDED_DISCOVERY_QUERIES],
+            [query["phrase"] for query in CANONICAL_DISCOVERY_QUERIES],
         )
         self.assertEqual(
             [query.to_payload() for query in plan.queries],
-            GENERIC_EXPANDED_DISCOVERY_QUERIES,
+            CANONICAL_DISCOVERY_QUERIES,
         )
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 1)
         self.assertIsNone(plan.x_skip_reason)
         hn_send.assert_called_once()
         queued_call = hn_send.call_args
-        self.assertEqual(queued_call.args[0], GENERIC_EXPANDED_DISCOVERY_QUERIES)
+        self.assertEqual(queued_call.args[0], CANONICAL_DISCOVERY_QUERIES)
         self.assertEqual(queued_call.args[1:], (720, 50))
         self.assertEqual(queued_call.kwargs["tenant_id"], "tenant-1")
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
@@ -301,7 +322,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
         self.assertEqual(
             queued_call.kwargs["x_fallback_query"],
-            _x_fallback_query(GENERIC_EXPANDED_DISCOVERY_QUERIES),
+            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
         )
         x_send.assert_not_called()
 
@@ -331,7 +352,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         create_run.assert_called_once_with(
             "tenant-1",
             "profile-1",
-            GENERIC_EXPANDED_DISCOVERY_QUERIES,
+            CANONICAL_DISCOVERY_QUERIES,
         )
         self.assertEqual(hn_send.call_args.kwargs["discovery_run_id"], run_id)
 
@@ -373,7 +394,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.additional_source_jobs, 0)
         self.assertEqual(plan.x_jobs, 1)
         x_send.assert_called_once_with(
-            _x_fallback_query(GENERIC_EXPANDED_DISCOVERY_QUERIES),
+            _x_fallback_query(CANONICAL_DISCOVERY_QUERIES),
             720,
             50,
             strict_single_page=True,
@@ -513,7 +534,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
         self.assertEqual(
             hn_send.call_args.args[0],
-            GENERIC_EXPANDED_DISCOVERY_QUERIES,
+            CANONICAL_DISCOVERY_QUERIES,
         )
         x_send.assert_not_called()
 
@@ -544,10 +565,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
 
         self.assertEqual(
             plan.query_terms,
-            [
-                "founders cannot keep trial signups coming in",
-                "struggling with founders keep trial signups",
-            ],
+            ["founders cannot keep trial signups coming in"],
         )
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.additional_source_jobs, 0)

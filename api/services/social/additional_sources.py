@@ -206,15 +206,16 @@ def _stackexchange_site_for_query(query: str) -> str:
     """Route a query to the Stack Exchange community most likely to contain it.
 
     An explicit deployment setting always wins. In its absence, marketplace and
-    seller language belongs on E-commerce rather than Stack Overflow; technical
-    language keeps the existing Stack Overflow route.
+    seller language belongs on Webmasters rather than Stack Overflow. The
+    former E-commerce target is not a live Stack Exchange API site and returns
+    a permanent HTTP 400; technical language keeps Stack Overflow.
     """
     configured = normalise_text(os.getenv("ARCLI_STACKEXCHANGE_SITE", "")).lower()
     if configured:
         return configured
     tokens = _query_tokens(query)
     if tokens.intersection(_COMMERCE_DISCOVERY_QUERY_TOKENS):
-        return "ecommerce"
+        return "webmasters"
     return "stackoverflow"
 
 

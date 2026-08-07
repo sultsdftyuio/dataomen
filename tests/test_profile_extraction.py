@@ -7,9 +7,11 @@ from pydantic import ValidationError
 
 from api.services.crawling import (
     PROFILE_EXTRACTION_CACHE_VERSION,
+    SERVICE_PROFILE_IDENTITY_VERSION,
     _cached_service_profile_for_markdown,
     _load_existing_service_profile,
     _profile_document,
+    _service_profile_has_current_website_identity,
     _service_profile_payload,
     _workspace_brain_profile_from_document,
 )
@@ -440,6 +442,7 @@ def test_profile_document_preserves_rich_matching_brief_fields() -> None:
     assert payload["profile_json"]["discovery_queries"] == _discovery_queries()
     assert payload["urgency_signals"] == deep_profile["urgency_signals"]
     assert document["profile_extraction_cache_version"] == PROFILE_EXTRACTION_CACHE_VERSION
+    assert document["service_profile_identity_version"] == SERVICE_PROFILE_IDENTITY_VERSION
 
 
 def test_existing_service_profile_lookup_is_scoped_to_website_url() -> None:
@@ -499,6 +502,31 @@ def test_profile_cache_rejects_a_previous_discovery_contract_version() -> None:
     )
 
     assert cached is None
+
+
+def test_profile_identity_marker_rejects_legacy_rows_for_a_website_replacement() -> None:
+    deep_profile = ServiceProfileDraft.model_validate(_profile_payload()).model_dump()
+    legacy_document = _profile_document(deep_profile, "https://ledgerflow.example/")
+    legacy_document.pop("service_profile_identity_version")
+    columns = {"profile_json": {}, "website_url": {}, "updated_at": {}}
+
+    assert not _service_profile_has_current_website_identity(
+        {"profile_json": legacy_document},
+        website_url="https://ledgerflow.example/",
+        columns=columns,
+    )
+
+
+def test_profile_identity_marker_requires_the_matching_website_url() -> None:
+    deep_profile = ServiceProfileDraft.model_validate(_profile_payload()).model_dump()
+    document = _profile_document(deep_profile, "https://ledgerflow.example/")
+    columns = {"profile_json": {}, "website_url": {}, "updated_at": {}}
+
+    assert not _service_profile_has_current_website_identity(
+        {"profile_json": document},
+        website_url="https://other-site.example/",
+        columns=columns,
+    )
 
 
 def test_workspace_brain_keeps_legacy_cached_profile_usable_without_typed_queries() -> None:

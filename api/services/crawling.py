@@ -34,6 +34,11 @@ DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
 # v9 permits genuine demand-acquisition language (for example, leads and sales
 # pipeline) while continuing to reject Arcli's own retrieval mechanics.
 PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v9"
+# A separate identity version protects the tenant boundary between website
+# replacements. A profile created before this marker may have been updated in
+# place by an older worker after the tenant changed its URL, so it must never
+# be reused as the current site's profile or extraction cache.
+SERVICE_PROFILE_IDENTITY_VERSION = "website-scoped-v2"
 
 SERVICE_PROFILE_COLUMNS = {
     "tenant_id",
@@ -927,6 +932,7 @@ def _profile_document(
         "embedding_status": "pending",
         "extracted_at": now,
         "profile_extraction_cache_version": PROFILE_EXTRACTION_CACHE_VERSION,
+        "service_profile_identity_version": SERVICE_PROFILE_IDENTITY_VERSION,
     }
     if is_pass1:
         document.update(
@@ -1085,6 +1091,11 @@ def _load_existing_service_profile(
     select_columns = ["tenant_id"]
     if "id" in columns:
         select_columns.insert(0, "id")
+    select_columns.extend(
+        column_name
+        for column_name in ("profile_json", "profile", "data")
+        if column_name in columns
+    )
 
     order_columns = [
         column_name
@@ -1119,6 +1130,42 @@ def _load_existing_service_profile(
     ).mappings().first()
 
     return dict(row) if row else None
+
+
+def _service_profile_has_current_website_identity(
+    row: dict[str, Any],
+    *,
+    website_url: str,
+    columns: dict[str, dict[str, str]],
+) -> bool:
+    """Return whether a persisted row can safely represent this website.
+
+    Old deployments reused a tenant's latest row when its website changed.
+    That made a correctly crawled site inherit an unrelated matching brief.
+    JSON-backed profiles now carry an explicit identity marker; rows predating
+    it receive a fresh profile record on their next crawl. Deployments without
+    a JSON document column retain the legacy path for schema compatibility.
+    """
+
+    document_columns = [
+        column_name
+        for column_name in ("profile_json", "profile", "data")
+        if column_name in columns
+    ]
+    if not document_columns:
+        return True
+
+    for column_name in document_columns:
+        document = _as_dict(row.get(column_name))
+        if (
+            document.get("service_profile_identity_version")
+            == SERVICE_PROFILE_IDENTITY_VERSION
+            and _normalized_equals(
+                _string_value(document.get("website_url")), website_url
+            )
+        ):
+            return True
+    return False
 
 
 def _profile_has_embeddable_content(document: dict[str, Any]) -> bool:
@@ -1203,6 +1250,8 @@ def _cached_service_profile_for_markdown(
                 and document.get("extraction_status") == "completed"
                 and document.get("profile_extraction_cache_version")
                 == PROFILE_EXTRACTION_CACHE_VERSION
+                and document.get("service_profile_identity_version")
+                == SERVICE_PROFILE_IDENTITY_VERSION
                 and _profile_has_embeddable_content(document)
             ):
                 return document
@@ -1332,6 +1381,8 @@ def _cached_workspace_brain_profile_for_website(
             document = _as_dict(row.get(column_name))
             if (
                 document.get("extraction_status") in {"completed", "manual_refined"}
+                and document.get("service_profile_identity_version")
+                == SERVICE_PROFILE_IDENTITY_VERSION
                 and _profile_has_embeddable_content(document)
             ):
                 return _workspace_brain_profile_from_document(document, website_url)
@@ -1369,6 +1420,19 @@ def _upsert_service_profile(
         crawl_markdown_sha256=crawl_markdown_sha256,
     )
     existing = _load_existing_service_profile(conn, tenant_id, website_url, columns)
+    if existing and not _service_profile_has_current_website_identity(
+        existing,
+        website_url=website_url,
+        columns=columns,
+    ):
+        logger.info(
+            "service_profile_identity_refresh tenant_id=%s website_url=%s stale_service_profile_id=%s identity_version=%s",
+            tenant_id,
+            website_url,
+            existing.get("id"),
+            SERVICE_PROFILE_IDENTITY_VERSION,
+        )
+        existing = None
     expressions, params = _bind_payload(payload, columns)
 
     if existing:

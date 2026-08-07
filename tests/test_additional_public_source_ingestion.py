@@ -239,6 +239,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
                 actors._has_sufficient_free_evidence_for_x_suppression(
                     plausible_hits=10,
                     plausible_query_types={"buyer_pain", "recommendation_request"},
+                    matching_source_posts=2,
                 )
             )
             self.assertTrue(
@@ -249,7 +250,32 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
                         "recommendation_request",
                         "urgent_failure",
                     },
+                    matching_source_posts=2,
                 )
+            )
+            self.assertFalse(
+                actors._has_sufficient_free_evidence_for_x_suppression(
+                    plausible_hits=10,
+                    plausible_query_types={
+                        "buyer_pain",
+                        "recommendation_request",
+                        "urgent_failure",
+                    },
+                    matching_source_posts=0,
+                )
+            )
+
+    def test_stackexchange_routes_marketplace_queries_to_a_live_site(self) -> None:
+        from api.services.social_ingestion import _stackexchange_site_for_query
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                _stackexchange_site_for_query("How do I improve Etsy SEO tags"),
+                "webmasters",
+            )
+            self.assertEqual(
+                _stackexchange_site_for_query("my API deployment keeps failing"),
+                "stackoverflow",
             )
 
     def test_activation_queues_hn_first_then_the_four_free_sources(self) -> None:

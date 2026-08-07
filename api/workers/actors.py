@@ -78,6 +78,7 @@ def _has_sufficient_free_evidence_for_x_suppression(
     *,
     plausible_hits: int,
     plausible_query_types: set[str],
+    matching_source_posts: int = 0,
 ) -> bool:
     """Decide whether free-source coverage is strong enough to skip X.
 
@@ -88,6 +89,14 @@ def _has_sufficient_free_evidence_for_x_suppression(
     """
 
     if plausible_hits < _minimum_plausible_free_hits_for_x_suppression():
+        return False
+
+    # Cheap plausibility is only a retrieval heuristic. Broad terms can
+    # produce a few superficially plausible rows which are not usable for
+    # embedding/matching, as happened with Etsy queries on Hacker News. Do
+    # not suppress the single X fallback unless the free phase yielded at
+    # least one post that can actually enter the matching pipeline.
+    if matching_source_posts < 1:
         return False
 
     normalized_types = {
@@ -431,6 +440,7 @@ def ingest_hn_batch_job(
                 initial_source_result_counts={"hackernews": total_hits},
                 initial_plausible_hits=total_plausible_hits,
                 initial_plausible_query_types=sorted(plausible_query_types),
+                initial_matching_source_posts=matching_source_posts,
                 fallback_to_x=fallback_to_x,
                 enabled_sources=list(additional_sources or []),
                 x_fallback_group_id=x_fallback_group_id,
@@ -444,6 +454,7 @@ def ingest_hn_batch_job(
         elif fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
             plausible_hits=total_plausible_hits,
             plausible_query_types=plausible_query_types,
+            matching_source_posts=matching_source_posts,
         ):
             if x_fallback_disabled_reason:
                 x_fallback_skip_reason = x_fallback_disabled_reason
@@ -579,6 +590,7 @@ def ingest_additional_public_sources_batch_job(
     initial_source_result_counts: dict[str, int] | None = None,
     initial_plausible_hits: int = 0,
     initial_plausible_query_types: Sequence[str] | None = None,
+    initial_matching_source_posts: int = 0,
     fallback_to_x: bool = False,
     enabled_sources: Sequence[str] | None = None,
     x_fallback_group_id: str | None = None,
@@ -648,6 +660,7 @@ def ingest_additional_public_sources_batch_job(
             if isinstance(query_type, str) and query_type.strip()
         }
         total_new_inserts = max(0, initial_new_inserts)
+        initial_matchable_posts = max(0, initial_matching_source_posts)
         source_failures = 0
         source_result_counts: dict[str, int] = {
             str(source).strip().casefold(): max(0, int(hits))
@@ -771,6 +784,7 @@ def ingest_additional_public_sources_batch_job(
                 source_result_counts.setdefault(source, 0)
 
         matching_source_posts = len(matching_source_post_refs)
+        total_matching_source_posts = initial_matchable_posts + matching_source_posts
         embedding_jobs = trigger_embedding_jobs(list(matching_source_post_refs.values()))
         x_fallback_enqueued = False
         x_fallback_skip_reason: str | None = x_fallback_disabled_reason
@@ -778,6 +792,7 @@ def ingest_additional_public_sources_batch_job(
         if fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
             plausible_hits=total_plausible_hits,
             plausible_query_types=plausible_query_types,
+            matching_source_posts=total_matching_source_posts,
         ):
             if x_fallback_disabled_reason:
                 x_fallback_skip_reason = x_fallback_disabled_reason
@@ -835,7 +850,7 @@ def ingest_additional_public_sources_batch_job(
                     "plausible_hits": total_plausible_hits,
                     "plausible_query_types": sorted(plausible_query_types),
                     "new_inserts": total_new_inserts,
-                    "matching_source_posts": matching_source_posts,
+                    "matching_source_posts": total_matching_source_posts,
                     "embedding_jobs": embedding_jobs,
                     "x_fallback": {
                         "outcome": x_outcome,
@@ -895,7 +910,7 @@ def ingest_additional_public_sources_batch_job(
             _minimum_plausible_query_types_for_x_suppression()
         ),
         new_inserts=total_new_inserts,
-        matching_source_posts=matching_source_posts,
+        matching_source_posts=total_matching_source_posts,
         embedding_jobs=embedding_jobs,
         x_fallback_enqueued=x_fallback_enqueued,
         x_fallback_skip_reason=x_fallback_skip_reason,
@@ -953,6 +968,7 @@ def ingest_hn_job(
         if fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
             plausible_hits=result.plausible_hits,
             plausible_query_types={query_type or "legacy"} if result.plausible_hits else set(),
+            matching_source_posts=len(matching_source_post_refs),
         ):
             if not _x_source_is_configured():
                 x_fallback_skip_reason = "x_bearer_token_not_configured"

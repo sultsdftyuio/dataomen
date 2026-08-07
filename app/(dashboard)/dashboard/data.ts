@@ -583,6 +583,7 @@ async function runLeadQuery(
   threshold: number,
   select: string,
   withOrder = true,
+  activeSince: string | null = null,
 ) {
   let query = supabase
     .from("lead_matches")
@@ -591,6 +592,14 @@ async function runLeadQuery(
     .eq("service_profile_id", serviceProfileId)
     .in("match_status", ["ready_for_review", "qualified"])
     .gte("verifier_score", threshold);
+
+  // A profile that was historically overwritten during a website replacement
+  // can share an ID with legacy matches. Only show matches evaluated since the
+  // active profile was updated, so a previous website's conversations never
+  // appear as results for the current one.
+  if (activeSince) {
+    query = query.gte("updated_at", activeSince);
+  }
 
   if (withOrder) {
     query = query
@@ -606,6 +615,7 @@ export async function fetchQualifiedLeads(
   tenantId: string,
   serviceProfileId: string | null,
   threshold: number,
+  activeSince: string | null = null,
 ): Promise<QualifiedLeadView[]> {
   if (!serviceProfileId) return [];
 
@@ -615,10 +625,20 @@ export async function fetchQualifiedLeads(
     serviceProfileId,
     threshold,
     "*, source_posts(*)",
+    true,
+    activeSince,
   );
 
   if (result.error) {
-    result = await runLeadQuery(supabase, tenantId, serviceProfileId, threshold, "*");
+    result = await runLeadQuery(
+      supabase,
+      tenantId,
+      serviceProfileId,
+      threshold,
+      "*",
+      true,
+      activeSince,
+    );
   }
 
   if (result.error) {
@@ -629,6 +649,20 @@ export async function fetchQualifiedLeads(
       threshold,
       "*",
       false,
+      activeSince,
+    );
+  }
+
+  // ``updated_at`` is part of the current lead-match contract. If an older
+  // deployment lacks it, retain a readable dashboard rather than failing the
+  // whole page; current deployments always keep the replacement-site guard.
+  if (result.error && activeSince) {
+    result = await runLeadQuery(
+      supabase,
+      tenantId,
+      serviceProfileId,
+      threshold,
+      "*",
     );
   }
 
@@ -652,6 +686,7 @@ async function runDiscoveryCandidateQuery(
   serviceProfileId: string,
   select: string,
   withOrder = true,
+  activeSince: string | null = null,
 ) {
   let query = supabase
     .from("lead_matches")
@@ -659,6 +694,10 @@ async function runDiscoveryCandidateQuery(
     .eq("tenant_id", tenantId)
     .eq("service_profile_id", serviceProfileId)
     .eq("match_status", "discovery_candidate");
+
+  if (activeSince) {
+    query = query.gte("updated_at", activeSince);
+  }
 
   if (withOrder) {
     query = query
@@ -678,6 +717,7 @@ export async function fetchDiscoveryCandidates(
   supabase: SupabaseClient<Database>,
   tenantId: string,
   serviceProfileId: string | null,
+  activeSince: string | null = null,
 ): Promise<QualifiedLeadView[]> {
   if (!serviceProfileId) return [];
 
@@ -686,6 +726,8 @@ export async function fetchDiscoveryCandidates(
     tenantId,
     serviceProfileId,
     "*, source_posts(*)",
+    true,
+    activeSince,
   );
 
   if (result.error) {
@@ -694,6 +736,8 @@ export async function fetchDiscoveryCandidates(
       tenantId,
       serviceProfileId,
       "*",
+      true,
+      activeSince,
     );
   }
 
@@ -704,6 +748,16 @@ export async function fetchDiscoveryCandidates(
       serviceProfileId,
       "*",
       false,
+      activeSince,
+    );
+  }
+
+  if (result.error && activeSince) {
+    result = await runDiscoveryCandidateQuery(
+      supabase,
+      tenantId,
+      serviceProfileId,
+      "*",
     );
   }
 

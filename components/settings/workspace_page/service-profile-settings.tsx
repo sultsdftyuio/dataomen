@@ -10,13 +10,17 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CheckCircle2,
   CircleDotDashed,
   ChevronDown,
+  FileSearch,
   Globe2,
   Loader2,
   Plus,
+  Radar,
   RotateCcw,
   Save,
+  Target,
   X,
 } from "lucide-react";
 
@@ -194,6 +198,16 @@ function normalizeWebsiteUrl(value: string) {
   }
   parsed.hash = "";
   return parsed.toString();
+}
+
+function websiteDomain(value: string) {
+  try {
+    return new URL(
+      /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`,
+    ).hostname.replace(/^www\./i, "");
+  } catch {
+    return null;
+  }
 }
 
 async function readSettingsProfileResult(
@@ -592,6 +606,15 @@ export function ServiceProfileSettings({
 
   const statusLabel =
     serviceProfile.embeddingStatus === "completed" ? "Active" : "Regenerating";
+  const activeWebsiteDomain = websiteDomain(resolvedWebsiteUrl);
+  const draftedWebsiteDomain = websiteDomain(websiteDraft);
+  const websiteChanged = (() => {
+    try {
+      return normalizeWebsiteUrl(websiteDraft) !== normalizeWebsiteUrl(resolvedWebsiteUrl);
+    } catch {
+      return false;
+    }
+  })();
 
   if (layout === "progressive") {
     return (
@@ -756,71 +779,119 @@ export function ServiceProfileSettings({
 
   return (
     <div className="space-y-5">
-      <div
-        className="rounded-lg border p-3"
-        style={{ borderColor: C.rule, backgroundColor: C.offWhite }}
+      <section
+        className="overflow-hidden rounded-xl border bg-white shadow-sm"
+        style={{ borderColor: C.rule }}
+        aria-labelledby="discovery-source-title"
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <label
-              htmlFor="matching-website-url"
-              className="text-xs font-semibold"
-              style={{ color: C.navy }}
+        <div className="h-1" style={{ backgroundColor: C.blue }} />
+        <div className="p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div
+                className="flex size-10 shrink-0 items-center justify-center rounded-lg"
+                style={{ backgroundColor: C.bluePale, color: C.blue }}
+              >
+                <Globe2 className="size-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: C.blue }}>
+                  Source of truth
+                </p>
+                <h2 id="discovery-source-title" className="mt-1 text-lg font-semibold tracking-tight" style={{ color: C.navy }}>
+                  Your discovery website
+                </h2>
+                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                  This site defines the buyer brief behind every scan and lead decision.
+                </p>
+              </div>
+            </div>
+            <span
+              className="inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold"
+              style={{ borderColor: C.green, backgroundColor: C.greenPale, color: C.green }}
             >
-              Website source
+              <CheckCircle2 className="size-3.5" aria-hidden="true" />
+              {statusLabel}
+            </span>
+          </div>
+
+          <div className="mt-5">
+            <label htmlFor="matching-website-url" className="text-sm font-semibold" style={{ color: C.navy }}>
+              Website to analyze
             </label>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-              We use this page to refresh the brief. Updating it starts a new crawl;
-              your current matching rules stay active until the refresh completes.
-            </p>
             <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
               <div className="relative min-w-0 flex-1">
                 <Globe2
-                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2"
+                  className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2"
                   style={{ color: C.muted }}
                   aria-hidden="true"
                 />
                 <input
                   id="matching-website-url"
-                  type="url"
+                  type="text"
                   inputMode="url"
                   autoComplete="url"
+                  spellCheck={false}
                   value={websiteDraft}
                   disabled={isWebsitePending}
-                  className="h-9 w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-                  style={{ borderColor: C.rule, color: C.navy }}
+                  className="h-12 w-full rounded-lg border bg-background py-2 pl-12 pr-3 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
+                  style={{ borderColor: draftedWebsiteDomain ? C.blueLight : C.rule, color: C.navy }}
                   onChange={(event) => setWebsiteDraft(event.target.value)}
                 />
               </div>
               <Button
                 type="button"
-                variant="outline"
-                className="h-9 shrink-0 rounded-md"
-                disabled={isWebsitePending}
+                className="h-12 shrink-0 rounded-lg px-4"
+                disabled={isWebsitePending || !websiteDraft.trim()}
                 onClick={refreshWebsiteContext}
+                style={{ backgroundColor: C.navy, color: C.white }}
               >
                 {isWebsitePending ? (
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 ) : (
                   <RotateCcw className="size-4" aria-hidden="true" />
                 )}
-                {isWebsitePending ? "Queueing..." : "Update & re-crawl"}
+                {isWebsitePending ? "Starting scan..." : websiteChanged ? "Replace & analyze" : "Analyze again"}
               </Button>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" style={{ color: C.muted }}>
+              {draftedWebsiteDomain ? (
+                <span className="inline-flex items-center gap-1.5" style={{ color: C.green }}>
+                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                  Ready to analyze {draftedWebsiteDomain}
+                </span>
+              ) : (
+                <span>Paste a domain or full URL. We add https automatically.</span>
+              )}
+              {activeWebsiteDomain && !websiteChanged ? <span>Currently using {activeWebsiteDomain}</span> : null}
+            </div>
           </div>
-          <span
-            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-semibold"
-            style={{
-              borderColor: C.blueLight,
-              backgroundColor: C.bluePale,
-              color: C.blue,
-            }}
-          >
-            <CircleDotDashed className="size-3.5" aria-hidden="true" />
-            {statusLabel}
-          </span>
+
+          {websiteChanged ? (
+            <div
+              className="mt-4 rounded-lg border px-3 py-3 text-xs leading-5"
+              style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.amber }}
+            >
+              <span className="font-semibold">You are replacing the discovery source.</span>{" "}
+              We will create a fresh profile for this website and keep its results separate from the current one.
+            </div>
+          ) : null}
+
+          <ol className="mt-5 grid gap-2 sm:grid-cols-3">
+            {[
+              { icon: FileSearch, label: "Read key pages" },
+              { icon: Target, label: "Build your brief" },
+              { icon: Radar, label: "Scan conversations" },
+            ].map(({ icon: Icon, label }, index) => (
+              <li key={label} className="flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs" style={{ borderColor: C.rule, color: C.navySoft }}>
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold" style={{ backgroundColor: C.bluePale, color: C.blue }}>{index + 1}</span>
+                <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="font-medium">{label}</span>
+              </li>
+            ))}
+          </ol>
         </div>
-      </div>
+      </section>
 
       {!hasProfileContent ? (
         <div

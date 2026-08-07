@@ -291,6 +291,22 @@ def _initial_source_query_variants_per_type() -> int:
     )
 
 
+def _generic_query_variants_are_enabled() -> bool:
+    """Return whether non-category-specific recall variants may be searched.
+
+    The six matching-brief phrases retain the customer's market language. The
+    old generic templates could turn a natural request into a fragment such as
+    ``looking for do improve Etsy SEO``, discarding the useful context and
+    retrieving unrelated posts. Keep those templates opt-in for deployments
+    that have deliberately validated their generic recall strategy.
+    """
+
+    value = os.getenv(
+        "ARCLI_INITIAL_PUBLIC_GENERIC_QUERY_VARIANTS_ENABLED", "false"
+    ).strip().casefold()
+    return value in {"1", "true", "yes", "on"}
+
+
 def public_source_search_queries(
     profile: ServiceProfile,
     *,
@@ -301,9 +317,9 @@ def public_source_search_queries(
     Canonical profile phrases remain the source of truth and always lead each
     intent.  Demand-acquisition profiles also receive concise buyer-language
     alternatives, since a public author is much more likely to write "need
-    more leads" than the exact sentence generated for a profile.  Every other
-    product receives a compact, phrase-derived alternative too, so an unusual
-    website is not limited to an exact generated sentence.
+    more leads" than the exact sentence generated for a profile. Other
+    profiles use their six canonical phrases by default; generic recall
+    templates are available only through a deployment-level opt-in.
     """
 
     canonical_queries = public_source_queries(
@@ -318,11 +334,13 @@ def public_source_search_queries(
     queries: list[DiscoveryQuery] = []
     seen_phrases: set[str] = set()
     for canonical in canonical_queries:
-        specific_alternatives = (
-            _DEMAND_ACQUISITION_QUERY_VARIANTS.get(canonical.query_type, ())
-            if is_demand_acquisition_profile
-            else _generic_query_variants(canonical)
-        )
+        specific_alternatives = ()
+        if is_demand_acquisition_profile:
+            specific_alternatives = _DEMAND_ACQUISITION_QUERY_VARIANTS.get(
+                canonical.query_type, ()
+            )
+        elif _generic_query_variants_are_enabled():
+            specific_alternatives = _generic_query_variants(canonical)
         alternatives = (canonical.phrase, *specific_alternatives)
         added_for_type = 0
         for alternative in alternatives:

@@ -54,8 +54,19 @@ export default async function DashboardPage() {
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
   ]);
   const [leads, discoveryCandidates] = await Promise.all([
-    fetchQualifiedLeads(supabase, tenantId, serviceProfile.id, threshold),
-    fetchDiscoveryCandidates(supabase, tenantId, serviceProfile.id),
+    fetchQualifiedLeads(
+      supabase,
+      tenantId,
+      serviceProfile.id,
+      threshold,
+      serviceProfile.updatedAt,
+    ),
+    fetchDiscoveryCandidates(
+      supabase,
+      tenantId,
+      serviceProfile.id,
+      serviceProfile.updatedAt,
+    ),
   ]);
   const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,

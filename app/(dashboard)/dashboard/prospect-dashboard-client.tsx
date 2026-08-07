@@ -10,6 +10,7 @@ import {
   Clock3,
   Copy,
   ExternalLink,
+  Globe2,
   ListFilter,
   MessageSquareText,
   Radar,
@@ -244,6 +245,16 @@ function pipelineStatus({
     detail:
       "Review the scan outcome below. Plausible conversations are kept separately for your judgment and never presented as CRM-ready leads.",
   };
+}
+
+function sourceDomain(value: string | null) {
+  if (!value) return null;
+
+  try {
+    return new URL(value).hostname.replace(/^www\./i, "");
+  } catch {
+    return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  }
 }
 
 const FIRST_SCAN_STEPS = [
@@ -1944,6 +1955,63 @@ function WarmUpState({
   );
 }
 
+function DiscoverySourceBar({
+  serviceProfile,
+  status,
+}: {
+  serviceProfile: ServiceProfileView;
+  status: ReturnType<typeof pipelineStatus>;
+}) {
+  const domain = sourceDomain(serviceProfile.websiteUrl);
+  const isReady = status.label === "Latest scan complete";
+
+  return (
+    <section
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 shadow-sm"
+      style={{ borderColor: C.rule }}
+      aria-label="Active discovery source"
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className="flex size-9 shrink-0 items-center justify-center rounded-lg"
+          style={{ backgroundColor: C.bluePale, color: C.blue }}
+        >
+          <Globe2 className="size-4.5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
+            Active discovery source
+          </p>
+          <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }} title={serviceProfile.websiteUrl ?? undefined}>
+            {domain ?? "Website needed"}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+          style={{
+            borderColor: isReady ? C.green : C.blueLight,
+            backgroundColor: isReady ? C.greenPale : C.bluePale,
+            color: isReady ? C.green : C.blue,
+          }}
+        >
+          {status.label}
+        </span>
+        <Button
+          asChild
+          type="button"
+          size="xs"
+          variant="outline"
+          style={{ borderColor: C.ruleDark, backgroundColor: C.white, color: C.navySoft }}
+        >
+          <Link href="/settings">Change website</Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 export default function ProspectDashboardClient({
   serviceProfile,
   crawlJob,
@@ -2211,6 +2279,8 @@ export default function ProspectDashboardClient({
           </SheetContent>
         </Sheet>
       </header>
+
+      <DiscoverySourceBar serviceProfile={serviceProfile} status={status} />
 
       {buyerDemandReport?.isTerminal && queueItems.length === 0 ? (
         <CompletedDiscoveryReport report={buyerDemandReport} />
