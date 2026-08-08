@@ -24,7 +24,7 @@ from api.services.profile_extraction import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PASS1_MODEL = "gpt-5-nano"
+DEFAULT_PASS1_MODEL = "gpt-5.4-nano"
 # The caller has a five-second handoff timeout. Reserve a small margin for the
 # profile upsert and Dramatiq publish while allowing the model a realistic
 # response window after the homepage fetch.
@@ -381,7 +381,7 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
         # The Pass 1 default is the original GPT-5 nano family, which supports
         # minimal reasoning. Do not send this model-specific setting to an
         # operator-supplied non-GPT-5-nano override.
-        if self.model.startswith("gpt-5-nano"):
+        if self.model.startswith("gpt-5.4-nano"):
             request["reasoning_effort"] = DEFAULT_PASS1_REASONING_EFFORT
 
         rate_limit = provider_rate_limiter.try_reserve_paced_slot(
