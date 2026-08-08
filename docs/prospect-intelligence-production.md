@@ -83,11 +83,11 @@ ARCLI_WATCHLIST_DISCOVERY_COOLOFF_SECONDS=300
 ARCLI_WATCHLIST_JOB_TIME_LIMIT_MS=180000
 ```
 
-`ARCLI_MATCHING_SIMILARITY_THRESHOLD` now defaults to `0.24` to admit more
-buyer-language paraphrases to the verifier. It is a recall prefilter, not a
-qualification score; `LEAD_VERIFIER_SCORE_THRESHOLD` still controls Ready to
-act and `LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD` still controls review-only
-signals. Keep the verifier enabled and do not set a higher
+`ARCLI_MATCHING_SIMILARITY_THRESHOLD` now defaults to `0.20` to admit more
+buyer-language and adjacent-need paraphrases to the verifier. It is a recall
+prefilter, not a qualification score; `LEAD_VERIFIER_SCORE_THRESHOLD` still
+controls Ready for review and `LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD` still
+controls review-only signals. Keep the verifier enabled and do not set a higher
 `ARCLI_VERIFIER_MIN_SIMILARITY_THRESHOLD` unless intentionally reducing recall.
 
 ## Optional buyer-language research

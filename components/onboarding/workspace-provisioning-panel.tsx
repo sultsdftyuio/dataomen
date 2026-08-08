@@ -140,10 +140,9 @@ export function WorkspaceProvisioningPanel({
       if (result.ok) {
         setSubmittedWebsiteUrl(websiteUrl.trim());
         setSubmittedAt(now);
-        // The dashboard owns the first-scan experience. Its live status
-        // refreshes while the crawler prepares the matching brief and first
-        // prospect candidates.
-        router.replace("/dashboard");
+        // Keep the dashboard for the finished result. The dedicated discovery
+        // screen owns progress for the crawl, profile, and first source scan.
+        router.replace("/onboarding/discovery?scan=1");
         return;
       } else {
         setSubmittedAt(null);
@@ -167,6 +166,8 @@ export function WorkspaceProvisioningPanel({
       if (result.ok) {
         setSubmittedWebsiteUrl(effectiveWebsiteUrl.trim());
         setSubmittedAt(now);
+        router.replace("/onboarding/discovery?scan=1");
+        return;
       } else {
         setSubmittedAt(null);
       }

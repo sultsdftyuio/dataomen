@@ -567,7 +567,12 @@ export function ServiceProfileSettings({
               }
             : result,
         );
-        if (result.ok || response.status === 202) router.refresh();
+        if (result.ok) {
+          router.replace("/onboarding/discovery?scan=1");
+          return;
+        }
+
+        router.refresh();
       } catch {
         setProfileResult({
           ok: false,

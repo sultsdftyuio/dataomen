@@ -125,6 +125,23 @@ class HackerNewsIngestionTests(unittest.TestCase):
             )
         )
 
+    def test_recall_guard_admits_a_single_adjacent_buyer_signal_by_default(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        buyer_request = SimpleNamespace(
+            title="Need help with reconciliation",
+            body="We need help with reconciliation before the month end.",
+        )
+
+        with unittest.mock.patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(
+                ingestion_module._source_post_is_plausible_for_discovery_query(
+                    buyer_request,
+                    "automated finance reconciliation workflow software",
+                    query_type="recommendation_request",
+                )
+            )
+
     def test_legacy_demand_fallback_is_upgraded_only_for_search(self) -> None:
         import api.services.social_ingestion as ingestion_module
 

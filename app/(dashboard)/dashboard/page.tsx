@@ -8,6 +8,7 @@ import {
   fetchQualifiedLeads,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
+  isBuyerDemandReportCurrent,
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
@@ -53,6 +54,25 @@ export default async function DashboardPage() {
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
   ]);
+  const buyerDemandReport = await fetchBuyerDemandReport(
+    supabase,
+    tenantId,
+    serviceProfile.id,
+    threshold,
+  );
+
+  // A known stale report means this website was re-submitted and needs to
+  // finish its new discovery flow. Keep dashboards usable on legacy
+  // workspaces where the optional discovery-run telemetry is unavailable.
+  if (
+    !serviceProfile.hasProfile ||
+    isServiceProfileWarmingUp(serviceProfile) ||
+    (buyerDemandReport !== null &&
+      !isBuyerDemandReportCurrent(crawlJob, buyerDemandReport))
+  ) {
+    redirect("/onboarding/discovery");
+  }
+
   const [leads, discoveryCandidates] = await Promise.all([
     fetchQualifiedLeads(
       supabase,
@@ -68,13 +88,6 @@ export default async function DashboardPage() {
       serviceProfile.updatedAt,
     ),
   ]);
-  const buyerDemandReport = await fetchBuyerDemandReport(
-    supabase,
-    tenantId,
-    serviceProfile.id,
-    threshold,
-  );
-
   return (
     <ProspectDashboardClient
       serviceProfile={serviceProfile}

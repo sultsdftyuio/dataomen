@@ -49,8 +49,8 @@ const EMPTY_FIELDS: ServiceProfileFields = {
 };
 
 export function verifierScoreThreshold() {
-  const configured = Number(process.env.LEAD_VERIFIER_SCORE_THRESHOLD ?? "0.7");
-  return Number.isFinite(configured) ? configured : 0.7;
+  const configured = Number(process.env.LEAD_VERIFIER_SCORE_THRESHOLD ?? "0.6");
+  return Number.isFinite(configured) ? configured : 0.6;
 }
 
 function asRecord(value: unknown): DbRecord | null {
@@ -286,6 +286,30 @@ export function isServiceProfileWarmingUp(profile: ServiceProfileView) {
   return ["queued", "pending", "processing", "generating"].includes(
     embeddingStatus ?? "",
   );
+}
+
+/**
+ * A terminal report belongs to the active website crawl only when it was
+ * written after that crawl was last updated. This prevents an older result
+ * from appearing while the same website is being re-crawled.
+ */
+export function isBuyerDemandReportCurrent(
+  crawlJob: CrawlJobView | null,
+  report: BuyerDemandReportView | null,
+) {
+  if (!report?.isTerminal) return false;
+  if (!crawlJob?.updatedAt) return true;
+
+  const crawlTimestamp = Date.parse(crawlJob.updatedAt);
+  const reportTimestamp = Date.parse(report.completedAt ?? report.updatedAt ?? "");
+
+  // Preserve compatibility with older optional telemetry rows that do not
+  // have usable timestamps rather than trapping a finished workspace.
+  if (!Number.isFinite(crawlTimestamp) || !Number.isFinite(reportTimestamp)) {
+    return true;
+  }
+
+  return reportTimestamp >= crawlTimestamp;
 }
 
 export async function fetchTenantWebsiteUrl(

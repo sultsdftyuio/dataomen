@@ -370,7 +370,7 @@ def _discovery_query_overlap_fraction() -> float:
 
     return max(
         0.1,
-        min(0.8, env_float("ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION", 0.25)),
+        min(0.8, env_float("ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION", 0.15)),
     )
 
 

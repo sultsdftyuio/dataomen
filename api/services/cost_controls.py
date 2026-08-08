@@ -165,7 +165,7 @@ class ProviderRateLimiter:
         )
         if reservation.wait_seconds <= 0:
             return
-        logger.info(
+        logger.debug(
             "provider_request_deferred provider=%s limit=%s window_seconds=%s wait_seconds=%.2f queued_requests=%s",
             reservation.provider,
             reservation.limit,
@@ -191,7 +191,7 @@ class ProviderRateLimiter:
         )
         if reservation.wait_seconds <= 0:
             return
-        logger.info(
+        logger.debug(
             "provider_request_deferred provider=%s limit=%s window_seconds=%s wait_seconds=%.2f queued_requests=%s",
             reservation.provider,
             reservation.limit,

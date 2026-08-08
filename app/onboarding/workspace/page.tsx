@@ -34,7 +34,7 @@ export default async function WorkspaceOnboardingPage() {
   const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
 
   if (websiteUrl) {
-    redirect("/dashboard");
+    redirect("/onboarding/discovery");
   }
 
   return <WorkspaceProvisioningPanel initialWebsiteUrl={websiteUrl} />;

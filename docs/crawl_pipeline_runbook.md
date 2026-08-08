@@ -268,7 +268,7 @@ ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY=50
 
 # The lexical prefilter is recall-oriented. A source hit still needs buyer
 # context, embedding similarity, and verifier evidence before it can appear.
-ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION=0.25
+ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION=0.15
 
 # Suppress the paid fallback only after this many plausible signals across the
 # complete free phase (HN + the four added sources). The prior HN-named env
@@ -309,10 +309,10 @@ ARCLI_INITIAL_PUBLIC_X_FALLBACK_TENANT_WINDOW_SECONDS=86400
 ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT=100
 ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES=15
 
-# A conservative verifier-confirmed signal below the normal review threshold
-# is stored as discovery_candidate, never as qualified.
-LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.45
-LEAD_VERIFIER_SCORE_THRESHOLD=0.70
+# A verifier-confirmed plausible signal is stored as discovery_candidate until
+# it reaches the higher Ready for review threshold.
+LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.35
+LEAD_VERIFIER_SCORE_THRESHOLD=0.60
 ```
 
 The strict one-page setting bounds a successful X fallback to one X search

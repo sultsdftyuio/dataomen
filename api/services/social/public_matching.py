@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Sequence, TypeVar
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -44,28 +44,129 @@ from api.services.verifier import (
     VerifierService,
 )
 
+_CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION = "website-scoped-v2"
+
+
+def _normalized_website_identity(value: Any) -> str | None:
+    """Return a stable host/path identity without making http/https distinct."""
+    raw_value = _string_value(value)
+    if not raw_value:
+        return None
+
+    candidate = raw_value.strip()
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return None
+
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    if not host:
+        return None
+
+    try:
+        port_number = parsed.port
+    except ValueError:
+        return None
+
+    port = f":{port_number}" if port_number else ""
+    path = parsed.path.rstrip("/")
+    return f"{host}{port}{path}"
+
+
+def _profile_matches_active_website(row: dict[str, Any]) -> bool:
+    """Accept only the current, website-scoped profile for a tenant.
+
+    A public post is global, but profile matches must target the one website a
+    tenant currently selected. Older rows may carry a stale brief after a site
+    replacement; their document lacks the current identity marker and must not
+    spend embeddings or verifier calls.
+    """
+    active_website = _normalized_website_identity(row.get("active_website_url"))
+    if not active_website:
+        return False
+
+    document = _first_document(row)
+    if document:
+        return (
+            document.get("service_profile_identity_version")
+            == _CURRENT_WEBSITE_PROFILE_IDENTITY_VERSION
+            and _normalized_website_identity(document.get("website_url"))
+            == active_website
+        )
+
+    # Keep flat-column-only deployments working. JSON-backed rows fail closed
+    # above, because they have enough information to prove they are stale.
+    return _normalized_website_identity(
+        row.get("website_url") or row.get("url")
+    ) == active_website
+
+
+def _current_profile_rows_for_active_websites(
+    rows: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Choose at most one current profile per tenant from newest-first rows."""
+    selected_tenants: set[str] = set()
+    active_rows: list[dict[str, Any]] = []
+    for row in rows:
+        tenant_id = _string_value(row.get("tenant_id"))
+        if (
+            not tenant_id
+            or tenant_id in selected_tenants
+            or not _profile_matches_active_website(row)
+        ):
+            continue
+        selected_tenants.add(tenant_id)
+        active_rows.append(row)
+    return active_rows
+
+
+def _active_tenant_website_url(conn: Connection, tenant_id: str) -> str | None:
+    row = conn.execute(
+        text(
+            """
+            SELECT website_url
+              FROM public.tenant_settings
+             WHERE tenant_id = :tenant_id
+             LIMIT 1
+            """
+        ),
+        {"tenant_id": tenant_id},
+    ).mappings().first()
+    return _string_value(row.get("website_url")) if row else None
+
+
 def _public_matching_profile_rows(conn: Connection) -> list[dict[str, Any]]:
-    """Return profiles with a tenant binding; public data is never tenant-owned."""
+    """Return one active website profile per tenant for global post matching."""
     columns = _service_profile_columns(conn)
     if not {"id", "tenant_id"}.issubset(columns):
         return []
 
-    select_columns = list(columns)
-    order_column = "updated_at" if "updated_at" in columns else "id"
+    select_columns = [f"profile.{column_name}" for column_name in columns]
+    order_column = "profile.updated_at" if "updated_at" in columns else "profile.id"
     profile_limit = max(1, env_int("ARCLI_PUBLIC_SOURCE_PROFILE_LIMIT", 250))
+    candidate_limit = min(profile_limit * 4, 1_000)
     rows = conn.execute(
         text(
             f"""
-            SELECT {", ".join(select_columns)}
-              FROM public.service_profiles
-             WHERE tenant_id IS NOT NULL
+            SELECT {", ".join(select_columns)},
+                   settings.website_url AS active_website_url
+              FROM public.service_profiles AS profile
+              JOIN public.tenant_settings AS settings
+                ON settings.tenant_id = profile.tenant_id
+             WHERE profile.tenant_id IS NOT NULL
+               AND settings.website_url IS NOT NULL
              ORDER BY {order_column} DESC NULLS LAST
-             LIMIT :profile_limit
+             LIMIT :candidate_limit
             """
         ),
-        {"profile_limit": profile_limit},
+        {"candidate_limit": candidate_limit},
     ).mappings()
-    return [dict(row) for row in rows]
+    return _current_profile_rows_for_active_websites(
+        [dict(row) for row in rows]
+    )[:profile_limit]
 
 
 
@@ -155,6 +256,7 @@ def rematch_existing_public_source_posts_for_profile(
             normalized_profile_id,
             profile_columns,
         )
+        active_website_url = _active_tenant_website_url(conn, normalized_tenant_id)
         source_rows = _load_recent_embedded_public_source_post_rows(
             conn,
             limit=source_limit,
@@ -167,6 +269,20 @@ def rematch_existing_public_source_posts_for_profile(
             normalized_tenant_id,
             normalized_profile_id,
             "service_profile_not_found",
+        )
+        return _empty_public_rematch_result()
+
+    if not _profile_matches_active_website(
+        {
+            **profile_row,
+            "active_website_url": active_website_url,
+        }
+    ):
+        logger.info(
+            "existing_public_source_rematch_skipped tenant_id=%s service_profile_id=%s skip_reason=%s",
+            normalized_tenant_id,
+            normalized_profile_id,
+            "profile_not_current_for_active_website",
         )
         return _empty_public_rematch_result()
 

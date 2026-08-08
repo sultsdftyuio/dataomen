@@ -156,7 +156,7 @@ class EmbeddingService(OpenAIClientOwner):
             embedding=embedding,
             dimensions=len(embedding),
         )
-        logger.info(
+        logger.debug(
             "embedding_generated tenant_id=%s service_profile_id=%s source_post_id=%s purpose=%s model=%s dimensions=%s input_chars=%s current_count=%s limit=%s",
             quota.tenant_id,
             service_profile_id,

@@ -12,10 +12,10 @@ MetadataValue = str | int | float | bool
 RejectionStage = Literal["cheap_filter", "embedding_similarity"]
 
 # This stage is a recall-oriented prefilter; the verifier is the precision
-# gate before a lead reaches review. A 0.24 floor deliberately admits broader
-# semantic candidates (including buyer-language paraphrases) to that verifier;
-# it is never itself a lead decision.
-DEFAULT_SIMILARITY_THRESHOLD = 0.24
+# gate before a lead reaches review. A 0.20 floor deliberately admits broader
+# semantic candidates (including adjacent buyer-language paraphrases) to that
+# verifier; it is never itself a lead decision.
+DEFAULT_SIMILARITY_THRESHOLD = 0.20
 DEFAULT_MAX_CANDIDATES = 50
 REJECTION_EMPTY_TEXT = "empty_or_too_short_text"
 REJECTION_SPAM_SIGNAL = "cheap_filter_spam_signal"
@@ -156,7 +156,7 @@ def _emit_rejection(
         rejection_reason=rejection_reason,
     )
 
-    logger.info(
+    logger.debug(
         "lead_match_rejected tenant_id=%s service_profile_id=%s source_post_id=%s stage=%s rejection_reason=%s similarity_score=%s threshold=%s",
         rejection.tenant_id,
         rejection.service_profile_id,
@@ -308,7 +308,7 @@ def find_candidate_matches(
     candidates.sort(key=lambda candidate: candidate.score, reverse=True)
     candidates = candidates[:resolved_max_candidates]
 
-    logger.info(
+    logger.debug(
         "candidate_matching_completed tenant_id=%s service_profile_id=%s posts=%s candidates=%s threshold=%.3f max_candidates=%s cheap_filter_rejections=%s similarity_rejections=%s",
         resolved_tenant_id,
         service_profile_id,
@@ -321,7 +321,7 @@ def find_candidate_matches(
     )
 
     if not candidates:
-        logger.warning(
+        logger.debug(
             "tenant_zero_match_signals tenant_id=%s service_profile_id=%s posts=%s threshold=%.3f cheap_filter_rejections=%s similarity_rejections=%s",
             resolved_tenant_id,
             service_profile_id,

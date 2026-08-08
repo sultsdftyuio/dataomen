@@ -13,6 +13,73 @@ from api.services.verifier import VERIFIER_POLICY_VERSION, VerificationResult
 
 
 class PublicSourceMatchingTests(unittest.TestCase):
+    def test_current_website_scope_uses_only_the_latest_safe_profile_per_tenant(self) -> None:
+        from api.services.social.public_matching import (
+            _current_profile_rows_for_active_websites,
+        )
+
+        rows = [
+            {
+                "id": "stale-profile",
+                "tenant_id": "tenant-a",
+                "website_url": "https://selltora.com/",
+                "active_website_url": "https://selltora.com/",
+                "profile_json": {
+                    "website_url": "https://selltora.com/",
+                    "one_liner": "Etsy listing optimization",
+                },
+            },
+            {
+                "id": "current-profile",
+                "tenant_id": "tenant-a",
+                "website_url": "https://selltora.com/",
+                "active_website_url": "https://selltora.com/",
+                "profile_json": {
+                    "service_profile_identity_version": "website-scoped-v2",
+                    "website_url": "https://selltora.com/",
+                    "one_liner": "Outbound sales automation",
+                },
+            },
+            {
+                "id": "other-website",
+                "tenant_id": "tenant-b",
+                "website_url": "https://other.example/",
+                "active_website_url": "https://current.example/",
+                "profile_json": {
+                    "service_profile_identity_version": "website-scoped-v2",
+                    "website_url": "https://other.example/",
+                },
+            },
+        ]
+
+        selected = _current_profile_rows_for_active_websites(rows)
+
+        self.assertEqual([row["id"] for row in selected], ["current-profile"])
+
+    def test_current_website_scope_keeps_flat_legacy_profiles_when_url_matches(self) -> None:
+        from api.services.social.public_matching import (
+            _current_profile_rows_for_active_websites,
+        )
+
+        selected = _current_profile_rows_for_active_websites(
+            [
+                {
+                    "id": "legacy-current",
+                    "tenant_id": "tenant-a",
+                    "website_url": "https://www.example.com/",
+                    "active_website_url": "https://example.com/",
+                },
+                {
+                    "id": "legacy-old",
+                    "tenant_id": "tenant-a",
+                    "website_url": "https://old.example.com/",
+                    "active_website_url": "https://example.com/",
+                },
+            ]
+        )
+
+        self.assertEqual([row["id"] for row in selected], ["legacy-current"])
+
     def test_source_qualified_embedding_load_never_blends_equal_external_ids(self) -> None:
         import api.services.social_ingestion as ingestion
 
@@ -89,6 +156,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
             "key_value_propositions": ["Automated billing"],
             "ideal_customer_pain_points": ["Manual invoices"],
             "profile_embedding": [1.0, 0.0],
+            "website_url": "https://billing.example/",
         }
         persisted: list[dict[str, object]] = []
 
@@ -190,6 +258,11 @@ class PublicSourceMatchingTests(unittest.TestCase):
             "key_value_propositions": ["Automated billing"],
             "ideal_customer_pain_points": ["Manual invoices"],
             "profile_embedding": [1.0, 0.0],
+            "website_url": "https://billing.example/",
+            "profile_json": {
+                "service_profile_identity_version": "website-scoped-v2",
+                "website_url": "https://billing.example/",
+            },
         }
         persisted: list[dict[str, object]] = []
 
@@ -228,6 +301,11 @@ class PublicSourceMatchingTests(unittest.TestCase):
             patch.object(ingestion, "_load_service_profile", return_value=profile_row) as load_profile,
             patch.object(
                 ingestion,
+                "_active_tenant_website_url",
+                return_value="https://billing.example/",
+            ),
+            patch.object(
+                ingestion,
                 "_load_recent_embedded_public_source_post_rows",
                 return_value=[source_row],
             ),
@@ -254,8 +332,8 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertEqual(result["embedded"], 1)
         self.assertEqual(result["cache_misses"], 0)
         self.assertEqual(result["candidates"], 1)
-        self.assertEqual(result["ready_for_review"], 0)
-        self.assertEqual(result["discovery_candidates"], 1)
+        self.assertEqual(result["ready_for_review"], 1)
+        self.assertEqual(result["discovery_candidates"], 0)
         self.assertEqual(len(persisted), 1)
         self.assertEqual(persisted[0]["tenant_id"], "tenant-new")
         self.assertEqual(
@@ -347,6 +425,11 @@ class PublicSourceMatchingTests(unittest.TestCase):
             "key_value_propositions": ["Automated billing"],
             "ideal_customer_pain_points": ["Manual invoices"],
             "profile_embedding": [1.0, 0.0],
+            "website_url": "https://billing.example/",
+            "profile_json": {
+                "service_profile_identity_version": "website-scoped-v2",
+                "website_url": "https://billing.example/",
+            },
         }
 
         class FakeEngine:
@@ -370,6 +453,11 @@ class PublicSourceMatchingTests(unittest.TestCase):
             patch.object(ingestion, "_load_service_profile", return_value=profile_row),
             patch.object(
                 ingestion,
+                "_active_tenant_website_url",
+                return_value="https://billing.example/",
+            ),
+            patch.object(
+                ingestion,
                 "_load_recent_embedded_public_source_post_rows",
                 return_value=source_rows,
             ),
@@ -391,10 +479,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
         self.assertEqual(result["candidates"], 0)
         self.assertEqual(matcher.call_args.kwargs["max_candidates"], 1)
 
-    def test_discovery_candidate_requires_a_real_conservative_verifier_match(self) -> None:
+    def test_lowered_review_and_discovery_thresholds_still_require_a_verifier_match(self) -> None:
         import api.services.social_ingestion as ingestion
 
-        weak_verified = VerificationResult(
+        ready_for_review = VerificationResult(
             match=True,
             decision_label="weak_match",
             confidence=0.6,
@@ -402,15 +490,23 @@ class PublicSourceMatchingTests(unittest.TestCase):
             why_this_matches="Plausible recurring billing need.",
             suggested_reply="Here is a useful resource.",
         )
-        self.assertEqual(ingestion._lead_match_status(weak_verified), "discovery_candidate")
+        self.assertEqual(ingestion._lead_match_status(ready_for_review), "ready_for_review")
 
-        low_confidence = weak_verified.model_copy(update={"confidence": 0.44})
+        discovery_candidate = ready_for_review.model_copy(update={"confidence": 0.35})
+        self.assertEqual(
+            ingestion._lead_match_status(discovery_candidate),
+            "discovery_candidate",
+        )
+
+        low_confidence = ready_for_review.model_copy(update={"confidence": 0.34})
         self.assertEqual(ingestion._lead_match_status(low_confidence), "rejected")
 
-        skipped = weak_verified.model_copy(update={"verifier_executed": False})
+        skipped = ready_for_review.model_copy(update={"verifier_executed": False})
         self.assertEqual(ingestion._lead_match_status(skipped), "rejected")
 
-        non_match_label = weak_verified.model_copy(update={"decision_label": "not_a_match"})
+        non_match_label = ready_for_review.model_copy(
+            update={"match": False, "decision_label": "not_a_match"}
+        )
         self.assertEqual(ingestion._lead_match_status(non_match_label), "rejected")
 
     def test_profile_activation_enqueues_historical_corpus_rematch(self) -> None:

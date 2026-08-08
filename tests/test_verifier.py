@@ -30,10 +30,10 @@ def test_verifier_uses_the_matching_threshold_when_no_override_is_configured() -
         post_id="post-1",
         source="twitter",
         text="How do I find better SaaS leads?",
-        # This is below the former 0.32 recall floor but above the current
-        # broad-candidate threshold. It must reach the verifier, which remains
-        # the only precision gate.
-        similarity_score=0.25,
+        # This is below the former 0.24 recall floor and at the current broad
+        # candidate threshold. It must reach the verifier, which remains the
+        # only precision gate.
+        similarity_score=0.20,
     )
     verifier = VerifierService(client=object(), quota_guard=AllowedQuotaGuard())
     expected = VerificationResult(
@@ -78,7 +78,10 @@ def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() 
     assert "Revenue is at risk after a payment failure" in prompt
     assert "similarity score is only a cheap prefilter" in prompt.lower()
     assert "search_terms describe the buyer's desired outcome" in prompt
+    assert "weighted relevance signals, not a checklist" in prompt
     assert "tool/category search" in verifier.SYSTEM_PROMPT
+    assert "broader or adjacent buyer" in verifier.SYSTEM_PROMPT
+    assert "0.35-0.59 represents a plausible Discovery candidate" in verifier.SYSTEM_PROMPT
     assert "Do not require the writer to use the vendor's product-category" in verifier.SYSTEM_PROMPT
     assert "without words such as prospect, lead" in verifier.SYSTEM_PROMPT
     assert "exact short excerpt" in verifier.SYSTEM_PROMPT

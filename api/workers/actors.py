@@ -132,7 +132,12 @@ def _job_started(
     tenant_id: str | None = None,
     **fields: Any,
 ) -> None:
-    logger.info(
+    log = (
+        logger.debug
+        if job_name == "source_post_embedding_handoff"
+        else logger.info
+    )
+    log(
         "job_executed tenant_id=%s job_name=%s job_state=%s %s",
         tenant_id or "global",
         job_name,
@@ -148,7 +153,12 @@ def _job_finished(
     tenant_id: str | None = None,
     **fields: Any,
 ) -> None:
-    logger.info(
+    log = (
+        logger.debug
+        if job_name == "source_post_embedding_handoff"
+        else logger.info
+    )
+    log(
         "job_executed tenant_id=%s job_name=%s job_state=%s %s",
         tenant_id or "global",
         job_name,
@@ -662,6 +672,7 @@ def ingest_additional_public_sources_batch_job(
         total_new_inserts = max(0, initial_new_inserts)
         initial_matchable_posts = max(0, initial_matching_source_posts)
         source_failures = 0
+        source_failure_details: dict[str, dict[str, int | str | None]] = {}
         source_result_counts: dict[str, int] = {
             str(source).strip().casefold(): max(0, int(hits))
             for source, hits in (initial_source_result_counts or {}).items()
@@ -727,6 +738,10 @@ def ingest_additional_public_sources_batch_job(
                     source_failures += 1
                     response = getattr(exc, "response", None)
                     status_code = getattr(response, "status_code", None)
+                    source_failure_details[source] = {
+                        "error_type": exc.__class__.__name__,
+                        "status_code": status_code if isinstance(status_code, int) else None,
+                    }
                     release_additional_public_source_query(
                         source=source,
                         query=query["phrase"],
@@ -846,6 +861,7 @@ def ingest_additional_public_sources_batch_job(
                 summary={
                     "sources": source_result_counts,
                     "source_failures": source_failures,
+                    "source_failure_details": source_failure_details,
                     "hits_found": total_hits,
                     "plausible_hits": total_plausible_hits,
                     "plausible_query_types": sorted(plausible_query_types),
@@ -902,6 +918,7 @@ def ingest_additional_public_sources_batch_job(
         sources=source_names,
         source_hits=source_result_counts,
         source_failures=source_failures,
+        source_failure_details=source_failure_details,
         hits_found=total_hits,
         plausible_free_hits=total_plausible_hits,
         minimum_plausible_free_hits_for_x_suppression=minimum_plausible_hits,
