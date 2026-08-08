@@ -46,8 +46,8 @@ export default async function MatchingBriefPage() {
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
-        eyebrow="The matching thesis"
-        title="Prospect desk brief"
+        eyebrow="Discovery setup"
+        title="Matching brief"
         description="Set the buyer, problem, and signals that make a conversation worth your attention."
         icon={Target}
         visual={
@@ -61,7 +61,7 @@ export default async function MatchingBriefPage() {
               </p>
               <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>
                 {isActive
-                  ? "This brief is shaping the signals on your Prospect desk."
+                  ? "This brief is shaping the signals in Prospects."
                   : "Your last active brief remains in use while this one refreshes."}
               </p>
             </div>

@@ -11,7 +11,7 @@ export type DashboardNavigationItem = {
 export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
   {
     href: "/dashboard",
-    label: "Overview",
+    label: "Prospects",
     description: "Review the conversations that need a next step.",
   },
   {
@@ -23,11 +23,6 @@ export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
     href: "/dashboard/brief",
     label: "Matching brief",
     description: "Refine who you want to reach and what they need.",
-  },
-  {
-    href: "/dashboard/research",
-    label: "Research",
-    description: "Learn from verified buyer language and recurring themes.",
   },
   {
     href: "/settings",

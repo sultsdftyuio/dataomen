@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { CSSProperties } from "react";
 import {
-  BarChart3,
   BriefcaseBusiness,
   ClipboardList,
   Settings2,
@@ -23,7 +22,6 @@ const ICONS: Record<string, LucideIcon> = {
   "/dashboard": ClipboardList,
   "/dashboard/watchlists": UsersRound,
   "/dashboard/brief": BriefcaseBusiness,
-  "/dashboard/research": BarChart3,
   "/settings": Settings2,
 };
 
@@ -39,7 +37,7 @@ export function DashboardNavigation({ compact = false }: DashboardNavigationProp
       aria-label="Product navigation"
       className={
         compact
-          ? "grid w-full grid-cols-5 items-center"
+          ? "grid w-full grid-cols-4 items-center"
           : "flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
       }
     >
@@ -69,7 +67,7 @@ export function DashboardNavigation({ compact = false }: DashboardNavigationProp
             }
           >
             <Icon className="size-4" aria-hidden="true" />
-            <span className={compact ? "max-w-full truncate" : "hidden lg:inline"}>
+            <span className={compact ? "max-w-full truncate" : "inline"}>
               {item.label}
             </span>
           </Link>

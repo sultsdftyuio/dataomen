@@ -16,7 +16,7 @@ import ProspectDashboardClient from "./prospect-dashboard-client";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const metadata: Metadata = {
-  title: "Overview | Arcli",
+  title: "Prospects | Arcli",
   description: "Review evidence-backed prospect conversations and next steps.",
 };
 

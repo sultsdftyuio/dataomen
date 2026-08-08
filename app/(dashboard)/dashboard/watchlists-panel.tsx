@@ -164,7 +164,7 @@ function WatchlistResultCards({ result }: { result: WatchlistResultsView | undef
       })}
       {signals.length > 4 ? (
         <p className="text-xs" style={{ color: C.muted }}>
-          Showing the latest 4 signals. Open Prospect desk to work through the full queue.
+          Showing the latest 4 signals. Open Prospects to work through the full queue.
         </p>
       ) : null}
     </div>
@@ -505,7 +505,7 @@ function WatchlistDetail({
               {signalCount > 0 ? (
                 <Button asChild size="sm" variant="outline" style={{ borderColor: C.blueLight, color: C.blue }}>
                   <Link href="/dashboard">
-                    Open Prospect desk
+                    Open Prospects
                     <ArrowRight className="size-3.5" />
                   </Link>
                 </Button>
@@ -771,7 +771,7 @@ export default function WatchlistsPanel({
             <div className="absolute -left-10 -top-10 size-40 rounded-full" style={{ backgroundColor: "rgba(59, 154, 232, 0.12)" }} aria-hidden="true" />
             <div className="relative max-w-sm">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                Buyer groups desk
+                Buyer groups
               </p>
               <h2 className="pfd mt-3 text-2xl leading-tight" style={{ color: C.navy }}>
                 Choose an audience worth watching

@@ -241,9 +241,9 @@ function pipelineStatus({
 
   return {
     label: "Latest scan complete",
-    title: "No verifier-confirmed conversations in the latest scan.",
+    title: "Your latest scan is complete.",
     detail:
-      "Review the scan outcome below. Plausible conversations are kept separately for your judgment and never presented as CRM-ready leads.",
+      "Review the conversations below. Plausible matches stay separate from ready-to-act prospects so you can judge them with confidence.",
   };
 }
 
@@ -1555,7 +1555,7 @@ export function BuyerLanguageResearch({
                                 className="border-l-2 pl-3 text-sm italic leading-6"
                                 style={{ borderColor: C.blueLight, color: C.navy }}
                               >
-                                â€œ{item.excerpt}â€
+                                “{item.excerpt}”
                               </blockquote>
                               {item.sourceUrl ? (
                                 <Button
@@ -1604,7 +1604,7 @@ export function BuyerLanguageResearch({
                     className="h-8 px-2.5 text-xs"
                     style={{ backgroundColor: C.blue, color: C.white }}
                   >
-                    {isRequestPending ? "Startingâ€¦" : "Find more words"}
+                    {isRequestPending ? "Starting…" : "Find more words"}
                   </Button>
                 ) : null}
                 <Button
@@ -1646,7 +1646,7 @@ export function BuyerLanguageResearch({
                     color: C.blue,
                   }}
                 >
-                  {isRequestPending ? "Startingâ€¦" : "Start scan"}
+                  {isRequestPending ? "Starting…" : "Start scan"}
                 </Button>
               </div>
             </details>
@@ -2005,7 +2005,7 @@ function DiscoverySourceBar({
           variant="outline"
           style={{ borderColor: C.ruleDark, backgroundColor: C.white, color: C.navySoft }}
         >
-          <Link href="/settings">Change website</Link>
+          <Link href="/dashboard/brief">Edit matching brief</Link>
         </Button>
       </div>
     </section>
@@ -2186,7 +2186,7 @@ export default function ProspectDashboardClient({
       <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
-            Prospect desk
+            Prospects
           </h1>
         </div>
         <Sheet>
@@ -2199,7 +2199,7 @@ export default function ProspectDashboardClient({
               style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
             >
               <Radar className="size-3.5" />
-              Scan &amp; guidance
+              Scan status
             </Button>
           </SheetTrigger>
           <SheetContent
@@ -2207,9 +2207,9 @@ export default function ProspectDashboardClient({
             style={{ backgroundColor: C.white, borderColor: C.rule }}
           >
             <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-              <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>Scan &amp; guidance</SheetTitle>
+              <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>Scan status</SheetTitle>
               <SheetDescription style={{ color: C.muted }}>
-                Context and next steps are kept here so the prospect desk stays focused.
+                Current scan details and helpful next steps stay here so your prospect list stays focused.
               </SheetDescription>
             </SheetHeader>
             <div className="space-y-5 p-4">
@@ -2269,10 +2269,6 @@ export default function ProspectDashboardClient({
                     <p className="text-sm font-semibold">Buyer groups</p>
                     <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Focus future scans on a specific audience.</p>
                   </Link>
-                  <Link href="/dashboard/research" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, color: C.navy }}>
-                    <p className="text-sm font-semibold">Buyer words</p>
-                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Study recurring language without leaving the desk cluttered.</p>
-                  </Link>
                 </div>
               </section>
             </div>
@@ -2319,7 +2315,7 @@ export default function ProspectDashboardClient({
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <h2 id="matches-heading" className="pfd text-lg leading-none" style={{ color: C.navy }}>
-              Your radar
+              Prospects
             </h2>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
               {leads.length} ready to reply
@@ -2470,7 +2466,7 @@ export default function ProspectDashboardClient({
               <div className="absolute -bottom-20 -right-10 size-56 rounded-full border" style={{ borderColor: "rgba(27, 110, 191, 0.14)" }} aria-hidden="true" />
               <div className="relative max-w-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-                  Prospect desk
+                  Prospects
                 </p>
                 <h3 className="pfd mt-3 text-2xl leading-tight" style={{ color: C.navy }}>
                   Pick a prospect to begin
@@ -2592,10 +2588,6 @@ export default function ProspectDashboardClient({
               <Link href="/dashboard/brief" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
                 <p className="text-sm font-semibold" style={{ color: C.navy }}>Refine your brief</p>
                 <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Use the phrases buyers use when they need help.</p>
-              </Link>
-              <Link href="/dashboard/research" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, backgroundColor: C.white }}>
-                <p className="text-sm font-semibold" style={{ color: C.navy }}>Buyer words</p>
-                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Learn from accepted evidence without treating it as a lead.</p>
               </Link>
               {buyerDemandReport?.marketPatterns.length ? (
                 <div className="rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>

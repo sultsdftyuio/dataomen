@@ -1,94 +1,65 @@
-// app/(dashboard)/dashboard/loading.tsx
-import React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardLoading() {
   return (
-    <div className="w-full mx-auto h-full flex flex-col space-y-8 animate-in fade-in duration-300 font-sans">
-      
-      {/* 1. ROI Header Skeleton */}
-      <div className="flex justify-between items-end">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-56 rounded-md" />
-          <Skeleton className="h-4 w-96 rounded-md" />
-        </div>
-        <Skeleton className="h-7 w-28 rounded-full" />
-      </div>
+    <div className="flex h-full w-full flex-col gap-3 animate-in fade-in duration-300">
+      <header className="flex min-h-11 items-center justify-between gap-4">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-8 w-28 rounded-md" />
+      </header>
 
-      {/* 2. Workspace Plan Card Skeleton */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-6 w-24 rounded-full" />
-            <Skeleton className="h-4 w-36 rounded-md" />
-          </div>
-          <Skeleton className="h-4 w-80 rounded-md" />
-        </div>
-        <div className="flex flex-col gap-2 lg:items-end">
-          <Skeleton className="h-3 w-40 rounded-sm" />
-          <div className="flex gap-2">
-            <Skeleton className="h-6 w-24 rounded-md" />
-            <Skeleton className="h-6 w-28 rounded-md" />
-            <Skeleton className="h-6 w-28 rounded-md" />
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-9 rounded-lg" />
+          <div className="space-y-2">
+            <Skeleton className="h-2.5 w-28" />
+            <Skeleton className="h-4 w-36" />
           </div>
         </div>
-      </div>
+        <Skeleton className="h-7 w-32 rounded-full" />
+      </section>
 
-      {/* 3. Hero Metrics Grid Skeleton (3 Columns) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-4">
-          <div className="flex justify-between items-start">
-            <Skeleton className="h-3 w-32 rounded-sm" />
-            <Skeleton className="h-5 w-5 rounded-full" />
+      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(300px,0.72fr)_minmax(560px,1.65fr)]">
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-slate-50 px-4">
+            <Skeleton className="h-5 w-20" />
+            <Skeleton className="h-5 w-24 rounded-full" />
           </div>
-          <Skeleton className="h-10 w-28 rounded-md" />
-          <Skeleton className="h-3 w-40 rounded-sm" />
-        </div>
-
-        <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-4">
-          <div className="flex justify-between items-start">
-            <Skeleton className="h-3 w-28 rounded-sm" />
-            <Skeleton className="h-5 w-5 rounded-full" />
+          <div className="border-b border-slate-200 p-3">
+            <div className="flex gap-2">
+              <Skeleton className="h-8 flex-1 rounded-full" />
+              <Skeleton className="h-8 w-24 rounded-md" />
+            </div>
           </div>
-          <Skeleton className="h-10 w-28 rounded-md" />
-          <Skeleton className="h-3 w-48 rounded-sm" />
-        </div>
-
-        <div className="bg-white p-6 rounded-xl border border-slate-200 space-y-4">
-          <div className="flex justify-between items-start">
-            <Skeleton className="h-3 w-28 rounded-sm" />
-            <Skeleton className="h-5 w-5 rounded-full" />
-          </div>
-          <Skeleton className="h-10 w-20 rounded-md" />
-          <Skeleton className="h-3 w-44 rounded-sm" />
-        </div>
-      </div>
-
-      {/* 4. Actionable Queue Preview Skeleton */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-          <Skeleton className="h-4 w-40 rounded-md" />
-          <Skeleton className="h-3 w-24 rounded-sm" />
-        </div>
-        <div className="p-5 space-y-4">
-          {Array.from({ length: 4 }).map((_, idx) => (
-            <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-              <div className="space-y-1.5">
-                <Skeleton className="h-4 w-48 rounded-md" />
-                <div className="flex gap-2">
-                  <Skeleton className="h-4 w-20 rounded" />
+          <div>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="space-y-2 border-b border-slate-100 px-4 py-3.5">
+                <div className="flex justify-between gap-3">
+                  <Skeleton className="h-3 w-28" />
                   <Skeleton className="h-4 w-16 rounded" />
                 </div>
+                <Skeleton className="h-5 w-4/5" />
+                <Skeleton className="h-3 w-3/5" />
               </div>
-              <div className="space-y-1.5 text-right flex flex-col items-end">
-                <Skeleton className="h-4 w-20 rounded-md" />
-                <Skeleton className="h-3 w-24 rounded-sm" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
+        </section>
 
+        <section className="hidden overflow-hidden rounded-xl border border-slate-200 bg-slate-50 xl:block">
+          <div className="flex h-12 items-center justify-between border-b border-slate-200 bg-blue-50 px-4">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-5 w-24 rounded-full" />
+          </div>
+          <div className="space-y-4 p-4">
+            <Skeleton className="h-16 w-full rounded-lg" />
+            <div className="grid grid-cols-2 gap-3">
+              <Skeleton className="h-24 rounded-lg" />
+              <Skeleton className="h-24 rounded-lg" />
+            </div>
+            <Skeleton className="h-10 w-full rounded-lg" />
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

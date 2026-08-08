@@ -37,11 +37,14 @@ export default function SettingsClient({
   return (
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1 pb-3">
       <div>
-        <h1 className="text-lg font-semibold tracking-tight">
-          Discovery workspace
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
+          Workspace
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+          Workspace settings
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your website defines the brief behind every discovery scan.
+          Manage the source, matching brief, and plan behind your prospect scans.
         </p>
       </div>
 

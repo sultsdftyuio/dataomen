@@ -59,7 +59,7 @@ export default async function WatchlistsPage() {
     <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Focused search"
-        title="Buyer groups desk"
+        title="Buyer groups"
         description="Watch the audiences that matter most, one real problem at a time."
         icon={UsersRound}
         visual={

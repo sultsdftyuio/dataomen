@@ -1,7 +1,6 @@
 import React from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Settings } from "lucide-react";
 
 import { DashboardNavigation } from "@/components/dashboard/DashboardNavigation";
 import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
@@ -71,17 +70,6 @@ export default async function DashboardLayout({
             </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-3">
-            <Link
-              href="/settings"
-              className="rounded-md p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-              style={{ color: C.navySoft, backgroundColor: C.blueTint }}
-              title="Workspace settings"
-              aria-label="Workspace settings"
-            >
-              <Settings className="h-4 w-4" />
-            </Link>
-          </div>
         </div>
       </header>
 
