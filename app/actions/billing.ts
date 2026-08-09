@@ -6,7 +6,7 @@ import { createClient as createSupabaseServiceClient } from "@supabase/supabase-
 
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
-import { getWorkspaceEntitlements, PRO_TRIAL_DAYS } from "@/lib/entitlements";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { DodoPayments } from "dodopayments";
 import type { Database } from "@/types/supabase";
 
@@ -54,7 +54,6 @@ type ResumeSubscriptionResult = {
 
 type BillingTestState =
   | "free"
-  | "trialing"
   | "active"
   | "past_due"
   | "canceling"
@@ -153,7 +152,7 @@ async function scheduleSubscriptionCancellationForTenant(
   const planTier = entitlements.planTier.toLowerCase();
   const canCancel =
     planTier === "pro" &&
-    ["active", "trialing", "past_due"].includes(entitlements.subscriptionStatus ?? "");
+    ["active", "past_due"].includes(entitlements.subscriptionStatus ?? "");
 
   if (!canCancel) {
     throw new Error("No active subscription found to cancel.");
@@ -303,22 +302,6 @@ function readString(record: Record<string, unknown> | null, key: string): string
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function readNumber(record: Record<string, unknown> | null, key: string): number | null {
-  if (!record) return null;
-  const value = record[key];
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
-}
-
 function readBoolean(record: Record<string, unknown> | null, key: string): boolean | null {
   if (!record) return null;
   const value = record[key];
@@ -387,7 +370,7 @@ function isDodoTestApiKey(apiKey: string): boolean {
 }
 
 function isBillingTestState(value: string): value is BillingTestState {
-  return ["free", "trialing", "active", "past_due", "canceling", "canceled"].includes(
+  return ["free", "active", "past_due", "canceling", "canceled"].includes(
     value
   );
 }
@@ -398,20 +381,6 @@ function billingTestUpdateFromState(
   const now = new Date().toISOString();
 
   switch (state) {
-    case "trialing": {
-      const trialEndsAt = addDays(null, PRO_TRIAL_DAYS);
-
-      return {
-        plan_tier: "pro",
-        subscription_status: "trialing",
-        trial_ends_at: trialEndsAt,
-        billing_status: "trialing",
-        plan: "pro",
-        status: "active",
-        current_period_end: trialEndsAt,
-        updated_at: now,
-      };
-    }
     case "active":
       return {
         plan_tier: "pro",
@@ -564,48 +533,23 @@ function extractCurrentPeriodEnd(subscription: Record<string, unknown>): string 
   );
 }
 
-function resolveTrialEndsAt(subscription: Record<string, unknown>): string | null {
-  const explicitTrialEnd =
-    readString(subscription, "trial_ends_at") ??
-    readString(subscription, "trial_end") ??
-    readString(subscription, "trial_end_at") ??
-    readString(subscription, "trial_expires_at");
-
-  if (explicitTrialEnd && Number.isFinite(Date.parse(explicitTrialEnd))) {
-    return explicitTrialEnd;
-  }
-
-  const trialPeriodDays = readNumber(subscription, "trial_period_days");
-  if (!trialPeriodDays || trialPeriodDays <= 0) {
-    return null;
-  }
-
-  return addDays(readString(subscription, "created_at"), trialPeriodDays);
-}
-
-function isActiveOrTrialingDodoSubscription(subscription: Record<string, unknown>): boolean {
+function isActiveDodoSubscription(subscription: Record<string, unknown>): boolean {
   const status = readString(subscription, "status")?.toLowerCase();
-  return status === "active" || status === "trialing";
+  return status === "active";
 }
 
 function tenantUpdateFromDodoSubscription(
   subscription: Record<string, unknown>
 ): Database["public"]["Tables"]["tenants"]["Update"] {
-  const trialEndsAt = resolveTrialEndsAt(subscription);
-  const trialEndsTimestamp = trialEndsAt ? Date.parse(trialEndsAt) : NaN;
   const cancelAtPeriodEnd = readBoolean(subscription, "cancel_at_next_billing_date") === true;
-  const isTrialing =
-    Number.isFinite(trialEndsTimestamp) && trialEndsTimestamp > Date.now();
   const subscriptionStatus = cancelAtPeriodEnd
     ? "canceling"
-    : isTrialing
-      ? "trialing"
-      : "active";
+    : "active";
 
   return compact({
     plan_tier: "pro",
     subscription_status: subscriptionStatus,
-    trial_ends_at: isTrialing ? trialEndsAt : null,
+    trial_ends_at: null,
     billing_status: subscriptionStatus,
     plan: "pro",
     status: "active",
@@ -622,7 +566,7 @@ async function retrieveActiveSubscriptionById(
 ): Promise<Record<string, unknown> | null> {
   const subscription = asRecord(await dodo.subscriptions.retrieve(subscriptionId));
 
-  if (!subscription || !isActiveOrTrialingDodoSubscription(subscription)) {
+  if (!subscription || !isActiveDodoSubscription(subscription)) {
     return null;
   }
 
@@ -650,7 +594,7 @@ async function findActiveSubscriptionByCustomerId(
     const subscriptionRecord = asRecord(subscription);
     scannedCount += 1;
 
-    if (subscriptionRecord && isActiveOrTrialingDodoSubscription(subscriptionRecord)) {
+    if (subscriptionRecord && isActiveDodoSubscription(subscriptionRecord)) {
       return {
         subscription: subscriptionRecord,
         lookupStrategy: "customer_id",
@@ -684,7 +628,7 @@ async function findActiveSubscriptionByMetadata(
 
     if (
       subscriptionRecord &&
-      isActiveOrTrialingDodoSubscription(subscriptionRecord) &&
+      isActiveDodoSubscription(subscriptionRecord) &&
       extractTenantIdFromMetadata(subscriptionRecord) === tenantId
     ) {
       return {
@@ -822,10 +766,7 @@ export async function upgradeToProPlan(): Promise<BillingSessionResult> {
         tenant_id: tenantId, // Mandatory: deterministic routing for asynchronous webhooks (Rule 14)
         user_id: userId,
       },
-      subscription_data: {
-        trial_period_days: PRO_TRIAL_DAYS,
-      },
-      return_url: `${siteUrl}/dashboard?billing=trial_started`,
+      return_url: `${siteUrl}/settings?billing=checkout_complete`,
     });
 
     if (!session || !session.checkout_url) {
@@ -971,7 +912,7 @@ export async function verifyAndSyncSubscriptionStatus(
   const desiredCustomerId = update.dodo_customer_id ?? null;
   const desiredSubscriptionStatus =
     typeof update.subscription_status === "string" ? update.subscription_status : null;
-  const activeLocalStatus = ["active", "trialing", "canceling"].includes(
+  const activeLocalStatus = ["active", "canceling"].includes(
     tenant.subscription_status?.toLowerCase() ?? ""
   );
   const shouldSync =
@@ -1382,7 +1323,7 @@ export async function manageBillingPortal(): Promise<BillingSessionResult> {
 
   const canManageBilling =
     planTier === "pro" &&
-    ["active", "trialing", "past_due", "canceling"].includes(entitlements.subscriptionStatus ?? "");
+    ["active", "past_due", "canceling"].includes(entitlements.subscriptionStatus ?? "");
 
   if (!canManageBilling) {
     throw new Error("No active subscription found to manage.");

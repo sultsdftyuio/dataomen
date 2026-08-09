@@ -25,11 +25,6 @@ const TEST_STATES: BillingTestOption[] = [
     detail: "Locked",
   },
   {
-    state: "trialing",
-    label: "Trialing",
-    detail: "3 days",
-  },
-  {
     state: "active",
     label: "Active",
     detail: "Pro open",

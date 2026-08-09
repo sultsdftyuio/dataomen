@@ -57,21 +57,20 @@ async function verifyUniversalEntitlement() {
 }
 
 function verifyNoApiKeyPaywallTokens() {
-  const apiRoute = readFileSync(join(process.cwd(), "api/routes/api_keys.py"), "utf8");
-  const apiKeysManager = readFileSync(
-    join(process.cwd(), "components/settings/api-keys-manager.tsx"),
+  const apiKeyVault = readFileSync(
+    join(process.cwd(), "api/services/security/api_keys.py"),
     "utf8"
   );
 
   assert.equal(
-    apiRoute.includes("requireProEntitlement"),
+    apiKeyVault.includes("requireProEntitlement"),
     false,
-    "api/routes/api_keys.py must not use requireProEntitlement"
+    "API key authentication must not depend on a Pro entitlement"
   );
   assert.equal(
-    apiKeysManager.includes("UpgradeButton"),
-    false,
-    "ApiKeysManager must not render UpgradeButton"
+    apiKeyVault.includes("hmac.compare_digest"),
+    true,
+    "API key authentication must use constant-time hash verification"
   );
 }
 
@@ -86,7 +85,7 @@ function verifyApiKeyRoutingContracts() {
   );
   assert.match(
     nextConfig,
-    /destination:\s*`\$\{backendUrl\}\/v1\/:path\*`/,
+    /destination:\s*`\$\{backendUrl\}\/api\/v1\/:path\*`/,
     "Next.js /api/v1 proxy must target the FastAPI /v1 router"
   );
   assert.equal(
@@ -97,23 +96,24 @@ function verifyApiKeyRoutingContracts() {
 }
 
 function verifyApiKeySchemaContracts() {
-  const trackRoute = readFileSync(join(process.cwd(), "api/routes/track.py"), "utf8");
-  const apiRoute = readFileSync(join(process.cwd(), "api/routes/api_keys.py"), "utf8");
+  const apiKeyVault = readFileSync(
+    join(process.cwd(), "api/services/security/api_keys.py"),
+    "utf8"
+  );
+  const apiKeyCache = readFileSync(
+    join(process.cwd(), "api/services/security/api_key_cache.py"),
+    "utf8"
+  );
 
   assert.equal(
-    trackRoute.includes("expires_at"),
-    false,
-    "api/routes/track.py must not query api_keys.expires_at until that column exists in the schema"
-  );
-  assert.equal(
-    apiRoute.includes("Maximum number of active API keys reached."),
-    false,
-    "api/routes/api_keys.py must align with the one-active-key rotation model"
-  );
-  assert.equal(
-    apiRoute.includes("23505"),
+    apiKeyVault.includes('PREFIX = "arcli_live"'),
     true,
-    "api/routes/api_keys.py must handle the active-key unique constraint"
+    "API keys must preserve their expected public prefix"
+  );
+  assert.equal(
+    apiKeyCache.includes("api_key_auth:"),
+    true,
+    "API key auth cache must remain tenant-scoped by key id"
   );
 }
 

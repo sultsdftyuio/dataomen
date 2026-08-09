@@ -21,7 +21,7 @@ export const revalidate = 0;
 type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;
 
 type SettingsPageProps = {
-  searchParams: Promise<{ billing?: string | string[] }>;
+  searchParams: Promise<{ billing?: string | string[]; upgrade?: string | string[] }>;
 };
 
 const PRO_QUALIFIED_LEAD_MONTHLY_LIMIT = 500;
@@ -91,6 +91,7 @@ export default async function SettingsPage({
 }: SettingsPageProps) {
   const resolvedSearchParams = await searchParams;
   const billingReturnState = searchParamValue(resolvedSearchParams.billing);
+  const shouldAutoStartProCheckout = searchParamValue(resolvedSearchParams.upgrade) === "pro";
 
   // 1. Deterministic Server Auth Fetch
   const supabase = await createClient();
@@ -108,8 +109,8 @@ export default async function SettingsPage({
   let billingPlanData: WorkspaceBillingCardProps["planData"] = {
     planName: "Free Access",
     planStatus: "free",
-    description: "Restricted Free Access. Pro features are locked until you start the Pro trial.",
-    priceText: "$29/month after the 3-day trial",
+    description: "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.",
+    priceText: "$29/month",
     isProTier: false,
   };
   let serviceProfile: ServiceProfileView | null = null;
@@ -120,7 +121,7 @@ export default async function SettingsPage({
       tenantResult.context;
     tenantId = resolvedTenantId;
 
-    if (billingReturnState === "trial_started") {
+    if (billingReturnState === "checkout_complete") {
       let shouldRefreshSettings = false;
 
       try {
@@ -178,8 +179,7 @@ export default async function SettingsPage({
       planName: entitlements.billingLabel,
       planStatus: subscriptionStatus,
       description: entitlements.billingDescription,
-      daysRemaining: entitlements.daysUntilTrialEnds,
-      priceText: "$29/month after the 3-day trial",
+      priceText: "$29/month",
       isProTier: planTier === "pro",
       isCanceling: entitlements.isCanceling,
       currentPeriodEnd: entitlements.currentPeriodEnd,
@@ -191,6 +191,7 @@ export default async function SettingsPage({
       },
       amountDueCents: 2900,
       currency: "USD",
+      autoStartCheckout: shouldAutoStartProCheckout && !entitlements.isPro,
       features: [
         {
           label: "Verified prospect queue",

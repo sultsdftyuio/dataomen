@@ -22,15 +22,9 @@ export type WorkspaceEntitlements = {
   subscriptionStatus: string | null;
   trialEndsAt: string | null;
   currentPeriodEnd: string | null;
-  daysUntilTrialEnds: number | null;
   isPro: boolean;
-  isTrialing: boolean;
   isCanceling: boolean;
   isFreeAccess: boolean;
-  /**
-   * Kept for older callers. Free Access is restricted, not a Pro trial.
-   */
-  isFreeTrial: boolean;
   canViewCustomerLists: boolean;
   canSendEmails: boolean;
   canCreateTemplates: boolean;
@@ -42,14 +36,14 @@ export type WorkspaceEntitlements = {
 
 export const PRO_PLAN_REQUIRED_MESSAGE =
   "Upgrade to Pro to unlock customer lists, campaign sending, and custom templates.";
-export const PRO_TRIAL_DAYS = 3;
 export const PRO_MONTHLY_PRICE = 29;
 
 // Supports both Pro and Enterprise tiers to prevent enterprise users from being locked out
 const PAID_PLAN_TIERS = new Set(["pro", "enterprise"]);
 
-// Active lifecycle statuses that permit entitlement access
-const ACTIVE_STATUSES = new Set(["active", "trialing", "canceling"]);
+// Active lifecycle statuses that permit entitlement access. New subscriptions
+// are paid immediately and do not have a trial state.
+const ACTIVE_STATUSES = new Set(["active", "canceling"]);
 
 /**
  * Deterministically normalizes database strings to lowercase trimmed formats.
@@ -79,14 +73,6 @@ function formatBillingDate(value: string | null): string | null {
   }).format(new Date(timestamp));
 }
 
-function daysUntil(value: string | null): number | null {
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return null;
-  const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.max(0, Math.ceil((timestamp - Date.now()) / msPerDay));
-}
-
 /**
  * Core entitlement state engine. Evaluates plan access deterministically.
  * Rule 3 & Rule 11: Enforces defensive grace-period checks during scheduled cancellations.
@@ -107,7 +93,7 @@ function buildEntitlements(
   const trialEndsAt = normalizeTimestamp(trialEndsAtValue);
   const currentPeriodEnd = normalizeTimestamp(currentPeriodEndValue);
 
-  // Validate status is active or trialing
+  // Validate that the paid subscription is currently active.
   let hasActiveStatus = subscriptionStatus
     ? ACTIVE_STATUSES.has(subscriptionStatus)
     : false;
@@ -122,17 +108,13 @@ function buildEntitlements(
   }
 
   const isPro = isPaidTier && hasActiveStatus;
-  const isTrialing = isPaidTier && subscriptionStatus === "trialing";
   const isCanceling = isPaidTier && subscriptionStatus === "canceling" && hasActiveStatus;
   const isFreeAccess = !isPro;
 
-  const daysUntilTrialEnds = isTrialing ? daysUntil(trialEndsAt) : null;
   const isPastDue = isPaidTier && subscriptionStatus === "past_due";
   const currentPeriodEndLabel = formatBillingDate(currentPeriodEnd);
 
-  const billingLabel = isTrialing
-    ? "Pro Trial"
-    : isCanceling
+  const billingLabel = isCanceling
       ? planTier === "enterprise" ? "Enterprise" : "Pro"
     : isPro
       ? planTier === "enterprise" ? "Enterprise" : "Pro"
@@ -140,11 +122,7 @@ function buildEntitlements(
         ? "Payment Past Due"
       : "Free Access";
 
-  const billingDescription = isTrialing
-    ? daysUntilTrialEnds === null
-      ? `${PRO_TRIAL_DAYS}-day Pro trial active. $${PRO_MONTHLY_PRICE}/month after the trial.`
-      : `${daysUntilTrialEnds} ${daysUntilTrialEnds === 1 ? "day" : "days"} left in your ${PRO_TRIAL_DAYS}-day Pro trial. $${PRO_MONTHLY_PRICE}/month after the trial.`
-    : isCanceling
+  const billingDescription = isCanceling
       ? currentPeriodEndLabel
         ? `Active until ${currentPeriodEndLabel}.`
         : "Active until the end of the current billing period."
@@ -152,7 +130,7 @@ function buildEntitlements(
       ? `Pro subscription active at $${PRO_MONTHLY_PRICE}/month.`
       : isPastDue
         ? "Payment is past due. Update billing to restore Pro features."
-      : "Restricted Free Access. Pro features stay locked until you start the Pro trial.";
+      : "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.";
 
   return {
     tenantId,
@@ -160,12 +138,9 @@ function buildEntitlements(
     subscriptionStatus,
     trialEndsAt,
     currentPeriodEnd,
-    daysUntilTrialEnds,
     isPro,
-    isTrialing,
     isCanceling,
     isFreeAccess,
-    isFreeTrial: isFreeAccess,
     canViewCustomerLists: isPro,
     canSendEmails: isPro,
     canCreateTemplates: isPro,

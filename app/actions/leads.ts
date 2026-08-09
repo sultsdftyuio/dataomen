@@ -8,6 +8,7 @@ import {
   type ValidatedWebhookDestination,
   validateWebhookDestination,
 } from "@/lib/crm-webhook-destination";
+import { PRO_PLAN_REQUIRED_MESSAGE, requireProEntitlement } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 const UUID_PATTERN =
@@ -147,6 +148,12 @@ export async function markLeadAsQualified(
   }
 
   const { supabase, tenantId } = tenantResult.context;
+
+  try {
+    await requireProEntitlement(supabase, tenantId);
+  } catch {
+    return actionFailure("unauthorized", PRO_PLAN_REQUIRED_MESSAGE);
+  }
 
   // This is deliberately one conditional statement, rather than a read then
   // write. Concurrent requests therefore cannot both claim the webhook, and

@@ -155,11 +155,11 @@ export default function ArcliPricingCards() {
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>A small set of checked prospect alerts</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>A live count of matched conversations</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Clear reasons for each alert</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>One website discovery domain</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
@@ -282,7 +282,7 @@ export default function ArcliPricingCards() {
 
             <div style={{ padding: "0 28px 32px 28px" }}>
               <Link 
-                href="/register?tier=pro" 
+                href="/register?next=%2Fsettings%3Fupgrade%3Dpro"
                 style={{ 
                   width: "100%", 
                   height: 44, 
@@ -299,7 +299,7 @@ export default function ArcliPricingCards() {
                   boxShadow: "0 4px 12px rgba(27,110,191,0.24)"
                 }}
               >
-                Start 3-Day Free Trial <ArrowRight size={16} />
+                Get Pro <ArrowRight size={16} />
               </Link>
               
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.rule}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em" }}>

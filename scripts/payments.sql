@@ -12,7 +12,6 @@
 DO $$ BEGIN
     CREATE TYPE platform_billing_state AS ENUM (
         'free',
-        'trialing', 
         'active',
         'canceling', 
         'past_due', 

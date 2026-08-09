@@ -224,7 +224,7 @@ function RegisterForm() {
                 <CheckCircle2 size={14} color={C.green} /> Free Access
               </span>
               <span className="flex items-center gap-1">
-                <CheckCircle2 size={14} color={C.green} /> 3-day Pro trial on upgrade
+                <CheckCircle2 size={14} color={C.green} /> Upgrade to Pro anytime
               </span>
             </div>
           </form>

@@ -8,6 +8,8 @@ import {
   DISCOVERY_QUERY_TYPES,
   discoveryQueryPlanValidationError,
 } from "@/lib/discovery-queries";
+import { PRO_PLAN_REQUIRED_MESSAGE, requireProEntitlement } from "@/lib/entitlements";
+import { freePlanDomainChangeError } from "@/lib/plan-limits";
 import type { Json } from "@/types/supabase";
 import { resolveTenantContext, type TenantContext } from "@/utils/supabase/tenant";
 import {
@@ -140,6 +142,18 @@ async function requireTenant(): Promise<TenantContext | ProspectActionResult> {
   }
 
   return actionError("Workspace access could not be verified.");
+}
+
+async function requireProTenant(): Promise<TenantContext | ProspectActionResult> {
+  const context = await requireTenant();
+  if ("ok" in context) return context;
+
+  try {
+    await requireProEntitlement(context.supabase, context.tenantId);
+    return context;
+  } catch {
+    return actionError(PRO_PLAN_REQUIRED_MESSAGE);
+  }
 }
 
 function normalizeWebsiteUrl(value: unknown): string {
@@ -368,6 +382,15 @@ function watchlistTriggerEndpoints() {
 }
 
 async function persistWebsiteUrl(context: TenantContext, websiteUrl: string) {
+  const websiteLimitError = await freePlanDomainChangeError(
+    context.supabase,
+    context.tenantId,
+    websiteUrl,
+  );
+  if (websiteLimitError) {
+    throw new Error(websiteLimitError);
+  }
+
   const updateResult = await context.supabase
     .from("tenant_settings")
     .update({
@@ -751,7 +774,7 @@ async function postWatchlistDiscoveryTrigger(
 export async function createWatchlist(
   input: WatchlistCreateInput,
 ): Promise<ProspectActionResult> {
-  const context = await requireTenant();
+  const context = await requireProTenant();
   if ("ok" in context) return context;
 
   const parsed = WATCHLIST_SCHEMA.safeParse(input);
@@ -806,7 +829,7 @@ export async function createWatchlist(
 export async function runWatchlistDiscovery(
   watchlistId: string,
 ): Promise<ProspectActionResult> {
-  const context = await requireTenant();
+  const context = await requireProTenant();
   if ("ok" in context) return context;
 
   const normalizedId = watchlistId.trim();
@@ -833,7 +856,7 @@ export async function setWatchlistActive(
   watchlistId: string,
   isActive: boolean,
 ): Promise<ProspectActionResult> {
-  const context = await requireTenant();
+  const context = await requireProTenant();
   if ("ok" in context) return context;
   const normalizedId = watchlistId.trim();
   if (!normalizedId) return actionError("This Watchlist is no longer available.");
@@ -1203,7 +1226,7 @@ export async function submitLeadFeedback(
   leadMatchId: string,
   feedback: string,
 ): Promise<ProspectActionResult> {
-  const context = await requireTenant();
+  const context = await requireProTenant();
   if ("ok" in context) return context;
 
   const requestedFeedback = feedback.trim();

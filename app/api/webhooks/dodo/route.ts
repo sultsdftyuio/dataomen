@@ -3,7 +3,7 @@ import { createClient as createSupabaseServiceClient } from "@supabase/supabase-
 import { DodoPayments } from "dodopayments";
 
 import type { Database } from "@/types/supabase";
-import { PRO_MONTHLY_PRICE, PRO_TRIAL_DAYS } from "@/lib/entitlements";
+import { PRO_MONTHLY_PRICE } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 
@@ -131,23 +131,10 @@ function readString(record: Record<string, unknown> | null, key: string): string
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
-function readNumber(record: Record<string, unknown> | null, key: string): number | null {
-  if (!record) return null;
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 function readBoolean(record: Record<string, unknown> | null, key: string): boolean | null {
   if (!record) return null;
   const value = record[key];
   return typeof value === "boolean" ? value : null;
-}
-
-function addDays(dateValue: string | undefined, days: number): string {
-  const start = dateValue && Number.isFinite(Date.parse(dateValue))
-    ? new Date(dateValue)
-    : new Date();
-  return new Date(start.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function extractTenantIdFromPayload(data: Record<string, unknown>): string | null {
@@ -248,35 +235,6 @@ function extractCurrentPeriodEnd(data: Record<string, unknown>): string | null {
   );
 }
 
-function explicitTrialEnd(data: Record<string, unknown>): string | null {
-  const trialEnd =
-    readString(data, "trial_ends_at") ??
-    readString(data, "trial_end") ??
-    readString(data, "trial_end_at") ??
-    readString(data, "trial_expires_at");
-
-  return trialEnd && Number.isFinite(Date.parse(trialEnd)) ? trialEnd : null;
-}
-
-function resolveTrialEndsAt(
-  eventType: string,
-  data: Record<string, unknown>,
-  timestamp: string | undefined
-): string | null {
-  const explicitEnd = explicitTrialEnd(data);
-  if (explicitEnd) return explicitEnd;
-
-  const configuredTrialDays = readNumber(data, "trial_period_days");
-  const hasTrial = configuredTrialDays !== null && configuredTrialDays > 0;
-
-  if (!hasTrial && eventType !== "subscription.active") {
-    return null;
-  }
-
-  const trialDays = hasTrial ? configuredTrialDays : PRO_TRIAL_DAYS;
-  return addDays(readString(data, "created_at") ?? timestamp, trialDays);
-}
-
 function compact(record: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value !== undefined)
@@ -297,13 +255,12 @@ function tenantUpdateFor(event: DodoWebhookEvent): Record<string, unknown> | nul
 
   switch (event.type) {
     case "subscription.active": {
-      const trialEndsAt = resolveTrialEndsAt(event.type, data, event.timestamp);
       return compact({
         ...common,
         plan_tier: "pro",
-        subscription_status: "trialing",
-        trial_ends_at: trialEndsAt,
-        billing_status: "trialing",
+        subscription_status: "active",
+        trial_ends_at: null,
+        billing_status: "active",
         plan: "pro",
         status: "active",
       });
@@ -320,22 +277,16 @@ function tenantUpdateFor(event: DodoWebhookEvent): Record<string, unknown> | nul
       });
     case "subscription.updated":
     case "subscription.plan_changed": {
-      const trialEndsAt = resolveTrialEndsAt(event.type, data, event.timestamp);
-      const trialEndsTimestamp = trialEndsAt ? Date.parse(trialEndsAt) : NaN;
       const cancelAtPeriodEnd = readBoolean(data, "cancel_at_next_billing_date") === true;
-      const isTrialing =
-        Number.isFinite(trialEndsTimestamp) && trialEndsTimestamp > Date.now();
       const subscriptionStatus = cancelAtPeriodEnd
         ? "canceling"
-        : isTrialing
-          ? "trialing"
-          : "active";
+        : "active";
 
       return compact({
         ...common,
         plan_tier: "pro",
         subscription_status: subscriptionStatus,
-        trial_ends_at: isTrialing ? trialEndsAt : null,
+        trial_ends_at: null,
         billing_status: subscriptionStatus,
         plan: "pro",
         status: "active",
@@ -482,7 +433,7 @@ export async function POST(request: Request) {
 
   const isResumeUpdate =
     event.type === "subscription.updated" &&
-    (update.subscription_status === "active" || update.subscription_status === "trialing");
+    update.subscription_status === "active";
   if (
     isResumeUpdate &&
     existingTenant.subscription_status === update.subscription_status &&
@@ -529,6 +480,6 @@ export async function POST(request: Request) {
     status: "ok",
     event_type: event.type,
     tenant_id: tenantId,
-    terms: `$${PRO_MONTHLY_PRICE}/month after the ${PRO_TRIAL_DAYS}-day trial`,
+    terms: `$${PRO_MONTHLY_PRICE}/month`,
   });
 }

@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:api-keys": "tsx scripts/verify-api-key-access.ts",
+    "test:subscriptions": "tsx scripts/verify-subscription-access.ts",
     "test:og": "tsx --test test/og-image.test.ts"
   },
   "dependencies": {

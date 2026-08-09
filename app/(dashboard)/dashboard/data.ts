@@ -48,6 +48,11 @@ const EMPTY_FIELDS: ServiceProfileFields = {
   excluded_audiences: [],
 };
 
+export type LeadQueueCounts = {
+  readyToReview: number;
+  discoveryCandidates: number;
+};
+
 export function verifierScoreThreshold() {
   const configured = Number(process.env.LEAD_VERIFIER_SCORE_THRESHOLD ?? "0.6");
   return Number.isFinite(configured) ? configured : 0.6;
@@ -796,6 +801,63 @@ export async function fetchDiscoveryCandidates(
   return ((result.data ?? []) as unknown[]).map((row, index) =>
     leadView(asRecord(row) ?? {}, index),
   );
+}
+
+/**
+ * Free workspaces receive aggregate discovery progress only. This query never
+ * loads source text, author details, URLs, or reply drafts into the browser.
+ */
+export async function fetchLeadQueueCounts(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  serviceProfileId: string | null,
+  threshold: number,
+  activeSince: string | null = null,
+): Promise<LeadQueueCounts> {
+  if (!serviceProfileId) {
+    return { readyToReview: 0, discoveryCandidates: 0 };
+  }
+
+  type FreeLeadCountRow = {
+    ready_to_review: number | null;
+    discovery_candidates: number | null;
+  };
+  type FreeLeadCountClient = {
+    rpc: (
+      functionName: "free_plan_lead_queue_counts",
+      args: {
+        p_service_profile_id: string;
+        p_minimum_verifier_score: number;
+        p_active_since: string | null;
+      },
+    ) => Promise<{ data: FreeLeadCountRow[] | null; error: unknown }>;
+  };
+
+  const { data, error } = await (supabase as unknown as FreeLeadCountClient).rpc(
+    "free_plan_lead_queue_counts",
+    {
+      p_service_profile_id: serviceProfileId,
+      p_minimum_verifier_score: threshold,
+      p_active_since: activeSince,
+    },
+  );
+
+  if (error) {
+    // Fail closed. Do not fall back to a regular lead_matches read: Free
+    // access must never receive individual lead records.
+    console.error("[ProspectDashboard] Free lead count lookup failed", {
+      tenant_id: tenantId,
+      service_profile_id: serviceProfileId,
+      error,
+    });
+    return { readyToReview: 0, discoveryCandidates: 0 };
+  }
+
+  const row = data?.[0];
+  return {
+    readyToReview: row?.ready_to_review ?? 0,
+    discoveryCandidates: row?.discovery_candidates ?? 0,
+  };
 }
 
 function watchlistView(row: DbRecord): WatchlistView | null {

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Sparkles, AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
+import { AlertCircle, CheckCircle2, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,8 +18,7 @@ interface WorkspacePlanBadgeProps {
 }
 
 export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
-  const { isPro, isTrialing, isPastDue, billingLabel, billingDescription } =
-    entitlements as WorkspaceEntitlements & { isPastDue?: boolean };
+  const { isPro, billingLabel, billingDescription } = entitlements;
   const planTier = entitlements.planTier.toLowerCase();
 
   // Calculate past due status explicitly if not present on type
@@ -31,16 +30,12 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
     entitlements.subscriptionStatus === "canceling";
 
   const badgeClassName = isPro
-    ? isTrialing
-      ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 cursor-pointer transition-colors"
-      : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer transition-colors"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer transition-colors"
     : activePastDue
       ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer transition-colors"
       : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer transition-colors";
 
-  const statusText = isTrialing
-    ? "3-day Pro Trial"
-    : activeCanceling
+  const statusText = activeCanceling
       ? "Pro"
       : billingLabel;
 
@@ -49,8 +44,7 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
       <PopoverTrigger asChild>
         <button type="button" className="focus:outline-none">
           <Badge variant="outline" className={badgeClassName}>
-            {isTrialing && <Sparkles className="mr-1 h-3 w-3 text-amber-500" />}
-            {isPro && !isTrialing && (
+            {isPro && (
               <CheckCircle2 className="mr-1 h-3 w-3 text-emerald-600" />
             )}
             {activePastDue && (

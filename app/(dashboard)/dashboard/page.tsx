@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   fetchBuyerDemandReport,
   fetchDiscoveryCandidates,
+  fetchLeadQueueCounts,
   fetchLatestCrawlJob,
   fetchQualifiedLeads,
   fetchServiceProfile,
@@ -12,7 +13,9 @@ import {
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
+import FreeProspectPreview from "./free-prospect-preview";
 import ProspectDashboardClient from "./prospect-dashboard-client";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 
 export const metadata: Metadata = {
@@ -50,9 +53,10 @@ export default async function DashboardPage() {
     redirect("/onboarding/workspace");
   }
 
-  const [serviceProfile, crawlJob] = await Promise.all([
+  const [serviceProfile, crawlJob, entitlements] = await Promise.all([
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
+    getWorkspaceEntitlements(supabase, tenantId),
   ]);
   const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,
@@ -71,6 +75,17 @@ export default async function DashboardPage() {
       !isBuyerDemandReportCurrent(crawlJob, buyerDemandReport))
   ) {
     redirect("/onboarding/discovery");
+  }
+
+  if (!entitlements.isPro) {
+    const counts = await fetchLeadQueueCounts(
+      supabase,
+      tenantId,
+      serviceProfile.id,
+      threshold,
+      serviceProfile.updatedAt,
+    );
+    return <FreeProspectPreview websiteUrl={websiteUrl} counts={counts} />;
   }
 
   const [leads, discoveryCandidates] = await Promise.all([

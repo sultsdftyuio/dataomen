@@ -1,7 +1,7 @@
 // components/settings/workspace_page/workspace-billing-card.tsx
 "use client";
 
-import React, { useState, useTransition } from "react";
+import React, { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CreditCard, CheckCircle2, LockKeyhole, XCircle } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
@@ -20,7 +20,7 @@ import { C } from "@/lib/tokens";
 export interface WorkspaceBillingCardProps {
   planData?: {
     planName?: string;
-    planStatus?: "free" | "active" | "past_due" | "canceled" | "cancelled" | "trialing" | "canceling";
+    planStatus?: "free" | "active" | "past_due" | "canceled" | "cancelled" | "canceling";
     description?: string;
     daysRemaining?: number | null;
     priceText?: string;
@@ -40,6 +40,7 @@ export interface WorkspaceBillingCardProps {
       description: string;
       unlocked: boolean;
     }>;
+    autoStartCheckout?: boolean;
   };
 }
 
@@ -96,8 +97,8 @@ export default function WorkspaceBillingCard({
   planData = {
     planName: "Free Access",
     planStatus: "free",
-    description: "Restricted Free Access. Pro features are locked until you start the Pro trial.",
-    priceText: "$29/month after the 3-day trial",
+    description: "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.",
+    priceText: "$29/month",
     isProTier: false,
   },
 }: WorkspaceBillingCardProps) {
@@ -106,7 +107,7 @@ export default function WorkspaceBillingCard({
   const [pendingAction, setPendingAction] = useState<PendingBillingAction>(null);
   const planStatus = planData.planStatus ?? "free";
   const planName = planData.planName ?? "Free Access";
-  const priceText = planData.priceText ?? "$29/month after the 3-day trial";
+  const priceText = planData.priceText ?? "$29/month";
   const isCanceling = planData.isCanceling ?? planStatus === "canceling";
   const formattedPeriodEnd = formatBillingDate(planData.currentPeriodEnd);
   const activeUntilText = `Active until ${formattedPeriodEnd ?? "the end of the current billing period"}`;
@@ -117,22 +118,55 @@ export default function WorkspaceBillingCard({
   );
   const canOpenPortal =
     planData.isProTier === true &&
-    ["active", "trialing", "past_due", "canceling"].includes(planStatus);
+    ["active", "past_due", "canceling"].includes(planStatus);
   const canCancelPlan =
     planData.isProTier === true &&
-    ["active", "trialing", "past_due"].includes(planStatus) &&
+    ["active", "past_due"].includes(planStatus) &&
     !isCanceling;
   const hasOpenProAccess =
-    planStatus === "active" || planStatus === "trialing" || isCanceling;
+    planStatus === "active" || isCanceling;
   const planDescription =
     isCanceling
       ? activeUntilText
       : planData.description ??
-        (planStatus === "trialing"
-          ? "3-day Pro trial active. $29/month after the trial."
-          : planStatus === "active"
+        (planStatus === "active"
             ? "Pro billing active at $29/month."
-            : "Restricted Free Access. Pro features are locked until you start the Pro trial.");
+            : "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.");
+  const autoCheckoutAttempted = useRef(false);
+
+  useEffect(() => {
+    if (
+      !planData.autoStartCheckout ||
+      canOpenPortal ||
+      autoCheckoutAttempted.current
+    ) {
+      return;
+    }
+
+    autoCheckoutAttempted.current = true;
+    setPendingAction("upgrade");
+    startBillingTransition(async () => {
+      try {
+        const result = await upgradeToProPlan();
+        if (result.url) {
+          window.location.assign(result.url);
+          return;
+        }
+        if (result.status === "already_active") {
+          router.replace("/settings");
+          router.refresh();
+        }
+      } catch (error: any) {
+        toast({
+          title: "Billing Error",
+          description: error?.message || "Unable to start checkout session. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setPendingAction(null);
+      }
+    });
+  }, [canOpenPortal, planData.autoStartCheckout, router, startBillingTransition]);
   const proFeatures =
     planData.features ??
     DEFAULT_PRO_FEATURES.map((feature) => ({

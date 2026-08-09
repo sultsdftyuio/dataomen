@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { z } from "zod";
 
 import { createClient } from "@/utils/supabase/server";
+import { freePlanDomainChangeError } from "@/lib/plan-limits";
 
 type GenerateWorkspaceBrainResult =
   | {
@@ -387,7 +388,7 @@ async function authorizeTenantAccess(tenantId: string) {
     };
   }
 
-  return { ok: true as const, userId: user.id };
+  return { ok: true as const, userId: user.id, supabase };
 }
 
 export async function generateWorkspaceBrain(
@@ -415,6 +416,15 @@ export async function generateWorkspaceBrain(
   const authorization = await authorizeTenantAccess(parsed.data.tenantId);
   if (!authorization.ok) {
     return authorization.result;
+  }
+
+  const websiteLimitError = await freePlanDomainChangeError(
+    authorization.supabase,
+    parsed.data.tenantId,
+    normalizedWebsiteUrl,
+  );
+  if (websiteLimitError) {
+    return actionError("free_plan_domain_limit", websiteLimitError);
   }
 
   const targets = generationQueueTargets();

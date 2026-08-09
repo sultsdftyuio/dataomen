@@ -9,6 +9,7 @@ import {
   WorkspaceSettingsSchema,
   type ServiceProfileSettingsInput,
 } from "@/lib/settings/schemas";
+import { freePlanDomainChangeError } from "@/lib/plan-limits";
 import type { Database, Json } from "@/types/supabase";
 
 type TenantSettingsUpdate =
@@ -545,6 +546,17 @@ export async function handleWorkspaceUpdate(req: Request) {
         403,
         "insufficient_workspace_role"
       );
+    }
+
+    if (websiteUrl !== undefined) {
+      const websiteLimitError = await freePlanDomainChangeError(
+        supabase,
+        tenantId,
+        normalizeOptionalString(websiteUrl),
+      );
+      if (websiteLimitError) {
+        return jsonError(websiteLimitError, 403, "free_plan_domain_limit");
+      }
     }
 
     let profileUpdated = false;

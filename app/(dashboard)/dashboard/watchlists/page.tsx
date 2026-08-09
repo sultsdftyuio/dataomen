@@ -4,6 +4,7 @@ import { UsersRound } from "lucide-react";
 
 import { DashboardPageIntro } from "@/components/dashboard/DashboardPageIntro";
 import { C } from "@/lib/tokens";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
 import {
   createWatchlist,
@@ -42,6 +43,11 @@ export default async function WatchlistsPage() {
   }
 
   const { supabase, tenantId } = tenantResult.context;
+  const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
+  if (!entitlements.isPro) {
+    redirect("/dashboard");
+  }
+
   const threshold = verifierScoreThreshold();
   const watchlists = await fetchWatchlists(supabase, tenantId);
   const results = await fetchWatchlistResults(

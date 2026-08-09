@@ -357,10 +357,8 @@ WHERE subscription_status IS NULL
 UPDATE tenants SET trial_ends_at = NULL WHERE plan_tier <> 'pro';
 UPDATE tenants SET billing_status = 'free'
 WHERE billing_status IS NULL AND plan_tier <> 'pro';
-UPDATE tenants SET billing_status = 'trialing'
-WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status = 'trialing';
 UPDATE tenants SET billing_status = 'active'
-WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status = 'active';
+WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status IN ('active', 'trialing');
 UPDATE tenants SET billing_status = 'past_due'
 WHERE billing_status IS NULL AND plan_tier = 'pro' AND subscription_status = 'past_due';
 UPDATE tenants SET billing_status = 'canceled'
@@ -381,7 +379,7 @@ CHECK (plan_tier IN ('free', 'free_trial', 'pro'));
 
 ALTER TABLE tenants DROP CONSTRAINT IF EXISTS tenants_subscription_status_check;
 ALTER TABLE tenants ADD CONSTRAINT tenants_subscription_status_check
-CHECK (subscription_status IN ('free', 'trialing', 'active', 'past_due', 'canceled', 'cancelled'));
+CHECK (subscription_status IN ('free', 'active', 'past_due', 'canceling', 'canceled', 'cancelled'));
 
 CREATE INDEX IF NOT EXISTS idx_tenants_dodo_customer_id
 ON tenants(dodo_customer_id);
