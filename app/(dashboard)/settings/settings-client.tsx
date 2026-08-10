@@ -1,56 +1,103 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import { Building2, CircleUserRound, Globe2, Settings2 } from "lucide-react";
 
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
-import AutoStartProCheckout from "@/components/settings/workspace_page/auto-start-pro-checkout";
+import WorkspaceBillingCard, {
+  type WorkspaceBillingCardProps,
+} from "@/components/settings/workspace_page/workspace-billing-card";
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
+import { C } from "@/lib/tokens";
 
 type SettingsClientProps = {
   user: User;
   initialSettings: any;
   serviceProfile: ServiceProfileView | null;
-  autoStartProCheckout: boolean;
+  planData: WorkspaceBillingCardProps["planData"];
 };
+
+function websiteDomain(value: string) {
+  try {
+    return new URL(value).hostname.replace(/^www\./i, "");
+  } catch {
+    return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  }
+}
 
 export default function SettingsClient({
   user,
   initialSettings,
   serviceProfile,
-  autoStartProCheckout,
+  planData,
 }: SettingsClientProps) {
   const workspaceSettings = initialSettings?.workspace ?? {};
-  const initialData = {
-    fullName:
-      user.user_metadata?.full_name || user.email?.split("@")[0] || "User",
-    authEmail: user.email ?? "",
-    companyName: workspaceSettings.companyName ?? "",
-    supportEmail:
-      workspaceSettings.replyToEmail ?? workspaceSettings.senderEmail ?? "",
-    websiteUrl: workspaceSettings.websiteUrl ?? "",
-  };
+  const workspaceName = workspaceSettings.companyName || "Workspace";
+  const websiteUrl = serviceProfile?.websiteUrl ?? workspaceSettings.websiteUrl ?? "";
+  const initialData = { websiteUrl };
+  const displayName = user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1 pb-3">
-      <AutoStartProCheckout enabled={autoStartProCheckout} />
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
-          Workspace
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-          Workspace settings
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Keep the website and matching brief behind your prospect scans current.
-        </p>
+    <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col gap-5 overflow-y-auto pb-6">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b pb-5" style={{ borderColor: C.rule }}>
+        <div>
+          <div className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+            <Settings2 className="size-3.5" aria-hidden="true" /> Account & workspace
+          </div>
+          <h1 className="pfd mt-2 text-3xl leading-none" style={{ color: C.navy }}>
+            Settings
+          </h1>
+          <p className="mt-2 text-sm" style={{ color: C.muted }}>
+            Manage your account, prospecting setup, and subscription in one place.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-white px-3 py-2 text-right" style={{ borderColor: C.rule }}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Current workspace</p>
+          <p className="mt-0.5 text-sm font-semibold" style={{ color: C.navy }}>{workspaceName}</p>
+        </div>
+      </header>
+
+      <div className="grid min-h-0 gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="space-y-5">
+          <section className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10,22,40,0.04)" }}>
+            <div className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <h2 className="text-sm font-semibold" style={{ color: C.navy }}>Account</h2>
+              <p className="mt-1 text-xs" style={{ color: C.muted }}>The account currently signed in to this workspace.</p>
+            </div>
+            <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: C.bluePale, color: C.blue }}>
+                  <CircleUserRound className="size-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Signed in as</p>
+                  <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>{displayName}</p>
+                  <p className="truncate text-xs" style={{ color: C.navySoft }}>{user.email ?? "No email available"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 sm:border-l sm:pl-5" style={{ borderColor: C.rule }}>
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.offWhite, color: C.navySoft }}>
+                  <Building2 className="size-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Workspace</p>
+                  <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>{workspaceName}</p>
+                  <p className="flex items-center gap-1 truncate text-xs" style={{ color: C.navySoft }}>
+                    <Globe2 className="size-3 shrink-0" aria-hidden="true" />
+                    {websiteUrl ? websiteDomain(websiteUrl) : "Website not connected"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <WorkspaceTab initialData={initialData} serviceProfile={serviceProfile} />
+        </div>
+
+        <aside className="min-w-0 xl:sticky xl:top-0 xl:self-start">
+          <WorkspaceBillingCard planData={planData} />
+        </aside>
       </div>
-
-      <hr className="border-border" />
-
-      <WorkspaceTab
-        initialData={initialData}
-        serviceProfile={serviceProfile}
-      />
     </div>
   );
 }

@@ -26,8 +26,8 @@ export const dashboardNavigationItems: readonly DashboardNavigationItem[] = [
   },
   {
     href: "/settings",
-    label: "Workspace",
-    description: "Manage workspace details and your matching brief.",
+    label: "Settings",
+    description: "Manage account, workspace, and billing settings.",
   },
 ];
 

@@ -290,13 +290,13 @@ export default function WorkspaceBillingCard({
     <section
       style={{
         background: C.white,
-        borderRadius: 8,
+        borderRadius: 12,
         border: surfaceBorder,
         boxShadow: surfaceShadow,
-        padding: 16,
+        overflow: "hidden",
+        padding: 0,
         display: "flex",
         flexDirection: "column",
-        gap: 14,
       }}
     >
       <div
@@ -305,7 +305,8 @@ export default function WorkspaceBillingCard({
           alignItems: "center",
           justifyContent: "space-between",
           borderBottom: `1px solid ${C.rule}`,
-          paddingBottom: 10,
+          padding: 16,
+          backgroundColor: C.offWhite,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -351,28 +352,30 @@ export default function WorkspaceBillingCard({
           alignItems: "flex-start",
           gap: 16,
           flexWrap: "wrap",
+          padding: 16,
+          backgroundColor: C.blueTint,
         }}
       >
         <div style={{ minWidth: 220, flex: "1 1 260px" }}>
           <div
             style={{
               fontSize: 10,
-              color: C.muted,
+              color: C.blue,
               fontWeight: 700,
               textTransform: "uppercase",
               letterSpacing: "0.05em",
               marginBottom: 4,
             }}
           >
-            Current status
+            Your plan
           </div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: C.navy }}>
+          <div className="pfd" style={{ fontSize: 22, lineHeight: 1, color: C.navy }}>
             {planName}
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
             {planDescription}
           </div>
-          <div style={{ fontSize: 11, color: C.navySoft, marginTop: 4, fontWeight: 600 }}>
+          <div style={{ fontSize: 13, color: C.blue, marginTop: 8, fontWeight: 700 }}>
             {isCanceling ? amountDueText ?? priceText : priceText}
           </div>
         </div>
@@ -382,14 +385,15 @@ export default function WorkspaceBillingCard({
             onClick={handleManageBilling}
             disabled={isBillingPending}
             style={{
-              height: 28,
-              padding: "0 12px",
-              background: C.offWhite,
-              color: C.navy,
-              border: surfaceBorder,
-              borderRadius: 6,
-              fontSize: 11,
-              fontWeight: 600,
+              height: 34,
+              padding: "0 14px",
+              background: canOpenPortal ? C.white : C.blue,
+              color: canOpenPortal ? C.navy : C.white,
+              border: `1px solid ${canOpenPortal ? C.ruleDark : C.blue}`,
+              borderRadius: 7,
+              fontSize: 12,
+              fontWeight: 700,
+              boxShadow: canOpenPortal ? "none" : "0 4px 10px rgba(27,110,191,0.2)",
               cursor: isBillingPending ? "not-allowed" : "pointer",
               display: "inline-flex",
               alignItems: "center",
@@ -476,7 +480,7 @@ export default function WorkspaceBillingCard({
         <div
           style={{
             borderTop: `1px solid ${C.rule}`,
-            paddingTop: 12,
+            padding: "14px 16px 16px",
             display: "flex",
             flexDirection: "column",
             gap: 7,
@@ -496,9 +500,9 @@ export default function WorkspaceBillingCard({
       ) : null}
 
       <div
-        style={{
-          borderTop: `1px solid ${C.rule}`,
-          paddingTop: 12,
+          style={{
+            borderTop: `1px solid ${C.rule}`,
+            padding: "14px 16px 16px",
           display: "flex",
           flexDirection: "column",
           gap: 10,

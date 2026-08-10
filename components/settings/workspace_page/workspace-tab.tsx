@@ -37,17 +37,17 @@ export default function WorkspaceTab({
   const isBriefActive = profile?.embeddingStatus === "completed";
 
   return (
-    <div className="mx-auto w-full max-w-4xl pb-3">
-      <Card className="bg-white shadow-sm" style={{ borderColor: C.rule }}>
-        <CardHeader className="border-b p-4" style={{ borderColor: C.rule }}>
+    <div className="w-full">
+      <Card className="overflow-hidden rounded-xl bg-white shadow-sm" style={{ borderColor: C.rule }}>
+        <CardHeader className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <CardTitle className="text-base font-semibold" style={{ color: C.navy }}>
-            Discovery setup
+            Prospecting setup
           </CardTitle>
           <CardDescription className="text-xs leading-5">
-            Keep your website and matching brief current. These two inputs shape every prospect scan.
+            Keep the source and matching brief that guide every prospect scan current.
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-4">
+        <CardContent className="p-5">
           {profile ? (
             <div className="divide-y rounded-lg border" style={{ borderColor: C.rule }}>
               <div className="flex flex-wrap items-start justify-between gap-4 p-4">
