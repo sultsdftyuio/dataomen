@@ -1,228 +1,69 @@
 import { redirect } from "next/navigation";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { verifyAndSyncSubscriptionStatus } from "@/app/actions/billing";
+
 import { createClient } from "@/utils/supabase/server";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
-import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import { buildSettingsSnapshot } from "@/lib/settings/normalizers";
 import { fetchTenantSettingsRow } from "@/lib/settings/server";
 import SettingsClient from "./settings-client";
-import type { WorkspaceBillingCardProps } from "@/components/settings/workspace_page/workspace-billing-card";
 import {
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
 } from "@/app/(dashboard)/dashboard/data";
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
-import type { Database } from "@/types/supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type BillingPlanStatus = NonNullable<NonNullable<WorkspaceBillingCardProps["planData"]>["planStatus"]>;
-
 type SettingsPageProps = {
-  searchParams: Promise<{ billing?: string | string[]; upgrade?: string | string[] }>;
+  searchParams: Promise<{ upgrade?: string | string[] }>;
 };
 
-const PRO_QUALIFIED_LEAD_MONTHLY_LIMIT = 500;
-
-async function fetchCurrentMonthQualifiedLeadUsage(
-  supabase: SupabaseClient<Database>,
-  tenantId: string
-): Promise<number> {
-  const cycleStart = new Date();
-  cycleStart.setUTCDate(1);
-  cycleStart.setUTCHours(0, 0, 0, 0);
-
-  const { count, error } = await supabase
-    .from("lead_matches")
-    .select("id", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .eq("match_status", "qualified")
-    .gte("created_at", cycleStart.toISOString());
-
-  if (error) {
-    console.error("[Settings] Qualified lead usage lookup failed", {
-      event: "settings_billing_qualified_lead_usage_failed",
-      tenant_id: tenantId,
-      cycle_start: cycleStart.toISOString(),
-      error,
-    });
-    return 0;
-  }
-
-  return count ?? 0;
-}
-
-function searchParamValue(value: string | string[] | undefined): string | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
-}
-
-function billingTestControlsEnabled(): boolean {
-  const explicitFlag = process.env.BILLING_TEST_CONTROLS_ENABLED
-    ?.trim()
-    .replace(/^["']+|["']+$/g, "")
-    .trim()
-    .toLowerCase();
-  const vercelEnv = process.env.VERCEL_ENV
-    ?.trim()
-    .replace(/^["']+|["']+$/g, "")
-    .trim()
-    .toLowerCase();
-
-  if (explicitFlag && ["true", "1", "yes"].includes(explicitFlag)) {
-    return true;
-  }
-
-  if (explicitFlag && ["false", "0", "no"].includes(explicitFlag)) {
-    return false;
-  }
-
-  return (
-    process.env.NODE_ENV !== "production" ||
-    vercelEnv === "preview" ||
-    vercelEnv === "development"
-  );
-}
-
-export default async function SettingsPage({ 
-  searchParams 
-}: SettingsPageProps) {
+export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const resolvedSearchParams = await searchParams;
-  const billingReturnState = searchParamValue(resolvedSearchParams.billing);
-  const shouldAutoStartProCheckout = searchParamValue(resolvedSearchParams.upgrade) === "pro";
-
-  // 1. Deterministic Server Auth Fetch
+  const shouldAutoStartProCheckout =
+    (Array.isArray(resolvedSearchParams.upgrade)
+      ? resolvedSearchParams.upgrade[0]
+      : resolvedSearchParams.upgrade) === "pro";
   const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
   if (authError || !user) {
     redirect("/login");
   }
 
-  // 2. Resolve Tenant Context
   const tenantResult = await resolveTenantContext();
-  
-  // 3. Build a normalized snapshot for the client
   let settings = buildSettingsSnapshot(null);
-  let billingPlanData: WorkspaceBillingCardProps["planData"] = {
-    planName: "Free Access",
-    planStatus: "free",
-    description: "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.",
-    priceText: "$29/month",
-    isProTier: false,
-  };
   let serviceProfile: ServiceProfileView | null = null;
-  let tenantId: string | null = null;
 
   if (!("response" in tenantResult)) {
-    const { supabase: tenantSupabase, tenantId: resolvedTenantId } =
-      tenantResult.context;
-    tenantId = resolvedTenantId;
-
-    if (billingReturnState === "checkout_complete") {
-      let shouldRefreshSettings = false;
-
-      try {
-        const result = await verifyAndSyncSubscriptionStatus(resolvedTenantId);
-
-        console.info("[Settings] Billing return verification completed", {
-          event: "settings_billing_return_verified",
-          tenant_id: resolvedTenantId,
-          sync_status: result.status,
-          lookup_strategy: result.lookupStrategy,
-        });
-
-        if (result.status === "synced" || result.status === "already_synced") {
-          shouldRefreshSettings = true;
-        }
-      } catch (error) {
-        console.error("[Settings] Billing return verification failed", {
-          event: "settings_billing_return_verification_failed",
-          tenant_id: resolvedTenantId,
-          error,
-        });
-      }
-
-      if (shouldRefreshSettings) {
-        redirect("/settings");
-      }
-    }
-    
-    // Removed fetchTenantApiKeySummary from Promise.all
-    const [settingsResult, entitlements, websiteUrl, qualifiedLeadsDiscovered] = await Promise.all([
-      fetchTenantSettingsRow(tenantSupabase, resolvedTenantId),
-      getWorkspaceEntitlements(tenantSupabase, resolvedTenantId),
-      fetchTenantWebsiteUrl(tenantSupabase, resolvedTenantId),
-      fetchCurrentMonthQualifiedLeadUsage(tenantSupabase, resolvedTenantId),
+    const { supabase: tenantSupabase, tenantId } = tenantResult.context;
+    const [settingsResult, websiteUrl] = await Promise.all([
+      fetchTenantSettingsRow(tenantSupabase, tenantId),
+      fetchTenantWebsiteUrl(tenantSupabase, tenantId),
     ]);
 
-    const { data, error } = settingsResult;
-
-    if (error) {
-      console.error("[SETTINGS_FETCH_ERROR]", error);
+    if (settingsResult.error) {
+      console.error("[SETTINGS_FETCH_ERROR]", settingsResult.error);
     } else {
-      // Pass null for apiKeySummary since it is no longer needed
-      settings = buildSettingsSnapshot(data as any, null);
+      settings = buildSettingsSnapshot(settingsResult.data as never, null);
     }
 
     serviceProfile = await fetchServiceProfile(
       tenantSupabase,
-      resolvedTenantId,
+      tenantId,
       websiteUrl ?? settings.workspace.websiteUrl,
     );
-
-    const subscriptionStatus = (entitlements.subscriptionStatus ?? "free") as BillingPlanStatus;
-    const planTier = entitlements.planTier.toLowerCase();
-    billingPlanData = {
-      planName: entitlements.billingLabel,
-      planStatus: subscriptionStatus,
-      description: entitlements.billingDescription,
-      priceText: "$29/month",
-      isProTier: planTier === "pro",
-      isCanceling: entitlements.isCanceling,
-      currentPeriodEnd: entitlements.currentPeriodEnd,
-      workspaceName: settings.workspace.companyName || "Workspace",
-      entitlements,
-      qualifiedLeadUsage: {
-        discovered: qualifiedLeadsDiscovered,
-        limit: PRO_QUALIFIED_LEAD_MONTHLY_LIMIT,
-      },
-      amountDueCents: 2900,
-      currency: "USD",
-      autoStartCheckout: shouldAutoStartProCheckout && !entitlements.isPro,
-      features: [
-        {
-          label: "Verified prospect queue",
-          description: "Review prospects aligned with your service profile.",
-          unlocked: entitlements.canViewCustomerLists,
-        },
-        {
-          label: "Lead qualification signals",
-          description: "Inspect why each lead matched your audience and pain criteria.",
-          unlocked: entitlements.canSendEmails,
-        },
-        {
-          label: "Reusable matching criteria",
-          description: "Create reusable profile rules for discovery workflows.",
-          unlocked: entitlements.canCreateTemplates,
-        },
-      ],
-    };
   }
 
-  const showBillingTestControls = billingTestControlsEnabled();
-
-  // 4. Pass clean, safely abstracted state to the Client
   return (
-    <SettingsClient 
-      user={user} 
-      initialSettings={settings} 
-      planData={billingPlanData}
-      billingTestControlsEnabled={showBillingTestControls}
+    <SettingsClient
+      user={user}
+      initialSettings={settings}
       serviceProfile={serviceProfile}
-      tenantId={tenantId}
+      autoStartProCheckout={shouldAutoStartProCheckout}
     />
   );
 }

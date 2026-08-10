@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 
 import { upgradeToProPlan } from "@/app/actions/billing";
 
@@ -72,7 +72,7 @@ export default function UpgradeButton({
   };
 
   return (
-    <div className="flex flex-col items-start gap-1.5">
+    <div className="flex flex-col items-start gap-2">
       <button
         type="button"
         onClick={handleUpgrade}
@@ -80,17 +80,23 @@ export default function UpgradeButton({
         aria-busy={isLoading}
         aria-disabled={isLoading}
         className={[
-          "inline-flex items-center justify-center gap-2",
-          "rounded-lg px-4 py-2",
-          "text-sm font-semibold text-white",
-          "shadow-sm transition-all",
-          "focus-visible:outline focus-visible:outline-2",
-          "focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
+          "group inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3.5",
+          "text-sm font-semibold text-white transition-all duration-200",
+          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1B6EBF]",
           isLoading
-            ? "cursor-not-allowed bg-indigo-400 opacity-80 dark:bg-indigo-500/50"
-            : "cursor-pointer bg-indigo-600 shadow-indigo-500/10 hover:bg-indigo-700 active:scale-[0.98]",
+            ? "cursor-wait opacity-80"
+            : "cursor-pointer hover:-translate-y-px active:translate-y-0",
           className,
         ].join(" ")}
+        style={{
+          background: isLoading
+            ? "linear-gradient(135deg, #5797D6 0%, #2B73BB 100%)"
+            : "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
+          borderColor: "rgba(255,255,255,0.2)",
+          boxShadow: isLoading
+            ? "0 3px 10px rgba(27,110,191,0.16)"
+            : "0 6px 16px rgba(27,110,191,0.24)",
+        }}
       >
         {isLoading ? (
           <>
@@ -104,6 +110,10 @@ export default function UpgradeButton({
               aria-hidden="true"
             />
             <span>Upgrade to Pro</span>
+            <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
+              $35/mo
+            </span>
+            <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
           </>
         )}
       </button>
@@ -111,7 +121,8 @@ export default function UpgradeButton({
       {error && (
         <p
           role="alert"
-          className="animate-in slide-in-from-top-1 fade-in text-xs font-medium text-destructive duration-200 dark:text-red-400"
+          className="animate-in slide-in-from-top-1 rounded-md border px-2.5 py-2 text-xs font-medium duration-200"
+          style={{ color: "#B42318", backgroundColor: "#FFF6F5", borderColor: "#FECDCA" }}
         >
           {error}
         </p>

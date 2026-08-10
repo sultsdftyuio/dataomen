@@ -1,7 +1,8 @@
 "use client";
 
-import { LockKeyhole, Radar } from "lucide-react";
+import { CheckCircle2, LockKeyhole, Radar, Sparkles } from "lucide-react";
 
+import { PlanPreviewSwitcher } from "@/components/dashboard/PlanPreviewSwitcher";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 import { C } from "@/lib/tokens";
 import type { LeadQueueCounts } from "./data";
@@ -9,6 +10,7 @@ import type { LeadQueueCounts } from "./data";
 type FreeProspectPreviewProps = {
   websiteUrl: string;
   counts: LeadQueueCounts;
+  showPlanPreview: boolean;
 };
 
 function domainForDisplay(websiteUrl: string) {
@@ -22,24 +24,22 @@ function domainForDisplay(websiteUrl: string) {
 export default function FreeProspectPreview({
   websiteUrl,
   counts,
+  showPlanPreview,
 }: FreeProspectPreviewProps) {
   const total = counts.readyToReview + counts.discoveryCandidates;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4 overflow-y-auto pr-1">
+    <div className="flex h-full w-full flex-col gap-4 overflow-y-auto pr-1">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-            Free discovery
-          </p>
-          <h1 className="pfd mt-1 text-3xl leading-none" style={{ color: C.navy }}>
+          <h1 className="pfd text-3xl leading-none" style={{ color: C.navy }}>
             Your prospect desk is ready
           </h1>
           <p className="mt-2 text-sm" style={{ color: C.muted }}>
             We are scanning conversations for {domainForDisplay(websiteUrl)}.
           </p>
         </div>
-        <UpgradeButton className="shrink-0" />
+        {showPlanPreview ? <PlanPreviewSwitcher activePlan="free" /> : null}
       </header>
 
       <section
@@ -72,7 +72,42 @@ export default function FreeProspectPreview({
         </div>
       </section>
 
-      <section className="relative overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
+      <section
+        className="relative overflow-hidden rounded-xl border px-5 py-5"
+        style={{ borderColor: C.blueLight, background: "linear-gradient(135deg, #F7FBFF 0%, #FFFFFF 72%)" }}
+      >
+        <div className="absolute -right-12 -top-16 size-48 rounded-full" style={{ backgroundColor: "rgba(59,154,232,0.13)" }} aria-hidden="true" />
+        <div className="absolute -bottom-20 right-20 size-40 rounded-full border" style={{ borderColor: "rgba(27,110,191,0.13)" }} aria-hidden="true" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-xl">
+            <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue, backgroundColor: C.bluePale }}>
+              <Sparkles className="size-3" aria-hidden="true" /> Pro prospect desk
+            </div>
+            <h2 className="pfd mt-3 text-2xl leading-none sm:text-3xl" style={{ color: C.navy }}>
+              See the people behind the signal.
+            </h2>
+            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+              Open every matched conversation with its fit evidence, qualification signal, and a reply draft ready to refine.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold" style={{ color: C.navy }}>
+              {["Verified matches", "Why they fit", "Reply drafts"].map((feature) => (
+                <span key={feature} className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 className="size-3.5" style={{ color: C.green }} aria-hidden="true" />
+                  {feature}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+            <p className="text-xs font-semibold" style={{ color: C.navySoft }}>
+              $35/month · cancel any time
+            </p>
+            <UpgradeButton />
+          </div>
+        </div>
+      </section>
+
+      <section className="relative min-h-[420px] flex-1 overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
         <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <div>
             <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>Matched conversations</h2>
@@ -98,7 +133,9 @@ export default function FreeProspectPreview({
             <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
               Pro reveals every matched conversation and gives you the evidence and reply draft to act on it.
             </p>
-            <UpgradeButton className="mt-4" />
+            <p className="mt-4 text-xs font-semibold" style={{ color: C.blue }}>
+              Unlock with Pro above to review the full conversation.
+            </p>
           </div>
         </div>
       </section>

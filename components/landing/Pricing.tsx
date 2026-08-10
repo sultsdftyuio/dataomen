@@ -1,313 +1,151 @@
 "use client";
 
-import React from "react";
 import Link from "next/link";
-import { 
-  CheckCircle2, 
-  Activity, 
-  ArrowRight, 
-  ShieldCheck,
-  Sparkles
-} from "lucide-react";
+import { Activity, ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from "lucide-react";
+
 import { C } from "@/lib/tokens";
+
+const freeFeatures = [
+  "Learn from one website",
+  "One discovery domain",
+  "A live count of matched conversations",
+  "Standard email support",
+];
+
+const proFeatures = [
+  "Ongoing discovery across public conversations",
+  "Verified prospect queue and match evidence",
+  "Buyer groups and reusable matching criteria",
+  "Refresh your brief as your product evolves",
+];
+
+function FeatureList({ features, color = C.blue }: { features: string[]; color?: string }) {
+  return (
+    <ul className="mt-7 space-y-3" style={{ listStyle: "none" }}>
+      {features.map((feature) => (
+        <li key={feature} className="flex items-start gap-2.5 text-sm font-medium" style={{ color: C.navy }}>
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0" style={{ color }} aria-hidden="true" />
+          {feature}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export default function ArcliPricingCards() {
   const surfaceBorder = "1px solid rgba(0,0,0,0.08)";
-  const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
+  const surfaceShadow = "0 8px 28px rgba(10,22,40,0.05)";
 
   return (
-    <section 
-      id="pricing" 
-      style={{ 
-        padding: "140px 24px", 
-        background: "#FAFAFA", 
-        borderTop: surfaceBorder, 
+    <section
+      id="pricing"
+      style={{
+        padding: "140px 24px",
+        background: "linear-gradient(180deg, #F7FBFF 0%, #FFFFFF 100%)",
+        borderTop: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",
-        position: "relative",
-        overflow: "hidden"
       }}
     >
-      {/* Background Decorative Gradient */}
-      <div 
-        style={{
-          position: "absolute",
-          top: 0,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: 800,
-          height: 400,
-          background: "rgba(235, 244, 253, 0.6)",
-          filter: "blur(80px)",
-          borderRadius: "50%",
-          pointerEvents: "none"
-        }} 
-      />
-
-      <div style={{ maxWidth: 960, margin: "0 auto", position: "relative", zIndex: 10 }}>
-        
-        {/* Section Header */}
-        <div style={{ textAlign: "center", maxWidth: 640, margin: "0 auto 64px auto" }}>
-          <div 
-            style={{ 
-              display: "inline-flex", 
-              alignItems: "center", 
-              gap: 8, 
-              color: C.blue, 
-              fontWeight: 700, 
-              fontSize: 12, 
-              marginBottom: 16, 
-              letterSpacing: "0.08em", 
+      <div style={{ maxWidth: 1040, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", maxWidth: 660, margin: "0 auto 56px" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              color: C.blue,
+              fontWeight: 700,
+              fontSize: 12,
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
-              background: C.bluePale,
-              border: `1px solid rgba(27,110,191,0.18)`,
-              padding: "6px 14px",
-              borderRadius: 20
+              marginBottom: 14,
             }}
           >
             <Activity size={14} /> SIMPLE PRICING
           </div>
-          
-          <h2 
-            style={{ 
-              fontSize: 42, 
-              color: C.navy, 
-              marginBottom: 16, 
-              lineHeight: 1.08, 
-              letterSpacing: "-0.015em", 
-              fontWeight: 600 
+          <h2
+            className="pfd"
+            style={{
+              fontSize: 42,
+              color: C.navy,
+              lineHeight: 1.08,
+              letterSpacing: "-0.015em",
+              fontWeight: 600,
+              marginBottom: 18,
             }}
           >
-            Start for free. <br />
-            <span style={{ color: C.blue }}>Upgrade when prospects turn into revenue.</span>
+            Start free. Upgrade when a prospect is worth acting on.
           </h2>
-          
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
-            Use Arcli to learn what you sell, find people asking for help, and send you the prospects worth reviewing.
+            One straightforward plan for turning public conversations into a focused prospect queue.
           </p>
         </div>
 
-        {/* Pricing Cards Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24, alignItems: "stretch" }}>
-          
-          {/* ── CARD 1: Free Plan ($0) ── */}
-          <div 
-            style={{ 
-              background: C.white, 
-              borderRadius: 12, 
-              border: surfaceBorder, 
-              boxShadow: surfaceShadow,
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              position: "relative",
-              overflow: "hidden"
-            }}
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          <article
+            className="flex min-h-[460px] flex-col rounded-lg border bg-white p-7"
+            style={{ borderColor: C.rule, boxShadow: surfaceShadow }}
           >
-            <div style={{ padding: "32px 28px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-                <div>
-                  <span 
-                    style={{ 
-                      display: "inline-flex", 
-                      alignItems: "center", 
-                      gap: 6, 
-                      padding: "4px 10px", 
-                      borderRadius: 6, 
-                      fontSize: 11, 
-                      fontWeight: 700, 
-                      background: "rgba(84,111,138,0.1)", 
-                      color: C.muted, 
-                      letterSpacing: "0.05em", 
-                      textTransform: "uppercase", 
-                      marginBottom: 8 
-                    }}
-                  >
-                    Free Forever
-                  </span>
-                  <h3 style={{ fontSize: 22, fontWeight: 700, color: C.navy, margin: 0 }}>Free Plan</h3>
-                </div>
-              </div>
-
-              <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.6, marginBottom: 24 }}>
-                Perfect for seeing how Arcli finds prospects before you scale your search.
-              </p>
-
-              {/* Price Display */}
-              <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: `1px solid ${C.rule}` }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span style={{ fontSize: 40, fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>$0</span>
-                  <span style={{ color: C.muted, fontWeight: 600, fontSize: 14 }}>/ forever</span>
-                </div>
-                <p style={{ fontSize: 12, color: C.faint, fontWeight: 600, marginTop: 6 }}>
-                  No credit card required. Instant access.
-                </p>
-              </div>
-
-              {/* Feature Specs */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.faint, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                  What&apos;s Included
-                </div>
-                
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Learn from one website</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>A live count of matched conversations</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>One website discovery domain</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.blue} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Standard email support</span>
-                </div>
-              </div>
+            <span
+              className="inline-flex w-fit rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]"
+              style={{ backgroundColor: C.offWhite, color: C.muted, border: surfaceBorder }}
+            >
+              Free
+            </span>
+            <h3 className="pfd mt-5 text-3xl leading-none" style={{ color: C.navy }}>
+              See the signal.
+            </h3>
+            <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
+              Let Arcli learn your offer and show you whether the right conversations are out there.
+            </p>
+            <div className="mt-7 border-b pb-6" style={{ borderColor: C.rule }}>
+              <span className="text-5xl font-semibold tracking-tight" style={{ color: C.navy }}>$0</span>
+              <span className="ml-1 text-sm font-semibold" style={{ color: C.muted }}>/ forever</span>
             </div>
+            <FeatureList features={freeFeatures} />
+            <Link
+              href="/register?tier=free"
+              className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg border text-sm font-semibold transition-colors hover:bg-[#F7FBFF]"
+              style={{ borderColor: C.ruleDark, color: C.navy, textDecoration: "none" }}
+            >
+              Get started free <ArrowRight className="size-4" />
+            </Link>
+          </article>
 
-            <div style={{ padding: "0 28px 32px 28px" }}>
-              <Link 
-                href="/register?tier=free" 
-                style={{ 
-                  width: "100%", 
-                  height: 44, 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center", 
-                  gap: 8, 
-                  borderRadius: 8, 
-                  fontWeight: 700, 
-                  color: C.navy, 
-                  background: C.offWhite, 
-                  border: surfaceBorder,
-                  textDecoration: "none", 
-                  fontSize: 14,
-                  boxShadow: surfaceShadow
-                }}
-              >
-                Get Started Free <ArrowRight size={16} />
-              </Link>
-            </div>
-          </div>
-
-          {/* ── CARD 2: Pro Plan ($29) ── */}
-          <div 
-            style={{ 
-              background: "linear-gradient(180deg, #FFFFFF 0%, #FAFCFF 100%)", 
-              borderRadius: 12, 
-              border: "1px solid rgba(27,110,191,0.28)", 
-              boxShadow: "0 12px 32px -8px rgba(27,110,191,0.12)",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              position: "relative",
-              overflow: "hidden"
-            }}
+          <article
+            className="relative flex min-h-[460px] flex-col overflow-hidden rounded-lg border bg-white p-7"
+            style={{ borderColor: C.blueLight, boxShadow: "0 12px 32px rgba(27,110,191,0.12)" }}
           >
-            {/* Top Accent Bar */}
-            <div style={{ height: 6, width: "100%", background: `linear-gradient(90deg, ${C.blue} 0%, ${C.blueLight} 100%)` }} />
-
-            <div style={{ padding: "32px 28px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-                <div>
-                  <span 
-                    style={{ 
-                      display: "inline-flex", 
-                      alignItems: "center", 
-                      gap: 6, 
-                      padding: "4px 10px", 
-                      borderRadius: 6, 
-                      fontSize: 11, 
-                      fontWeight: 700, 
-                      background: C.bluePale, 
-                      color: C.blue, 
-                      border: "1px solid rgba(27,110,191,0.2)",
-                      letterSpacing: "0.05em", 
-                      textTransform: "uppercase", 
-                      marginBottom: 8 
-                    }}
-                  >
-                    <Sparkles size={12} fill={C.blue} /> Recommended
-                  </span>
-                  <h3 style={{ fontSize: 22, fontWeight: 700, color: C.navy, margin: 0 }}>Pro Plan</h3>
-                </div>
-              </div>
-
-              <p style={{ fontSize: 14, color: C.navySoft, lineHeight: 1.6, marginBottom: 24 }}>
-                Keep finding and checking prospects from public posts without spending your day searching manually.
-              </p>
-
-              {/* Price Display */}
-              <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid rgba(27,110,191,0.14)" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                  <span style={{ fontSize: 40, fontWeight: 800, color: C.navy, letterSpacing: "-0.02em" }}>$29</span>
-                  <span style={{ color: C.muted, fontWeight: 600, fontSize: 14 }}>/ month</span>
-                </div>
-                <p style={{ fontSize: 12, color: C.blue, fontWeight: 600, marginTop: 6 }}>
-                  No commission on the revenue you generate.
-                </p>
-              </div>
-
-              {/* Feature Specs */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
-                  Everything in Free, plus:
-                </div>
-                
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Ongoing search across public posts</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Clear fit and need checks</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Bad-match filters and ignore rules</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Refresh what Arcli knows from your website</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>Priority 24/7 support</span>
-                </div>
-              </div>
+            <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: C.blue }} aria-hidden="true" />
+            <span
+              className="inline-flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]"
+              style={{ backgroundColor: C.bluePale, color: C.blue, border: "1px solid rgba(27,110,191,0.18)" }}
+            >
+              <Sparkles className="size-3" aria-hidden="true" /> Pro
+            </span>
+            <h3 className="pfd mt-5 text-3xl leading-none" style={{ color: C.navy }}>
+              Act on the signal.
+            </h3>
+            <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
+              Review the people, evidence, and matching reasons behind every prospect Arcli finds.
+            </p>
+            <div className="mt-7 border-b pb-6" style={{ borderColor: C.blueLight }}>
+              <span className="text-5xl font-semibold tracking-tight" style={{ color: C.navy }}>$35</span>
+              <span className="ml-1 text-sm font-semibold" style={{ color: C.muted }}>/ month</span>
+              <p className="mt-2 text-xs font-semibold" style={{ color: C.blue }}>Cancel any time.</p>
             </div>
-
-            <div style={{ padding: "0 28px 32px 28px" }}>
-              <Link 
-                href="/register?next=%2Fsettings%3Fupgrade%3Dpro"
-                style={{ 
-                  width: "100%", 
-                  height: 44, 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center", 
-                  gap: 8, 
-                  borderRadius: 8, 
-                  fontWeight: 700, 
-                  color: C.white, 
-                  background: C.blue, 
-                  textDecoration: "none", 
-                  fontSize: 14,
-                  boxShadow: "0 4px 12px rgba(27,110,191,0.24)"
-                }}
-              >
-                Get Pro <ArrowRight size={16} />
-              </Link>
-              
-              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.rule}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontSize: 11, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                <ShieldCheck size={14} color={C.blue} /> Cancel Anytime
-              </div>
-            </div>
-          </div>
-
+            <FeatureList features={proFeatures} color={C.green} />
+            <Link
+              href="/register?next=%2Fsettings%3Fupgrade%3Dpro"
+              className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors hover:brightness-95"
+              style={{ backgroundColor: C.blue, color: C.white, textDecoration: "none" }}
+            >
+              Get Pro <ArrowRight className="size-4" />
+            </Link>
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: C.muted }}>
+              <ShieldCheck className="size-3.5" style={{ color: C.blue }} aria-hidden="true" /> No commission on revenue
+            </p>
+          </article>
         </div>
       </div>
     </section>

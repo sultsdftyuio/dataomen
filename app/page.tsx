@@ -4,6 +4,7 @@ import "../styles/globals.css";
 
 import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
+import { PublicSources } from "@/components/landing/public-sources";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
 import { Campaigns } from "@/components/landing/Campaigns"; 
@@ -52,6 +53,7 @@ export default async function Page() {
         {/* Page Content Flow */}
         <div className="relative z-10 flex flex-col">
           <Hero />
+          <PublicSources />
           <HowItWorks />
           <DeepDiveFeatures />
           <Campaigns />

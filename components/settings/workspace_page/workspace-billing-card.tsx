@@ -98,7 +98,7 @@ export default function WorkspaceBillingCard({
     planName: "Free Access",
     planStatus: "free",
     description: "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.",
-    priceText: "$29/month",
+    priceText: "$35/month",
     isProTier: false,
   },
 }: WorkspaceBillingCardProps) {
@@ -107,12 +107,12 @@ export default function WorkspaceBillingCard({
   const [pendingAction, setPendingAction] = useState<PendingBillingAction>(null);
   const planStatus = planData.planStatus ?? "free";
   const planName = planData.planName ?? "Free Access";
-  const priceText = planData.priceText ?? "$29/month";
+  const priceText = planData.priceText ?? "$35/month";
   const isCanceling = planData.isCanceling ?? planStatus === "canceling";
   const formattedPeriodEnd = formatBillingDate(planData.currentPeriodEnd);
   const activeUntilText = `Active until ${formattedPeriodEnd ?? "the end of the current billing period"}`;
   const amountDueText = formatAmountDue(
-    planData.amountDueCents ?? 2900,
+    planData.amountDueCents ?? 3500,
     planData.currency ?? "USD",
     planData.currentPeriodEnd
   );
@@ -130,7 +130,7 @@ export default function WorkspaceBillingCard({
       ? activeUntilText
       : planData.description ??
         (planStatus === "active"
-            ? "Pro billing active at $29/month."
+            ? "Pro billing active at $35/month."
             : "Free access includes one discovery domain. Upgrade to Pro to unlock matched leads.");
   const autoCheckoutAttempted = useRef(false);
 

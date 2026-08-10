@@ -91,7 +91,7 @@ export function HowItWorks() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 600, color: C.navy, fontSize: 14 }}>someone asked for help</div>
-                      <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>source: Reddit / HN / X</div>
+                      <div style={{ fontSize: 11, color: C.faint, fontWeight: 500 }}>source: public conversations</div>
                     </div>
                   </div>
                   <ArrowRight size={16} color={C.faint} />

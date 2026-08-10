@@ -36,7 +36,7 @@ export type WorkspaceEntitlements = {
 
 export const PRO_PLAN_REQUIRED_MESSAGE =
   "Upgrade to Pro to unlock customer lists, campaign sending, and custom templates.";
-export const PRO_MONTHLY_PRICE = 29;
+export const PRO_MONTHLY_PRICE = 35;
 
 // Supports both Pro and Enterprise tiers to prevent enterprise users from being locked out
 const PAID_PLAN_TIERS = new Set(["pro", "enterprise"]);

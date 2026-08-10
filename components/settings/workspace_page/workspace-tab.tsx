@@ -5,10 +5,6 @@ import { Globe2, Radar, Target } from "lucide-react";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
-import BillingTestSwitcher from "./billing-test-switcher";
-import WorkspaceBillingCard, {
-  type WorkspaceBillingCardProps,
-} from "./workspace-billing-card";
 import { Button } from "@/components/ui/button";
 import { C } from "@/lib/tokens";
 
@@ -20,8 +16,6 @@ interface WorkspaceTabProps {
   initialData?: WorkspaceInitialData;
   initialProfile?: ServiceProfileView | null;
   serviceProfile?: ServiceProfileView | null;
-  planData?: WorkspaceBillingCardProps["planData"];
-  billingTestControlsEnabled?: boolean;
   [legacyProp: string]: unknown;
 }
 
@@ -37,15 +31,13 @@ export default function WorkspaceTab({
   initialData,
   initialProfile = null,
   serviceProfile = null,
-  planData,
-  billingTestControlsEnabled = false,
 }: WorkspaceTabProps) {
   const profile = initialProfile ?? serviceProfile;
   const websiteUrl = profile?.websiteUrl ?? initialData?.websiteUrl ?? "";
   const isBriefActive = profile?.embeddingStatus === "completed";
 
   return (
-    <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-4 pb-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="mx-auto w-full max-w-4xl pb-3">
       <Card className="bg-white shadow-sm" style={{ borderColor: C.rule }}>
         <CardHeader className="border-b p-4" style={{ borderColor: C.rule }}>
           <CardTitle className="text-base font-semibold" style={{ color: C.navy }}>
@@ -123,13 +115,6 @@ export default function WorkspaceTab({
           )}
         </CardContent>
       </Card>
-
-      <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-3 lg:self-start">
-        <WorkspaceBillingCard planData={planData} />
-        {billingTestControlsEnabled ? (
-          <BillingTestSwitcher currentStatus={planData?.planStatus} />
-        ) : null}
-      </aside>
     </div>
   );
 }

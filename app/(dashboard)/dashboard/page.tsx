@@ -26,6 +26,19 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function planPreviewEnabled(): boolean {
+  const value = process.env.BILLING_TEST_CONTROLS_ENABLED
+    ?.trim()
+    .replace(/^["']+|["']+$/g, "")
+    .trim()
+    .toLowerCase();
+
+  if (["true", "1", "yes"].includes(value ?? "")) return true;
+  if (["false", "0", "no"].includes(value ?? "")) return false;
+
+  return process.env.NODE_ENV !== "production";
+}
+
 export default async function DashboardPage() {
   const tenantResult = await resolveTenantContext();
 
@@ -85,7 +98,13 @@ export default async function DashboardPage() {
       threshold,
       serviceProfile.updatedAt,
     );
-    return <FreeProspectPreview websiteUrl={websiteUrl} counts={counts} />;
+    return (
+      <FreeProspectPreview
+        websiteUrl={websiteUrl}
+        counts={counts}
+        showPlanPreview={planPreviewEnabled()}
+      />
+    );
   }
 
   const [leads, discoveryCandidates] = await Promise.all([
@@ -111,6 +130,7 @@ export default async function DashboardPage() {
       discoveryCandidates={discoveryCandidates}
       buyerDemandReport={buyerDemandReport}
       isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
+      showPlanPreview={planPreviewEnabled()}
     />
   );
 }
