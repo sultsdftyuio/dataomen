@@ -85,7 +85,7 @@ export function PlanPreviewSwitcher({ activePlan }: PlanPreviewSwitcherProps) {
               <CheckCircle2 className="size-3" style={{ color: C.green }} aria-hidden="true" />
             ) : null}
             <span>{plan.label}</span>
-            <span className="sr-only"> — {plan.detail}</span>
+            <span className="sr-only"> &mdash; {plan.detail}</span>
           </button>
         );
       })}

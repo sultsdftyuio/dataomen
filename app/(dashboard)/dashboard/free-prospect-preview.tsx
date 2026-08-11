@@ -100,7 +100,7 @@ export default function FreeProspectPreview({
           </div>
           <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
             <p className="text-xs font-semibold" style={{ color: C.navySoft }}>
-              $35/month · cancel any time
+              $35/month &middot; cancel any time
             </p>
             <UpgradeButton />
           </div>

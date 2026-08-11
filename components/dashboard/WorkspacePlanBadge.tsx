@@ -87,7 +87,7 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
               href="/settings"
               className="text-center text-xs font-medium text-slate-500 hover:text-slate-900 transition-colors py-1"
             >
-              Manage Workspace Settings →
+              Manage Workspace Settings &rarr;
             </Link>
           </div>
         </div>
