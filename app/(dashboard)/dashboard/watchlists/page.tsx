@@ -45,7 +45,7 @@ export default async function WatchlistsPage() {
   const { supabase, tenantId } = tenantResult.context;
   const entitlements = await getWorkspaceEntitlements(supabase, tenantId);
   if (!entitlements.isPro) {
-    redirect("/upgrade");
+    redirect("/dashboard");
   }
 
   const threshold = verifierScoreThreshold();

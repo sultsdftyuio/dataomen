@@ -34,20 +34,14 @@ test("marks only the current navigation workflow as active", () => {
   assert.equal(isDashboardNavigationItemActive("/dashboarding", "/dashboard"), false);
 });
 
-test("sends free workspaces from Buyer groups to the upgrade page", () => {
-  const watchlistsPage = readFileSync(
-    join(process.cwd(), "app", "(dashboard)", "dashboard", "watchlists", "page.tsx"),
-    "utf8",
-  );
-  const upgradePage = readFileSync(
-    join(process.cwd(), "app", "(dashboard)", "upgrade", "page.tsx"),
+test("opens a Pro prompt instead of navigating free workspaces to Buyer groups", () => {
+  const navigation = readFileSync(
+    join(process.cwd(), "components", "dashboard", "DashboardNavigation.tsx"),
     "utf8",
   );
 
-  assert.match(
-    watchlistsPage,
-    /if \(!entitlements\.isPro\) \{\s+redirect\("\/upgrade"\);\s+\}/,
-  );
-  assert.match(upgradePage, /Upgrade to Pro \| Arcli/);
-  assert.match(upgradePage, /See the people behind the signal\./);
+  assert.match(navigation, /item\.href === "\/dashboard\/watchlists"/);
+  assert.match(navigation, /onClick=\{\(\) => setIsUpgradeOpen\(true\)\}/);
+  assert.match(navigation, /Pro prospect desk/);
+  assert.match(navigation, /See the people behind the signal\./);
 });

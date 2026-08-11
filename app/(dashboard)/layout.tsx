@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { DashboardNavigation } from "@/components/dashboard/DashboardNavigation";
 import { WorkspaceTopNav } from "@/components/dashboard/WorkspaceTopNav";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 import Logo from "@/components/ui/logo";
 import { C } from "@/lib/tokens";
 import { resolveTenantContext } from "@/utils/supabase/tenant";
@@ -38,7 +39,10 @@ export default async function DashboardLayout({
   }
 
   const { supabase, tenantId } = tenantResult.context;
-  const websiteUrl = await fetchTenantWebsiteUrl(supabase, tenantId);
+  const [websiteUrl, entitlements] = await Promise.all([
+    fetchTenantWebsiteUrl(supabase, tenantId),
+    getWorkspaceEntitlements(supabase, tenantId),
+  ]);
 
   if (!websiteUrl) {
     redirect("/onboarding/workspace");
@@ -66,7 +70,7 @@ export default async function DashboardLayout({
               <WorkspaceTopNav />
             </div>
             <div className="hidden min-w-0 items-center border-l pl-3 md:flex" style={{ borderColor: C.rule }}>
-              <DashboardNavigation />
+              <DashboardNavigation isPro={entitlements.isPro} />
             </div>
           </div>
 
@@ -81,7 +85,7 @@ export default async function DashboardLayout({
         className="shrink-0 border-t bg-white md:hidden"
         style={{ borderColor: C.rule }}
       >
-        <DashboardNavigation compact />
+        <DashboardNavigation compact isPro={entitlements.isPro} />
       </div>
     </div>
   );
