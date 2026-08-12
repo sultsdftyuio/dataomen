@@ -1,6 +1,6 @@
 export const OG_IMAGE_PATH = '/api/og';
 
-const DEFAULT_OG_TITLE = 'Arcli | SaaS Churn Recovery Platform';
+const DEFAULT_OG_TITLE = 'Arcli | Find New Customers';
 const MAX_TITLE_LENGTH = 140;
 
 export type OgImageType = 'default' | 'security';

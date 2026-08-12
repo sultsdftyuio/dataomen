@@ -31,8 +31,8 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Arcli | SaaS Churn Recovery Platform',
-  description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
+  title: 'Arcli | Find New Customers',
+  description: 'Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.',
   generator: 'Next.js',
   metadataBase: new URL(SITE_URL),
   alternates: {
@@ -40,8 +40,8 @@ export const metadata: Metadata = {
   },
   
   openGraph: {
-    title: 'Arcli | SaaS Churn Recovery Platform',
-    description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
+    title: 'Arcli | Find New Customers',
+    description: 'Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.',
     url: SITE_URL,
     siteName: 'Arcli',
     locale: 'en_US',
@@ -50,8 +50,8 @@ export const metadata: Metadata = {
 
   twitter: {
     card: 'summary_large_image', 
-    title: 'Arcli | SaaS Churn Recovery Platform',
-    description: 'Automatically detect, recover, and measure lost SaaS revenue before churn becomes permanent. Protect your MRR with deterministic recovery intelligence.',
+    title: 'Arcli | Find New Customers',
+    description: 'Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.',
   },
 }
 
