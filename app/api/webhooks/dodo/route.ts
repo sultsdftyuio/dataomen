@@ -235,6 +235,44 @@ function extractCurrentPeriodEnd(data: Record<string, unknown>): string | null {
   );
 }
 
+function hasFutureAccessWindow(value: unknown) {
+  if (typeof value !== "string") return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp > Date.now();
+}
+
+function preserveCancellationAccessUntilEnd(
+  update: Record<string, unknown>,
+  existingTenant: {
+    current_period_end?: string | null;
+    trial_ends_at?: string | null;
+    dodo_subscription_id?: string | null;
+  },
+) {
+  const accessEnd =
+    (typeof update.current_period_end === "string" && update.current_period_end) ||
+    existingTenant.current_period_end ||
+    existingTenant.trial_ends_at ||
+    null;
+
+  if (!hasFutureAccessWindow(accessEnd)) return update;
+
+  // Dodo may emit a final cancellation event before an already-paid period
+  // ends. Keep the workspace in the scheduled-cancellation state until that
+  // stored end date, rather than immediately revoking its paid access.
+  return compact({
+    ...update,
+    plan_tier: "pro",
+    subscription_status: "canceling",
+    billing_status: "canceling",
+    plan: "pro",
+    status: "active",
+    current_period_end: accessEnd,
+    dodo_subscription_id:
+      existingTenant.dodo_subscription_id ?? update.dodo_subscription_id ?? undefined,
+  });
+}
+
 function compact(record: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value !== undefined)
@@ -392,7 +430,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing tenant_id metadata." }, { status: 400 });
   }
 
-  const update = tenantUpdateFor(event);
+  let update = tenantUpdateFor(event);
   if (!update) {
     return NextResponse.json({ status: "ignored", event_type: event.type });
   }
@@ -429,6 +467,14 @@ export async function POST(request: Request) {
       tenant_id: tenantId,
     });
     return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+  }
+
+  if (
+    event.type === "subscription.cancelled" ||
+    event.type === "subscription.canceled" ||
+    event.type === "subscription.expired"
+  ) {
+    update = preserveCancellationAccessUntilEnd(update, existingTenant);
   }
 
   const isResumeUpdate =

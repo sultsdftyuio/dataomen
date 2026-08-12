@@ -44,6 +44,7 @@ const PAID_PLAN_TIERS = new Set(["pro", "enterprise"]);
 // Active lifecycle statuses that permit entitlement access. New subscriptions
 // are paid immediately and do not have a trial state.
 const ACTIVE_STATUSES = new Set(["active", "canceling"]);
+const CANCELLATION_STATUSES = new Set(["canceling", "canceled", "cancelled"]);
 
 /**
  * Deterministically normalizes database strings to lowercase trimmed formats.
@@ -93,26 +94,34 @@ function buildEntitlements(
   const trialEndsAt = normalizeTimestamp(trialEndsAtValue);
   const currentPeriodEnd = normalizeTimestamp(currentPeriodEndValue);
 
-  // Validate that the paid subscription is currently active.
+  const accessEnd = currentPeriodEnd ?? trialEndsAt;
+  const accessEndTimestamp = accessEnd ? Date.parse(accessEnd) : Number.NaN;
+  const hasFutureAccessWindow =
+    Number.isFinite(accessEndTimestamp) && accessEndTimestamp > Date.now();
+
+  // Validate that the paid subscription is currently active. A cancellation
+  // event can arrive before the paid/trial period actually ends, so that
+  // future entitlement window takes precedence over the final event label.
   let hasActiveStatus = subscriptionStatus
     ? ACTIVE_STATUSES.has(subscriptionStatus)
     : false;
 
-  // Defensive Guard: If canceling, verify current_period_end hasn't already expired
-  // Protects against delayed webhook delivery (Arcli Rule 14) leaving expired workspaces enabled
-  if (subscriptionStatus === "canceling" && currentPeriodEnd) {
-    const periodEndTimestamp = Date.parse(currentPeriodEnd);
-    if (Number.isFinite(periodEndTimestamp) && periodEndTimestamp < Date.now()) {
-      hasActiveStatus = false;
-    }
+  if (subscriptionStatus && CANCELLATION_STATUSES.has(subscriptionStatus)) {
+    // A scheduled cancellation without an end timestamp remains active to
+    // preserve backwards compatibility with older billing records. Once an
+    // explicit end is known, it is the hard entitlement boundary.
+    hasActiveStatus = accessEnd ? hasFutureAccessWindow : subscriptionStatus === "canceling";
   }
 
   const isPro = isPaidTier && hasActiveStatus;
-  const isCanceling = isPaidTier && subscriptionStatus === "canceling" && hasActiveStatus;
+  const isCanceling =
+    isPaidTier &&
+    Boolean(subscriptionStatus && CANCELLATION_STATUSES.has(subscriptionStatus)) &&
+    hasActiveStatus;
   const isFreeAccess = !isPro;
 
   const isPastDue = isPaidTier && subscriptionStatus === "past_due";
-  const currentPeriodEndLabel = formatBillingDate(currentPeriodEnd);
+  const currentPeriodEndLabel = formatBillingDate(accessEnd);
 
   const billingLabel = isCanceling
       ? planTier === "enterprise" ? "Enterprise" : "Pro"

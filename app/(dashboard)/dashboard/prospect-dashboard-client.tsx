@@ -53,11 +53,13 @@ import {
   type LeadFeedbackValue,
   type QualifiedLeadView,
   type ServiceProfileView,
+  type WebsiteCrawlCooldownView,
 } from "./prospect-types";
 
 type ProspectDashboardClientProps = {
   serviceProfile: ServiceProfileView;
   crawlJob: CrawlJobView | null;
+  websiteCrawlCooldown: WebsiteCrawlCooldownView;
   leads: QualifiedLeadView[];
   discoveryCandidates: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
@@ -99,6 +101,20 @@ function formatTime(value: Date | null) {
     hour: "numeric",
     minute: "2-digit",
   }).format(value);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return null;
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function normalizedStatus(value: string | null | undefined) {
@@ -1182,120 +1198,132 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
         : isFailed
           ? "The scan could not complete. Review the matching brief and source configuration before trying again."
         : "No conversations reached Ready to act in this completed scan.";
+  const statusLabel = isPartial
+    ? "Partial"
+    : isSkipped
+      ? "Skipped"
+      : isFailed
+        ? "Needs attention"
+        : "Complete";
+  const compactStats = [
+    summary.totalHits !== null ? `${summary.totalHits} collected` : null,
+    summary.plausibleHits !== null ? `${summary.plausibleHits} reviewed` : null,
+    summary.sourceFailures && summary.sourceFailures > 0
+      ? `${summary.sourceFailures} unavailable`
+      : null,
+  ].filter((value): value is string => Boolean(value));
 
   return (
     <Card className="rounded-lg shadow-sm" style={{ borderColor: C.blueLight }}>
-      <CardContent className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold" style={{ color: C.navy }}>
-            {title}
-          </p>
-          <p className="text-xs leading-5" style={{ color: C.navySoft }}>
-            {detail}
-          </p>
-        </div>
-        {completedAt ? (
+      <CardContent className="px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span
+              className="flex size-7 shrink-0 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : C.greenPale,
+                color: isFailed ? C.red : isPartial ? C.amber : C.green,
+              }}
+              aria-hidden="true"
+            >
+              {isFailed || isPartial ? <AlertCircle className="size-3.5" /> : <Check className="size-3.5" />}
+            </span>
+            <p className="truncate text-xs font-semibold" style={{ color: C.navy }}>
+              {title}
+            </p>
+          </div>
+          {compactStats.length > 0 ? (
+            <p className="hidden text-[11px] sm:block" style={{ color: C.navySoft }}>
+              {compactStats.join(" · ")}
+            </p>
+          ) : null}
           <Badge
             variant="outline"
-            className="rounded-md text-[10px]"
+            className="rounded-full px-2 py-0.5 text-[10px]"
             style={{
-              borderColor: C.blueLight,
-              backgroundColor: C.blueTint,
-              color: C.blue,
+              borderColor: isFailed ? C.red : isPartial ? C.amber : C.blueLight,
+              backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : C.blueTint,
+              color: isFailed ? C.red : isPartial ? C.amber : C.blue,
             }}
           >
-            {isPartial
-              ? "Partial"
-              : isSkipped
-                ? "Skipped"
-                : isFailed
-                  ? "Failed"
-                  : "Completed"} {completedAt}
+            {statusLabel}{completedAt ? ` · ${completedAt}` : ""}
           </Badge>
-        ) : null}
+        </div>
 
-        {summary.totalHits === 0 ? (
-          <p className="w-full text-xs leading-5" style={{ color: C.navySoft }}>
-            This scan returned no public items for the current brief and time window. No speculative leads were created; refine the buyer-language phrases or try the next scan window.
-          </p>
-        ) : null}
+        <details className="group mt-1.5">
+          <summary
+            className="cursor-pointer select-none text-[11px] font-semibold marker:hidden"
+            style={{ color: C.blue }}
+          >
+            <span className="group-open:hidden">View scan details</span>
+            <span className="hidden group-open:inline">Hide scan details</span>
+          </summary>
+          <div className="mt-2 space-y-2 border-t pt-2" style={{ borderColor: C.rule }}>
+            <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+              {detail}
+            </p>
 
-        {sourcesWithSignalOrFailure.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-bold uppercase" style={{ color: C.muted }}>
-              Sources
-            </span>
-            {sourcesWithSignalOrFailure.map((source) => (
-              <Badge
-                key={source.source}
-                variant="outline"
-                className="rounded-md px-1.5 py-0 text-[10px]"
-                style={{
-                  borderColor: source.failed ? C.red : C.ruleDark,
-                  backgroundColor: source.failed ? C.redPale : C.white,
-                  color: source.failed ? C.red : C.navySoft,
-                }}
-              >
-                {sourceDisplayName(source.source)}
-                {source.itemCount !== null ? ` ${source.itemCount}` : ""}
-                {source.failed ? " unavailable" : ""}
-              </Badge>
-            ))}
-            {zeroResultSourceCount > 0 ? (
-              <span className="text-[10px]" style={{ color: C.muted }}>
-                +{zeroResultSourceCount} with no relevant results
-              </span>
+            {summary.totalHits === 0 ? (
+              <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+                No public items matched this brief and time window. Refine the buyer-language phrases before the next daily scan.
+              </p>
             ) : null}
+
+            {sourcesWithSignalOrFailure.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {sourcesWithSignalOrFailure.map((source) => (
+                  <Badge
+                    key={source.source}
+                    variant="outline"
+                    className="rounded-md px-1.5 py-0 text-[10px]"
+                    style={{
+                      borderColor: source.failed ? C.red : C.ruleDark,
+                      backgroundColor: source.failed ? C.redPale : C.white,
+                      color: source.failed ? C.red : C.navySoft,
+                    }}
+                  >
+                    {sourceDisplayName(source.source)}
+                    {source.itemCount !== null ? ` ${source.itemCount}` : ""}
+                    {source.failed ? " unavailable" : ""}
+                  </Badge>
+                ))}
+                {zeroResultSourceCount > 0 ? (
+                  <span className="text-[10px]" style={{ color: C.muted }}>
+                    +{zeroResultSourceCount} with no relevant results
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {summary.xFallback ? (
+              <p className="text-[11px]" style={{ color: C.muted }}>
+                X fallback
+                {summary.xFallback.outcome
+                  ? `: ${humanizeRunValue(summary.xFallback.outcome)}`
+                  : ""}
+                {summary.xFallback.reason
+                  ? ` (${humanizeRunValue(summary.xFallback.reason)})`
+                  : ""}
+              </p>
+            ) : null}
+
+            {summary.caveat ? (
+              <p className="text-[10px] leading-4" style={{ color: C.muted }}>
+                {summary.caveat}
+              </p>
+            ) : null}
+
+            <Button
+              asChild
+              size="xs"
+              variant="outline"
+              className="h-7 px-2 text-[10px]"
+              style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+            >
+              <Link href="/dashboard/brief">Improve brief</Link>
+            </Button>
           </div>
-        ) : null}
-
-        {summary.totalHits !== null ||
-        summary.plausibleHits !== null ||
-        summary.sourceFailures !== null ? (
-          <div className="flex flex-wrap gap-x-2 text-xs" style={{ color: C.navySoft }}>
-            {summary.totalHits !== null ? (
-              <span>{summary.totalHits} items returned</span>
-            ) : null}
-            {summary.plausibleHits !== null ? (
-              <span>{summary.plausibleHits} plausible signals reviewed</span>
-            ) : null}
-            {summary.sourceFailures !== null && summary.sourceFailures > 0 ? (
-              <span>{summary.sourceFailures} source{summary.sourceFailures === 1 ? "" : "s"} unavailable</span>
-            ) : null}
-          </div>
-        ) : null}
-
-        {summary.xFallback ? (
-          <p className="text-xs" style={{ color: C.muted }}>
-            X fallback
-            {summary.xFallback.outcome
-              ? `: ${humanizeRunValue(summary.xFallback.outcome)}`
-              : ""}
-            {summary.xFallback.reason
-              ? ` (${humanizeRunValue(summary.xFallback.reason)})`
-              : ""}
-          </p>
-        ) : null}
-
-        {summary.caveat ? (
-          <p className="w-full text-[10px] leading-4" style={{ color: C.muted }}>
-            {summary.caveat}
-          </p>
-        ) : null}
-
-        <Button
-          asChild
-          size="xs"
-          variant="outline"
-          className="h-6 px-2 text-[10px]"
-          style={{
-            borderColor: C.blueLight,
-            backgroundColor: C.white,
-            color: C.blue,
-          }}
-        >
-          <a href="/settings">Review brief</a>
-        </Button>
+        </details>
       </CardContent>
     </Card>
   );
@@ -1960,16 +1988,97 @@ function WarmUpState({
 function DiscoverySourceBar({
   serviceProfile,
   status,
+  websiteCrawlCooldown,
 }: {
   serviceProfile: ServiceProfileView;
   status: ReturnType<typeof pipelineStatus>;
+  websiteCrawlCooldown: WebsiteCrawlCooldownView;
 }) {
   const domain = sourceDomain(serviceProfile.websiteUrl);
   const isReady = status.label === "Latest scan complete";
+  const router = useRouter();
+  const [websiteUrl, setWebsiteUrl] = useState(serviceProfile.websiteUrl ?? "");
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [localNextAvailableAt, setLocalNextAvailableAt] = useState<string | null>(
+    websiteCrawlCooldown.nextAvailableAt,
+  );
+  const [isSubmitting, startSubmitting] = useTransition();
+  const nextAvailableAt = localNextAvailableAt ?? websiteCrawlCooldown.nextAvailableAt;
+  const nextAvailableLabel = formatDateTime(nextAvailableAt);
+  const isCoolingDown = Boolean(nextAvailableAt && Date.parse(nextAvailableAt) > Date.now());
+
+  useEffect(() => {
+    setWebsiteUrl(serviceProfile.websiteUrl ?? "");
+  }, [serviceProfile.websiteUrl]);
+
+  useEffect(() => {
+    setLocalNextAvailableAt(websiteCrawlCooldown.nextAvailableAt);
+  }, [websiteCrawlCooldown.nextAvailableAt]);
+
+  const submitWebsite = () => {
+    let normalizedWebsiteUrl: string;
+    try {
+      const candidate = /^https?:\/\//i.test(websiteUrl.trim())
+        ? websiteUrl.trim()
+        : `https://${websiteUrl.trim()}`;
+      const parsed = new URL(candidate);
+      if (!parsed.hostname || !["http:", "https:"].includes(parsed.protocol)) {
+        throw new Error("Enter a valid website URL.");
+      }
+      parsed.hash = "";
+      normalizedWebsiteUrl = parsed.toString();
+    } catch {
+      setMessage({ ok: false, text: "Enter a valid HTTP(S) website URL." });
+      return;
+    }
+
+    setMessage(null);
+    startSubmitting(async () => {
+      try {
+        const response = await fetch("/api/settings/workspace", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ websiteUrl: normalizedWebsiteUrl }),
+        });
+        const payload = (await response.json().catch(() => null)) as {
+          success?: boolean;
+          scanStarted?: boolean;
+          error?: string;
+          message?: string;
+        } | null;
+        const wasAccepted =
+          response.ok && payload?.success === true && payload?.scanStarted !== false;
+
+        if (!wasAccepted) {
+          setMessage({
+            ok: false,
+            text:
+              payload?.error ??
+              payload?.message ??
+              "We could not queue a fresh website scan. Please try again later.",
+          });
+          return;
+        }
+
+        const nextScan = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        setLocalNextAvailableAt(nextScan);
+        setMessage({
+          ok: true,
+          text: "Website saved. Your fresh scan is queued and the next one unlocks tomorrow.",
+        });
+        router.refresh();
+      } catch {
+        setMessage({
+          ok: false,
+          text: "We could not reach workspace settings. Please try again.",
+        });
+      }
+    });
+  };
 
   return (
     <section
-      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 shadow-sm"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border bg-white px-3 py-2.5 shadow-sm"
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
@@ -1988,6 +2097,33 @@ function DiscoverySourceBar({
             {domain ?? "Website needed"}
           </p>
         </div>
+      </div>
+      <div className="flex min-w-[min(100%,19rem)] flex-1 items-center gap-2 sm:min-w-[22rem]">
+        <label htmlFor="dashboard-website-url" className="sr-only">
+          Website to scan
+        </label>
+        <input
+          id="dashboard-website-url"
+          type="url"
+          inputMode="url"
+          autoComplete="url"
+          value={websiteUrl}
+          disabled={isSubmitting || isCoolingDown}
+          onChange={(event) => setWebsiteUrl(event.target.value)}
+          className="h-8 min-w-0 flex-1 rounded-md border bg-white px-2.5 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF] disabled:cursor-not-allowed disabled:opacity-70"
+          style={{ borderColor: C.ruleDark, color: C.navy }}
+          placeholder="https://yourcompany.com"
+        />
+        <Button
+          type="button"
+          size="xs"
+          disabled={isSubmitting || isCoolingDown}
+          onClick={submitWebsite}
+          className="h-8 shrink-0 px-2.5 text-[11px]"
+          style={{ backgroundColor: C.blue, color: C.white }}
+        >
+          {isSubmitting ? "Queueing…" : "Save & scan"}
+        </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span
@@ -2010,6 +2146,25 @@ function DiscoverySourceBar({
           <Link href="/dashboard/brief">Edit matching brief</Link>
         </Button>
       </div>
+      <div className="w-full border-t pt-2" style={{ borderColor: C.rule }}>
+        {message ? (
+          <p
+            className="text-[11px] leading-4"
+            role={message.ok ? "status" : "alert"}
+            style={{ color: message.ok ? C.green : C.red }}
+          >
+            {message.text}
+          </p>
+        ) : isCoolingDown ? (
+          <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
+            Your next fresh scan is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}. Daily scans keep the brief current; repeated scans of the same pages can add noise without improving matches.
+          </p>
+        ) : (
+          <p className="text-[11px] leading-4" style={{ color: C.muted }}>
+            Use a fresh scan once a day when your site meaningfully changes. It keeps matching quality high and avoids duplicate page evidence.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -2017,6 +2172,7 @@ function DiscoverySourceBar({
 export default function ProspectDashboardClient({
   serviceProfile,
   crawlJob,
+  websiteCrawlCooldown,
   leads,
   discoveryCandidates,
   buyerDemandReport,
@@ -2282,7 +2438,11 @@ export default function ProspectDashboardClient({
         </div>
       </header>
 
-      <DiscoverySourceBar serviceProfile={serviceProfile} status={status} />
+      <DiscoverySourceBar
+        serviceProfile={serviceProfile}
+        status={status}
+        websiteCrawlCooldown={websiteCrawlCooldown}
+      />
 
       {buyerDemandReport?.isTerminal && queueItems.length === 0 ? (
         <CompletedDiscoveryReport report={buyerDemandReport} />

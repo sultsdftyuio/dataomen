@@ -23,6 +23,26 @@ type TriggerResult = {
   reason: string | null;
 };
 
+async function triggerFailureReason(response: Response) {
+  const body = await response.text().catch(() => "");
+  if (!body) return null;
+
+  try {
+    const payload = JSON.parse(body) as {
+      error?: unknown;
+      message?: unknown;
+      detail?: unknown;
+    };
+    for (const value of [payload.error, payload.message, payload.detail]) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  } catch {
+    // Fall through to the bounded raw response below.
+  }
+
+  return body.trim().slice(0, 500) || null;
+}
+
 function crawlTriggerEndpoint() {
   const explicit = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
   if (explicit) return explicit;
@@ -129,17 +149,18 @@ async function postCrawlTrigger(
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      const reason = await triggerFailureReason(response);
       console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
         event: "workspace_crawl_trigger_failed",
         tenant_id: tenantId,
         website_url: websiteUrl,
         status: response.status,
-        body: body.slice(0, 500),
+        body: reason,
       });
       return {
         accepted: false,
-        reason: `the crawl worker returned HTTP ${response.status}`,
+        reason:
+          reason ?? `the crawl worker returned HTTP ${response.status}`,
       };
     }
 

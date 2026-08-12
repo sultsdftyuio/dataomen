@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 const ACTIVE_STATUSES = ["pending", "processing"] as const;
 const TERMINAL_STATUSES = ["completed", "failed", "dead_lettered"] as const;
+const WEBSITE_CRAWL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 type DbRecord = Record<string, Json>;
 type QueryResult<T> = { data: T | null; error: unknown };
@@ -17,6 +18,11 @@ type CrawlJobRow = {
   id: string;
   status: string | null;
   message_id: string | null;
+};
+
+type CrawlCooldownRow = {
+  id: string;
+  queued_at: string | null;
 };
 
 const TriggerSchema = z.object({
@@ -184,6 +190,29 @@ async function findActiveJob(
 
   if (result.error) throw result.error;
   return result.data;
+}
+
+async function findWebsiteCrawlCooldown(
+  supabase: ReturnType<typeof db>,
+  tenantId: string,
+) {
+  const result = (await supabase
+    .from("crawl_jobs")
+    .select("id,queued_at")
+    .eq("tenant_id", tenantId)
+    .order("queued_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()) as QueryResult<CrawlCooldownRow>;
+
+  if (result.error) throw result.error;
+  const queuedAt = result.data?.queued_at;
+  const queuedTimestamp = queuedAt ? Date.parse(queuedAt) : Number.NaN;
+  if (!Number.isFinite(queuedTimestamp)) return null;
+
+  const nextAvailableTimestamp = queuedTimestamp + WEBSITE_CRAWL_COOLDOWN_MS;
+  return nextAvailableTimestamp > Date.now()
+    ? new Date(nextAvailableTimestamp).toISOString()
+    : null;
 }
 
 async function createPendingJob(
@@ -415,6 +444,18 @@ function accepted(
   );
 }
 
+function websiteCrawlRateLimited(nextAvailableAt: string) {
+  return jsonResponse(
+    {
+      error:
+        "Website scans are available once every 24 hours to keep matching quality high.",
+      code: "website_crawl_daily_limit",
+      next_available_at: nextAvailableAt,
+    },
+    { status: 429 },
+  );
+}
+
 export async function POST(request: Request) {
   const authError = verifyInternalRequest(request);
   if (authError) return authError;
@@ -461,6 +502,12 @@ export async function POST(request: Request) {
     if (activeJob) {
       return accepted(parsed.data.tenant_id, websiteUrl, activeJob, true);
     }
+
+    const nextAvailableAt = await findWebsiteCrawlCooldown(
+      supabase,
+      parsed.data.tenant_id,
+    );
+    if (nextAvailableAt) return websiteCrawlRateLimited(nextAvailableAt);
 
     const { job, created } = await createPendingJob(
       supabase,

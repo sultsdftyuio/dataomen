@@ -9,6 +9,7 @@ import {
   fetchQualifiedLeads,
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
+  fetchWebsiteCrawlCooldown,
   isBuyerDemandReportCurrent,
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
@@ -66,10 +67,11 @@ export default async function DashboardPage() {
     redirect("/onboarding/workspace");
   }
 
-  const [serviceProfile, crawlJob, entitlements] = await Promise.all([
+  const [serviceProfile, crawlJob, entitlements, websiteCrawlCooldown] = await Promise.all([
     fetchServiceProfile(supabase, tenantId, websiteUrl),
     fetchLatestCrawlJob(supabase, tenantId, websiteUrl),
     getWorkspaceEntitlements(supabase, tenantId),
+    fetchWebsiteCrawlCooldown(supabase, tenantId),
   ]);
   const buyerDemandReport = await fetchBuyerDemandReport(
     supabase,
@@ -126,6 +128,7 @@ export default async function DashboardPage() {
     <ProspectDashboardClient
       serviceProfile={serviceProfile}
       crawlJob={crawlJob}
+      websiteCrawlCooldown={websiteCrawlCooldown}
       leads={leads}
       discoveryCandidates={discoveryCandidates}
       buyerDemandReport={buyerDemandReport}

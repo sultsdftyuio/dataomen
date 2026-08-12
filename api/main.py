@@ -624,10 +624,39 @@ def trigger_crawl(
     Accept a trusted frontend handoff and enqueue the slow crawl asynchronously.
     The crawl itself must run only inside the Dramatiq worker.
     """
-    from api.services.crawling import _database_engine, _upsert_service_profile, enqueue_crawl_job
+    from api.services.crawling import (
+        _database_engine,
+        _upsert_service_profile,
+        enqueue_crawl_job,
+        reserve_website_crawl_slot,
+    )
 
     started_at = time.monotonic()
     _validate_internal_tenant_scope(tenant_id=payload.tenant_id)
+
+    with _database_engine().begin() as conn:
+        next_available_at = reserve_website_crawl_slot(
+            conn,
+            tenant_id=payload.tenant_id,
+            crawl_job_id=job_id,
+            website_url=payload.website_url,
+            source=payload.source,
+        )
+    if next_available_at:
+        logger.info(
+            "crawl_job_rate_limited tenant_id=%s job_id=%s website_url=%s next_available_at=%s",
+            payload.tenant_id,
+            job_id,
+            payload.website_url,
+            next_available_at,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                "Website scans are available once every 24 hours to keep matching "
+                f"quality high. Your next fresh scan is available after {next_available_at}."
+            ),
+        )
 
     logger.info(
         "crawl_job_trigger_received tenant_id=%s job_id=%s website_url=%s source=%s requested_by=%s",

@@ -76,6 +76,20 @@ async function verifyEntitlementStates() {
     "tenant-expired-cancellation",
   );
   assert.equal(expiredCancellation.isPro, false, "expired cancellations must be locked");
+
+  const finalCancellationBeforePeriodEnd = await getWorkspaceEntitlements(
+    createSupabaseMock({
+      planTier: "pro",
+      subscriptionStatus: "canceled",
+      currentPeriodEnd: new Date(Date.now() + 60_000).toISOString(),
+    }) as any,
+    "tenant-final-cancellation-before-period-end",
+  );
+  assert.equal(
+    finalCancellationBeforePeriodEnd.isPro,
+    true,
+    "a final cancellation event must not revoke Pro before the paid period ends",
+  );
 }
 
 async function verifyFreeDomainLimit() {

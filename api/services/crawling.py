@@ -31,6 +31,7 @@ DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
+DEFAULT_WEBSITE_CRAWL_COOLDOWN_SECONDS = 24 * 60 * 60
 # v9 permits genuine demand-acquisition language (for example, leads and sales
 # pipeline) while continuing to reject Arcli's own retrieval mechanics.
 PROFILE_EXTRACTION_CACHE_VERSION = "discovery-intent-v9"
@@ -199,6 +200,100 @@ def _table_exists(conn: Connection, table_name: str) -> bool:
             {"table_name": table_name},
         ).scalar_one()
     )
+
+
+def reserve_website_crawl_slot(
+    conn: Connection,
+    *,
+    tenant_id: str,
+    crawl_job_id: str,
+    website_url: str,
+    source: str | None = None,
+) -> str | None:
+    """Reserve the tenant's one fresh website scan per 24 hours.
+
+    A row lock on the tenant makes this atomic across dashboard, onboarding,
+    and direct internal-worker handoffs. The guard is tenant-wide, so changing
+    the URL cannot be used to bypass the cooldown.
+    """
+
+    if not _table_exists(conn, "crawl_jobs"):
+        # Older local environments may not have the crawl reliability ledger.
+        # Production deployments must apply that ledger for job tracking.
+        return None
+
+    cooldown_seconds = _env_int(
+        "ARCLI_WEBSITE_CRAWL_COOLDOWN_SECONDS",
+        DEFAULT_WEBSITE_CRAWL_COOLDOWN_SECONDS,
+    )
+    conn.execute(
+        text(
+            """
+            SELECT tenant_id
+              FROM public.tenants
+             WHERE tenant_id = :tenant_id
+             FOR UPDATE
+            """
+        ),
+        {"tenant_id": tenant_id},
+    ).first()
+
+    recent = conn.execute(
+        text(
+            """
+            SELECT id,
+                   status,
+                   queued_at + (:cooldown_seconds * interval '1 second')
+                       AS next_available_at
+             FROM public.crawl_jobs
+             WHERE tenant_id = :tenant_id
+               AND queued_at > (
+                   CURRENT_TIMESTAMP - (:cooldown_seconds * interval '1 second')
+               )
+             ORDER BY queued_at DESC
+             LIMIT 1
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "cooldown_seconds": cooldown_seconds,
+        },
+    ).mappings().first()
+
+    if recent:
+        # The Next.js relay records a pending job before forwarding to this
+        # worker. Let that exact in-flight job continue; any terminal or
+        # different job is a new scan and must respect the daily cooldown.
+        if (
+            str(recent.get("id") or "") == crawl_job_id
+            and str(recent.get("status") or "").lower() in CRAWL_JOB_ACTIVE_STATUSES
+        ):
+            return None
+
+        next_available_at = recent.get("next_available_at")
+        if isinstance(next_available_at, datetime):
+            if next_available_at.tzinfo is None:
+                next_available_at = next_available_at.replace(tzinfo=timezone.utc)
+            return next_available_at.astimezone(timezone.utc).isoformat()
+        return datetime.now(timezone.utc).replace(
+            microsecond=0
+        ).isoformat()
+
+    # Record the accepted request before the fast profile pass so concurrent
+    # requests cannot spend crawler/model capacity before the guard applies.
+    _upsert_crawl_job(
+        conn,
+        crawl_job_id=crawl_job_id,
+        tenant_id=tenant_id,
+        website_url=website_url,
+        status="pending",
+        phase="queued",
+        context={
+            "source": source or "crawl_trigger",
+            "website_crawl_cooldown_reserved": True,
+        },
+    )
+    return None
 
 
 def _crawl_job_row(

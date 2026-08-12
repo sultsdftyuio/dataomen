@@ -10,6 +10,10 @@ import {
   type ServiceProfileSettingsInput,
 } from "@/lib/settings/schemas";
 import { freePlanDomainChangeError } from "@/lib/plan-limits";
+import {
+  getWebsiteCrawlCooldown,
+  websiteCrawlCooldownMessage,
+} from "@/lib/website-crawl-cooldown";
 import type { Database, Json } from "@/types/supabase";
 
 type TenantSettingsUpdate =
@@ -556,6 +560,16 @@ export async function handleWorkspaceUpdate(req: Request) {
       );
       if (websiteLimitError) {
         return jsonError(websiteLimitError, 403, "free_plan_domain_limit");
+      }
+
+      const crawlCooldown = await getWebsiteCrawlCooldown(supabase, tenantId);
+      if (crawlCooldown.nextAvailableAt) {
+        return jsonError(
+          websiteCrawlCooldownMessage(crawlCooldown.nextAvailableAt),
+          429,
+          "website_crawl_daily_limit",
+          { nextAvailableAt: crawlCooldown.nextAvailableAt },
+        );
       }
     }
 

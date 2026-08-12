@@ -10,6 +10,10 @@ import {
 } from "@/lib/discovery-queries";
 import { PRO_PLAN_REQUIRED_MESSAGE, requireProEntitlement } from "@/lib/entitlements";
 import { freePlanDomainChangeError } from "@/lib/plan-limits";
+import {
+  getWebsiteCrawlCooldown,
+  websiteCrawlCooldownMessage,
+} from "@/lib/website-crawl-cooldown";
 import type { Json } from "@/types/supabase";
 import { resolveTenantContext, type TenantContext } from "@/utils/supabase/tenant";
 import {
@@ -472,15 +476,29 @@ async function postCrawlerTrigger(
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
+      let reason: string | null = null;
+      try {
+        const payload = JSON.parse(text) as {
+          error?: unknown;
+          message?: unknown;
+          detail?: unknown;
+        };
+        for (const value of [payload.error, payload.message, payload.detail]) {
+          if (typeof value === "string" && value.trim()) {
+            reason = value.trim();
+            break;
+          }
+        }
+      } catch {
+        reason = text.trim() || null;
+      }
       console.warn("[ProspectDashboard] crawler trigger endpoint failed", {
         tenant_id: context.tenantId,
         website_url: websiteUrl,
         status: response.status,
-        body: text.slice(0, 500),
+        body: (reason ?? text).slice(0, 500),
       });
-      return actionError(
-        `Crawler queue rejected the request with HTTP ${response.status}.`,
-      );
+      return actionError(reason ?? `Crawler queue rejected the request with HTTP ${response.status}.`);
     }
 
     const payload = (await response.json().catch(() => null)) as
@@ -946,6 +964,14 @@ export async function submitWebsiteForCrawl(
   }
 
   try {
+    const crawlCooldown = await getWebsiteCrawlCooldown(
+      context.supabase,
+      context.tenantId,
+    );
+    if (crawlCooldown.nextAvailableAt) {
+      return actionError(websiteCrawlCooldownMessage(crawlCooldown.nextAvailableAt));
+    }
+
     await persistWebsiteUrl(context, websiteUrl);
 
     const triggerResult = await postCrawlerTrigger(
