@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import api.main as main
+import api.services.crawling as crawling
 import pytest
 from fastapi import HTTPException
 
@@ -78,3 +79,31 @@ def test_daily_crawl_cooldown_stops_work_before_the_fast_profile_pass() -> None:
     assert error.value.status_code == 429
     assert "once every 24 hours" in str(error.value.detail)
     extract_profile.assert_not_called()
+
+
+class _NoRecentCrawlConnection:
+    def execute(self, *_args, **_kwargs):
+        return self
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return None
+
+
+def test_daily_recheck_resets_the_previous_queue_message_before_reenqueueing() -> None:
+    """A terminal URL row is reused, so it cannot retain its old message ID."""
+    with (
+        patch("api.services.crawling._table_exists", return_value=True),
+        patch("api.services.crawling._upsert_crawl_job") as upsert,
+    ):
+        next_available_at = crawling.reserve_website_crawl_slot(
+            _NoRecentCrawlConnection(),
+            tenant_id="ff2a2bd0-7379-4a0e-a47e-3f430998d079",
+            crawl_job_id="crawl-job-id",
+            website_url="https://example.com/",
+        )
+
+    assert next_available_at is None
+    assert upsert.call_args.kwargs["restart_queue"] is True

@@ -2122,7 +2122,11 @@ function DiscoverySourceBar({
           className="h-8 shrink-0 px-2.5 text-[11px]"
           style={{ backgroundColor: C.blue, color: C.white }}
         >
-          {isSubmitting ? "Queueing…" : "Save & scan"}
+          {isSubmitting
+            ? "Queueing…"
+            : serviceProfile.websiteUrl
+              ? "Check new leads"
+              : "Save & scan"}
         </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -2157,11 +2161,11 @@ function DiscoverySourceBar({
           </p>
         ) : isCoolingDown ? (
           <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
-            Your next fresh scan is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}. Daily scans keep the brief current; repeated scans of the same pages can add noise without improving matches.
+            Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}. It uses your current brief to look for newly posted conversations, while avoiding duplicate searches.
           </p>
         ) : (
           <p className="text-[11px] leading-4" style={{ color: C.muted }}>
-            Use a fresh scan once a day when your site meaningfully changes. It keeps matching quality high and avoids duplicate page evidence.
+            Check once a day for new public conversations that match this website. We reuse your current brief and avoid duplicate results.
           </p>
         )}
       </div>

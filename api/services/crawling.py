@@ -292,6 +292,7 @@ def reserve_website_crawl_slot(
             "source": source or "crawl_trigger",
             "website_crawl_cooldown_reserved": True,
         },
+        restart_queue=True,
     )
     return None
 
@@ -450,6 +451,7 @@ def _upsert_crawl_job(
     error_type: str | None = None,
     error_message: str | None = None,
     context: dict[str, Any] | None = None,
+    restart_queue: bool = False,
 ) -> str | None:
     if not _table_exists(conn, "crawl_jobs"):
         return None
@@ -494,21 +496,39 @@ def _upsert_crawl_job(
                SET website_url = EXCLUDED.website_url,
                    status = EXCLUDED.status,
                    phase = EXCLUDED.phase,
-                   message_id = COALESCE(EXCLUDED.message_id, public.crawl_jobs.message_id),
+                   -- A completed URL keeps the same ledger row. A new daily
+                   -- check must not inherit its old broker message, or the
+                   -- enqueue step mistakes that completed work for an active
+                   -- queue signal and never publishes a fresh message.
+                   message_id = CASE
+                       WHEN :restart_queue THEN NULL
+                       ELSE COALESCE(EXCLUDED.message_id, public.crawl_jobs.message_id)
+                   END,
                    failure_reason = EXCLUDED.failure_reason,
                    error_type = EXCLUDED.error_type,
                    error_message = EXCLUDED.error_message,
                    error_context = EXCLUDED.error_context,
+                   queued_at = CASE
+                       WHEN :restart_queue THEN CAST(:now AS timestamptz)
+                       ELSE public.crawl_jobs.queued_at
+                   END,
+                   started_at = CASE
+                       WHEN :restart_queue THEN NULL
+                       ELSE public.crawl_jobs.started_at
+                   END,
                    last_heartbeat_at = CAST(:now AS timestamptz),
                    completed_at = CASE
+                       WHEN :restart_queue THEN NULL
                        WHEN EXCLUDED.status = 'completed' THEN CAST(:now AS timestamptz)
                        ELSE public.crawl_jobs.completed_at
                    END,
                    failed_at = CASE
+                       WHEN :restart_queue THEN NULL
                        WHEN EXCLUDED.status = 'failed' THEN CAST(:now AS timestamptz)
                        ELSE public.crawl_jobs.failed_at
                    END,
                    dead_lettered_at = CASE
+                       WHEN :restart_queue THEN NULL
                        WHEN EXCLUDED.status = 'dead_lettered' THEN CAST(:now AS timestamptz)
                        ELSE public.crawl_jobs.dead_lettered_at
                    END,
@@ -529,6 +549,7 @@ def _upsert_crawl_job(
             "error_message": error_message,
             "error_context": json.dumps(context or {}),
             "now": now,
+            "restart_queue": restart_queue,
         },
     ).first()
     return str(row[0]) if row else None
