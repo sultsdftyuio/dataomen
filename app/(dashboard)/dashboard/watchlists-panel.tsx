@@ -43,12 +43,9 @@ const SOURCE_OPTIONS = [
   { value: "lemmy", label: "Lemmy", detail: "Independent public communities" },
   { value: "stackexchange", label: "Stack Exchange", detail: "Specific how-to problems" },
   { value: "github", label: "GitHub", detail: "Open-source issues and discussions" },
-  { value: "x", label: "X (fallback)", detail: "Used only as a cost-controlled fallback" },
 ] as const;
 
-const DEFAULT_SOURCES = SOURCE_OPTIONS.filter((source) => source.value !== "x").map(
-  (source) => source.value,
-);
+const DEFAULT_SOURCES = SOURCE_OPTIONS.map((source) => source.value);
 
 function splitLines(value: string) {
   const seen = new Set<string>();
@@ -71,7 +68,12 @@ function formatDate(value: string | null) {
 }
 
 function sourceLabel(value: string) {
+  if (value.trim().toLowerCase() === "x") return "Public conversation";
   return SOURCE_OPTIONS.find((source) => source.value === value)?.label ?? value;
+}
+
+function visibleSources(sources: string[]) {
+  return sources.filter((source) => source.trim().toLowerCase() !== "x");
 }
 
 function scanLabel(status: string | null) {
@@ -381,6 +383,7 @@ function WatchlistDetail({
   const reviewCount = result?.discoveryCandidates.length ?? 0;
   const signalCount = readyCount + reviewCount;
   const lastScan = formatDate(watchlist.lastScanAt);
+  const displayedSources = visibleSources(watchlist.sourcePreferences);
 
   useEffect(() => {
     setShowCoverage(false);
@@ -453,7 +456,7 @@ function WatchlistDetail({
                 Coverage
               </p>
               <p className="mt-1 text-xs" style={{ color: C.muted }}>
-                {watchlist.sourcePreferences.length} public {watchlist.sourcePreferences.length === 1 ? "source" : "sources"} enabled
+                {displayedSources.length} public {displayedSources.length === 1 ? "source" : "sources"} enabled
               </p>
             </div>
             <Button
@@ -469,7 +472,7 @@ function WatchlistDetail({
           </div>
           {showCoverage ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {watchlist.sourcePreferences.map((source) => (
+              {displayedSources.map((source) => (
                 <Badge key={source} variant="outline" className="h-5 rounded px-1.5 text-[10px]" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
                   {sourceLabel(source)}
                 </Badge>

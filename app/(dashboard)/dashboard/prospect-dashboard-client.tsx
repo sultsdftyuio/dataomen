@@ -1175,7 +1175,7 @@ function sourceDisplayName(source: string) {
     hn: "Hacker News",
     hackernews: "Hacker News",
     hacker_news: "Hacker News",
-    x: "X",
+    x: "Public conversation",
   };
 
   return knownNames[normalized] ?? humanizeRunValue(source);
@@ -1306,7 +1306,7 @@ function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView })
 
             {summary.xFallback ? (
               <p className="text-[11px]" style={{ color: C.muted }}>
-                X fallback
+                Additional coverage
                 {summary.xFallback.outcome
                   ? `: ${humanizeRunValue(summary.xFallback.outcome)}`
                   : ""}

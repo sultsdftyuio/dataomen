@@ -58,7 +58,9 @@ export default async function WatchlistsPage() {
   );
   const activeWatchlistCount = watchlists.filter((watchlist) => watchlist.isActive).length;
   const sourceCount = new Set(
-    watchlists.flatMap((watchlist) => watchlist.sourcePreferences),
+    watchlists.flatMap((watchlist) =>
+      watchlist.sourcePreferences.filter((source) => source.trim().toLowerCase() !== "x"),
+    ),
   ).size;
 
   return (
@@ -83,10 +85,6 @@ export default async function WatchlistsPage() {
                 <p className="mt-1 text-[10px] font-medium" style={{ color: C.muted }}>Sources picked</p>
               </div>
             </div>
-            <p className="mt-2 border-t pt-2 text-[10px] leading-4" style={{ borderColor: C.rule, color: C.muted }}>
-              New groups start with public sources. X remains an optional,
-              cost-controlled fallback.
-            </p>
           </div>
         }
       />
