@@ -296,7 +296,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
@@ -312,12 +312,16 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 1)
         self.assertIsNone(plan.x_skip_reason)
-        hn_send.assert_called_once()
-        queued_call = hn_send.call_args
+        fast_send.assert_called_once()
+        queued_call = fast_send.call_args
         self.assertEqual(queued_call.args[0], CANONICAL_DISCOVERY_QUERIES)
         self.assertEqual(queued_call.args[1:], (720, 50))
         self.assertEqual(queued_call.kwargs["tenant_id"], "tenant-1")
         self.assertEqual(queued_call.kwargs["service_profile_id"], "profile-1")
+        self.assertEqual(
+            queued_call.kwargs["enabled_sources"],
+            ["hackernews", "bluesky", "stackexchange", "github", "lemmy"],
+        )
         self.assertTrue(queued_call.kwargs["fallback_to_x"])
         self.assertTrue(queued_call.kwargs["x_fallback_group_id"])
         self.assertEqual(
@@ -344,7 +348,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
                 "api.services.social.discovery_telemetry.create_discovery_run",
                 return_value=run_id,
             ) as create_run,
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
 
@@ -354,7 +358,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             "profile-1",
             CANONICAL_DISCOVERY_QUERIES,
         )
-        self.assertEqual(hn_send.call_args.kwargs["discovery_run_id"], run_id)
+        self.assertEqual(fast_send.call_args.kwargs["discovery_run_id"], run_id)
 
     def test_x_only_activation_keeps_matching_context_when_telemetry_is_unavailable(self) -> None:
         """Observability rollout must not remove normal X job tenant context."""
@@ -494,7 +498,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
@@ -502,7 +506,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 0)
         self.assertEqual(plan.x_skip_reason, "x_bearer_token_not_configured")
-        self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
+        self.assertFalse(fast_send.call_args.kwargs["fallback_to_x"])
         x_send.assert_not_called()
 
     def test_disabled_x_source_is_not_queued(self) -> None:
@@ -522,7 +526,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
@@ -530,10 +534,10 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.hn_jobs, 1)
         self.assertEqual(plan.x_jobs, 0)
         self.assertEqual(plan.x_skip_reason, "x_ingestion_disabled")
-        hn_send.assert_called_once()
-        self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
+        fast_send.assert_called_once()
+        self.assertFalse(fast_send.call_args.kwargs["fallback_to_x"])
         self.assertEqual(
-            hn_send.call_args.args[0],
+            fast_send.call_args.args[0],
             CANONICAL_DISCOVERY_QUERIES,
         )
         x_send.assert_not_called()
@@ -551,7 +555,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=_profile_row()),
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = enqueue_initial_public_source_ingestion(
@@ -571,7 +575,7 @@ class InitialPublicSourceIngestionTests(unittest.TestCase):
         self.assertEqual(plan.additional_source_jobs, 0)
         self.assertEqual(plan.x_jobs, 0)
         self.assertEqual(plan.x_skip_reason, "x_not_selected_for_watchlist")
-        self.assertFalse(hn_send.call_args.kwargs["fallback_to_x"])
+        self.assertFalse(fast_send.call_args.kwargs["fallback_to_x"])
         x_send.assert_not_called()
 
 

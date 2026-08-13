@@ -304,7 +304,7 @@ export function isBuyerDemandReportCurrent(
   crawlJob: CrawlJobView | null,
   report: BuyerDemandReportView | null,
 ) {
-  if (!report?.isTerminal) return false;
+  if (!report) return false;
   if (!crawlJob?.updatedAt) return true;
 
   const crawlTimestamp = Date.parse(crawlJob.updatedAt);
@@ -1080,10 +1080,10 @@ function patternMatchFromRow(row: DbRecord): VerifierConfirmedPatternMatch | nul
 }
 
 /**
- * Fetch a terminal, tenant-owned discovery report when the optional
- * telemetry migration is present. This intentionally does not read run events
- * or source posts: the report is aggregate-only and all individual evidence
- * stays in the tenant-scoped action/watch queues above.
+ * Fetch the latest tenant-owned discovery run when the optional telemetry
+ * migration is present. A running Fast check is included so the dashboard can
+ * keep refreshing while sources finish; individual evidence remains in the
+ * tenant-scoped action/watch queues above.
  */
 export async function fetchBuyerDemandReport(
   supabase: SupabaseClient<Database>,
@@ -1106,8 +1106,8 @@ export async function fetchBuyerDemandReport(
       // never replace the opportunity scan that explains an empty action
       // queue, even though both runs use the same matching brief.
       .eq("run_kind", "opportunity_leads")
-      .in("status", ["completed", "partial", "skipped", "failed"])
-      .order("completed_at", { ascending: false })
+      .in("status", ["running", "completed", "partial", "skipped", "failed"])
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle<Record<string, Json>>();
 
@@ -1121,8 +1121,8 @@ export async function fetchBuyerDemandReport(
         .select("id,tenant_id,service_profile_id,status,summary,completed_at,updated_at")
         .eq("tenant_id", tenantId)
         .eq("service_profile_id", serviceProfileId)
-        .in("status", ["completed", "partial", "skipped", "failed"])
-        .order("completed_at", { ascending: false })
+        .in("status", ["running", "completed", "partial", "skipped", "failed"])
+        .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle<Record<string, Json>>();
     }

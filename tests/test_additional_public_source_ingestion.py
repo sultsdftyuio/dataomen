@@ -278,7 +278,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
                 "stackoverflow",
             )
 
-    def test_activation_queues_hn_first_then_the_four_free_sources(self) -> None:
+    def test_activation_queues_one_fast_check_for_all_free_sources(self) -> None:
         import api.services.social_ingestion as ingestion
         from api.workers import actors
 
@@ -291,8 +291,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
             patch.object(ingestion, "_service_profile_columns", return_value={}),
             patch.object(ingestion, "_load_service_profile", return_value=self._profile_row()),
-            patch.object(actors.ingest_hn_batch_job, "send") as hn_send,
-            patch.object(actors.ingest_additional_public_sources_batch_job, "send") as additional_send,
+            patch.object(actors.ingest_initial_public_sources_fast_job, "send") as fast_send,
             patch.object(actors.ingest_x_job, "send") as x_send,
         ):
             plan = ingestion.enqueue_initial_public_source_ingestion("tenant-1", "profile-1")
@@ -301,11 +300,10 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
         self.assertEqual(plan.additional_source_jobs, 1)
         self.assertEqual(plan.x_jobs, 1)
         self.assertEqual(
-            hn_send.call_args.kwargs["additional_sources"],
-            ["bluesky", "stackexchange", "github", "lemmy"],
+            fast_send.call_args.kwargs["enabled_sources"],
+            ["hackernews", "bluesky", "stackexchange", "github", "lemmy"],
         )
-        self.assertTrue(hn_send.call_args.kwargs["continue_to_additional_sources"])
-        additional_send.assert_not_called()
+        self.assertTrue(fast_send.call_args.kwargs["fallback_to_x"])
         x_send.assert_not_called()
 
     def test_hn_batch_defers_paid_fallback_until_additional_free_sources_finish(self) -> None:

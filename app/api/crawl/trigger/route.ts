@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { WEBSITE_CRAWL_COOLDOWN_MS } from "@/lib/website-crawl-cooldown";
 import type { Json } from "@/types/supabase";
 import { createServiceRoleClient } from "@/utils/supabase/server";
 
@@ -10,7 +11,6 @@ export const dynamic = "force-dynamic";
 
 const ACTIVE_STATUSES = ["pending", "processing"] as const;
 const TERMINAL_STATUSES = ["completed", "failed", "dead_lettered"] as const;
-const WEBSITE_CRAWL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 type DbRecord = Record<string, Json>;
 type QueryResult<T> = { data: T | null; error: unknown };
@@ -196,6 +196,8 @@ async function findWebsiteCrawlCooldown(
   supabase: ReturnType<typeof db>,
   tenantId: string,
 ) {
+  if (WEBSITE_CRAWL_COOLDOWN_MS === 0) return null;
+
   const result = (await supabase
     .from("crawl_jobs")
     .select("id,queued_at")

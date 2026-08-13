@@ -1,0 +1,150 @@
+"""Fast-check fan-out/fan-in coverage."""
+
+from __future__ import annotations
+
+import threading
+import unittest
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from api.services.social.fast_check import (
+    FastCheckQueryOutcome,
+    FastCheckSourceResult,
+    run_fast_public_source_check,
+)
+
+
+class FastPublicSourceCheckTests(unittest.TestCase):
+    def test_faster_source_is_reported_before_a_slow_source_finishes(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        hn_started = threading.Event()
+        release_hn = threading.Event()
+        completed_sources: list[str] = []
+
+        def slow_hn(**_kwargs: object):
+            hn_started.set()
+            self.assertTrue(release_hn.wait(timeout=2))
+            return SimpleNamespace(
+                hits_found=1,
+                plausible_hits=1,
+                inserted_count=1,
+                matchable_source_post_refs=[],
+                matchable_source_post_ids=[],
+            )
+
+        def fast_bluesky(**_kwargs: object):
+            self.assertTrue(hn_started.wait(timeout=2))
+            return SimpleNamespace(
+                hits_found=2,
+                plausible_hits=1,
+                inserted_count=1,
+                matchable_source_post_refs=[],
+            )
+
+        queries = [{"query_type": "buyer_pain", "phrase": "need more leads"}]
+        with (
+            patch.object(ingestion, "ingest_hn_posts", side_effect=slow_hn),
+            patch.object(
+                ingestion,
+                "additional_public_source_supports_discovery_query",
+                return_value=True,
+            ),
+            patch.object(ingestion, "additional_public_source_cache_scope", return_value=""),
+            patch.object(ingestion, "claim_additional_public_source_query", return_value=True),
+            patch.object(
+                ingestion,
+                "ingest_additional_public_source_posts",
+                side_effect=fast_bluesky,
+            ),
+            patch.object(ingestion, "_result_source_post_refs", return_value=[]),
+        ):
+            # Release the slow task only after the fast callback has arrived.
+            def on_complete(result: FastCheckSourceResult) -> None:
+                completed_sources.append(result.source)
+                if result.source == "bluesky":
+                    release_hn.set()
+
+            results = run_fast_public_source_check(
+                queries,
+                sources=["hackernews", "bluesky"],
+                since_hours_ago=24,
+                posts_per_query=10,
+                max_concurrency=2,
+                on_source_completed=on_complete,
+            )
+
+        self.assertEqual(completed_sources, ["bluesky", "hackernews"])
+        self.assertEqual({result.source for result in results}, {"bluesky", "hackernews"})
+
+    def test_parent_actor_completes_only_after_every_source_callback(self) -> None:
+        from api.workers import actors
+
+        first = FastCheckSourceResult(
+            source="hackernews",
+            query_outcomes=(
+                FastCheckQueryOutcome(
+                    source="hackernews",
+                    query_type="buyer_pain",
+                    query="need more leads",
+                    outcome="completed",
+                    hits_found=1,
+                    plausible_hits=1,
+                ),
+            ),
+        )
+        second = FastCheckSourceResult(
+            source="bluesky",
+            query_outcomes=(
+                FastCheckQueryOutcome(
+                    source="bluesky",
+                    query_type="buyer_pain",
+                    query="need more leads",
+                    outcome="completed",
+                    hits_found=2,
+                    plausible_hits=1,
+                ),
+            ),
+        )
+        complete_run = MagicMock()
+
+        def run_sources(*_args: object, **kwargs: object) -> list[FastCheckSourceResult]:
+            callback = kwargs["on_source_completed"]
+            callback(first)
+            self.assertEqual(complete_run.call_count, 0)
+            callback(second)
+            self.assertEqual(complete_run.call_count, 0)
+            return [first, second]
+
+        with (
+            patch(
+                "api.services.social.fast_check.run_fast_public_source_check",
+                side_effect=run_sources,
+            ),
+            patch("api.services.social_ingestion.trigger_embedding_jobs", return_value=0),
+            patch.object(actors, "_complete_discovery_run", complete_run),
+            patch.object(actors, "_record_discovery_event"),
+            patch.object(actors, "_close_actor_openai_clients"),
+        ):
+            actors.ingest_initial_public_sources_fast_job.fn(
+                [{"query_type": "buyer_pain", "phrase": "need more leads"}],
+                enabled_sources=["hackernews", "bluesky"],
+                tenant_id="tenant-1",
+                service_profile_id="profile-1",
+                discovery_run_id="run-1",
+            )
+
+        complete_run.assert_called_once()
+        self.assertEqual(complete_run.call_args.kwargs["status"], "completed")
+        self.assertEqual(
+            complete_run.call_args.kwargs["summary"]["sources"],
+            {"hackernews": 1, "bluesky": 2},
+        )
+        self.assertTrue(
+            complete_run.call_args.kwargs["summary"]["source_completion"]
+            ["all_sources_finished"]
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

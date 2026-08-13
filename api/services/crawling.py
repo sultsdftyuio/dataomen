@@ -87,6 +87,17 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
     return max(value, minimum)
 
 
+def _website_crawl_test_mode_enabled() -> bool:
+    """Return whether temporary repeat-crawl testing is enabled.
+
+    The default is intentionally enabled during launch validation. Set
+    ARCLI_UNLIMITED_CRAWL_TEST_MODE=false to restore the daily crawl guard.
+    """
+
+    value = os.getenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def _env_float(name: str, default: float, minimum: float = 0.1) -> float:
     raw_value = os.getenv(name, str(default)).strip()
     try:
@@ -210,11 +221,12 @@ def reserve_website_crawl_slot(
     website_url: str,
     source: str | None = None,
 ) -> str | None:
-    """Reserve the tenant's one fresh website scan per 24 hours.
+    """Reserve a website crawl while preventing duplicate in-flight work.
 
     A row lock on the tenant makes this atomic across dashboard, onboarding,
-    and direct internal-worker handoffs. The guard is tenant-wide, so changing
-    the URL cannot be used to bypass the cooldown.
+    and direct internal-worker handoffs. In temporary test mode this permits
+    repeat scans and website changes immediately; otherwise it enforces the
+    tenant-wide daily quality guard.
     """
 
     if not _table_exists(conn, "crawl_jobs"):
@@ -237,6 +249,33 @@ def reserve_website_crawl_slot(
         ),
         {"tenant_id": tenant_id},
     ).first()
+
+    if _website_crawl_test_mode_enabled():
+        existing_job = _crawl_job_row_for_website(conn, tenant_id, website_url)
+        if (
+            existing_job
+            and str(existing_job.get("id") or "") == crawl_job_id
+            and str(existing_job.get("status") or "").lower()
+            in CRAWL_JOB_ACTIVE_STATUSES
+        ):
+            # The Next.js relay has already created this same active ledger
+            # row. Do not clear its broker signal or send a second message.
+            return None
+
+        _upsert_crawl_job(
+            conn,
+            crawl_job_id=crawl_job_id,
+            tenant_id=tenant_id,
+            website_url=website_url,
+            status="pending",
+            phase="queued",
+            context={
+                "source": source or "crawl_trigger",
+                "website_crawl_test_mode": True,
+            },
+            restart_queue=True,
+        )
+        return None
 
     recent = conn.execute(
         text(

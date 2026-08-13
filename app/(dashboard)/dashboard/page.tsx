@@ -10,6 +10,7 @@ import {
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
   fetchWebsiteCrawlCooldown,
+  isBuyerDemandReportCurrent,
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
@@ -81,6 +82,13 @@ export default async function DashboardPage() {
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
   const crawlIsActive = crawlStatus === "pending" || crawlStatus === "processing";
   const crawlFailed = crawlStatus === "failed" || crawlStatus === "dead_lettered";
+  const discoveryRunIsActive = Boolean(
+    buyerDemandReport &&
+      !buyerDemandReport.isTerminal &&
+      isBuyerDemandReportCurrent(crawlJob, buyerDemandReport),
+  );
+  const isDiscoveryWarmingUp =
+    isServiceProfileWarmingUp(serviceProfile) || discoveryRunIsActive;
 
   // An active crawl still gets the focused progress view. If a job is missing
   // or has failed, keep the dashboard available so the person can see the
@@ -135,7 +143,7 @@ export default async function DashboardPage() {
       leads={leads}
       discoveryCandidates={discoveryCandidates}
       buyerDemandReport={buyerDemandReport}
-      isWarmingUp={isServiceProfileWarmingUp(serviceProfile)}
+      isWarmingUp={isDiscoveryWarmingUp}
       showPlanPreview={planPreviewEnabled()}
     />
   );

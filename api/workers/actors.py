@@ -340,6 +340,340 @@ def _complete_discovery_run(
 
 
 @dramatiq.actor(
+    actor_name="ingest_initial_public_sources_fast_job",
+    queue_name=os.getenv("ARCLI_PUBLIC_INGESTION_QUEUE_NAME", "ingestion"),
+    max_retries=2,
+    min_backoff=15_000,
+    max_backoff=90_000,
+)
+def ingest_initial_public_sources_fast_job(
+    queries: Sequence[Any],
+    since_hours_ago: int = 24,
+    posts_per_query: int = 25,
+    *,
+    enabled_sources: Sequence[str] | None = None,
+    fallback_to_x: bool = False,
+    x_fallback_group_id: str | None = None,
+    x_fallback_query: str | None = None,
+    x_fallback_disabled_reason: str | None = None,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
+    discovery_run_id: str | None = None,
+) -> None:
+    """Fan out public sources and close the discovery run only after all finish.
+
+    A completed provider immediately hands its matchable posts to the embedding
+    queue.  The parent job remains running, however, until every selected
+    public source (and an eligible fallback) has reported a terminal outcome.
+    """
+
+    normalized_queries = _normalized_discovery_queries(queries)
+    if not normalized_queries:
+        raise ValueError("at least one public-source query is required")
+
+    source_names = tuple(
+        dict.fromkeys(
+            source.strip().casefold()
+            for source in (enabled_sources or [])
+            if isinstance(source, str) and source.strip()
+        )
+    )
+    if not source_names:
+        raise ValueError("at least one public source is required")
+
+    _job_started(
+        job_name="initial_public_sources_fast",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        query_count=len(normalized_queries),
+        sources=source_names,
+        since_hours_ago=since_hours_ago,
+    )
+    _record_discovery_event(
+        discovery_run_id=discovery_run_id,
+        tenant_id=tenant_id,
+        source="public_sources",
+        query_type=None,
+        query=None,
+        phase="fast_check",
+        outcome="started",
+        details={"sources": list(source_names), "query_count": len(normalized_queries)},
+    )
+
+    source_counts: dict[str, int] = {}
+    source_failure_details: dict[str, dict[str, int | str | None]] = {}
+    total_hits = 0
+    total_plausible_hits = 0
+    total_new_inserts = 0
+    total_matching_source_posts = 0
+    plausible_query_types: set[str] = set()
+    embedding_jobs = 0
+
+    def on_source_completed(result: Any) -> None:
+        nonlocal total_hits
+        nonlocal total_plausible_hits
+        nonlocal total_new_inserts
+        nonlocal total_matching_source_posts
+        nonlocal embedding_jobs
+
+        source = str(result.source)
+        source_counts[source] = result.hits_found
+        total_hits += result.hits_found
+        total_plausible_hits += result.plausible_hits
+        total_new_inserts += result.inserted_count
+        total_matching_source_posts += len(result.source_post_refs)
+        plausible_query_types.update(result.plausible_query_types)
+
+        # This is intentionally inside the per-source callback: a fast
+        # provider can make leads available while a slower provider continues
+        # searching. The parent run remains non-terminal until below.
+        if result.source_post_refs:
+            from api.services.social_ingestion import trigger_embedding_jobs
+
+            embedding_jobs += trigger_embedding_jobs(list(result.source_post_refs))
+
+        for query_result in result.query_outcomes:
+            details: dict[str, Any] = {}
+            if query_result.outcome == "completed":
+                details = {
+                    "hits_found": query_result.hits_found,
+                    "plausible_hits": query_result.plausible_hits,
+                    "new_inserts": query_result.inserted_count,
+                }
+            elif query_result.outcome == "failed":
+                details = {
+                    "error_type": query_result.error_type,
+                    "status_code": query_result.status_code,
+                }
+                source_failure_details[source] = {
+                    "error_type": query_result.error_type,
+                    "status_code": query_result.status_code,
+                }
+            elif query_result.outcome == "skipped":
+                details = {"reason": "unsupported_query_for_source"}
+
+            _record_discovery_event(
+                discovery_run_id=discovery_run_id,
+                tenant_id=tenant_id,
+                source=source,
+                query_type=query_result.query_type,
+                query=query_result.query,
+                phase="search",
+                outcome=query_result.outcome,
+                details=details,
+            )
+
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source=source,
+            query_type=None,
+            query=None,
+            phase="source",
+            outcome="partial" if result.failed else "completed",
+            details={
+                "hits_found": result.hits_found,
+                "plausible_hits": result.plausible_hits,
+                "new_inserts": result.inserted_count,
+                "matching_source_posts": len(result.source_post_refs),
+            },
+        )
+
+    try:
+        from api.services.social.fast_check import run_fast_public_source_check
+
+        run_fast_public_source_check(
+            normalized_queries,
+            sources=source_names,
+            since_hours_ago=since_hours_ago,
+            posts_per_query=posts_per_query,
+            max_concurrency=min(
+                6,
+                _int_env("ARCLI_FAST_CHECK_SOURCE_CONCURRENCY", 4, minimum=1),
+            ),
+            on_source_completed=on_source_completed,
+        )
+
+        x_fallback_outcome = "skipped" if x_fallback_disabled_reason else "not_needed"
+        x_fallback_reason = (
+            x_fallback_disabled_reason or "sufficient_diverse_free_evidence"
+        )
+        if fallback_to_x and not _has_sufficient_free_evidence_for_x_suppression(
+            plausible_hits=total_plausible_hits,
+            plausible_query_types=plausible_query_types,
+            matching_source_posts=total_matching_source_posts,
+        ):
+            x_fallback_outcome = "skipped"
+            x_fallback_reason = x_fallback_disabled_reason or "x_not_configured"
+            if x_fallback_disabled_reason:
+                pass
+            elif not _x_source_is_configured():
+                x_fallback_reason = "x_bearer_token_not_configured"
+            elif not _claim_initial_x_fallback(x_fallback_group_id):
+                x_fallback_reason = "initial_ingestion_x_fallback_already_claimed"
+            elif not _claim_tenant_x_fallback_budget(tenant_id):
+                x_fallback_reason = "initial_ingestion_x_fallback_tenant_budget_exceeded"
+            else:
+                from api.services.social_ingestion import (
+                    _result_source_post_refs,
+                    ingest_x_posts,
+                    trigger_embedding_jobs,
+                )
+
+                x_fallback_outcome = "completed"
+                x_fallback_reason = "insufficient_diverse_free_evidence"
+                try:
+                    x_result = ingest_x_posts(
+                        x_fallback_query or normalized_queries[0]["phrase"],
+                        since_hours_ago,
+                        posts_per_query,
+                        max_pages=1,
+                    )
+                    x_refs = _result_source_post_refs(x_result, source="x")
+                    source_counts["x"] = x_result.hits_found
+                    total_hits += x_result.hits_found
+                    total_new_inserts += x_result.inserted_count
+                    total_matching_source_posts += len(x_refs)
+                    if x_refs:
+                        embedding_jobs += trigger_embedding_jobs(x_refs)
+                    _record_discovery_event(
+                        discovery_run_id=discovery_run_id,
+                        tenant_id=tenant_id,
+                        source="x",
+                        query_type="fallback",
+                        query=x_fallback_query or normalized_queries[0]["phrase"],
+                        phase="search",
+                        outcome="completed",
+                        details={
+                            "hits_found": x_result.hits_found,
+                            "new_inserts": x_result.inserted_count,
+                            "matching_source_posts": len(x_refs),
+                        },
+                    )
+                except Exception as exc:
+                    response = getattr(exc, "response", None)
+                    status_code = getattr(response, "status_code", None)
+                    source_counts.setdefault("x", 0)
+                    source_failure_details["x"] = {
+                        "error_type": exc.__class__.__name__,
+                        "status_code": status_code if isinstance(status_code, int) else None,
+                    }
+                    x_fallback_outcome = "failed"
+                    x_fallback_reason = "provider_error"
+                    _record_discovery_event(
+                        discovery_run_id=discovery_run_id,
+                        tenant_id=tenant_id,
+                        source="x",
+                        query_type="fallback",
+                        query=x_fallback_query or normalized_queries[0]["phrase"],
+                        phase="search",
+                        outcome="failed",
+                        details=source_failure_details["x"],
+                    )
+
+        source_failures = len(source_failure_details)
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source="x",
+            query_type=None,
+            query=None,
+            phase="fallback",
+            outcome=x_fallback_outcome,
+            details={"reason": x_fallback_reason},
+        )
+        # This is deliberately the only terminal update in the fast path. At
+        # this point every selected provider has reported, and any permitted
+        # fallback has also finished or been recorded as unavailable.
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="partial" if source_failures else "completed",
+            summary={
+                "sources": source_counts,
+                "source_failures": source_failures,
+                "source_failure_details": source_failure_details,
+                "hits_found": total_hits,
+                "plausible_hits": total_plausible_hits,
+                "plausible_query_types": sorted(plausible_query_types),
+                "new_inserts": total_new_inserts,
+                "matching_source_posts": total_matching_source_posts,
+                "embedding_jobs": embedding_jobs,
+                "source_completion": {
+                    "expected": [
+                        *source_names,
+                        *(
+                            ["x"]
+                            if x_fallback_outcome in {"completed", "failed"}
+                            else []
+                        ),
+                    ],
+                    "completed": list(source_counts),
+                    "all_sources_finished": True,
+                },
+                "x_fallback": {
+                    "outcome": x_fallback_outcome,
+                    "reason": x_fallback_reason,
+                },
+                "verification_pending": True,
+            },
+        )
+    except Exception as exc:
+        _record_discovery_event(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            source="public_sources",
+            query_type=None,
+            query=None,
+            phase="fast_check",
+            outcome="failed",
+            details={"error_type": exc.__class__.__name__},
+        )
+        _complete_discovery_run(
+            discovery_run_id=discovery_run_id,
+            tenant_id=tenant_id,
+            status="failed",
+            summary={
+                "last_failure": {
+                    "source": "public_sources",
+                    "error_type": exc.__class__.__name__,
+                },
+                "source_completion": {
+                    "expected": list(source_names),
+                    "completed": list(source_counts),
+                    "all_sources_finished": False,
+                },
+                "verification_pending": True,
+            },
+        )
+        logger.exception(
+            "initial_public_sources_fast_failed tenant_id=%s service_profile_id=%s query_count=%s error_type=%s",
+            tenant_id,
+            service_profile_id,
+            len(normalized_queries),
+            exc.__class__.__name__,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="initial_public_sources_fast",
+        state="completed",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+        query_count=len(normalized_queries),
+        sources=source_names,
+        source_hits=source_counts,
+        source_failures=len(source_failure_details),
+        hits_found=total_hits,
+        matching_source_posts=total_matching_source_posts,
+        embedding_jobs=embedding_jobs,
+        discovery_run_completed=True,
+    )
+
+
+@dramatiq.actor(
     actor_name="ingest_hn_batch_job",
     queue_name=os.getenv("ARCLI_HN_INGESTION_QUEUE_NAME", "ingestion"),
     max_retries=3,

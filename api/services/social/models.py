@@ -247,7 +247,7 @@ class SocialPost:
 
 @dataclass(frozen=True)
 class InitialPublicSourceIngestionPlan:
-    """The bounded HN-first source-search work spawned after a profile is embedded."""
+    """The bounded public-source Fast check spawned after a profile is embedded."""
 
     queries: list[DiscoveryQuery]
     hn_jobs: int

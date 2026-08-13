@@ -18,6 +18,12 @@ envs:
     scope: RUN_TIME
     type: secret
     value: REPLACE_WITH_INTERNAL_WORKER_SECRET
+  # Temporary: allow repeated website checks while discovery is being tested.
+  # Set this to "false" to restore the daily crawl quality guard.
+  - key: ARCLI_UNLIMITED_CRAWL_TEST_MODE
+    scope: RUN_TIME
+    type: general
+    value: "true"
 
 services:
   - name: arcli-api

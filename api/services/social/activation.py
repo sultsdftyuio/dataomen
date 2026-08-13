@@ -50,12 +50,12 @@ def enqueue_initial_public_source_ingestion(
     discovery_queries_override: Sequence[DiscoveryQuery] | None = None,
     allowed_sources: frozenset[str] | set[str] | None = None,
 ) -> InitialPublicSourceIngestionPlan:
-    """Queue HN-first public-source searches from a completed service profile.
+    """Queue a parallel Fast check from a completed service profile.
 
     The profile-activation path used to call a legacy Reddit/X fetcher
-    directly. This function hands work to the independently retryable global
-    HN, four additional public-source, and optional X ingestion actors instead,
-    then their embedding actors match new posts to every eligible profile.
+    directly. This function fans out the global public sources through one
+    parent job, which makes early source results matchable immediately while
+    retaining one final, tenant-owned completion state for the full check.
     """
     engine = _database_engine()
     with engine.begin() as conn:
@@ -98,8 +98,7 @@ def enqueue_initial_public_source_ingestion(
         )
 
     from api.workers.actors import (
-        ingest_additional_public_sources_batch_job,
-        ingest_hn_batch_job,
+        ingest_initial_public_sources_fast_job,
         ingest_x_job,
     )
 
@@ -168,57 +167,33 @@ def enqueue_initial_public_source_ingestion(
     )
     x_fallback_query = _x_fallback_query(discovery_queries) if x_fallback_group_id else None
     discovery_query_payloads = [query.to_payload() for query in discovery_queries]
-    if hn_enabled:
-        # HN is always first. Its batch optionally hands off to the four
-        # additional free sources before a single paid X fallback is allowed.
-        hn_job_kwargs: dict[str, Any] = {
+    free_sources = (("hackernews",) if hn_enabled else ()) + tuple(additional_sources)
+    if free_sources:
+        # The parent Fast check fans out each free provider concurrently. It
+        # hands early source results to matching as they arrive, but keeps the
+        # tenant's discovery run open until every provider has reported.
+        fast_job_kwargs: dict[str, Any] = {
+            "enabled_sources": list(free_sources),
             "fallback_to_x": x_enabled,
-            "continue_to_additional_sources": bool(additional_sources),
+            "tenant_id": tenant_id,
+            "service_profile_id": service_profile_id,
         }
-        if additional_sources:
-            hn_job_kwargs["additional_sources"] = list(additional_sources)
         if x_fallback_group_id:
-            hn_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
+            fast_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
         if x_fallback_query:
-            hn_job_kwargs["x_fallback_query"] = x_fallback_query
+            fast_job_kwargs["x_fallback_query"] = x_fallback_query
         if x_skip_reason:
-            hn_job_kwargs["x_fallback_disabled_reason"] = x_skip_reason
+            fast_job_kwargs["x_fallback_disabled_reason"] = x_skip_reason
         if discovery_run_id:
-            hn_job_kwargs["discovery_run_id"] = discovery_run_id
-        ingest_hn_batch_job.send(
+            fast_job_kwargs["discovery_run_id"] = discovery_run_id
+        ingest_initial_public_sources_fast_job.send(
             discovery_query_payloads,
             lookback_hours,
             posts_per_query,
-            tenant_id=tenant_id,
-            service_profile_id=service_profile_id,
-            **hn_job_kwargs,
+            **fast_job_kwargs,
         )
-        hn_jobs = 1
+        hn_jobs = 1 if hn_enabled else 0
         additional_source_jobs = 1 if additional_sources else 0
-        x_jobs = 1 if x_enabled else 0
-    elif additional_sources:
-        additional_job_kwargs: dict[str, Any] = {
-            "initial_plausible_hits": 0,
-            "fallback_to_x": x_enabled,
-            "enabled_sources": list(additional_sources),
-        }
-        if x_fallback_group_id:
-            additional_job_kwargs["x_fallback_group_id"] = x_fallback_group_id
-        if x_fallback_query:
-            additional_job_kwargs["x_fallback_query"] = x_fallback_query
-        if x_skip_reason:
-            additional_job_kwargs["x_fallback_disabled_reason"] = x_skip_reason
-        if discovery_run_id:
-            additional_job_kwargs["discovery_run_id"] = discovery_run_id
-        ingest_additional_public_sources_batch_job.send(
-            discovery_query_payloads,
-            lookback_hours,
-            posts_per_query,
-            tenant_id=tenant_id,
-            service_profile_id=service_profile_id,
-            **additional_job_kwargs,
-        )
-        additional_source_jobs = 1
         x_jobs = 1 if x_enabled else 0
     elif x_enabled:
         # Preserve an explicitly X-only deployment, but retain the same spend
@@ -271,7 +246,7 @@ def enqueue_initial_public_source_ingestion(
             )
 
     logger.info(
-        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s discovery_run_id=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
+        "initial_public_source_ingestion_enqueued tenant_id=%s service_profile_id=%s discovery_run_id=%s query_terms=%s hn_jobs=%s additional_source_jobs=%s additional_sources=%s fast_check_sources=%s x_fallback_jobs=%s x_strategy=%s x_fallback_query=%s lookback_hours=%s posts_per_query=%s",
         tenant_id,
         service_profile_id,
         discovery_run_id,
@@ -279,6 +254,7 @@ def enqueue_initial_public_source_ingestion(
         hn_jobs,
         additional_source_jobs,
         additional_sources,
+        free_sources,
         x_jobs,
         "after_all_free_sources_insufficient_diverse_evidence"
         if (hn_enabled or additional_sources) and x_enabled

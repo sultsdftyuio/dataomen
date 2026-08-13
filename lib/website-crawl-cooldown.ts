@@ -2,7 +2,22 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/types/supabase";
 
-export const WEBSITE_CRAWL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_WEBSITE_CRAWL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const DISABLED_VALUES = new Set(["0", "false", "no", "off"]);
+
+/**
+ * Temporary launch setting: let the team re-check and switch websites while
+ * validating discovery. Set ARCLI_UNLIMITED_CRAWL_TEST_MODE=false in every
+ * runtime to restore the normal daily quality guard.
+ */
+export function websiteCrawlTestModeEnabled() {
+  const value = process.env.ARCLI_UNLIMITED_CRAWL_TEST_MODE?.trim().toLowerCase();
+  return !value || !DISABLED_VALUES.has(value);
+}
+
+export const WEBSITE_CRAWL_COOLDOWN_MS = websiteCrawlTestModeEnabled()
+  ? 0
+  : DEFAULT_WEBSITE_CRAWL_COOLDOWN_MS;
 
 type CrawlCooldownClient = SupabaseClient<Database>;
 
@@ -21,6 +36,10 @@ export async function getWebsiteCrawlCooldown(
   supabase: CrawlCooldownClient,
   tenantId: string,
 ): Promise<WebsiteCrawlCooldown> {
+  if (WEBSITE_CRAWL_COOLDOWN_MS === 0) {
+    return { lastRequestedAt: null, nextAvailableAt: null };
+  }
+
   const client = supabase as unknown as {
     from: (table: string) => {
       select: (columns: string) => {

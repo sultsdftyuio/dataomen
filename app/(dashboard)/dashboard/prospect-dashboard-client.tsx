@@ -260,9 +260,9 @@ function pipelineStatus({
   if (isWarmingUp) {
     return {
       label: "Warming up",
-      title: "Starting public-source matching.",
+      title: "Checking public conversations.",
       detail:
-        "Arcli is moving from profile preparation into public-conversation discovery and verification.",
+        "Sources are checked in parallel. New matches appear as each source finishes, and this scan completes after the last source reports back.",
     };
   }
 
@@ -2069,11 +2069,10 @@ function DiscoverySourceBar({
           return;
         }
 
-        const nextScan = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-        setLocalNextAvailableAt(nextScan);
+        setLocalNextAvailableAt(null);
         setMessage({
           ok: true,
-          text: "Website saved. Your fresh scan is queued and the next one unlocks tomorrow.",
+          text: "Website saved. Your lead check is queued.",
         });
         router.refresh();
       } catch {
@@ -2174,7 +2173,7 @@ function DiscoverySourceBar({
           </p>
         ) : (
           <p className="text-[11px] leading-4" style={{ color: C.muted }}>
-            Check once a day for new public conversations that match this website. We reuse your current brief and avoid duplicate results.
+            You can run another check while testing. Each check uses your current brief to look for newly posted conversations and avoids duplicate results.
           </p>
         )}
       </div>
