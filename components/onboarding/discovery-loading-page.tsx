@@ -39,26 +39,28 @@ type DiscoveryStage = {
 
 const STAGES: DiscoveryStage[] = [
   {
-    label: "Read your website",
-    detail: "Finding the pages that explain your product and buyers.",
+    label: "Understand your website",
+    detail: "Learning what you offer and who it is for.",
     icon: Globe2,
   },
   {
-    label: "Build your matching brief",
-    detail: "Turning your offer, audience, and pains into a discovery profile.",
+    label: "Learn what to look for",
+    detail: "Using your website to understand the problems you solve.",
     icon: FileSearch,
   },
   {
-    label: "Find buyer conversations",
-    detail: "Searching public conversations for relevant buying signals.",
+    label: "Look for new customers",
+    detail: "Finding people online who may need what you offer.",
     icon: Radar,
   },
   {
-    label: "Review the results",
-    detail: "Verifying evidence before it reaches your dashboard.",
+    label: "Check the best matches",
+    detail: "Making sure the results are worth your time.",
     icon: Target,
   },
 ];
+
+const STALLED_CRAWL_MS = 10 * 60 * 1000;
 
 function normalizedStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase().replace(/\s+/g, "_") ?? null;
@@ -70,6 +72,23 @@ function websiteDomain(value: string) {
   } catch {
     return value.replace(/^https?:\/\//i, "").replace(/\/$/, "");
   }
+}
+
+function relativeTime(value: string | null | undefined) {
+  const timestamp = Date.parse(value ?? "");
+  if (!Number.isFinite(timestamp)) return "Waiting for the first update";
+
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 15) return "Updated just now";
+  if (seconds < 60) return "Updated less than a minute ago";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `Updated ${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  return `Updated ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
 }
 
 function activeStageIndex({
@@ -95,6 +114,18 @@ function activeStageIndex({
   return isWarmingUp ? 2 : 3;
 }
 
+function isActiveCrawlStalled(crawlJob: CrawlJobView | null) {
+  const status = normalizedStatus(crawlJob?.status);
+  if (!crawlJob || !["pending", "processing"].includes(status ?? "")) {
+    return false;
+  }
+
+  const timestamp = Date.parse(
+    crawlJob.lastHeartbeatAt ?? crawlJob.updatedAt ?? "",
+  );
+  return Number.isFinite(timestamp) && Date.now() - timestamp > STALLED_CRAWL_MS;
+}
+
 function statusMessage({
   crawlJob,
   serviceProfile,
@@ -104,6 +135,15 @@ function statusMessage({
   const crawlStatus = normalizedStatus(crawlJob?.status);
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
 
+  if (!crawlJob && !serviceProfile.hasProfile) {
+    return {
+      kind: "error" as const,
+      title: "Your first scan did not start.",
+      detail:
+        "We could not confirm that your website was added to the scan queue. Open the dashboard to retry or check your website settings.",
+    };
+  }
+
   if (["failed", "dead_lettered"].includes(crawlStatus ?? "")) {
     return {
       kind: "error" as const,
@@ -112,6 +152,24 @@ function statusMessage({
         crawlJob?.errorMessage ??
         crawlJob?.failureReason ??
         "Check the website address and try the crawl again.",
+    };
+  }
+
+  if (!serviceProfile.hasProfile && isActiveCrawlStalled(crawlJob)) {
+    return {
+      kind: "error" as const,
+      title: "Your website scan has stopped updating.",
+      detail:
+        "It has not reported progress for more than 10 minutes. Open the dashboard to retry after checking the website address.",
+    };
+  }
+
+  if (!serviceProfile.hasProfile && crawlStatus === "completed") {
+    return {
+      kind: "error" as const,
+      title: "We could not build your website profile.",
+      detail:
+        "The website scan finished without creating a profile. Open the dashboard to check the website address and try again.",
     };
   }
 
@@ -128,8 +186,8 @@ function statusMessage({
   if (buyerDemandReport?.isTerminal) {
     return {
       kind: "ready" as const,
-      title: "Your first discovery is ready.",
-      detail: "Taking you to the dashboard now.",
+      title: "Your first results are ready.",
+      detail: "Taking you to your dashboard now.",
     };
   }
 
@@ -144,23 +202,31 @@ function statusMessage({
   if (embeddingStatus && embeddingStatus !== "completed") {
     return {
       kind: "working" as const,
-      title: "Building your matching brief.",
-      detail: "We are preparing the buyer signals that guide every search.",
+      title: "Learning what to look for.",
+      detail: "We are using your website to understand the people you want to reach.",
     };
   }
 
   if (isWarmingUp) {
     return {
       kind: "working" as const,
-      title: "Finding relevant buyer conversations.",
-      detail: "We are searching sources and checking each potential match against your brief.",
+      title: "Looking for people who need this.",
+      detail: "We are checking public conversations and filtering out poor matches.",
+    };
+  }
+
+  if (crawlStatus === "completed") {
+    return {
+      kind: "ready" as const,
+      title: "Your website is ready.",
+      detail: "Opening your dashboard while we finish checking new conversations.",
     };
   }
 
   return {
     kind: "working" as const,
-    title: "Reviewing your first scan.",
-    detail: "We are finishing the evidence checks before showing your results.",
+    title: "Finishing up your first scan.",
+    detail: "We are doing a final check before showing your results.",
   };
 }
 
@@ -179,6 +245,13 @@ export function DiscoveryLoadingPage({
   const domain = useMemo(() => websiteDomain(websiteUrl), [websiteUrl]);
   const hasError = status.kind === "error";
   const isReady = status.kind === "ready";
+  const lastUpdate = relativeTime(
+    crawlJob?.lastHeartbeatAt ??
+      crawlJob?.updatedAt ??
+      serviceProfile.updatedAt ??
+      buyerDemandReport?.updatedAt,
+  );
+  const isTakingLongerThanUsual = !hasError && !isReady && elapsedSeconds >= 90;
 
   useEffect(() => {
     if (hasError || isReady) return;
@@ -210,14 +283,20 @@ export function DiscoveryLoadingPage({
       <div className="mx-auto flex w-full max-w-5xl flex-col">
         <Logo className="h-8" />
 
-        <div className="grid flex-1 gap-8 py-12 lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:py-20">
+        <div className="grid flex-1 gap-7 py-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-16">
           <section className="max-w-lg">
             <div
               className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold"
               style={{ borderColor: C.blueLight, backgroundColor: C.bluePale, color: C.blue }}
             >
-              {hasError ? <AlertCircle className="size-4" aria-hidden="true" /> : <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
-              {hasError ? "Action needed" : isReady ? "Ready" : "First discovery in progress"}
+              {hasError ? (
+                <AlertCircle className="size-4" aria-hidden="true" />
+              ) : isReady ? (
+                <Check className="size-4" aria-hidden="true" />
+              ) : (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              {hasError ? "Action needed" : isReady ? "Ready" : "Finding potential customers"}
             </div>
             <h1 className="mt-5 font-serif text-4xl leading-[1.04] tracking-tight sm:text-5xl" style={{ color: C.navy }}>
               {status.title}
@@ -233,10 +312,27 @@ export function DiscoveryLoadingPage({
               <span className="truncate">{domain}</span>
             </div>
             {!hasError && !isReady ? (
-              <p className="mt-4 text-xs leading-5" style={{ color: C.faint }}>
-                This page updates automatically. Usually this takes a few minutes.
-                {elapsedSeconds >= 60 ? " Your scan is still running normally." : ""}
-              </p>
+              <div className="mt-5 rounded-xl border bg-white px-4 py-3 shadow-sm" style={{ borderColor: C.rule }}>
+                <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                  {lastUpdate}
+                </p>
+                <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                  This page updates on its own. Most first scans take a few minutes.
+                </p>
+              </div>
+            ) : null}
+            {isTakingLongerThanUsual ? (
+              <div className="mt-4 rounded-xl border px-4 py-3" style={{ borderColor: C.amber, backgroundColor: C.amberPale }}>
+                <p className="text-xs font-semibold" style={{ color: C.navy }}>
+                  Taking longer than usual?
+                </p>
+                <p className="mt-1 text-xs leading-5" style={{ color: C.navySoft }}>
+                  You can keep this page open. If the website address needs changing, update it in settings.
+                </p>
+                <Link href="/settings" className="mt-2 inline-flex text-xs font-semibold underline underline-offset-2" style={{ color: C.blue }}>
+                  Check website settings
+                </Link>
+              </div>
             ) : null}
             {hasError ? (
               <div className="mt-7 flex flex-wrap gap-3">
@@ -260,10 +356,10 @@ export function DiscoveryLoadingPage({
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-                    Your discovery flow
+                    What we are doing
                   </p>
                   <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                    We only show the dashboard once this first scan has results to review.
+                    We will take you to your results as soon as they are ready.
                   </p>
                 </div>
                 <Sparkles className="size-5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
@@ -297,7 +393,7 @@ export function DiscoveryLoadingPage({
                           <span className="text-sm font-semibold" style={{ color: isComplete || isActive ? C.navy : C.navySoft }}>
                             {stage.label}
                           </span>
-                          {isActive ? <span className="text-[11px] font-semibold" style={{ color: C.blue }}>In progress</span> : null}
+                          {isActive ? <span className="text-[11px] font-semibold" style={{ color: C.blue }}>Working on it</span> : null}
                         </span>
                         <span className="mt-1 block text-xs leading-5" style={{ color: C.muted }}>
                           {stage.detail}

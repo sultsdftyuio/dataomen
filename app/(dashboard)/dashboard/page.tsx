@@ -10,7 +10,6 @@ import {
   fetchServiceProfile,
   fetchTenantWebsiteUrl,
   fetchWebsiteCrawlCooldown,
-  isBuyerDemandReportCurrent,
   isServiceProfileWarmingUp,
   verifierScoreThreshold,
 } from "./data";
@@ -79,15 +78,19 @@ export default async function DashboardPage() {
     serviceProfile.id,
     threshold,
   );
+  const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
+  const crawlIsActive = crawlStatus === "pending" || crawlStatus === "processing";
+  const crawlFailed = crawlStatus === "failed" || crawlStatus === "dead_lettered";
 
-  // A known stale report means this website was re-submitted and needs to
-  // finish its new discovery flow. Keep dashboards usable on legacy
-  // workspaces where the optional discovery-run telemetry is unavailable.
+  // An active crawl still gets the focused progress view. If a job is missing
+  // or has failed, keep the dashboard available so the person can see the
+  // problem and retry instead of bouncing between two loading routes.
   if (
-    !serviceProfile.hasProfile ||
-    isServiceProfileWarmingUp(serviceProfile) ||
-    (buyerDemandReport !== null &&
-      !isBuyerDemandReportCurrent(crawlJob, buyerDemandReport))
+    crawlIsActive ||
+    (isServiceProfileWarmingUp(serviceProfile) &&
+      crawlJob !== null &&
+      !crawlFailed &&
+      serviceProfile.hasProfile)
   ) {
     redirect("/onboarding/discovery");
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, LockKeyhole, Radar, Sparkles } from "lucide-react";
+import Link from "next/link";
 
 import { PlanPreviewSwitcher } from "@/components/dashboard/PlanPreviewSwitcher";
 import UpgradeButton from "@/components/ui/UpgradeButton";
@@ -71,6 +72,14 @@ export default function FreeProspectPreview({
           </div>
         </div>
       </section>
+
+      <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+        Is your first scan taking too long?{" "}
+        <Link href="/settings" className="font-semibold underline underline-offset-2" style={{ color: C.blue }}>
+          Check your website settings
+        </Link>
+        {" "}and start it again.
+      </p>
 
       <section
         className="relative overflow-hidden rounded-xl border px-5 py-5"

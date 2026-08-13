@@ -58,13 +58,24 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
     : null;
   const resolvedSearchParams = await searchParams;
   const scanWasJustRequested = Boolean(resolvedSearchParams.scan);
+  const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
+  const crawlIsActive = crawlStatus === "pending" || crawlStatus === "processing";
+
+  // Never make onboarding a dead end. If no job was ever recorded, the
+  // dashboard shows the recovery controls instead of sending the customer
+  // straight back to this polling page. A fresh submission keeps `?scan=1`
+  // so the page can show a useful start failure if its job is missing.
+  if (!scanWasJustRequested && !crawlJob) {
+    redirect("/dashboard");
+  }
 
   // A completed profile and terminal report can be opened directly from a
-  // bookmark. A fresh URL submission includes `?scan=1` and is kept on this
-  // page until the current crawl reports progress.
+  // bookmark. Likewise, once no crawl or profile preparation is active, the
+  // dashboard is the useful place to inspect a delayed source search rather
+  // than waiting here forever for optional discovery telemetry.
   if (
     !scanWasJustRequested &&
-    currentBuyerDemandReport?.isTerminal &&
+    !crawlIsActive &&
     !isServiceProfileWarmingUp(serviceProfile)
   ) {
     redirect("/dashboard");

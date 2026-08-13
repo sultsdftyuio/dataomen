@@ -197,6 +197,15 @@ function pipelineStatus({
     };
   }
 
+  if (!crawlJob && !serviceProfile.hasProfile) {
+    return {
+      label: "Needs attention",
+      title: "Your first scan did not start.",
+      detail:
+        "We could not find a scan for this website. Use Check new leads above to try again, or review the website address in settings.",
+    };
+  }
+
   if (!serviceProfile.hasProfile) {
     return {
       label: crawlPhase?.replace(/_/g, " ") ?? "Crawling",
