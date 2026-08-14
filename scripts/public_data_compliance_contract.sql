@@ -82,7 +82,7 @@ CREATE TRIGGER public_data_removal_request_updated_at
 -- the completed suppression, which stops future collection of the same post,
 -- account, or URL.
 CREATE OR REPLACE FUNCTION public.complete_public_data_removal_request(
-    request_id UUID
+    target_request_id UUID
 )
 RETURNS TABLE (
     request_id UUID,
@@ -103,7 +103,7 @@ DECLARE
 BEGIN
     SELECT * INTO request_row
       FROM public.public_data_removal_requests
-     WHERE id = request_id
+     WHERE id = target_request_id
      FOR UPDATE;
 
     IF NOT FOUND THEN

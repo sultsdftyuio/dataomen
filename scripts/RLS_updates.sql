@@ -14,7 +14,7 @@ DO $$ BEGIN
     ALTER TYPE billing_state ADD VALUE IF NOT EXISTS 'canceling' AFTER 'active';
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
 
--- 2. Add 'canceling' to platform_billing_state (defined in scripts/payments.sql)
+-- 2. Add 'canceling' to platform_billing_state when a legacy database has it.
 DO $$ BEGIN
     ALTER TYPE platform_billing_state ADD VALUE IF NOT EXISTS 'canceling' AFTER 'active';
 EXCEPTION WHEN undefined_object THEN NULL; END $$;
