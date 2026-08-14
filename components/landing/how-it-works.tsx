@@ -15,14 +15,14 @@ export function HowItWorks() {
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section id="pipeline" style={{ padding: "140px 24px", background: "#FFFFFF", borderTop: surfaceBorder, fontFamily: sans }}>
+    <section id="pipeline" style={{ padding: "112px 24px", background: "#FFFFFF", borderTop: surfaceBorder, fontFamily: sans }}>
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
 
         {/* ── Section Header ── */}
         <div 
           className={`fu ${vis0 ? "vis" : ""}`} 
           ref={ref0 as React.RefObject<HTMLDivElement>}
-          style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 120px" }}
+          style={{ textAlign: "center", maxWidth: 620, margin: "0 auto 80px" }}
         >
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, letterSpacing: "0.08em", marginBottom: 14, textTransform: "uppercase" }}>
             <Database size={14} /> THE PIPELINE
@@ -36,7 +36,7 @@ export function HowItWorks() {
         </div>
 
         {/* ── Step 1: Detect (Ingest & Score) ── */}
-        <div className="grid-2" style={{ marginBottom: 160 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
+        <div className="grid-2" style={{ marginBottom: 112 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.navy, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 01
@@ -107,7 +107,7 @@ export function HowItWorks() {
         </div>
 
         {/* ── Step 2: Recover (Idempotent Queues) ── */}
-        <div className="grid-2" style={{ marginBottom: 160 }} ref={ref2 as React.RefObject<HTMLDivElement>}>
+        <div className="grid-2" style={{ marginBottom: 112 }} ref={ref2 as React.RefObject<HTMLDivElement>}>
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 2 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
               STEP 02
@@ -188,26 +188,6 @@ export function HowItWorks() {
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               When someone looks like a fit, Arcli shows the post, the problem, and why it matters. Your thumbs-up or thumbs-down helps future alerts improve.
             </p>
-            <a
-              href="#demo"
-              style={{
-                height: 40,
-                padding: "0 16px",
-                borderRadius: 8,
-                border: surfaceBorder,
-                boxShadow: surfaceShadow,
-                background: "#FFFFFF",
-                color: C.navy,
-                fontSize: 14,
-                fontWeight: 700,
-                display: "inline-flex",
-                alignItems: "center",
-                textDecoration: "none",
-                letterSpacing: "0.02em"
-              }}
-            >
-              See Prospect Alerts
-            </a>
           </div>
 
           <div className={`fu ${vis3 ? "vis" : ""}`} style={{ order: 2, position: "relative" }}>
@@ -229,7 +209,7 @@ export function HowItWorks() {
                   
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
                     <div>
-                      <h5 style={{ fontSize: 13, fontWeight: 500, color: C.faint, marginBottom: 4 }}>Source: Reddit post</h5>
+                      <h5 style={{ fontSize: 13, fontWeight: 500, color: C.faint, marginBottom: 4 }}>Source: public post</h5>
                       <p style={{ fontSize: 13, color: "#E2E8F0", fontWeight: 600 }}>
                         Pain: manual billing reconciliation
                       </p>

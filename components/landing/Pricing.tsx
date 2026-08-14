@@ -40,7 +40,7 @@ export default function ArcliPricingCards() {
     <section
       id="pricing"
       style={{
-        padding: "140px 24px",
+        padding: "112px 24px",
         background: "linear-gradient(180deg, #F7FBFF 0%, #FFFFFF 100%)",
         borderTop: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",

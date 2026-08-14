@@ -35,33 +35,28 @@ export default function Footer() {
           {/* Nav Links Grid */}
           <div className="lg:col-span-3 grid grid-cols-2 md:grid-cols-3 gap-8">
             
-            {/* Column 1: Core Systems */}
+            {/* Column 1: Explore Arcli */}
             <div>
               <h3 className="text-gray-900 font-semibold mb-4 tracking-[0.08em] text-xs uppercase">Platform</h3>
               <ul className="space-y-3">
                 <li>
-                  <Link href="/saas-churn-recovery" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Find Prospects
+                  <Link href="/#sources" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    Public Sources
                   </Link>
                 </li>
                 <li>
-                  <Link href="/saas-churn-risk-scoring" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Quality Checks
+                  <Link href="/#pipeline" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    How It Works
                   </Link>
                 </li>
                 <li>
-                  <Link href="/saas-dunning-software" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Prospect Alerts
+                  <Link href="/#quality" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    Why Matches Fit
                   </Link>
                 </li>
                 <li>
-                  <Link href="/saas-revenue-attribution" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Useful Alerts
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/saas-billing-infrastructure" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Website Setup
+                  <Link href="/#pricing" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    Pricing
                   </Link>
                 </li>
               </ul>
@@ -78,7 +73,7 @@ export default function Footer() {
                 </li>
                 <li>
                   <Link href="/login" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
-                    Founder Login
+                    Log In
                   </Link>
                 </li>
                 <li>

@@ -32,7 +32,7 @@ export function FAQ() {
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section style={{ padding: "100px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
+    <section style={{ padding: "112px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(36px, 5vw, 48px)", textAlign: "center", marginBottom: 44, color: C.navy, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
           Frequently Asked Questions

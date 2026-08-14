@@ -43,9 +43,10 @@ export function PublicSources() {
 
   return (
     <section
+      id="sources"
       aria-labelledby="sources-heading"
       style={{
-        padding: "96px 24px",
+        padding: "112px 24px",
         background: "#FFFFFF",
         borderTop: surfaceBorder,
         fontFamily: "var(--font-geist-sans), sans-serif",

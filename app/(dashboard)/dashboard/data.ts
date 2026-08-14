@@ -8,11 +8,13 @@ import {
 } from "@/lib/discovery-queries";
 import {
   deriveBuyerDemandPatterns,
+  deriveDiscoverySourceProgress,
   isCompletedDiscoveryRunStatus,
   isTerminalDiscoveryRunStatus,
   parseDiscoveryRunSummary,
   sourceGroundedExcerpt,
   sourceGroundedUrgencyReason,
+  type DiscoveryRunEventView,
   type VerifierConfirmedPatternMatch,
 } from "@/lib/buyer-demand-report";
 import {
@@ -1036,11 +1038,14 @@ type OptionalEvidenceReadClient = {
 function discoveryRunView(
   row: DbRecord,
   marketPatterns: BuyerDemandReportView["marketPatterns"],
+  sourceEvents: DiscoveryRunEventView[],
 ): BuyerDemandReportView | null {
   const id = readString([row], ["id"]);
   if (!id) return null;
 
   const status = normalizeServiceProfileStatus(readString([row], ["status"]));
+
+  const summary = parseDiscoveryRunSummary(row.summary);
 
   return {
     id,
@@ -1053,9 +1058,69 @@ function discoveryRunView(
     // diagnostics and prevent unnecessary empty-state polling.
     isCompleted: isCompletedDiscoveryRunStatus(status),
     isTerminal: isTerminalDiscoveryRunStatus(status),
-    summary: parseDiscoveryRunSummary(row.summary),
+    summary,
+    sourceProgress: deriveDiscoverySourceProgress(summary, sourceEvents),
     marketPatterns,
   };
+}
+
+function discoveryRunEventView(row: DbRecord): DiscoveryRunEventView | null {
+  const source = readString([row], ["source"]);
+  const phase = readString([row], ["phase"]);
+  const outcome = readString([row], ["outcome"]);
+  if (!source || !phase || !outcome) return null;
+
+  return {
+    source,
+    phase,
+    outcome,
+    details: asRecord(row.details) ?? {},
+    occurredAt: readString([row], ["occurred_at", "occurredAt"]),
+  };
+}
+
+async function fetchDiscoveryRunEvents(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  runId: string,
+): Promise<DiscoveryRunEventView[]> {
+  const client = supabase as unknown as OptionalEvidenceReadClient;
+
+  try {
+    const result = await client
+      .from("discovery_run_events")
+      .select("tenant_id,run_id,source,phase,outcome,details,occurred_at")
+      .eq("tenant_id", tenantId)
+      .eq("run_id", runId)
+      .order("occurred_at", { ascending: true })
+      .limit(120);
+
+    if (result.error) {
+      if (!isOptionalAdditiveSchemaUnavailable(result.error)) {
+        console.info("[ProspectDashboard] source progress lookup unavailable", {
+          tenant_id: tenantId,
+          run_id: runId,
+        });
+      }
+      return [];
+    }
+
+    return (result.data ?? [])
+      .map((row) => asRecord(row))
+      .filter((row): row is DbRecord => row !== null)
+      // RLS and the predicate already scope this read. Keep the dashboard's
+      // own ownership check before we turn telemetry into visible progress.
+      .filter((row) => readString([row], ["tenant_id"]) === tenantId)
+      .map(discoveryRunEventView)
+      .filter((event): event is DiscoveryRunEventView => event !== null);
+  } catch (error) {
+    console.info("[ProspectDashboard] source progress lookup skipped", {
+      tenant_id: tenantId,
+      run_id: runId,
+      error_type: error instanceof Error ? error.name : "unknown",
+    });
+    return [];
+  }
 }
 
 function patternMatchFromRow(row: DbRecord): VerifierConfirmedPatternMatch | null {
@@ -1203,7 +1268,12 @@ export async function fetchBuyerDemandReport(
     });
   }
 
-  return discoveryRunView(runRow, marketPatterns);
+  const runId = readString([runRow], ["id"]);
+  const sourceEvents = runId
+    ? await fetchDiscoveryRunEvents(supabase, tenantId, runId)
+    : [];
+
+  return discoveryRunView(runRow, marketPatterns, sourceEvents);
 }
 
 /**

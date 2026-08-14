@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CheckCircle2, ShieldAlert, Workflow, DollarSign, Activity, Zap, RefreshCcw, Key } from "lucide-react";
+import { CheckCircle2, ShieldAlert, Workflow, Activity, Zap, RefreshCcw, Key } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
 
@@ -12,18 +12,18 @@ export function DeepDiveFeatures() {
   const surfaceShadow = "0 1px 3px rgba(0,0,0,0.08)";
 
   return (
-    <section id="dashboards" style={{ padding: "140px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
+    <section id="quality" style={{ padding: "112px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
 
         {/* ── Segment A: Quality Checks ── */}
-        <div className="grid-2" style={{ marginBottom: 160 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
+        <div className="grid-2" style={{ marginBottom: 112 }} ref={ref1 as React.RefObject<HTMLDivElement>}>
 
           <div className={`fu ${vis1 ? "vis" : ""}`} style={{ order: 1 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, color: C.blue, fontWeight: 700, fontSize: 12, marginBottom: 14, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              <ShieldAlert size={14} /> QUALITY CHECKS
+              <ShieldAlert size={14} /> WHY THIS MATCH MATTERS
             </div>
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Prospects your team<br />can actually trust.
+              What a verified prospect<br />looks like.
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Arcli reads for real need, not just matching words. It checks each post against what you sell, then shows why the person may be worth your time.
@@ -49,7 +49,7 @@ export function DeepDiveFeatures() {
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
                 <div>
-                  <h4 style={{ fontSize: 14, fontWeight: 600, color: C.navy, marginBottom: 4 }}>Prospect: SaaS founder in r/SaaS</h4>
+                  <h4 style={{ fontSize: 14, fontWeight: 600, color: C.navy, marginBottom: 4 }}>Potential buyer with a clear problem</h4>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#EF4444", background: "rgba(239,68,68,0.08)", border: surfaceBorder, padding: "2px 8px", borderRadius: 6 }}>PROBLEM MATCH</span>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#4B5563", background: "rgba(75,85,99,0.08)", border: surfaceBorder, padding: "2px 8px", borderRadius: 6 }}>GOOD FIT</span>
@@ -117,28 +117,6 @@ export function DeepDiveFeatures() {
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Arcli sends short alerts with the original post, the problem, and why it looks useful. Mark what is right or wrong, and the next alerts get sharper.
             </p>
-            <div style={{ display: "flex", gap: 12 }}>
-              <a
-                href="#demo"
-                style={{
-                  height: 40,
-                  padding: "0 16px",
-                  borderRadius: 8,
-                  border: surfaceBorder,
-                  boxShadow: surfaceShadow,
-                  background: C.blue,
-                  color: "#fff",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  textDecoration: "none",
-                  letterSpacing: "0.02em"
-                }}
-              >
-                View Prospect Alerts
-              </a>
-            </div>
           </div>
 
           <div className={`fu ${vis2 ? "vis" : ""}`} style={{ order: 1, position: "relative" }}>

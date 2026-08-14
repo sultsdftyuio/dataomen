@@ -12,8 +12,8 @@ export function Hero() {
     <section
       className="dot-grid"
       style={{
-        paddingTop: 168,
-        paddingBottom: 112,
+        paddingTop: 152,
+        paddingBottom: 96,
         background: "linear-gradient(180deg, #FFFFFF 0%, #F4F8FF 100%)",
         position: "relative",
         overflow: "hidden",
@@ -40,8 +40,8 @@ export function Hero() {
               margin: "0 auto 20px",
             }}
           >
-            Find buyers<br />
-            <span style={{ color: C.blue }}>ready now.</span>
+            Find people who need<br />
+            <span style={{ color: C.blue }}>what you sell.</span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>

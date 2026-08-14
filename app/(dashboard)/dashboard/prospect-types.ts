@@ -2,6 +2,7 @@ import type { DiscoveryQuery } from "@/lib/discovery-queries";
 import type { BuyerLanguageResearchView } from "@/lib/buyer-language-research";
 import type {
   BuyerDemandPattern,
+  DiscoverySourceProgressView,
   DiscoveryRunSummaryView,
 } from "@/lib/buyer-demand-report";
 
@@ -130,6 +131,7 @@ export type BuyerDemandReportView = {
   isCompleted: boolean;
   isTerminal: boolean;
   summary: DiscoveryRunSummaryView;
+  sourceProgress: DiscoverySourceProgressView[];
   marketPatterns: BuyerDemandPattern[];
 };
 

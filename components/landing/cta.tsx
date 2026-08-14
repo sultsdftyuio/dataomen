@@ -1,13 +1,13 @@
 "use client";
 
-import { CheckCircle2, ArrowRight, Play } from "lucide-react";
+import { CheckCircle2, ArrowRight } from "lucide-react";
 import { C } from "@/lib/tokens";
 
 export function CTA() {
   return (
     <section
       style={{
-        padding: "120px 24px",
+        padding: "112px 24px",
         background: "linear-gradient(135deg, #1B6EBF 0%, #0F4F91 100%)",
         textAlign: "center",
         color: "#FFFFFF",
@@ -26,7 +26,8 @@ export function CTA() {
           Skip the noise.<br />Find real prospects.
         </h2>
         <p style={{ fontSize: 17, marginBottom: 30, color: "rgba(255,255,255,0.9)", lineHeight: 1.62 }}>
-        </p>          Add your website. Arcli finds people already asking for help with the problem you solve.
+          Add your website. Arcli finds people already asking for help with the problem you solve.
+        </p>
 
 
         {/* CTA buttons */}
@@ -51,27 +52,6 @@ export function CTA() {
             }}
           >
             Find Prospects <ArrowRight size={14} />
-          </a>
-          <a
-            href="#demo"
-            style={{
-              height: 40,
-              padding: "0 16px",
-              borderRadius: 8,
-              fontWeight: 600,
-              textDecoration: "none",
-              fontSize: 14,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              border: "1px solid rgba(255,255,255,0.22)",
-              background: "rgba(255,255,255,0.12)",
-              color: "#FFFFFF",
-              letterSpacing: "0.02em",
-            }}
-          >
-            <Play size={14} /> See Examples
           </a>
         </div>
 

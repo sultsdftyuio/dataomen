@@ -7,8 +7,6 @@ import { Hero } from "@/components/landing/hero";
 import { PublicSources } from "@/components/landing/public-sources";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { DeepDiveFeatures } from "@/components/landing/Deepdivefeatures";
-import { Campaigns } from "@/components/landing/Campaigns"; 
-import { Testimonials } from "@/components/landing/testimonials";
 import Pricing from "@/components/landing/Pricing"; 
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
@@ -56,8 +54,6 @@ export default async function Page() {
           <PublicSources />
           <HowItWorks />
           <DeepDiveFeatures />
-          <Campaigns />
-          <Testimonials />
           <Pricing />
           <FAQ />
           <CTA />

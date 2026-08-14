@@ -1176,10 +1176,153 @@ function sourceDisplayName(source: string) {
     hn: "Hacker News",
     hackernews: "Hacker News",
     hacker_news: "Hacker News",
+    reddit: "Reddit",
+    lemmy: "Lemmy",
+    github: "GitHub",
+    stackexchange: "Stack Exchange",
+    stack_exchange: "Stack Exchange",
+    stackoverflow: "Stack Overflow",
+    stack_overflow: "Stack Overflow",
+    bluesky: "Bluesky",
     x: "Public conversation",
   };
 
   return knownNames[normalized] ?? humanizeRunValue(source);
+}
+
+function sourceProgressCopy(source: BuyerDemandReportView["sourceProgress"][number]) {
+  const count = source.itemCount;
+  const postLabel = count === 1 ? "post" : "posts";
+
+  if (source.state === "checking") {
+    return count && count > 0
+      ? `${count} ${postLabel} found so far`
+      : "Checking this source";
+  }
+  if (source.state === "found") return `${count ?? 0} ${postLabel} found`;
+  if (source.state === "partial") return `${count ?? 0} ${postLabel} found · partial coverage`;
+  if (source.state === "no_results") return "No relevant posts this scan";
+  return "This source was unavailable";
+}
+
+function sourceProgressTone(source: BuyerDemandReportView["sourceProgress"][number]) {
+  if (source.state === "found") {
+    return { border: C.greenPale, background: C.greenPale, color: C.green };
+  }
+  if (source.state === "checking") {
+    return { border: C.blueLight, background: C.blueTint, color: C.blue };
+  }
+  if (source.state === "partial") {
+    return { border: C.amberPale, background: C.amberPale, color: C.amber };
+  }
+  if (source.state === "unavailable") {
+    return { border: C.redPale, background: C.redPale, color: C.red };
+  }
+  return { border: C.rule, background: C.offWhite, color: C.muted };
+}
+
+function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
+  const summary = report.summary;
+  const isRunning = !report.isTerminal;
+  const isPartial = report.status === "partial";
+  const isFailed = report.status === "failed";
+  const statusLabel = isRunning ? "Scanning" : isPartial ? "Partial" : isFailed ? "Needs attention" : "Complete";
+  const title = isRunning
+    ? "Checking public conversations"
+    : isPartial
+      ? "Partially completed discovery scan"
+      : isFailed
+        ? "Discovery scan needs attention"
+        : "What this scan found";
+  const detail = isRunning
+    ? "Each source reports here as it finishes. New posts are checked before they appear as potential buyers or leads."
+    : summary.verifierPending
+      ? "Source collection is complete. The posts below are still being checked for real buyer problems."
+      : "These are source results, not lead counts. A post reaches your desk only after it is checked against your brief.";
+  const compactStats = [
+    summary.totalHits !== null ? `${summary.totalHits} collected` : null,
+    summary.plausibleHits !== null ? `${summary.plausibleHits} reviewed` : null,
+    summary.sourceFailures && summary.sourceFailures > 0 ? `${summary.sourceFailures} unavailable` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return (
+    <Card className="overflow-hidden rounded-xl shadow-sm" style={{ borderColor: C.blueLight }}>
+      <CardContent className="p-0">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3.5 sm:px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full"
+              style={{
+                backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : isRunning ? C.blueTint : C.greenPale,
+                color: isFailed ? C.red : isPartial ? C.amber : isRunning ? C.blue : C.green,
+              }}
+              aria-hidden="true"
+            >
+              {isFailed || isPartial ? <AlertCircle className="size-4" /> : isRunning ? <Radar className="size-4 animate-pulse" /> : <Check className="size-4" />}
+            </span>
+            <div>
+              <h2 className="pfd text-lg leading-none" style={{ color: C.navy }}>{title}</h2>
+              <p className="mt-1.5 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>{detail}</p>
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px]"
+            style={{
+              borderColor: isFailed ? C.red : isPartial ? C.amber : C.blueLight,
+              backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : C.blueTint,
+              color: isFailed ? C.red : isPartial ? C.amber : C.blue,
+            }}
+          >
+            {statusLabel}
+          </Badge>
+        </div>
+
+        <div className="px-4 py-3.5 sm:px-5">
+          {report.sourceProgress.length > 0 ? (
+            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Source-by-source scan results">
+              {report.sourceProgress.map((source) => {
+                const tone = sourceProgressTone(source);
+                const isChecking = source.state === "checking";
+                const isFound = source.state === "found" || source.state === "partial";
+                return (
+                  <li key={source.source} className="rounded-lg border px-3 py-2.5" style={{ borderColor: tone.border, backgroundColor: tone.background }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-xs font-semibold" style={{ color: C.navy }}>{sourceDisplayName(source.source)}</p>
+                      <span className="shrink-0" style={{ color: tone.color }} aria-hidden="true">
+                        {isChecking ? <Radar className="size-3.5 animate-pulse" /> : source.state === "unavailable" || source.state === "partial" ? <AlertCircle className="size-3.5" /> : isFound ? <Check className="size-3.5" /> : <Search className="size-3.5" />}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-medium" style={{ color: tone.color }}>{sourceProgressCopy(source)}</p>
+                    {isFound && source.plausibleCount !== null ? (
+                      <p className="mt-1 text-[10px] leading-4" style={{ color: C.navySoft }}>
+                        {source.plausibleCount} worth checking against your brief
+                        {source.newPostCount !== null && source.newPostCount > 0 ? ` · ${source.newPostCount} new` : ""}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-lg border border-dashed px-3 py-3 text-xs leading-5" style={{ borderColor: C.ruleDark, color: C.navySoft }}>
+              Preparing source checks. Each source will appear here as soon as it starts responding.
+            </div>
+          )}
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3" style={{ borderColor: C.rule }}>
+            <p className="text-[11px]" style={{ color: C.muted }}>
+              {compactStats.length > 0 ? compactStats.join(" · ") : "Post results update as sources finish."}
+            </p>
+            <Button asChild size="xs" variant="outline" className="h-7 px-2 text-[10px]" style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}>
+              <Link href="/dashboard/brief">Improve brief</Link>
+            </Button>
+          </div>
+          {summary.caveat ? <p className="mt-2 text-[10px] leading-4" style={{ color: C.muted }}>{summary.caveat}</p> : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function CompletedDiscoveryReport({ report }: { report: BuyerDemandReportView }) {
@@ -2465,8 +2608,8 @@ export default function ProspectDashboardClient({
         websiteCrawlCooldown={websiteCrawlCooldown}
       />
 
-      {buyerDemandReport?.isTerminal && queueItems.length === 0 ? (
-        <CompletedDiscoveryReport report={buyerDemandReport} />
+      {buyerDemandReport ? (
+        <DiscoveryScanReport report={buyerDemandReport} />
       ) : null}
 
       {!buyerDemandReport && queueItems.length === 0 && !isFirstDeskPass ? (

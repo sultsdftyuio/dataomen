@@ -29,6 +29,36 @@ export type DiscoveryRunSummaryView = {
   xFallback: DiscoveryFallbackSummary | null;
 };
 
+/** A safe, tenant-scoped telemetry event used to explain scan progress. */
+export type DiscoveryRunEventView = {
+  source: string;
+  phase: string;
+  outcome: string;
+  details: Record<string, unknown>;
+  occurredAt: string | null;
+};
+
+export type DiscoverySourceProgressState =
+  | "checking"
+  | "found"
+  | "partial"
+  | "no_results"
+  | "unavailable";
+
+/**
+ * A human-readable per-source state for the dashboard. Counts are provider
+ * results, not lead counts: a found post still needs the normal matching and
+ * verification steps before it becomes a lead.
+ */
+export type DiscoverySourceProgressView = {
+  source: string;
+  state: DiscoverySourceProgressState;
+  itemCount: number | null;
+  plausibleCount: number | null;
+  newPostCount: number | null;
+  updatedAt: string | null;
+};
+
 export type VerifierConfirmedPatternMatch = {
   id: string;
   tenantId: string;
@@ -176,7 +206,15 @@ export function parseDiscoveryRunSummary(value: unknown): DiscoveryRunSummaryVie
   const summary = asRecord(value) ?? {};
   const sourceValue =
     summary.source_counts ?? summary.source_results ?? summary.sources ?? [];
-  const sources = sourceSummaries(sourceValue);
+  const failedSourceNames = new Set(
+    Object.keys(asRecord(summary.source_failure_details) ?? {}).map(
+      normalizedSourceName,
+    ),
+  );
+  const sources = sourceSummaries(sourceValue).map((source) => ({
+    ...source,
+    failed: source.failed || failedSourceNames.has(normalizedSourceName(source.source)),
+  }));
   const hasSourceCounts = sources.some((source) => source.itemCount !== null);
   const sourceTotal = sources.reduce(
     (total, source) => total + (source.itemCount ?? 0),
@@ -206,6 +244,145 @@ export function parseDiscoveryRunSummary(value: unknown): DiscoveryRunSummaryVie
     caveat: firstString(summary, ["caveat", "note", "message"]),
     xFallback: fallbackSummary(summary),
   };
+}
+
+function normalizedSourceName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function sourceNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  return value.flatMap((item) => {
+    const source = asString(item);
+    const key = source ? normalizedSourceName(source) : "";
+    if (!source || !key || seen.has(key)) return [];
+    seen.add(key);
+    return [source];
+  });
+}
+
+function eventDetailCount(event: DiscoveryRunEventView, keys: string[]) {
+  return firstCount(asRecord(event.details) ?? {}, keys);
+}
+
+function eventTimestamp(value: string | null) {
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+/**
+ * Combine aggregate run results with the append-only source events. This lets
+ * a source move from "Checking" to a concrete result while the other public
+ * sources are still running, without treating a collected post as a lead.
+ */
+export function deriveDiscoverySourceProgress(
+  summary: DiscoveryRunSummaryView,
+  events: DiscoveryRunEventView[],
+): DiscoverySourceProgressView[] {
+  type MutableProgress = DiscoverySourceProgressView & {
+    hasFinalResult: boolean;
+  };
+
+  const progress = new Map<string, MutableProgress>();
+  const ensure = (source: string) => {
+    const key = normalizedSourceName(source);
+    if (!key || key === "public_sources") return null;
+
+    const existing = progress.get(key);
+    if (existing) return existing;
+
+    const created: MutableProgress = {
+      source,
+      state: "checking",
+      itemCount: null,
+      plausibleCount: null,
+      newPostCount: null,
+      updatedAt: null,
+      hasFinalResult: false,
+    };
+    progress.set(key, created);
+    return created;
+  };
+
+  // The run-start event contains the configured source list, allowing the UI
+  // to show sources that are still waiting on a response.
+  for (const event of events) {
+    if (normalizedSourceName(event.source) !== "public_sources") continue;
+    for (const source of sourceNames(event.details.sources)) ensure(source);
+  }
+
+  for (const source of summary.sources) {
+    const current = ensure(source.source);
+    if (!current) continue;
+    current.itemCount = source.itemCount;
+    current.state = source.failed
+      ? (source.itemCount ?? 0) > 0
+        ? "partial"
+        : "unavailable"
+      : source.itemCount === 0
+        ? "no_results"
+        : "found";
+    current.hasFinalResult = true;
+  }
+
+  for (const event of [...events].sort(
+    (left, right) => eventTimestamp(left.occurredAt) - eventTimestamp(right.occurredAt),
+  )) {
+    const current = ensure(event.source);
+    if (!current) continue;
+
+    const phase = event.phase.trim().toLowerCase();
+    const outcome = event.outcome.trim().toLowerCase();
+    const hits = eventDetailCount(event, ["hits_found", "item_count", "count"]);
+    const plausible = eventDetailCount(event, ["plausible_hits", "plausible_count"]);
+    const inserted = eventDetailCount(event, ["new_inserts", "inserted_count"]);
+
+    if (event.occurredAt) current.updatedAt = event.occurredAt;
+
+    // The terminal summary owns the final total, while the detailed source
+    // event supplies the useful supporting counts for the UI.
+    if (current.hasFinalResult) {
+      if (phase === "source") {
+        current.plausibleCount ??= plausible;
+        current.newPostCount ??= inserted;
+      }
+      continue;
+    }
+
+    if (phase === "source") {
+      current.itemCount = hits ?? 0;
+      current.plausibleCount = plausible;
+      current.newPostCount = inserted;
+      current.state = outcome === "failed"
+        ? "unavailable"
+        : outcome === "partial"
+          ? current.itemCount > 0
+            ? "partial"
+            : "unavailable"
+          : current.itemCount > 0
+            ? "found"
+            : "no_results";
+      current.hasFinalResult = true;
+      continue;
+    }
+
+    if (phase === "search" && outcome === "completed") {
+      current.itemCount = (current.itemCount ?? 0) + (hits ?? 0);
+      current.plausibleCount = (current.plausibleCount ?? 0) + (plausible ?? 0);
+      current.newPostCount = (current.newPostCount ?? 0) + (inserted ?? 0);
+      current.state = current.itemCount > 0 ? "found" : "checking";
+      continue;
+    }
+
+    if (phase === "search" && outcome === "failed" && current.itemCount === null) {
+      current.state = "unavailable";
+    }
+  }
+
+  return Array.from(progress.values()).map(({ hasFinalResult: _ignored, ...source }) => source);
 }
 
 export function isCompletedDiscoveryRunStatus(status: string | null | undefined) {

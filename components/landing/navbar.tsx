@@ -22,12 +22,11 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // UPDATED: Absolute root anchors (/#...) to enable cross-page navigation
   const navLinks = [
-    { name: "Prospects", href: "/#platform" },
-    { name: "Quality", href: "/#features" },
-    { name: "Alerts", href: "/#campaigns" },
-    { name: "Pricing", href: "/#pricing" }
+    { name: "Sources", href: "/#sources" },
+    { name: "How it works", href: "/#pipeline" },
+    { name: "Why it fits", href: "/#quality" },
+    { name: "Pricing", href: "/#pricing" },
   ];
 
   return (
