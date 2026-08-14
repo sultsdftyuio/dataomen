@@ -345,7 +345,7 @@ def _discovery_query_overlap_fraction() -> float:
     """Return the configurable lexical-recall guard for public source hits."""
 
     return max(
-        0.1,
+        0.05,
         min(0.8, env_float("ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION", 0.15)),
     )
 
@@ -404,12 +404,19 @@ def _source_post_is_plausible_for_discovery_query(
     if _PUBLISHER_CONTEXT_PATTERN.search(text_value) and not has_first_person_context:
         return False
 
-    # A recommendation or category search must look like someone evaluating a
-    # solution.  A direct first-person request is credible even if it omits a
-    # formal question word (for example, "we are evaluating ...").  Other
-    # query types can express urgency as a concise symptom, but still need
-    # either an explicit request or a first-person situation.
+    # A recommendation or category search should ideally look like someone
+    # evaluating a solution.  We keep the old stricter rule as an optional
+    # deployment setting, but default to passing a query-grounded request or
+    # problem signal to the semantic/verifier stages. This improves recall for
+    # short GitHub issues and Stack Exchange questions without auto-accepting
+    # a lead.
     if query_type in {"recommendation_request", "category_tool_search"}:
+        strict_buyer_context = os.getenv(
+            "ARCLI_STRICT_BUYER_CONTEXT_FILTER",
+            "false",
+        ).strip().casefold() in {"1", "true", "yes", "on"}
+        if not strict_buyer_context:
+            return has_request_context or has_first_person_context
         return (has_request_context or has_first_person_context) and (
             has_first_person_context
             or bool(re.search(r"\b(?:what|which|anyone|recommend)\b", text_value))

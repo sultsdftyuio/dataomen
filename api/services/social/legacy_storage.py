@@ -366,18 +366,16 @@ def _lead_match_status(verification: Any) -> str:
         "LEAD_VERIFIER_SCORE_THRESHOLD",
         DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
     )
-    # A verifier-confirmed match with weaker confidence is useful evidence for
-    # a human to inspect. It is deliberately *not* qualified or CRM-ready.
-    if verifier_score >= threshold:
+    # Main leads need both the configured confidence and direct evidence of a
+    # real buyer problem. Potential buyers stay in their own review-only lane,
+    # even if the model gave an unusually high numeric score.
+    if decision_label == "strong_match" and verifier_score >= threshold:
         return "ready_for_review"
     discovery_threshold = env_float(
         "LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD",
         DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD,
     )
-    if (
-        decision_label in {"strong_match", "weak_match"}
-        and verifier_score >= discovery_threshold
-    ):
+    if decision_label in {"strong_match", "weak_match"} and verifier_score >= discovery_threshold:
         return "discovery_candidate"
     return "rejected"
 

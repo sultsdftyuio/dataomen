@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from api.services.integrations.public_source import (
     PublicSourcePost,
     clip_text,
+    compact_discovery_search_query,
     env_positive_float,
     env_positive_int,
     fetch_json_with_retry,
@@ -200,16 +201,16 @@ class GitHubIssuesConnector:
 
     @staticmethod
     def _search_query(query: str, since_timestamp: int) -> str:
-        phrase = normalise_text(query).replace('"', "")
+        phrase = compact_discovery_search_query(
+            query,
+            max_terms=env_positive_int("ARCLI_GITHUB_DISCOVERY_QUERY_TERMS", 2),
+        )
         if not phrase:
             raise ValueError("query is required")
         if since_timestamp < 0:
             raise ValueError("since_timestamp must be a Unix timestamp")
         date = datetime.fromtimestamp(since_timestamp, tz=timezone.utc).date().isoformat()
-        return (
-            f'"{clip_text(phrase, 200)}" '
-            f"in:title,body is:issue is:public created:>={date}"
-        )
+        return f"{clip_text(phrase, 200)} in:title,body is:issue is:public created:>={date}"
 
     @staticmethod
     def _to_source_post(

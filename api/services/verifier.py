@@ -43,7 +43,7 @@ VERIFIER_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 # Persist this alongside a verdict. Bump it only when verifier instructions
 # materially change lead eligibility, so cached decisions cannot survive a
 # policy change while preserving normal tenant-scoped cache reuse.
-VERIFIER_POLICY_VERSION = "buyer_outcome_v4_broad_discovery"
+VERIFIER_POLICY_VERSION = "buyer_outcome_v6_leads_and_potential_buyers"
 # Keep the verifier gate aligned with the candidate prefilter by default. The
 # verifier itself is the precision gate; a higher hidden default would make
 # the recall-oriented matching threshold ineffective.
@@ -152,21 +152,23 @@ class VerifierService(OpenAIClientOwner):
         "audience, problem solved, pain points, buying triggers, urgency signals, "
         "search_terms, negative keywords, and excluded audiences as weighted "
         "relevance signals, not a checklist or hard requirements. Similar words or "
-        "a product category alone are not evidence. A Discovery candidate may be a "
-        "broader or adjacent buyer: return `match: true` and `weak_match` when the "
-        "post contains one credible buyer need, question, workflow frustration, "
-        "outcome investigation, or request that the service could plausibly address, "
-        "even if the writer is not an exact target persona and does not mention every "
-        "profile field. Do not require the writer to use the vendor's product-category, "
+        "a product category alone are not evidence. A main lead must show a clear, "
+        "real buyer problem that the service could plausibly solve. Return "
+        "`strong_match` only for that direct evidence: a specific request, urgency, "
+        "evaluation, tool/category search, switching signal, or concrete problem. "
+        "A Potential buyer can be an earlier but still credible buyer signal: a relevant "
+        "question, investigation, workflow frustration, failed outcome, or request from "
+        "a person or team that the service could plausibly help. Return `match: true` and "
+        "`weak_match` for a Potential buyer, even if the writer is not an exact target "
+        "persona, does not mention every profile field, or does not explicitly say they "
+        "are shopping for a solution. Do not require the writer to use the vendor's product-category, "
         "internal workflow, or operator terminology when they clearly describe the "
         "real outcome the service solves. For example, when a service helps a B2B "
         "software team find customers, an in-context team explicitly needing more "
         "signups or customers, asking how to reach customers, or struggling with "
         "manual outreach can be a match even without words such as prospect, lead, "
-        "account matching, or buyer intent. Use `strong_match` only for a clear, "
-        "direct fit with a specific request, urgency, evaluation, tool/category search, "
-        "switching signal, or concrete problem. Calibrate confidence so 0.35-0.59 represents a plausible "
-        "Discovery candidate and 0.60+ represents a clear fit ready for human review. "
+        "account matching, or buyer intent. Calibrate confidence so 0.30-0.54 represents a plausible "
+        "Potential buyer and 0.55+ represents a clear main lead ready for human review. "
         "Reject only no plausible fit, clear conflicting audiences or use cases, spam, "
         "job postings, announcements, generic publisher content, or generic advice "
         "with no buyer situation. Negative keywords and excluded audiences are context "
@@ -397,7 +399,7 @@ class VerifierService(OpenAIClientOwner):
         client = self._get_client()
         provider_rate_limiter.wait_for_slot(
             provider="openai-chat",
-            limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 20),
+            limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 500),
         )
         try:
             parse_completion = client.beta.chat.completions.parse
@@ -469,8 +471,9 @@ class VerifierService(OpenAIClientOwner):
             "solved, pain points, triggers, urgency, search terms, and exclusions as "
             "weighted relevance signals, not a checklist. A candidate may be an adjacent "
             "buyer if it shows one credible problem, investigation, workflow frustration, "
-            "or request the service could plausibly address. Do not require an exact target "
-            "audience, every profile field, or explicit intent to buy for a `weak_match`; "
+            "or request the service could plausibly address. Prefer a cautious `weak_match` "
+            "when the post has one real, relevant buyer situation. Do not require an exact target "
+            "audience, every profile field, company size, budget, or explicit intent to buy; "
             "reserve rejection for no plausible fit, clear bad-fit content, spam, or generic "
             "educational content without a buyer situation.\n\n"
             "Service Profile JSON:\n"

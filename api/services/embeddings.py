@@ -176,17 +176,102 @@ class EmbeddingService(OpenAIClientOwner):
         *,
         tenant_id: str | None = None,
         service_profile_id: str | None = None,
+        source_post_ids: Sequence[str | None] | None = None,
         purpose: str = "semantic_matching",
     ) -> list[EmbeddingResponse]:
-        return [
-            self.embed_text(
-                request,
-                tenant_id=tenant_id,
-                service_profile_id=service_profile_id,
-                purpose=purpose,
-            )
+        """Embed a bounded collection with one provider request per batch.
+
+        OpenAI's embeddings endpoint accepts an array of inputs.  Keeping the
+        quota decision per document preserves Arcli's existing usage policy,
+        while batching removes needless network round trips for public-post
+        matching.
+        """
+        payloads = [
+            request
+            if isinstance(request, EmbeddingRequest)
+            else EmbeddingRequest(text=request, model=self.model)
             for request in requests
         ]
+        if not payloads:
+            return []
+
+        normalized_source_post_ids = list(source_post_ids or ())
+        if source_post_ids is not None and len(normalized_source_post_ids) != len(
+            payloads
+        ):
+            raise ValueError("source_post_ids must match the number of embedding requests")
+        if not normalized_source_post_ids:
+            normalized_source_post_ids = [None] * len(payloads)
+
+        quotas = []
+        for payload, source_post_id in zip(payloads, normalized_source_post_ids):
+            quota = self.quota_guard.check_and_increment(
+                tenant_id=tenant_id,
+                counter_name=EMBEDDING_QUOTA_COUNTER,
+                limit=env_int(
+                    "ARCLI_AI_DAILY_EMBEDDING_LIMIT",
+                    EMBEDDING_QUOTA_DEFAULT_LIMIT,
+                ),
+                window_seconds=env_int(
+                    "ARCLI_AI_DAILY_EMBEDDING_WINDOW_SECONDS",
+                    EMBEDDING_QUOTA_DEFAULT_WINDOW_SECONDS,
+                ),
+            )
+            if not quota.allowed:
+                logger.warning(
+                    "embedding_skipped tenant_id=%s service_profile_id=%s source_post_id=%s purpose=%s rejection_reason=%s current_count=%s limit=%s window_seconds=%s",
+                    quota.tenant_id,
+                    service_profile_id,
+                    source_post_id,
+                    purpose,
+                    quota.rejection_reason,
+                    quota.current_count,
+                    quota.limit,
+                    quota.window_seconds,
+                )
+                raise RuntimeError("Embedding quota exceeded for tenant.")
+            quotas.append(quota)
+
+        requested_batch_size = env_int("ARCLI_OPENAI_EMBEDDING_BATCH_SIZE", 32)
+        batch_size = min(2_048, max(1, requested_batch_size))
+        responses: list[EmbeddingResponse | None] = [None] * len(payloads)
+        indexes_by_model: dict[str, list[int]] = {}
+        for index, payload in enumerate(payloads):
+            indexes_by_model.setdefault(payload.model, []).append(index)
+
+        for model, indexes in indexes_by_model.items():
+            for start in range(0, len(indexes), batch_size):
+                batch_indexes = indexes[start : start + batch_size]
+                embeddings = self._create_embeddings(
+                    [payloads[index].text for index in batch_indexes],
+                    model,
+                )
+                if len(embeddings) != len(batch_indexes):
+                    raise RuntimeError("OpenAI returned an incomplete embedding batch.")
+                for index, embedding in zip(batch_indexes, embeddings):
+                    result = EmbeddingResponse(
+                        model=model,
+                        embedding=embedding,
+                        dimensions=len(embedding),
+                    )
+                    responses[index] = result
+                    quota = quotas[index]
+                    logger.debug(
+                        "embedding_generated tenant_id=%s service_profile_id=%s source_post_id=%s purpose=%s model=%s dimensions=%s input_chars=%s current_count=%s limit=%s",
+                        quota.tenant_id,
+                        service_profile_id,
+                        normalized_source_post_ids[index],
+                        purpose,
+                        result.model,
+                        result.dimensions,
+                        len(payloads[index].text),
+                        quota.current_count,
+                        quota.limit,
+                    )
+
+        if any(response is None for response in responses):
+            raise RuntimeError("OpenAI embedding batch did not return every requested input.")
+        return [response for response in responses if response is not None]
 
     @retry(
         retry=retry_if_exception(_is_retryable_openai_error),
@@ -216,6 +301,46 @@ class EmbeddingService(OpenAIClientOwner):
             raise RuntimeError("OpenAI returned an invalid embedding vector.")
 
         return [float(value) for value in embedding]
+
+    @retry(
+        retry=retry_if_exception(_is_retryable_openai_error),
+        wait=wait_exponential_jitter(initial=1, max=20),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry,
+        reraise=True,
+    )
+    def _create_embeddings(self, texts: Sequence[str], model: str) -> list[list[float]]:
+        """Call the provider once for a same-model collection of inputs."""
+        if not texts:
+            return []
+
+        client = self._get_client()
+        provider_rate_limiter.wait_for_slot(
+            provider="openai-embeddings",
+            limit=env_int("ARCLI_OPENAI_EMBEDDING_REQUESTS_PER_MINUTE", 60),
+        )
+        response = client.embeddings.create(
+            model=model,
+            input=list(texts),
+            timeout=self.timeout_seconds,
+        )
+        data = getattr(response, "data", None)
+        if not data:
+            raise RuntimeError("OpenAI returned no embedding data.")
+
+        embeddings: list[list[float] | None] = [None] * len(texts)
+        for fallback_index, item in enumerate(data):
+            response_index = getattr(item, "index", fallback_index)
+            if not isinstance(response_index, int) or not 0 <= response_index < len(texts):
+                raise RuntimeError("OpenAI returned an invalid embedding batch index.")
+            embedding = getattr(item, "embedding", None)
+            if not isinstance(embedding, list) or not embedding:
+                raise RuntimeError("OpenAI returned an invalid embedding vector.")
+            embeddings[response_index] = [float(value) for value in embedding]
+
+        if any(embedding is None for embedding in embeddings):
+            raise RuntimeError("OpenAI returned an incomplete embedding batch.")
+        return [embedding for embedding in embeddings if embedding is not None]
 
     def _build_client(self) -> Any:
         try:
@@ -320,8 +445,12 @@ def _database_engine() -> Engine:
     return create_engine(
         _normalize_database_url(database_url),
         pool_pre_ping=True,
-        pool_size=4,
-        max_overflow=0,
+        # Public-source matching is I/O bound and now runs on up to eight
+        # worker threads. Keep enough checked connections available for the
+        # short cache and lead-write transactions without opening an
+        # unbounded number against the hosted database.
+        pool_size=env_int("ARCLI_DB_POOL_SIZE", 8),
+        max_overflow=env_int("ARCLI_DB_MAX_OVERFLOW", 4),
         pool_timeout=5,
         pool_recycle=1_800,
     )
@@ -1491,30 +1620,9 @@ def _enqueue_public_ingestion_after_embedding(
             exc,
         )
 
-    # Historical HN/X rows are globally cached.  A profile activation must
-    # also evaluate a bounded cached slice, otherwise only future searches (or
-    # duplicate hits returned by them) can ever reach this customer.
-    try:
-        from api.services.social_ingestion import enqueue_existing_public_source_rematch
-
-        rematch_message_id = enqueue_existing_public_source_rematch(
-            tenant_id,
-            service_profile_id,
-        )
-        logger.info(
-            "existing_public_source_rematch_enqueued_after_embedding tenant_id=%s service_profile_id=%s message_id=%s",
-            tenant_id,
-            service_profile_id,
-            rematch_message_id,
-        )
-    except Exception as exc:
-        logger.exception(
-            "existing_public_source_rematch_enqueue_after_embedding_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
-            tenant_id,
-            service_profile_id,
-            exc.__class__.__name__,
-            exc,
-        )
+    # The initial fast check schedules the historical rematch after it has
+    # handed fresh source results to matching.  That makes a new scan useful
+    # first, while preserving the bounded cached-corpus check afterwards.
 
 
 def mark_service_profile_embedding_dead_lettered(

@@ -286,6 +286,8 @@ def trigger_embedding_jobs(source_post_refs: Sequence[PublicSourcePostRef]) -> i
 def enqueue_existing_public_source_rematch(
     tenant_id: str,
     service_profile_id: str | None,
+    *,
+    delay_ms: int = 0,
 ) -> str | None:
     """Queue a bounded, profile-only rematch of the cached public corpus.
 
@@ -311,16 +313,24 @@ def enqueue_existing_public_source_rematch(
 
     from api.workers.actors import rematch_existing_public_source_posts_job
 
-    message = rematch_existing_public_source_posts_job.send(
-        tenant_id,
-        service_profile_id,
-    )
+    normalized_delay_ms = max(0, int(delay_ms))
+    if normalized_delay_ms:
+        message = rematch_existing_public_source_posts_job.send_with_options(
+            args=(tenant_id, service_profile_id),
+            delay=normalized_delay_ms,
+        )
+    else:
+        message = rematch_existing_public_source_posts_job.send(
+            tenant_id,
+            service_profile_id,
+        )
     logger.info(
-        "existing_public_source_rematch_enqueued tenant_id=%s service_profile_id=%s job_state=%s message_id=%s",
+        "existing_public_source_rematch_enqueued tenant_id=%s service_profile_id=%s job_state=%s message_id=%s delay_ms=%s",
         tenant_id,
         service_profile_id,
         "pending",
         message.message_id,
+        normalized_delay_ms,
     )
     return message.message_id
 

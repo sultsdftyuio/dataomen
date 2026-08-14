@@ -122,6 +122,10 @@ class FastPublicSourceCheckTests(unittest.TestCase):
                 side_effect=run_sources,
             ),
             patch("api.services.social_ingestion.trigger_embedding_jobs", return_value=0),
+            patch(
+                "api.services.social_ingestion.enqueue_existing_public_source_rematch",
+                return_value="rematch-message",
+            ) as rematch_enqueue,
             patch.object(actors, "_complete_discovery_run", complete_run),
             patch.object(actors, "_record_discovery_event"),
             patch.object(actors, "_close_actor_openai_clients"),
@@ -143,6 +147,11 @@ class FastPublicSourceCheckTests(unittest.TestCase):
         self.assertTrue(
             complete_run.call_args.kwargs["summary"]["source_completion"]
             ["all_sources_finished"]
+        )
+        rematch_enqueue.assert_called_once_with(
+            "tenant-1",
+            "profile-1",
+            delay_ms=300_000,
         )
 
 

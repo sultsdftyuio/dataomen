@@ -26,6 +26,82 @@ _SPAM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Public source APIs generally treat consecutive query words as an AND or an
+# exact phrase.  A full buyer-language sentence makes a good matching brief,
+# but is usually far too specific for an issue tracker or technical forum.
+# Keep the distinctive words people are likely to write, then let Arcli's
+# embedding and verifier stages decide whether the post is actually a lead.
+_DISCOVERY_SEARCH_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "best",
+        "by",
+        "can",
+        "could",
+        "do",
+        "does",
+        "for",
+        "from",
+        "get",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "looking",
+        "me",
+        "more",
+        "my",
+        "need",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "please",
+        "recommend",
+        "recommendation",
+        "recommendations",
+        "should",
+        "that",
+        "the",
+        "this",
+        "to",
+        "too",
+        "use",
+        "way",
+        "we",
+        "what",
+        "which",
+        "with",
+        "would",
+        "you",
+        "your",
+    }
+)
+_DISCOVERY_SEARCH_GENERIC_TERMS = frozenset(
+    {
+        "better",
+        "manual",
+        "manually",
+        "platform",
+        "process",
+        "service",
+        "solution",
+        "software",
+        "system",
+        "tool",
+        "tools",
+        "workflow",
+    }
+)
+
 
 class PublicSourcePost(BaseModel):
     """Provider-neutral content contract persisted in the global source corpus."""
@@ -92,6 +168,34 @@ def normalise_text(value: object) -> str:
 def clip_text(value: str, limit: int) -> str:
     """Bound untrusted provider text before it reaches the shared database."""
     return value[: max(1, limit)].rstrip()
+
+
+def compact_discovery_search_query(value: object, *, max_terms: int = 2) -> str:
+    """Turn a natural buyer phrase into a recall-oriented source query.
+
+    This intentionally does *not* decide whether a result is a lead. It only
+    prevents provider search syntax from demanding that a prospect repeat a
+    long generated phrase word-for-word. At least one meaningful term is kept
+    and the original normalized value remains a safe fallback.
+    """
+    normalized = normalise_text(value)
+    requested_limit = max(1, min(5, int(max_terms)))
+    terms = re.findall(r"[a-z0-9][a-z0-9_-]*", normalized.casefold())
+    meaningful_terms = [
+        term
+        for term in terms
+        if term not in _DISCOVERY_SEARCH_STOP_WORDS
+        and term not in _DISCOVERY_SEARCH_GENERIC_TERMS
+        and len(term) > 1
+    ]
+    selected_terms = meaningful_terms[:requested_limit]
+    if not selected_terms:
+        selected_terms = [
+            term
+            for term in terms
+            if term not in _DISCOVERY_SEARCH_STOP_WORDS and len(term) > 1
+        ][:requested_limit]
+    return " ".join(selected_terms) or clip_text(normalized, 200)
 
 
 def html_to_text(value: object) -> str:

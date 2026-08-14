@@ -82,7 +82,7 @@ class _Worker:
 
 
 class DramatiqMemoryGuardrailTests(unittest.TestCase):
-    def test_default_worker_concurrency_is_single_process_four_threads(self) -> None:
+    def test_default_worker_concurrency_is_single_process_eight_threads(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
                 start_worker.int_env("DRAMATIQ_PROCESSES", start_worker.DRAMATIQ_PROCESSES),
@@ -90,11 +90,11 @@ class DramatiqMemoryGuardrailTests(unittest.TestCase):
             )
             self.assertEqual(
                 start_worker.int_env("DRAMATIQ_THREADS", start_worker.DRAMATIQ_THREADS),
-                4,
+                8,
             )
         self.assertEqual(
             start_worker.dramatiq_concurrency_command(),
-            ("dramatiq", "api.worker:broker", "-p", "1", "-t", "4"),
+            ("dramatiq", "api.worker:broker", "-p", "1", "-t", "8"),
         )
 
     def test_worker_registry_keeps_heavy_services_out_of_idle_imports(self) -> None:
@@ -135,7 +135,7 @@ raise SystemExit(','.join(sorted(blocked)) or 0)
         with patch.dict(os.environ, {}, clear=True):
             runtime_env = start_worker.dramatiq_runtime_environment()
 
-        self.assertEqual(runtime_env["dramatiq_queue_prefetch"], "8")
+        self.assertEqual(runtime_env["dramatiq_queue_prefetch"], "16")
         self.assertEqual(runtime_env["dramatiq_delay_queue_prefetch"], "64")
         self.assertEqual(runtime_env["dramatiq_worker_timeout"], "5000")
 
@@ -143,7 +143,7 @@ raise SystemExit(','.join(sorted(blocked)) or 0)
         with patch.dict(os.environ, {}, clear=True):
             runtime_env = start_worker.apply_dramatiq_runtime_environment()
 
-            self.assertEqual(os.environ["dramatiq_queue_prefetch"], "8")
+            self.assertEqual(os.environ["dramatiq_queue_prefetch"], "16")
             self.assertEqual(
                 os.environ["dramatiq_delay_queue_prefetch"],
                 "64",
@@ -198,7 +198,7 @@ raise SystemExit(','.join(sorted(blocked)) or 0)
         command = popen.call_args.args[0]
         child_env = popen.call_args.kwargs["env"]
         self.assertEqual(command, [sys.executable, os.path.abspath(start_worker.__file__), "--dramatiq-child"])
-        self.assertEqual(child_env["dramatiq_queue_prefetch"], "8")
+        self.assertEqual(child_env["dramatiq_queue_prefetch"], "16")
         self.assertEqual(child_env["dramatiq_delay_queue_prefetch"], "64")
         self.assertEqual(child_env["dramatiq_worker_timeout"], "5000")
 

@@ -75,14 +75,14 @@ DEFAULT_MAX_POSTS = 80
 
 
 
-DEFAULT_VERIFIER_QUALIFIED_THRESHOLD = 0.6
+DEFAULT_VERIFIER_QUALIFIED_THRESHOLD = 0.55
 
 
 
 # These are verifier-confirmed, human-review signals rather than qualified
 # opportunities. A lower floor preserves plausible evidence that would
 # otherwise vanish while the ready-for-review threshold remains higher.
-DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD = 0.35
+DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD = 0.30
 
 
 

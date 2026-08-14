@@ -72,7 +72,7 @@ type FeedbackNotice = {
   ok: boolean;
 };
 
-type QueueFilter = "all" | "ready" | "review";
+type QueueFilter = "all" | "leads" | "potential";
 type QueueSort = "priority" | "newest" | "confidence";
 
 const STALE_EMBEDDING_MS = 10 * 60 * 1000;
@@ -133,7 +133,7 @@ function leadTimestamp(lead: QualifiedLeadView) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-function isReviewLead(lead: QualifiedLeadView) {
+function isPotentialBuyer(lead: QualifiedLeadView) {
   return lead.matchStatus === "discovery_candidate";
 }
 
@@ -163,7 +163,7 @@ function sortQueueItems(items: QualifiedLeadView[], sort: QueueSort) {
     if (sort === "confidence") return b.verifierScore - a.verifierScore;
 
     const priority = (lead: QualifiedLeadView) =>
-      (isReviewLead(lead) ? 0 : 4) +
+      (isPotentialBuyer(lead) ? 0 : 4) +
       (lead.urgencyReason ? 2 : 0) +
       (lead.matchStatus === "qualified" ? 1 : 0);
     const priorityDifference = priority(b) - priority(a);
@@ -270,7 +270,7 @@ function pipelineStatus({
     label: "Latest scan complete",
     title: "Your latest scan is complete.",
     detail:
-      "Review the conversations below. Plausible matches stay separate from ready-to-act prospects so you can judge them with confidence.",
+      "Clear buyer-problem leads and potential buyers stay separate, so you can judge each one with confidence.",
   };
 }
 
@@ -290,7 +290,7 @@ const FIRST_SCAN_STEPS = [
   "Building your matching brief",
   "Preparing the search",
   "Scanning conversations",
-  "Reviewing possible leads",
+  "Reviewing buyer signals",
 ] as const;
 
 function firstScanStepIndex({
@@ -499,8 +499,8 @@ function LeadOutreach({
 
   const reviewOnlyNotice = isReviewOnly ? (
     <p className="text-xs font-medium" style={{ color: C.amber }}>
-      Review only — this item did not meet the action threshold and cannot be
-      qualified or exported to your CRM.
+      Potential buyer — review the evidence before outreach. It cannot be
+      qualified or exported to your CRM yet.
     </p>
   ) : null;
 
@@ -877,7 +877,7 @@ function DenseQueueRow({
       type="button"
       onClick={() => onSelect(lead.id)}
       aria-pressed={selected}
-      className="w-full border-b border-l-[3px] px-4 py-3.5 text-left transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
+      className="w-full border-b border-l-[3px] px-5 py-4 text-left transition-colors hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]"
       style={{
         borderColor: C.rule,
         borderLeftColor: selected ? C.blue : "transparent",
@@ -896,13 +896,13 @@ function DenseQueueRow({
             color: isWatch ? C.amber : C.green,
           }}
         >
-          {isWatch ? "Worth a look" : "Ready"}
+          {isWatch ? "Potential buyer" : "Lead"}
         </span>
       </div>
-      <p className="pfd mt-1.5 truncate text-[15px] leading-5" style={{ color: C.navy }}>
+      <p className="pfd mt-2 truncate text-base leading-5" style={{ color: C.navy }}>
         {lead.sourcePost.title}
       </p>
-      <div className="mt-1 flex items-center justify-between gap-2">
+      <div className="mt-1.5 flex items-center justify-between gap-2">
         <p className="min-w-0 truncate text-xs" style={{ color: C.muted }}>
           {lead.painDetected || lead.matchReason}
         </p>
@@ -935,20 +935,20 @@ function DenseLeadDetails({
 }) {
   const isWatch = lead.matchStatus === "discovery_candidate";
   const postedAt = formatDate(lead.sourcePost.publishedAt);
-  const [openDetail, setOpenDetail] = useState<"evidence" | "reply" | "outcome" | null>(null);
+  const [openDetail, setOpenDetail] = useState<"reply" | "outcome" | null>(null);
   const isQualified = lead.matchStatus === "qualified";
 
   useEffect(() => {
     setOpenDetail(null);
   }, [lead.id]);
 
-  const toggleDetail = (detail: "evidence" | "reply" | "outcome") => {
+  const toggleDetail = (detail: "reply" | "outcome") => {
     setOpenDetail((current) => (current === detail ? null : detail));
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b px-4 py-3.5" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
+      <div className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.navySoft }}>
             {sourceDisplayName(lead.sourcePost.source)}
@@ -963,10 +963,10 @@ function DenseLeadDetails({
               color: isWatch ? C.amber : C.green,
             }}
           >
-            {isWatch ? "Worth a look" : "Ready to reply"}
+            {isWatch ? "Potential buyer" : "Clear buyer problem"}
           </Badge>
         </div>
-        <h3 className="pfd mt-1.5 text-lg leading-6" style={{ color: C.navy }}>
+        <h3 className="pfd mt-2 text-xl leading-7" style={{ color: C.navy }}>
           {lead.sourcePost.title}
         </h3>
         {(postedAt || lead.sourcePost.author) ? (
@@ -979,11 +979,11 @@ function DenseLeadDetails({
       </div>
 
       <div
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
         style={{ backgroundColor: C.offWhite }}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-l-[3px] bg-white p-3.5" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-l-[3px] bg-white p-4" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
               What they need
             </p>
@@ -991,7 +991,7 @@ function DenseLeadDetails({
               {lead.painDetected}
             </p>
           </div>
-          <div className="rounded-lg border border-l-[3px] bg-white p-3.5" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
+          <div className="rounded-lg border border-l-[3px] bg-white p-4" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
               Your opening
             </p>
@@ -1012,6 +1012,50 @@ function DenseLeadDetails({
           </div>
         ) : null}
 
+        <section
+          aria-label="Original public post or comment"
+          className="rounded-lg border bg-white p-3.5"
+          style={{ borderColor: C.rule }}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
+                Original post or comment
+              </p>
+              <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
+                The actual public text that triggered this match.
+              </p>
+            </div>
+            {lead.sourcePost.url ? (
+              <Button
+                asChild
+                size="xs"
+                variant="outline"
+                style={{ borderColor: C.blueLight, color: C.blue }}
+              >
+                <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="size-3" />
+                  Open original
+                </a>
+              </Button>
+            ) : null}
+          </div>
+          {lead.evidenceExcerpt ? (
+            <blockquote
+              className="mt-3 border-l-2 pl-3 text-sm italic leading-6"
+              style={{ borderColor: C.blueLight, color: C.navy }}
+            >
+              “{lead.evidenceExcerpt}”
+            </blockquote>
+          ) : null}
+          <p
+            className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-6"
+            style={{ color: C.navySoft }}
+          >
+            {lead.sourcePost.text}
+          </p>
+        </section>
+
         <section aria-label="Conversation actions" className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <p className="pfd text-base leading-none" style={{ color: C.navy }}>
             Choose a path
@@ -1020,20 +1064,6 @@ function DenseLeadDetails({
             Open only the detail you need right now.
           </p>
           <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Conversation actions">
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              aria-pressed={openDetail === "evidence"}
-              onClick={() => toggleDetail("evidence")}
-              style={{
-                borderColor: openDetail === "evidence" ? C.blueLight : C.ruleDark,
-                backgroundColor: openDetail === "evidence" ? C.blueTint : C.white,
-                color: openDetail === "evidence" ? C.blue : C.navySoft,
-              }}
-            >
-              Read evidence
-            </Button>
             <Button
               type="button"
               size="xs"
@@ -1064,35 +1094,6 @@ function DenseLeadDetails({
             </Button>
           </div>
         </section>
-
-        {openDetail === "evidence" ? (
-        <div className="rounded-lg border p-3.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
-              In their own words
-            </p>
-            {lead.sourcePost.author ? (
-              <span className="text-[10px]" style={{ color: C.muted }}>{lead.sourcePost.author}</span>
-            ) : null}
-          </div>
-          {lead.evidenceExcerpt ? (
-            <blockquote className="mt-2 border-l-2 pl-3 text-sm italic leading-6" style={{ borderColor: C.blueLight, color: C.navy }}>
-              “{lead.evidenceExcerpt}”
-            </blockquote>
-          ) : null}
-          <p className="mt-3 max-h-24 overflow-y-auto whitespace-pre-wrap text-xs leading-5" style={{ color: C.navySoft }}>
-            {lead.sourcePost.text}
-          </p>
-          {lead.sourcePost.url ? (
-            <Button asChild size="xs" variant="outline" className="mt-3" style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}>
-              <a href={lead.sourcePost.url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="size-3" />
-                Open original
-              </a>
-            </Button>
-          ) : null}
-        </div>
-        ) : null}
 
         {openDetail === "reply" ? (
           <LeadOutreach
@@ -2295,13 +2296,21 @@ export default function ProspectDashboardClient({
   );
   const filteredQueueItems = useMemo(() => {
     const filtered = queueItems.filter((lead) => {
-      if (queueFilter === "ready" && isReviewLead(lead)) return false;
-      if (queueFilter === "review" && !isReviewLead(lead)) return false;
+      if (queueFilter === "leads" && isPotentialBuyer(lead)) return false;
+      if (queueFilter === "potential" && !isPotentialBuyer(lead)) return false;
       return matchesQueueSearch(lead, queueQuery);
     });
 
     return sortQueueItems(filtered, queueSort);
   }, [queueFilter, queueItems, queueQuery, queueSort]);
+  const visibleLeads = useMemo(
+    () => filteredQueueItems.filter((lead) => !isPotentialBuyer(lead)),
+    [filteredQueueItems],
+  );
+  const visiblePotentialBuyers = useMemo(
+    () => filteredQueueItems.filter(isPotentialBuyer),
+    [filteredQueueItems],
+  );
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(
     queueItems[0]?.id ?? null,
   );
@@ -2357,7 +2366,7 @@ export default function ProspectDashboardClient({
       <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
-            Prospects
+            Leads
           </h1>
         </div>
         <div className="flex items-center gap-2">
@@ -2414,8 +2423,8 @@ export default function ProspectDashboardClient({
                 </p>
                 <div className="mt-2 grid grid-cols-3 divide-x rounded-lg border bg-white" style={{ borderColor: C.rule }}>
                   {[
-                    { label: "Ready", value: leads.length, color: C.green },
-                    { label: "Review", value: discoveryCandidates.length, color: C.amber },
+                    { label: "Leads", value: leads.length, color: C.green },
+                    { label: "Potential", value: discoveryCandidates.length, color: C.amber },
                     { label: "Feed", value: queueItems.length, color: C.blue },
                   ].map((metric) => (
                     <div key={metric.label} className="p-3 text-center" style={{ borderColor: C.rule }}>
@@ -2485,21 +2494,21 @@ export default function ProspectDashboardClient({
           isWarmingUp={isWarmingUp}
         />
       ) : (
-      <div className="grid gap-4 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(300px,0.72fr)_minmax(560px,1.65fr)]">
+      <div className="grid min-h-[560px] gap-5 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(360px,0.95fr)_minmax(640px,1.55fr)] 2xl:grid-cols-[minmax(420px,1fr)_minmax(760px,1.7fr)]">
         <section
           aria-labelledby="matches-heading"
-          className="flex min-h-0 max-h-[420px] flex-col overflow-hidden rounded-xl border bg-white xl:max-h-none"
+          className="flex min-h-0 max-h-[560px] flex-col overflow-hidden rounded-xl border bg-white xl:max-h-none"
           style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
         >
-          <div className="flex h-12 shrink-0 items-center justify-between border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-            <h2 id="matches-heading" className="pfd text-lg leading-none" style={{ color: C.navy }}>
-              Prospects
+          <div className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+            <h2 id="matches-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
+              Leads
             </h2>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
-              {leads.length} ready to reply
+              {leads.length} clear buyer problems
             </span>
           </div>
-          <div className="border-b p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+          <div className="border-b px-5 py-4" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <div className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
                 <Search
@@ -2511,8 +2520,8 @@ export default function ProspectDashboardClient({
                   type="search"
                   value={queueQuery}
                   onChange={(event) => setQueueQuery(event.target.value)}
-                  placeholder="Search matches"
-                  aria-label="Search matches"
+                  placeholder="Search leads and potential buyers"
+                  aria-label="Search leads and potential buyers"
                   className="h-8 w-full rounded-full border bg-white pl-8 pr-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
                   style={{ borderColor: C.ruleDark, color: C.navy }}
                 />
@@ -2532,9 +2541,9 @@ export default function ProspectDashboardClient({
             </div>
             {isQueueControlsOpen ? (
               <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
-                <div className="flex items-center gap-1" role="group" aria-label="Match status filter">
-                  {(["all", "ready", "review"] as const).map((filter) => {
-                    const label = filter === "all" ? "All" : filter === "ready" ? "Ready" : "Worth a look";
+                <div className="flex items-center gap-1" role="group" aria-label="Lead type filter">
+                  {(["all", "leads", "potential"] as const).map((filter) => {
+                    const label = filter === "all" ? "All" : filter === "leads" ? "Leads" : "Potential buyers";
                     const active = queueFilter === filter;
 
                     return (
@@ -2575,14 +2584,69 @@ export default function ProspectDashboardClient({
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {filteredQueueItems.length > 0 ? (
-              filteredQueueItems.map((lead) => (
-                <DenseQueueRow
-                  key={lead.id}
-                  lead={lead}
-                  selected={lead.id === selectedLeadId}
-                  onSelect={setSelectedLeadId}
-                />
-              ))
+              <>
+                {visibleLeads.length > 0 ? (
+                  <section aria-labelledby="clear-leads-heading">
+                    <div
+                      className="sticky top-0 z-10 border-b px-5 py-3"
+                      style={{ borderColor: C.rule, backgroundColor: C.greenPale }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 id="clear-leads-heading" className="text-xs font-bold" style={{ color: C.green }}>
+                            Leads
+                          </h3>
+                          <p className="mt-0.5 text-[11px]" style={{ color: C.navySoft }}>
+                            Each one shows a clear, real buyer problem.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold" style={{ color: C.green }}>
+                          {visibleLeads.length}
+                        </span>
+                      </div>
+                    </div>
+                    {visibleLeads.map((lead) => (
+                      <DenseQueueRow
+                        key={lead.id}
+                        lead={lead}
+                        selected={lead.id === selectedLeadId}
+                        onSelect={setSelectedLeadId}
+                      />
+                    ))}
+                  </section>
+                ) : null}
+
+                {visiblePotentialBuyers.length > 0 ? (
+                  <section aria-labelledby="potential-buyers-heading">
+                    <div
+                      className="sticky top-0 z-10 border-y px-5 py-3"
+                      style={{ borderColor: C.rule, backgroundColor: C.amberPale }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 id="potential-buyers-heading" className="text-xs font-bold" style={{ color: C.amber }}>
+                            Potential buyers
+                          </h3>
+                          <p className="mt-0.5 text-[11px]" style={{ color: C.navySoft }}>
+                            Relevant early signals that need a closer check.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold" style={{ color: C.amber }}>
+                          {visiblePotentialBuyers.length}
+                        </span>
+                      </div>
+                    </div>
+                    {visiblePotentialBuyers.map((lead) => (
+                      <DenseQueueRow
+                        key={lead.id}
+                        lead={lead}
+                        selected={lead.id === selectedLeadId}
+                        onSelect={setSelectedLeadId}
+                      />
+                    ))}
+                  </section>
+                ) : null}
+              </>
             ) : queueItems.length > 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-5 text-center">
                 <ListFilter className="size-4" style={{ color: C.blue }} aria-hidden="true" />
@@ -2618,13 +2682,17 @@ export default function ProspectDashboardClient({
           className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[#F6FAFE]"
           style={{ borderColor: C.rule, backgroundColor: C.offWhite, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
-          <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b px-4" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-            <h2 id="details-heading" className="pfd text-lg leading-none" style={{ color: C.navy }}>
-              Lead brief
+          <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
+            <h2 id="details-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
+              {selectedLead?.matchStatus === "discovery_candidate"
+                ? "Potential buyer brief"
+                : "Lead brief"}
             </h2>
             {selectedLead ? (
               <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
-                {selectedLead.matchStatus === "discovery_candidate" ? "Worth a look" : "Ready to reply"}
+                {selectedLead.matchStatus === "discovery_candidate"
+                  ? "Potential buyer"
+                  : "Clear buyer problem"}
               </span>
             ) : null}
           </div>
@@ -2644,7 +2712,7 @@ export default function ProspectDashboardClient({
               <div className="absolute -bottom-20 -right-10 size-56 rounded-full border" style={{ borderColor: "rgba(27, 110, 191, 0.14)" }} aria-hidden="true" />
               <div className="relative max-w-sm">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-                  Prospects
+                  Leads
                 </p>
                 <h3 className="pfd mt-3 text-2xl leading-tight" style={{ color: C.navy }}>
                   Pick a prospect to begin
@@ -2686,7 +2754,7 @@ export default function ProspectDashboardClient({
               <div className="relative mt-5 flex items-end justify-between gap-4">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-                    Ready to reply
+                    Clear buyer problems
                   </p>
                   <p className="mt-1 text-4xl font-semibold tracking-tight" style={{ color: C.navy }}>{leads.length}</p>
                 </div>
@@ -2723,7 +2791,7 @@ export default function ProspectDashboardClient({
                 <button
                   type="button"
                   onClick={() => {
-                    setQueueFilter("ready");
+                    setQueueFilter("leads");
                     setQueueQuery("");
                   }}
                   className="block w-full rounded-md border p-3 text-left transition-colors hover:bg-[#F0F7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
@@ -2740,7 +2808,7 @@ export default function ProspectDashboardClient({
                 <button
                   type="button"
                   onClick={() => {
-                    setQueueFilter("review");
+                    setQueueFilter("potential");
                     setQueueQuery("");
                   }}
                   className="block w-full rounded-md border p-3 text-left transition-colors hover:bg-[#F0F7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"

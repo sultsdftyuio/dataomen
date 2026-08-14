@@ -618,6 +618,40 @@ def ingest_initial_public_sources_fast_job(
                 "verification_pending": True,
             },
         )
+        # Cached-post rematching is useful, but it is not on the critical
+        # path for a new scan.  Give fresh public-source posts a clear runway
+        # through matching before the bounded historical corpus uses threads.
+        if tenant_id and service_profile_id:
+            try:
+                from api.services.social_ingestion import (
+                    enqueue_existing_public_source_rematch,
+                )
+
+                rematch_delay_ms = _int_env(
+                    "ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS",
+                    300_000,
+                    minimum=0,
+                )
+                rematch_message_id = enqueue_existing_public_source_rematch(
+                    tenant_id,
+                    service_profile_id,
+                    delay_ms=rematch_delay_ms,
+                )
+                logger.info(
+                    "existing_public_source_rematch_deferred_after_fast_check tenant_id=%s service_profile_id=%s message_id=%s delay_ms=%s",
+                    tenant_id,
+                    service_profile_id,
+                    rematch_message_id,
+                    rematch_delay_ms,
+                )
+            except Exception as rematch_exc:
+                logger.exception(
+                    "existing_public_source_rematch_enqueue_after_fast_check_failed tenant_id=%s service_profile_id=%s error_type=%s error=%s",
+                    tenant_id,
+                    service_profile_id,
+                    rematch_exc.__class__.__name__,
+                    rematch_exc,
+                )
     except Exception as exc:
         _record_discovery_event(
             discovery_run_id=discovery_run_id,
@@ -1659,15 +1693,101 @@ def enqueue_source_post_embedding_job(
     )
 
 
+@dramatiq.actor(
+    actor_name="enqueue_source_post_embedding_batch_job",
+    queue_name=os.getenv("ARCLI_SOURCE_POST_EMBEDDING_QUEUE_NAME", "embeddings"),
+    max_retries=3,
+    min_backoff=10_000,
+    max_backoff=60_000,
+)
+def enqueue_source_post_embedding_batch_job(
+    source_post_refs: Sequence[dict[str, str]],
+) -> None:
+    """Embed a small public-post batch before applying normal lead matching."""
+    refs = [
+        {
+            "source": str(ref.get("source") or "").strip(),
+            "source_post_id": str(ref.get("source_post_id") or "").strip(),
+        }
+        for ref in source_post_refs
+        if isinstance(ref, dict)
+        and str(ref.get("source") or "").strip()
+        and str(ref.get("source_post_id") or "").strip()
+    ]
+    if not refs:
+        return
+
+    _job_started(
+        job_name="source_post_embedding_batch_handoff",
+        source_post_count=len(refs),
+    )
+    try:
+        from api.services.social_ingestion import (
+            process_public_source_post_embedding_batch,
+        )
+
+        result = process_public_source_post_embedding_batch(refs)
+        # Watchlists remain an independent tenant-scoped view.  Batch the
+        # shared embedding work, but never let a watchlist error retry or
+        # duplicate the profile-wide matching result above.
+        watchlist_candidates = 0
+        watchlist_ready_for_review = 0
+        for ref in refs:
+            try:
+                from api.services.watchlist_matching import (
+                    process_active_watchlists_for_public_source_post,
+                )
+
+                watchlist_result = process_active_watchlists_for_public_source_post(
+                    ref["source_post_id"],
+                    source=ref["source"],
+                )
+                watchlist_candidates += int(watchlist_result.get("candidates", 0))
+                watchlist_ready_for_review += int(
+                    watchlist_result.get("ready_for_review", 0)
+                )
+            except Exception as watchlist_exc:
+                logger.exception(
+                    "watchlist_source_matching_failed source=%s source_post_id=%s error_type=%s error=%s",
+                    ref["source"],
+                    ref["source_post_id"],
+                    watchlist_exc.__class__.__name__,
+                    watchlist_exc,
+                )
+    except Exception as exc:
+        logger.exception(
+            "source_post_embedding_batch_failed job_state=%s source_post_count=%s error_type=%s error=%s",
+            "failed",
+            len(refs),
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+    finally:
+        _close_actor_openai_clients()
+
+    _job_finished(
+        job_name="source_post_embedding_batch_handoff",
+        state="completed",
+        source_post_count=len(refs),
+        posts=result["posts"],
+        embedded=result["embedded"],
+        candidates=result["candidates"],
+        ready_for_review=result["ready_for_review"],
+        watchlist_candidates=watchlist_candidates,
+        watchlist_ready_for_review=watchlist_ready_for_review,
+    )
+
+
 def enqueue_source_post_embedding_jobs(source_post_refs: Sequence[Any]) -> int:
-    """Publish one source-qualified, idempotent embedding handoff per public row.
+    """Publish small source-qualified embedding batches for public rows.
 
     A plain string remains accepted solely to drain messages created by older
     workers. New callers pass ``PublicSourcePostRef`` objects, which avoid
     conflating equal external IDs from different providers.
     """
     _require_redis_broker()
-    messages_sent = 0
+    refs: list[dict[str, str]] = []
     seen: set[tuple[str | None, str]] = set()
     for source_post_ref in source_post_refs:
         if isinstance(source_post_ref, str):
@@ -1687,15 +1807,28 @@ def enqueue_source_post_embedding_jobs(source_post_refs: Sequence[Any]) -> int:
         if key in seen:
             continue
         seen.add(key)
-        if source:
-            enqueue_source_post_embedding_job.send(source_post_id, source=source)
-        else:
+        # New source ingestion always has a source. Keep source-less legacy
+        # messages on the original actor because they require ambiguity-safe
+        # single-row loading.
+        if not source:
             enqueue_source_post_embedding_job.send(source_post_id)
+            continue
+        refs.append({"source": source, "source_post_id": source_post_id})
+
+    batch_size = _int_env("ARCLI_SOURCE_POST_EMBEDDING_BATCH_SIZE", 16, minimum=1)
+    messages_sent = 0
+    for offset in range(0, len(refs), batch_size):
+        enqueue_source_post_embedding_batch_job.send(refs[offset : offset + batch_size])
         messages_sent += 1
+
+    legacy_count = len(seen) - len(refs)
+    messages_sent += legacy_count
     logger.info(
-        "source_post_embedding_handoffs_enqueued job_state=%s source_post_count=%s",
+        "source_post_embedding_handoffs_enqueued job_state=%s source_post_count=%s batch_count=%s batch_size=%s",
         "pending",
+        len(seen),
         messages_sent,
+        batch_size,
     )
     return messages_sent
 

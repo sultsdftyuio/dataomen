@@ -19,7 +19,7 @@ from urllib.parse import quote
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from api.services.cost_controls import TenantQuotaGuard, env_float, env_int
+from api.services.cost_controls import TenantQuotaGuard, env_int
 from api.services.client_lifecycle import managed_network_client
 from api.services.embeddings import (
     EmbeddingService,
@@ -260,10 +260,7 @@ def run_initial_public_ingestion(
                 tenant_id=tenant_id,
                 service_profile_id=resolved_profile_id,
             )
-        if verification.match and verification.confidence >= env_float(
-            "LEAD_VERIFIER_SCORE_THRESHOLD",
-            DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
-        ):
+        if _lead_match_status(verification) == "ready_for_review":
             qualified_count += 1
 
         with engine.begin() as conn:
@@ -309,12 +306,12 @@ from .legacy_fetch import (
 from .legacy_storage import (
     _cached_lead_verification,
     _cached_source_post_embedding,
+    _lead_match_status,
     _persist_lead_match,
     _persist_source_post_embedding_cache,
     _persist_source_posts,
 )
 from .models import (
-    DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
     _embedding_sha256,
     _profile_embedding_from_row,
     _service_profile_from_row,

@@ -45,18 +45,18 @@ def _result(
 
 
 class AdditionalPublicSourceServiceTests(unittest.TestCase):
-    def test_technical_sources_skip_plain_business_outcome_queries(self) -> None:
+    def test_technical_sources_search_plain_business_outcome_queries_by_default(self) -> None:
         from api.services.social_ingestion import (
             additional_public_source_supports_discovery_query,
         )
 
-        self.assertFalse(
+        self.assertTrue(
             additional_public_source_supports_discovery_query(
                 "github",
                 "not enough people signing up",
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             additional_public_source_supports_discovery_query(
                 "stackexchange",
                 "we are doing outreach by hand",
@@ -80,6 +80,23 @@ class AdditionalPublicSourceServiceTests(unittest.TestCase):
                 "my Etsy listings get views but no sales",
             )
         )
+
+    def test_technical_source_skip_is_available_as_an_explicit_strict_opt_out(self) -> None:
+        from api.services.social_ingestion import (
+            additional_public_source_supports_discovery_query,
+        )
+
+        with patch.dict(
+            os.environ,
+            {"ARCLI_TECHNICAL_SOURCE_REQUIRE_TECHNICAL_QUERY": "true"},
+            clear=True,
+        ):
+            self.assertFalse(
+                additional_public_source_supports_discovery_query(
+                    "github",
+                    "not enough people signing up",
+                )
+            )
 
     def test_service_persists_source_qualified_global_post_and_returns_ref(self) -> None:
         import api.services.social_ingestion as ingestion
@@ -201,6 +218,14 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             self.assertEqual(
                 additional_public_source_cache_scope("lemmy"),
                 "https://lemmy.world/api/v3/search",
+            )
+            self.assertEqual(
+                additional_public_source_cache_scope("stackexchange"),
+                "auto:recall-v2",
+            )
+            self.assertEqual(
+                additional_public_source_cache_scope("github"),
+                "recall-v2",
             )
 
     def _profile_row(self) -> dict[str, object]:
@@ -394,7 +419,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             tenant_id="tenant-1",
         )
 
-    def test_business_outcome_query_skips_technical_sources_and_keeps_x_fallback(self) -> None:
+    def test_business_outcome_query_searches_all_sources_and_keeps_x_fallback(self) -> None:
         from api.workers import actors
         import api.services.social_ingestion as ingestion
 
@@ -403,7 +428,12 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
             patch.object(
                 ingestion,
                 "ingest_additional_public_source_posts",
-                side_effect=[_result("bluesky"), _result("lemmy")],
+                side_effect=[
+                    _result("bluesky"),
+                    _result("stackexchange"),
+                    _result("github"),
+                    _result("lemmy"),
+                ],
             ) as ingest,
             patch.object(ingestion, "trigger_embedding_jobs", return_value=2),
             patch.object(actors, "_x_source_is_configured", return_value=True),
@@ -425,7 +455,7 @@ class AdditionalPublicSourceActivationTests(unittest.TestCase):
 
         self.assertEqual(
             [item.kwargs["source"] for item in ingest.call_args_list],
-            ["bluesky", "lemmy"],
+            ["bluesky", "stackexchange", "github", "lemmy"],
         )
         x_send.assert_called_once_with(
             '"manual customer onboarding"',
@@ -552,16 +582,20 @@ class PublicSourceReferenceTests(unittest.TestCase):
         ]
         with (
             patch.object(actors, "_require_redis_broker"),
-            patch.object(actors.enqueue_source_post_embedding_job, "send") as send,
+            patch.object(actors.enqueue_source_post_embedding_batch_job, "send") as send,
         ):
             sent = actors.enqueue_source_post_embedding_jobs(refs)
 
-        self.assertEqual(sent, 2)
+        self.assertEqual(sent, 1)
         self.assertEqual(
             send.call_args_list,
             [
-                call("42", source="hackernews"),
-                call("42", source="twitter"),
+                call(
+                    [
+                        {"source": "hackernews", "source_post_id": "42"},
+                        {"source": "twitter", "source_post_id": "42"},
+                    ]
+                ),
             ],
         )
 

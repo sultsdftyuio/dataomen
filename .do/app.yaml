@@ -56,10 +56,12 @@ workers:
       deploy_on_push: true
     source_dir: /
     dockerfile_path: ./Dockerfile
-    # Equivalent to: dramatiq api.worker:broker -p 1 -t 4
+    # Equivalent to: dramatiq api.worker:broker -p 1 -t 8
     run_command: python scripts/start_worker.py
     instance_count: 1
-    instance_size_slug: basic-xxs
+    # Four times the RAM of basic-xxs gives the I/O-heavy matching worker
+    # room for eight threads and avoids recycling during a normal scan.
+    instance_size_slug: apps-s-1vcpu-2gb
     envs:
       - key: ARCLI_WORKER_BACKEND
         scope: RUN_TIME
@@ -76,11 +78,11 @@ workers:
       - key: DRAMATIQ_THREADS
         scope: RUN_TIME
         type: general
-        value: "4"
+        value: "8"
       - key: ARCLI_DRAMATIQ_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
-        value: "8"
+        value: "16"
       - key: ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
@@ -96,7 +98,79 @@ workers:
       - key: ARCLI_REDIS_MAX_CONNECTIONS
         scope: RUN_TIME
         type: general
+        value: "32"
+      # Eight worker threads share these bounded pools for short cache and
+      # rate-limit transactions; this does not require a new database.
+      - key: ARCLI_QUOTA_REDIS_MAX_CONNECTIONS
+        scope: RUN_TIME
+        type: general
+        value: "12"
+      - key: ARCLI_DB_POOL_SIZE
+        scope: RUN_TIME
+        type: general
+        value: "8"
+      - key: ARCLI_DB_MAX_OVERFLOW
+        scope: RUN_TIME
+        type: general
+        value: "4"
+      # New source posts share one OpenAI embeddings request per small batch.
+      - key: ARCLI_SOURCE_POST_EMBEDDING_BATCH_SIZE
+        scope: RUN_TIME
+        type: general
         value: "16"
+      - key: ARCLI_OPENAI_EMBEDDING_BATCH_SIZE
+        scope: RUN_TIME
+        type: general
+        value: "32"
+      # Prefer recall during source collection; only the verifier can mark a
+      # post ready for review.
+      - key: ARCLI_MATCHING_SIMILARITY_THRESHOLD
+        scope: RUN_TIME
+        type: general
+        value: "0.15"
+      - key: ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION
+        scope: RUN_TIME
+        type: general
+        value: "0.10"
+      - key: ARCLI_TECHNICAL_SOURCE_REQUIRE_TECHNICAL_QUERY
+        scope: RUN_TIME
+        type: general
+        value: "false"
+      - key: ARCLI_STRICT_BUYER_CONTEXT_FILTER
+        scope: RUN_TIME
+        type: general
+        value: "false"
+      # A verifier-confirmed relevant buyer problem should be visible for
+      # review sooner; a human still decides whether to pursue it.
+      - key: LEAD_VERIFIER_SCORE_THRESHOLD
+        scope: RUN_TIME
+        type: general
+        value: "0.55"
+      - key: LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD
+        scope: RUN_TIME
+        type: general
+        value: "0.30"
+      - key: ARCLI_GITHUB_DISCOVERY_QUERY_TERMS
+        scope: RUN_TIME
+        type: general
+        value: "2"
+      - key: ARCLI_STACKEXCHANGE_DISCOVERY_QUERY_TERMS
+        scope: RUN_TIME
+        type: general
+        value: "2"
+      # Recheck global cached posts later, after the fresh scan's batches have
+      # made new leads available.
+      - key: ARCLI_INITIAL_PUBLIC_REMATCH_DELAY_MS
+        scope: RUN_TIME
+        type: general
+        value: "300000"
+      # Arcli's pacing ceiling for verifier calls. OpenAI remains the authority:
+      # any lower account/model limit is handled through the existing 429 retry
+      # and backoff path.
+      - key: ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE
+        scope: RUN_TIME
+        type: general
+        value: "500"
       # X requires a token with recent-search access.
       - key: ARCLI_X_INGESTION_ENABLED
         scope: RUN_TIME
@@ -105,11 +179,11 @@ workers:
       - key: ARCLI_WORKER_MAX_RSS_MB
         scope: RUN_TIME
         type: general
-        value: "384"
+        value: "1536"
       - key: ARCLI_WORKER_MAX_RSS_GROWTH_MB
         scope: RUN_TIME
         type: general
-        value: "64"
+        value: "768"
       - key: ARCLI_WORKER_MEMORY_CHECK_SECONDS
         scope: RUN_TIME
         type: general
@@ -117,21 +191,21 @@ workers:
       - key: ARCLI_WORKER_MEMORY_GRACE_SECONDS
         scope: RUN_TIME
         type: general
-        value: "60"
+        value: "90"
       - key: ARCLI_WORKER_MEMORY_GROWTH_SAMPLES
         scope: RUN_TIME
         type: general
-        value: "2"
+        value: "3"
       - key: ARCLI_WORKER_RECYCLE_TIMEOUT_SECONDS
         scope: RUN_TIME
         type: general
-        value: "270"
+        value: "360"
       - key: ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS
         scope: RUN_TIME
         type: general
-        value: "240"
+        value: "330"
     termination:
-      grace_period_seconds: 270
+      grace_period_seconds: 360
 
 ingress:
   rules:

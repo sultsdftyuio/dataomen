@@ -80,11 +80,13 @@ def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() 
     assert "search_terms describe the buyer's desired outcome" in prompt
     assert "weighted relevance signals, not a checklist" in prompt
     assert "tool/category search" in verifier.SYSTEM_PROMPT
-    assert "broader or adjacent buyer" in verifier.SYSTEM_PROMPT
-    assert "0.35-0.59 represents a plausible Discovery candidate" in verifier.SYSTEM_PROMPT
+    assert "Potential buyer" in verifier.SYSTEM_PROMPT
+    assert "main lead must show a clear, real buyer problem" in verifier.SYSTEM_PROMPT
+    assert "0.30-0.54 represents a plausible Potential buyer" in verifier.SYSTEM_PROMPT
     assert "Do not require the writer to use the vendor's product-category" in verifier.SYSTEM_PROMPT
     assert "without words such as prospect, lead" in verifier.SYSTEM_PROMPT
     assert "exact short excerpt" in verifier.SYSTEM_PROMPT
+    assert "Prefer a cautious `weak_match`" in prompt
 
 
 def test_verifier_keeps_only_verbatim_source_evidence() -> None:

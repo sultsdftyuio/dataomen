@@ -184,6 +184,14 @@ class StackExchangeConnectorTests(unittest.TestCase):
         self.assertEqual(params["filter"], "withbody")
         self.assertEqual(params["key"], "test-key")
 
+    def test_stackexchange_compacts_long_buyer_language_before_searching(self) -> None:
+        self.assertEqual(
+            StackExchangeConnector._search_query(
+                "We need a better manual customer onboarding workflow"
+            ),
+            "customer onboarding",
+        )
+
 
 class GitHubIssuesConnectorTests(unittest.TestCase):
     def test_anonymous_default_covers_every_activation_discovery_query(self) -> None:
@@ -195,7 +203,8 @@ class GitHubIssuesConnectorTests(unittest.TestCase):
     def test_query_scopes_to_recent_public_issues(self) -> None:
         query = GitHubIssuesConnector._search_query("manual customer onboarding", 1_700_000_000)
 
-        self.assertIn('"manual customer onboarding"', query)
+        self.assertIn("customer onboarding", query)
+        self.assertNotIn('"', query)
         self.assertIn("in:title,body", query)
         self.assertIn("is:issue", query)
         self.assertIn("is:public", query)

@@ -282,7 +282,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
             def verify(self, *_args, **_kwargs):
                 return VerificationResult(
                     match=True,
-                    decision_label="weak_match",
+                    decision_label="strong_match",
                     confidence=0.6,
                     pain_detected="Manual billing work",
                     why_this_matches="The post asks for a billing platform.",
@@ -484,7 +484,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
 
         ready_for_review = VerificationResult(
             match=True,
-            decision_label="weak_match",
+            decision_label="strong_match",
             confidence=0.6,
             pain_detected="Manual billing work",
             why_this_matches="Plausible recurring billing need.",
@@ -492,13 +492,21 @@ class PublicSourceMatchingTests(unittest.TestCase):
         )
         self.assertEqual(ingestion._lead_match_status(ready_for_review), "ready_for_review")
 
-        discovery_candidate = ready_for_review.model_copy(update={"confidence": 0.35})
+        high_confidence_potential = ready_for_review.model_copy(
+            update={"decision_label": "weak_match", "confidence": 0.8}
+        )
+        self.assertEqual(
+            ingestion._lead_match_status(high_confidence_potential),
+            "discovery_candidate",
+        )
+
+        discovery_candidate = ready_for_review.model_copy(update={"confidence": 0.30})
         self.assertEqual(
             ingestion._lead_match_status(discovery_candidate),
             "discovery_candidate",
         )
 
-        low_confidence = ready_for_review.model_copy(update={"confidence": 0.34})
+        low_confidence = ready_for_review.model_copy(update={"confidence": 0.29})
         self.assertEqual(ingestion._lead_match_status(low_confidence), "rejected")
 
         skipped = ready_for_review.model_copy(update={"verifier_executed": False})
@@ -509,7 +517,7 @@ class PublicSourceMatchingTests(unittest.TestCase):
         )
         self.assertEqual(ingestion._lead_match_status(non_match_label), "rejected")
 
-    def test_profile_activation_enqueues_historical_corpus_rematch(self) -> None:
+    def test_profile_activation_leaves_historical_rematch_for_the_fast_check(self) -> None:
         import api.services.embeddings as embeddings
         import api.services.social_ingestion as ingestion
         import api.services.ingestion_service as ingestion_service
@@ -520,16 +528,10 @@ class PublicSourceMatchingTests(unittest.TestCase):
                 "enqueue_initial_public_ingestion_job",
                 return_value="initial-message",
             ) as initial_enqueue,
-            patch.object(
-                ingestion,
-                "enqueue_existing_public_source_rematch",
-                return_value="rematch-message",
-            ) as rematch_enqueue,
         ):
             embeddings._enqueue_public_ingestion_after_embedding("tenant-a", "profile-1")
 
         initial_enqueue.assert_called_once_with("tenant-a", "profile-1")
-        rematch_enqueue.assert_called_once_with("tenant-a", "profile-1")
 
     def test_profile_embedding_text_includes_urgency_and_canonical_discovery_phrases(self) -> None:
         from api.services.embeddings import _service_profile_embedding_text

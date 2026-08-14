@@ -142,6 +142,22 @@ class HackerNewsIngestionTests(unittest.TestCase):
                 )
             )
 
+    def test_recall_guard_keeps_a_short_problem_statement_for_verification(self) -> None:
+        import api.services.social_ingestion as ingestion_module
+
+        buyer_problem = SimpleNamespace(
+            title="Onboarding keeps dropping customers",
+            body="Our setup workflow is still manual.",
+        )
+
+        self.assertTrue(
+            ingestion_module._source_post_is_plausible_for_discovery_query(
+                buyer_problem,
+                "best customer onboarding software",
+                query_type="category_tool_search",
+            )
+        )
+
     def test_legacy_demand_fallback_is_upgraded_only_for_search(self) -> None:
         import api.services.social_ingestion as ingestion_module
 

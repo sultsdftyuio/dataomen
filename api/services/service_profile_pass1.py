@@ -386,7 +386,7 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
 
         rate_limit = provider_rate_limiter.try_reserve_paced_slot(
             provider="openai-chat",
-            limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 20),
+            limit=env_int("ARCLI_OPENAI_CHAT_REQUESTS_PER_MINUTE", 500),
         )
         if not rate_limit.allowed:
             raise RuntimeError(

@@ -220,19 +220,19 @@ def _stackexchange_site_for_query(query: str) -> str:
 
 
 def additional_public_source_supports_discovery_query(source: str, query: str) -> bool:
-    """Avoid technical forums for a plainly non-technical buyer need.
+    """Keep technical sources available unless an operator opts out.
 
-    Stack Overflow and GitHub issues are valuable for developer-tool customers,
-    but searching them for phrases such as "need more people signing up"
-    produces product discussions rather than prospective buyers. Bluesky and
-    Lemmy remain broad-discussion sources for every product category.
+    GitHub and Stack Exchange often surface the implementation side of a buyer
+    problem even when the profile uses everyday wording. They are discovery
+    sources, not lead deciders: semantic matching and the verifier still
+    reject irrelevant technical conversations.
     """
     normalized_source = source.strip().casefold()
     if normalized_source not in {"stackexchange", "github"}:
         return True
     if os.getenv(
         "ARCLI_TECHNICAL_SOURCE_REQUIRE_TECHNICAL_QUERY",
-        "true",
+        "false",
     ).strip().casefold() in {"0", "false", "no", "off"}:
         return True
     query_tokens = _query_tokens(query)
@@ -268,7 +268,10 @@ def additional_public_source_cache_scope(source: str) -> str:
 
         return (os.getenv("ARCLI_BLUESKY_SEARCH_URL") or BLUESKY_SEARCH_POSTS_URL).strip()
     if source == "stackexchange":
-        return os.getenv("ARCLI_STACKEXCHANGE_SITE", "").strip() or "auto"
+        configured_site = os.getenv("ARCLI_STACKEXCHANGE_SITE", "").strip() or "auto"
+        return f"{configured_site}:recall-v2"
+    if source == "github":
+        return "recall-v2"
     if source == "lemmy":
         from api.services.integrations.lemmy_connector import LEMMY_SEARCH_URL
 

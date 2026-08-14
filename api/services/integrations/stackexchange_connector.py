@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from api.services.integrations.public_source import (
     PublicSourcePost,
     clip_text,
+    compact_discovery_search_query,
     env_positive_float,
     env_positive_int,
     fetch_json_with_retry,
@@ -102,7 +103,7 @@ class StackExchangeConnector:
         *,
         max_pages: int | None = None,
     ) -> list[StackExchangeSourcePost]:
-        normalized_query = normalise_text(query)
+        normalized_query = self._search_query(query)
         if not normalized_query:
             raise ValueError("query is required")
         if since_timestamp < 0:
@@ -175,6 +176,16 @@ class StackExchangeConnector:
                     await asyncio.sleep(wait_seconds)
 
         return posts
+
+    @staticmethod
+    def _search_query(query: str) -> str:
+        return compact_discovery_search_query(
+            query,
+            max_terms=env_positive_int(
+                "ARCLI_STACKEXCHANGE_DISCOVERY_QUERY_TERMS",
+                2,
+            ),
+        )
 
     async def _fetch_page(
         self,
