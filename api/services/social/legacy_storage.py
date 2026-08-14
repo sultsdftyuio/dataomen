@@ -543,6 +543,7 @@ from .models import (
     DEFAULT_DISCOVERY_CANDIDATE_THRESHOLD,
     DEFAULT_VERIFIER_QUALIFIED_THRESHOLD,
     SOURCE_POST_EMBEDDING_CACHE_KEY,
+    SocialPost,
     _embedding_values,
     logger,
 )

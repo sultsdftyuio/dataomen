@@ -42,6 +42,30 @@ def _int_env(name: str, default: int, *, minimum: int = 0) -> int:
         return default
 
 
+def _enqueue_public_data_retention() -> None:
+    """Schedule one lightweight corpus-retention pass without delaying a scan."""
+
+    try:
+        from api.services.cost_controls import TenantQuotaGuard
+
+        decision = TenantQuotaGuard().check_and_increment(
+            tenant_id="public-data-governance",
+            counter_name="retention-enqueue",
+            limit=1,
+            window_seconds=3_600,
+        )
+        if not decision.allowed:
+            return
+        purge_expired_public_data_job.send()
+    except Exception as exc:
+        # Maintenance must never prevent a customer discovery scan. The worker
+        # logs the failure without personal data and retries on the next hour.
+        logger.warning(
+            "public_data_retention_enqueue_skipped error_type=%s",
+            exc.__class__.__name__,
+        )
+
+
 def _minimum_plausible_free_hits_for_x_suppression() -> int:
     """Read the free-source fallback threshold with the HN-era name as fallback."""
     if "ARCLI_INITIAL_PUBLIC_FREE_MIN_PLAUSIBLE_HITS_FOR_X_SUPPRESSION" in os.environ:
@@ -380,6 +404,8 @@ def ingest_initial_public_sources_fast_job(
     )
     if not source_names:
         raise ValueError("at least one public source is required")
+
+    _enqueue_public_data_retention()
 
     _job_started(
         job_name="initial_public_sources_fast",
@@ -1620,6 +1646,39 @@ def ingest_x_job(
             "x_fallback": {"outcome": "completed", "reason": "insufficient_diverse_free_evidence"},
             "verification_pending": True,
         },
+    )
+
+
+@dramatiq.actor(
+    actor_name="purge_expired_public_data_job",
+    queue_name=os.getenv("ARCLI_MAINTENANCE_QUEUE_NAME", "maintenance"),
+    max_retries=2,
+    min_backoff=60_000,
+    max_backoff=900_000,
+)
+def purge_expired_public_data_job() -> None:
+    """Apply the public-source retention policy outside customer job latency."""
+
+    _job_started(job_name="public_data_retention")
+    try:
+        from api.services.social.data_governance import run_public_data_retention
+
+        result = run_public_data_retention()
+    except Exception as exc:
+        logger.exception(
+            "public_data_retention_failed error_type=%s error=%s",
+            exc.__class__.__name__,
+            exc,
+        )
+        raise
+
+    _job_finished(
+        job_name="public_data_retention",
+        state="skipped" if result.skipped else "completed",
+        lead_matches_deleted=result.lead_matches_deleted,
+        source_posts_deleted=result.source_posts_deleted,
+        discovery_evidence_deleted=result.discovery_evidence_deleted,
+        removal_requests_anonymized=result.removal_requests_anonymized,
     )
 
 

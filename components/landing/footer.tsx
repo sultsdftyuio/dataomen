@@ -109,6 +109,11 @@ export default function Footer() {
                   </Link>
                 </li>
                 <li>
+                  <Link href="/privacy/remove" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
+                    Remove Public Data
+                  </Link>
+                </li>
+                <li>
                   <Link href="/terms" className="text-sm text-gray-600 hover:text-blue-600 transition-colors">
                     Terms of Service
                   </Link>

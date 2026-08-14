@@ -312,6 +312,7 @@ from .legacy_storage import (
     _persist_source_posts,
 )
 from .models import (
+    SocialPost,
     _embedding_sha256,
     _profile_embedding_from_row,
     _service_profile_from_row,

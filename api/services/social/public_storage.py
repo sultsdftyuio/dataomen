@@ -153,11 +153,22 @@ def _persist_new_public_source_posts(
     *,
     batch_size: int,
 ) -> list[str]:
-    """Insert only new public source rows and return the inserted source IDs."""
+    """Insert only governed, new public source rows and return their IDs."""
+    from api.services.social.data_governance import (
+        filter_approved_removals,
+        prepare_public_posts_for_storage,
+    )
+
+    governed_posts = filter_approved_removals(
+        prepare_public_posts_for_storage(posts)
+    )
+    if not governed_posts:
+        return []
+
     inserted_source_post_ids: list[str] = []
     author_handle_supported = True
     with _public_source_supabase_client_context() as client:
-        for batch in _iter_batches(posts, batch_size):
+        for batch in _iter_batches(governed_posts, batch_size):
             payloads = [_source_post_payload(post) for post in batch]
             if author_handle_supported:
                 try:

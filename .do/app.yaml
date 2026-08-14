@@ -24,6 +24,27 @@ envs:
     scope: RUN_TIME
     type: general
     value: "true"
+  # Public-source data is minimised before storage and removed after this
+  # bounded period, including all copied lead-brief and research snapshots.
+  - key: ARCLI_PUBLIC_DATA_RETENTION_DAYS
+    scope: RUN_TIME
+    type: general
+    value: "30"
+  # Only explicitly approved public provider adapters can persist content.
+  - key: ARCLI_PUBLIC_SOURCE_ALLOWLIST
+    scope: RUN_TIME
+    type: general
+    value: "hackernews,bluesky,stackexchange,github,lemmy,twitter"
+  # Requires scripts/public_data_compliance_contract.sql. When enabled, a
+  # completed removal request prevents the matching public item being re-added.
+  - key: ARCLI_PUBLIC_DATA_GOVERNANCE_ENFORCEMENT
+    scope: RUN_TIME
+    type: general
+    value: "true"
+  - key: ARCLI_PRIVACY_REQUEST_RETENTION_DAYS
+    scope: RUN_TIME
+    type: general
+    value: "90"
 
 services:
   - name: arcli-api

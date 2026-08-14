@@ -2362,7 +2362,7 @@ export default function ProspectDashboardClient({
     queueItems.length === 0 && (!serviceProfile.hasProfile || isWarmingUp);
 
   return (
-    <div className="flex w-full flex-col gap-3 xl:h-full xl:min-h-0" style={{ color: C.text }}>
+    <div className="flex w-full flex-col gap-3 xl:min-h-[900px]" style={{ color: C.text }}>
       <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
@@ -2494,10 +2494,10 @@ export default function ProspectDashboardClient({
           isWarmingUp={isWarmingUp}
         />
       ) : (
-      <div className="grid min-h-[560px] gap-5 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(360px,0.95fr)_minmax(640px,1.55fr)] 2xl:grid-cols-[minmax(420px,1fr)_minmax(760px,1.7fr)]">
+      <div className="grid min-h-[640px] gap-5 xl:min-h-[760px] xl:grid-cols-[minmax(360px,0.95fr)_minmax(640px,1.55fr)] 2xl:grid-cols-[minmax(420px,1fr)_minmax(760px,1.7fr)]">
         <section
           aria-labelledby="matches-heading"
-          className="flex min-h-0 max-h-[560px] flex-col overflow-hidden rounded-xl border bg-white xl:max-h-none"
+          className="flex min-h-[640px] max-h-[640px] flex-col overflow-hidden rounded-xl border bg-white xl:min-h-0 xl:max-h-none"
           style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
         >
           <div className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
@@ -2679,7 +2679,7 @@ export default function ProspectDashboardClient({
 
         <section
           aria-labelledby="details-heading"
-          className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-[#F6FAFE]"
+          className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-[#F6FAFE] xl:min-h-0"
           style={{ borderColor: C.rule, backgroundColor: C.offWhite, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
           <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>

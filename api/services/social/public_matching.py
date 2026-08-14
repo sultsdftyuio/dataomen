@@ -932,6 +932,7 @@ from .activation import _source_post_is_plausible_for_discovery_query
 from .models import (
     DEFAULT_INITIAL_PUBLIC_GLOBAL_REMATCH_LIMIT,
     DEFAULT_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES,
+    SocialPost,
     _embedding_sha256,
     _profile_discovery_queries,
     _profile_embedding_from_row,

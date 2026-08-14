@@ -77,7 +77,7 @@ export default async function DashboardLayout({
         </div>
       </header>
 
-      <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-3 animate-in fade-in duration-300 sm:p-4 xl:overflow-hidden">
+      <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-3 animate-in fade-in duration-300 sm:p-4">
         {children}
       </main>
 
