@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { Building2, CircleUserRound, Globe2, Settings2 } from "lucide-react";
+import { Building2, CircleUserRound, Globe2, MessageCircleMore, Settings2 } from "lucide-react";
 
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
 import WorkspaceBillingCard, {
@@ -94,8 +94,23 @@ export default function SettingsClient({
           <WorkspaceTab initialData={initialData} serviceProfile={serviceProfile} />
         </div>
 
-        <aside className="min-w-0 xl:sticky xl:top-0 xl:self-start">
+        <aside className="min-w-0 space-y-3 xl:sticky xl:top-0 xl:self-start">
           <WorkspaceBillingCard planData={planData} />
+
+          <section className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5" style={{ borderColor: C.rule }}>
+            <MessageCircleMore className="size-4 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
+            <p className="text-xs leading-5" style={{ color: C.muted }}>
+              Need help or have a suggestion?{" "}
+              <a
+                href="mailto:support@arcli.tech?subject=Arcli%20feedback%20or%20support"
+                className="font-semibold underline underline-offset-2"
+                style={{ color: C.blue }}
+              >
+                Email support
+              </a>
+              .
+            </p>
+          </section>
         </aside>
       </div>
     </div>

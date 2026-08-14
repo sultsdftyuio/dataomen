@@ -4,6 +4,7 @@ import React from "react";
 import { CheckCircle2, Database, ArrowRight, Webhook, Workflow, DollarSign, ShieldCheck, Activity, Key } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
+import { RevealWords } from "@/components/landing/reveal";
 
 export function HowItWorks() {
   const [ref0, vis0] = useVisible(0.1);
@@ -28,7 +29,7 @@ export function HowItWorks() {
             <Database size={14} /> THE PIPELINE
           </div>
           <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-            How Arcli finds prospects for you.
+            <RevealWords text="How Arcli finds prospects for you." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
             Add your website. Arcli learns what you do, finds people asking for help online, checks the fit, sends the best matches, and learns from your feedback.
@@ -42,7 +43,7 @@ export function HowItWorks() {
               STEP 01
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Learn What You Sell
+              <RevealWords text="Learn What You Sell" />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               Give Arcli your website. It reads your public pages and learns who you help, what problem you solve, and what to ignore.
@@ -113,7 +114,7 @@ export function HowItWorks() {
               STEP 02
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Checks Each Match
+              <RevealWords text="Checks Each Match" />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               Arcli does not send every post that happens to use the right words. It reads the context, checks whether the person has a real problem, and removes bad fits before alerting you.
@@ -183,7 +184,7 @@ export function HowItWorks() {
               STEP 03
             </div>
             <h2 className="pfd" style={{ fontSize: 38, color: C.navy, marginBottom: 20, lineHeight: 1.08, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Useful Alerts That Improve
+              <RevealWords text="Useful Alerts That Improve" />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 28 }}>
               When someone looks like a fit, Arcli shows the post, the problem, and why it matters. Your thumbs-up or thumbs-down helps future alerts improve.

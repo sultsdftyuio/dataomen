@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { C } from "@/lib/tokens";
+import { Reveal, RevealWords } from "@/components/landing/reveal";
 
 const items = [
   {
@@ -35,21 +36,21 @@ export function FAQ() {
     <section style={{ padding: "112px 24px", background: "#FAFAFA", borderTop: surfaceBorder, fontFamily: "var(--font-geist-sans), sans-serif" }}>
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
         <h2 className="pfd" style={{ fontSize: "clamp(36px, 5vw, 48px)", textAlign: "center", marginBottom: 44, color: C.navy, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-          Frequently Asked Questions
+          <RevealWords text="Frequently Asked Questions" />
         </h2>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {items.map((item, i) => (
-            <div
-              key={i}
-              style={{
-                border: open === i ? "1px solid rgba(37,99,235,0.45)" : surfaceBorder,
-                borderRadius: 8,
-                overflow: "hidden",
-                transition: "all 0.2s", background: "#fff",
-                boxShadow: surfaceShadow,
-              }}
-            >
+            <Reveal key={item.q} delay={i * 70}>
+              <div
+                style={{
+                  border: open === i ? "1px solid rgba(37,99,235,0.45)" : surfaceBorder,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  transition: "all 0.2s", background: "#fff",
+                  boxShadow: surfaceShadow,
+                }}
+              >
               <button
                 onClick={() => setOpen(open === i ? null : i)}
                 style={{
@@ -73,7 +74,8 @@ export function FAQ() {
                   {item.a}
                 </div>
               )}
-            </div>
+              </div>
+            </Reveal>
           ))}
         </div>
       </div>

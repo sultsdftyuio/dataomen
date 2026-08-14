@@ -18,12 +18,11 @@ envs:
     scope: RUN_TIME
     type: secret
     value: REPLACE_WITH_INTERNAL_WORKER_SECRET
-  # Temporary: allow repeated website checks while discovery is being tested.
-  # Set this to "false" to restore the daily crawl quality guard.
+  # Daily website crawl guard. Do not enable unlimited scans in production.
   - key: ARCLI_UNLIMITED_CRAWL_TEST_MODE
     scope: RUN_TIME
     type: general
-    value: "true"
+    value: "false"
   # Public-source data is minimised before storage and removed after this
   # bounded period, including all copied lead-brief and research snapshots.
   - key: ARCLI_PUBLIC_DATA_RETENTION_DAYS

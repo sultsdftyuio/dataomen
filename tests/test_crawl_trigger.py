@@ -109,9 +109,9 @@ def test_daily_recheck_resets_the_previous_queue_message_before_reenqueueing() -
     assert upsert.call_args.kwargs["restart_queue"] is True
 
 
-def test_temporary_repeat_crawl_mode_is_enabled_by_default(monkeypatch) -> None:
+def test_temporary_repeat_crawl_mode_requires_explicit_opt_in(monkeypatch) -> None:
     monkeypatch.delenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", raising=False)
-    assert crawling._website_crawl_test_mode_enabled() is True
-
-    monkeypatch.setenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "false")
     assert crawling._website_crawl_test_mode_enabled() is False
+
+    monkeypatch.setenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "true")
+    assert crawling._website_crawl_test_mode_enabled() is True

@@ -126,14 +126,20 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       websiteUrl ?? settings.workspace.websiteUrl,
     );
 
-    const planStatus = (entitlements.subscriptionStatus ?? "free") as BillingPlanStatus;
     const planTier = entitlements.planTier.toLowerCase();
+    const planStatus = (
+      entitlements.isPro
+        ? entitlements.subscriptionStatus ?? "active"
+        : planTier === "pro"
+          ? "canceled"
+          : entitlements.subscriptionStatus ?? "free"
+    ) as BillingPlanStatus;
     billingPlanData = {
       planName: entitlements.billingLabel,
       planStatus,
       description: entitlements.billingDescription,
       priceText: "$35/month",
-      isProTier: planTier === "pro",
+      isProTier: entitlements.isPro,
       isCanceling: entitlements.isCanceling,
       currentPeriodEnd: entitlements.currentPeriodEnd,
       workspaceName: settings.workspace.companyName || "Workspace",

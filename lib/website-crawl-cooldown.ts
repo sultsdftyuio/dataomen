@@ -3,16 +3,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 
 const DEFAULT_WEBSITE_CRAWL_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-const DISABLED_VALUES = new Set(["0", "false", "no", "off"]);
+const ENABLED_VALUES = new Set(["1", "true", "yes", "on"]);
 
 /**
- * Temporary launch setting: let the team re-check and switch websites while
- * validating discovery. Set ARCLI_UNLIMITED_CRAWL_TEST_MODE=false in every
- * runtime to restore the normal daily quality guard.
+ * The daily quality guard is the default. Local testing can opt into unlimited
+ * scans explicitly, but no deployed environment should need this override.
  */
 export function websiteCrawlTestModeEnabled() {
   const value = process.env.ARCLI_UNLIMITED_CRAWL_TEST_MODE?.trim().toLowerCase();
-  return !value || !DISABLED_VALUES.has(value);
+  return ENABLED_VALUES.has(value ?? "");
 }
 
 export const WEBSITE_CRAWL_COOLDOWN_MS = websiteCrawlTestModeEnabled()

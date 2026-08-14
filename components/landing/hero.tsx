@@ -4,6 +4,7 @@
 import { ArrowRight } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
+import { RevealWords } from "@/components/landing/reveal";
 
 export function Hero() {
   const [ref, vis] = useVisible(0.1);
@@ -40,8 +41,11 @@ export function Hero() {
               margin: "0 auto 20px",
             }}
           >
-            Find people who need<br />
-            <span style={{ color: C.blue }}>what you sell.</span>
+            <RevealWords text="Find people who need" />
+            <br />
+            <span style={{ color: C.blue }}>
+              <RevealWords text="what you sell." delay={180} />
+            </span>
           </h1>
 
           <p style={{ fontFamily: "var(--font-geist-sans), sans-serif", fontSize: 17, color: C.navySoft, lineHeight: 1.62, maxWidth: 640, margin: "0 auto 36px" }}>

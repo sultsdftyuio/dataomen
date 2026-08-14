@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Activity, ArrowRight, CheckCircle2, ShieldCheck, Sparkles } from "lucide-react";
 
 import { C } from "@/lib/tokens";
+import { Reveal, RevealWords } from "@/components/landing/reveal";
 
 const freeFeatures = [
   "Learn from one website",
@@ -47,7 +48,7 @@ export default function ArcliPricingCards() {
       }}
     >
       <div style={{ maxWidth: 1040, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", maxWidth: 660, margin: "0 auto 56px" }}>
+        <Reveal style={{ textAlign: "center", maxWidth: 660, margin: "0 auto 56px" }}>
           <div
             style={{
               display: "inline-flex",
@@ -74,18 +75,19 @@ export default function ArcliPricingCards() {
               marginBottom: 18,
             }}
           >
-            Start free. Upgrade when a prospect is worth acting on.
+            <RevealWords text="Start free. Upgrade when a prospect is worth acting on." />
           </h2>
           <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62 }}>
             One straightforward plan for turning public conversations into a focused prospect queue.
           </p>
-        </div>
+        </Reveal>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <article
-            className="flex min-h-[460px] flex-col rounded-lg border bg-white p-7"
-            style={{ borderColor: C.rule, boxShadow: surfaceShadow }}
-          >
+          <Reveal delay={100}>
+            <article
+              className="flex min-h-[460px] flex-col rounded-lg border bg-white p-7"
+              style={{ borderColor: C.rule, boxShadow: surfaceShadow }}
+            >
             <span
               className="inline-flex w-fit rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]"
               style={{ backgroundColor: C.offWhite, color: C.muted, border: surfaceBorder }}
@@ -110,12 +112,14 @@ export default function ArcliPricingCards() {
             >
               Get started free <ArrowRight className="size-4" />
             </Link>
-          </article>
+            </article>
+          </Reveal>
 
-          <article
-            className="relative flex min-h-[460px] flex-col overflow-hidden rounded-lg border bg-white p-7"
-            style={{ borderColor: C.blueLight, boxShadow: "0 12px 32px rgba(27,110,191,0.12)" }}
-          >
+          <Reveal delay={200}>
+            <article
+              className="relative flex min-h-[460px] flex-col overflow-hidden rounded-lg border bg-white p-7"
+              style={{ borderColor: C.blueLight, boxShadow: "0 12px 32px rgba(27,110,191,0.12)" }}
+            >
             <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: C.blue }} aria-hidden="true" />
             <span
               className="inline-flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]"
@@ -145,7 +149,8 @@ export default function ArcliPricingCards() {
             <p className="mt-4 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: C.muted }}>
               <ShieldCheck className="size-3.5" style={{ color: C.blue }} aria-hidden="true" /> No commission on revenue
             </p>
-          </article>
+            </article>
+          </Reveal>
         </div>
       </div>
     </section>

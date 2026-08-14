@@ -25,9 +25,7 @@ export function WorkspacePlanBadge({ entitlements }: WorkspacePlanBadgeProps) {
   const activePastDue =
     planTier === "pro" &&
     entitlements.subscriptionStatus === "past_due";
-  const activeCanceling =
-    planTier === "pro" &&
-    entitlements.subscriptionStatus === "canceling";
+  const activeCanceling = entitlements.isCanceling;
 
   const badgeClassName = isPro
     ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer transition-colors"

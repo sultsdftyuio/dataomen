@@ -88,14 +88,10 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
 
 
 def _website_crawl_test_mode_enabled() -> bool:
-    """Return whether temporary repeat-crawl testing is enabled.
+    """Return whether an explicit local unlimited-crawl override is enabled."""
 
-    The default is intentionally enabled during launch validation. Set
-    ARCLI_UNLIMITED_CRAWL_TEST_MODE=false to restore the daily crawl guard.
-    """
-
-    value = os.getenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "true").strip().lower()
-    return value not in {"0", "false", "no", "off"}
+    value = os.getenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "false").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 def _env_float(name: str, default: float, minimum: float = 0.1) -> float:

@@ -98,19 +98,20 @@ function buildEntitlements(
   const accessEndTimestamp = accessEnd ? Date.parse(accessEnd) : Number.NaN;
   const hasFutureAccessWindow =
     Number.isFinite(accessEndTimestamp) && accessEndTimestamp > Date.now();
+  const hasExpiredRecordedAccessWindow =
+    Boolean(accessEnd) && !hasFutureAccessWindow;
 
-  // Validate that the paid subscription is currently active. A cancellation
-  // event can arrive before the paid/trial period actually ends, so that
-  // future entitlement window takes precedence over the final event label.
+  // A scheduled cancellation remains paid only until its recorded period end.
+  // An explicit period end also protects against a delayed final webhook: an
+  // otherwise-active record cannot retain Pro after that boundary has passed.
   let hasActiveStatus = subscriptionStatus
     ? ACTIVE_STATUSES.has(subscriptionStatus)
     : false;
 
   if (subscriptionStatus && CANCELLATION_STATUSES.has(subscriptionStatus)) {
-    // A scheduled cancellation without an end timestamp remains active to
-    // preserve backwards compatibility with older billing records. Once an
-    // explicit end is known, it is the hard entitlement boundary.
-    hasActiveStatus = accessEnd ? hasFutureAccessWindow : subscriptionStatus === "canceling";
+    hasActiveStatus = hasFutureAccessWindow;
+  } else if (subscriptionStatus === "active" && hasExpiredRecordedAccessWindow) {
+    hasActiveStatus = false;
   }
 
   const isPro = isPaidTier && hasActiveStatus;

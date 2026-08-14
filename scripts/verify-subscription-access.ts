@@ -77,6 +77,30 @@ async function verifyEntitlementStates() {
   );
   assert.equal(expiredCancellation.isPro, false, "expired cancellations must be locked");
 
+  const expiredActivePeriod = await getWorkspaceEntitlements(
+    createSupabaseMock({
+      planTier: "pro",
+      subscriptionStatus: "active",
+      currentPeriodEnd: new Date(Date.now() - 60_000).toISOString(),
+    }) as any,
+    "tenant-expired-active-period",
+  );
+  assert.equal(
+    expiredActivePeriod.isPro,
+    false,
+    "an active record with an expired paid period must be locked",
+  );
+
+  const cancellationWithoutPeriodEnd = await getWorkspaceEntitlements(
+    createSupabaseMock({ planTier: "pro", subscriptionStatus: "canceling" }) as any,
+    "tenant-canceling-without-period-end",
+  );
+  assert.equal(
+    cancellationWithoutPeriodEnd.isPro,
+    false,
+    "a cancellation without a known paid-until date must fail closed",
+  );
+
   const finalCancellationBeforePeriodEnd = await getWorkspaceEntitlements(
     createSupabaseMock({
       planTier: "pro",

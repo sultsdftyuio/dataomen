@@ -4,6 +4,7 @@ import React from "react";
 import { CheckCircle2, ShieldAlert, Workflow, Activity, Zap, RefreshCcw, Key } from "lucide-react";
 import { C } from "@/lib/tokens";
 import { useVisible } from "@/hooks/useVisible";
+import { RevealWords } from "@/components/landing/reveal";
 
 export function DeepDiveFeatures() {
   const [ref1, vis1] = useVisible(0.1);
@@ -23,7 +24,9 @@ export function DeepDiveFeatures() {
               <ShieldAlert size={14} /> WHY THIS MATCH MATTERS
             </div>
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              What a verified prospect<br />looks like.
+              <RevealWords text="What a verified prospect" />
+              <br />
+              <RevealWords text="looks like." delay={180} />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Arcli reads for real need, not just matching words. It checks each post against what you sell, then shows why the person may be worth your time.
@@ -112,7 +115,9 @@ export function DeepDiveFeatures() {
               <Workflow size={14} /> BETTER ALERTS OVER TIME
             </div>
             <h2 className="pfd" style={{ fontSize: 42, color: C.navy, marginBottom: 20, lineHeight: 1.06, letterSpacing: "-0.015em", fontWeight: 600 }}>
-              Know who to look at,<br />and why now.
+              <RevealWords text="Know who to look at," />
+              <br />
+              <RevealWords text="and why now." delay={180} />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, marginBottom: 26 }}>
               Arcli sends short alerts with the original post, the problem, and why it looks useful. Mark what is right or wrong, and the next alerts get sharper.

@@ -23,7 +23,6 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PlanPreviewSwitcher } from "@/components/dashboard/PlanPreviewSwitcher";
 import {
   Card,
   CardContent,
@@ -64,7 +63,6 @@ type ProspectDashboardClientProps = {
   discoveryCandidates: QualifiedLeadView[];
   buyerDemandReport: BuyerDemandReportView | null;
   isWarmingUp: boolean;
-  showPlanPreview: boolean;
 };
 
 type FeedbackNotice = {
@@ -2333,7 +2331,6 @@ export default function ProspectDashboardClient({
   discoveryCandidates,
   buyerDemandReport,
   isWarmingUp,
-  showPlanPreview,
 }: ProspectDashboardClientProps) {
   const router = useRouter();
   const [feedbackMessages, setFeedbackMessages] = useState<
@@ -2513,7 +2510,6 @@ export default function ProspectDashboardClient({
           </h1>
         </div>
         <div className="flex items-center gap-2">
-        {showPlanPreview ? <PlanPreviewSwitcher activePlan="pro" /> : null}
         <Sheet>
           <SheetTrigger asChild>
             <Button

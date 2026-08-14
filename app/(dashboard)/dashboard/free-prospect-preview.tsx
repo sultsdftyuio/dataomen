@@ -1,9 +1,8 @@
 "use client";
 
-import { CheckCircle2, LockKeyhole, Radar, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileSearch, LockKeyhole, Radar, Sparkles } from "lucide-react";
 import Link from "next/link";
 
-import { PlanPreviewSwitcher } from "@/components/dashboard/PlanPreviewSwitcher";
 import UpgradeButton from "@/components/ui/UpgradeButton";
 import { C } from "@/lib/tokens";
 import type { LeadQueueCounts } from "./data";
@@ -11,7 +10,7 @@ import type { LeadQueueCounts } from "./data";
 type FreeProspectPreviewProps = {
   websiteUrl: string;
   counts: LeadQueueCounts;
-  showPlanPreview: boolean;
+  scanStatus: string | null;
 };
 
 function domainForDisplay(websiteUrl: string) {
@@ -25,9 +24,13 @@ function domainForDisplay(websiteUrl: string) {
 export default function FreeProspectPreview({
   websiteUrl,
   counts,
-  showPlanPreview,
+  scanStatus,
 }: FreeProspectPreviewProps) {
   const total = counts.readyToReview + counts.discoveryCandidates;
+  const hasMatches = total > 0;
+  const scanCompleted = scanStatus === "completed";
+  const scanFailed = scanStatus === "failed" || scanStatus === "dead_lettered";
+  const lockedCardCount = Math.min(Math.max(total, 1), 3);
 
   return (
     <div className="flex h-full w-full flex-col gap-4 overflow-y-auto pr-1">
@@ -37,10 +40,11 @@ export default function FreeProspectPreview({
             Your prospect desk is ready
           </h1>
           <p className="mt-2 text-sm" style={{ color: C.muted }}>
-            We are scanning conversations for {domainForDisplay(websiteUrl)}.
+            {scanCompleted
+              ? `Latest scan complete for ${domainForDisplay(websiteUrl)}.`
+              : `We are scanning conversations for ${domainForDisplay(websiteUrl)}.`}
           </p>
         </div>
-        {showPlanPreview ? <PlanPreviewSwitcher activePlan="free" /> : null}
       </header>
 
       <section
@@ -51,14 +55,23 @@ export default function FreeProspectPreview({
           <div className="flex items-center gap-2">
             <Radar className="size-4" style={{ color: C.blue }} aria-hidden="true" />
             <p className="text-sm font-semibold" style={{ color: C.navy }}>
-              {total > 0
+              {hasMatches
                 ? `${total} matched ${total === 1 ? "conversation is" : "conversations are"} waiting`
-                : "Your scan is looking for matched conversations"}
+                : scanCompleted
+                  ? "No conversations matched this time"
+                  : scanFailed
+                    ? "Your last scan needs attention"
+                    : "Your scan is looking for matched conversations"}
             </p>
           </div>
           <p className="mt-2 text-xs leading-5" style={{ color: C.navySoft }}>
-            Free shows your real discovery progress. Upgrade to reveal the people,
-            source posts, evidence, and reply drafts behind these matches.
+            {hasMatches
+              ? "Free shows the real count. Pro reveals the people, source posts, evidence, and reply drafts behind these matches."
+              : scanCompleted
+                ? "Nothing was strong enough for your current buyer and problem criteria. You can refine the brief before the next check."
+                : scanFailed
+                  ? "Check your website setup, then try again when the next scan is available."
+                  : "Free shows the real discovery progress while Arcli looks for strong matches."}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:block sm:border-l sm:pl-4" style={{ borderColor: C.rule }}>
@@ -73,81 +86,121 @@ export default function FreeProspectPreview({
         </div>
       </section>
 
-      <p className="text-xs leading-5" style={{ color: C.navySoft }}>
-        Is your first scan taking too long?{" "}
-        <Link href="/settings" className="font-semibold underline underline-offset-2" style={{ color: C.blue }}>
-          Check your website settings
-        </Link>
-        {" "}and start it again.
-      </p>
+      {scanFailed ? (
+        <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+          Need to fix the scan?{" "}
+          <Link href="/settings" className="font-semibold underline underline-offset-2" style={{ color: C.blue }}>
+            Check your website settings
+          </Link>
+          .
+        </p>
+      ) : null}
 
-      <section
-        className="relative overflow-hidden rounded-xl border px-5 py-5"
-        style={{ borderColor: C.blueLight, background: "linear-gradient(135deg, #F7FBFF 0%, #FFFFFF 72%)" }}
-      >
-        <div className="absolute -right-12 -top-16 size-48 rounded-full" style={{ backgroundColor: "rgba(59,154,232,0.13)" }} aria-hidden="true" />
-        <div className="absolute -bottom-20 right-20 size-40 rounded-full border" style={{ borderColor: "rgba(27,110,191,0.13)" }} aria-hidden="true" />
-        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-xl">
-            <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue, backgroundColor: C.bluePale }}>
-              <Sparkles className="size-3" aria-hidden="true" /> Pro prospect desk
+      {hasMatches ? (
+        <>
+          <section
+            className="relative overflow-hidden rounded-xl border px-5 py-5"
+            style={{ borderColor: C.blueLight, background: "linear-gradient(135deg, #F7FBFF 0%, #FFFFFF 72%)" }}
+          >
+            <div className="absolute -right-12 -top-16 size-48 rounded-full" style={{ backgroundColor: "rgba(59,154,232,0.13)" }} aria-hidden="true" />
+            <div className="absolute -bottom-20 right-20 size-40 rounded-full border" style={{ borderColor: "rgba(27,110,191,0.13)" }} aria-hidden="true" />
+            <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div className="max-w-xl">
+                <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue, backgroundColor: C.bluePale }}>
+                  <Sparkles className="size-3" aria-hidden="true" /> {total} locked {total === 1 ? "match" : "matches"}
+                </div>
+                <h2 className="pfd mt-3 text-2xl leading-none sm:text-3xl" style={{ color: C.navy }}>
+                  See the people behind the signal.
+                </h2>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+                  Open every matched conversation with its fit evidence, qualification signal, and a reply draft ready to refine.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold" style={{ color: C.navy }}>
+                  {["Verified matches", "Why they fit", "Reply drafts"].map((feature) => (
+                    <span key={feature} className="inline-flex items-center gap-1.5">
+                      <CheckCircle2 className="size-3.5" style={{ color: C.green }} aria-hidden="true" />
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+                <p className="text-xs font-semibold" style={{ color: C.navySoft }}>
+                  $35/month &middot; cancel any time
+                </p>
+                <UpgradeButton />
+              </div>
             </div>
-            <h2 className="pfd mt-3 text-2xl leading-none sm:text-3xl" style={{ color: C.navy }}>
-              See the people behind the signal.
-            </h2>
-            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-              Open every matched conversation with its fit evidence, qualification signal, and a reply draft ready to refine.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold" style={{ color: C.navy }}>
-              {["Verified matches", "Why they fit", "Reply drafts"].map((feature) => (
-                <span key={feature} className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 className="size-3.5" style={{ color: C.green }} aria-hidden="true" />
-                  {feature}
-                </span>
+          </section>
+
+          <section className="relative min-h-[280px] flex-1 overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
+            <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <div>
+                <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>Matched conversations</h2>
+                <p className="mt-1 text-xs" style={{ color: C.muted }}>{total} {total === 1 ? "match is" : "matches are"} ready to unlock with Pro.</p>
+              </div>
+              <LockKeyhole className="size-4" style={{ color: C.blue }} aria-hidden="true" />
+            </div>
+            <div className="pointer-events-none space-y-3 p-4 select-none" aria-hidden="true">
+              {Array.from({ length: lockedCardCount }, (_, index) => (
+                <div key={index} className="rounded-lg border p-4 blur-[5px]" style={{ borderColor: C.rule }}>
+                  <p className="text-sm font-semibold" style={{ color: C.navy }}>Matched conversation</p>
+                  <div className="mt-3 h-3 w-4/5 rounded" style={{ backgroundColor: C.rule }} />
+                  <div className="mt-2 h-3 w-3/5 rounded" style={{ backgroundColor: C.rule }} />
+                </div>
               ))}
             </div>
-          </div>
-          <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-            <p className="text-xs font-semibold" style={{ color: C.navySoft }}>
-              $35/month &middot; cancel any time
-            </p>
-            <UpgradeButton />
-          </div>
-        </div>
-      </section>
-
-      <section className="relative min-h-[420px] flex-1 overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.rule }}>
-        <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-          <div>
-            <h2 className="pfd text-xl leading-none" style={{ color: C.navy }}>Matched conversations</h2>
-            <p className="mt-1 text-xs" style={{ color: C.muted }}>Lead details unlock with Pro.</p>
-          </div>
-          <LockKeyhole className="size-4" style={{ color: C.blue }} aria-hidden="true" />
-        </div>
-        <div className="pointer-events-none space-y-3 p-4 select-none" aria-hidden="true">
-          {["Buyer need detected", "High-fit conversation", "Suggested reply ready"].map((label) => (
-            <div key={label} className="rounded-lg border p-4 blur-[5px]" style={{ borderColor: C.rule }}>
-              <p className="text-sm font-semibold" style={{ color: C.navy }}>{label}</p>
-              <div className="mt-3 h-3 w-4/5 rounded" style={{ backgroundColor: C.rule }} />
-              <div className="mt-2 h-3 w-3/5 rounded" style={{ backgroundColor: C.rule }} />
+            <div className="absolute inset-0 flex items-center justify-center bg-white/65 px-5 text-center backdrop-blur-[1px]">
+              <div className="max-w-sm">
+                <div className="mx-auto flex size-10 items-center justify-center rounded-full" style={{ backgroundColor: C.bluePale, color: C.blue }}>
+                  <LockKeyhole className="size-4" />
+                </div>
+                <h3 className="pfd mt-3 text-2xl leading-none" style={{ color: C.navy }}>Your matches are ready</h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+                  Pro reveals every matched conversation and gives you the evidence and reply draft to act on it.
+                </p>
+              </div>
             </div>
-          ))}
-        </div>
-        <div className="absolute inset-0 flex items-center justify-center bg-white/65 px-5 text-center backdrop-blur-[1px]">
-          <div className="max-w-sm">
-            <div className="mx-auto flex size-10 items-center justify-center rounded-full" style={{ backgroundColor: C.bluePale, color: C.blue }}>
-              <LockKeyhole className="size-4" />
+          </section>
+        </>
+      ) : (
+        <section className="rounded-xl border bg-white p-5" style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10,22,40,0.04)" }}>
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.bluePale, color: C.blue }}>
+              <FileSearch className="size-5" aria-hidden="true" />
             </div>
-            <h3 className="pfd mt-3 text-2xl leading-none" style={{ color: C.navy }}>Unlock your leads</h3>
-            <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-              Pro reveals every matched conversation and gives you the evidence and reply draft to act on it.
-            </p>
-            <p className="mt-4 text-xs font-semibold" style={{ color: C.blue }}>
-              Unlock with Pro above to review the full conversation.
-            </p>
+            <div className="max-w-2xl">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+                {scanCompleted ? "Latest scan complete" : "Next useful step"}
+              </p>
+              <h2 className="pfd mt-1 text-2xl leading-none" style={{ color: C.navy }}>
+                {scanCompleted ? "No matches cleared your brief this time." : "Set your next scan up for better matches."}
+              </h2>
+              <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
+                {scanCompleted
+                  ? "That does not mean the problem is not being discussed. It means no conversation was strong enough for the buyer and problem criteria you chose. Refine the brief with the words your buyers actually use, then let the next check look again."
+                  : "Make sure your matching brief names the buyer, the problem, and the phrases they use when looking for help. That gives the next scan a clearer signal to work with."}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  href="/dashboard/brief"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-white"
+                  style={{ backgroundColor: C.blue, textDecoration: "none" }}
+                >
+                  Improve matching brief <ArrowRight className="size-3.5" aria-hidden="true" />
+                </Link>
+                <Link
+                  href="/settings"
+                  className="inline-flex h-9 items-center rounded-lg border px-3 text-sm font-semibold"
+                  style={{ borderColor: C.ruleDark, color: C.navy, textDecoration: "none" }}
+                >
+                  Review website
+                </Link>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

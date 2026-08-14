@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { C } from "@/lib/tokens";
+import { Reveal, RevealWords } from "@/components/landing/reveal";
 
 const sources = [
   {
@@ -54,7 +55,8 @@ export function PublicSources() {
     >
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
         <div className="grid gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
-          <div>
+          <Reveal>
+            <div>
             <div
               style={{
                 display: "inline-flex",
@@ -82,37 +84,39 @@ export function PublicSources() {
                 marginBottom: 18,
               }}
             >
-              We check the conversations where people ask for help.
+              <RevealWords text="We check the conversations where people ask for help." />
             </h2>
             <p style={{ color: C.navySoft, fontSize: 17, lineHeight: 1.62, maxWidth: 520 }}>
               Arcli looks across public communities for people describing the
               problems your product solves. You choose the coverage for each
               buyer group.
             </p>
-          </div>
+            </div>
+          </Reveal>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {sources.map(({ name, detail, icon: Icon }) => (
-              <article
-                key={name}
-                className="flex items-start gap-3 rounded-lg border bg-white p-4 transition-colors hover:bg-[#F7FBFF]"
-                style={{ borderColor: C.rule, boxShadow: "0 1px 3px rgba(10,22,40,0.04)" }}
-              >
-                <div
-                  className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: C.bluePale, color: C.blue }}
+            {sources.map(({ name, detail, icon: Icon }, index) => (
+              <Reveal key={name} delay={120 + index * 80}>
+                <article
+                  className="flex items-start gap-3 rounded-lg border bg-white p-4 transition-colors hover:bg-[#F7FBFF]"
+                  style={{ borderColor: C.rule, boxShadow: "0 1px 3px rgba(10,22,40,0.04)" }}
                 >
-                  <Icon className="size-4" aria-hidden="true" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold" style={{ color: C.navy }}>
-                    {name}
-                  </h3>
-                  <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                    {detail}
-                  </p>
-                </div>
-              </article>
+                  <div
+                    className="flex size-9 shrink-0 items-center justify-center rounded-lg"
+                    style={{ backgroundColor: C.bluePale, color: C.blue }}
+                  >
+                    <Icon className="size-4" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: C.navy }}>
+                      {name}
+                    </h3>
+                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
+                      {detail}
+                    </p>
+                  </div>
+                </article>
+              </Reveal>
             ))}
           </div>
         </div>
