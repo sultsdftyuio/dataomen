@@ -1254,7 +1254,7 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
       style={{ borderColor: isPartial ? C.amber : isFailed ? C.red : C.blueLight }}
     >
       <CardContent className="p-0">
-        <div className="flex flex-col gap-3 border-b px-4 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+        <div className="flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5 lg:px-6" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <div className="flex min-w-0 items-start gap-3">
             <span
               className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full"
@@ -1267,7 +1267,7 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
               {isFailed || isPartial ? <AlertCircle className="size-4" /> : isRunning ? <Radar className="size-4 animate-pulse" /> : <Check className="size-4" />}
             </span>
             <div className="min-w-0">
-              <h2 className="pfd text-lg leading-5" style={{ color: C.navy }}>{title}</h2>
+              <h2 className="pfd text-lg leading-5 lg:text-xl lg:leading-6" style={{ color: C.navy }}>{title}</h2>
               <p className="mt-1.5 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>{detail}</p>
             </div>
           </div>
@@ -1284,23 +1284,40 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
           </Badge>
         </div>
 
-        <div className="px-4 py-3.5 sm:px-5">
+        <div className="px-4 py-4 sm:px-5 lg:px-6">
           {isPartial ? (
             <div
-              className="mb-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5"
+              className="mb-4 grid gap-3 rounded-lg border px-3.5 py-3 text-xs leading-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
               role="status"
               style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.navySoft }}
             >
-              <AlertCircle className="mt-0.5 size-4 shrink-0" style={{ color: C.amber }} />
-              <p>
-                {sourceFailureCount > 0
-                  ? `${sourceFailureCount} source${sourceFailureCount === 1 ? " was" : "s were"} unavailable. Results from the other sources are shown below.`
-                  : "Coverage was partial. Results from the available sources are shown below."}
-              </p>
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" style={{ color: C.amber }} />
+                <div>
+                  <p className="font-semibold" style={{ color: C.navy }}>Partial source coverage</p>
+                  <p className="mt-0.5">
+                    {sourceFailureCount > 0
+                      ? `${sourceFailureCount} source${sourceFailureCount === 1 ? " was" : "s were"} unavailable. Results from the other sources are shown below.`
+                      : "Coverage was partial. Results from the available sources are shown below."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 border-t pt-2.5 text-right lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" style={{ borderColor: C.amber }}>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.amber }}>Unavailable</p>
+                  <p className="text-lg font-semibold leading-5" style={{ color: C.navy }}>{sourceFailureCount}</p>
+                </div>
+                {summary.totalHits !== null ? (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.amber }}>Collected</p>
+                    <p className="text-lg font-semibold leading-5" style={{ color: C.navy }}>{summary.totalHits}</p>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
           {report.sourceProgress.length > 0 ? (
-            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Source-by-source scan results">
+            <ul className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Source-by-source scan results">
               {report.sourceProgress.map((source) => {
                 const tone = sourceProgressTone(source);
                 const isChecking = source.state === "checking";
