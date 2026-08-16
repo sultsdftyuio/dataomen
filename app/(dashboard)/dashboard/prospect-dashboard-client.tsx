@@ -1250,7 +1250,7 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
 
   return (
     <Card
-      className="overflow-hidden rounded-xl shadow-sm"
+      className="shrink-0 gap-0 overflow-hidden rounded-xl py-0 shadow-sm"
       style={{ borderColor: isPartial ? C.amber : isFailed ? C.red : C.blueLight }}
     >
       <CardContent className="p-0">
