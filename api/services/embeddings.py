@@ -28,11 +28,89 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 MAX_EMBEDDING_INPUT_CHARS = 32_000
+MAX_EMBEDDING_INPUT_TOKENS = 8_192
+EMBEDDING_INPUT_TOKEN_SAFETY_MARGIN = 64
 EMBEDDING_QUOTA_COUNTER = "embeddings"
 EMBEDDING_QUOTA_DEFAULT_LIMIT = 20_000
 EMBEDDING_QUOTA_DEFAULT_WINDOW_SECONDS = 86_400
 DEFAULT_EMBEDDING_JOB_STALE_SECONDS = 600
 DEFAULT_EMBEDDING_JOB_TIME_LIMIT_MS = 90_000
+
+
+@lru_cache(maxsize=8)
+def _embedding_tokenizer(model: str) -> Any | None:
+    """Load the model tokenizer only while a worker is embedding text."""
+    try:
+        import tiktoken
+
+        try:
+            return tiktoken.encoding_for_model(model)
+        except KeyError:
+            # All current text-embedding-3 models use cl100k_base. Keep a
+            # deterministic fallback for an explicitly configured alias.
+            return tiktoken.get_encoding("cl100k_base")
+    except Exception as exc:
+        logger.warning(
+            "embedding_tokenizer_unavailable model=%s error_type=%s",
+            model,
+            exc.__class__.__name__,
+        )
+        return None
+
+
+def _embedding_input_token_limit() -> int:
+    configured = env_int(
+        "ARCLI_OPENAI_EMBEDDING_MAX_INPUT_TOKENS",
+        MAX_EMBEDDING_INPUT_TOKENS,
+    )
+    return min(MAX_EMBEDDING_INPUT_TOKENS, max(16, configured))
+
+
+def normalize_embedding_text(text: str, *, model: str = EMBEDDING_MODEL) -> str:
+    """Bound an embedding document without splitting Unicode or API tokens.
+
+    OpenAI rejects an entire array request when any one document crosses the
+    model's per-input token limit.  Source posts can contain minified code or
+    logs, for which a character cap is not a token cap.  Tokenize only on the
+    active embedding path to keep the idle Dramatiq worker lightweight.
+    """
+    if not text:
+        return text
+
+    token_limit = _embedding_input_token_limit()
+    safe_token_limit = max(1, token_limit - EMBEDDING_INPUT_TOKEN_SAFETY_MARGIN)
+    encoded = text.encode("utf-8")
+    # Token count cannot exceed UTF-8 byte count. Avoid loading a tokenizer at
+    # all for the overwhelmingly common short document.
+    if len(encoded) <= safe_token_limit:
+        return text
+
+    tokenizer = _embedding_tokenizer(model)
+    if tokenizer is not None:
+        token_ids = tokenizer.encode(text, disallowed_special=())
+        if len(token_ids) <= safe_token_limit:
+            return text
+
+        bounded = tokenizer.decode(token_ids[:safe_token_limit]).rstrip()
+        logger.info(
+            "embedding_input_truncated model=%s original_tokens=%s retained_tokens=%s",
+            model,
+            len(token_ids),
+            safe_token_limit,
+        )
+        return bounded
+
+    # A tokenizer dependency failure must not turn one long public post into
+    # a permanently failing batch. Every token represents at least one UTF-8
+    # byte, so this conservative fallback remains safely below the limit.
+    bounded = encoded[:safe_token_limit].decode("utf-8", errors="ignore").rstrip()
+    logger.info(
+        "embedding_input_truncated_fallback model=%s original_bytes=%s retained_bytes=%s",
+        model,
+        len(encoded),
+        len(bounded.encode("utf-8")),
+    )
+    return bounded or text[0]
 
 
 class EmbeddingRequest(BaseModel):
@@ -48,6 +126,16 @@ class EmbeddingRequest(BaseModel):
         min_length=1,
         description="OpenAI embedding model to use.",
     )
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def bound_text_to_provider_limit(cls, value: Any) -> Any:
+        # Preserve the public character-limit validation for oversized direct
+        # requests. The normal ingestion paths already select at most this
+        # many characters, then need the token-aware bound below.
+        if not isinstance(value, str) or len(value) > MAX_EMBEDDING_INPUT_CHARS:
+            return value
+        return normalize_embedding_text(value)
 
 
 class EmbeddingResponse(BaseModel):
@@ -838,7 +926,7 @@ def _service_profile_embedding_text(row: dict[str, Any]) -> str:
     if not text_value.strip():
         raise RuntimeError("Service profile has no embeddable content.")
 
-    return text_value
+    return normalize_embedding_text(text_value)
 
 
 def _service_profile_website_url(row: dict[str, Any]) -> str | None:

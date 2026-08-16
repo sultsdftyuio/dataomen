@@ -31,6 +31,7 @@ from api.services.embeddings import (
     _service_profile_columns,
     _string_list,
     _string_value,
+    normalize_embedding_text,
 )
 from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
@@ -122,7 +123,7 @@ def run_initial_public_ingestion(
     for post in posts:
         source_post_id = source_post_ids.get(post.dedupe_key)
         match_post_id = source_post_id or post.dedupe_key
-        embedding_text = post.matching_text[:32_000]
+        embedding_text = normalize_embedding_text(post.matching_text[:32_000])
         text_sha256 = _sha256_text(embedding_text)
         cached_embedding: list[float] | None = None
         if source_post_id:

@@ -23,6 +23,8 @@ type TriggerResult = {
   reason: string | null;
 };
 
+type WorkerEndpointEnvironment = Record<string, string | undefined>;
+
 async function triggerFailureReason(response: Response) {
   const body = await response.text().catch(() => "");
   if (!body) return null;
@@ -43,15 +45,55 @@ async function triggerFailureReason(response: Response) {
   return body.trim().slice(0, 500) || null;
 }
 
-function crawlTriggerEndpoint() {
-  const explicit = process.env.ARCLI_CRAWLER_TRIGGER_URL?.trim();
-  if (explicit) return explicit;
+function joinBackendPath(baseUrl: string, path: string) {
+  const base = baseUrl.trim().replace(/\/+$/, "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
 
-  const legacy = process.env.ARCLI_CRAWLER_INGEST_URL?.trim();
-  if (legacy) return legacy;
+  if (base.endsWith("/api") && normalizedPath.startsWith("/api/")) {
+    return `${base}${normalizedPath.slice(4)}`;
+  }
 
-  const internalApiUrl = process.env.INTERNAL_API_URL?.trim().replace(/\/$/, "");
-  return internalApiUrl ? `${internalApiUrl}/api/crawl/trigger` : null;
+  return `${base}${normalizedPath}`;
+}
+
+function uniqueEndpoints(candidates: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      candidates
+        .map((endpoint) => endpoint?.trim())
+        .filter((endpoint): endpoint is string => Boolean(endpoint)),
+    ),
+  );
+}
+
+function backendEndpoints(
+  path: string,
+  environment: WorkerEndpointEnvironment,
+) {
+  return [
+    environment.ARCLI_WORKER_API_URL,
+    environment.PYTHON_BACKEND_URL,
+    environment.INTERNAL_API_URL,
+  ].map((baseUrl) => (baseUrl ? joinBackendPath(baseUrl, path) : null));
+}
+
+export function crawlTriggerEndpoints(
+  environment: WorkerEndpointEnvironment = process.env,
+) {
+  return uniqueEndpoints([
+    environment.ARCLI_CRAWLER_TRIGGER_URL,
+    environment.ARCLI_CRAWLER_INGEST_URL,
+    ...backendEndpoints("/api/crawl/trigger", environment),
+  ]);
+}
+
+export function embeddingTriggerEndpoints(
+  environment: WorkerEndpointEnvironment = process.env,
+) {
+  return uniqueEndpoints([
+    environment.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL,
+    ...backendEndpoints("/api/service-profile/embed/trigger", environment),
+  ]);
 }
 
 function crawlJobId(tenantId: string, websiteUrl: string) {
@@ -102,8 +144,8 @@ async function postCrawlTrigger(
   tenantId: string,
   websiteUrl: string,
 ): Promise<TriggerResult> {
-  const endpoint = crawlTriggerEndpoint();
-  if (!endpoint) {
+  const endpoints = crawlTriggerEndpoints();
+  if (endpoints.length === 0) {
     console.warn("[WORKSPACE_CRAWL_TRIGGER_SKIPPED]", {
       event: "workspace_crawl_trigger_not_configured",
       tenant_id: tenantId,
@@ -128,84 +170,78 @@ async function postCrawlTrigger(
     };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const deadline = Date.now() + 5000;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${workerSecret}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": crawlJobId(tenantId, websiteUrl),
-      },
-      cache: "no-store",
-      signal: controller.signal,
-      body: JSON.stringify({
-        tenant_id: tenantId,
-        website_url: websiteUrl,
-        source: "settings_workspace",
-      }),
-    });
+  for (const endpoint of endpoints) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
 
-    if (!response.ok) {
-      const reason = await triggerFailureReason(response);
-      console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
-        event: "workspace_crawl_trigger_failed",
-        tenant_id: tenantId,
-        website_url: websiteUrl,
-        status: response.status,
-        body: reason,
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), remainingMs);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${workerSecret}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": crawlJobId(tenantId, websiteUrl),
+        },
+        cache: "no-store",
+        signal: controller.signal,
+        body: JSON.stringify({
+          tenant_id: tenantId,
+          website_url: websiteUrl,
+          source: "settings_workspace",
+        }),
       });
-      return {
-        accepted: false,
-        reason:
-          reason ?? `the crawl worker returned HTTP ${response.status}`,
-      };
+
+      if (!response.ok) {
+        const reason = await triggerFailureReason(response);
+        console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
+          event: "workspace_crawl_trigger_failed",
+          tenant_id: tenantId,
+          website_url: websiteUrl,
+          endpoint,
+          status: response.status,
+          body: reason,
+        });
+        return {
+          accepted: false,
+          reason:
+            reason ?? `the crawl worker returned HTTP ${response.status}`,
+        };
+      }
+
+      console.info("[WORKSPACE_CRAWL_TRIGGERED]", {
+        event: "workspace_crawl_triggered",
+        tenant_id: tenantId,
+        website_url: websiteUrl,
+        endpoint,
+      });
+      return { accepted: true, reason: null };
+    } catch (error) {
+      console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
+        event: "workspace_crawl_trigger_unavailable",
+        tenant_id: tenantId,
+        website_url: websiteUrl,
+        endpoint,
+        error,
+      });
+    } finally {
+      clearTimeout(timeout);
     }
-
-    console.info("[WORKSPACE_CRAWL_TRIGGERED]", {
-      event: "workspace_crawl_triggered",
-      tenant_id: tenantId,
-      website_url: websiteUrl,
-    });
-    return { accepted: true, reason: null };
-  } catch (error) {
-    console.warn("[WORKSPACE_CRAWL_TRIGGER_FAILED]", {
-      event: "workspace_crawl_trigger_unavailable",
-      tenant_id: tenantId,
-      website_url: websiteUrl,
-      error,
-    });
-    return { accepted: false, reason: "the crawl worker could not be reached" };
-  } finally {
-    clearTimeout(timeout);
   }
-}
 
-function embeddingTriggerEndpoint() {
-  const explicit = process.env.ARCLI_PROFILE_EMBEDDING_TRIGGER_URL?.trim();
-  if (explicit) return explicit;
-
-  const workerApiUrl =
-    process.env.ARCLI_WORKER_API_URL?.trim() ||
-    process.env.PYTHON_BACKEND_URL?.trim() ||
-    process.env.INTERNAL_API_URL?.trim();
-  const base = workerApiUrl?.replace(/\/+$/, "");
-
-  return base
-    ? base.endsWith("/api")
-      ? `${base}/service-profile/embed/trigger`
-      : `${base}/api/service-profile/embed/trigger`
-    : null;
+  return { accepted: false, reason: "the crawl worker could not be reached" };
 }
 
 async function postEmbeddingTrigger(
   tenantId: string,
   serviceProfileId: string | null,
 ): Promise<TriggerResult> {
-  const endpoint = embeddingTriggerEndpoint();
-  if (!endpoint) {
+  const endpoints = embeddingTriggerEndpoints();
+  if (endpoints.length === 0) {
     console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_SKIPPED]", {
       event: "workspace_profile_embedding_trigger_not_configured",
       tenant_id: tenantId,
@@ -230,60 +266,71 @@ async function postEmbeddingTrigger(
     };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const deadline = Date.now() + 5000;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${workerSecret}`,
-        "Content-Type": "application/json",
-      },
-      cache: "no-store",
-      signal: controller.signal,
-      body: JSON.stringify({
-        tenant_id: tenantId,
-        service_profile_id: serviceProfileId,
-        source: "settings_service_profile_update",
-      }),
-    });
+  for (const endpoint of endpoints) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
-        event: "workspace_profile_embedding_trigger_failed",
-        tenant_id: tenantId,
-        service_profile_id: serviceProfileId,
-        status: response.status,
-        body: body.slice(0, 500),
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), remainingMs);
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${workerSecret}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+        body: JSON.stringify({
+          tenant_id: tenantId,
+          service_profile_id: serviceProfileId,
+          source: "settings_service_profile_update",
+        }),
       });
-      return {
-        accepted: false,
-        reason: `the lead-discovery worker returned HTTP ${response.status}`,
-      };
-    }
 
-    console.info("[WORKSPACE_PROFILE_EMBEDDING_TRIGGERED]", {
-      event: "workspace_profile_embedding_triggered",
-      tenant_id: tenantId,
-      service_profile_id: serviceProfileId,
-    });
-    return { accepted: true, reason: null };
-  } catch (error) {
-    console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
-      event: "workspace_profile_embedding_trigger_unavailable",
-      tenant_id: tenantId,
-      service_profile_id: serviceProfileId,
-      error,
-    });
-    return {
-      accepted: false,
-      reason: "the lead-discovery worker could not be reached",
-    };
-  } finally {
-    clearTimeout(timeout);
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
+          event: "workspace_profile_embedding_trigger_failed",
+          tenant_id: tenantId,
+          service_profile_id: serviceProfileId,
+          endpoint,
+          status: response.status,
+          body: body.slice(0, 500),
+        });
+        return {
+          accepted: false,
+          reason: `the lead-discovery worker returned HTTP ${response.status}`,
+        };
+      }
+
+      console.info("[WORKSPACE_PROFILE_EMBEDDING_TRIGGERED]", {
+        event: "workspace_profile_embedding_triggered",
+        tenant_id: tenantId,
+        service_profile_id: serviceProfileId,
+        endpoint,
+      });
+      return { accepted: true, reason: null };
+    } catch (error) {
+      console.warn("[WORKSPACE_PROFILE_EMBEDDING_TRIGGER_FAILED]", {
+        event: "workspace_profile_embedding_trigger_unavailable",
+        tenant_id: tenantId,
+        service_profile_id: serviceProfileId,
+        endpoint,
+        error,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  return {
+    accepted: false,
+    reason: "the lead-discovery worker could not be reached",
+  };
 }
 
 function savedButScanNotStartedResponse(reasons: string[]) {

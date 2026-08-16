@@ -31,6 +31,7 @@ from api.services.embeddings import (
     _service_profile_columns,
     _string_list,
     _string_value,
+    normalize_embedding_text,
 )
 from api.services.integrations.hn_connector import SourcePost
 from api.services.integrations.public_source import PublicSourcePost
@@ -326,7 +327,7 @@ def rematch_existing_public_source_posts_for_profile(
             ):
                 continue
 
-            embedding_text = post.matching_text[:32_000]
+            embedding_text = normalize_embedding_text(post.matching_text[:32_000])
             with engine.begin() as conn:
                 embedding_values = _cached_public_source_post_embedding(
                     conn,
@@ -547,7 +548,7 @@ def process_public_source_post_embedding(
                 )
                 continue
 
-            embedding_text = post.matching_text[:32_000]
+            embedding_text = normalize_embedding_text(post.matching_text[:32_000])
             text_sha256 = _sha256_text(embedding_text)
             embedding_values = (
                 _embedding_values_by_database_post_id.get(database_post_id)
@@ -791,7 +792,7 @@ def prewarm_public_source_post_embedding_cache(
                 post = _public_source_post_as_social_post(source_row)
                 if not post:
                     continue
-                embedding_text = post.matching_text[:32_000]
+                embedding_text = normalize_embedding_text(post.matching_text[:32_000])
                 text_sha256 = _sha256_text(embedding_text)
                 with engine.begin() as conn:
                     cached_embedding = _cached_public_source_post_embedding(

@@ -25,6 +25,7 @@ from api.services.embeddings import (
     _database_engine,
     _load_service_profile,
     _service_profile_columns,
+    normalize_embedding_text,
 )
 from api.services.matching import PostEmbedding, find_candidate_matches
 from api.services.social.legacy_fetch import _primitive_metadata
@@ -222,7 +223,7 @@ def watchlist_embedding_text(profile: ServiceProfile) -> str:
     ]
     if profile.negative_keywords:
         lines.append(f"Exclude: {', '.join(profile.negative_keywords)}")
-    return "\n".join(line for line in lines if line.strip())[:32_000]
+    return normalize_embedding_text("\n".join(line for line in lines if line.strip())[:32_000])
 
 
 def _load_watchlist_row(
@@ -566,7 +567,7 @@ def _match_post_to_contexts(
                 [
                     PostEmbedding(
                         post_id=source_post_id,
-                        text=post.matching_text[:32_000],
+                        text=normalize_embedding_text(post.matching_text[:32_000]),
                         embedding=post_embedding,
                         source=post.source,
                         url=post.url,
@@ -677,7 +678,7 @@ def process_active_watchlists_for_public_source_post(
                     conn,
                     database_post_id=database_post_id,
                     text_sha256=hashlib.sha256(
-                        post.matching_text[:32_000].encode("utf-8")
+                        normalize_embedding_text(post.matching_text[:32_000]).encode("utf-8")
                     ).hexdigest(),
                     embedding_model=embedding_service.model,
                 )
@@ -738,7 +739,7 @@ def rematch_existing_public_source_posts_for_watchlist(
                     conn,
                     database_post_id=database_post_id,
                     text_sha256=hashlib.sha256(
-                        post.matching_text[:32_000].encode("utf-8")
+                        normalize_embedding_text(post.matching_text[:32_000]).encode("utf-8")
                     ).hexdigest(),
                     embedding_model=embedding_service.model,
                 )

@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { Building2, CircleUserRound, Globe2, MessageCircleMore, Settings2 } from "lucide-react";
+import { Building2, CircleUserRound, Globe2, Mail, MessageCircleMore, Settings2 } from "lucide-react";
 
 import type { ServiceProfileView } from "@/app/(dashboard)/dashboard/prospect-types";
 import WorkspaceBillingCard, {
@@ -72,7 +72,7 @@ export default function SettingsClient({
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>Signed in as</p>
                   <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }}>{displayName}</p>
-                  <p className="truncate text-xs" style={{ color: C.navySoft }}>{user.email ?? "No email available"}</p>
+                  <p className="text-xs" style={{ color: C.navySoft }}>Account owner</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 sm:border-l sm:pl-5" style={{ borderColor: C.rule }}>
@@ -86,6 +86,16 @@ export default function SettingsClient({
                     <Globe2 className="size-3 shrink-0" aria-hidden="true" />
                     {websiteUrl ? websiteDomain(websiteUrl) : "Website not connected"}
                   </p>
+                </div>
+              </div>
+              <div className="flex min-w-0 items-start gap-3 rounded-lg border px-3 py-3 sm:col-span-2" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: C.white, color: C.blue }}>
+                  <Mail className="size-4" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>Account email</p>
+                  <p className="mt-1 break-all text-sm font-semibold leading-5" style={{ color: C.navy }}>{user.email ?? "No email available"}</p>
+                  <p className="mt-1 text-xs leading-4" style={{ color: C.navySoft }}>Used for sign-in and account updates.</p>
                 </div>
               </div>
             </div>

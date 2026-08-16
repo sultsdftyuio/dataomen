@@ -1234,9 +1234,14 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
         : "What this scan found";
   const detail = isRunning
     ? "Each source reports here as it finishes. New posts are checked before they appear as potential buyers or leads."
-    : summary.verifierPending
-      ? "Source collection is complete. The posts below are still being checked for real buyer problems."
-      : "These are source results, not lead counts. A post reaches your desk only after it is checked against your brief.";
+    : isPartial
+      ? "Some sources were unavailable, but completed sources still produced usable discovery results."
+      : isFailed
+        ? "This discovery scan could not complete. Check the source details below before trying again."
+        : summary.verifierPending
+          ? "Source collection is complete. The posts below are still being checked for real buyer problems."
+          : "These are source results, not lead counts. A post reaches your desk only after it is checked against your brief.";
+  const sourceFailureCount = summary.sourceFailures ?? 0;
   const compactStats = [
     summary.totalHits !== null ? `${summary.totalHits} collected` : null,
     summary.plausibleHits !== null ? `${summary.plausibleHits} reviewed` : null,
@@ -1244,9 +1249,12 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
   ].filter((value): value is string => Boolean(value));
 
   return (
-    <Card className="overflow-hidden rounded-xl shadow-sm" style={{ borderColor: C.blueLight }}>
+    <Card
+      className="overflow-hidden rounded-xl shadow-sm"
+      style={{ borderColor: isPartial ? C.amber : isFailed ? C.red : C.blueLight }}
+    >
       <CardContent className="p-0">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3.5 sm:px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+        <div className="flex flex-col gap-3 border-b px-4 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <div className="flex min-w-0 items-start gap-3">
             <span
               className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full"
@@ -1258,14 +1266,14 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
             >
               {isFailed || isPartial ? <AlertCircle className="size-4" /> : isRunning ? <Radar className="size-4 animate-pulse" /> : <Check className="size-4" />}
             </span>
-            <div>
-              <h2 className="pfd text-lg leading-none" style={{ color: C.navy }}>{title}</h2>
+            <div className="min-w-0">
+              <h2 className="pfd text-lg leading-5" style={{ color: C.navy }}>{title}</h2>
               <p className="mt-1.5 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>{detail}</p>
             </div>
           </div>
           <Badge
             variant="outline"
-            className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px]"
+            className="self-start rounded-full px-2.5 py-0.5 text-[10px] sm:shrink-0"
             style={{
               borderColor: isFailed ? C.red : isPartial ? C.amber : C.blueLight,
               backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : C.blueTint,
@@ -1277,6 +1285,20 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
         </div>
 
         <div className="px-4 py-3.5 sm:px-5">
+          {isPartial ? (
+            <div
+              className="mb-3 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs leading-5"
+              role="status"
+              style={{ borderColor: C.amber, backgroundColor: C.amberPale, color: C.navySoft }}
+            >
+              <AlertCircle className="mt-0.5 size-4 shrink-0" style={{ color: C.amber }} />
+              <p>
+                {sourceFailureCount > 0
+                  ? `${sourceFailureCount} source${sourceFailureCount === 1 ? " was" : "s were"} unavailable. Results from the other sources are shown below.`
+                  : "Coverage was partial. Results from the available sources are shown below."}
+              </p>
+            </div>
+          ) : null}
           {report.sourceProgress.length > 0 ? (
             <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Source-by-source scan results">
               {report.sourceProgress.map((source) => {

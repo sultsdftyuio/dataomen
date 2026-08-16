@@ -25,10 +25,12 @@ The final migration is additive and keeps buyer-language research separate from
   verifier. Buyer-language research does not call OpenAI.
 
 The Next.js deployment needs the same `INTERNAL_WORKER_SECRET` and a reachable
-worker API URL. Configure the explicit URLs when the worker is on a different
-service; otherwise `INTERNAL_API_URL` is used as the shared fallback:
+worker API URL. Prefer `ARCLI_WORKER_API_URL` (or `PYTHON_BACKEND_URL`) when
+the worker is on a different service; explicit route URLs take precedence and
+`INTERNAL_API_URL` remains a legacy fallback:
 
 ```text
+ARCLI_WORKER_API_URL=https://api.example.com
 ARCLI_CRAWLER_TRIGGER_URL=https://api.example.com/api/crawl/trigger
 ARCLI_PROFILE_EMBEDDING_TRIGGER_URL=https://api.example.com/api/service-profile/embed/trigger
 INTERNAL_WORKER_SECRET=<the same value configured on the Python API>
