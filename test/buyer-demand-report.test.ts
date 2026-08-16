@@ -202,7 +202,7 @@ test("falls back safely when optional discovery telemetry is not deployed", asyn
     ["eq", "tenant_id", TENANT_ID],
     ["eq", "service_profile_id", "profile-a"],
     ["eq", "run_kind", "opportunity_leads"],
-    ["in", "status", ["completed", "partial", "skipped", "failed"]],
+    ["in", "status", ["running", "completed", "partial", "skipped", "failed"]],
   ]);
 });
 
@@ -255,9 +255,9 @@ test("uses the scoped legacy report only when the additive run-kind column is ab
     ["eq", "tenant_id", TENANT_ID],
     ["eq", "service_profile_id", "profile-a"],
     ["eq", "run_kind", "opportunity_leads"],
-    ["in", "status", ["completed", "partial", "skipped", "failed"]],
+    ["in", "status", ["running", "completed", "partial", "skipped", "failed"]],
     ["eq", "tenant_id", TENANT_ID],
     ["eq", "service_profile_id", "profile-a"],
-    ["in", "status", ["completed", "partial", "skipped", "failed"]],
+    ["in", "status", ["running", "completed", "partial", "skipped", "failed"]],
   ]);
 });

@@ -1224,6 +1224,11 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
   const isRunning = !report.isTerminal;
   const isPartial = report.status === "partial";
   const isFailed = report.status === "failed";
+  // The terminal summary is authoritative. Source-list events can contain a
+  // fallback source that never ran, which must not remain shown as “Checking”.
+  const displayedSourceProgress = report.isTerminal
+    ? report.sourceProgress.filter((source) => source.state !== "checking")
+    : report.sourceProgress;
   const statusLabel = isRunning ? "Scanning" : isPartial ? "Partial" : isFailed ? "Needs attention" : "Complete";
   const title = isRunning
     ? "Checking public conversations"
@@ -1316,9 +1321,9 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
               </div>
             </div>
           ) : null}
-          {report.sourceProgress.length > 0 ? (
+          {displayedSourceProgress.length > 0 ? (
             <ul className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Source-by-source scan results">
-              {report.sourceProgress.map((source) => {
+              {displayedSourceProgress.map((source) => {
                 const tone = sourceProgressTone(source);
                 const isChecking = source.state === "checking";
                 const isFound = source.state === "found" || source.state === "partial";
@@ -2179,13 +2184,18 @@ function DiscoverySourceBar({
   serviceProfile,
   status,
   websiteCrawlCooldown,
+  discoveryStatus,
 }: {
   serviceProfile: ServiceProfileView;
   status: ReturnType<typeof pipelineStatus>;
   websiteCrawlCooldown: WebsiteCrawlCooldownView;
+  discoveryStatus: BuyerDemandReportView["status"];
 }) {
   const domain = sourceDomain(serviceProfile.websiteUrl);
-  const isReady = status.label === "Latest scan complete";
+  const latestDiscoveryWasPartial =
+    status.label === "Latest scan complete" && normalizedStatus(discoveryStatus) === "partial";
+  const displayStatus = latestDiscoveryWasPartial ? "Latest scan partial" : status.label;
+  const isReady = displayStatus === "Latest scan complete";
   const router = useRouter();
   const [websiteUrl, setWebsiteUrl] = useState(serviceProfile.websiteUrl ?? "");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -2322,12 +2332,12 @@ function DiscoverySourceBar({
         <span
           className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
           style={{
-            borderColor: isReady ? C.green : C.blueLight,
-            backgroundColor: isReady ? C.greenPale : C.bluePale,
-            color: isReady ? C.green : C.blue,
+            borderColor: isReady ? C.green : latestDiscoveryWasPartial ? C.amber : C.blueLight,
+            backgroundColor: isReady ? C.greenPale : latestDiscoveryWasPartial ? C.amberPale : C.bluePale,
+            color: isReady ? C.green : latestDiscoveryWasPartial ? C.amber : C.blue,
           }}
         >
-          {status.label}
+          {displayStatus}
         </span>
         <Button
           asChild
@@ -2641,6 +2651,7 @@ export default function ProspectDashboardClient({
         serviceProfile={serviceProfile}
         status={status}
         websiteCrawlCooldown={websiteCrawlCooldown}
+        discoveryStatus={buyerDemandReport?.status ?? null}
       />
 
       {buyerDemandReport ? (
