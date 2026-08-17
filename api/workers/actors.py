@@ -456,7 +456,11 @@ def ingest_initial_public_sources_fast_job(
         if result.source_post_refs:
             from api.services.social_ingestion import trigger_embedding_jobs
 
-            embedding_jobs += trigger_embedding_jobs(list(result.source_post_refs))
+            embedding_jobs += trigger_embedding_jobs(
+                list(result.source_post_refs),
+                tenant_id=tenant_id,
+                service_profile_id=service_profile_id,
+            )
 
         for query_result in result.query_outcomes:
             details: dict[str, Any] = {}
@@ -561,7 +565,11 @@ def ingest_initial_public_sources_fast_job(
                     total_new_inserts += x_result.inserted_count
                     total_matching_source_posts += len(x_refs)
                     if x_refs:
-                        embedding_jobs += trigger_embedding_jobs(x_refs)
+                        embedding_jobs += trigger_embedding_jobs(
+                            x_refs,
+                            tenant_id=tenant_id,
+                            service_profile_id=service_profile_id,
+                        )
                     _record_discovery_event(
                         discovery_run_id=discovery_run_id,
                         tenant_id=tenant_id,
@@ -1761,6 +1769,9 @@ def enqueue_source_post_embedding_job(
 )
 def enqueue_source_post_embedding_batch_job(
     source_post_refs: Sequence[dict[str, str]],
+    *,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
 ) -> None:
     """Embed a small public-post batch before applying normal lead matching."""
     refs = [
@@ -1778,6 +1789,8 @@ def enqueue_source_post_embedding_batch_job(
 
     _job_started(
         job_name="source_post_embedding_batch_handoff",
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
         source_post_count=len(refs),
     )
     try:
@@ -1785,7 +1798,11 @@ def enqueue_source_post_embedding_batch_job(
             process_public_source_post_embedding_batch,
         )
 
-        result = process_public_source_post_embedding_batch(refs)
+        result = process_public_source_post_embedding_batch(
+            refs,
+            tenant_id=tenant_id,
+            service_profile_id=service_profile_id,
+        )
         # Watchlists remain an independent tenant-scoped view.  Batch the
         # shared embedding work, but never let a watchlist error retry or
         # duplicate the profile-wide matching result above.
@@ -1838,7 +1855,12 @@ def enqueue_source_post_embedding_batch_job(
     )
 
 
-def enqueue_source_post_embedding_jobs(source_post_refs: Sequence[Any]) -> int:
+def enqueue_source_post_embedding_jobs(
+    source_post_refs: Sequence[Any],
+    *,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
+) -> int:
     """Publish small source-qualified embedding batches for public rows.
 
     A plain string remains accepted solely to drain messages created by older
@@ -1874,20 +1896,32 @@ def enqueue_source_post_embedding_jobs(source_post_refs: Sequence[Any]) -> int:
             continue
         refs.append({"source": source, "source_post_id": source_post_id})
 
-    batch_size = _int_env("ARCLI_SOURCE_POST_EMBEDDING_BATCH_SIZE", 16, minimum=1)
+    # Small batches keep the worker's memory guard from recycling mid-scan.
+    batch_size = _int_env("ARCLI_SOURCE_POST_EMBEDDING_BATCH_SIZE", 8, minimum=1)
+    batch_kwargs: dict[str, str] = {}
+    if tenant_id and service_profile_id:
+        batch_kwargs = {
+            "tenant_id": tenant_id,
+            "service_profile_id": service_profile_id,
+        }
     messages_sent = 0
     for offset in range(0, len(refs), batch_size):
-        enqueue_source_post_embedding_batch_job.send(refs[offset : offset + batch_size])
+        enqueue_source_post_embedding_batch_job.send(
+            refs[offset : offset + batch_size],
+            **batch_kwargs,
+        )
         messages_sent += 1
 
     legacy_count = len(seen) - len(refs)
     messages_sent += legacy_count
     logger.info(
-        "source_post_embedding_handoffs_enqueued job_state=%s source_post_count=%s batch_count=%s batch_size=%s",
+        "source_post_embedding_handoffs_enqueued job_state=%s source_post_count=%s batch_count=%s batch_size=%s tenant_id=%s service_profile_id=%s",
         "pending",
         len(seen),
         messages_sent,
         batch_size,
+        tenant_id,
+        service_profile_id,
     )
     return messages_sent
 
@@ -1997,7 +2031,7 @@ def process_watchlist_discovery_job_actor(tenant_id: str, watchlist_id: str) -> 
     max_retries=_int_env("ARCLI_CRAWL_JOB_MAX_RETRIES", 2),
     min_backoff=_int_env("ARCLI_CRAWL_JOB_MIN_BACKOFF_MS", 15_000, minimum=1),
     max_backoff=_int_env("ARCLI_CRAWL_JOB_MAX_BACKOFF_MS", 60_000, minimum=1),
-    time_limit=_int_env("ARCLI_CRAWL_JOB_TIME_LIMIT_MS", 210_000, minimum=1),
+    time_limit=_int_env("ARCLI_CRAWL_JOB_TIME_LIMIT_MS", 135_000, minimum=1),
     on_retry_exhausted="mark_crawl_job_dead_lettered",
     throws=(NonRetryableCrawlError,),
 )

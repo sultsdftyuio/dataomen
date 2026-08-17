@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import os
 from unittest.mock import patch
 
 import api.main as main
@@ -115,3 +117,49 @@ def test_temporary_repeat_crawl_mode_requires_explicit_opt_in(monkeypatch) -> No
 
     monkeypatch.setenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "true")
     assert crawling._website_crawl_test_mode_enabled() is True
+
+
+def test_default_crawl_budget_is_two_minutes() -> None:
+    assert crawling.DEFAULT_CRAWL_JOB_TOTAL_TIMEOUT_SECONDS == 120
+    assert crawling.DEFAULT_CRAWL_PHASE_TIMEOUT_SECONDS == 75
+    assert crawling.DEFAULT_PROFILE_EXTRACTION_TIMEOUT_SECONDS == 35
+    assert crawling.DEFAULT_CRAWL_JOB_TIME_LIMIT_MS == 135_000
+
+
+def test_fallback_pages_are_fetched_concurrently_without_changing_page_order() -> None:
+    class FakeClient:
+        active_requests = 0
+        max_active_requests = 0
+
+        async def scrape(self, *, url: str, **_kwargs: object) -> dict[str, str]:
+            self.active_requests += 1
+            self.max_active_requests = max(
+                self.max_active_requests,
+                self.active_requests,
+            )
+            try:
+                await asyncio.sleep(0.01)
+                return {"markdown": f"# {url}"}
+            finally:
+                self.active_requests -= 1
+
+    urls = [f"https://example.com/page-{index}" for index in range(5)]
+    crawler = crawling.WebsiteCrawler(page_timeout_ms=1_000)
+    client = FakeClient()
+    with (
+        patch.dict(os.environ, {"ARCLI_FALLBACK_SCRAPE_CONCURRENCY": "2"}),
+        patch.object(crawler, "_fallback_urls", return_value=urls),
+    ):
+        documents = asyncio.run(
+            crawler._scrape_common_pages(
+                client,
+                "https://example.com/",
+                set(),
+                tenant_id="tenant-1",
+                service_profile_id="profile-1",
+                crawl_job_id="crawl-1",
+            )
+        )
+
+    assert client.max_active_requests == 2
+    assert [source for source, _markdown in documents] == urls

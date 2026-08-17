@@ -266,6 +266,10 @@ ARCLI_INITIAL_PUBLIC_INGESTION_QUERY_VARIANTS_PER_TYPE=2
 ARCLI_INITIAL_PUBLIC_INGESTION_LOOKBACK_HOURS=720
 ARCLI_INITIAL_PUBLIC_INGESTION_POSTS_PER_QUERY=50
 
+# Keep each public-post embedding handoff small enough to avoid worker memory
+# recycling without reducing source or verifier coverage.
+ARCLI_SOURCE_POST_EMBEDDING_BATCH_SIZE=8
+
 # The lexical prefilter is recall-oriented. A source hit still needs buyer
 # context, embedding similarity, and verifier evidence before it can appear.
 ARCLI_DISCOVERY_QUERY_OVERLAP_FRACTION=0.15
@@ -313,6 +317,21 @@ ARCLI_INITIAL_PUBLIC_GLOBAL_REMATCH_MAX_CANDIDATES=15
 # it reaches the higher Ready for review threshold.
 LEAD_DISCOVERY_CANDIDATE_SCORE_THRESHOLD=0.35
 LEAD_VERIFIER_SCORE_THRESHOLD=0.60
+```
+
+Website profiling is a distinct, two-minute job. Public-source retrieval and
+verification are separate queue stages: they can keep adding results after the
+website crawl has completed, but they must never keep the crawl itself open.
+
+```text
+ARCLI_CRAWL_JOB_TOTAL_TIMEOUT_SECONDS=120
+ARCLI_CRAWL_PHASE_TIMEOUT_SECONDS=75
+ARCLI_PROFILE_EXTRACTION_TIMEOUT_SECONDS=35
+ARCLI_CRAWL_JOB_TIME_LIMIT_MS=135000
+
+# Fallback About/Pricing/Product pages retain the same coverage but are fetched
+# concurrently, up to this provider-safe limit.
+ARCLI_FALLBACK_SCRAPE_CONCURRENCY=3
 ```
 
 The strict one-page setting bounds a successful X fallback to one X search

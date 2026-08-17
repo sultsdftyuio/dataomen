@@ -261,7 +261,12 @@ def _result_source_post_refs(
 
 
 
-def trigger_embedding_jobs(source_post_refs: Sequence[PublicSourcePostRef]) -> int:
+def trigger_embedding_jobs(
+    source_post_refs: Sequence[PublicSourcePostRef],
+    *,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
+) -> int:
     """Hand fetched public rows to the embedding queue.
 
     The source corpus is global, while lead matching is tenant-scoped. A post
@@ -290,7 +295,11 @@ def trigger_embedding_jobs(source_post_refs: Sequence[PublicSourcePostRef]) -> i
 
     from api.workers.actors import enqueue_source_post_embedding_jobs
 
-    return enqueue_source_post_embedding_jobs(source_post_refs)
+    return enqueue_source_post_embedding_jobs(
+        source_post_refs,
+        tenant_id=tenant_id,
+        service_profile_id=service_profile_id,
+    )
 
 
 

@@ -185,7 +185,7 @@ def test_pass1_uses_the_model_default_temperature(
 
     assert profile.company_name == "Ledgerflow"
     assert "temperature" not in request
-    assert request["reasoning_effort"] == "minimal"
+    assert request["reasoning_effort"] == "none"
     assert request["max_completion_tokens"] == 1_000
 
 

@@ -103,6 +103,8 @@ export default async function DashboardPage() {
         websiteUrl={websiteUrl}
         counts={counts}
         scanStatus={crawlStatus}
+        discoveryStatus={buyerDemandReport?.status ?? null}
+        verificationPending={buyerDemandReport?.summary.verifierPending ?? false}
       />
     );
   }

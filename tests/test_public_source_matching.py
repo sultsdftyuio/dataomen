@@ -234,6 +234,62 @@ class PublicSourceMatchingTests(unittest.TestCase):
             VERIFIER_POLICY_VERSION,
         )
 
+    def test_initial_batch_matches_only_the_profile_that_requested_it(self) -> None:
+        import api.services.social_ingestion as ingestion
+
+        class FakeEngine:
+            def begin(self):
+                return nullcontext(object())
+
+        class FakeEmbeddingService:
+            def close(self) -> None:
+                return None
+
+        profile_rows = [
+            {"id": "profile-a", "tenant_id": "tenant-a"},
+            {"id": "profile-b", "tenant_id": "tenant-b"},
+        ]
+        refs = [{"source": "hackernews", "source_post_id": "hn-1"}]
+        with (
+            patch.object(ingestion, "_database_engine", return_value=FakeEngine()),
+            patch.object(
+                ingestion,
+                "_load_public_source_post_rows",
+                return_value=[{"id": "post-1"}],
+            ),
+            patch.object(
+                ingestion,
+                "_public_matching_profile_rows",
+                return_value=profile_rows,
+            ),
+            patch.object(ingestion, "_table_columns", return_value={}),
+            patch.object(
+                ingestion,
+                "prewarm_public_source_post_embedding_cache",
+                return_value=0,
+            ),
+            patch.object(ingestion, "EmbeddingService", FakeEmbeddingService),
+            patch.object(
+                ingestion,
+                "process_public_source_post_embedding",
+                return_value={
+                    "posts": 1,
+                    "embedded": 1,
+                    "candidates": 1,
+                    "ready_for_review": 0,
+                    "discovery_candidates": 1,
+                },
+            ) as process,
+        ):
+            result = ingestion.process_public_source_post_embedding_batch(
+                refs,
+                tenant_id="tenant-a",
+                service_profile_id="profile-a",
+            )
+
+        self.assertEqual(result["candidates"], 1)
+        self.assertEqual(process.call_args.kwargs["_profile_rows"], [profile_rows[0]])
+
     def test_activation_rematches_only_the_new_profile_against_cached_global_posts(self) -> None:
         import api.services.social_ingestion as ingestion
 

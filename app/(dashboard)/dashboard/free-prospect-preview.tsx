@@ -11,6 +11,8 @@ type FreeProspectPreviewProps = {
   websiteUrl: string;
   counts: LeadQueueCounts;
   scanStatus: string | null;
+  discoveryStatus: string | null;
+  verificationPending: boolean;
 };
 
 function domainForDisplay(websiteUrl: string) {
@@ -25,11 +27,27 @@ export default function FreeProspectPreview({
   websiteUrl,
   counts,
   scanStatus,
+  discoveryStatus,
+  verificationPending,
 }: FreeProspectPreviewProps) {
   const total = counts.readyToReview + counts.discoveryCandidates;
   const hasMatches = total > 0;
-  const scanCompleted = scanStatus === "completed";
-  const scanFailed = scanStatus === "failed" || scanStatus === "dead_lettered";
+  const normalizedDiscoveryStatus = discoveryStatus?.trim().toLowerCase() ?? null;
+  const normalizedCrawlStatus = scanStatus?.trim().toLowerCase() ?? null;
+  const effectiveStatus = normalizedDiscoveryStatus ?? normalizedCrawlStatus;
+  const scanCompleted = effectiveStatus === "completed" && !verificationPending;
+  const scanPartial = effectiveStatus === "partial" && !verificationPending;
+  const scanFailed = effectiveStatus === "failed" || effectiveStatus === "dead_lettered";
+  const isVerifying = verificationPending || effectiveStatus === "running";
+  const scanLabel = isVerifying
+    ? "Checking potential matches"
+    : scanPartial
+      ? "Latest scan partially complete"
+      : scanCompleted
+        ? "Latest scan complete"
+        : scanFailed
+          ? "Latest scan needs attention"
+          : "Scanning conversations";
   const lockedCardCount = Math.min(Math.max(total, 1), 3);
 
   return (
@@ -40,7 +58,11 @@ export default function FreeProspectPreview({
             Your prospect desk is ready
           </h1>
           <p className="mt-2 text-sm" style={{ color: C.muted }}>
-            {scanCompleted
+            {isVerifying
+              ? `Sources are collected for ${domainForDisplay(websiteUrl)}. Checking buyer fit now.`
+              : scanPartial
+                ? `Latest scan had partial source coverage for ${domainForDisplay(websiteUrl)}.`
+                : scanCompleted
               ? `Latest scan complete for ${domainForDisplay(websiteUrl)}.`
               : `We are scanning conversations for ${domainForDisplay(websiteUrl)}.`}
           </p>
@@ -57,7 +79,9 @@ export default function FreeProspectPreview({
             <p className="text-sm font-semibold" style={{ color: C.navy }}>
               {hasMatches
                 ? `${total} matched ${total === 1 ? "conversation is" : "conversations are"} waiting`
-                : scanCompleted
+                : isVerifying
+                  ? "Checking the strongest conversations"
+                  : scanCompleted || scanPartial
                   ? "No conversations matched this time"
                   : scanFailed
                     ? "Your last scan needs attention"
@@ -67,7 +91,9 @@ export default function FreeProspectPreview({
           <p className="mt-2 text-xs leading-5" style={{ color: C.navySoft }}>
             {hasMatches
               ? "Free shows the real count. Pro reveals the people, source posts, evidence, and reply drafts behind these matches."
-              : scanCompleted
+              : isVerifying
+                ? "Source collection is complete. Arcli is still checking the strongest conversations against your buyer and problem criteria."
+              : scanCompleted || scanPartial
                 ? "Nothing was strong enough for your current buyer and problem criteria. You can refine the brief before the next check."
                 : scanFailed
                   ? "Check your website setup, then try again when the next scan is available."
@@ -171,13 +197,19 @@ export default function FreeProspectPreview({
             </div>
             <div className="max-w-2xl">
               <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-                {scanCompleted ? "Latest scan complete" : "Next useful step"}
+                {isVerifying ? "Verification in progress" : scanLabel}
               </p>
               <h2 className="pfd mt-1 text-2xl leading-none" style={{ color: C.navy }}>
-                {scanCompleted ? "No matches cleared your brief this time." : "Set your next scan up for better matches."}
+                {isVerifying
+                  ? "We’re checking the strongest conversations now."
+                  : scanCompleted || scanPartial
+                    ? "No matches cleared your brief this time."
+                    : "Set your next scan up for better matches."}
               </h2>
               <p className="mt-3 text-sm leading-6" style={{ color: C.navySoft }}>
-                {scanCompleted
+                {isVerifying
+                  ? "This can take a few more minutes after sources finish. The desk will update automatically if a conversation clears your matching brief."
+                  : scanCompleted || scanPartial
                   ? "That does not mean the problem is not being discussed. It means no conversation was strong enough for the buyer and problem criteria you chose. Refine the brief with the words your buyers actually use, then let the next check look again."
                   : "Make sure your matching brief names the buyer, the problem, and the phrases they use when looking for help. That gives the next scan a clearer signal to work with."}
               </p>

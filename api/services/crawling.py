@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 CRAWL_JOB_TERMINAL_STATUSES = {"completed", "failed", "dead_lettered"}
 CRAWL_JOB_ACTIVE_STATUSES = {"pending", "processing"}
 CRAWL_PAGE_MARKDOWN_LIMIT_CHARS = 250_000
-DEFAULT_CRAWL_JOB_TOTAL_TIMEOUT_SECONDS = 180
-DEFAULT_CRAWL_PHASE_TIMEOUT_SECONDS = 110
-DEFAULT_PROFILE_EXTRACTION_TIMEOUT_SECONDS = 60
+DEFAULT_CRAWL_JOB_TOTAL_TIMEOUT_SECONDS = 120
+DEFAULT_CRAWL_PHASE_TIMEOUT_SECONDS = 75
+DEFAULT_PROFILE_EXTRACTION_TIMEOUT_SECONDS = 35
 DEFAULT_CRAWL_JOB_STALE_SECONDS = 600
-DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 210_000
+DEFAULT_CRAWL_JOB_TIME_LIMIT_MS = 135_000
 DEFAULT_WORKSPACE_BRAIN_TOTAL_TIMEOUT_SECONDS = 105
 DEFAULT_WORKSPACE_BRAIN_CRAWL_TIMEOUT_SECONDS = 65
 DEFAULT_WORKSPACE_BRAIN_EXTRACTION_TIMEOUT_SECONDS = 35
@@ -1926,23 +1926,38 @@ class WebsiteCrawler:
         if not callable(scrape):
             return []
 
-        documents: list[tuple[str, str]] = []
-        for candidate_url in self._fallback_urls(url):
-            if candidate_url in seen_sources:
-                continue
+        candidate_urls = [
+            candidate_url
+            for candidate_url in self._fallback_urls(url)
+            if candidate_url not in seen_sources
+        ]
+        if not candidate_urls:
+            return []
+
+        concurrency = max(
+            1,
+            min(
+                4,
+                env_int("ARCLI_FALLBACK_SCRAPE_CONCURRENCY", 3),
+            ),
+        )
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def scrape_one(candidate_url: str) -> tuple[str, Any | None]:
             try:
-                result = await asyncio.wait_for(
-                    self._call_url_method(
-                        scrape,
-                        candidate_url,
-                        formats=["markdown"],
-                        only_main_content=True,
-                        remove_base64_images=True,
-                        block_ads=True,
-                        timeout=self.page_timeout_ms,
-                    ),
-                    timeout=max(10, self.page_timeout_ms // 1000 + 5),
-                )
+                async with semaphore:
+                    result = await asyncio.wait_for(
+                        self._call_url_method(
+                            scrape,
+                            candidate_url,
+                            formats=["markdown"],
+                            only_main_content=True,
+                            remove_base64_images=True,
+                            block_ads=True,
+                            timeout=self.page_timeout_ms,
+                        ),
+                        timeout=max(10, self.page_timeout_ms // 1000 + 5),
+                    )
             except asyncio.TimeoutError:
                 logger.warning(
                     "firecrawl_scrape_timeout tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s failure_reason=%s",
@@ -1952,7 +1967,7 @@ class WebsiteCrawler:
                     candidate_url,
                     "fallback_scrape_timeout",
                 )
-                continue
+                return candidate_url, None
             except Exception as exc:
                 logger.info(
                     "firecrawl_scrape_skipped tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s error_type=%s error=%s failure_reason=%s",
@@ -1964,9 +1979,22 @@ class WebsiteCrawler:
                     exc,
                     "fallback_scrape_failed",
                 )
-                continue
+                return candidate_url, None
 
-            documents.extend(self._documents_from_result(result, seen_sources, candidate_url))
+            return candidate_url, result
+
+        scraped = await asyncio.gather(
+            *(scrape_one(candidate_url) for candidate_url in candidate_urls)
+        )
+        # Process results in the stable fallback-URL order. This retains the
+        # exact document/deduplication behavior of the former sequential loop,
+        # while overlapping slow independent Firecrawl requests.
+        documents: list[tuple[str, str]] = []
+        for candidate_url, result in scraped:
+            if result is not None:
+                documents.extend(
+                    self._documents_from_result(result, seen_sources, candidate_url)
+                )
         return documents
 
     async def _call_url_method(self, method: Any, url: str, **kwargs: Any) -> Any:

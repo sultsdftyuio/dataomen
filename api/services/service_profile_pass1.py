@@ -34,7 +34,9 @@ DEFAULT_PASS1_FETCH_TIMEOUT_SECONDS = 0.5
 # application. The typed six-query discovery contract adds compact JSON while
 # still keeping Pass 1 materially cheaper than the authoritative deep crawl.
 DEFAULT_PASS1_MAX_COMPLETION_TOKENS = 1_000
-DEFAULT_PASS1_REASONING_EFFORT = "minimal"
+# GPT-5.4 nano accepts "none" as its lowest-latency reasoning setting. The
+# older "minimal" value is not valid for this model family.
+DEFAULT_PASS1_REASONING_EFFORT = "none"
 PASS1_INPUT_MAX_CHARS = 4_800
 PASS1_MAX_HTML_CHARS = 160_000
 PASS1_MAX_REDIRECTS = 2
@@ -378,9 +380,8 @@ class Pass1ProfileExtractor(OpenAIClientOwner):
             "max_completion_tokens": DEFAULT_PASS1_MAX_COMPLETION_TOKENS,
             "timeout": self.timeout_seconds,
         }
-        # The Pass 1 default is the original GPT-5 nano family, which supports
-        # minimal reasoning. Do not send this model-specific setting to an
-        # operator-supplied non-GPT-5-nano override.
+        # Keep the default GPT-5.4 nano extraction latency-focused. Do not
+        # send this model-specific setting to an operator-supplied override.
         if self.model.startswith("gpt-5.4-nano"):
             request["reasoning_effort"] = DEFAULT_PASS1_REASONING_EFFORT
 

@@ -859,8 +859,17 @@ def prewarm_public_source_post_embedding_cache(
 
 def process_public_source_post_embedding_batch(
     source_post_refs: Sequence[Any],
+    *,
+    tenant_id: str | None = None,
+    service_profile_id: str | None = None,
 ) -> dict[str, int]:
-    """Batch post embeddings, then preserve matching and verifier behavior."""
+    """Batch post embeddings, then apply global or profile-scoped matching.
+
+    Fresh posts from an activation only need to be matched to the profile that
+    asked for that scan. Their embeddings remain in the global cache; other
+    tenants retain their normal periodic and profile-rematch paths without a
+    surprise all-tenant verifier fan-out.
+    """
     normalized_refs = _normalized_public_source_post_refs(source_post_refs)
     if not normalized_refs:
         return {
@@ -884,6 +893,16 @@ def process_public_source_post_embedding_batch(
             )
         profile_rows = _public_matching_profile_rows(conn)
         lead_match_columns = _table_columns(conn, "lead_matches")
+
+    normalized_tenant_id = _string_value(tenant_id)
+    normalized_profile_id = _string_value(service_profile_id)
+    if normalized_tenant_id and normalized_profile_id:
+        profile_rows = [
+            row
+            for row in profile_rows
+            if _string_value(row.get("tenant_id")) == normalized_tenant_id
+            and _string_value(row.get("id")) == normalized_profile_id
+        ]
 
     embedding_service = EmbeddingService()
     embedding_values_by_database_post_id: dict[str, list[float]] = {}
