@@ -40,7 +40,7 @@ export default function LogoutButton() {
       className="text-slate-500 hover:text-slate-700 hover:bg-slate-100"
     >
       <LogOut className="h-4 w-4" />
-      {isSigningOut ? "Signing out..." : "Log out"}
+      {isSigningOut ? "Signing out..." : "Sign out"}
     </Button>
   );
 }

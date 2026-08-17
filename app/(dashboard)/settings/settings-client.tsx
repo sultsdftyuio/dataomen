@@ -8,6 +8,7 @@ import WorkspaceBillingCard, {
   type WorkspaceBillingCardProps,
 } from "@/components/settings/workspace_page/workspace-billing-card";
 import WorkspaceTab from "@/components/settings/workspace_page/workspace-tab";
+import LogoutButton from "@/components/dashboard/logout-button";
 import { C } from "@/lib/tokens";
 
 type SettingsClientProps = {
@@ -97,6 +98,13 @@ export default function SettingsClient({
                   <p className="mt-1 break-all text-sm font-semibold leading-5" style={{ color: C.navy }}>{user.email ?? "No email available"}</p>
                   <p className="mt-1 text-xs leading-4" style={{ color: C.navySoft }}>Used for sign-in and account updates.</p>
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4 sm:col-span-2" style={{ borderColor: C.rule }}>
+                <div>
+                  <p className="text-xs font-semibold" style={{ color: C.navy }}>Signed-in session</p>
+                  <p className="mt-0.5 text-xs" style={{ color: C.navySoft }}>Sign out securely from this device.</p>
+                </div>
+                <LogoutButton />
               </div>
             </div>
           </section>
