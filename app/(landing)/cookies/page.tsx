@@ -4,6 +4,7 @@ import { ArrowLeft, Cookie } from "lucide-react";
 export const metadata = {
   title: "Cookie Policy | Arcli",
   description: "How Arcli uses essential cookies and similar storage technologies.",
+  alternates: { canonical: "/cookies" },
 };
 
 export default function CookiePolicyPage() {

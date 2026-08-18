@@ -5,6 +5,7 @@ import { RemovalRequestForm } from "./removal-request-form";
 export const metadata = {
   title: "Remove public-source data | Arcli",
   description: "Request removal or suppression of public-source data from Arcli.",
+  alternates: { canonical: "/privacy/remove" },
 };
 
 export default function PublicDataRemovalPage() {

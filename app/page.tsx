@@ -1,5 +1,4 @@
-import React from "react";
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import "../styles/globals.css";
 
 import { Navbar } from "@/components/landing/navbar";
@@ -11,24 +10,66 @@ import Pricing from "@/components/landing/Pricing";
 import { FAQ } from "@/components/landing/faq";
 import { CTA } from "@/components/landing/cta";
 import Footer from "@/components/landing/footer";
-import { createClient } from "@/utils/supabase/server";
+import { DEFAULT_OG_IMAGE_URL, SITE_URL } from "@/lib/site";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+const description =
+  "Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.";
 
-export default async function Page() {
-  // Server-side redirect prevents auth flashes on the marketing page.
-  // Using getUser() validates the JWT against Supabase Auth for strict security.
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+export const metadata: Metadata = {
+  title: "Arcli | Find New Customers",
+  description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Arcli | Find New Customers",
+    description,
+    url: SITE_URL,
+    siteName: "Arcli",
+    type: "website",
+    images: [
+      {
+        url: DEFAULT_OG_IMAGE_URL,
+        width: 1200,
+        height: 630,
+        alt: "Arcli finds prospects from public conversations",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Arcli | Find New Customers",
+    description,
+    images: [DEFAULT_OG_IMAGE_URL],
+  },
+};
 
-  if (user) {
-    redirect("/dashboard");
-  }
+const structuredData = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Arcli",
+    url: SITE_URL,
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Arcli",
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web",
+    url: SITE_URL,
+    description,
+  },
+];
 
+export default function Page() {
   return (
     // ALIGNED: Switched base to match exact custom text color (#0B1120) and a sharper selection highlight
     <main className="bg-[#FAFAFA] text-[#0B1120] font-sans antialiased selection:bg-blue-500/20 selection:text-blue-900">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       <Navbar />
       
       <div className="relative isolate overflow-hidden">

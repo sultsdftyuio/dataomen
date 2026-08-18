@@ -568,7 +568,7 @@ export function ServiceProfileSettings({
             : result,
         );
         if (result.ok) {
-          router.replace("/onboarding/discovery?scan=1");
+          router.replace("/dashboard/discovery?scan=1");
           return;
         }
 

@@ -29,6 +29,7 @@ type DiscoveryLoadingPageProps = {
   serviceProfile: ServiceProfileView;
   buyerDemandReport: BuyerDemandReportView | null;
   isWarmingUp: boolean;
+  mode?: "onboarding" | "scan";
 };
 
 type DiscoveryStage = {
@@ -131,6 +132,7 @@ function statusMessage({
   serviceProfile,
   buyerDemandReport,
   isWarmingUp,
+  mode = "onboarding",
 }: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
   const crawlStatus = normalizedStatus(crawlJob?.status);
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
@@ -138,7 +140,7 @@ function statusMessage({
   if (!crawlJob && !serviceProfile.hasProfile) {
     return {
       kind: "error" as const,
-      title: "Your first scan did not start.",
+      title: mode === "scan" ? "Your scan did not start." : "Your first scan did not start.",
       detail:
         "We could not confirm that your website was added to the scan queue. Open the dashboard to retry or check your website settings.",
     };
@@ -186,7 +188,7 @@ function statusMessage({
   if (buyerDemandReport?.isTerminal) {
     return {
       kind: "ready" as const,
-      title: "Your first results are ready.",
+      title: mode === "scan" ? "Your fresh results are ready." : "Your first results are ready.",
       detail: "Taking you to your dashboard now.",
     };
   }
@@ -218,14 +220,14 @@ function statusMessage({
   if (crawlStatus === "completed") {
     return {
       kind: "ready" as const,
-      title: "Your website is ready.",
+      title: mode === "scan" ? "Your latest scan is ready." : "Your website is ready.",
       detail: "Opening your dashboard while we finish checking new conversations.",
     };
   }
 
   return {
     kind: "working" as const,
-    title: "Finishing up your first scan.",
+    title: mode === "scan" ? "Finishing your latest scan." : "Finishing up your first scan.",
     detail: "We are doing a final check before showing your results.",
   };
 }
@@ -236,10 +238,11 @@ export function DiscoveryLoadingPage({
   serviceProfile,
   buyerDemandReport,
   isWarmingUp,
+  mode = "onboarding",
 }: DiscoveryLoadingPageProps) {
   const router = useRouter();
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const context = { crawlJob, serviceProfile, buyerDemandReport, isWarmingUp };
+  const context = { crawlJob, serviceProfile, buyerDemandReport, isWarmingUp, mode };
   const activeIndex = activeStageIndex(context);
   const status = statusMessage(context);
   const domain = useMemo(() => websiteDomain(websiteUrl), [websiteUrl]);
@@ -252,6 +255,7 @@ export function DiscoveryLoadingPage({
       buyerDemandReport?.updatedAt,
   );
   const isTakingLongerThanUsual = !hasError && !isReady && elapsedSeconds >= 90;
+  const isWorkspaceScan = mode === "scan";
 
   useEffect(() => {
     if (hasError || isReady) return;
@@ -277,13 +281,33 @@ export function DiscoveryLoadingPage({
 
   return (
     <main
-      className="min-h-screen overflow-hidden px-5 py-6 sm:px-8 sm:py-8"
+      className={`${isWorkspaceScan ? "min-h-full" : "min-h-screen"} overflow-hidden px-1 py-2 sm:px-3 sm:py-4`}
       style={{ backgroundColor: C.offWhite, color: C.text }}
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col">
-        <Logo className="h-8" />
+        {isWorkspaceScan ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4" style={{ borderColor: C.rule }}>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+                Live discovery
+              </p>
+              <p className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>
+                Building your next prospect list
+              </p>
+            </div>
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+              style={{ borderColor: C.blueLight, backgroundColor: C.bluePale, color: C.blue }}
+            >
+              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+              Live updates on
+            </span>
+          </div>
+        ) : (
+          <Logo className="h-8" />
+        )}
 
-        <div className="grid flex-1 gap-7 py-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:py-16">
+        <div className={`grid flex-1 gap-7 ${isWorkspaceScan ? "py-8 lg:py-10" : "py-10 lg:py-16"} lg:grid-cols-[0.9fr_1.1fr] lg:items-center`}>
           <section className="max-w-lg">
             <div
               className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold"
@@ -317,7 +341,7 @@ export function DiscoveryLoadingPage({
                   {lastUpdate}
                 </p>
                 <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                  This page updates on its own. Most first scans take a few minutes.
+                  This page updates on its own. Most scans finish in about two minutes.
                 </p>
               </div>
             ) : null}
@@ -359,7 +383,7 @@ export function DiscoveryLoadingPage({
                     What we are doing
                   </p>
                   <p className="mt-1 text-sm" style={{ color: C.muted }}>
-                    We will take you to your results as soon as they are ready.
+                    We will take you to your refreshed prospect desk as soon as the results are ready.
                   </p>
                 </div>
                 <Sparkles className="size-5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 export const metadata = {
   title: "Privacy Policy | Arcli",
   description: "How Arcli handles account information and selected public-source data.",
+  alternates: { canonical: "/privacy" },
 };
 
 const UPDATED_ON = "August 14, 2026";

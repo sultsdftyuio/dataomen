@@ -2196,6 +2196,16 @@ function DiscoverySourceBar({
     status.label === "Latest scan complete" && normalizedStatus(discoveryStatus) === "partial";
   const displayStatus = latestDiscoveryWasPartial ? "Latest scan partial" : status.label;
   const isReady = displayStatus === "Latest scan complete";
+  const scanTone = isReady
+    ? { border: C.green, background: C.greenPale, foreground: C.green }
+    : latestDiscoveryWasPartial
+      ? { border: C.amber, background: C.amberPale, foreground: C.amber }
+      : { border: C.blueLight, background: C.bluePale, foreground: C.blue };
+  const scanInsight = latestDiscoveryWasPartial
+    ? "Some sources were unavailable. Results from the sources that completed are still included below."
+    : isReady
+      ? "Your latest scan is ready. New conversations will appear here when they match your brief."
+      : "Arcli is preparing this source and checking new public conversations against your brief.";
   const router = useRouter();
   const [websiteUrl, setWebsiteUrl] = useState(serviceProfile.websiteUrl ?? "");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -2261,11 +2271,7 @@ function DiscoverySourceBar({
         }
 
         setLocalNextAvailableAt(null);
-        setMessage({
-          ok: true,
-          text: "Website saved. Your lead check is queued.",
-        });
-        router.refresh();
+        router.replace("/dashboard/discovery?scan=1");
       } catch {
         setMessage({
           ok: false,
@@ -2277,28 +2283,39 @@ function DiscoverySourceBar({
 
   return (
     <section
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border bg-white px-3 py-2.5 shadow-sm"
+      className="flex flex-wrap items-stretch gap-0 overflow-hidden rounded-2xl border bg-white shadow-sm"
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div
+        className="relative flex min-w-[14rem] flex-1 items-center gap-3 overflow-hidden p-4"
+        style={{ backgroundColor: C.bluePale }}
+      >
         <div
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg"
-          style={{ backgroundColor: C.bluePale, color: C.blue }}
+          className="absolute -right-8 -top-10 size-28 rounded-full"
+          style={{ backgroundColor: "rgba(59,154,232,0.17)" }}
+          aria-hidden="true"
+        />
+        <div
+          className="relative flex size-10 shrink-0 items-center justify-center rounded-xl border bg-white"
+          style={{ borderColor: C.blueLight, color: C.blue }}
         >
-          <Globe2 className="size-4.5" aria-hidden="true" />
+          <Radar className="size-5" aria-hidden="true" />
         </div>
-        <div className="min-w-0">
+        <div className="relative min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-            Active discovery source
+            Prospect discovery
           </p>
-          <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: C.navy }} title={serviceProfile.websiteUrl ?? undefined}>
+          <p className="mt-0.5 truncate text-base font-semibold" style={{ color: C.navy }} title={serviceProfile.websiteUrl ?? undefined}>
             {domain ?? "Website needed"}
+          </p>
+          <p className="mt-1 max-w-[18rem] text-[11px] leading-4" style={{ color: C.navySoft }}>
+            Your source for public buying signals.
           </p>
         </div>
       </div>
-      <div className="flex min-w-[min(100%,19rem)] flex-1 items-center gap-2 sm:min-w-[22rem]">
-        <label htmlFor="dashboard-website-url" className="sr-only">
+      <div className="flex min-w-[min(100%,20rem)] flex-[1.7] flex-wrap items-center gap-2 border-t p-4 sm:min-w-[22rem] lg:border-l lg:border-t-0" style={{ borderColor: C.rule }}>
+        <label htmlFor="dashboard-website-url" className="w-full text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
           Website to scan
         </label>
         <input
@@ -2309,7 +2326,7 @@ function DiscoverySourceBar({
           value={websiteUrl}
           disabled={isSubmitting || isCoolingDown}
           onChange={(event) => setWebsiteUrl(event.target.value)}
-          className="h-8 min-w-0 flex-1 rounded-md border bg-white px-2.5 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF] disabled:cursor-not-allowed disabled:opacity-70"
+          className="h-9 min-w-0 flex-1 rounded-lg border bg-white px-3 text-xs outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-[#1B6EBF] disabled:cursor-not-allowed disabled:opacity-70"
           style={{ borderColor: C.ruleDark, color: C.navy }}
           placeholder="https://yourcompany.com"
         />
@@ -2318,38 +2335,53 @@ function DiscoverySourceBar({
           size="xs"
           disabled={isSubmitting || isCoolingDown}
           onClick={submitWebsite}
-          className="h-8 shrink-0 px-2.5 text-[11px]"
+          className="h-9 shrink-0 rounded-lg px-3 text-xs"
           style={{ backgroundColor: C.blue, color: C.white }}
         >
           {isSubmitting
             ? "Queueing…"
             : serviceProfile.websiteUrl
-              ? "Check new leads"
+              ? "Find new leads"
               : "Save & scan"}
         </Button>
+        <p className="w-full text-[11px] leading-4" style={{ color: C.muted }}>
+          Arcli filters fresh conversations through your matching brief.
+        </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="min-w-[14rem] flex-1 border-t p-4 lg:border-l lg:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
+        <div className="flex flex-wrap items-start gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+              Scan health
+            </p>
         <span
-          className="rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+          className="mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold"
           style={{
-            borderColor: isReady ? C.green : latestDiscoveryWasPartial ? C.amber : C.blueLight,
-            backgroundColor: isReady ? C.greenPale : latestDiscoveryWasPartial ? C.amberPale : C.bluePale,
-            color: isReady ? C.green : latestDiscoveryWasPartial ? C.amber : C.blue,
+            borderColor: scanTone.border,
+            backgroundColor: scanTone.background,
+            color: scanTone.foreground,
           }}
         >
           {displayStatus}
         </span>
+          </div>
         <Button
           asChild
           type="button"
           size="xs"
           variant="outline"
-          style={{ borderColor: C.ruleDark, backgroundColor: C.white, color: C.navySoft }}
+          className="mt-5 h-7 px-2.5 text-[11px]"
+          style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
         >
-          <Link href="/dashboard/brief">Edit matching brief</Link>
+          <Link href="/dashboard/brief">Tune matching brief</Link>
         </Button>
+        </div>
+        <p className="mt-3 text-[11px] leading-4" style={{ color: C.navySoft }}>
+          {scanInsight}
+        </p>
       </div>
-      <div className="w-full border-t pt-2" style={{ borderColor: C.rule }}>
+      <div className="flex w-full items-start gap-2 border-t px-4 py-2.5" style={{ borderColor: C.rule }}>
+        <Target className="mt-0.5 size-3.5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
         {message ? (
           <p
             className="text-[11px] leading-4"
@@ -2360,11 +2392,11 @@ function DiscoverySourceBar({
           </p>
         ) : isCoolingDown ? (
           <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
-            Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}. It uses your current brief to look for newly posted conversations, while avoiding duplicate searches.
+            Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}. It checks for new conversations without repeating work.
           </p>
         ) : (
           <p className="text-[11px] leading-4" style={{ color: C.muted }}>
-            You can run another check while testing. Each check uses your current brief to look for newly posted conversations and avoids duplicate results.
+            Every check finds fresh buyer conversations, qualifies them against your brief, and keeps duplicate results out.
           </p>
         )}
       </div>

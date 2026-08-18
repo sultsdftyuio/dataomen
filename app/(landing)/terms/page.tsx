@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 export const metadata = {
   title: "Terms of Service | Arcli",
   description: "Terms and acceptable use rules for Arcli's public-conversation monitoring service.",
+  alternates: { canonical: "/terms" },
 };
 
 const UPDATED_ON = "August 14, 2026";

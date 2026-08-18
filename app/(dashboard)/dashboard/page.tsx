@@ -87,7 +87,7 @@ export default async function DashboardPage() {
       !crawlFailed &&
       serviceProfile.hasProfile)
   ) {
-    redirect("/onboarding/discovery");
+    redirect("/dashboard/discovery");
   }
 
   if (!entitlements.isPro) {

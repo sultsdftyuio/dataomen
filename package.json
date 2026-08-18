@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test:api-keys": "tsx scripts/verify-api-key-access.ts",
     "test:subscriptions": "tsx scripts/verify-subscription-access.ts",
-    "test:og": "tsx --test test/og-image.test.ts"
+    "test:og": "tsx --test test/og-image.test.ts",
+    "test:seo": "tsx --test test/seo-metadata.test.ts"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "1.33.1-dev20.0",

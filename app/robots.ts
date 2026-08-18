@@ -1,5 +1,6 @@
 // app/robots.ts
 import { MetadataRoute } from 'next';
+import { SITE_URL } from '@/lib/site';
 
 /**
  * Arcli Global Crawler Configuration
@@ -14,9 +15,6 @@ import { MetadataRoute } from 'next';
 export const dynamic = 'force-static';
 
 export default function robots(): MetadataRoute.Robots {
-  // Utilizing the production domain as the unshakeable source of truth.
-  const baseUrl = 'https://arcli.tech';
-
   return {
     rules: {
       // Apply these rules universally to all authorized indexing bots
@@ -32,26 +30,31 @@ export default function robots(): MetadataRoute.Robots {
       // Strict Disallow definitions to protect compute and tenant isolation
       disallow: [
         // Tenant Isolation: Never crawl the internal app interfaces
-        '/dashboard/',
+        '/dashboard',
+        '/onboarding',
+        '/settings',
         
         // Compute Protection: Hard-block APIs to prevent accidental DB usage/token burn
         // Note: The specific /api/og 'allow' above safely overrides this blanket block.
         '/api/',
         
         // Auth Flow: Keep search results mathematically clean of utility states
-        '/login/',
-        '/register/',
-        '/forgot-password/',
+        '/login',
+        '/register',
+        '/forgot-password',
+        '/signup',
+        '/sign-up',
         
         // Public Shares: Maintain data privacy for un-syndicated tenant insights
-        '/share/',
+        '/share',
         
         // Next.js Internals: Save compute on optimized images and raw data blobs
         '/_next/data/',
         '/_next/image/',
       ],
     },
+    host: SITE_URL,
     // Direct crawlers to the optimized XML map for structured discovery
-    sitemap: `${baseUrl}/sitemap.xml`,
+    sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

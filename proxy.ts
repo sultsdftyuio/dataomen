@@ -24,7 +24,7 @@ import {
 } from '@/utils/auth-redirects'
 import { getSupabaseCookieOptions } from '@/utils/supabase/cookie-options'
 
-export default async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const EDGE_LAYER = 'next-edge-middleware'
 
@@ -76,6 +76,30 @@ export default async function middleware(request: NextRequest) {
   const isSystemRoute = ['/robots.txt', '/sitemap.xml', '/favicon.ico'].includes(pathname)
   if (isSystemRoute) {
     return NextResponse.next()
+  }
+
+  // Keep marketing pages fast and cacheable for visitors and crawlers that do
+  // not have a Supabase session. Authenticated visitors still take the normal
+  // path below and are redirected from the home page to their dashboard.
+  const isPublicMarketingRoute = [
+    '/',
+    '/security',
+    '/privacy',
+    '/privacy/remove',
+    '/terms',
+    '/cookies',
+  ].includes(pathname)
+  const hasSupabaseSessionCookie = request.cookies.getAll().some(({ name }) =>
+    /^sb-.+-auth-token(?:\.\d+)?$/.test(name),
+  )
+
+  if (isPublicMarketingRoute && !hasSupabaseSessionCookie) {
+    const response = NextResponse.next()
+    response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload')
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'DENY')
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+    return response
   }
 
   // ---------------------------------------------------------------------------

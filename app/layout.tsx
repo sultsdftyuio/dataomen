@@ -2,10 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Playfair_Display } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { DEFAULT_OG_IMAGE_URL, SITE_URL } from '@/lib/site'
 import './globals.css'
-
-const SITE_URL = 'https://arcli.tech'
-const DEFAULT_OG_IMAGE_URL = `${SITE_URL}/api/og`
 
 const geist = Geist({ 
   subsets: ["latin"],
@@ -35,10 +33,7 @@ export const metadata: Metadata = {
   description: 'Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.',
   generator: 'Next.js',
   metadataBase: new URL(SITE_URL),
-  alternates: {
-    canonical: SITE_URL,
-  },
-  
+
   openGraph: {
     title: 'Arcli | Find New Customers',
     description: 'Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.',
@@ -46,12 +41,21 @@ export const metadata: Metadata = {
     siteName: 'Arcli',
     locale: 'en_US',
     type: 'website',
+    images: [
+      {
+        url: DEFAULT_OG_IMAGE_URL,
+        width: 1200,
+        height: 630,
+        alt: 'Arcli finds prospects from public conversations',
+      },
+    ],
   },
 
   twitter: {
     card: 'summary_large_image', 
     title: 'Arcli | Find New Customers',
     description: 'Arcli finds online conversations from people who may need what you offer, so you can reach out at the right time.',
+    images: [DEFAULT_OG_IMAGE_URL],
   },
 }
 

@@ -5,11 +5,12 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 
 import { createOgImageUrl } from '@/lib/og-image';
+import { SITE_URL } from '@/lib/site';
 
-const PAGE_URL = 'https://arcli.tech/security';
+const PAGE_URL = `${SITE_URL}/security`;
 const OG_IMAGE_URL = new URL(
-  createOgImageUrl('Security and GDPR for AI Analytics', 'security'),
-  'https://arcli.tech',
+  createOgImageUrl('Security and GDPR for prospect discovery', 'security'),
+  SITE_URL,
 ).toString();
 
 export const metadata: Metadata = {

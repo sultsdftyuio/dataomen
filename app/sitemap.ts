@@ -1,76 +1,42 @@
 import { MetadataRoute } from 'next';
-
-const BASE_URL = 'https://arcli.tech';
+import { SITE_URL } from '@/lib/site';
 
 /**
  * Arcli Deterministic Sitemap
- * Maps explicit static landing pages to ensure fast, reliable crawler discovery.
- * Dynamic AI SEO logic has been removed to preserve MVP simplicity and deterministic builds.
+ * Only maps public routes that actually exist, so crawlers do not waste their
+ * budget on legacy product pages that return 404.
  */
 export default function sitemap(): MetadataRoute.Sitemap {
-  // Define explicit static application routes found in app/(landing)
-  const staticRoutes: MetadataRoute.Sitemap = [
+  return [
     {
-      url: BASE_URL,
-      lastModified: new Date(),
+      url: SITE_URL,
       changeFrequency: 'weekly',
       priority: 1.0,
     },
     {
-      url: `${BASE_URL}/saas-churn-recovery`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/saas-churn-risk-scoring`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/saas-revenue-attribution`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/saas-billing-infrastructure`,
-      lastModified: new Date(),
+      url: `${SITE_URL}/security`,
       changeFrequency: 'monthly',
       priority: 0.8,
     },
     {
-      url: `${BASE_URL}/saas-dunning-software`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${BASE_URL}/security`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: `${BASE_URL}/privacy`,
-      lastModified: new Date(),
+      url: `${SITE_URL}/privacy`,
       changeFrequency: 'yearly',
       priority: 0.3,
     },
     {
-      url: `${BASE_URL}/terms`,
-      lastModified: new Date(),
+      url: `${SITE_URL}/privacy/remove`,
+      changeFrequency: 'yearly',
+      priority: 0.2,
+    },
+    {
+      url: `${SITE_URL}/terms`,
       changeFrequency: 'yearly',
       priority: 0.3,
     },
     {
-      url: `${BASE_URL}/cookies`,
-      lastModified: new Date(),
+      url: `${SITE_URL}/cookies`,
       changeFrequency: 'yearly',
       priority: 0.3,
-    }
+    },
   ];
-
-  return staticRoutes;
 }
