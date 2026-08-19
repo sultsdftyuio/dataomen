@@ -18,17 +18,11 @@ interface UpgradeButtonProps {
    */
   className?: string;
 
-  /**
-   * Lets compact pricing cards show the price once in their own layout,
-   * without squeezing a second price badge into the button.
-   */
-  showPrice?: boolean;
 }
 
 export default function UpgradeButton({
   productId, // Reserved for future checkout variants
   className = "",
-  showPrice = true,
 }: UpgradeButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,11 +111,9 @@ export default function UpgradeButton({
               aria-hidden="true"
             />
             <span>Upgrade to Pro</span>
-            {showPrice ? (
-              <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
-                $35/mo
-              </span>
-            ) : null}
+            <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-white">
+              $35/mo
+            </span>
             <ArrowRight className="size-3.5 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true" />
           </>
         )}
