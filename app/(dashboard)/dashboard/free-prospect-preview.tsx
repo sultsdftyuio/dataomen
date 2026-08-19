@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowRight, CheckCircle2, FileSearch, LockKeyhole, Radar, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  FileSearch,
+  LockKeyhole,
+  MessageSquareText,
+  Radar,
+  ShieldCheck,
+  Sparkles,
+  UsersRound,
+} from "lucide-react";
 import Link from "next/link";
 
 import UpgradeButton from "@/components/ui/UpgradeButton";
@@ -125,36 +134,57 @@ export default function FreeProspectPreview({
       {hasMatches ? (
         <>
           <section
-            className="relative overflow-hidden rounded-xl border px-5 py-5"
-            style={{ borderColor: C.blueLight, background: "linear-gradient(135deg, #F7FBFF 0%, #FFFFFF 72%)" }}
+            className="relative isolate overflow-hidden rounded-2xl border px-5 py-6 shadow-[0_18px_45px_rgba(10,22,40,0.12)] sm:px-7 sm:py-7"
+            style={{ borderColor: "#102C4D", background: "linear-gradient(135deg, #09192E 0%, #0C3158 55%, #155B94 130%)" }}
           >
-            <div className="absolute -right-12 -top-16 size-48 rounded-full" style={{ backgroundColor: "rgba(59,154,232,0.13)" }} aria-hidden="true" />
-            <div className="absolute -bottom-20 right-20 size-40 rounded-full border" style={{ borderColor: "rgba(27,110,191,0.13)" }} aria-hidden="true" />
-            <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-              <div className="max-w-xl">
-                <div className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em]" style={{ color: C.blue, backgroundColor: C.bluePale }}>
-                  <Sparkles className="size-3" aria-hidden="true" /> {total} locked {total === 1 ? "match" : "matches"}
+            <div className="absolute inset-0 opacity-25" style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.24) 1px, transparent 1px)", backgroundSize: "18px 18px", maskImage: "linear-gradient(to right, black, transparent 72%)" }} aria-hidden="true" />
+            <div className="absolute -right-20 -top-24 size-72 rounded-full border" style={{ borderColor: "rgba(139,209,255,0.27)", boxShadow: "0 0 0 28px rgba(92,182,245,0.08), 0 0 0 60px rgba(92,182,245,0.05)" }} aria-hidden="true" />
+            <div className="absolute -bottom-32 right-[22%] size-56 rounded-full" style={{ background: "radial-gradient(circle, rgba(61,174,255,0.22), transparent 68%)" }} aria-hidden="true" />
+            <div className="relative grid gap-7 xl:grid-cols-[minmax(0,1fr)_260px] xl:items-end">
+              <div className="min-w-0 max-w-2xl">
+                <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-200/25 bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-100">
+                  <Sparkles className="size-3 shrink-0 text-amber-300" aria-hidden="true" />
+                  <span className="truncate">Pro prospect desk</span>
+                  <span className="h-3 w-px shrink-0 bg-sky-100/30" aria-hidden="true" />
+                  <span className="shrink-0 text-sky-200">{total} locked {total === 1 ? "match" : "matches"}</span>
                 </div>
-                <h2 className="pfd mt-3 text-2xl leading-none sm:text-3xl" style={{ color: C.navy }}>
+                <h2 className="pfd mt-3 text-3xl leading-[0.94] text-white sm:text-4xl">
                   See the people behind the signal.
                 </h2>
-                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-                  Open every matched conversation with its fit evidence, qualification signal, and a reply draft ready to refine.
+                <p className="mt-3 max-w-xl text-sm leading-6 text-sky-100/85">
+                  Buyer groups are available on Pro, alongside full match evidence and reply drafts that turn a conversation into a clear next step.
                 </p>
-                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold" style={{ color: C.navy }}>
-                  {["Verified matches", "Why they fit", "Reply drafts"].map((feature) => (
-                    <span key={feature} className="inline-flex items-center gap-1.5">
-                      <CheckCircle2 className="size-3.5" style={{ color: C.green }} aria-hidden="true" />
-                      {feature}
-                    </span>
+                <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                  {[
+                    { label: "Verified matches", detail: "real people, ready to review", icon: ShieldCheck },
+                    { label: "Why they fit", detail: "evidence behind every signal", icon: UsersRound },
+                    { label: "Reply drafts", detail: "a confident first response", icon: MessageSquareText },
+                  ].map(({ label, detail, icon: Icon }) => (
+                    <div key={label} className="rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2.5 backdrop-blur-sm">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-white">
+                        <Icon className="size-3.5 text-sky-300" aria-hidden="true" />
+                        {label}
+                      </div>
+                      <p className="mt-1 pl-5.5 text-[10px] leading-4 text-sky-100/65">{detail}</p>
+                    </div>
                   ))}
                 </div>
               </div>
-              <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-                <p className="text-xs font-semibold" style={{ color: C.navySoft }}>
-                  $35/month &middot; cancel any time
-                </p>
-                <UpgradeButton />
+              <div className="relative w-full overflow-hidden rounded-xl border border-white/15 bg-white px-4 py-4 shadow-[0_12px_28px_rgba(0,0,0,0.2)] xl:w-[260px]">
+                <div className="absolute right-0 top-0 h-16 w-20 bg-gradient-to-bl from-sky-100 to-transparent opacity-80" aria-hidden="true" />
+                <div className="relative">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+                    Unlock your desk
+                  </p>
+                  <div className="mt-1 flex items-end gap-1" style={{ color: C.navy }}>
+                    <span className="pfd text-3xl leading-none">$35</span>
+                    <span className="mb-0.5 text-xs font-semibold" style={{ color: C.muted }}>/ month</span>
+                  </div>
+                  <p className="mt-1.5 text-[11px]" style={{ color: C.muted }}>Cancel any time. No annual commitment.</p>
+                  <div className="mt-4">
+                    <UpgradeButton className="w-full justify-center px-3" showPrice={false} />
+                  </div>
+                </div>
               </div>
             </div>
           </section>
