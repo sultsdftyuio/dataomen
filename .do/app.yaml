@@ -110,7 +110,7 @@ workers:
       - key: ARCLI_DRAMATIQ_QUEUES
         scope: RUN_TIME
         type: general
-        value: "system,ingestion,embeddings,maintenance,workspace-brain,buyer-language-research"
+        value: "system,ingestion,embeddings,maintenance"
       - key: ARCLI_DRAMATIQ_QUEUE_PREFETCH
         scope: RUN_TIME
         type: general
@@ -279,7 +279,7 @@ workers:
       - key: ARCLI_DRAMATIQ_QUEUES
         scope: RUN_TIME
         type: general
-        value: crawling
+        value: "crawling,workspace-brain"
       - key: DRAMATIQ_PROCESSES
         scope: RUN_TIME
         type: general

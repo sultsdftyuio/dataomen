@@ -28,9 +28,10 @@ remain `null`. Respect every target website's terms and robots policy.
 ## Arcli production website scans
 
 `website_markdown.py` is the Crawl4AI-first browser adapter used by the
-dedicated `crawl4ai-worker` in `.do/app.yaml`. It returns source Markdown from
-the homepage and a small set of profile pages; Arcli's existing profile
-extractor then creates the service profile.
+dedicated `crawl4ai-worker` in `.do/app.yaml`. It handles the `crawling` and
+`workspace-brain` queues, returns source Markdown from the homepage and a
+small set of profile pages, and then lets Arcli's existing profile extractor
+create the service profile.
 
 The worker starts deliberately small on a 2 GB App Platform component:
 
