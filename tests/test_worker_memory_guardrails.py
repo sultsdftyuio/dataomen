@@ -243,6 +243,43 @@ raise SystemExit(','.join(sorted(blocked)) or 0)
             worker_timeout=5_000,
         )
 
+    def test_embedded_worker_can_consume_only_the_crawl_queue(self) -> None:
+        broker = _Broker()
+        worker = _Worker()
+        state = start_worker.WorkerState()
+        state.shutdown_requested = _Event(True)  # type: ignore[assignment]
+
+        import dramatiq
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ARCLI_DRAMATIQ_MODULES": "api.worker",
+                    "ARCLI_DRAMATIQ_QUEUES": "crawling",
+                    "ARCLI_REQUIRED_DRAMATIQ_VERSION": "2.2.0",
+                },
+                clear=True,
+            ),
+            patch.object(
+                start_worker,
+                "importlib",
+                SimpleNamespace(import_module=lambda _name: None),
+            ),
+            patch("dramatiq.get_broker", return_value=broker),
+            patch("dramatiq.Worker", return_value=worker) as worker_class,
+            patch("dramatiq.__version__", "2.2.0"),
+        ):
+            return_code = start_worker.run_embedded_dramatiq_worker(state)
+
+        self.assertEqual(return_code, 0)
+        worker_class.assert_called_once_with(
+            broker,
+            worker_threads=8,
+            worker_timeout=5_000,
+            queues={"crawling"},
+        )
+
     def test_embedded_worker_recycles_only_after_pause_and_stop(self) -> None:
         broker = _Broker()
         worker = _Worker()

@@ -59,7 +59,7 @@ export default async function DiscoveryPage({ searchParams }: DiscoveryPageProps
   const resolvedSearchParams = await searchParams;
   const scanWasJustRequested = Boolean(resolvedSearchParams.scan);
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
-  const crawlIsActive = crawlStatus === "pending" || crawlStatus === "processing";
+  const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
 
   // Never make onboarding a dead end. If no job was ever recorded, the
   // dashboard shows the recovery controls instead of sending the customer

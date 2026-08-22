@@ -2247,20 +2247,52 @@ function DiscoverySourceBar({
   discoveryStatus: BuyerDemandReportView["status"];
 }) {
   const domain = sourceDomain(serviceProfile.websiteUrl);
-  const latestDiscoveryWasPartial =
-    status.label === "Latest scan complete" && normalizedStatus(discoveryStatus) === "partial";
-  const displayStatus = latestDiscoveryWasPartial ? "Latest scan partial" : status.label;
-  const isReady = displayStatus === "Latest scan complete";
+  const normalizedDiscoveryStatus = normalizedStatus(discoveryStatus);
+  const latestDiscoveryWasPartial = normalizedDiscoveryStatus === "partial";
+  const discoveryNeedsAttention = ["failed", "skipped"].includes(
+    normalizedDiscoveryStatus ?? "",
+  );
+  const discoveryIsRunning = ["queued", "pending", "running"].includes(
+    normalizedDiscoveryStatus ?? "",
+  );
+  const discoveryIsComplete = normalizedDiscoveryStatus === "completed";
+  const websiteSetupNeedsAttention = ["Needs attention", "Profile details needed"].includes(
+    status.label,
+  );
+  const displayStatus = latestDiscoveryWasPartial
+    ? "Discovery partial"
+    : discoveryNeedsAttention
+      ? "Discovery needs attention"
+      : discoveryIsRunning
+        ? "Discovery in progress"
+        : discoveryIsComplete
+          ? "Latest discovery complete"
+          : websiteSetupNeedsAttention
+            ? status.label
+          : status.label === "Latest scan complete"
+            ? "Website setup complete"
+            : status.label;
+  const isReady = discoveryIsComplete || status.label === "Latest scan complete";
   const scanTone = isReady
     ? { border: C.green, background: C.greenPale, foreground: C.green }
     : latestDiscoveryWasPartial
       ? { border: C.amber, background: C.amberPale, foreground: C.amber }
+      : discoveryNeedsAttention || websiteSetupNeedsAttention
+        ? { border: C.red, background: C.redPale, foreground: C.red }
       : { border: C.blueLight, background: C.bluePale, foreground: C.blue };
   const scanInsight = latestDiscoveryWasPartial
     ? "Some sources were unavailable. Results from the sources that completed are still included below."
-    : isReady
-      ? "Your latest scan is ready. New conversations will appear here when they match your brief."
-      : "Arcli is preparing this source and checking new public conversations against your brief.";
+    : discoveryNeedsAttention
+      ? "Open the discovery report for source details, then tune your brief before the next run."
+      : discoveryIsRunning
+        ? "Arcli is checking public conversations against your matching brief."
+        : discoveryIsComplete
+          ? "Your source report is ready. New matches appear here only after they pass your brief."
+          : websiteSetupNeedsAttention
+            ? status.detail
+          : isReady
+            ? "Website setup is complete. Your first public-source discovery run will appear here."
+            : "Arcli is preparing your website and matching brief for public-source discovery.";
   const router = useRouter();
   const [websiteUrl, setWebsiteUrl] = useState(serviceProfile.websiteUrl ?? "");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -2407,7 +2439,7 @@ function DiscoverySourceBar({
         <div className="flex flex-wrap items-start gap-2">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
-              Scan health
+              Discovery health
             </p>
         <span
           className="mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold"
@@ -2447,7 +2479,7 @@ function DiscoverySourceBar({
           </p>
         ) : isCoolingDown ? (
           <p className="text-[11px] leading-4" style={{ color: C.navySoft }}>
-            Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}. It checks for new conversations without repeating work.
+            Fresh website checks are available once every 24 hours. Your next lead check is available {nextAvailableLabel ? `on ${nextAvailableLabel}` : "tomorrow"}.
           </p>
         ) : (
           <p className="text-[11px] leading-4" style={{ color: C.muted }}>
@@ -2478,25 +2510,62 @@ function ScanOverview({
   isRefreshing: boolean;
   onRefresh: () => void;
 }) {
-  const isPartial = normalizedStatus(discoveryStatus) === "partial";
-  const isReportFailed = normalizedStatus(discoveryStatus) === "failed";
-  const displayLabel = isPartial ? "Latest scan partial" : isReportFailed ? "Discovery needs attention" : status.label;
-  const title = isPartial
-    ? "Your latest scan is partially complete."
+  const normalizedDiscoveryStatus = normalizedStatus(discoveryStatus);
+  const isPartial = normalizedDiscoveryStatus === "partial";
+  const isReportFailed = normalizedDiscoveryStatus === "failed";
+  const isDiscoveryRunning = ["queued", "pending", "running"].includes(
+    normalizedDiscoveryStatus ?? "",
+  );
+  const discoveryIsComplete = normalizedDiscoveryStatus === "completed";
+  const websiteSetupIsComplete = status.label === "Latest scan complete";
+  const websiteSetupNeedsAttention = ["Needs attention", "Profile details needed"].includes(
+    status.label,
+  );
+  const displayLabel = isPartial
+    ? "Discovery partial"
     : isReportFailed
-      ? "Your latest discovery scan needs attention."
-      : status.title;
+      ? "Discovery needs attention"
+      : isDiscoveryRunning
+        ? "Discovery in progress"
+        : discoveryIsComplete
+          ? "Latest discovery complete"
+          : websiteSetupNeedsAttention
+            ? status.label
+          : websiteSetupIsComplete
+            ? "Website setup complete"
+            : "Website setup";
+  const title = isPartial
+    ? "Your latest discovery run is partially complete."
+    : isReportFailed
+      ? "Your latest discovery run needs attention."
+      : isDiscoveryRunning
+        ? "Searching for buyer conversations."
+        : discoveryIsComplete
+          ? "Your latest discovery results are ready."
+          : websiteSetupNeedsAttention
+            ? status.title
+          : websiteSetupIsComplete
+            ? "Your website and matching brief are ready."
+            : status.title;
   const detail = isPartial
     ? "Some sources were unavailable, but results from the sources that completed are still ready to review."
     : isReportFailed
-      ? "Review the scan report for source details, then refine the brief or run another scan."
-      : status.detail;
-  const isComplete = displayLabel === "Latest scan complete";
+      ? "Review the discovery report for source details, then refine the brief or try another scan."
+      : isDiscoveryRunning
+        ? "Arcli is checking public conversations and filtering them against your matching brief."
+        : discoveryIsComplete
+          ? "Review the buyer-problem leads, potential buyers, and source report from this run."
+          : websiteSetupNeedsAttention
+            ? status.detail
+          : websiteSetupIsComplete
+            ? "A discovery run checks public conversations separately and puts verified buyer signals on this desk."
+            : status.detail;
+  const isComplete = discoveryIsComplete || websiteSetupIsComplete;
   const tone = isPartial
     ? { border: C.amber, background: C.amberPale, color: C.amber }
     : isComplete
     ? { border: C.green, background: C.greenPale, color: C.green }
-    : displayLabel === "Needs attention" || isReportFailed
+    : isReportFailed || websiteSetupNeedsAttention
       ? { border: C.red, background: C.redPale, color: C.red }
       : { border: C.blueLight, background: C.blueTint, color: C.blue };
   const metrics = [
@@ -2516,7 +2585,7 @@ function ScanOverview({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
-              Scan status
+              Discovery status
             </span>
             <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ borderColor: tone.border, backgroundColor: tone.background, color: tone.color }}>
               {displayLabel}

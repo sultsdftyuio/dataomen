@@ -10,6 +10,19 @@ const ENABLED_VALUES = new Set(["1", "true", "yes", "on"]);
  * scans explicitly, but no deployed environment should need this override.
  */
 export function websiteCrawlTestModeEnabled() {
+  // `NODE_ENV` is production for deployed Next builds. Do not let a local
+  // convenience flag accidentally remove the product's daily quality guard.
+  const runtime = process.env.NODE_ENV?.trim().toLowerCase();
+  const vercelEnvironment = process.env.VERCEL_ENV?.trim().toLowerCase();
+  const arcliEnvironment = process.env.ARCLI_ENVIRONMENT?.trim().toLowerCase();
+  if (
+    runtime === "production" ||
+    vercelEnvironment === "production" ||
+    arcliEnvironment === "production"
+  ) {
+    return false;
+  }
+
   const value = process.env.ARCLI_UNLIMITED_CRAWL_TEST_MODE?.trim().toLowerCase();
   return ENABLED_VALUES.has(value ?? "");
 }

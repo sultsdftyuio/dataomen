@@ -67,7 +67,7 @@ export default async function DashboardPage() {
     threshold,
   );
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
-  const crawlIsActive = crawlStatus === "pending" || crawlStatus === "processing";
+  const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
   const crawlFailed = crawlStatus === "failed" || crawlStatus === "dead_lettered";
   const discoveryRunIsActive = Boolean(
     buyerDemandReport &&
@@ -82,6 +82,7 @@ export default async function DashboardPage() {
   // problem and retry instead of bouncing between two loading routes.
   if (
     crawlIsActive ||
+    discoveryRunIsActive ||
     (isServiceProfileWarmingUp(serviceProfile) &&
       crawlJob !== null &&
       !crawlFailed &&

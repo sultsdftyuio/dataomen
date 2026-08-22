@@ -1,0 +1,4 @@
+# Install inside the existing worker virtual environment or a dedicated venv.
+# After installation, run: playwright install chromium
+crawl4ai>=0.9,<1.0
+pydantic>=2.13,<3.0

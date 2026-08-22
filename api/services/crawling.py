@@ -16,7 +16,11 @@ from pydantic import ValidationError
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Connection, Engine
 
-from api.services.cost_controls import env_int, provider_rate_limiter
+from api.services.cost_controls import (
+    env_int,
+    provider_concurrency_limiter,
+    provider_rate_limiter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +93,16 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
 
 def _website_crawl_test_mode_enabled() -> bool:
     """Return whether an explicit local unlimited-crawl override is enabled."""
+
+    # Keep the local convenience flag from weakening a deployed worker if its
+    # environment variables are copied from a development setup.
+    deployment_markers = (
+        os.getenv("NODE_ENV", ""),
+        os.getenv("VERCEL_ENV", ""),
+        os.getenv("ARCLI_ENVIRONMENT", ""),
+    )
+    if any(marker.strip().lower() == "production" for marker in deployment_markers):
+        return False
 
     value = os.getenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "false").strip().lower()
     return value in {"1", "true", "yes", "on"}
@@ -1647,10 +1661,11 @@ def _upsert_service_profile(
 
 class WebsiteCrawler:
     """
-    Firecrawl-backed website crawler for onboarding profile extraction.
+    Crawl4AI-first website crawler for onboarding profile extraction.
 
-    It targets the homepage plus common About and Pricing surfaces and returns
-    clean markdown that is ready for LLM synthesis.
+    Crawl4AI renders the homepage and common About/Pricing surfaces locally in
+    the dedicated browser worker. Firecrawl is retained only as a bounded
+    fallback when the browser cannot return enough usable source Markdown.
     """
 
     TARGET_PATH_PATTERNS = (
@@ -1708,6 +1723,38 @@ class WebsiteCrawler:
         if inspect.isawaitable(result):
             await result
 
+    def _crawl4ai_has_sufficient_content(self, documents: list[tuple[str, str]]) -> bool:
+        minimum_documents = env_int("ARCLI_CRAWL4AI_MIN_DOCUMENTS", 1)
+        minimum_characters = env_int("ARCLI_CRAWL4AI_MIN_CONTENT_CHARS", 700)
+        cleaned_documents = [
+            self._strip_boilerplate(markdown) for _, markdown in documents
+        ]
+        return (
+            sum(bool(markdown) for markdown in cleaned_documents) >= minimum_documents
+            and sum(len(markdown) for markdown in cleaned_documents)
+            >= minimum_characters
+        )
+
+    async def _crawl_with_crawl4ai(self, url: str) -> list[tuple[str, str]]:
+        """Render bounded profile pages through the local Crawl4AI browser."""
+        from Crawl4AI.website_markdown import Crawl4AIWebsiteCrawler
+
+        crawler = Crawl4AIWebsiteCrawler(
+            page_timeout_ms=env_int(
+                "ARCLI_CRAWL4AI_PAGE_TIMEOUT_MS",
+                min(self.page_timeout_ms, 20_000),
+            ),
+            max_pages=self.max_pages,
+        )
+        pages = await crawler.crawl_pages(self._fallback_urls(url)[: self.max_pages])
+        return [(page.url, page.markdown) for page in pages]
+
+    @staticmethod
+    def _crawl4ai_enabled() -> bool:
+        from Crawl4AI.website_markdown import crawl4ai_enabled
+
+        return crawl4ai_enabled()
+
     async def crawl_and_scrape(
         self,
         url: str,
@@ -1724,10 +1771,9 @@ class WebsiteCrawler:
         """
         resolved_tenant_id = tenant_id or "unknown"
         normalized_url = self._normalize_url(url)
-        client = self._get_client()
-
         documents: list[tuple[str, str]] = []
         seen_sources: set[str] = set()
+        crawl_error: Exception | None = None
 
         logger.info(
             "website_crawl_started tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s max_pages=%s timeout_seconds=%s",
@@ -1739,50 +1785,141 @@ class WebsiteCrawler:
             self.timeout_seconds,
         )
 
-        try:
-            await provider_rate_limiter.wait_for_slot_async(
-                provider="firecrawl-crawl",
-                limit=env_int("ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE", 4),
-            )
-            crawl_result = await self._crawl_target_pages(client, normalized_url)
-            documents.extend(self._documents_from_result(crawl_result, seen_sources))
-        except asyncio.TimeoutError as exc:
-            logger.warning(
-                "firecrawl_crawl_timeout tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s timeout_seconds=%s failure_reason=%s",
-                resolved_tenant_id,
-                service_profile_id,
-                crawl_job_id,
-                normalized_url,
-                self.timeout_seconds,
-                "crawl_timeout",
-            )
-            crawl_error: Exception | None = exc
-        except Exception as exc:
-            logger.warning(
-                "firecrawl_crawl_failed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s error_type=%s error=%s failure_reason=%s",
-                resolved_tenant_id,
-                service_profile_id,
-                crawl_job_id,
-                normalized_url,
-                exc.__class__.__name__,
-                exc,
-                "primary_crawl_failed",
-                exc_info=True,
-            )
-            crawl_error = exc
-        else:
-            crawl_error = None
+        crawl4ai_lease = None
+        crawl4ai_used = False
+        if self._crawl4ai_enabled():
+            try:
+                crawl4ai_lease = await provider_concurrency_limiter.acquire_async(
+                    provider="crawl4ai-browser",
+                    # A 2 GB App Platform component starts safely with one
+                    # Chromium crawl shared across every replica.
+                    limit=env_int("ARCLI_CRAWL4AI_ACTIVE_CRAWLS", 1),
+                    lease_seconds=env_int(
+                        "ARCLI_CRAWL4AI_CONCURRENCY_LEASE_SECONDS",
+                        max(90, self.timeout_seconds + 25),
+                    ),
+                )
+                crawl4ai_documents = await asyncio.wait_for(
+                    self._crawl_with_crawl4ai(normalized_url),
+                    timeout=self.timeout_seconds,
+                )
+                for source_url, markdown in crawl4ai_documents:
+                    if source_url not in seen_sources:
+                        seen_sources.add(source_url)
+                        documents.append((source_url, markdown))
+                crawl4ai_used = self._crawl4ai_has_sufficient_content(documents)
+                if crawl4ai_used:
+                    logger.info(
+                        "crawl4ai_primary_succeeded tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s",
+                        resolved_tenant_id,
+                        service_profile_id,
+                        crawl_job_id,
+                        normalized_url,
+                        len(documents),
+                        sum(len(markdown) for _, markdown in documents),
+                    )
+                else:
+                    logger.warning(
+                        "crawl4ai_primary_insufficient tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s documents=%s content_chars=%s fallback=firecrawl",
+                        resolved_tenant_id,
+                        service_profile_id,
+                        crawl_job_id,
+                        normalized_url,
+                        len(documents),
+                        sum(len(markdown) for _, markdown in documents),
+                    )
+                    # Do not mix a sparse browser result with the fallback.
+                    # Firecrawl must be able to recover the homepage as well
+                    # as any secondary pages when Crawl4AI is insufficient.
+                    documents.clear()
+                    seen_sources.clear()
+            except asyncio.TimeoutError as exc:
+                logger.warning(
+                    "crawl4ai_primary_timeout tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s timeout_seconds=%s fallback=firecrawl",
+                    resolved_tenant_id,
+                    service_profile_id,
+                    crawl_job_id,
+                    normalized_url,
+                    self.timeout_seconds,
+                )
+                crawl_error = exc
+            except Exception as exc:
+                logger.warning(
+                    "crawl4ai_primary_failed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s error_type=%s error=%s fallback=firecrawl",
+                    resolved_tenant_id,
+                    service_profile_id,
+                    crawl_job_id,
+                    normalized_url,
+                    exc.__class__.__name__,
+                    exc,
+                    exc_info=True,
+                )
+                crawl_error = exc
+            finally:
+                if crawl4ai_lease is not None:
+                    provider_concurrency_limiter.release(crawl4ai_lease)
 
-        if len(documents) < 3:
-            fallback_docs = await self._scrape_common_pages(
-                client=client,
-                url=normalized_url,
-                seen_sources=seen_sources,
-                tenant_id=resolved_tenant_id,
-                service_profile_id=service_profile_id,
-                crawl_job_id=crawl_job_id,
-            )
-            documents.extend(fallback_docs)
+        if not crawl4ai_used:
+            client = self._get_client()
+            firecrawl_lease = None
+            try:
+                await provider_rate_limiter.wait_for_slot_async(
+                    provider="firecrawl-crawl",
+                    # Firecrawl's Free tier admits one `/crawl` request per minute.
+                    # Paid deployments can raise this only alongside the shared
+                    # in-flight limit below.
+                    limit=env_int("ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE", 1),
+                )
+                firecrawl_lease = await provider_concurrency_limiter.acquire_async(
+                    provider="firecrawl-crawl",
+                    # One Firecrawl crawl uses up to two browser requests. The Free
+                    # plan has two concurrent requests, so one active crawl is the
+                    # safe default across every worker instance.
+                    limit=env_int("ARCLI_FIRECRAWL_ACTIVE_CRAWLS", 1),
+                    lease_seconds=env_int(
+                        "ARCLI_FIRECRAWL_CONCURRENCY_LEASE_SECONDS",
+                        max(90, self.timeout_seconds + 25),
+                    ),
+                )
+                crawl_result = await self._crawl_target_pages(client, normalized_url)
+                documents.extend(self._documents_from_result(crawl_result, seen_sources))
+                crawl_error = None
+            except asyncio.TimeoutError as exc:
+                logger.warning(
+                    "firecrawl_fallback_timeout tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s timeout_seconds=%s",
+                    resolved_tenant_id,
+                    service_profile_id,
+                    crawl_job_id,
+                    normalized_url,
+                    self.timeout_seconds,
+                )
+                crawl_error = exc
+            except Exception as exc:
+                logger.warning(
+                    "firecrawl_fallback_failed tenant_id=%s service_profile_id=%s crawl_job_id=%s url=%s error_type=%s error=%s",
+                    resolved_tenant_id,
+                    service_profile_id,
+                    crawl_job_id,
+                    normalized_url,
+                    exc.__class__.__name__,
+                    exc,
+                    exc_info=True,
+                )
+                crawl_error = exc
+            else:
+                if len(documents) < 3:
+                    fallback_docs = await self._scrape_common_pages(
+                        client=client,
+                        url=normalized_url,
+                        seen_sources=seen_sources,
+                        tenant_id=resolved_tenant_id,
+                        service_profile_id=service_profile_id,
+                        crawl_job_id=crawl_job_id,
+                    )
+                    documents.extend(fallback_docs)
+            finally:
+                if firecrawl_lease is not None:
+                    provider_concurrency_limiter.release(firecrawl_lease)
 
         cleaned_parts = []
         for source_url, markdown in documents:
@@ -1938,7 +2075,10 @@ class WebsiteCrawler:
             1,
             min(
                 4,
-                env_int("ARCLI_FALLBACK_SCRAPE_CONCURRENCY", 3),
+                # A fallback is still Firecrawl work. Keep the Free-plan
+                # default serial so a single website cannot exhaust its two
+                # concurrent browser slots after a primary crawl misses pages.
+                env_int("ARCLI_FALLBACK_SCRAPE_CONCURRENCY", 1),
             ),
         )
         semaphore = asyncio.Semaphore(concurrency)

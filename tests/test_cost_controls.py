@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from api.services.cost_controls import ProviderRateLimiter
+from api.services.cost_controls import ProviderConcurrencyLimiter, ProviderRateLimiter
 
 
 class FakeRedis:
@@ -113,3 +113,41 @@ def test_paced_reservation_uses_one_atomic_redis_operation() -> None:
     assert reservation.queued_requests == 1
     assert len(redis.calls) == 1
     assert redis.calls[0][1:3] == (1, "arcli:pace:openai-chat")
+
+
+def test_provider_concurrency_limiter_releases_the_next_free_plan_slot() -> None:
+    limiter = ProviderConcurrencyLimiter()
+    provider = "test-free-firecrawl-slot"
+
+    with patch("api.services.cost_controls.time.monotonic", return_value=100.0):
+        first, first_wait = limiter._try_acquire(
+            provider=provider,
+            limit=1,
+            lease_seconds=90,
+            token="first",
+        )
+        blocked, blocked_wait = limiter._try_acquire(
+            provider=provider,
+            limit=1,
+            lease_seconds=90,
+            token="second",
+        )
+
+    assert first is not None
+    assert first_wait == 0
+    assert blocked is None
+    assert blocked_wait == 90
+
+    limiter.release(first)
+
+    with patch("api.services.cost_controls.time.monotonic", return_value=101.0):
+        next_lease, next_wait = limiter._try_acquire(
+            provider=provider,
+            limit=1,
+            lease_seconds=90,
+            token="second",
+        )
+
+    assert next_lease is not None
+    assert next_wait == 0
+    limiter.release(next_lease)

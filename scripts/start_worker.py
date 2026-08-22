@@ -22,9 +22,9 @@ DEFAULT_MEMORY_GRACE_SECONDS = 60
 DEFAULT_MEMORY_GROWTH_SAMPLES = 2
 DEFAULT_RECYCLE_TIMEOUT_SECONDS = 270
 DRAMATIQ_RUNTIME_LIMITS = (
-    # Eight normal messages keeps the original four worker threads supplied
+    # Sixteen normal messages keeps the eight worker threads supplied
     # without the network round-trip becoming the throughput bottleneck.
-    ("dramatiq_queue_prefetch", "ARCLI_DRAMATIQ_QUEUE_PREFETCH", 8),
+    ("dramatiq_queue_prefetch", "ARCLI_DRAMATIQ_QUEUE_PREFETCH", 16),
     (
         "dramatiq_delay_queue_prefetch",
         "ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH",
@@ -36,7 +36,7 @@ DRAMATIQ_RUNTIME_LIMITS = (
     ("dramatiq_worker_timeout", "ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS", 5_000),
 )
 DRAMATIQ_PROCESSES = 1
-DRAMATIQ_THREADS = 4
+DRAMATIQ_THREADS = 8
 
 
 def dramatiq_concurrency_command() -> tuple[str, ...]:
@@ -44,9 +44,9 @@ def dramatiq_concurrency_command() -> tuple[str, ...]:
 
     The production entrypoint uses the embedded worker below so it can close
     Redis before process recycle.  Its effective concurrency is deliberately
-    identical to ``dramatiq api.worker:broker -p 1 -t 4``.
+    identical to ``dramatiq api.worker:broker -p 1 -t 8``.
     """
-    return ("dramatiq", "api.worker:broker", "-p", "1", "-t", "4")
+    return ("dramatiq", "api.worker:broker", "-p", "1", "-t", "8")
 
 
 class WorkerState:
@@ -70,6 +70,13 @@ def csv_env(name: str, default: str) -> list[str]:
     if not values:
         raise RuntimeError(f"{name} must contain at least one module.")
     return values
+
+
+def optional_csv_env(name: str) -> set[str] | None:
+    """Return a queue allowlist, or ``None`` to consume every declared queue."""
+    raw_value = os.getenv(name, "")
+    values = {item.strip() for item in raw_value.split(",") if item.strip()}
+    return values or None
 
 
 def int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -264,6 +271,7 @@ def run_embedded_dramatiq_worker(state: WorkerState) -> int:
     modules = csv_env("ARCLI_DRAMATIQ_MODULES", "api.worker")
     processes = int_env("DRAMATIQ_PROCESSES", DRAMATIQ_PROCESSES)
     threads = int_env("DRAMATIQ_THREADS", DRAMATIQ_THREADS)
+    queue_allowlist = optional_csv_env("ARCLI_DRAMATIQ_QUEUES")
     shutdown_timeout = int_env("ARCLI_WORKER_SHUTDOWN_TIMEOUT_SECONDS", 240)
     worker_shutdown_timeout_ms = max(1_000, (shutdown_timeout - 10) * 1_000)
     if processes != 1:
@@ -284,19 +292,22 @@ def run_embedded_dramatiq_worker(state: WorkerState) -> int:
     activity_tracker = WorkerActivityTracker()
     broker.add_middleware(activity_tracker)
     broker.emit_after("process_boot")
-    worker = dramatiq.Worker(
-        broker,
-        worker_threads=threads,
-        worker_timeout=int(runtime_env["dramatiq_worker_timeout"]),
-    )
+    worker_kwargs: dict[str, Any] = {
+        "worker_threads": threads,
+        "worker_timeout": int(runtime_env["dramatiq_worker_timeout"]),
+    }
+    if queue_allowlist is not None:
+        worker_kwargs["queues"] = queue_allowlist
+    worker = dramatiq.Worker(broker, **worker_kwargs)
 
     logger.info(
-        "starting_embedded_dramatiq_worker modules=%s processes=%s threads=%s "
+        "starting_embedded_dramatiq_worker modules=%s processes=%s threads=%s queues=%s "
         "queue_prefetch=%s delay_queue_prefetch=%s worker_timeout_ms=%s "
         "dramatiq_version=%s",
         ",".join(modules),
         processes,
         threads,
+        ",".join(sorted(queue_allowlist)) if queue_allowlist else "all",
         runtime_env["dramatiq_queue_prefetch"],
         runtime_env["dramatiq_delay_queue_prefetch"],
         runtime_env["dramatiq_worker_timeout"],

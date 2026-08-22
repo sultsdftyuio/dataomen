@@ -234,7 +234,11 @@ defaults below are intentionally conservative and can be raised only after
 checking the limits for the project's Firecrawl, X, and OpenAI accounts:
 
 ```text
-ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE=4
+# Firecrawl Free defaults. Upgrade these together only after confirming the
+# provider plan's crawl rate and concurrent-browser limits.
+ARCLI_FIRECRAWL_CRAWLS_PER_MINUTE=1
+ARCLI_FIRECRAWL_ACTIVE_CRAWLS=1
+ARCLI_FALLBACK_SCRAPE_CONCURRENCY=1
 ARCLI_HN_REQUESTS_PER_MINUTE=60
 ARCLI_BLUESKY_REQUESTS_PER_MINUTE=30
 ARCLI_STACKEXCHANGE_REQUESTS_PER_MINUTE=15

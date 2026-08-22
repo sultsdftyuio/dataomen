@@ -117,7 +117,7 @@ function activeStageIndex({
 
 function isActiveCrawlStalled(crawlJob: CrawlJobView | null) {
   const status = normalizedStatus(crawlJob?.status);
-  if (!crawlJob || !["pending", "processing"].includes(status ?? "")) {
+  if (!crawlJob || !["queued", "pending", "processing"].includes(status ?? "")) {
     return false;
   }
 
@@ -135,6 +135,7 @@ function statusMessage({
   mode = "onboarding",
 }: Omit<DiscoveryLoadingPageProps, "websiteUrl">) {
   const crawlStatus = normalizedStatus(crawlJob?.status);
+  const crawlPhase = normalizedStatus(crawlJob?.phase);
   const embeddingStatus = normalizedStatus(serviceProfile.embeddingStatus);
 
   if (!crawlJob && !serviceProfile.hasProfile) {
@@ -193,6 +194,16 @@ function statusMessage({
     };
   }
 
+  if (!serviceProfile.hasProfile && crawlPhase === "queued") {
+    return {
+      kind: "working" as const,
+      queued: true,
+      title: "Your website scan is queued.",
+      detail:
+        "Arcli is processing one website at a time on the current plan. Your scan will start automatically, and you can safely leave this page.",
+    };
+  }
+
   if (!serviceProfile.hasProfile) {
     return {
       kind: "working" as const,
@@ -248,13 +259,15 @@ export function DiscoveryLoadingPage({
   const domain = useMemo(() => websiteDomain(websiteUrl), [websiteUrl]);
   const hasError = status.kind === "error";
   const isReady = status.kind === "ready";
+  const isQueued = status.kind === "working" && status.queued === true;
   const lastUpdate = relativeTime(
     crawlJob?.lastHeartbeatAt ??
       crawlJob?.updatedAt ??
       serviceProfile.updatedAt ??
       buyerDemandReport?.updatedAt,
   );
-  const isTakingLongerThanUsual = !hasError && !isReady && elapsedSeconds >= 90;
+  const isTakingLongerThanUsual =
+    !hasError && !isReady && !isQueued && elapsedSeconds >= 90;
   const isWorkspaceScan = mode === "scan";
 
   useEffect(() => {
@@ -320,7 +333,13 @@ export function DiscoveryLoadingPage({
               ) : (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               )}
-              {hasError ? "Action needed" : isReady ? "Ready" : "Finding potential customers"}
+              {hasError
+                ? "Action needed"
+                : isReady
+                  ? "Ready"
+                  : isQueued
+                    ? "Queued for website scan"
+                    : "Finding potential customers"}
             </div>
             <h1 className="mt-5 font-serif text-4xl leading-[1.04] tracking-tight sm:text-5xl" style={{ color: C.navy }}>
               {status.title}
@@ -341,7 +360,9 @@ export function DiscoveryLoadingPage({
                   {lastUpdate}
                 </p>
                 <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>
-                  This page updates on its own. Most scans finish in about two minutes.
+                  {isQueued
+                    ? "This page updates on its own. We will begin as soon as the current website scan finishes."
+                    : "This page updates on its own. Most active website scans finish in about two minutes."}
                 </p>
               </div>
             ) : null}
@@ -417,7 +438,7 @@ export function DiscoveryLoadingPage({
                           <span className="text-sm font-semibold" style={{ color: isComplete || isActive ? C.navy : C.navySoft }}>
                             {stage.label}
                           </span>
-                          {isActive ? <span className="text-[11px] font-semibold" style={{ color: C.blue }}>Working on it</span> : null}
+                          {isActive ? <span className="text-[11px] font-semibold" style={{ color: C.blue }}>{isQueued && index === 0 ? "Queued" : "Working on it"}</span> : null}
                         </span>
                         <span className="mt-1 block text-xs leading-5" style={{ color: C.muted }}>
                           {stage.detail}

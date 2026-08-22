@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import api.main as main
 import api.services.crawling as crawling
@@ -113,10 +113,16 @@ def test_daily_recheck_resets_the_previous_queue_message_before_reenqueueing() -
 
 def test_temporary_repeat_crawl_mode_requires_explicit_opt_in(monkeypatch) -> None:
     monkeypatch.delenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", raising=False)
+    monkeypatch.delenv("NODE_ENV", raising=False)
+    monkeypatch.delenv("VERCEL_ENV", raising=False)
+    monkeypatch.delenv("ARCLI_ENVIRONMENT", raising=False)
     assert crawling._website_crawl_test_mode_enabled() is False
 
     monkeypatch.setenv("ARCLI_UNLIMITED_CRAWL_TEST_MODE", "true")
     assert crawling._website_crawl_test_mode_enabled() is True
+
+    monkeypatch.setenv("NODE_ENV", "production")
+    assert crawling._website_crawl_test_mode_enabled() is False
 
 
 def test_default_crawl_budget_is_two_minutes() -> None:
@@ -163,3 +169,74 @@ def test_fallback_pages_are_fetched_concurrently_without_changing_page_order() -
 
     assert client.max_active_requests == 2
     assert [source for source, _markdown in documents] == urls
+
+
+def test_crawl4ai_primary_skips_firecrawl_when_it_returns_enough_content() -> None:
+    class _Limiter:
+        def __init__(self) -> None:
+            self.providers: list[str] = []
+
+        async def acquire_async(self, **kwargs: object) -> object:
+            self.providers.append(str(kwargs["provider"]))
+            return object()
+
+        def release(self, _lease: object) -> None:
+            return None
+
+    crawler = crawling.WebsiteCrawler()
+    limiter = _Limiter()
+    with (
+        patch.dict(os.environ, {"ARCLI_CRAWL4AI_ENABLED": "true"}),
+        patch.object(crawling, "provider_concurrency_limiter", limiter),
+        patch.object(
+            crawler,
+            "_crawl_with_crawl4ai",
+            new=AsyncMock(return_value=[("https://example.com/", "A" * 900)]),
+        ),
+        patch.object(crawler, "_get_client") as firecrawl_client,
+    ):
+        markdown = asyncio.run(crawler.crawl_and_scrape("https://example.com/"))
+
+    assert markdown == "## Source: https://example.com/\n\n" + "A" * 900
+    assert limiter.providers == ["crawl4ai-browser"]
+    firecrawl_client.assert_not_called()
+
+
+def test_crawl4ai_failure_uses_firecrawl_fallback() -> None:
+    class _Limiter:
+        async def acquire_async(self, **_kwargs: object) -> object:
+            return object()
+
+        def release(self, _lease: object) -> None:
+            return None
+
+    class _RateLimiter:
+        async def wait_for_slot_async(self, **_kwargs: object) -> None:
+            return None
+
+    class _FirecrawlClient:
+        async def crawl(self, **_kwargs: object) -> dict[str, object]:
+            return {
+                "data": [
+                    {
+                        "markdown": "# Firecrawl fallback\n\n" + "content " * 100,
+                        "metadata": {"source_url": "https://example.com/"},
+                    }
+                ]
+            }
+
+    crawler = crawling.WebsiteCrawler()
+    with (
+        patch.dict(os.environ, {"ARCLI_CRAWL4AI_ENABLED": "true"}),
+        patch.object(crawling, "provider_concurrency_limiter", _Limiter()),
+        patch.object(crawling, "provider_rate_limiter", _RateLimiter()),
+        patch.object(
+            crawler,
+            "_crawl_with_crawl4ai",
+            new=AsyncMock(side_effect=RuntimeError("browser unavailable")),
+        ),
+        patch.object(crawler, "_get_client", return_value=_FirecrawlClient()),
+    ):
+        markdown = asyncio.run(crawler.crawl_and_scrape("https://example.com/"))
+
+    assert "Firecrawl fallback" in markdown

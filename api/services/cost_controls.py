@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -56,6 +57,16 @@ class ProviderPacingReservation:
     queued_requests: int
 
 
+@dataclass(frozen=True)
+class ProviderConcurrencyLease:
+    """A short-lived provider slot shared by every worker instance."""
+
+    provider: str
+    key: str
+    token: str
+    backend: str
+
+
 # Redis is the coordination point in production.  A fixed-window ``INCR``
 # counter prevents more than N requests in one calendar bucket, but it still
 # permits a burst at the next bucket boundary.  This script reserves one
@@ -81,6 +92,36 @@ local next_slot_ms = scheduled_ms + interval_ms
 local ttl_ms = math.max(window_ms * 2, wait_ms + window_ms)
 redis.call('PSETEX', KEYS[1], ttl_ms, tostring(next_slot_ms))
 return {1, wait_ms, math.ceil(wait_ms / interval_ms)}
+"""
+
+# A pacing limit alone cannot protect a provider's concurrent-browser plan: a
+# slow crawl can still be running when the next minute's request is admitted.
+# Leases expire as a safety net if a worker dies before it can release one.
+_ACQUIRE_CONCURRENCY_LEASE_LUA = """
+local redis_time = redis.call('TIME')
+local now_ms = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+local lease_ms = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local token = ARGV[3]
+
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now_ms)
+local active = redis.call('ZCARD', KEYS[1])
+if active >= limit then
+    local earliest = redis.call('ZRANGE', KEYS[1], 0, 0, 'WITHSCORES')
+    local retry_ms = lease_ms
+    if earliest[2] then
+        retry_ms = math.max(1, tonumber(earliest[2]) - now_ms)
+    end
+    return {0, retry_ms}
+end
+
+redis.call('ZADD', KEYS[1], now_ms + lease_ms, token)
+redis.call('PEXPIRE', KEYS[1], math.max(lease_ms * 2, 60000))
+return {1, 0}
+"""
+
+_RELEASE_CONCURRENCY_LEASE_LUA = """
+return redis.call('ZREM', KEYS[1], ARGV[1])
 """
 
 
@@ -429,6 +470,196 @@ class ProviderRateLimiter:
 # One limiter per process; Redis makes the production counter shared across
 # all worker processes and worker instances.
 provider_rate_limiter = ProviderRateLimiter()
+
+
+class ProviderConcurrencyLimiter:
+    """Bound in-flight provider work across workers, with Redis leases."""
+
+    _memory_lock = threading.Lock()
+    _memory_leases: dict[str, dict[str, float]] = {}
+
+    def __init__(self, redis_client: RedisLike | None = None) -> None:
+        self.redis_client = redis_client
+
+    async def acquire_async(
+        self,
+        *,
+        provider: str,
+        limit: int,
+        lease_seconds: int,
+    ) -> ProviderConcurrencyLease:
+        """Wait for a provider slot without exceeding its concurrent-plan limit."""
+
+        import asyncio
+
+        safe_provider = TenantQuotaGuard._safe_counter_name(provider)
+        safe_limit = max(1, int(limit))
+        safe_lease_seconds = max(1, int(lease_seconds))
+        token = uuid.uuid4().hex
+
+        while True:
+            lease, retry_after_seconds = self._try_acquire(
+                provider=safe_provider,
+                limit=safe_limit,
+                lease_seconds=safe_lease_seconds,
+                token=token,
+            )
+            if lease is not None:
+                return lease
+
+            # Poll at most once per second so an early release wakes the next
+            # queued crawl promptly, while keeping Redis traffic bounded.
+            await asyncio.sleep(min(1.0, max(0.2, retry_after_seconds)))
+
+    def release(self, lease: ProviderConcurrencyLease) -> None:
+        """Release a slot immediately; expiry protects against worker crashes."""
+
+        if lease.backend == "memory":
+            self._release_memory(lease)
+            return
+
+        client = self.redis_client
+        owns_client = client is None
+        if client is None:
+            client = _redis_client_from_env()
+
+        if client is None:
+            logger.warning(
+                "provider_concurrency_release_skipped provider=%s backend=redis reason=redis_unavailable",
+                lease.provider,
+            )
+            return
+
+        try:
+            evaluate = getattr(client, "eval", None)
+            if not callable(evaluate):
+                raise RuntimeError("Redis client does not support atomic script evaluation.")
+            evaluate(_RELEASE_CONCURRENCY_LEASE_LUA, 1, lease.key, lease.token)
+        except Exception as exc:
+            logger.warning(
+                "provider_concurrency_release_failed provider=%s backend=%s error_type=%s error=%s",
+                lease.provider,
+                "redis",
+                exc.__class__.__name__,
+                exc,
+            )
+        finally:
+            if owns_client:
+                _close_redis_client(client)
+
+    def _try_acquire(
+        self,
+        *,
+        provider: str,
+        limit: int,
+        lease_seconds: int,
+        token: str,
+    ) -> tuple[ProviderConcurrencyLease | None, float]:
+        key = f"arcli:concurrency:{provider}"
+        client = self.redis_client
+        owns_client = client is None
+        if client is None:
+            client = _redis_client_from_env()
+
+        if client is None:
+            return self._try_acquire_memory(
+                provider=provider,
+                key=key,
+                limit=limit,
+                lease_seconds=lease_seconds,
+                token=token,
+            )
+
+        try:
+            evaluate = getattr(client, "eval", None)
+            if not callable(evaluate):
+                raise RuntimeError("Redis client does not support atomic script evaluation.")
+            result = evaluate(
+                _ACQUIRE_CONCURRENCY_LEASE_LUA,
+                1,
+                key,
+                lease_seconds * 1000,
+                limit,
+                token,
+            )
+            if not isinstance(result, (list, tuple)) or len(result) < 2:
+                raise RuntimeError("Redis returned an invalid provider concurrency lease.")
+            acquired, retry_after_ms = int(result[0]), int(result[1])
+            if acquired:
+                return (
+                    ProviderConcurrencyLease(
+                        provider=provider,
+                        key=key,
+                        token=token,
+                        backend="redis",
+                    ),
+                    0.0,
+                )
+            return None, max(0.2, retry_after_ms / 1000)
+        except Exception as exc:
+            logger.warning(
+                "provider_concurrency_reservation_failed provider=%s backend=%s error_type=%s error=%s",
+                provider,
+                "redis",
+                exc.__class__.__name__,
+                exc,
+            )
+            return self._try_acquire_memory(
+                provider=provider,
+                key=key,
+                limit=limit,
+                lease_seconds=lease_seconds,
+                token=token,
+            )
+        finally:
+            if owns_client:
+                _close_redis_client(client)
+
+    @classmethod
+    def _try_acquire_memory(
+        cls,
+        *,
+        provider: str,
+        key: str,
+        limit: int,
+        lease_seconds: int,
+        token: str,
+    ) -> tuple[ProviderConcurrencyLease | None, float]:
+        now = time.monotonic()
+        with cls._memory_lock:
+            active = cls._memory_leases.setdefault(key, {})
+            for active_token, expires_at in tuple(active.items()):
+                if expires_at <= now:
+                    del active[active_token]
+
+            if len(active) >= limit:
+                retry_after = min(active.values()) - now
+                return None, max(0.2, retry_after)
+
+            active[token] = now + lease_seconds
+            return (
+                ProviderConcurrencyLease(
+                    provider=provider,
+                    key=key,
+                    token=token,
+                    backend="memory",
+                ),
+                0.0,
+            )
+
+    @classmethod
+    def _release_memory(cls, lease: ProviderConcurrencyLease) -> None:
+        with cls._memory_lock:
+            active = cls._memory_leases.get(lease.key)
+            if active is None:
+                return
+            active.pop(lease.token, None)
+            if not active:
+                cls._memory_leases.pop(lease.key, None)
+
+
+# Like the pacing limiter, Redis makes this shared across all worker instances.
+provider_concurrency_limiter = ProviderConcurrencyLimiter()
 
 
 class TenantQuotaGuard:

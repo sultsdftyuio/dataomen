@@ -57,7 +57,7 @@ export default async function DashboardDiscoveryPage({ searchParams }: Discovery
     ? buyerDemandReport
     : null;
   const crawlStatus = crawlJob?.status?.trim().toLowerCase() ?? null;
-  const crawlIsActive = crawlStatus === "pending" || crawlStatus === "processing";
+  const crawlIsActive = ["queued", "pending", "processing"].includes(crawlStatus ?? "");
   const isWarmingUp =
     isServiceProfileWarmingUp(serviceProfile) ||
     Boolean(currentBuyerDemandReport && !currentBuyerDemandReport.isTerminal);
