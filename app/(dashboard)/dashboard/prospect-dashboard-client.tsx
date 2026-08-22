@@ -30,14 +30,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { markLeadAsQualified } from "@/app/actions/leads";
 import { shouldContinueActionQueuePolling } from "@/lib/buyer-demand-report";
 import { C } from "@/lib/tokens";
@@ -1309,7 +1301,8 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
       style={{ borderColor: isPartial ? C.amber : isFailed ? C.red : C.blueLight }}
     >
       <CardContent className="p-0">
-        <div className="flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5 lg:px-6" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+        <details className="group">
+          <summary className="flex cursor-pointer list-none flex-col gap-3 px-4 py-4 marker:hidden sm:flex-row sm:items-start sm:justify-between sm:px-5 lg:px-6 [&::-webkit-details-marker]:hidden" style={{ backgroundColor: C.offWhite }}>
           <div className="flex min-w-0 items-start gap-3">
             <span
               className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full"
@@ -1324,22 +1317,32 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
             <div className="min-w-0">
               <h2 className="pfd text-lg leading-5 lg:text-xl lg:leading-6" style={{ color: C.navy }}>{title}</h2>
               <p className="mt-1.5 max-w-3xl text-xs leading-5" style={{ color: C.navySoft }}>{detail}</p>
+              {compactStats.length > 0 ? (
+                <p className="mt-2 text-[11px]" style={{ color: C.muted }}>{compactStats.join(" Â· ")}</p>
+              ) : null}
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className="self-start rounded-full px-2.5 py-0.5 text-[10px] sm:shrink-0"
-            style={{
-              borderColor: isFailed ? C.red : isPartial ? C.amber : C.blueLight,
-              backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : C.blueTint,
-              color: isFailed ? C.red : isPartial ? C.amber : C.blue,
-            }}
-          >
-            {statusLabel}
-          </Badge>
-        </div>
+          <div className="flex shrink-0 items-center gap-2 self-start">
+            <Badge
+              variant="outline"
+              className="rounded-full px-2.5 py-0.5 text-[10px]"
+              style={{
+                borderColor: isFailed ? C.red : isPartial ? C.amber : C.blueLight,
+                backgroundColor: isFailed ? C.redPale : isPartial ? C.amberPale : C.blueTint,
+                color: isFailed ? C.red : isPartial ? C.amber : C.blue,
+              }}
+            >
+              {statusLabel}
+            </Badge>
+            <span className="text-[11px] font-semibold" style={{ color: C.blue }}>
+              <span className="group-open:hidden">View report</span>
+              <span className="hidden group-open:inline">Hide report</span>
+            </span>
+          </div>
+          </summary>
 
-        <div className="px-4 py-4 sm:px-5 lg:px-6">
+          <div className="hidden border-t group-open:block" style={{ borderColor: C.rule }}>
+          <div className="px-4 py-4 sm:px-5 lg:px-6">
           {isPartial ? (
             <div
               className="mb-4 grid gap-3 rounded-lg border px-3.5 py-3 text-xs leading-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
@@ -1411,7 +1414,9 @@ function DiscoveryScanReport({ report }: { report: BuyerDemandReportView }) {
             </Button>
           </div>
           {summary.caveat ? <p className="mt-2 text-[10px] leading-4" style={{ color: C.muted }}>{summary.caveat}</p> : null}
-        </div>
+          </div>
+          </div>
+        </details>
       </CardContent>
     </Card>
   );
@@ -2454,6 +2459,119 @@ function DiscoverySourceBar({
   );
 }
 
+function ScanOverview({
+  status,
+  leadCount,
+  potentialCount,
+  feedCount,
+  discoveryStatus,
+  lastUpdatedAt,
+  isRefreshing,
+  onRefresh,
+}: {
+  status: ReturnType<typeof pipelineStatus>;
+  leadCount: number;
+  potentialCount: number;
+  feedCount: number;
+  discoveryStatus: BuyerDemandReportView["status"];
+  lastUpdatedAt: Date | null;
+  isRefreshing: boolean;
+  onRefresh: () => void;
+}) {
+  const isPartial = normalizedStatus(discoveryStatus) === "partial";
+  const isReportFailed = normalizedStatus(discoveryStatus) === "failed";
+  const displayLabel = isPartial ? "Latest scan partial" : isReportFailed ? "Discovery needs attention" : status.label;
+  const title = isPartial
+    ? "Your latest scan is partially complete."
+    : isReportFailed
+      ? "Your latest discovery scan needs attention."
+      : status.title;
+  const detail = isPartial
+    ? "Some sources were unavailable, but results from the sources that completed are still ready to review."
+    : isReportFailed
+      ? "Review the scan report for source details, then refine the brief or run another scan."
+      : status.detail;
+  const isComplete = displayLabel === "Latest scan complete";
+  const tone = isPartial
+    ? { border: C.amber, background: C.amberPale, color: C.amber }
+    : isComplete
+    ? { border: C.green, background: C.greenPale, color: C.green }
+    : displayLabel === "Needs attention" || isReportFailed
+      ? { border: C.red, background: C.redPale, color: C.red }
+      : { border: C.blueLight, background: C.blueTint, color: C.blue };
+  const metrics = [
+    { label: "Leads", value: leadCount, color: C.green },
+    { label: "Potential", value: potentialCount, color: C.amber },
+    { label: "Feed", value: feedCount, color: C.blue },
+  ];
+
+  return (
+    <section
+      aria-labelledby="scan-overview-title"
+      className="relative shrink-0 overflow-hidden rounded-xl border bg-white px-5 py-5 shadow-sm sm:px-6"
+      style={{ borderColor: tone.border }}
+    >
+      <div className="absolute -right-10 -top-14 size-40 rounded-full" style={{ backgroundColor: `${tone.color}12` }} aria-hidden="true" />
+      <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(330px,0.7fr)] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+              Scan status
+            </span>
+            <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold" style={{ borderColor: tone.border, backgroundColor: tone.background, color: tone.color }}>
+              {displayLabel}
+            </span>
+          </div>
+          <h2 id="scan-overview-title" className="pfd mt-2 text-2xl leading-none" style={{ color: C.navy }}>
+            {title}
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+            {detail}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="text-[11px]" style={{ color: C.muted }}>Updated {formatTime(lastUpdatedAt)}</p>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={isRefreshing}
+              onClick={onRefresh}
+              style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+            >
+              <RefreshCw className={cn("size-3", isRefreshing && "animate-spin")} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        <section aria-labelledby="desk-pulse-heading" className="rounded-lg border bg-white/80 p-3" style={{ borderColor: C.rule }}>
+          <p id="desk-pulse-heading" className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+            Your pulse
+          </p>
+          <div className="mt-2 grid grid-cols-3 divide-x rounded-md border" style={{ borderColor: C.rule }}>
+            {metrics.map((metric) => (
+              <div key={metric.label} className="p-3 text-center" style={{ borderColor: C.rule }}>
+                <p className="text-xl font-semibold leading-none" style={{ color: C.navy }}>{metric.value}</p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: metric.color }}>{metric.label}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <div className="relative mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-3" style={{ borderColor: C.rule }}>
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>Next moves</span>
+        <Link href="/dashboard/brief" className="text-xs font-semibold hover:underline" style={{ color: C.blue }}>
+          Refine matching brief
+        </Link>
+        <Link href="/dashboard/watchlists" className="text-xs font-semibold hover:underline" style={{ color: C.blue }}>
+          Create a buyer group
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 export default function ProspectDashboardClient({
   serviceProfile,
   crawlJob,
@@ -2640,94 +2758,18 @@ export default function ProspectDashboardClient({
             Leads
           </h1>
         </div>
-        <div className="flex items-center gap-2">
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 shrink-0 px-3 text-[11px]"
-              style={{ borderColor: C.ruleDark, color: C.navySoft, backgroundColor: C.white }}
-            >
-              <Radar className="size-3.5" />
-              Scan status
-            </Button>
-          </SheetTrigger>
-          <SheetContent
-            className="gap-0 overflow-y-auto p-0 sm:max-w-md"
-            style={{ backgroundColor: C.white, borderColor: C.rule }}
-          >
-            <SheetHeader className="border-b" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-              <SheetTitle className="pfd text-xl" style={{ color: C.navy }}>Scan status</SheetTitle>
-              <SheetDescription style={{ color: C.muted }}>
-                Current scan details and helpful next steps stay here so your prospect list stays focused.
-              </SheetDescription>
-            </SheetHeader>
-            <div className="space-y-5 p-4">
-              <section className="rounded-lg border p-4" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.blue }}>
-                  {status.label}
-                </p>
-                <h2 className="mt-1 text-sm font-semibold" style={{ color: C.navy }}>{status.title}</h2>
-                <p className="mt-2 text-xs leading-5" style={{ color: C.navySoft }}>{status.detail}</p>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="text-[11px]" style={{ color: C.muted }}>Updated {formatTime(lastUpdatedAt)}</p>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    disabled={isRefreshPending}
-                    onClick={refreshDashboard}
-                    style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
-                  >
-                    <RefreshCw className={cn("size-3", isRefreshPending && "animate-spin")} />
-                    Refresh
-                  </Button>
-                </div>
-              </section>
-
-              <section aria-labelledby="desk-pulse-heading">
-                <p id="desk-pulse-heading" className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
-                  Your pulse
-                </p>
-                <div className="mt-2 grid grid-cols-3 divide-x rounded-lg border bg-white" style={{ borderColor: C.rule }}>
-                  {[
-                    { label: "Leads", value: leads.length, color: C.green },
-                    { label: "Potential", value: discoveryCandidates.length, color: C.amber },
-                    { label: "Feed", value: queueItems.length, color: C.blue },
-                  ].map((metric) => (
-                    <div key={metric.label} className="p-3 text-center" style={{ borderColor: C.rule }}>
-                      <p className="text-lg font-semibold" style={{ color: C.navy }}>{metric.value}</p>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: metric.color }}>{metric.label}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section aria-labelledby="next-moves-heading">
-                <div className="flex items-center gap-2">
-                  <Target className="size-3.5" style={{ color: C.blue }} aria-hidden="true" />
-                  <p id="next-moves-heading" className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
-                    Helpful next moves
-                  </p>
-                </div>
-                <div className="mt-2 space-y-2">
-                  <Link href="/dashboard/brief" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, color: C.navy }}>
-                    <p className="text-sm font-semibold">Refine your brief</p>
-                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Improve what the next scan should look for.</p>
-                  </Link>
-                  <Link href="/dashboard/watchlists" className="block rounded-md border p-3 transition-colors hover:bg-[#F0F7FF]" style={{ borderColor: C.rule, color: C.navy }}>
-                    <p className="text-sm font-semibold">Buyer groups</p>
-                    <p className="mt-1 text-xs leading-5" style={{ color: C.muted }}>Focus future scans on a specific audience.</p>
-                  </Link>
-                </div>
-              </section>
-            </div>
-          </SheetContent>
-        </Sheet>
-        </div>
       </header>
+
+      <ScanOverview
+        status={status}
+        leadCount={leads.length}
+        potentialCount={discoveryCandidates.length}
+        feedCount={queueItems.length}
+        discoveryStatus={buyerDemandReport?.status ?? null}
+        lastUpdatedAt={lastUpdatedAt}
+        isRefreshing={isRefreshPending}
+        onRefresh={refreshDashboard}
+      />
 
       <DiscoverySourceBar
         serviceProfile={serviceProfile}
