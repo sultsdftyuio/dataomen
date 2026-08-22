@@ -15,28 +15,28 @@ from typing import Any
 logger = logging.getLogger("arcli.worker")
 
 WORKER_RECYCLE_EXIT_CODE = 75
-DEFAULT_MAX_RSS_MB = 1536
-DEFAULT_MAX_RSS_GROWTH_MB = 768
+DEFAULT_MAX_RSS_MB = 384
+DEFAULT_MAX_RSS_GROWTH_MB = 64
 DEFAULT_MEMORY_CHECK_SECONDS = 15
 DEFAULT_MEMORY_GRACE_SECONDS = 60
 DEFAULT_MEMORY_GROWTH_SAMPLES = 2
 DEFAULT_RECYCLE_TIMEOUT_SECONDS = 270
 DRAMATIQ_RUNTIME_LIMITS = (
-    # Sixteen normal messages keeps the default eight worker threads supplied
+    # Eight normal messages keeps the original four worker threads supplied
     # without the network round-trip becoming the throughput bottleneck.
-    ("dramatiq_queue_prefetch", "ARCLI_DRAMATIQ_QUEUE_PREFETCH", 16),
+    ("dramatiq_queue_prefetch", "ARCLI_DRAMATIQ_QUEUE_PREFETCH", 8),
     (
         "dramatiq_delay_queue_prefetch",
         "ARCLI_DRAMATIQ_DELAY_QUEUE_PREFETCH",
         # This is deliberately far below Dramatiq's 1,000-per-thread default,
         # while retaining enough future retries to avoid delay-queue head-of-
-        # line blocking under the normal eight-thread workload.
+        # line blocking under the normal four-thread workload.
         64,
     ),
     ("dramatiq_worker_timeout", "ARCLI_DRAMATIQ_WORKER_TIMEOUT_MS", 5_000),
 )
 DRAMATIQ_PROCESSES = 1
-DRAMATIQ_THREADS = 8
+DRAMATIQ_THREADS = 4
 
 
 def dramatiq_concurrency_command() -> tuple[str, ...]:
@@ -44,10 +44,9 @@ def dramatiq_concurrency_command() -> tuple[str, ...]:
 
     The production entrypoint uses the embedded worker below so it can close
     Redis before process recycle.  Its effective concurrency is deliberately
-    identical to ``dramatiq api.worker:broker -p 1 -t <threads>``.
+    identical to ``dramatiq api.worker:broker -p 1 -t 4``.
     """
-    threads = int_env("DRAMATIQ_THREADS", DRAMATIQ_THREADS)
-    return ("dramatiq", "api.worker:broker", "-p", "1", "-t", str(threads))
+    return ("dramatiq", "api.worker:broker", "-p", "1", "-t", "4")
 
 
 class WorkerState:
