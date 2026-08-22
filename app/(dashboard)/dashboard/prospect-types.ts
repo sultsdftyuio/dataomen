@@ -94,6 +94,10 @@ export type QualifiedLeadView = {
   urgencyReason: string | null;
   /** The raw text is retained separately in `sourcePost.text`. */
   evidenceExcerpt: string | null;
+  /** A cautious conversation-stage estimate; it does not affect ranking. */
+  purchaseStage: string | null;
+  /** A direct product or vendor name from the source text, when present. */
+  competitorMention: string | null;
   matchReason: string;
   suggestedReply: string;
   matchedAt: string | null;

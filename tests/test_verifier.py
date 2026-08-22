@@ -90,7 +90,7 @@ def test_verifier_prompt_includes_urgency_context_and_requires_buyer_evidence() 
 
 
 def test_verifier_keeps_only_verbatim_source_evidence() -> None:
-    source_text = "Our customers are blocked and we need a replacement before Friday."
+    source_text = "Our customers are blocked in Intercom and we need a replacement before Friday."
     result = VerificationResult(
         match=True,
         decision_label="strong_match",
@@ -102,6 +102,8 @@ def test_verifier_keeps_only_verbatim_source_evidence() -> None:
         urgency_level="high",
         urgency_reason="need a replacement before Friday",
         evidence_excerpt="Our customers are blocked",
+        purchase_stage="evaluating_options",
+        competitor_mention="Intercom",
     )
 
     sanitized = VerifierService._sanitize_source_evidence(result, source_text)
@@ -109,6 +111,8 @@ def test_verifier_keeps_only_verbatim_source_evidence() -> None:
     assert sanitized.urgency_level == "high"
     assert sanitized.urgency_reason == "need a replacement before Friday"
     assert sanitized.evidence_excerpt == "Our customers are blocked"
+    assert sanitized.purchase_stage == "evaluating_options"
+    assert sanitized.competitor_mention == "Intercom"
 
 
 def test_verifier_omits_invented_source_evidence_without_changing_match() -> None:
@@ -123,6 +127,8 @@ def test_verifier_omits_invented_source_evidence_without_changing_match() -> Non
         urgency_level="high",
         urgency_reason="deadline is tomorrow",
         evidence_excerpt="the team is losing revenue every hour",
+        purchase_stage="ready_to_act",
+        competitor_mention="Stripe",
     )
 
     sanitized = VerifierService._sanitize_source_evidence(
@@ -135,6 +141,8 @@ def test_verifier_omits_invented_source_evidence_without_changing_match() -> Non
     assert sanitized.urgency_level == "none"
     assert sanitized.urgency_reason == ""
     assert sanitized.evidence_excerpt == ""
+    assert sanitized.purchase_stage == "ready_to_act"
+    assert sanitized.competitor_mention == ""
 
 
 def test_verifier_clears_positive_evidence_for_a_rejected_post() -> None:
@@ -149,6 +157,8 @@ def test_verifier_clears_positive_evidence_for_a_rejected_post() -> None:
         urgency_level="high",
         urgency_reason="need it today",
         evidence_excerpt="need it today",
+        purchase_stage="ready_to_act",
+        competitor_mention="Intercom",
     )
 
     sanitized = VerifierService._sanitize_source_evidence(result, "I need it today")
@@ -158,3 +168,5 @@ def test_verifier_clears_positive_evidence_for_a_rejected_post() -> None:
     assert sanitized.urgency_level == "none"
     assert sanitized.urgency_reason == ""
     assert sanitized.evidence_excerpt == ""
+    assert sanitized.purchase_stage is None
+    assert sanitized.competitor_mention == ""

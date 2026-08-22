@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 DecisionLabel = Literal["strong_match", "weak_match", "spam", "not_a_match"]
 UrgencyLevel = Literal["none", "low", "medium", "high"]
+PurchaseStage = Literal[
+    "problem_aware",
+    "solution_seeking",
+    "evaluating_options",
+    "ready_to_act",
+]
 SignalType = Literal[
     "buyer_pain",
     "urgent_failure",
@@ -118,6 +124,12 @@ class VerificationResult(BaseModel):
     # VerifierService when it cannot be tied to the candidate text.
     urgency_reason: str = Field(default="", max_length=500)
     evidence_excerpt: str = Field(default="", max_length=700)
+    # Lightweight context for a human reviewer. Neither field changes match
+    # eligibility or the score: they only add useful buying context when the
+    # public conversation supports it.
+    purchase_stage: PurchaseStage | None = Field(default=None)
+    # This must be the exact vendor or tool name written in the source text.
+    competitor_mention: str = Field(default="", max_length=120)
     verifier_executed: bool = Field(default=True)
 
 
@@ -182,12 +194,19 @@ class VerifierService(OpenAIClientOwner):
         "manual_workflow_frustration, category_tool_search, switching_trigger, "
         "or null), `urgency_level` (none, low, medium, high), "
         "`urgency_reason` (string), `evidence_excerpt` (string), and "
+        "`purchase_stage` (problem_aware, solution_seeking, evaluating_options, "
+        "ready_to_act, or null), `competitor_mention` (an exact product or vendor "
+        "name from the post, or an empty string), "
         "`rejection_reason` (string or null). `urgency_reason` and "
         "`evidence_excerpt` must each be an exact short excerpt from the candidate "
-        "post, or an empty string when no explicit evidence exists. For rejected posts, make "
+        "post, or an empty string when no explicit evidence exists. Only set "
+        "`competitor_mention` when the writer directly names a tool or vendor; do not "
+        "infer a competitor from a category. Purchase stage is a cautious reading of "
+        "the conversation, not proof of a purchase. For rejected posts, make "
         "`rejection_reason` explicit and concise and return an empty "
         "`suggested_reply`, empty `pain_theme`, null `signal_type`, `none` urgency, "
-        "and empty evidence fields. For a match, write a concise, helpful public reply "
+        "empty competitor context, null purchase stage, and empty evidence fields. "
+        "For a match, write a concise, helpful public reply "
         "that responds directly to the person's pain without pressure, claims, "
         "or a mass-outreach tone."
     )
@@ -336,6 +355,15 @@ class VerifierService(OpenAIClientOwner):
         return len(normalized_excerpt) >= 8 and normalized_excerpt in normalized_source
 
     @classmethod
+    def _is_verbatim_source_phrase(cls, phrase: str, source_text: str) -> bool:
+        """Validate a short named-tool/vendor mention without accepting noise."""
+
+        normalized_phrase = cls._normalize_evidence(phrase).casefold()
+        normalized_source = cls._normalize_evidence(source_text).casefold()
+        alphanumeric_characters = re.sub(r"[^a-z0-9]", "", normalized_phrase)
+        return len(alphanumeric_characters) >= 2 and normalized_phrase in normalized_source
+
+    @classmethod
     def _sanitize_source_evidence(
         cls,
         result: VerificationResult,
@@ -356,18 +384,26 @@ class VerifierService(OpenAIClientOwner):
                     "urgency_level": "none",
                     "urgency_reason": "",
                     "evidence_excerpt": "",
+                    "purchase_stage": None,
+                    "competitor_mention": "",
                 }
             )
 
         evidence_excerpt = cls._normalize_evidence(result.evidence_excerpt)
         urgency_reason = cls._normalize_evidence(result.urgency_reason)
+        competitor_mention = cls._normalize_evidence(result.competitor_mention)
         evidence_is_valid = cls._is_verbatim_source_excerpt(evidence_excerpt, source_text)
         urgency_is_valid = cls._is_verbatim_source_excerpt(urgency_reason, source_text)
+        competitor_is_valid = cls._is_verbatim_source_phrase(
+            competitor_mention,
+            source_text,
+        )
 
         update: dict[str, Any] = {
             "evidence_excerpt": evidence_excerpt if evidence_is_valid else "",
             "urgency_reason": urgency_reason if urgency_is_valid else "",
             "urgency_level": result.urgency_level if urgency_is_valid else "none",
+            "competitor_mention": competitor_mention if competitor_is_valid else "",
         }
         if evidence_excerpt and not evidence_is_valid:
             logger.info(
@@ -378,6 +414,11 @@ class VerifierService(OpenAIClientOwner):
             logger.info(
                 "verifier_urgency_omitted reason=%s",
                 "not_verbatim_source_excerpt",
+            )
+        if competitor_mention and not competitor_is_valid:
+            logger.info(
+                "verifier_competitor_mention_omitted reason=%s",
+                "not_verbatim_source_phrase",
             )
         return result.model_copy(update=update)
 

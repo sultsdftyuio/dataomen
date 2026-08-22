@@ -601,6 +601,8 @@ function leadView(row: DbRecord, index: number): QualifiedLeadView {
       sourcePost.text,
       readString(sources, ["evidence_excerpt"]),
     ),
+    purchaseStage: readString(sources, ["purchase_stage"]),
+    competitorMention: readString(sources, ["competitor_mention"]),
     matchReason:
       readString(sources, [
         "match_reason",

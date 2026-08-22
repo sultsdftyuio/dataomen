@@ -79,6 +79,49 @@ function formatScore(score: number) {
   return `${Math.round(score * 100)}%`;
 }
 
+function purchaseStageLabel(stage: string | null) {
+  switch (stage) {
+    case "problem_aware":
+      return "Problem aware";
+    case "solution_seeking":
+      return "Exploring solutions";
+    case "evaluating_options":
+      return "Comparing options";
+    case "ready_to_act":
+      return "Ready to act";
+    default:
+      return null;
+  }
+}
+
+function SupportingSignals({ lead }: { lead: QualifiedLeadView }) {
+  const stage = purchaseStageLabel(lead.purchaseStage);
+
+  if (!stage && !lead.competitorMention) return null;
+
+  return (
+    <section
+      aria-label="Additional buying context"
+      className="flex flex-wrap items-center gap-2 rounded-lg border bg-white px-3 py-2.5"
+      style={{ borderColor: C.rule }}
+    >
+      <span className="mr-0.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+        Context
+      </span>
+      {stage ? (
+        <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}>
+          Stage: {stage}
+        </span>
+      ) : null}
+      {lead.competitorMention ? (
+        <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: C.ruleDark, backgroundColor: C.offWhite, color: C.navySoft }}>
+          Also mentioned: {lead.competitorMention}
+        </span>
+      ) : null}
+    </section>
+  );
+}
+
 function formatDate(value: string | null) {
   if (!value) return null;
 
@@ -147,6 +190,8 @@ function matchesQueueSearch(lead: QualifiedLeadView, query: string) {
     lead.painDetected,
     lead.matchReason,
     lead.urgencyReason,
+    lead.purchaseStage,
+    lead.competitorMention,
   ]
     .filter(Boolean)
     .join(" ")
@@ -980,31 +1025,36 @@ function DenseLeadDetails({
         className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
         style={{ backgroundColor: C.offWhite }}
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-lg border border-l-[3px] bg-white p-4" style={{ borderColor: C.rule, borderLeftColor: C.amber }}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
-              What they need
-            </p>
-            <p className="mt-1 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
+              <MessageSquareText className="size-3.5" aria-hidden="true" />
+              Buyer need
+            </div>
+            <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
               {lead.painDetected}
             </p>
           </div>
-          <div className="rounded-lg border border-l-[3px] bg-white p-4" style={{ borderColor: C.rule, borderLeftColor: C.blue }}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
-              Your opening
-            </p>
-            <p className="mt-1 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
+          <div className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
+              <Target className="size-3.5" aria-hidden="true" />
+              Why it fits
+            </div>
+            <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
               {lead.matchReason}
             </p>
           </div>
         </div>
 
+        <SupportingSignals lead={lead} />
+
         {lead.urgencyReason ? (
-          <div className="rounded-lg border border-l-[3px] bg-white p-3" style={{ borderColor: C.rule, borderLeftColor: C.red }}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.red }}>
-              Why this matters now
-            </p>
-            <p className="mt-1 text-xs leading-5" style={{ color: C.navy }}>
+          <div className="rounded-lg border bg-white p-3.5" style={{ borderColor: C.rule }}>
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.red }}>
+              <Clock3 className="size-3.5" aria-hidden="true" />
+              {lead.urgencyLevel ? `Urgency: ${lead.urgencyLevel}` : "Why this matters now"}
+            </div>
+            <p className="mt-2 text-xs leading-5" style={{ color: C.navy }}>
               “{lead.urgencyReason}”
             </p>
           </div>
@@ -1018,10 +1068,10 @@ function DenseLeadDetails({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
-                Original post or comment
+                Source evidence
               </p>
               <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
-                The actual public text that triggered this match.
+                The public text behind this match.
               </p>
             </div>
             {lead.sourcePost.url ? (
@@ -1039,12 +1089,12 @@ function DenseLeadDetails({
             ) : null}
           </div>
           {lead.evidenceExcerpt ? (
-            <blockquote
-              className="mt-3 border-l-2 pl-3 text-sm italic leading-6"
-              style={{ borderColor: C.blueLight, color: C.navy }}
-            >
+            <div className="mt-3 rounded-md border px-3 py-2.5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>Key quote</p>
+              <blockquote className="mt-1 text-sm italic leading-6" style={{ color: C.navy }}>
               “{lead.evidenceExcerpt}”
-            </blockquote>
+              </blockquote>
+            </div>
           ) : null}
           <p
             className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-6"
