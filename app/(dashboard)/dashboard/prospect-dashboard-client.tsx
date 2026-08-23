@@ -2786,6 +2786,10 @@ export default function ProspectDashboardClient({
     setDashboardView("focus");
   }, []);
 
+  const previewLead = useCallback((leadId: string) => {
+    setSelectedLeadId(leadId);
+  }, []);
+
   useEffect(() => {
     if (filteredQueueItems.length === 0) {
       setSelectedLeadId(null);
@@ -2875,121 +2879,104 @@ export default function ProspectDashboardClient({
         <>
           <section
             aria-labelledby="focus-heading"
-            className="mx-auto w-full max-w-6xl rounded-2xl border bg-white p-6 shadow-sm sm:p-7"
+            className="mx-auto w-full max-w-6xl overflow-hidden rounded-2xl border bg-white shadow-sm"
             style={{ borderColor: C.rule }}
           >
-            <div className="grid gap-6 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(18rem,1.4fr)_auto] lg:items-center">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-                  Today
-                </p>
-                <h2 id="focus-heading" className="pfd mt-2 text-2xl leading-tight sm:text-3xl" style={{ color: C.navy }}>
-                  {queueItems.length > 0
-                    ? `${queueItems.length} ${queueItems.length === 1 ? "signal" : "signals"} to review`
-                    : status.title}
+            <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
+              <article className="min-w-0 p-6 sm:p-8">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+                    Today
+                  </p>
+                  <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ backgroundColor: C.blueTint, color: C.blue }}>
+                    {queueItems.length} {queueItems.length === 1 ? "signal" : "signals"} to review
+                  </span>
+                </div>
+                <h2 id="focus-heading" className="pfd mt-5 max-w-3xl text-2xl leading-tight sm:text-3xl" style={{ color: C.navy }}>
+                  {selectedLead ? selectedLead.sourcePost.title : status.title}
                 </h2>
-                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
-                  {queueItems.length > 0
-                    ? "Start with the strongest conversation."
+                <p className="mt-3 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+                  {selectedLead
+                    ? selectedLead.painDetected || selectedLead.matchReason
                     : status.detail}
                 </p>
-                <p className="mt-4 text-xs" role="status" style={{ color: C.muted }}>
-                  {status.label} · Updated {formatTime(lastUpdatedAt)}
-                </p>
-              </div>
-
-              {selectedLead ? (
-                <button
-                  type="button"
-                  onClick={() => setDashboardView("focus")}
-                  className="group rounded-xl border bg-[#F6FAFE] p-4 text-left transition-colors hover:bg-[#EDF7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                  style={{ borderColor: C.blueLight }}
-                >
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
-                    Strongest signal
-                  </p>
-                  <h3 className="mt-1.5 line-clamp-2 text-base font-semibold leading-6" style={{ color: C.navy }}>
-                    {selectedLead.sourcePost.title}
-                  </h3>
-                  <p className="mt-1 line-clamp-1 text-xs" style={{ color: C.navySoft }}>
-                    {selectedLead.painDetected || selectedLead.matchReason}
-                  </p>
-                </button>
-              ) : null}
-
-              <div className="flex flex-wrap gap-2 lg:flex-col lg:items-stretch">
                 {selectedLead ? (
-                  <Button
-                    type="button"
-                    onClick={() => setDashboardView("focus")}
-                    style={{ backgroundColor: C.blue, color: C.white }}
-                  >
-                    Review next
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsScanActivityOpen(true)}
-                    style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
-                  >
-                    View scan activity
-                  </Button>
-                )}
-                {queueItems.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setDashboardView("queue")}
-                    style={{ color: C.blue }}
-                  >
-                    All signals
-                  </Button>
+                  <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: C.muted }}>
+                    <span>{sourceDisplayName(selectedLead.sourcePost.source)}</span>
+                    {selectedLead.sourcePost.community ? <span>{selectedLead.sourcePost.community}</span> : null}
+                    <span style={{ color: isPotentialBuyer(selectedLead) ? C.amber : C.green }}>
+                      {isPotentialBuyer(selectedLead) ? "Potential buyer" : "Clear buyer problem"}
+                    </span>
+                  </div>
                 ) : null}
-              </div>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  {selectedLead ? (
+                    <Button
+                      type="button"
+                      onClick={() => setDashboardView("focus")}
+                      style={{ backgroundColor: C.blue, color: C.white }}
+                    >
+                      Review signal
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsScanActivityOpen(true)}
+                      style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+                    >
+                      View scan activity
+                    </Button>
+                  )}
+                  <p className="text-xs" role="status" style={{ color: C.muted }}>
+                    {status.label} · Updated {formatTime(lastUpdatedAt)}
+                  </p>
+                </div>
+              </article>
+
+              <aside className="border-t p-4 sm:p-5 lg:border-l lg:border-t-0" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Signal inbox</h3>
+                  {queueItems.length > 3 ? (
+                    <Button type="button" size="xs" variant="ghost" onClick={() => setDashboardView("queue")} style={{ color: C.blue }}>
+                      View all
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="mt-3 space-y-1.5">
+                  {filteredQueueItems.slice(0, 4).map((lead) => {
+                    const isSelected = lead.id === selectedLeadId;
+
+                    return (
+                      <button
+                        key={lead.id}
+                        type="button"
+                        onClick={() => previewLead(lead.id)}
+                        aria-pressed={isSelected}
+                        className="w-full rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                        style={{
+                          borderColor: isSelected ? C.blueLight : C.rule,
+                          backgroundColor: isSelected ? C.white : "transparent",
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[11px] font-semibold" style={{ color: C.navySoft }}>
+                            {sourceDisplayName(lead.sourcePost.source)}
+                          </span>
+                          <span className="shrink-0 text-[11px] font-semibold" style={{ color: isPotentialBuyer(lead) ? C.amber : C.green }}>
+                            {isPotentialBuyer(lead) ? "Potential" : "Lead"}
+                          </span>
+                        </div>
+                        <p className="mt-1 line-clamp-2 text-xs font-semibold leading-5" style={{ color: C.navy }}>
+                          {lead.sourcePost.title}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </aside>
             </div>
           </section>
-
-          {filteredQueueItems.length > 0 ? (
-            <section aria-labelledby="radar-heading" className="mx-auto w-full max-w-6xl">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 id="radar-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
-                  On your radar
-                </h2>
-                {filteredQueueItems.length > 3 ? (
-                  <Button type="button" size="xs" variant="ghost" onClick={() => setDashboardView("queue")} style={{ color: C.blue }}>
-                    View all {filteredQueueItems.length}
-                  </Button>
-                ) : null}
-              </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filteredQueueItems.slice(0, 3).map((lead) => (
-                  <button
-                    key={lead.id}
-                    type="button"
-                    onClick={() => selectLead(lead.id)}
-                    className="rounded-xl border bg-white p-4 text-left transition-colors hover:border-[#8BC5F5] hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
-                    style={{ borderColor: C.rule }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[11px] font-semibold" style={{ color: C.navySoft }}>
-                        {sourceDisplayName(lead.sourcePost.source)}
-                      </span>
-                      <span className="shrink-0 text-[11px] font-semibold" style={{ color: isPotentialBuyer(lead) ? C.amber : C.green }}>
-                        {isPotentialBuyer(lead) ? "Potential" : "Lead"}
-                      </span>
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5" style={{ color: C.navy }}>
-                      {lead.sourcePost.title}
-                    </p>
-                    <p className="mt-2 line-clamp-2 text-xs leading-5" style={{ color: C.muted }}>
-                      {lead.painDetected || lead.matchReason}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ) : null}
 
           <details
             open={isScanActivityOpen}
