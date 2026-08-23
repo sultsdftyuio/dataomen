@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -65,6 +65,7 @@ type FeedbackNotice = {
 
 type QueueFilter = "all" | "leads" | "potential";
 type QueueSort = "priority" | "newest" | "confidence";
+type DashboardView = "overview" | "focus" | "queue";
 
 const STALE_EMBEDDING_MS = 10 * 60 * 1000;
 
@@ -1018,28 +1019,26 @@ function DenseLeadDetails({
         className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5"
         style={{ backgroundColor: C.offWhite }}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
-              <MessageSquareText className="size-3.5" aria-hidden="true" />
-              Buyer need
-            </div>
-            <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
-              {lead.painDetected}
-            </p>
+        <section className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.amber }}>
+            <MessageSquareText className="size-3.5" aria-hidden="true" />
+            Why this matters
           </div>
-          <div className="rounded-lg border bg-white p-4" style={{ borderColor: C.rule }}>
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
-              <Target className="size-3.5" aria-hidden="true" />
-              Why it fits
-            </div>
-            <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
-              {lead.matchReason}
-            </p>
-          </div>
-        </div>
+          <p className="mt-2 text-sm leading-6" style={{ color: C.navy }}>
+            {lead.painDetected}
+          </p>
+          <p className="mt-3 border-t pt-3 text-xs leading-5" style={{ borderColor: C.rule, color: C.navySoft }}>
+            <span className="font-semibold" style={{ color: C.navy }}>Why it fits: </span>
+            {lead.matchReason}
+          </p>
+        </section>
 
-        <SupportingSignals lead={lead} />
+        <details className="rounded-lg border bg-white" style={{ borderColor: C.rule }}>
+          <summary className="cursor-pointer list-none px-3.5 py-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]" style={{ color: C.navy }}>
+            More context
+          </summary>
+          <div className="space-y-3 border-t p-3.5" style={{ borderColor: C.rule }}>
+            <SupportingSignals lead={lead} />
 
         {lead.urgencyReason ? (
           <div className="rounded-lg border bg-white p-3.5" style={{ borderColor: C.rule }}>
@@ -1053,11 +1052,18 @@ function DenseLeadDetails({
           </div>
         ) : null}
 
-        <section
+          </div>
+        </details>
+
+        <details
           aria-label="Original public post or comment"
-          className="rounded-lg border bg-white p-3.5"
+          className="rounded-lg border bg-white"
           style={{ borderColor: C.rule }}
         >
+          <summary className="cursor-pointer list-none px-3.5 py-3 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]" style={{ color: C.navy }}>
+            Evidence
+          </summary>
+          <div className="border-t p-3.5" style={{ borderColor: C.rule }}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.navySoft }}>
@@ -1095,7 +1101,8 @@ function DenseLeadDetails({
           >
             {lead.sourcePost.text}
           </p>
-        </section>
+          </div>
+        </details>
 
         <section aria-label="Conversation actions" className="rounded-lg border p-3" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
           <p className="pfd text-base leading-none" style={{ color: C.navy }}>
@@ -2668,8 +2675,8 @@ export default function ProspectDashboardClient({
   const [isQueueControlsOpen, setIsQueueControlsOpen] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshPending, startRefreshTransition] = useTransition();
-  const queuePanelRef = useRef<HTMLElement>(null);
-  const detailPanelRef = useRef<HTMLElement>(null);
+  const [dashboardView, setDashboardView] = useState<DashboardView>("overview");
+  const [isScanActivityOpen, setIsScanActivityOpen] = useState(false);
   const shouldRefreshForLeads = shouldContinueActionQueuePolling({
     isWarmingUp,
     readyToActCount: leads.length,
@@ -2774,28 +2781,10 @@ export default function ProspectDashboardClient({
     sortQueueItems(queueItems, "priority")[0]?.id ?? null,
   );
 
-  const scrollToPanel = useCallback((panel: HTMLElement | null) => {
-    if (!panel) return;
-
-    const prefersReducedMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    panel.scrollIntoView({
-      behavior: prefersReducedMotion ? "auto" : "smooth",
-      block: "start",
-    });
+  const selectLead = useCallback((leadId: string) => {
+    setSelectedLeadId(leadId);
+    setDashboardView("focus");
   }, []);
-
-  const selectLead = useCallback(
-    (leadId: string) => {
-      setSelectedLeadId(leadId);
-
-      if (window.matchMedia("(max-width: 1279px)").matches) {
-        window.requestAnimationFrame(() => scrollToPanel(detailPanelRef.current));
-      }
-    },
-    [scrollToPanel],
-  );
 
   useEffect(() => {
     if (filteredQueueItems.length === 0) {
@@ -2812,6 +2801,7 @@ export default function ProspectDashboardClient({
     const selectAdjacentLead = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
+        dashboardView !== "focus" ||
         target?.closest(
           'input, textarea, select, button, [contenteditable="true"], [role="textbox"]',
         ) ||
@@ -2833,7 +2823,7 @@ export default function ProspectDashboardClient({
 
     window.addEventListener("keydown", selectAdjacentLead);
     return () => window.removeEventListener("keydown", selectAdjacentLead);
-  }, [filteredQueueItems, selectedLeadId]);
+  }, [dashboardView, filteredQueueItems, selectedLeadId]);
 
   const selectedLead =
     filteredQueueItems.find((lead) => lead.id === selectedLeadId) ?? null;
@@ -2842,43 +2832,136 @@ export default function ProspectDashboardClient({
     Number(queueFilter !== "all") + Number(queueSort !== "priority");
   const isFirstDeskPass =
     queueItems.length === 0 && (!serviceProfile.hasProfile || isWarmingUp);
+  const showNextLead = () => {
+    if (filteredQueueItems.length < 2) return;
+
+    const currentIndex = filteredQueueItems.findIndex((lead) => lead.id === selectedLeadId);
+    const nextIndex = currentIndex < 0 || currentIndex === filteredQueueItems.length - 1
+      ? 0
+      : currentIndex + 1;
+    setSelectedLeadId(filteredQueueItems[nextIndex].id);
+  };
 
   return (
     <div className="flex w-full flex-col gap-4 xl:min-h-[900px]" style={{ color: C.text }}>
       <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
-            Lead desk
+            {dashboardView === "focus" ? "Focus" : dashboardView === "queue" ? "All signals" : "Leads"}
           </h1>
           <p className="mt-1 text-sm" style={{ color: C.navySoft }}>
-            Review real buyer signals and decide the next move.
+            {dashboardView === "focus"
+              ? "One signal at a time."
+              : dashboardView === "queue"
+                ? "Choose the signal you want to review."
+            : "Your next move, without the noise."}
           </p>
         </div>
+        {dashboardView === "queue" ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={() => setDashboardView("overview")}
+            style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+          >
+            <ChevronLeft className="size-3.5" aria-hidden="true" />
+            Overview
+          </Button>
+        ) : null}
       </header>
 
-      <ScanOverview
-        status={status}
-        leadCount={leads.length}
-        potentialCount={discoveryCandidates.length}
-        feedCount={queueItems.length}
-        discoveryStatus={buyerDemandReport?.status ?? null}
-        lastUpdatedAt={lastUpdatedAt}
-        isRefreshing={isRefreshPending}
-        onRefresh={refreshDashboard}
-      />
+      {dashboardView === "overview" ? (
+        <>
+          <section
+            aria-labelledby="focus-heading"
+            className="mx-auto flex w-full max-w-3xl flex-col items-center rounded-2xl border bg-white px-6 py-10 text-center shadow-sm sm:px-12 sm:py-14"
+            style={{ borderColor: C.rule }}
+          >
+            <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+              Today
+            </p>
+            <h2 id="focus-heading" className="pfd mt-3 max-w-xl text-3xl leading-tight sm:text-4xl" style={{ color: C.navy }}>
+              {queueItems.length > 0
+                ? `${queueItems.length} ${queueItems.length === 1 ? "buyer signal needs" : "buyer signals need"} your attention`
+                : status.title}
+            </h2>
+            <p className="mt-3 max-w-lg text-sm leading-6" style={{ color: C.navySoft }}>
+              {queueItems.length > 0
+                ? "Start with the strongest signal. Everything else stays out of the way until you need it."
+                : status.detail}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              {selectedLead ? (
+                <Button
+                  type="button"
+                  onClick={() => setDashboardView("focus")}
+                  style={{ backgroundColor: C.blue, color: C.white }}
+                >
+                  Review next signal
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsScanActivityOpen(true)}
+                  style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+                >
+                  View scan activity
+                </Button>
+              )}
+              {queueItems.length > 1 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDashboardView("queue")}
+                  style={{ color: C.blue }}
+                >
+                  See all signals
+                </Button>
+              ) : null}
+            </div>
+            <p className="mt-5 text-xs" role="status" style={{ color: C.muted }}>
+              {status.label} · Updated {formatTime(lastUpdatedAt)}
+            </p>
+          </section>
 
-      <DiscoverySourceBar
-        serviceProfile={serviceProfile}
-        status={status}
-        websiteCrawlCooldown={websiteCrawlCooldown}
-        discoveryStatus={buyerDemandReport?.status ?? null}
-      />
-
-      {buyerDemandReport ? (
-        <DiscoveryScanReport report={buyerDemandReport} />
+          <details
+            open={isScanActivityOpen}
+            onToggle={(event) => setIsScanActivityOpen(event.currentTarget.open)}
+            className="mx-auto w-full max-w-3xl rounded-xl border bg-white"
+            style={{ borderColor: C.rule }}
+          >
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]" style={{ color: C.navy }}>
+              <span>Scan activity</span>
+              <span className="text-xs font-medium" style={{ color: C.muted }}>
+                {status.label}
+              </span>
+            </summary>
+            <div className="space-y-3 border-t p-4 sm:p-5" style={{ borderColor: C.rule }}>
+              <ScanOverview
+                status={status}
+                leadCount={leads.length}
+                potentialCount={discoveryCandidates.length}
+                feedCount={queueItems.length}
+                discoveryStatus={buyerDemandReport?.status ?? null}
+                lastUpdatedAt={lastUpdatedAt}
+                isRefreshing={isRefreshPending}
+                onRefresh={refreshDashboard}
+              />
+              <DiscoverySourceBar
+                serviceProfile={serviceProfile}
+                status={status}
+                websiteCrawlCooldown={websiteCrawlCooldown}
+                discoveryStatus={buyerDemandReport?.status ?? null}
+              />
+              {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} /> : null}
+            </div>
+          </details>
+        </>
       ) : null}
 
-      {!buyerDemandReport && queueItems.length === 0 && !isFirstDeskPass ? (
+      {dashboardView !== "overview" && !buyerDemandReport && queueItems.length === 0 && !isFirstDeskPass ? (
         <Card className="rounded-lg shadow-sm" style={{ borderColor: C.blueLight }}>
           <CardHeader className="gap-1">
             <CardTitle className="text-base" style={{ color: C.navy }}>
@@ -2896,23 +2979,22 @@ export default function ProspectDashboardClient({
         </Card>
       ) : null}
 
-      {isFirstDeskPass ? (
+      {dashboardView !== "overview" && isFirstDeskPass ? (
         <WarmUpState
           crawlJob={crawlJob}
           serviceProfile={serviceProfile}
           isWarmingUp={isWarmingUp}
         />
-      ) : (
-      <div className="grid min-h-[640px] gap-5 xl:min-h-[760px] xl:grid-cols-[minmax(360px,0.95fr)_minmax(640px,1.55fr)] 2xl:grid-cols-[minmax(420px,1fr)_minmax(760px,1.7fr)]">
+      ) : dashboardView !== "overview" ? (
+      <div className="grid min-h-[640px] max-w-5xl gap-5 xl:min-h-[760px]">
         <section
-          ref={queuePanelRef}
           aria-labelledby="matches-heading"
-          className="flex min-h-[640px] max-h-[640px] flex-col overflow-hidden rounded-xl border bg-white xl:min-h-0 xl:max-h-none"
+          className={cn("flex min-h-[640px] max-h-[640px] flex-col overflow-hidden rounded-xl border bg-white xl:min-h-0 xl:max-h-none", dashboardView === "focus" && "hidden")}
           style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
         >
           <div className="flex h-14 shrink-0 items-center justify-between border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
             <h2 id="matches-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              Leads
+              All signals
             </h2>
             <span className="rounded-full px-2.5 py-1 text-[10px] font-bold" style={{ color: C.green, backgroundColor: C.greenPale }}>
               {leads.length} clear buyer problems
@@ -3096,10 +3178,8 @@ export default function ProspectDashboardClient({
         </section>
 
         <section
-          ref={detailPanelRef}
           aria-labelledby="details-heading"
-          tabIndex={-1}
-          className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-[#F6FAFE] xl:min-h-0"
+          className={cn("flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-[#F6FAFE] xl:min-h-0", dashboardView === "queue" && "hidden")}
           style={{ borderColor: C.rule, backgroundColor: C.offWhite, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
           <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
@@ -3108,12 +3188,11 @@ export default function ProspectDashboardClient({
                 type="button"
                 size="xs"
                 variant="outline"
-                className="xl:hidden"
-                onClick={() => scrollToPanel(queuePanelRef.current)}
+                onClick={() => setDashboardView("overview")}
                 style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
               >
                 <ChevronLeft className="size-3.5" aria-hidden="true" />
-                All leads
+                Overview
               </Button>
               <h2 id="details-heading" className="pfd truncate text-xl leading-none" style={{ color: C.navy }}>
                 {selectedLead?.matchStatus === "discovery_candidate"
@@ -3121,13 +3200,26 @@ export default function ProspectDashboardClient({
                   : "Lead brief"}
               </h2>
             </div>
-            {selectedLead ? (
-              <span className="shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
-                {selectedLead.matchStatus === "discovery_candidate"
-                  ? "Potential buyer"
-                  : "Clear buyer problem"}
-              </span>
-            ) : null}
+            <div className="flex shrink-0 items-center gap-2">
+              {selectedLead ? (
+                <span className="hidden rounded-full border px-2 py-1 text-[11px] font-semibold sm:inline-flex" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
+                  {selectedLead.matchStatus === "discovery_candidate"
+                    ? "Potential buyer"
+                    : "Clear buyer problem"}
+                </span>
+              ) : null}
+              {filteredQueueItems.length > 1 ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  onClick={showNextLead}
+                  style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+                >
+                  Next signal
+                </Button>
+              ) : null}
+            </div>
           </div>
           {selectedLead ? (
             <DenseLeadDetails
@@ -3282,7 +3374,7 @@ export default function ProspectDashboardClient({
           </section>
         </aside>
       </div>
-      )}
+      ) : null}
     </div>
   );
 }
