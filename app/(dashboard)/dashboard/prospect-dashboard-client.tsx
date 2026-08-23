@@ -2875,61 +2875,126 @@ export default function ProspectDashboardClient({
         <>
           <section
             aria-labelledby="focus-heading"
-            className="mx-auto flex w-full max-w-3xl flex-col items-center rounded-2xl border bg-white px-6 py-10 text-center shadow-sm sm:px-12 sm:py-14"
+            className="mx-auto w-full max-w-6xl rounded-2xl border bg-white p-6 shadow-sm sm:p-7"
             style={{ borderColor: C.rule }}
           >
-            <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
-              Today
-            </p>
-            <h2 id="focus-heading" className="pfd mt-3 max-w-xl text-3xl leading-tight sm:text-4xl" style={{ color: C.navy }}>
-              {queueItems.length > 0
-                ? `${queueItems.length} ${queueItems.length === 1 ? "buyer signal needs" : "buyer signals need"} your attention`
-                : status.title}
-            </h2>
-            <p className="mt-3 max-w-lg text-sm leading-6" style={{ color: C.navySoft }}>
-              {queueItems.length > 0
-                ? "Start with the strongest signal. Everything else stays out of the way until you need it."
-                : status.detail}
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <div className="grid gap-6 lg:grid-cols-[minmax(13rem,0.8fr)_minmax(18rem,1.4fr)_auto] lg:items-center">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
+                  Today
+                </p>
+                <h2 id="focus-heading" className="pfd mt-2 text-2xl leading-tight sm:text-3xl" style={{ color: C.navy }}>
+                  {queueItems.length > 0
+                    ? `${queueItems.length} ${queueItems.length === 1 ? "signal" : "signals"} to review`
+                    : status.title}
+                </h2>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+                  {queueItems.length > 0
+                    ? "Start with the strongest conversation."
+                    : status.detail}
+                </p>
+                <p className="mt-4 text-xs" role="status" style={{ color: C.muted }}>
+                  {status.label} · Updated {formatTime(lastUpdatedAt)}
+                </p>
+              </div>
+
               {selectedLead ? (
-                <Button
+                <button
                   type="button"
                   onClick={() => setDashboardView("focus")}
-                  style={{ backgroundColor: C.blue, color: C.white }}
+                  className="group rounded-xl border bg-[#F6FAFE] p-4 text-left transition-colors hover:bg-[#EDF7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                  style={{ borderColor: C.blueLight }}
                 >
-                  Review next signal
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsScanActivityOpen(true)}
-                  style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
-                >
-                  View scan activity
-                </Button>
-              )}
-              {queueItems.length > 1 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setDashboardView("queue")}
-                  style={{ color: C.blue }}
-                >
-                  See all signals
-                </Button>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+                    Strongest signal
+                  </p>
+                  <h3 className="mt-1.5 line-clamp-2 text-base font-semibold leading-6" style={{ color: C.navy }}>
+                    {selectedLead.sourcePost.title}
+                  </h3>
+                  <p className="mt-1 line-clamp-1 text-xs" style={{ color: C.navySoft }}>
+                    {selectedLead.painDetected || selectedLead.matchReason}
+                  </p>
+                </button>
               ) : null}
+
+              <div className="flex flex-wrap gap-2 lg:flex-col lg:items-stretch">
+                {selectedLead ? (
+                  <Button
+                    type="button"
+                    onClick={() => setDashboardView("focus")}
+                    style={{ backgroundColor: C.blue, color: C.white }}
+                  >
+                    Review next
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsScanActivityOpen(true)}
+                    style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+                  >
+                    View scan activity
+                  </Button>
+                )}
+                {queueItems.length > 1 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setDashboardView("queue")}
+                    style={{ color: C.blue }}
+                  >
+                    All signals
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            <p className="mt-5 text-xs" role="status" style={{ color: C.muted }}>
-              {status.label} · Updated {formatTime(lastUpdatedAt)}
-            </p>
           </section>
+
+          {filteredQueueItems.length > 0 ? (
+            <section aria-labelledby="radar-heading" className="mx-auto w-full max-w-6xl">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 id="radar-heading" className="text-sm font-semibold" style={{ color: C.navy }}>
+                  On your radar
+                </h2>
+                {filteredQueueItems.length > 3 ? (
+                  <Button type="button" size="xs" variant="ghost" onClick={() => setDashboardView("queue")} style={{ color: C.blue }}>
+                    View all {filteredQueueItems.length}
+                  </Button>
+                ) : null}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {filteredQueueItems.slice(0, 3).map((lead) => (
+                  <button
+                    key={lead.id}
+                    type="button"
+                    onClick={() => selectLead(lead.id)}
+                    className="rounded-xl border bg-white p-4 text-left transition-colors hover:border-[#8BC5F5] hover:bg-[#F7FBFF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF]"
+                    style={{ borderColor: C.rule }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[11px] font-semibold" style={{ color: C.navySoft }}>
+                        {sourceDisplayName(lead.sourcePost.source)}
+                      </span>
+                      <span className="shrink-0 text-[11px] font-semibold" style={{ color: isPotentialBuyer(lead) ? C.amber : C.green }}>
+                        {isPotentialBuyer(lead) ? "Potential" : "Lead"}
+                      </span>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5" style={{ color: C.navy }}>
+                      {lead.sourcePost.title}
+                    </p>
+                    <p className="mt-2 line-clamp-2 text-xs leading-5" style={{ color: C.muted }}>
+                      {lead.painDetected || lead.matchReason}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <details
             open={isScanActivityOpen}
             onToggle={(event) => setIsScanActivityOpen(event.currentTarget.open)}
-            className="mx-auto w-full max-w-3xl rounded-xl border bg-white"
+            className="mx-auto w-full max-w-6xl rounded-xl border bg-white"
             style={{ borderColor: C.rule }}
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]" style={{ color: C.navy }}>
