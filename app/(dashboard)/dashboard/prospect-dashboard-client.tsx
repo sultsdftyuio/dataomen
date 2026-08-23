@@ -2370,7 +2370,7 @@ function DiscoverySourceBar({
 
   return (
     <section
-      className="grid grid-cols-1 overflow-hidden rounded-2xl border bg-white shadow-sm md:grid-cols-2 xl:grid-cols-[minmax(0,0.8fr)_minmax(20rem,1.5fr)_minmax(17rem,1fr)]"
+      className="grid grid-cols-1 overflow-hidden rounded-2xl border bg-white shadow-sm lg:grid-cols-[minmax(15rem,1fr)_minmax(25rem,1.6fr)_minmax(19rem,1.1fr)]"
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
@@ -2401,7 +2401,7 @@ function DiscoverySourceBar({
           </p>
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-2 border-t p-4 md:border-l md:border-t-0" style={{ borderColor: C.rule }}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-t p-4 lg:border-l lg:border-t-0" style={{ borderColor: C.rule }}>
         <label htmlFor="dashboard-website-url" className="w-full text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
           Website to scan
         </label>
@@ -2435,7 +2435,7 @@ function DiscoverySourceBar({
           Arcli filters fresh conversations through your matching brief.
         </p>
       </div>
-      <div className="min-w-0 border-t p-4 md:col-span-2 xl:col-span-1 xl:border-l xl:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
+      <div className="min-w-0 border-t p-4 lg:border-l lg:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
         <div className="flex flex-col items-start">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
             Discovery health
