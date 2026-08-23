@@ -2370,7 +2370,7 @@ function DiscoverySourceBar({
 
   return (
     <section
-      className="grid grid-cols-1 overflow-hidden rounded-2xl border bg-white shadow-sm lg:grid-cols-[minmax(15rem,1fr)_minmax(25rem,1.6fr)_minmax(19rem,1.1fr)]"
+      className="grid shrink-0 grid-cols-1 overflow-hidden rounded-2xl border bg-white shadow-sm lg:grid-cols-[minmax(15rem,1fr)_minmax(25rem,1.6fr)_minmax(19rem,1.1fr)]"
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
