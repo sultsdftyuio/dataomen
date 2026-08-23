@@ -2879,11 +2879,10 @@ export default function ProspectDashboardClient({
         <>
           <section
             aria-labelledby="focus-heading"
-            className="mx-auto w-full max-w-6xl overflow-hidden rounded-2xl border bg-white shadow-sm"
-            style={{ borderColor: C.rule }}
+            className="mx-auto w-full max-w-6xl"
           >
-            <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
-              <article className="min-w-0 p-6 sm:p-8">
+            <div className="grid gap-4 lg:min-h-[390px] lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
+              <article className="flex min-w-0 flex-col rounded-2xl border bg-white p-6 shadow-sm sm:p-8" style={{ borderColor: C.rule }}>
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
                     Today
@@ -2907,6 +2906,16 @@ export default function ProspectDashboardClient({
                     <span style={{ color: isPotentialBuyer(selectedLead) ? C.amber : C.green }}>
                       {isPotentialBuyer(selectedLead) ? "Potential buyer" : "Clear buyer problem"}
                     </span>
+                  </div>
+                ) : null}
+                {selectedLead ? (
+                  <div className="mt-6 border-t pt-4" style={{ borderColor: C.rule }}>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
+                      Match rationale
+                    </p>
+                    <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
+                      {selectedLead.matchReason}
+                    </p>
                   </div>
                 ) : null}
                 <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -2934,7 +2943,7 @@ export default function ProspectDashboardClient({
                 </div>
               </article>
 
-              <aside className="border-t p-4 sm:p-5 lg:border-l lg:border-t-0" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <aside className="flex min-h-[300px] flex-col rounded-2xl border p-4 shadow-sm sm:p-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Signal inbox</h3>
                   {queueItems.length > 3 ? (
@@ -2974,42 +2983,79 @@ export default function ProspectDashboardClient({
                     );
                   })}
                 </div>
+                <div className="mt-auto border-t pt-4" style={{ borderColor: C.rule }}>
+                  <p className="text-xs leading-5" style={{ color: C.navySoft }}>
+                    Better matching starts with a sharper buyer problem.
+                  </p>
+                  <Link href="/dashboard/brief" className="mt-2 inline-flex rounded-sm text-xs font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2" style={{ color: C.blue }}>
+                    Refine matching brief
+                  </Link>
+                </div>
               </aside>
             </div>
           </section>
 
-          <details
-            open={isScanActivityOpen}
-            onToggle={(event) => setIsScanActivityOpen(event.currentTarget.open)}
-            className="mx-auto w-full max-w-6xl rounded-xl border bg-white"
-            style={{ borderColor: C.rule }}
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF]" style={{ color: C.navy }}>
-              <span>Scan activity</span>
-              <span className="text-xs font-medium" style={{ color: C.muted }}>
-                {status.label}
-              </span>
-            </summary>
-            <div className="space-y-3 border-t p-4 sm:p-5" style={{ borderColor: C.rule }}>
-              <ScanOverview
-                status={status}
-                leadCount={leads.length}
-                potentialCount={discoveryCandidates.length}
-                feedCount={queueItems.length}
-                discoveryStatus={buyerDemandReport?.status ?? null}
-                lastUpdatedAt={lastUpdatedAt}
-                isRefreshing={isRefreshPending}
-                onRefresh={refreshDashboard}
-              />
-              <DiscoverySourceBar
-                serviceProfile={serviceProfile}
-                status={status}
-                websiteCrawlCooldown={websiteCrawlCooldown}
-                discoveryStatus={buyerDemandReport?.status ?? null}
-              />
-              {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} /> : null}
+          <section aria-labelledby="discovery-summary-heading" className="mx-auto w-full max-w-6xl rounded-2xl border bg-white shadow-sm" style={{ borderColor: C.rule }}>
+            <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(0,1.2fr)] lg:items-center">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+                  Discovery snapshot
+                </p>
+                <h2 id="discovery-summary-heading" className="pfd mt-2 text-xl leading-none" style={{ color: C.navy }}>
+                  Latest scan
+                </h2>
+                <p className="mt-2 text-sm leading-6" style={{ color: C.navySoft }}>
+                  {status.label} · Updated {formatTime(lastUpdatedAt)}
+                </p>
+              </div>
+              <dl className="grid grid-cols-3 divide-x rounded-xl border" style={{ borderColor: C.rule }}>
+                <div className="p-3.5 text-center">
+                  <dt className="text-[11px] font-semibold" style={{ color: C.muted }}>Clear leads</dt>
+                  <dd className="mt-1 text-2xl font-semibold leading-none" style={{ color: C.navy }}>{leads.length}</dd>
+                </div>
+                <div className="p-3.5 text-center">
+                  <dt className="text-[11px] font-semibold" style={{ color: C.muted }}>Potential</dt>
+                  <dd className="mt-1 text-2xl font-semibold leading-none" style={{ color: C.navy }}>{discoveryCandidates.length}</dd>
+                </div>
+                <div className="p-3.5 text-center">
+                  <dt className="text-[11px] font-semibold" style={{ color: C.muted }}>Sources</dt>
+                  <dd className="mt-1 text-2xl font-semibold leading-none" style={{ color: C.navy }}>{buyerDemandReport?.sourceProgress.length ?? 0}</dd>
+                </div>
+              </dl>
             </div>
-          </details>
+            <details
+              open={isScanActivityOpen}
+              onToggle={(event) => setIsScanActivityOpen(event.currentTarget.open)}
+              className="border-t"
+              style={{ borderColor: C.rule }}
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1B6EBF] sm:px-6" style={{ color: C.navy }}>
+                <span>View scan activity</span>
+                <span className="text-xs font-medium" style={{ color: C.muted }}>
+                  {status.label}
+                </span>
+              </summary>
+              <div className="space-y-3 border-t p-4 sm:p-6" style={{ borderColor: C.rule }}>
+                <ScanOverview
+                  status={status}
+                  leadCount={leads.length}
+                  potentialCount={discoveryCandidates.length}
+                  feedCount={queueItems.length}
+                  discoveryStatus={buyerDemandReport?.status ?? null}
+                  lastUpdatedAt={lastUpdatedAt}
+                  isRefreshing={isRefreshPending}
+                  onRefresh={refreshDashboard}
+                />
+                <DiscoverySourceBar
+                  serviceProfile={serviceProfile}
+                  status={status}
+                  websiteCrawlCooldown={websiteCrawlCooldown}
+                  discoveryStatus={buyerDemandReport?.status ?? null}
+                />
+                {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} /> : null}
+              </div>
+            </details>
+          </section>
         </>
       ) : null}
 
