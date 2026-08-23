@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowDownUp,
   Check,
+  ChevronLeft,
   Clock3,
   Copy,
   ExternalLink,
@@ -925,7 +926,7 @@ function DenseQueueRow({
           {lead.sourcePost.community ? ` · ${lead.sourcePost.community}` : ""}
         </span>
         <span
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold"
           style={{
             backgroundColor: isWatch ? C.amberPale : C.greenPale,
             color: isWatch ? C.amber : C.green,
@@ -2628,10 +2629,10 @@ function ScanOverview({
 
       <div className="relative mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t pt-3" style={{ borderColor: C.rule }}>
         <span className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>Next moves</span>
-        <Link href="/dashboard/brief" className="text-xs font-semibold hover:underline" style={{ color: C.blue }}>
+        <Link href="/dashboard/brief" className="rounded-sm text-xs font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2" style={{ color: C.blue }}>
           Refine matching brief
         </Link>
-        <Link href="/dashboard/watchlists" className="text-xs font-semibold hover:underline" style={{ color: C.blue }}>
+        <Link href="/dashboard/watchlists" className="rounded-sm text-xs font-semibold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1B6EBF] focus-visible:ring-offset-2" style={{ color: C.blue }}>
           Create a buyer group
         </Link>
       </div>
@@ -2667,6 +2668,8 @@ export default function ProspectDashboardClient({
   const [isQueueControlsOpen, setIsQueueControlsOpen] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [isRefreshPending, startRefreshTransition] = useTransition();
+  const queuePanelRef = useRef<HTMLElement>(null);
+  const detailPanelRef = useRef<HTMLElement>(null);
   const shouldRefreshForLeads = shouldContinueActionQueuePolling({
     isWarmingUp,
     readyToActCount: leads.length,
@@ -2767,8 +2770,31 @@ export default function ProspectDashboardClient({
     () => filteredQueueItems.filter(isPotentialBuyer),
     [filteredQueueItems],
   );
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(
-    queueItems[0]?.id ?? null,
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(() =>
+    sortQueueItems(queueItems, "priority")[0]?.id ?? null,
+  );
+
+  const scrollToPanel = useCallback((panel: HTMLElement | null) => {
+    if (!panel) return;
+
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    panel.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  }, []);
+
+  const selectLead = useCallback(
+    (leadId: string) => {
+      setSelectedLeadId(leadId);
+
+      if (window.matchMedia("(max-width: 1279px)").matches) {
+        window.requestAnimationFrame(() => scrollToPanel(detailPanelRef.current));
+      }
+    },
+    [scrollToPanel],
   );
 
   useEffect(() => {
@@ -2818,12 +2844,15 @@ export default function ProspectDashboardClient({
     queueItems.length === 0 && (!serviceProfile.hasProfile || isWarmingUp);
 
   return (
-    <div className="flex w-full flex-col gap-3 xl:min-h-[900px]" style={{ color: C.text }}>
+    <div className="flex w-full flex-col gap-4 xl:min-h-[900px]" style={{ color: C.text }}>
       <header className="flex min-h-11 shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="pfd text-2xl leading-none sm:text-[1.7rem]" style={{ color: C.navy }}>
-            Leads
+            Lead desk
           </h1>
+          <p className="mt-1 text-sm" style={{ color: C.navySoft }}>
+            Review real buyer signals and decide the next move.
+          </p>
         </div>
       </header>
 
@@ -2876,6 +2905,7 @@ export default function ProspectDashboardClient({
       ) : (
       <div className="grid min-h-[640px] gap-5 xl:min-h-[760px] xl:grid-cols-[minmax(360px,0.95fr)_minmax(640px,1.55fr)] 2xl:grid-cols-[minmax(420px,1fr)_minmax(760px,1.7fr)]">
         <section
+          ref={queuePanelRef}
           aria-labelledby="matches-heading"
           className="flex min-h-[640px] max-h-[640px] flex-col overflow-hidden rounded-xl border bg-white xl:min-h-0 xl:max-h-none"
           style={{ borderColor: C.rule, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.05)" }}
@@ -2911,6 +2941,7 @@ export default function ProspectDashboardClient({
                 size="sm"
                 variant="outline"
                 aria-expanded={isQueueControlsOpen}
+                aria-controls="lead-queue-controls"
                 onClick={() => setIsQueueControlsOpen((open) => !open)}
                 className="h-8 shrink-0 px-2 text-[11px]"
                 style={{ borderColor: C.ruleDark, backgroundColor: C.white, color: C.navySoft }}
@@ -2920,7 +2951,7 @@ export default function ProspectDashboardClient({
               </Button>
             </div>
             {isQueueControlsOpen ? (
-              <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
+              <div id="lead-queue-controls" className="mt-3 flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.rule }}>
                 <div className="flex items-center gap-1" role="group" aria-label="Lead type filter">
                   {(["all", "leads", "potential"] as const).map((filter) => {
                     const label = filter === "all" ? "All" : filter === "leads" ? "Leads" : "Potential buyers";
@@ -2962,7 +2993,14 @@ export default function ProspectDashboardClient({
               </div>
             ) : null}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <p className="sr-only" role="status">
+            {filteredQueueItems.length > 0
+              ? `${filteredQueueItems.length} ${filteredQueueItems.length === 1 ? "match" : "matches"} shown`
+              : queueItems.length > 0
+                ? "No matches shown"
+                : "No matches available yet"}
+          </p>
+          <div id="lead-queue" className="min-h-0 flex-1 overflow-y-auto">
             {filteredQueueItems.length > 0 ? (
               <>
                 {visibleLeads.length > 0 ? (
@@ -2990,7 +3028,7 @@ export default function ProspectDashboardClient({
                         key={lead.id}
                         lead={lead}
                         selected={lead.id === selectedLeadId}
-                        onSelect={setSelectedLeadId}
+                        onSelect={selectLead}
                       />
                     ))}
                   </section>
@@ -3021,7 +3059,7 @@ export default function ProspectDashboardClient({
                         key={lead.id}
                         lead={lead}
                         selected={lead.id === selectedLeadId}
-                        onSelect={setSelectedLeadId}
+                        onSelect={selectLead}
                       />
                     ))}
                   </section>
@@ -3058,18 +3096,33 @@ export default function ProspectDashboardClient({
         </section>
 
         <section
+          ref={detailPanelRef}
           aria-labelledby="details-heading"
+          tabIndex={-1}
           className="flex min-h-[640px] flex-col overflow-hidden rounded-xl border bg-[#F6FAFE] xl:min-h-0"
           style={{ borderColor: C.rule, backgroundColor: C.offWhite, boxShadow: "0 8px 28px rgba(10, 22, 40, 0.06)" }}
         >
           <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b px-5" style={{ borderColor: C.rule, backgroundColor: C.blueTint }}>
-            <h2 id="details-heading" className="pfd text-xl leading-none" style={{ color: C.navy }}>
-              {selectedLead?.matchStatus === "discovery_candidate"
-                ? "Potential buyer brief"
-                : "Lead brief"}
-            </h2>
+            <div className="flex min-w-0 items-center gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="xl:hidden"
+                onClick={() => scrollToPanel(queuePanelRef.current)}
+                style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+              >
+                <ChevronLeft className="size-3.5" aria-hidden="true" />
+                All leads
+              </Button>
+              <h2 id="details-heading" className="pfd truncate text-xl leading-none" style={{ color: C.navy }}>
+                {selectedLead?.matchStatus === "discovery_candidate"
+                  ? "Potential buyer brief"
+                  : "Lead brief"}
+              </h2>
+            </div>
             {selectedLead ? (
-              <span className="rounded-full border px-2 py-1 text-[10px] font-semibold" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
+              <span className="shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold" style={{ borderColor: C.blueLight, color: C.blue, backgroundColor: C.white }}>
                 {selectedLead.matchStatus === "discovery_candidate"
                   ? "Potential buyer"
                   : "Clear buyer problem"}
