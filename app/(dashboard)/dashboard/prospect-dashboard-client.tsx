@@ -2370,12 +2370,12 @@ function DiscoverySourceBar({
 
   return (
     <section
-      className="flex flex-wrap items-stretch gap-0 overflow-hidden rounded-2xl border bg-white shadow-sm"
+      className="grid grid-cols-1 overflow-hidden rounded-2xl border bg-white shadow-sm lg:grid-cols-[minmax(13rem,0.8fr)_minmax(20rem,1.5fr)_minmax(15rem,1fr)]"
       style={{ borderColor: C.rule }}
       aria-label="Active discovery source"
     >
       <div
-        className="relative flex min-w-[14rem] flex-1 items-center gap-3 overflow-hidden p-4"
+        className="relative flex min-w-0 items-center gap-3 overflow-hidden p-4"
         style={{ backgroundColor: C.bluePale }}
       >
         <div
@@ -2401,7 +2401,7 @@ function DiscoverySourceBar({
           </p>
         </div>
       </div>
-      <div className="flex min-w-[min(100%,20rem)] flex-[1.7] flex-wrap items-center gap-2 border-t p-4 sm:min-w-[22rem] lg:border-l lg:border-t-0" style={{ borderColor: C.rule }}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-t p-4 lg:border-l lg:border-t-0" style={{ borderColor: C.rule }}>
         <label htmlFor="dashboard-website-url" className="w-full text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
           Website to scan
         </label>
@@ -2435,12 +2435,11 @@ function DiscoverySourceBar({
           Arcli filters fresh conversations through your matching brief.
         </p>
       </div>
-      <div className="min-w-[14rem] flex-1 border-t p-4 lg:border-l lg:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
-        <div className="flex flex-wrap items-start gap-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
-              Discovery health
-            </p>
+      <div className="min-w-0 border-t p-4 lg:border-l lg:border-t-0" style={{ backgroundColor: latestDiscoveryWasPartial ? "#FFFCF3" : C.offWhite, borderColor: C.rule }}>
+        <div className="flex flex-col items-start">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: C.muted }}>
+            Discovery health
+          </p>
         <span
           className="mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold"
           style={{
@@ -2451,23 +2450,22 @@ function DiscoverySourceBar({
         >
           {displayStatus}
         </span>
-          </div>
-        <Button
-          asChild
-          type="button"
-          size="xs"
-          variant="outline"
-          className="mt-5 h-7 px-2.5 text-[11px]"
-          style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
-        >
-          <Link href="/dashboard/brief">Tune matching brief</Link>
-        </Button>
+          <Button
+            asChild
+            type="button"
+            size="xs"
+            variant="outline"
+            className="mt-3 h-7 px-2.5 text-[11px]"
+            style={{ borderColor: C.blueLight, backgroundColor: C.white, color: C.blue }}
+          >
+            <Link href="/dashboard/brief">Tune matching brief</Link>
+          </Button>
         </div>
         <p className="mt-3 text-[11px] leading-4" style={{ color: C.navySoft }}>
           {scanInsight}
         </p>
       </div>
-      <div className="flex w-full items-start gap-2 border-t px-4 py-2.5" style={{ borderColor: C.rule }}>
+      <div className="col-span-full flex items-start gap-2 border-t px-4 py-2.5" style={{ borderColor: C.rule }}>
         <Target className="mt-0.5 size-3.5 shrink-0" style={{ color: C.blue }} aria-hidden="true" />
         {message ? (
           <p
