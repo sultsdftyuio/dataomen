@@ -2271,6 +2271,25 @@ function ArcliSignalMark({ className }: { className?: string }) {
   );
 }
 
+function ArcliQueueMark({ className }: { className?: string }) {
+  return (
+    <span className={cn("relative flex size-4 shrink-0 flex-col justify-center gap-[3px]", className)} aria-hidden="true">
+      <span className="flex items-center gap-[3px]">
+        <span className="size-[3px] rounded-full" style={{ backgroundColor: C.blue }} />
+        <span className="h-[2px] flex-1 rounded-full" style={{ backgroundColor: C.blue }} />
+      </span>
+      <span className="flex items-center gap-[3px]">
+        <span className="size-[3px] rounded-full" style={{ backgroundColor: C.blue }} />
+        <span className="h-[2px] w-3/4 rounded-full" style={{ backgroundColor: C.blue }} />
+      </span>
+      <span className="flex items-center gap-[3px]">
+        <span className="size-[3px] rounded-full" style={{ backgroundColor: C.blue }} />
+        <span className="h-[2px] w-1/2 rounded-full" style={{ backgroundColor: C.blue }} />
+      </span>
+    </span>
+  );
+}
+
 function DiscoverySourceBar({
   serviceProfile,
   status,
@@ -2881,7 +2900,7 @@ export default function ProspectDashboardClient({
             style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
             aria-hidden="true"
           >
-            <ArcliSignalMark />
+            <ArcliQueueMark />
           </span>
           <div className="min-w-0">
             <h1 className="pfd text-xl leading-none sm:text-2xl" style={{ color: C.navy }}>
