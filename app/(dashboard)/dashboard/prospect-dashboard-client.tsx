@@ -2865,18 +2865,27 @@ export default function ProspectDashboardClient({
 
   return (
     <div className="flex w-full flex-col gap-2.5 sm:gap-3" style={{ color: C.text }}>
-      <header className="mx-auto flex min-h-10 w-full max-w-[1800px] shrink-0 items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="pfd text-xl leading-none sm:text-2xl" style={{ color: C.navy }}>
-            {dashboardView === "focus" ? "Focus" : dashboardView === "queue" ? "All signals" : "Leads"}
-          </h1>
-          <p className="mt-0.5 text-[13px]" style={{ color: C.navySoft }}>
-            {dashboardView === "focus"
-              ? "One signal at a time."
-              : dashboardView === "queue"
-                ? "Choose the signal you want to review."
-            : "Your next move, without the noise."}
-          </p>
+      <header className="mx-auto flex min-h-11 w-full max-w-[1800px] shrink-0 items-center justify-between gap-4 border-b pb-3" style={{ borderColor: C.rule }}>
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border"
+            style={{ borderColor: C.blueLight, backgroundColor: C.blueTint, color: C.blue }}
+            aria-hidden="true"
+          >
+            <Radar className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="pfd text-xl leading-none sm:text-2xl" style={{ color: C.navy }}>
+              {dashboardView === "focus" ? "Focus" : dashboardView === "queue" ? "All signals" : "Leads"}
+            </h1>
+            <p className="mt-1 text-[13px]" style={{ color: C.navySoft }}>
+              {dashboardView === "focus"
+                ? "One signal at a time."
+                : dashboardView === "queue"
+                  ? "Choose the signal you want to review."
+                  : "Your next move, without the noise."}
+            </p>
+          </div>
         </div>
         {dashboardView === "queue" ? (
           <Button
@@ -2892,9 +2901,14 @@ export default function ProspectDashboardClient({
         ) : null}
       </header>
 
-      {dashboardView === "overview" && buyerDemandReport ? (
-        <section aria-label="Discovery findings" className="mx-auto w-full max-w-[1800px]">
-          <DiscoveryScanReport report={buyerDemandReport} />
+      {dashboardView === "overview" ? (
+        <section aria-label="Prospect discovery controls" className="mx-auto w-full max-w-[1800px]">
+          <DiscoverySourceBar
+            serviceProfile={serviceProfile}
+            status={status}
+            websiteCrawlCooldown={websiteCrawlCooldown}
+            discoveryStatus={buyerDemandReport?.status ?? null}
+          />
         </section>
       ) : null}
 
@@ -3079,12 +3093,7 @@ export default function ProspectDashboardClient({
                   isRefreshing={isRefreshPending}
                   onRefresh={refreshDashboard}
                 />
-                <DiscoverySourceBar
-                  serviceProfile={serviceProfile}
-                  status={status}
-                  websiteCrawlCooldown={websiteCrawlCooldown}
-                  discoveryStatus={buyerDemandReport?.status ?? null}
-                />
+                {buyerDemandReport ? <DiscoveryScanReport report={buyerDemandReport} /> : null}
               </div>
             </details>
           </section>

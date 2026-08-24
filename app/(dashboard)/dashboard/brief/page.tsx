@@ -44,7 +44,7 @@ export default async function MatchingBriefPage() {
   const isActive = serviceProfile.embeddingStatus === "completed";
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1600px] flex-col gap-4 overflow-y-auto pr-1">
+    <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col gap-3 overflow-y-auto pr-1">
       <DashboardPageIntro
         eyebrow="Discovery setup"
         title="Matching brief"
@@ -55,16 +55,14 @@ export default async function MatchingBriefPage() {
             <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.faint }}>
               Match state
             </p>
-            <div className="mt-2 rounded-md border p-2.5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
-              <p className="pfd text-lg leading-none" style={{ color: C.navy }}>
-                {isActive ? "Active" : "Updating"}
-              </p>
-              <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>
-                {isActive
-                  ? "This brief is shaping the signals in Prospects."
-                  : "Your last active brief remains in use while this one refreshes."}
-              </p>
-            </div>
+            <p className="mt-1.5 text-sm font-semibold" style={{ color: isActive ? C.green : C.blue }}>
+              {isActive ? "Active" : "Updating"}
+            </p>
+            <p className="mt-1 text-[11px] leading-5" style={{ color: C.muted }}>
+              {isActive
+                ? "This brief is shaping the signals in Prospects."
+                : "Your last active brief remains in use while this one refreshes."}
+            </p>
           </div>
         }
       />

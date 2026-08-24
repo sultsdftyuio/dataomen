@@ -76,7 +76,7 @@ export default async function WatchlistsPage() {
         icon={UsersRound}
         visual={
           watchlists.length === 0 ? (
-            <div className="border-l pl-4" style={{ borderColor: C.blueLight }}>
+            <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.blue }}>
                 First step
               </p>
