@@ -57,7 +57,7 @@ export default async function DashboardLayout({
         className="sticky top-0 z-50 border-b bg-white shadow-sm"
         style={{ borderColor: C.rule }}
       >
-        <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center gap-3 px-3 sm:px-4">
+        <div className="mx-auto flex h-12 w-full max-w-[1800px] items-center gap-3 px-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex min-w-0 items-center">
               <Link
@@ -77,7 +77,7 @@ export default async function DashboardLayout({
         </div>
       </header>
 
-      <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-3 animate-in fade-in duration-300 sm:p-4">
+      <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-2.5 animate-in fade-in duration-300 sm:p-3">
         {children}
       </main>
 
