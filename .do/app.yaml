@@ -297,11 +297,25 @@ workers:
     run_command: python scripts/start_worker.py
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-2gb
+    # Workers are not routed publicly. This endpoint is only for App Platform
+    # liveness probing and reports healthy after the supervised child is alive.
+    liveness_health_check:
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+      http_path: /health
+      port: 8080
     envs:
       - key: ARCLI_WORKER_BACKEND
         scope: RUN_TIME
         type: general
         value: dramatiq
+      - key: ARCLI_WORKER_HEALTH_PORT
+        scope: RUN_TIME
+        type: general
+        value: "8080"
       - key: ARCLI_DRAMATIQ_MODULES
         scope: RUN_TIME
         type: general

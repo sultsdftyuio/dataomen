@@ -11,10 +11,14 @@ def test_crawling_is_owned_by_the_browser_ready_worker_image() -> None:
         encoding="utf-8"
     )
     generic_dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    crawler_worker_spec = app_spec.split("- name: crawl4ai-worker", maxsplit=1)[1]
 
     assert "name: crawl4ai-worker" in app_spec
     assert "dockerfile_path: ./Crawl4AI/Dockerfile" in app_spec
     assert 'value: "crawling,workspace-brain"' in app_spec
+    assert "liveness_health_check:" in crawler_worker_spec
+    assert "http_path: /health" in crawler_worker_spec
+    assert "ARCLI_WORKER_HEALTH_PORT" in crawler_worker_spec
     assert "ARCLI_CRAWL4AI_ENABLED=true" in browser_dockerfile
     assert "python -m playwright install --with-deps chromium" in browser_dockerfile
     assert "ARCLI_CRAWL4AI_ENABLED=false" in generic_dockerfile

@@ -9,6 +9,8 @@ import sys
 import threading
 import time
 from collections.abc import Awaitable, Callable
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import FrameType
 from typing import Any
 
@@ -55,6 +57,62 @@ class WorkerState:
         self.recycle_requested = threading.Event()
         self.child_process: subprocess.Popen[bytes] | None = None
         self.signal_received_at: float | None = None
+
+
+def worker_is_healthy(state: WorkerState) -> bool:
+    """Report whether the supervised Dramatiq child is still running."""
+    child_process = state.child_process
+    return bool(
+        not state.shutdown_requested.is_set()
+        and child_process is not None
+        and child_process.poll() is None
+    )
+
+
+def start_worker_health_server(state: WorkerState) -> ThreadingHTTPServer | None:
+    """Expose an optional internal liveness endpoint for App Platform workers."""
+    raw_port = os.getenv("ARCLI_WORKER_HEALTH_PORT", "").strip()
+    if not raw_port:
+        return None
+
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise RuntimeError("ARCLI_WORKER_HEALTH_PORT must be an integer.") from exc
+    if not 1 <= port <= 65_535:
+        raise RuntimeError("ARCLI_WORKER_HEALTH_PORT must be between 1 and 65535.")
+
+    class HealthCheckHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - required stdlib handler name
+            if self.path != "/health":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+
+            status_code = (
+                HTTPStatus.OK if worker_is_healthy(state) else HTTPStatus.SERVICE_UNAVAILABLE
+            )
+            self.send_response(status_code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(
+                b'{"status":"ok"}'
+                if status_code == HTTPStatus.OK
+                else b'{"status":"starting_or_stopping"}'
+            )
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.daemon_threads = True
+    threading.Thread(
+        target=server.serve_forever,
+        name="worker-health-server",
+        daemon=True,
+    ).start()
+    logger.info("worker_health_server_started port=%s", port)
+    return server
 
 
 def configure_logging() -> None:
@@ -524,16 +582,22 @@ def main() -> int:
         return run_embedded_dramatiq_worker(state)
 
     register_signal_handlers(state)
+    health_server = start_worker_health_server(state)
+    try:
+        backend = os.getenv("ARCLI_WORKER_BACKEND", "dramatiq").strip().lower()
+        logger.info("worker_entrypoint_started backend=%s", backend)
 
-    backend = os.getenv("ARCLI_WORKER_BACKEND", "dramatiq").strip().lower()
-    logger.info("worker_entrypoint_started backend=%s", backend)
+        if backend == "dramatiq":
+            return run_dramatiq_worker(state)
+        if backend == "loop":
+            return run_python_loop(state)
 
-    if backend == "dramatiq":
-        return run_dramatiq_worker(state)
-    if backend == "loop":
-        return run_python_loop(state)
-
-    raise RuntimeError("ARCLI_WORKER_BACKEND must be 'dramatiq' or 'loop'.")
+        raise RuntimeError("ARCLI_WORKER_BACKEND must be 'dramatiq' or 'loop'.")
+    finally:
+        if health_server is not None:
+            health_server.shutdown()
+            health_server.server_close()
+            logger.info("worker_health_server_stopped")
 
 
 if __name__ == "__main__":
