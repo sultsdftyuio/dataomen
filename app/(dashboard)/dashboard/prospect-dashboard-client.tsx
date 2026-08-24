@@ -2881,8 +2881,8 @@ export default function ProspectDashboardClient({
             aria-labelledby="focus-heading"
             className="mx-auto w-full max-w-6xl"
           >
-            <div className="grid gap-4 lg:min-h-[390px] lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
-              <article className="flex min-w-0 flex-col rounded-2xl border bg-white p-6 shadow-sm sm:p-8" style={{ borderColor: C.rule }}>
+            <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,0.75fr)]">
+              <article className="flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-white p-6 shadow-sm sm:p-8" style={{ borderColor: C.rule }}>
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-xs font-bold uppercase tracking-[0.16em]" style={{ color: C.blue }}>
                     Today
@@ -2909,13 +2909,23 @@ export default function ProspectDashboardClient({
                   </div>
                 ) : null}
                 {selectedLead ? (
-                  <div className="mt-6 border-t pt-4" style={{ borderColor: C.rule }}>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
-                      Match rationale
-                    </p>
-                    <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: C.navySoft }}>
-                      {selectedLead.matchReason}
-                    </p>
+                  <div className="mt-6 grid gap-3 border-t pt-5 sm:grid-cols-2" style={{ borderColor: C.rule }}>
+                    <div className="rounded-xl border p-3.5" style={{ borderColor: C.blueLight, backgroundColor: C.blueTint }}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.blue }}>
+                        Buyer evidence
+                      </p>
+                      <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navy }}>
+                        {selectedLead.evidenceExcerpt || selectedLead.sourcePost.text}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border bg-white p-3.5" style={{ borderColor: C.rule }}>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: C.muted }}>
+                        Why it fits
+                      </p>
+                      <p className="mt-2 line-clamp-3 text-sm leading-5" style={{ color: C.navySoft }}>
+                        {selectedLead.matchReason}
+                      </p>
+                    </div>
                   </div>
                 ) : null}
                 <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -2943,7 +2953,7 @@ export default function ProspectDashboardClient({
                 </div>
               </article>
 
-              <aside className="flex min-h-[300px] flex-col rounded-2xl border p-4 shadow-sm sm:p-5" style={{ borderColor: C.rule, backgroundColor: C.offWhite }}>
+              <aside className="self-start rounded-2xl border bg-white p-4 shadow-sm sm:p-5" style={{ borderColor: C.rule }}>
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold" style={{ color: C.navy }}>Signal inbox</h3>
                   {queueItems.length > 3 ? (
